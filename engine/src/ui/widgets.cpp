@@ -935,6 +935,16 @@ void UiWalk::setListOff(std::uint32_t list, bool off) {
     else     state_->listOff.erase(list);
 }
 
+// `sub_428FF0(item, 0x40000001, on)` over ONE item - the same bit, one widget
+// at a time. Both directions are needed and they are not symmetrical here:
+// the drawer skips an item whose RECORD carries the bit unless something has
+// switched it on, and skips one the runtime switched off whatever the record
+// says, so a builder that means "drawn" has to say both.
+void UiWalk::setItemOff(std::uint32_t item, bool off) {
+    if (off) { state_->itemOff.insert(item); state_->itemShown.erase(item); }
+    else     { state_->itemOff.erase(item);  state_->itemShown.insert(item); }
+}
+
 // THE PANEL'S `+8`, run on the way OUT. `sub_42A370(screen, panel)` calls the
 // OLD panel's `+8` and then the new panel's `+4`, so a page that disabled
 // something on the way in is expected to re-enable it on the way out - and
@@ -1173,6 +1183,77 @@ void UiWalk::buildPage(const UiPanel& p) {
     // buttons, where ENTER reaches a callback that answers nothing.
     if (p.addr == kPanelShopSellConfirm || p.addr == kPanelShopExamine) {
         curFromBuilder_ = 1;
+        return;
+    }
+    // ---- THE HINT SHOP's two builders, transcribed ------------------------
+    //
+    // `sub_4AE120` (0x004E3018's `+4`) and `sub_4AE3A0` (0x004E3080's) are
+    // the same shape with different numbers, and between them they write
+    // every field the two pages differ in. Neither clears anything it does
+    // not name, so a flag one sets stands until the other clears it - which
+    // is how `Acheter`'s "Indice achete !" survives from the confirm back
+    // onto the shop if you leave it up.
+    //
+    //   sub_4AE120                              sub_4AE3A0
+    //     dword_6A17C0 = event 42 (the price)     -
+    //     word_4E2D0C  = 6                        word_4E2D0C = 6
+    //     body  0x40000080 -> 0                   body  0x40000080 -> 1
+    //     body  0x40000001 -> 0  (drawn)          body  0x40000001 -> 1 (not)
+    //     word_4E2B2E  = 0                        word_4E2B2E = 0
+    //     word_4E2B12  = 250                      word_4E2B12 = 180
+    //     price 0x40000001 -> 0                   list 0x004E2C18 -> 0 (both
+    //     foot  0x40000001 -> 0                       buttons drawn)
+    //     word_4E2CF2  = 400                      foot  0x40000001 -> 0
+    //     done  0x40000001 -> 1                   word_4E2CF2 = 290
+    //                                             panel+24 = 0
+    //     word_4E2AF0 = 5; sub_42ADD0(rows, 0, 2)  ...the same two lines
+    //     dword_4E2B4C = rows ? selected(rows)+0x3C : -1   ...the same
+    //     if (!rows) panel+24 = 1                          ...the same
+    //
+    // `panel+24 = 1` is index 1 of either panel's lists, and on BOTH that is
+    // 0x004E2B60, the body box - so with no hints at all the focus skips the
+    // row list entirely and ENTER lands on `0x004AE260`, which rebuilds the
+    // page. That is the whole of the no-hints state, and it is why the page
+    // is still navigable when it has nothing to sell.
+    if (p.addr == kPanelHints || p.addr == kPanelHintBuy) {
+        const bool buy = p.addr == kPanelHintBuy;
+        hintFooter_  = 6;
+        hintSection_ = 0;
+        hintBodyY_   = buy ? 180 : 250;
+        hintFooterY_ = buy ? 290 : 400;
+        setItemOff(kItemHintBody, buy);          // 0x40000001 on the body
+        setItemOff(kItemHintFoot, false);
+        if (buy) {
+            // `sub_429140(&word_4E2C18, 0x40000001, 0)` - over the LIST, so
+            // both buttons. The shop's own builder never touches them, which
+            // is why they have to be switched back on here after `Acheter`
+            // hid them.
+            for (const auto& l : p.lists) {
+                if (l.addr != kListHintBuy) continue;
+                for (const auto& it : l.items) setItemOff(it.addr, false);
+            }
+        } else {
+            setItemOff(kItemHintPrice, false);
+            setItemOff(kItemHintDone, true);     // `Indice achete !` hidden
+        }
+        // `sub_42ADD0(&word_4E2AF0, 0, 2)`: open object list 2, five widgets,
+        // selection back to 0, then the count from event 29. `hintRows_` is
+        // that count, supplied by the caller (see `setHintRows`).
+        //
+        // The CONFIRM panel does not carry the row list - the shop's four
+        // lists are rows / body / footer / backdrop and the confirm's five
+        // are buttons / body / price / footer / backdrop - but the engine
+        // binds it anyway, because `sub_42ADD0` takes the list RECORD and
+        // not the panel. `bindRows` walks the current panel's lists, so on
+        // the confirm it sets the count and the selection and leaves the
+        // five widgets' tags alone; they already hold the same values the
+        // shop's own build wrote, since both calls use window 0 and the same
+        // count.
+        selMap()[kListHintRows] = 0;
+        bindRows(kListHintRows, hintRows_, 0);
+        hintBodyRow_ = hintRows_ > 0 ? 0 : -1;
+        if (hintRows_ <= 0) curFromBuilder_ = 1;   // `[panel+24] = 1`
+        else if (buy)       curFromBuilder_ = 0;   // `mov [esi+18h], 0`
         return;
     }
     // MULTIPLAN's two children the same way: both records ship `+24` = 1
@@ -1868,6 +1949,59 @@ bool UiWalk::confirm() {
             if (load_) load_->mode = 1;        // `word_4CEA9A = 1`, saving
             return installPanel(kPanelLoadSlots);
         }
+        // ---- THE HINT SHOP's three callbacks ------------------------
+        //
+        // A ROW (0x004AE220). Six instructions, and the refusal does NOT
+        // install a panel the way `Sauvegarde`'s does - it rewrites the
+        // footer item's string id in place and returns, so the page stays
+        // put with `Je n'ai pas assez d'Anneaux pour faire ca !` under it.
+        //
+        //     push 5; call sub_42B1C0        ; Actor_GetProperty(5)
+        //     mov  ecx, dword_6A17C0         ; the price
+        //     cmp  eax, ecx
+        //     jge  loc_4AE243
+        //       mov word_4E2D0C, 8 ; mov eax, 1 ; retn
+        //     loc_4AE243:
+        //       sub_42A370(screen, off_4E3080) ; mov eax, 1 ; retn
+        if (it->callback == kCbHintRow) {
+            if (rings_ < hintPrice_) {
+                hintFooter_ = 8;
+                log_.push_back("indices: " + std::to_string(rings_) +
+                               " anneaux against a price of " +
+                               std::to_string(hintPrice_) + " - refused");
+                return true;
+            }
+            return installPanel(kPanelHintBuy);
+        }
+        // THE BODY BOX (0x004AE260) - `sub_42A370(screen, off_4E3018)` then
+        // `sub_42ADD0(&word_4E2AF0, 0, 2)`, which `buildPage` does for it.
+        if (it->callback == kCbHintBody) return installPanel(kPanelHints);
+        // `Acheter` (0x004AE480). The event is the PAYMENT and its refusal
+        // arm is a plain `return 1` with nothing changed, so a purchase the
+        // player cannot afford leaves the confirm exactly as it was.
+        if (it->callback == kCbHintBuy) {
+            if (!panel_) return false;
+            if (rings_ < hintPrice_) {
+                log_.push_back("indices: the purchase is refused - " +
+                               std::to_string(rings_) + " anneaux");
+                return true;
+            }
+            rings_ -= hintPrice_;          // `u16(player + 174) -= price`
+            hintPaid_ = hintPrice_;        // ...for the caller to write back
+            hintSection_ = 1;              // `word_4E2B2E = 1` - THE CLUE
+            for (const auto& l : panel_->lists) {
+                if (l.addr != kListHintBuy) continue;
+                for (const auto& b : l.items) setItemOff(b.addr, true);
+            }
+            setItemOff(kItemHintBody, false);
+            setItemOff(kItemHintFoot, true);
+            setItemOff(kItemHintPrice, true);
+            setItemOff(kItemHintDone, false);
+            cur_ = 1;                      // `[screen->panel + 0x18] = 1`
+            log_.push_back("indices: bought for " + std::to_string(hintPrice_) +
+                           ", " + std::to_string(rings_) + " anneaux left");
+            return true;
+        }
         // `Annuler` on the save screen (0x0042A990): it closes.
         if (it->callback == kCbSaveAnnuler) {
             log_.push_back("annuler: the screen closes");
@@ -1970,6 +2104,39 @@ bool UiWalk::confirm() {
         // Oui/Non list belongs to that page alone, so on the inventory page
         // this shows a list nothing draws and moves the focus to the page's
         // own list 1. Transcribed as it is, including that.
+        // `Lire plan`, the third inventory tile - `sub_42A370(screen,
+        // off_4DF190)`, seven instructions, and then the PANEL'S OWN `+4`
+        // decides whether the page survives. `sub_49D9E0` bounces straight
+        // back to `0x004DEE50` when `Images\<set>.bmp` cannot be opened, so
+        // the tile does nothing at all outside the four cities - which is not
+        // a refusal the callback makes, but one its page makes on arrival.
+        //
+        // `setCityMap` is what the caller has resolved: whether the bitmap
+        // opened. Without it the walk cannot know, so it installs the page and
+        // says the bitmap was not tested rather than guessing either way.
+        if (it->callback == kCbSneakMapOpen) {
+            if (!installPanel(kPanelSneakMap)) return false;
+            if (!cityMapKnown_) {
+                approx_ = true;
+                log_.push_back("sneak map: installed, the bitmap untested");
+                return true;
+            }
+            if (!cityMapAvailable_) {
+                log_.push_back("sneak map: no Images bitmap - bounced back");
+                return installPanel(kPanelSneakInventory);
+            }
+            log_.push_back("sneak map: the city map page");
+            return true;
+        }
+        // `0x0049BC30`, the ANNEAUX tile: `mov eax, 1; retn`. It consumes the
+        // confirm so `Ui_ConfirmSelection` does not descend into the item's
+        // `+44`, and does nothing else. Transcribed BECAUSE it is inert - the
+        // default below would descend, which is the behaviour it exists to
+        // prevent.
+        if (it->callback == kCbSneakRingsInert) {
+            log_.push_back("sneak: anneaux tile - inert (mov eax,1; retn)");
+            return true;
+        }
         if (it->callback == kCbSneakQuitShow) {
             setListOff(kListSneakQuit, false);
             selMap()[kListSneakQuit] = 1;                  // `Non`

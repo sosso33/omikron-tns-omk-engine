@@ -32,6 +32,7 @@ instruction, and the no-original-assembly constraint is untouched.
 | `shoot_weapons.json` | the two WEAPON tables `Shoot_InitWeapon` picks a row out of — the player's at `0x004C3658`, everybody else's at `0x004C36F8` | 8 + 8 rows |
 | `fight_ai_moves.json` | the melee AI's BUILT-IN input sequences at `0x004CAD0C`..`0x004CADA0` — what `Fight_TickAI` presses when it is not pressing a `.CTL` profile family (closing the distance, re-arming, and four press/release combos) | 8 sequences, 24 words |
 | `ui_widgets.json` | the widget TREE a replica cannot read out of `gamedata/` — panels, lists, items, their bindings and flags, the option pages, the name-field switch, and the **answer layer** (`answerSites`: every write to `dword_930750`) | 35 panels, 93 lists, 411 items |
+| `city_maps.json` | the SNEAK'S CITY MAP (`docs/UI.md` 3g-bis) - the four map rectangles at `0x004DF1F8` (52-byte rows: the bitmap's city name and the world rectangle it covers) and the fifteen per-place position OVERRIDES at `0x004DF2C8` (44-byte rows, three places in five languages) | 4 + 15 |
 
 **`vm_announce.json` has a different provenance from the rest.** The others
 are read out of the executable's bytes; this one is derived from the

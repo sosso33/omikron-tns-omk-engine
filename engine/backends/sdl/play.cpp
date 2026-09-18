@@ -1855,6 +1855,7 @@ int main(int argc, char** argv) {
     // wants a recipe PAIR, and a new game ships exactly two objects.
     std::string giveList;
     int moneyArg = -1;              // --money: a harness write of record +172
+    int ringsArg = -1;              // --rings: the same over record +174
     std::string varList;
     bool newWorld = false; // --newgame-world: START's world, the save's player
     // --scene-chunk N: run a SCENE chunk's startup script over the area, the
@@ -2013,6 +2014,7 @@ int main(int argc, char** argv) {
         // slot and runs none of its bookkeeping.
         else if (a == "--give" && i + 1 < argc) giveList = argv[++i];
         else if (a == "--money" && i + 1 < argc) moneyArg = std::atoi(argv[++i]);
+        else if (a == "--rings" && i + 1 < argc) ringsArg = std::atoi(argv[++i]);
         // A HARNESS FLAG, not a port: `--var 652=1,657=1` writes the game DB
         // directly. A flow can sit behind state no flag can otherwise reach -
         // the flat's lift gate tests `Porte Asc Fermee` and `Rencontre Telis`
@@ -2542,6 +2544,15 @@ int main(int argc, char** argv) {
         std::printf("--money: the player record's +172 set to %d (a harness write)\n",
                     state.money());
     }
+    // `--rings N`: the ANNEAUX at `+174`, the other half of the same pair.
+    // A save costs one and a hint three, and both shipped fixtures carry
+    // two - so neither purchase can be driven from them without this. A
+    // HARNESS write, like `--money` and `--give`.
+    if (ringsArg >= 0) {
+        state.setRings(std::min(ringsArg, 0xFFFF));
+        std::printf("--rings: the player record's +174 set to %d (a harness write)\n",
+                    state.rings());
+    }
     if (!giveList.empty()) {
         int placed = 0, refused = 0;
         std::string cur;
@@ -2891,6 +2902,13 @@ int main(int argc, char** argv) {
     // use 54 distinct names against the table's 66 rows.
     omk::SpecialMoves specialMoves =
         omk::SpecialMoves::loadJson(tb.empty() ? std::string() : tb + "/special_moves.json");
+    // The sneak's CITY MAP tables - the four map rectangles and the fifteen
+    // place overrides, both `.data` in the executable (`ui/citymap.h`).
+    const omk::CityMaps cityMaps =
+        omk::CityMaps::loadJson(tb.empty() ? std::string() : tb + "/city_maps.json");
+    if (!cityMaps.valid())
+        std::printf("sneak map: tables/city_maps.json not read - `Lire plan` will "
+                    "bounce back, because no city can be matched\n");
     if (!specialMoves.valid())
         std::printf("special moves: tables/special_moves.json not read - the take will "
                     "still work, but a fired move cannot name its row\n");
@@ -10566,6 +10584,16 @@ int main(int argc, char** argv) {
             // refuses without. `Actor_GetProperty` case 5 is the player
             // record's +174, and `GameState::rings` reads it.
             fresh->setRings(state.rings());
+            // ...and whether `Images\\<resident set>.bmp` EXISTS, which is
+            // what `sub_49D9E0` tests with `fopen` and what decides whether
+            // `Lire plan` opens a page or bounces straight back to the
+            // Inventaire tab. The walk cannot reach a file, so it is told.
+            //
+            // THE BITMAP ALONE. The city-table lookup is a separate step and a
+            // miss there is not a refusal - it leaves `dword_4DECFC` at -1 and
+            // the page stands, showing the bitmap with no pin on it. Only the
+            // `fopen` bounces.
+            fresh->setCityMap(fs.exists("IMAGES/" + session.setName() + ".bmp"));
             // whatever is held on the frame it opens does not count as input
             // to it (see the gate in the walk's dispatch below)
             screenOpenBits = bits;
@@ -10668,6 +10696,38 @@ int main(int argc, char** argv) {
             // which is what a reader met ("when I interact with the save
             // point I have directly this"). The bits are swallowed until they
             // are RELEASED.
+            // ---- THE HINT SHOP'S TWO INPUTS, before anything is pressed ----
+            //
+            // `sub_4AE120` reads both at BUILD time, and a build happens
+            // inside a confirm - so they have to be in the walk's hands
+            // before the press, not beside the drawing below.
+            //
+            // The PRICE is `Game_HandleEvent(42)` and is two steps:
+            // `Message_RunHandlers(25, area, -1)` - which runs inline and
+            // lets the world set the number - and then `Var_Get(GLOBAL+72)`.
+            // Broadcast once per open rather than once per build, which is
+            // the same value either way: the only message-25 handler in the
+            // shipped data is `IAM\GLOBAL`'s `set.var.i8 198, 3`.
+            //
+            // The ROW COUNT is the list's `+24`, `sub_42ADD0`'s event 29 on
+            // OBJECT LIST 2 - the memo journal, the same list the sneak's
+            // `Memoire` page binds. It cannot change while the screen is up,
+            // so it is read straight out of the DB.
+            if (openScreen == 30) {
+                static int hintTold = -1;
+                const int priceVar = omk::globalHintPriceVar(globalFile);
+                session.postMessage(25, -1);
+                walk->setHintPrice(state.var(priceVar));
+                const int rows = static_cast<int>(
+                    omk::objectList(state, omk::ObjectList::Memos).size());
+                walk->setHintRows(rows);
+                if (hintTold != walk->hintPrice() * 1000 + rows) {
+                    hintTold = walk->hintPrice() * 1000 + rows;
+                    std::printf("indices: variable %d = %d anneaux, object list 2 "
+                                "holds %d hint%s\n", priceVar, walk->hintPrice(),
+                                rows, rows == 1 ? "" : "s");
+                }
+            }
             std::uint32_t uiBits = bits;
             // ---- "ACTION / UTILISER" IS NOT THE SAME BIT IN EVERY GROUP ---
             //
@@ -10814,6 +10874,18 @@ int main(int argc, char** argv) {
                 } else {
                     std::fprintf(stderr, "detruire: slot %d not cleared\n", slot);
                 }
+            }
+            // ---- `Acheter`'s PAYMENT, carried out where the channel is ----
+            //
+            // `Game_HandleEvent(38, {price})` with object list 2 open is not
+            // a purchase at all - it is `u16(player + 174) -= price`, with a
+            // refusal when there is not enough. The walk did the test and the
+            // arithmetic on its own copy; the DB is written here, the way
+            // every other channel action in this file is.
+            if (const int paid = walk->takeHintPurchase(); paid > 0) {
+                state.setRings(std::max(0, state.rings() - paid));
+                std::printf("indices: paid %d anneaux, %d left on the player "
+                            "record's +174\n", paid, state.rings());
             }
             // ---- THE SLIDER'S TRAVEL --------------------------------
             //
@@ -17623,6 +17695,94 @@ int main(int argc, char** argv) {
                 }
             }
             comp.setExamineText(nullptr);
+            // ---- THE CITY MAP (`ui/citymap.h`) ---------------------------
+            //
+            // `Lire plan` installs panel 0x004DF190, whose open hook
+            // `sub_49D9E0` loads `Images\\<resident set>.bmp` and matches the
+            // uppercased stem against the compiled four-row table. Everything
+            // the two draw hooks then need is resolved HERE, because none of
+            // it is a property of the widget tree: the bitmap, the city row,
+            // where the player stands and which way he faces, and the markers.
+            //
+            // THE MARKERS are the ENABLED slider destinations whose names
+            // begin with the city's - the same `GLOBAL +16` list the slider
+            // page shows, filtered by the DB's AddressEnabled bits. The
+            // engine positions each through the 15-row OVERRIDE table first
+            // and falls back on `sub_40E630`, which is the TRANSPORT and
+            // would `Area_Load` from a draw hook; the port instead resolves
+            // only against the RESIDENT chunk's own address table and counts
+            // what it had to drop (`ui/citymap.h` says why that costs nothing
+            // in the shipped data: every destination of a city carries that
+            // city's area id, so the engine takes its same-area fast path).
+            static omk::ScreenComposer::CityMapView cityView;
+            comp.setCityMap(nullptr);
+            if (pn && pn->addr == omk::kPanelSneakMap) {
+                static std::string cityBmpStem;
+                static omk::Surface cityBmp;
+                const std::string stem = session.setName();
+                if (stem != cityBmpStem) {
+                    cityBmpStem = stem;
+                    // `sprintf("Images\\%s.bmp")` then `fopen`. DataFs
+                    // resolves case-insensitively, which is what the shipped
+                    // lower-case `anekbah.bmp` against an upper-case set name
+                    // needs.
+                    cityBmp = omk::surfaceFromBmp(fs.read("IMAGES/" + stem + ".bmp"));
+                }
+                cityView = omk::ScreenComposer::CityMapView{};
+                cityView.sheet = cityBmp.valid() ? &cityBmp : nullptr;
+                cityView.row = cityMaps.findCity(stem);
+                cityView.playerX = session.playerPos()[0];
+                cityView.playerZ = session.playerPos()[2];
+                cityView.playerFacing = session.playerYaw();
+                {
+                    const auto raw = state.raw();
+                    const std::size_t rec =
+                        static_cast<std::size_t>(omk::GameState::kPlayerRecord);
+                    for (std::size_t i = rec + 8;
+                         i < raw.size() && raw[i] != std::byte{0}; ++i)
+                        cityView.playerName.push_back(static_cast<char>(raw[i]));
+                }
+                int unplaced = 0;
+                if (cityView.row) {
+                    const auto& rs = session.residentSlot(session.activeSlot());
+                    for (const auto& d : destinations) {
+                        if (!state.bit(omk::StateArray::AddressEnabled, d.bit)) continue;
+                        const std::string place =
+                            omk::cityMapPlaceName(d.name, cityView.row->name);
+                        if (place.empty()) continue;
+                        omk::ScreenComposer::CityMapView::Marker mk;
+                        mk.name = place;
+                        if (const omk::CityPlaceRow* pr = cityMaps.findPlace(place)) {
+                            mk.x = pr->pos[0];
+                            mk.z = pr->pos[2];
+                        } else {
+                            const omk::Address* ad = nullptr;
+                            for (const auto& x : rs.addresses)
+                                if (x.id == d.bit) ad = &x;
+                            if (!ad) { ++unplaced; continue; }
+                            mk.x = ad->pos[0];
+                            mk.z = ad->pos[2];
+                        }
+                        cityView.markers.push_back(mk);
+                    }
+                }
+                comp.setCityMap(&cityView);
+                static std::string mapTold;
+                const std::string said =
+                    "set '" + stem + "' -> " +
+                    (cityBmp.valid() ? "Images/" + stem + ".bmp " +
+                         std::to_string(cityBmp.w) + "x" + std::to_string(cityBmp.h)
+                                     : std::string("no bitmap")) +
+                    ", city " + (cityView.row ? cityView.row->name + " id " +
+                                 std::to_string(cityView.row->id)
+                                              : std::string("none (tag -1)")) +
+                    ", " + std::to_string(cityView.markers.size()) +
+                    " markers, " + std::to_string(unplaced) + " unplaced";
+                if (said != mapTold) {
+                    mapTold = said;
+                    std::printf("sneak map: %s\n", said.c_str());
+                }
+            }
             // ---- THE IDENTITY PAGE'S SHEET (todo/sneak.md §5e step 2) -------
             //
             // What `Actor_GetProperty` (event 44) hands the identity hooks for
@@ -17990,7 +18150,7 @@ int main(int argc, char** argv) {
                         std::printf("sneak: memory page - %s\n", said.c_str());
                     }
                 }
-                // ---- THE ECHO BAR and THE CLOCK ---------------------
+                // ---- THE CLOCK, and WHAT THE ECHO BAR NEEDS ---------
                 //
                 // Two of the device's rows are filled by callbacks of its
                 // own, and both are readable - `sub_0049DC20` and
@@ -17999,57 +18159,28 @@ int main(int argc, char** argv) {
                 // so `asmfn.py` returns a neighbour and the range has to be
                 // dumped by hand.
                 //
-                // **The echo bar shows whatever is SELECTED**, not the
-                // hovered verb as the picture suggested. `sub_0049DC20`
-                // takes the panel's current item and dispatches on its
-                // ADDRESS:
+                // THE ECHO BAR IS NO LONGER COMPOSED HERE. It was: this
+                // block used to put the selected item's own label into
+                // `sneakRows` for it, which is right for three of the
+                // function's seven arms and silent for the other four - and
+                // the four include the one the page spends its time in, the
+                // TAB LABEL with `  (n / 18)` after it, so the bar was blank
+                // whenever the selection sat in the row list, which is
+                // whenever the player is looking at his inventory.
+                // `ScreenComposer::echoBarText` runs the whole function now,
+                // and reports what it drew in `ScreenFrame::echoBar` - a
+                // line composed where the drawing happens can be asserted;
+                // one composed here could only report the intention.
                 //
-                //     0x004DE338  "%s %d" of its string and `sub_42B1C0(4)`
-                //     0x004DE380  "%s %d" of its string and `sub_42B1C0(5)`
-                //     0x004DE3C8  its string alone
-                //     0x004DE230  its string, with `+30` forced to 1
-                //     ...
-                //
-                // which SETTLES what list 1 is: the three 50x50 icons are
-                // the setek and anneau COUNTERS and the map reader, and
-                // their strings - 8, 9 and 41, the ones a `+28`-keyed drawer
-                // printed across the page - belong to them and are rendered
-                // HERE. "Seteks en votre possession :" is echo-bar text for
-                // the setek icon, never a caption beside it.
-                //
-                // It also answers what `imager` counts: NOTHING. Its arm has
-                // no `sub_42B1C0` and no format - just the bare string "Lire
-                // plan". It is a map reader, not ammunition.
-                //
-                // The two counts come from `Game_RaiseEvent(44, {4|5})`,
-                // which is not modelled, so those two rows show their label
-                // without its number and say so rather than inventing one.
+                // What the bar cannot get for itself is the two counts:
+                // `sub_42B1C0(4)` and `(5)` raise `Game_HandleEvent(44)` on
+                // the player, whose cases 4 and 5 are the player record's
+                // `+172` and `+174` - the seteks and the anneaux.
+                comp.setPlayerCounts(state.money(), state.rings());
                 {
-                    const auto sneakText = omk::iamStrings(fs, "IAM/Sneak");
-                    const omk::UiItem* selItem = walk->selected();
                     for (const auto& l : pn->lists) {
                         for (const auto& e : l.items) {
-                            if (e.textFn == 0x0049DC20u && selItem) {
-                                const int id = selItem->label();
-                                if (id >= 0 &&
-                                    id < static_cast<int>(sneakText.size())) {
-                                    std::string t = sneakText[
-                                        static_cast<std::size_t>(id)];
-                                    // The two COUNTER arms format "%s %d",
-                                    // and the number is `Game_RaiseEvent(44,
-                                    // {4|5})` -> `sub_40B360` cases 4 and 5,
-                                    // which read the player record's +172 and
-                                    // +174. The third model, `imager`, has no
-                                    // count at all - its arm is the bare
-                                    // string - which is what settles that it
-                                    // is a map reader and not ammunition.
-                                    if (selItem->addr == 0x004DE338u)
-                                        t += " " + std::to_string(state.money());
-                                    else if (selItem->addr == 0x004DE380u)
-                                        t += " " + std::to_string(state.rings());
-                                    sneakRows[e.addr] = t;
-                                }
-                            } else if (e.textFn == 0x0049E090u) {
+                            if (e.textFn == 0x0049E090u) {
                                 // The clock. Both halves are the engine's own
                                 // formatters, already ported and checked
                                 // (`sub_0041E690`'s integer division); the
@@ -18339,6 +18470,100 @@ int main(int argc, char** argv) {
         // place, so the composer is told where the walk moved it.
         static std::map<std::uint32_t, std::pair<int, int>> itemMoved;
         itemMoved.clear();
+        // ---- `Indices`, THE HINT SHOP (screen 30's second page) -----------
+        //
+        // Five ROW widgets bound to OBJECT LIST 2 - the memo journal - a
+        // 440x120 body box showing one section of the selected memo's
+        // description, a footer counting the player's anneaux, and, on the
+        // confirm, `Cet indice te coutera : 3` over `Acheter` / `Annuler`.
+        //
+        // Everything the widget tree cannot carry comes from here: the row
+        // NAMES (the channel's case 33), the body's TEXT (case 40, the
+        // object record's description), the two native `textFn`s, and the
+        // Y each builder writes over the two items the pages SHARE.
+        static std::set<std::uint32_t> hintReport;
+        static std::map<std::uint32_t, int> itemSection;
+        static std::string hintTitleTold;
+        hintReport.clear();
+        itemSection.clear();
+        const std::uint32_t hintPanel =
+            walk && walk->panel() ? walk->panel()->addr : 0u;
+        if (hintPanel == omk::kPanelHints || hintPanel == omk::kPanelHintBuy) {
+            sneakRows.clear();
+            sneakHidden.clear();
+            comp.setExamineText(nullptr);
+            const auto saveText = omk::iamStrings(fs, "IAM/Save");
+            const auto str = [&](int id) {
+                return id >= 0 && id < static_cast<int>(saveText.size())
+                    ? saveText[static_cast<std::size_t>(id)] : std::string();
+            };
+            const auto memos = omk::objectList(state, omk::ObjectList::Memos);
+            // `sub_42ADD0` raises event 25 on list 2 before it asks for the
+            // count, so the channel is opened here too - case 33 refuses
+            // (result 3) while no list is open.
+            if (inv.openedList() != 2) inv.openList(2);
+            // The five widgets, through `sub_42AAE0`'s window rule. The walk
+            // already bound them in `buildPage`; this supplies the NAMES,
+            // which are `sub_42AA00` -> event 33 on the widget's own tag.
+            if (const omk::UiList* rl = w.listAt(omk::kListHintRows))
+                for (std::size_t k = 0; k < rl->items.size(); ++k)
+                    if (k < memos.size())
+                        sneakRows[rl->items[k].addr] =
+                            inv.displayName(memos[k], 0);
+            // THE BODY BOX. `sub_477F60` raises event 40 on the item's own
+            // `+0x3C` and lays out what it answers; `dword_4E2B4C` is that
+            // field, and the builders write it from the row list's selection
+            // - which they have just reset to 0. So it is the FIRST memo
+            // whatever row is highlighted, and `word_4E2B2E` picks which
+            // bracketed section of it: 0 the memo, 1 the clue `Acheter` buys.
+            const int bodyRow = walk->hintBodyRow();
+            const int bodyId = bodyRow >= 0 && bodyRow < static_cast<int>(memos.size())
+                ? memos[static_cast<std::size_t>(bodyRow)] : -1;
+            if (const omk::ObjectRecord* br = bodyId > 0 ? inv.record(bodyId) : nullptr) {
+                examineText = br->description;
+                comp.setExamineText(&examineText);
+                comp.setTextScroll(&walk->textScroll());
+            }
+            itemSection[omk::kItemHintBody] = walk->hintBodySection();
+            // THE FOOTER, `sub_4AE290`. Three arms, and the item's `+28` -
+            // which the row callback rewrites to 8 on a refusal - picks
+            // between the last two.
+            if (walk->hintRows() <= 0)
+                sneakRows[omk::kItemHintFoot] = str(5);
+            else if (walk->hintFooterString() == 6)
+                sneakRows[omk::kItemHintFoot] =
+                    "{C}" + str(6) + " " + std::to_string(walk->rings());
+            else
+                sneakRows[omk::kItemHintFoot] = str(walk->hintFooterString());
+            // THE PRICE LINE, `sub_4AE340`, and it is transcribed WITH ITS
+            // ODDITY. The hook calls `Ui_ItemStringDefault` (0x00476860) on
+            // an item whose bank C carries no `0x200` and whose `+30` is 0,
+            // so the string goes through `sub_43FEA0(0, ...)` - the SECTION
+            // extractor - and `Cet indice te coutera :` has no brackets at
+            // all. The engine's own answer is therefore `{TEXT ERROR!}`
+            // followed by the whole string, and the layout swallows the
+            // brace as an unknown directive, so the line reads correctly on
+            // screen. Reproduced rather than tidied: the `{TEXT ERROR!}` is
+            // what the function returns.
+            if (walk->hintRows() > 0 && saveText.size() > 2)
+                sneakRows[omk::kItemHintPrice] =
+                    "{C}" + omk::extractTextSection(&saveText[2], 0) + " " +
+                    std::to_string(walk->hintPrice());
+            // `word_4E2B12` and `word_4E2CF2`: the two shared items move
+            // between the pages, 250/400 on the shop and 180/290 on the
+            // confirm.
+            for (const auto& l : walk->panel()->lists)
+                for (const auto& e : l.items) {
+                    if (e.addr == omk::kItemHintBody)
+                        itemMoved[e.addr] = {e.x, walk->hintBodyY()};
+                    if (e.addr == omk::kItemHintFoot)
+                        itemMoved[e.addr] = {e.x, walk->hintFooterY()};
+                }
+            hintReport.insert(omk::kItemHintBody);
+            hintReport.insert(omk::kItemHintFoot);
+            hintReport.insert(omk::kItemHintPrice);
+            hintReport.insert(omk::kItemHintDone);
+        }
         if (walk && openScreen == 12 && walk->panel()) {
             for (const auto& l : walk->panel()->lists) {
                 if (l.hook != omk::kHookGandharGrid || l.items.empty()) continue;
@@ -19049,6 +19274,8 @@ int main(int argc, char** argv) {
             comp.setItemMove(itemMoved.empty() ? nullptr : &itemMoved);
             comp.setItemSource(itemSource.empty() ? nullptr : &itemSource);
             comp.setItemLitSource(itemLitSource.empty() ? nullptr : &itemLitSource);
+            comp.setItemSection(itemSection.empty() ? nullptr : &itemSection);
+            comp.setReportText(hintReport.empty() ? nullptr : &hintReport);
             comp.setHighScores(openScreen == 36 ? &highScores : nullptr,
                                walk ? walk->highScorePage() : 0);
             // THE CLOUD IS THE MENU'S BACKGROUND, NOT EVERY SCREEN'S.
@@ -19081,6 +19308,39 @@ int main(int argc, char** argv) {
             // was never the problem.
             if (!std::getenv("OMK_NOUI")) {
                 const omk::ScreenFrame sf = comp.draw(fb, openScreen, *walk);
+                // ---- THE HINT SHOP, REPORTED FROM THE DRAW -----------
+                //
+                // Every field on this line comes out of `ScreenFrame`, and
+                // the four texts are the strings the COMPOSER laid out, not
+                // the map it was handed: an item the builders hid has no
+                // entry at all, which is the half a handed-over map cannot
+                // say (CLAUDE.md 1, the log-line rule). `-` marks one that
+                // drew nothing this frame - and on a correct page three of
+                // the four always do, because the shop hides `Indice achete
+                // !` and the confirm hides the body until you have paid.
+                if (!hintReport.empty()) {
+                    const auto txt = [&](std::uint32_t a) {
+                        const auto t = sf.itemText.find(a);
+                        return t == sf.itemText.end() ? std::string("-")
+                                                      : t->second;
+                    };
+                    char page[512];
+                    std::snprintf(page, sizeof page,
+                                  "indices: %s, %d row%s, list %d, %d items drawn; "
+                                  "body '%s' | price '%s' | foot '%s' | done '%s'",
+                                  hintPanel == omk::kPanelHintBuy ? "the purchase confirm"
+                                                                  : "the shop",
+                                  walk->hintRows(), walk->hintRows() == 1 ? "" : "s",
+                                  walk->currentList(), sf.itemsDrawn,
+                                  txt(omk::kItemHintBody).c_str(),
+                                  txt(omk::kItemHintPrice).c_str(),
+                                  txt(omk::kItemHintFoot).c_str(),
+                                  txt(omk::kItemHintDone).c_str());
+                    if (hintTitleTold != page) {
+                        hintTitleTold = page;
+                        std::printf("%s\n", page);
+                    }
+                }
                 // ---- DEN'S LOCKER, REPORTED FROM THE DRAW ------------
                 //
                 // Not from `denDigit()`: the hook hands the composer a source
@@ -19128,6 +19388,31 @@ int main(int argc, char** argv) {
                         std::printf("high score: %s\n", said.c_str());
                     }
                 }
+                // ---- THE CITY MAP, reported from the DRAW ----------------
+                //
+                // The line above says what the viewer RESOLVED; this one says
+                // what the two hooks put on the frame - `mapSheet` is set
+                // inside the blit's own `if (item->tag)` arm, and every point
+                // is the projection's own output. A run that matched the city
+                // and then drew nothing would read differently here, which is
+                // the half a line printed at the hand-over cannot see.
+                if (openScreen == omk::kScreenSneak && sf.mapPin) {
+                    static std::string mapDrawTold;
+                    std::string said = std::string("the sheet ") +
+                        (sf.mapSheet ? "blitted" : "MISSING") + ", the pin at " +
+                        std::to_string(sf.mapPinAt[0]) + "," +
+                        std::to_string(sf.mapPinAt[1]) + ", " +
+                        std::to_string(sf.mapMarkers.size()) + " markers:";
+                    for (const auto& m : sf.mapMarkers)
+                        said += " " + m.first + " at " +
+                                std::to_string(m.second.first) + "," +
+                                std::to_string(m.second.second) + " |";
+                    if (!said.empty() && said.back() == '|') said.resize(said.size() - 2);
+                    if (said != mapDrawTold) {
+                        mapDrawTold = said;
+                        std::printf("sneak map: %s\n", said.c_str());
+                    }
+                }
                 // ---- XACHEN, reported from the draw for the same reason ---
                 //
                 // The symbol is a CELL of the artwork, so what a check can see
@@ -19154,6 +19439,33 @@ int main(int argc, char** argv) {
                         std::printf("xachen: the cartridges show %s(%s)\n", read.c_str(),
                                     walk->xachenSolved() ? "10 14 7 9 - the door opens"
                                                          : "not the code");
+                    }
+                }
+                // ---- THE SNEAK'S ECHO BAR, reported from the DRAW ------
+                //
+                // `sf.echoBar` is the string the composer's transcription of
+                // `sub_0049DC20` handed the LAYOUT, taken after it ran, and
+                // `sf.echoArm` is which of the function's seven branches
+                // produced it - so an empty bar (the examine box's arm, or a
+                // panel with nothing selected) reads differently from a bar
+                // the walk never reached at all, and no part of the line can
+                // be satisfied by something this file computed.
+                //
+                // `sf.rowMarks` is the row hook `0x0049C090`'s own fills, and
+                // `rowMarked` the row tags it marked - the second mark being
+                // what a `Utiliser sur` shows and nothing else in the device
+                // does.
+                if (openScreen == 9) {
+                    static std::string echoTold;
+                    std::string marks;
+                    for (int t : sf.rowMarked) marks += " " + std::to_string(t);
+                    const std::string said =
+                        "arm " + std::to_string(sf.echoArm) + " '" + sf.echoBar +
+                        "', " + std::to_string(sf.rowMarks) + " row marks" +
+                        (marks.empty() ? std::string() : " (tags" + marks + ")");
+                    if (said != echoTold) {
+                        echoTold = said;
+                        std::printf("sneak: echo bar - %s\n", said.c_str());
                     }
                 }
                 // ...and the memo body is reported from the DRAW: `textLines`

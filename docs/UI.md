@@ -1129,6 +1129,89 @@ these are), and the **camera** turns about the model rather than the model
 under the camera — the same picture for a rigid body with baked per-vertex
 colour, and nothing in the engine's data can tell them apart.
 
+### The ECHO BAR — `sub_0049DC20`, and the only place the money is shown
+
+Item `0x004DEBC0`, 411×24 at (180, 398), font `J`, the only selectable item of
+list `0x004DEC58` — **the last list of every one of the device's pages**. Its
+`+32` text callback composes the device's status line, and it is the ONLY
+place in the whole interface where the player's *seteks* and *anneaux* appear.
+Neither has a `proc` label (nothing calls them: they are dwords in the widget
+table), so the range had to be dumped out of the raw image by hand.
+
+`Ui_DrawItem` pre-clears its buffer and then draws whatever the callback left,
+so a branch that writes nothing leaves the bar blank. In order:
+
+| # | when | what |
+|---|---|---|
+| 0 | `Ui_OscillatorFlags(Ui_Oscillator(0), 1)` | `byte_6A4CA0`, a 5000 ms TRANSIENT message, **and nothing else** |
+| — | no current panel, or nothing selected on it | blank |
+| 1 | selection is `0x004DE338`, the setek tile | `"%s %d"` of its label and `sub_42B1C0(4)` |
+| 2 | `0x004DE380`, the anneau tile | the same with `(5)` |
+| 3 | `0x004DE3C8`, the imager tile | its bare label — **no count** |
+| 4 | `0x004DE230` / `0x004DE278`, the first two verbs | the label, `+30` forced to 1 across the call |
+| 5 | `0x004DE2C0` *Examiner*, or `0x004DE710` the examine box | the label; the box ships `+28 = -1`, so that arm draws nothing |
+| 6 | anything else | the CURRENT TAB's label, plus `"  (%d / 18)"` on the Inventaire tab |
+
+Three things it settles.
+
+* **`sub_42B1C0(n)`** raises `Game_HandleEvent(44)` on the player, whose
+  `sub_40B360` answers case 4 from the player record's `+172` and case 5 from
+  `+174` — the seteks and the anneaux. The corroboration is from the other
+  end: `sub_4AE060` refuses to save when property 5 reads zero, and a save
+  costs one *anneau*.
+* **`dword_4DE708` is `0x004DE6F0 + 0x18`** — the row list's own bound count,
+  what `sub_42ADD0` writes from the channel's event 29. So the `(n / 18)` is
+  the inventory's occupancy against an 18-slot capacity, and the 18 is a
+  literal in the format string rather than a field anywhere.
+* **The imager counts NOTHING.** Its arm has no `sub_42B1C0` and no format,
+  which is what settles that it is a map reader and not ammunition — and that
+  `Seteks en votre possession :` is echo-bar text for the setek tile, never a
+  caption beside it.
+
+**One call in it is dead**, at `0x0049DCA6`: `sub_42AA00(screen, row, B)`
+fills a second 0x100-byte buffer with the selected row's object name and
+nothing ever reads it — the only references to that stack slot are its
+`[0] = 0` and the `lea` that passes it. Its one effect is raising event 33
+once per draw of the bar. Whether that was intended cannot be told from the
+listing, so the port leaves it out and says so.
+
+**And `{TEXT ERROR!}` is the engine's, not a fault.** `Ui_ItemStringDefault`
+(`sub_476860`) sends any item whose `+30` is not −1 through `sub_43FEA0`, the
+bracketed-section extractor; `IAM\Sneak` contains no `[`, and the three verbs
+(plus `Oui`/`Non` and eighteen more items across the tree) ship `+30 = 0`. So
+every draw of the verb row really does compose `"{TEXT ERROR!}Utiliser"`. It
+is invisible because the text scanner treats `{` as opening a markup command
+and swallows everything to `}`. A port must not print the prefix, and must not
+"repair" the bar by dropping the `+30` path — both halves are the engine.
+
+### The ROW MARK — `sub_0049C090`, the second fill
+
+The `+20` draw hook of the nine row widgets `0x004DE440`..`0x004DE680`:
+
+```c
+tag = item->+3C;                      if (tag == -1) return;
+if (screen->+1C != off_4DEEB8) return;            // the VERB panel, only
+if (!dword_670BE0) hit = Ui_ListSelectedItem(&word_4DE6F0) == item;
+else               hit = tag == dword_670BE4 || == 670BE8 || == 670BEC;
+if (hit) Ui_DrawItemFill(screen, panel, item);
+```
+
+so a bar appears behind the row a verb is about to act on **only while the
+verb panel is up**, and during a `Utiliser sur` it marks the one or two rows
+already chosen — the page's only feedback for that operation.
+
+**It is a SECOND fill, not the only one.** The nine rows carry bank B
+`0x40000210`, and `0x40000010` is what `Ui_DrawItem` tests before calling
+`Ui_DrawItemFill` — the mask's top bits pick the bank, so bank A being zero
+says nothing about it. Every drawn row therefore fills once already and the
+marked one fills twice: with the inverse blend above, `src × (1 − 200/255)`
+applied twice takes the row from 0.216 of the page's tint to 0.385. That is
+the difference a player sees.
+
+`verify.py: engine: sneak echo bar` walks one route that reaches five of the
+bar's seven arms and both branches of the mark's gate, reading every field out
+of the frame the composer drew.
+
 ### `sub_49C050` — the row list's own hook, and why nothing moved inside it
 
 The sneak's nine row widgets are a list with a hook of its own, and the port
@@ -2509,6 +2592,100 @@ that `SaveDir_Build` writes. A loader that restores only the DB leaves the
 game at day 0 — invisible for as long as nothing draws a clock, which in
 `engine/` was until this row existed. `verify.py: save clock`.
 
+### 3g-bis. `Lire plan` — the CITY MAP, and the panel nothing points at
+
+The third of those three tiles is the only one that DOES anything. Its
+callback `0x0049BC40` is seven instructions —
+`sub_42A370(screen, off_4DF190)` — and `off_4DF190` has exactly **two**
+references in the whole 54 MB listing: that push, and its own
+`dd offset unk_4DEE50` definition. So no item's `+44` reaches the panel and
+the widget lift had never seen it; `exetables.py`'s `CODE_NAMED` names it now,
+as the Inventaire page's second code-installed child beside the verb panel.
+Its neighbour `0x0049BC30`, on the ANNEAUX tile, is `mov eax, 1; retn` — six
+bytes whose only purpose is to stop `Ui_ConfirmSelection` descending into that
+item's `+44`. **It is inert in the original**; do not implement it.
+
+The panel is three 640×480 items on one list, each a whole layer:
+
+| item | draw hook | what it is |
+|---|---|---|
+| `0x004DEC78` | `0x00477CA0` | the BITMAP. Its `+44` is the Inventaire page, and it is the only selectable one — confirming the map is how you leave it |
+| `0x004DECC0` | `0x0049E6F0` | the player's PIN and the destination MARKERS |
+| `0x004DED08` | `0x00477ED0` | the interference box §1 already describes |
+
+**The page names its own file from the resident DECOR.** `sub_49D9E0`, the
+panel's `+4`, takes `dword_93076C + 0x30` — the scene node's own path — keeps
+the basename after the last `\`, drops the last four characters and builds
+`Images\<that>.bmp`. `MESHES\DECORS\ANEKBAH.3DO` becomes `Images\ANEKBAH.bmp`,
+and four such files ship: `anekbah`, `qalisar`, `jaunpur`, `lahoreh`. It tests
+the path with `fopen`/`fclose` and **on failure re-installs `0x004DEE50` at
+once**, so outside those four locations the button silently bounces back to the
+Inventaire tab. `sub_49DB80`, the `+8`, frees the bitmap.
+
+It then `_strupr`s the stem and matches it against a **52-byte** table at
+`0x004DF1F8` (bounded by `0x004DF2CC`), storing the row's first dword in
+`dword_4DECFC` — which is the PIN ITEM's own `+0x3C` tag — or `-1`. Four rows,
+each `{int id; char name[32]; float x0, z0, xspan, zspan}` and each indexing
+itself 0..3. The four floats are the whole page:
+
+    px = item.x + (int)((X - x0) * item.w / xspan)
+    py = item.y + (int)((Z - z0) * item.h / zspan)
+
+over the item's own 640×480, the result then passed through `I2D_ScaleX/Y`. All
+four `zspan` are NEGATIVE, which is what turns the world's +z into the bitmap's
+−y.
+
+**The pin is an ARROW and it carries the heading.** `sub_49E5B0` builds an
+`I2D_DrawTriangle` whose first point is the player's own place and whose other
+two sit at `b + 30°` and `b − 30°` for `b = 90 − facing`, at a radius of 40
+(`flt_4BCEF8` 90.0, `flt_4BCEFC` −30.0, `flt_4BCF10` 30.0, `dbl_4BCF08` 40.0),
+each offset scaled on its own axis. Point 0 is `I2D_PackColour(osc/2, 0, 0,
+255)` — **blue** — and the other two white; a marker is the same primitive,
+10 wide and 10 tall pointing up, in `I2D_PackColour(osc, 255, 0, 0)` — **red**.
+`osc` is **oscillator 2**'s `+0x18`, a triangle between 45 and 200 on a 1000 ms
+period, so both pulse. It is an ALPHA, and §1's mode-2 triangle is three lines
+taking their colour from point 0's low three bytes, so the software back end
+drops it. The player's position and facing are `dword_930724 + 0xF4`, `+0xFC`
+and `+0x1A4`.
+
+Both are labelled in one 200×80 box at (+10, −10) from their own point: the pin
+with `sub_42B1F0(6)`, the player's NAME — the same event-44 property the
+identity page's *Nom* row shows — and a marker with its place name.
+
+**The markers are the ENABLED SLIDER DESTINATIONS**, the `GLOBAL +16` list
+§3g's slider page already shows. For each, the hook keeps the row whose first
+`len` characters uppercase to the city's name, strips the separator (3
+characters when `name[len]` is a space, 2 otherwise — `"Anekbah - Morgue zone
+42"` gives `"Morgue zone 42"`) and looks the remainder up in a second compiled
+table at `0x004DF2C8`, stride **44**, bounded by `aNoOne_1`: fifteen rows of
+`{char name[32]; float x, y, z}`, which are the **same three places in five
+languages** (English, French, German, Italian, Spanish) — the bookshop, the
+hide-out and the garden, all three in Jaunpur. A hit takes that row's `+32` and
+`+40`; a miss falls back on `sub_40E630`, the destination's own ADDRESS.
+
+Those three are **overrides, not copies**: `Librairie secteur 9` sits **3652**
+units from the address that positions it, `Jardin - 572 Iliam Rd` 945, and
+`Cache 8250 Konera St.` 110.
+
+**And the addresses are in the same space as the rectangles — which the data
+had to agree to.** `sub_40E630` returns the 16-byte address RECORD and the hook
+reads it with `fild`, an integer load. `Area_Load` converts an address through
+`rawToWorld` and stores the truncated result back into that int32 field, so
+what `fild` sees is the WORLD value; read that way **39 of 39** shipped
+destinations land inside their own city's rectangle, and read as the raw file
+value **0 of 39** do.
+
+Both tables are `.data`, so they are lifted to `tables/city_maps.json`.
+Ported as `engine/src/ui/citymap.*` plus two hooks in the composer;
+`verify.py: engine: sneak map`. **One part is deliberately not reproduced and
+is labelled in the port**: `sub_40E630` is not a lookup but the TRANSPORT, and
+its first act is to `Area_Load` the destination's area when that area is not
+resident — which a draw hook must not do. The port resolves a marker only
+against the resident chunk's own address table and reports any it had to drop.
+In the shipped data that costs nothing: every destination of a city carries
+that city's area id, so the engine's own same-area fast path
+(`cmp ecx, edx; jz loc_40E886`) is the one that runs whenever the map is open.
+
 ### The rows are a WINDOW, and the gate is per row
 
 `sub_42AAE0(list, window)` binds the nine row widgets:
@@ -3761,6 +3938,126 @@ afterwards by scripted input alone.
 > result here needs a positive control in the same run — which is exactly what
 > `menu-keys.log` supplies for the reopen, since its preamble count proves the
 > keys arrived.
+
+---
+
+### 3g-bis. `Indices` — the HINT SHOP on the save screen (2026-09-18)
+
+**Screen 30 is not one page.** Its root panel `0x004E2ED8` carries three
+buttons out of `IAM\Save` — 0 `Sauvegarde` (child `0x004CF2E8`, the slot panel
+of §3g), 1 **`Indices`** (child `0x004E3018`) and 3 `Annuler` — and the middle
+one is a shop that sells CLUES for *anneaux*. It was reachable in the port and
+drew nothing: five blank rows, a blank body and a footer reading `Indice
+acheté !`, the one string its own builder hides.
+
+**What a hint costs is settled from two sides that could disagree.**
+`sub_4AE120`, the shop panel's `+4` builder, opens with
+`dword_6A17C0 = Game_HandleEvent(42)`, and case 42's whole body is
+
+```
+Message_RunHandlers(25, dword_69BC60, -1);          // ask the world
+return Var_Get(*(__int16 *)(g_GlobalFile + 72));    // ...then read it
+```
+
+So the price is not a constant in the exe: the event **broadcasts message 25**
+to the resident SCENE, then the AREA, then `IAM\GLOBAL`'s subscription table,
+and whatever answers is free to write the variable first. `GLOBAL + 72` is
+**198**, and the shipped data holds exactly **one** message-25 subscription —
+`IAM\GLOBAL`'s, at offset 5006 — whose whole body is `set.var.i8 198, 3; end`.
+**A hint costs three anneaux**, everywhere in the game.
+
+**The rows are the MEMO JOURNAL.** `sub_4AE120` binds them with
+`word_4E2AF0 = 5; sub_42ADD0(&word_4E2AF0, 0, 2)` — five widgets over **object
+list 2**, the same call and the same list the sneak's `Mémoire` page makes
+(§3g of the device). `dword_4E2B08`, which looks unwritten on a grep, is that
+list's own `+0x18`: `sub_42ADD0` ends `sub_4083F0(0x1D, &count); mov [esi+18h],
+eax`, so the count comes from the channel's event 29 and the page is live data.
+
+**And what a purchase reveals is the record's SECOND bracketed section** — the
+clue `Text_LayOutBlock`'s section extractor already accounted for, 37 of
+`IAM\OBJECT`'s 1002 records carrying one (§5, `extractTextSection`). The body
+box `0x004E2B10` ships `+30 = -1` and both builders write **0**, the memo;
+`Acheter` writes **1**.
+
+The five widgets and the two builders that write them:
+
+| | `sub_4AE120` (the shop) | `sub_4AE3A0` (the confirm) |
+|---|---|---|
+| footer `0x004E2CF0` string id | 6 | 6 |
+| body `0x004E2B10` section / Y | 0 / **250** | 0 / **180** |
+| footer Y | **400** | **290** |
+| body drawn | yes | **no** |
+| price line `0x004E2C38` | drawn | (left as the shop set it) |
+| `Indice acheté !` `0x004E2CA8` | **hidden** | (left) |
+| buttons `0x004E2C18` | (left) | both drawn |
+| `panel+24` | 1 **when there are no rows** | 0, or 1 with no rows |
+
+`panel+24 = 1` is the body box on both panels, so **with no hints the focus
+skips the row list entirely** and the footer's first arm prints string 5,
+`Aucun indice disponible`.
+
+The three callbacks, none of which has a `proc` label because nothing calls
+them — they are dwords in the widget table:
+
+* **`0x004AE220`, a row.** `if (Actor_GetProperty(5) < dword_6A17C0)
+  { word_4E2D0C = 8; return 1; }` — the footer item's string id is rewritten
+  **in place** and the page does not move, which is a different refusal from
+  `Sauvegarde`'s (that one installs panel `0x004E2FB0`). Otherwise
+  `sub_42A370(screen, off_4E3080)`, the purchase confirm.
+* **`0x004AE260`, the body box.** Installs the shop again and re-runs
+  `sub_42ADD0`. It is what ENTER reaches when there is nothing to sell.
+* **`0x004AE480`, `Acheter`.** `Game_HandleEvent(38, {price})` — and case 38
+  has an arm for exactly this list:
+
+  ```
+  if (dword_4C0B64 == 2) {
+      v = u16(player + 174);                       // the ANNEAUX
+      if (v < i16(block)) return 0;                // refused, nothing changes
+      u16(player + 174) = v - u16(block);
+      return 1; }
+  ```
+
+  So on list 2 the "buy" is a **payment** and no object changes hands. On
+  success it hides the buttons, the price line and the footer, shows string 9
+  and switches the body to section 1.
+
+**`0x004E3080` is not in the widget tree** — only a callback installs it — so
+`tools/exetables.py`'s `CODE_NAMED` names it, as it does the sneak's verb and
+examine pages and the save panel's three refusals. Its record reads cleanly:
+parent `0x004E3018`, five lists, of which the body and the footer are the
+shop's own re-used at a different Y.
+
+**And the shop always has something to sell.** `inventory.add` (opcode 50)
+with **2** in its list field names **49 distinct objects** across `IAM\AREA`
+and `IAM\SCENE`, and **49 of those 49** carry a second bracketed section in
+their `IAM\OBJECT` description — there is not one memo the scripts hand out
+whose clue is missing. (59 records in the file carry the shape; the ten the
+scripts never give are the remainder.) So `Aucun indice disponible` is the
+state before the first memo, not a shipped dead end.
+
+**Two things read and deliberately NOT ported**, because the code does not
+settle them:
+
+* the interface **sound** a purchase might play — no call is traced;
+* **the row selection has no effect.** `dword_4E2B4C`, the body box's own
+  `+0x3C`, is written only by the two builders, from a selection
+  `sub_42ADD0` has just reset to 0, and the row list's hook is the generic
+  `sub_42AFF0`, which cannot write a page global. So the page shows and sells
+  the **first** memo's clue whatever row is highlighted.
+
+**And one oddity is transcribed rather than tidied.** `sub_4AE340`, the price
+line's `textFn`, calls `Ui_ItemStringDefault` on item `0x004E2C38`, whose bank
+C carries no `0x200` and whose `+30` is **0** — so the string goes through
+`sub_43FEA0(0, …)`, the section extractor, and `Cet indice te coûtera :` has no
+brackets at all. The function's failure arm writes `{TEXT ERROR!}` and then the
+whole string; `Text_LayOutBlock` swallows the brace as an unknown directive, so
+the line reads correctly on screen. The port produces the same string.
+
+Ported and drawn 2026-09-18: `engine/src/ui/widgets.{h,cpp}` (the two builders
+and the three callbacks), `screendraw.{h,cpp}` (the run-time section index and
+`ScreenFrame::itemText`, which reports the string the composer laid out rather
+than the one it was handed), `backends/sdl/play.cpp` (the rows, the body, the
+two native `textFn`s and the payment). `verify.py: engine: hint shop`.
 
 ---
 

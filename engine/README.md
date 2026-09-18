@@ -2419,6 +2419,23 @@ own for a rule in the binary:
 It was not a sneak bug: the LIFT's seven floor buttons are sprite items too,
 and the port had been printing seven labels over seven icons there as well.
 
+**`verify.py: engine: sneak map`** (2026-09-18) - **`Lire plan`, the device's
+CITY MAP**, which is a whole PAGE the widget table did not carry. Confirming
+the third 50x50 tile runs `0x0049BC40`, seven instructions installing panel
+`0x004DF190`; that address has two references in the whole listing, so no
+item's `+44` reaches it and `tools/exetables.py`'s `CODE_NAMED` has to name it
+(and does, as the Inventaire page's second code-installed child, beside the
+verb panel). `engine/src/ui/citymap.*` is the module: the two compiled tables
+(`tables/city_maps.json` - four map rectangles, fifteen per-place position
+overrides), `sub_49D9E0`'s bitmap naming and its BOUNCE (no
+`Images\<set>.bmp`, no page), and the projection `0x0049E6F0` runs. The
+composer draws the sheet, the player's blue heading ARROW and a red triangle
+per enabled destination of that city, each labelled; the interference box was
+already there. The markers' fallback resolver is the one part deliberately
+NOT reproduced - `sub_40E630` is the transport and would `Area_Load` from a
+draw hook - and the viewer reports every marker it had to drop (0 in the
+shipped data). `docs/UI.md` 3g-bis.
+
 **And the clock found a bug outside the interface entirely.** The sneak's
 clock row is the first thing in this port to put the time on screen, and it
 read day 0 against a save the loader had just printed a real date for: the

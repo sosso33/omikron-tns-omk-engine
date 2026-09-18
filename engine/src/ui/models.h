@@ -23,12 +23,22 @@
 //     cam+0x30    the FOV, 0x42480000 = 50
 //     cam+0x2C    0
 //
-// and the distance the sneak passes is `0x42EC3871` = 118.110, which is
-// 3.0 / 0.0254 - THREE METRES in the engine's inch unit, the same 0.0254
-// `Sound_Init` tells the listener. The sign of that argument picks the arm and
-// reads backwards easily: `fcomp` against 0 then `test ah, 41h` / `jz` takes
-// the jump when NEITHER C0 nor C3 is set, i.e. when it is POSITIVE - so a
-// positive distance uses the literal offset and SKIPS the bounding-box fit.
+// and THE DISTANCE THE THREE PREVIEWS PASS IS ZERO. This paragraph said
+// `0x42EC3871` = 118.110 = 3.0 / 0.0254, three metres in the engine's inch
+// unit, and that was wrong: the three hooks push `6a 00` - `push 0` - right
+// before the call. `0x42EC3871` is pushed at exactly ONE site in the whole
+// listing, `0x004779C0` on `dword_6A4748`, which `sub_4778E0("F1AVNT.CTL")`
+// loads: the IDENTITY page's character view, a different preview with a
+// standing man in it. `kCharacterDistance` below is that number and says so.
+//
+// The sign of the argument picks the arm and reads backwards easily: `fcomp`
+// against 0 then `test ah, 41h` / `jz` takes the jump when NEITHER C0 nor C3
+// is set, i.e. when it is POSITIVE - so a positive distance uses the literal
+// offset and skips the fit, and 0, which is not positive, takes the
+// BOUNDING-BOX FIT: `d = size + size / tan(50 degrees)` = 1.839 x size, per
+// model. `UiModels::draw` has had it right since it was written (its own
+// comment carries the arm and the reading that separated the two call sites);
+// only this header still named the wrong number.
 //
 // THE SPIN is `sub_441EB0(0, angle, 0, node+0x38)` - three Euler angles with
 // only the middle one set, so it turns about Y, a turntable - and the angle is

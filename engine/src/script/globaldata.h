@@ -43,6 +43,25 @@ std::vector<Recipe> globalRecipes(std::span<const std::byte> d);
 // -1 after a combine.  Nothing anywhere writes 8.
 std::int32_t globalSpellItem(std::span<const std::byte> d);
 
+// GLOBAL +72 (int16) - WHICH GAME VARIABLE HOLDS THE PRICE OF A HINT, and it
+// has exactly one reader: `Game_HandleEvent` case 42, the event the save
+// screen's hint shop asks for its price (`sub_4AE120`'s first instruction).
+// The arm is two calls and nothing else:
+//
+//     case 42:
+//       Message_RunHandlers(25, dword_69BC60, -1);       // ask the world
+//       return Var_Get(*(int16 *)(g_GlobalFile + 72));   // ...then read it
+//
+// so the price is not a constant in the exe at all: the event BROADCASTS
+// message 25 to the resident SCENE, then the AREA, then GLOBAL's own
+// subscription table, and whichever handler answers is free to write the
+// variable first. The shipped data has exactly ONE message-25 subscription -
+// `IAM\GLOBAL`'s, at offset 5006 - and its whole body is
+// `set.var.i8 198, 3; end`, where 198 is precisely the number at `+72`. Two
+// sides that could disagree and do not: **a hint costs three anneaux,
+// everywhere in the shipped game.**
+std::int32_t globalHintPriceVar(std::span<const std::byte> d);
+
 // THE SLIDER'S DESTINATIONS - `GLOBAL +16`, count `+28`, 36 bytes each, and
 // neither field was in this header until 2026-09-04.
 //
