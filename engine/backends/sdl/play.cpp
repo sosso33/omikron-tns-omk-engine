@@ -103,6 +103,15 @@
 #include <set>
 #include <string>
 
+#if defined(OMK_GLES)
+// The GLES2 backend (`backends/gles/glesrender.cpp`, `todo/vita-port.md` F1),
+// declared the same way as Vulkan's below: this file includes no GL header.
+namespace omk {
+Renderer* makeGlesRenderer();
+bool glesPresentSurface(Renderer*, const Surface&, int winW, int winH);
+}
+#endif
+
 // The live renderer's factory. DECLARED rather than included: A8 rule 2 keeps
 // `vulkan.h` inside `backends/vulkan/`, and this file must build and link with
 // no Vulkan on the machine at all - which is what OMK_VULKAN guards.
@@ -733,7 +742,77 @@ public:
         out.mouseDX = static_cast<float>(mx);
         out.mouseDY = static_cast<float>(my);
 #endif
+        readPad(out);
         return !out.quit;
+    }
+
+    // ---- THE GAMEPAD (`input/pad.h`, `todo/vita-port.md` F2) -----------------
+    //
+    // SDL's game controller, in positional terms (SOUTH is Xbox A and the
+    // PlayStation CROSS - which is also how SDL2 reports the Vita's own
+    // pad), handed on as `pad::Pad`; `pad::toDevices` then makes it the
+    // engine's JOYSTICK device. The subsystem is started HERE, lazily, rather
+    // than in `open`, because a Vulkan window never calls `open`. The first
+    // pad found is used and a pad plugged in later is picked up.
+    void readPad(omk::HostInput& out) {
+        out.pad = {};
+        if (!padInit_) {
+            padInit_ = true;
+#if defined(OMK_SDL3)
+            SDL_InitSubSystem(SDL_INIT_GAMEPAD);
+#else
+            SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER);
+#endif
+        }
+#if defined(OMK_SDL3)
+        if (!pad_) {
+            int n = 0;
+            SDL_JoystickID* ids = SDL_GetGamepads(&n);
+            if (ids && n > 0) pad_ = SDL_OpenGamepad(ids[0]);
+            SDL_free(ids);
+            if (pad_) std::printf("pad: %s\n", SDL_GetGamepadName(pad_));
+        }
+        if (!pad_) return;
+        if (!SDL_GamepadConnected(pad_)) { SDL_CloseGamepad(pad_); pad_ = nullptr; return; }
+        const auto btn = [&](SDL_GamepadButton b) { return SDL_GetGamepadButton(pad_, b); };
+        const auto axis = [&](SDL_GamepadAxis a) {
+            return static_cast<int>(SDL_GetGamepadAxis(pad_, a)) * 1000 / 32767; };
+        const std::pair<SDL_GamepadButton, omk::pad::Button> map[] = {
+            {SDL_GAMEPAD_BUTTON_SOUTH, omk::pad::South}, {SDL_GAMEPAD_BUTTON_EAST, omk::pad::East},
+            {SDL_GAMEPAD_BUTTON_WEST, omk::pad::West}, {SDL_GAMEPAD_BUTTON_NORTH, omk::pad::North},
+            {SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, omk::pad::LeftShoulder},
+            {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, omk::pad::RightShoulder},
+            {SDL_GAMEPAD_BUTTON_BACK, omk::pad::Back}, {SDL_GAMEPAD_BUTTON_START, omk::pad::Start},
+            {SDL_GAMEPAD_BUTTON_DPAD_UP, omk::pad::DpadUp}, {SDL_GAMEPAD_BUTTON_DPAD_DOWN, omk::pad::DpadDown},
+            {SDL_GAMEPAD_BUTTON_DPAD_LEFT, omk::pad::DpadLeft}, {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, omk::pad::DpadRight}};
+        for (const auto& [b, m] : map) if (btn(b)) out.pad.buttons |= m;
+        out.pad.lx = axis(SDL_GAMEPAD_AXIS_LEFTX);  out.pad.ly = axis(SDL_GAMEPAD_AXIS_LEFTY);
+        out.pad.rx = axis(SDL_GAMEPAD_AXIS_RIGHTX); out.pad.ry = axis(SDL_GAMEPAD_AXIS_RIGHTY);
+#else
+        if (!pad_) {
+            for (int i = 0; i < SDL_NumJoysticks() && !pad_; ++i)
+                if (SDL_IsGameController(i)) pad_ = SDL_GameControllerOpen(i);
+            if (pad_) std::printf("pad: %s\n", SDL_GameControllerName(pad_));
+        }
+        if (!pad_) return;
+        if (!SDL_GameControllerGetAttached(pad_)) { SDL_GameControllerClose(pad_); pad_ = nullptr; return; }
+        const auto btn = [&](SDL_GameControllerButton b) { return SDL_GameControllerGetButton(pad_, b) != 0; };
+        const auto axis = [&](SDL_GameControllerAxis a) {
+            return static_cast<int>(SDL_GameControllerGetAxis(pad_, a)) * 1000 / 32767; };
+        const std::pair<SDL_GameControllerButton, omk::pad::Button> map[] = {
+            {SDL_CONTROLLER_BUTTON_A, omk::pad::South}, {SDL_CONTROLLER_BUTTON_B, omk::pad::East},
+            {SDL_CONTROLLER_BUTTON_X, omk::pad::West}, {SDL_CONTROLLER_BUTTON_Y, omk::pad::North},
+            {SDL_CONTROLLER_BUTTON_LEFTSHOULDER, omk::pad::LeftShoulder},
+            {SDL_CONTROLLER_BUTTON_RIGHTSHOULDER, omk::pad::RightShoulder},
+            {SDL_CONTROLLER_BUTTON_BACK, omk::pad::Back}, {SDL_CONTROLLER_BUTTON_START, omk::pad::Start},
+            {SDL_CONTROLLER_BUTTON_DPAD_UP, omk::pad::DpadUp}, {SDL_CONTROLLER_BUTTON_DPAD_DOWN, omk::pad::DpadDown},
+            {SDL_CONTROLLER_BUTTON_DPAD_LEFT, omk::pad::DpadLeft}, {SDL_CONTROLLER_BUTTON_DPAD_RIGHT, omk::pad::DpadRight}};
+        for (const auto& [b, m] : map) if (btn(b)) out.pad.buttons |= m;
+        out.pad.lx = axis(SDL_CONTROLLER_AXIS_LEFTX);  out.pad.ly = axis(SDL_CONTROLLER_AXIS_LEFTY);
+        out.pad.rx = axis(SDL_CONTROLLER_AXIS_RIGHTX); out.pad.ry = axis(SDL_CONTROLLER_AXIS_RIGHTY);
+#endif
+        // START is the menu key, read straight from `held` (`pad::kEscape`)
+        if (out.pad.buttons & omk::pad::Start) out.held.insert(omk::pad::kEscape);
     }
 
     // Grab the pointer for first-person aiming, and let it go again. Called
@@ -915,6 +994,12 @@ private:
     int w_ = 0, h_ = 0;
     int arate_ = 0, achan_ = 2;
     bool droppedToldOnce_ = false;   // queueAudio's one line with no device
+    bool padInit_ = false;           // the controller subsystem, started lazily
+#if defined(OMK_SDL3)
+    SDL_Gamepad* pad_ = nullptr;
+#else
+    SDL_GameController* pad_ = nullptr;
+#endif
 
     // omk-play 72: a LOOPING shot wraps instead of ending. `Script_PlaySound`
     // carries a loop flag the port recorded and never honoured, so an ambience
@@ -3397,11 +3482,60 @@ int main(int argc, char** argv) {
         }
     }
 #endif
-    if (!vkRen && !front.open(dispW, dispH, "OMK Engine (software)")) {
+    // ---- THE GLES2 WINDOW MODE (`todo/vita-port.md` F1) -------------------
+    //
+    // The PS Vita's renderer, and any host whose GPU speaks GLES2 / GL 2.1:
+    // `-DOMK_GLES` with `backends/gles/glesrender.cpp` linked in. The same
+    // shape as Vulkan's mode above - a window that carries a GL context
+    // cannot also carry an `SDL_Renderer`, so this decides before the window
+    // exists and `front.open` is skipped when it succeeds. What is presented is
+    // the COMPOSED frame, the world read back and the interface drawn over it
+    // on the CPU (`glesPresentSurface`); presenting the world without the
+    // readback is G6. The window is whatever size the host gives - 960x544 on
+    // a Vita - and the frame is scaled into it at its own aspect.
+    SDL_Window* glWin = nullptr;
+    omk::Renderer* glRen = nullptr;
+    (void)glWin;   // read only by the OMK_GLES blocks
+#if defined(OMK_GLES)
+    if (!vkRen && !forceSoftware) {
+        if (SDL_InitSubSystem(SDL_INIT_VIDEO) == 0) {
+#if !defined(__APPLE__)
+            // GLES 2 where the platform has it (the Vita's vitaGL, Linux,
+            // WebGL); macOS's legacy GL 2.1 profile takes no attributes
+            SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+            SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+            SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+#endif
+            SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);
+#if defined(OMK_SDL3)
+            glWin = SDL_CreateWindow("OMK Engine (gles)", dispW, dispH, SDL_WINDOW_OPENGL);
+#else
+            glWin = SDL_CreateWindow("OMK Engine (gles)", SDL_WINDOWPOS_CENTERED,
+                                     SDL_WINDOWPOS_CENTERED, dispW, dispH, SDL_WINDOW_OPENGL);
+#endif
+        }
+        if (glWin && SDL_GL_CreateContext(glWin)) {
+            SDL_GL_SetSwapInterval(1);
+            omk::Renderer* gr = omk::makeGlesRenderer();
+            if (gr->init(dispW, dispH)) {
+                glRen = gr;
+                std::printf("renderer: GLES2 - %s\n", gr->name());
+            } else {
+                delete gr;
+            }
+        }
+        if (!glRen) {
+            if (glWin) { SDL_DestroyWindow(glWin); glWin = nullptr; }
+            std::printf("renderer: no GL context (%s) - the software reference\n",
+                        SDL_GetError());
+        }
+    }
+#endif
+    if (!vkRen && !glRen && !front.open(dispW, dispH, "OMK Engine (software)")) {
         std::fprintf(stderr, "SDL: %s\n", SDL_GetError());
         return 1;
     }
-    if (!vkRen) std::printf("renderer: the software reference\n");
+    if (!vkRen && !glRen) std::printf("renderer: the software reference\n");
 #if defined(OMK_VULKAN)
     // ...and the harness: a Vulkan renderer with no surface, for the WORLD
     // alone. `run_vulkan` and `shadow_probe` already prove the backend comes
@@ -3435,10 +3569,27 @@ int main(int argc, char** argv) {
 #if defined(OMK_VULKAN)
         if (vkRen) { omk::vulkanPresentSurface(vkRen, pic); return; }
 #endif
+#if defined(OMK_GLES)
+        if (glRen) {
+            int ww = 0, wh = 0;
+#if defined(OMK_SDL3)
+            SDL_GetWindowSizeInPixels(glWin, &ww, &wh);
+#else
+            SDL_GL_GetDrawableSize(glWin, &ww, &wh);
+#endif
+            omk::glesPresentSurface(glRen, pic, ww, wh);
+            SDL_GL_SwapWindow(glWin);
+            return;
+        }
+#endif
         front.present(pic);
     };
-    // The name field is real typing, so ask the host for characters.
+    // The name field is real typing, so ask the host for characters. Not on
+    // the Vita: there SDL answers with the system's on-screen keyboard, which
+    // would cover the game from the first frame (`todo/vita-port.md` F4).
+#if !defined(__vita__)
     SDL_StartTextInput();
+#endif
     // Queued, not mixed: a menu plays one blip at a time and the device is a
     // FIFO. Flushing first keeps them prompt - a blip that waits behind the
     // previous one arrives after the selection has already moved on.
@@ -5096,6 +5247,7 @@ int main(int argc, char** argv) {
 
     omk::SoftwareRenderer worldSw;
     omk::Renderer& world = vkRen ? *vkRen
+                         : glRen ? *glRen
                          : worldVk ? *worldVk
                                    : static_cast<omk::Renderer&>(worldSw);
     bool worldReady = false;
@@ -5357,7 +5509,7 @@ int main(int argc, char** argv) {
         // The Vulkan one is already initialised - its swapchain had to exist
         // before the window could be presented to at all.
         if (!worldReady) {
-            if (!vkRen && !worldVk) worldSw.init(dispW, dispH);
+            if (!vkRen && !glRen && !worldVk) worldSw.init(dispW, dispH);
             worldReady = true;
         }
         std::printf("world: slot %d set %s (AREA %d) - %zu corners, %zu batches, "
@@ -5731,6 +5883,10 @@ int main(int argc, char** argv) {
         // are what gate a device per group, and second-guessing them here is
         // how a port ends up with its own control scheme.
         for (int b : host.mouse) st.mouse.push_back(b);
+        // ...and a GAMEPAD, as the engine's own JOYSTICK device
+        // (`input/pad.h`): buttons 48 + k, the stick on slots 0..3 through
+        // `Input_Poll`'s hardwired axes. Zero when there is no pad.
+        omk::pad::toDevices(host.pad, st);
         // the `--hold` stream: held, not tapped, and only once he can walk
         // ...and it keeps feeding while a SCREEN is up. Gated on `adventure`
         // alone it stopped the moment the sneak opened - opening a screen is

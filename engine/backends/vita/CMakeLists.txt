@@ -20,11 +20,9 @@
 #   omk_smoke   `smoke_main.cpp`  - one set through the GLES2 backend on
 #                                   vitaGL. Needs vitaGL, and on the device the
 #                                   shader compiler, `ur0:data/libshacccg.suprx`.
-#   omk_vita    `play.cpp`        - THE GAME. OFF by default
-#                                   (`-DOMK_VITA_GAME=ON`): `play.cpp` does not
-#                                   yet know the GLES backend or the pad - the
-#                                   plan's steps F1-F4 are edits to a file
-#                                   another session holds.
+#   omk_vita    `play.cpp`        - THE GAME, through `vita_main.cpp`, on the
+#                                   GLES backend and SDL2 on vitaGL. ON by
+#                                   default; `-DOMK_VITA_GAME=OFF` skips it.
 #
 # Built against VitaSDK 2026.08 (GCC 15.2) on 2026-09-18: `omk_bench` and
 # `omk_smoke` link and package. Neither has yet run on a console.
@@ -41,7 +39,7 @@ endif()
 project(omk_vita CXX C)
 include("$ENV{VITASDK}/share/vita.cmake" REQUIRED)
 
-option(OMK_VITA_GAME "build the game itself (needs the play.cpp edits, F1-F4)" OFF)
+option(OMK_VITA_GAME "build the game itself (omk_vita.vpk)" ON)
 
 set(VITA_APP_NAME "OMK")
 set(VITA_VERSION  "00.01")
@@ -59,6 +57,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # float result against the host's - the bench's hash is only comparable across
 # machines if both compute the same operations (`bench_main.cpp`).
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -Wall -Wextra -mfpu=neon -mfloat-abi=hard -ffp-contract=off")
+# ROOM FOR THE SCE DATA. `vita-elf-create` appends the module's import stubs
+# at the END of the code segment, and the data segment starts at the next
+# 64 KiB boundary after it - so whether they fit is luck of where the code
+# ends. The game missed by 3.9 KiB on 2026-09-18 ("Cannot allocate 4280 bytes
+# for SCE data at end of segment 0; segment 1 overlaps"; the same fault as
+# vitasdk/buildscripts#186). The SDK's own linker script reserves
+# `__sce_headroom` bytes there when the symbol is defined; 16 KiB, for every
+# target, so a build cannot start failing because some code grew.
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--defsym,__sce_headroom=0x4000")
 
 # ---- the engine: every ported source, exactly the Makefile's glob
 file(GLOB OMK_SRC ${ENGINE}/src/*/*.cpp)
@@ -88,17 +95,30 @@ vita_create_self(omk_smoke.self omk_smoke UNSAFE)
 vita_create_vpk(omk_smoke.vpk ${OMK_TITLE_SMOKE} omk_smoke.self
   VERSION ${VITA_VERSION} NAME "OMK smoke")
 
-# ---- omk_vita: the game, once play.cpp can take it
+# ---- omk_vita: THE GAME - `play.cpp` through the GLES backend and SDL2 on
+# vitaGL (`sdl2_vitagl`). `play.cpp` is compiled with `-Dmain=omk_play_main`
+# and `vita_main.cpp` is the real entry point: a Vita title has no command
+# line, so it supplies the arguments (see that file). The tables compiled into
+# the exe travel IN the VPK as `app0:tables/`; the game data does not.
 if(OMK_VITA_GAME)
   add_executable(omk_vita
+    ${CMAKE_CURRENT_SOURCE_DIR}/vita_main.cpp
     ${ENGINE}/backends/sdl/play.cpp
     ${ENGINE}/backends/gles/glesrender.cpp)
-  # OMK_GLES selects the GLES renderer in play.cpp the way OMK_VULKAN
-  # selects Vulkan - the define F1 adds there.
+  set_source_files_properties(${ENGINE}/backends/sdl/play.cpp
+    PROPERTIES COMPILE_DEFINITIONS "main=omk_play_main")
   target_compile_definitions(omk_vita PRIVATE OMK_GLES=1)
+  target_include_directories(omk_vita PRIVATE $ENV{VITASDK}/arm-vita-eabi/include/SDL2)
   target_link_libraries(omk_vita omk_engine SDL2 ${OMK_VITAGL_LIBS}
-    SceAudio_stub SceTouch_stub SceHid_stub SceMotion_stub pthread)
+    SceAudio_stub SceAudioIn_stub SceTouch_stub SceHid_stub SceMotion_stub
+    SceIofilemgr_stub pthread)
   vita_create_self(eboot.bin omk_vita UNSAFE)
+  file(GLOB OMK_TABLES RELATIVE ${ENGINE}/../tables ${ENGINE}/../tables/*.json)
+  set(OMK_TABLE_FILES)
+  foreach(t ${OMK_TABLES})
+    list(APPEND OMK_TABLE_FILES FILE ${ENGINE}/../tables/${t} tables/${t})
+  endforeach()
   vita_create_vpk(omk_vita.vpk ${OMK_TITLE_GAME} eboot.bin
-    VERSION ${VITA_VERSION} NAME ${VITA_APP_NAME})
+    VERSION ${VITA_VERSION} NAME ${VITA_APP_NAME}
+    ${OMK_TABLE_FILES})
 endif()

@@ -35,7 +35,7 @@ Vita ones built with VitaSDK 2026.08 - see below):
 | `engine/backends/vita/bench_main.cpp` | THE DEVICE FACTOR: `composePose` + `applyPose` + `applyLights` over 45 street bodies, inline and through `omk::Threads`, per-stage ms, a hash across both | **run on the M1** (below); Vita side needs the SDK |
 | `engine/backends/gles/glesrender.cpp` | the GLES2 `Renderer` behind `o3de/renderer.h`: vitaGL / macOS GL 2.1 / GLES2-WebGL from one source; present pass with the 565 dither on the GPU | **run on the M1** through the probe |
 | `engine/backends/gles/gles_probe.cpp` | `run_vulkan`'s differential for GLES, headless (CGL, no window) | **green, and shown to fail** (below) |
-| `engine/backends/vita/vitapad.h` | the Vita pad as the game's own JOYSTICK device | host-tested over all four groups |
+| `engine/backends/vita/vitapad.h` | the Vita pad as the game's own JOYSTICK device | superseded the same day by `src/input/pad.h` and deleted (below) |
 | `engine/backends/vita/smoke_main.cpp` | one set on the Vita GPU, stick-flown, SQUARE toggles the depth tie, timings to `ux0:data/omk/smoke.txt` | **builds** (VPK); not yet run on a console |
 | `engine/backends/vita/CMakeLists.txt` | VitaSDK build: `omk_bench`, `omk_smoke`, `omk_vita` (the game, OFF until F1-F4) | **builds** `omk_bench.vpk` + `omk_smoke.vpk` |
 
@@ -128,6 +128,61 @@ probe's coverage and five EXACT presents; macOS only), `engine: vita build`
 (the cross-compile; skipped without an SDK). The licence-header count moved
 443 -> 458, attributed in the check (9 of it was already red at `202937c`).
 
+### 2026-09-18, later still: THE GAME BUILDS FOR THE VITA (`omk_vita.vpk`)
+
+`make vita` now builds three VPKs, the game first. What it took:
+
+* **F1, the GLES window mode in `play.cpp`** (`-DOMK_GLES`, beside
+  Vulkan's): an SDL window with a GL context (GLES 2 attributes except on
+  macOS), `makeGlesRenderer`, the world drawn through it, and every frame
+  presented COMPOSED - readback, the interface on the CPU,
+  `glesPresentSurface`, `SDL_GL_SwapWindow`. **Played on this Mac** as
+  `make play-gles` / `build/omk-play-gles`: the Anekbah street start, 120
+  frames, against `--software` - coverage **0.9919**, crowd, Kay'l, the fire,
+  the sky and his shadow all present. (The FIRST such run stopped after one
+  frame and dumped frame 0 - a letterboxed, half-drawn picture; it did not
+  reproduce in three reruns, with the event stream logged, and is recorded
+  here unexplained rather than guessed at.)
+* **F2, the pad**: `src/input/pad.h` (platform-free) maps a gamepad onto the
+  engine's own JOYSTICK device; `SdlFrontend` reads SDL's game controller
+  (SDL2 and SDL3) into `HostInput::pad`, and the frame hands it to
+  `pad::toDevices`. START is ESCAPE, straight into `held`, because the pause
+  check reads that before any device state exists. Replaces the stand-in
+  `backends/vita/vitapad.h` (deleted). SDL2 on the Vita reports the Vita's
+  own pad as a game controller, so desktop and Vita share one path. **Not yet
+  tried with a physical pad** - on the play-test list.
+* **F3, READ AND PORTED** (`a2256ca`, `engine: input poll`): `Input_Poll`
+  hardwires the stick to slots 0..3 (threshold 0 - `dword_52F498` is never
+  stored to - over DIPROP_RANGE -1000..1000, no engine dead zone) and reads
+  the joystick TABLE only from slot 4; a joystick code is a byte offset into
+  `DIJOYSTATE`. And its keyboard fixes - the shifts mirrored, left Ctrl
+  sets right Ctrl, TAB dropped under ALT - were missing from the port: left
+  Shift ran nothing, and `play.cpp`'s left-Ctrl remap, which called itself
+  "the viewer's choice", was the game's own rule.
+* **F4, the entry point**: `backends/vita/vita_main.cpp` is `main`;
+  `play.cpp` is compiled with `-Dmain=omk_play_main` and handed the
+  arguments (data `ux0:data/omk/gamedata`, tables packaged in the VPK as
+  `app0:tables`, saves `ux0:data/omk/saves/GAMES`, `--res 640x480`, an
+  `omk.ini` and extra lines from `ux0:data/omk/args.txt` when present). It
+  raises the heap to 300 MB and the main thread's stack to 8 MiB - `main` is
+  one 18800-line frame. stdout / stderr go to `ux0:data/omk/omk-play.log` /
+  `.err`. `SDL_StartTextInput` is skipped on the Vita (it would raise the
+  system keyboard over the game); the name field needs the IME, which is open.
+* **The link**: `vita-elf-create` failed with *"Cannot allocate 4280 bytes
+  for SCE data at end of segment 0; segment 1 overlaps"* - the import stubs go
+  at the end of the code segment and the data segment starts at the next
+  64 KiB boundary, so it is luck of alignment (the same fault as
+  vitasdk/buildscripts#186, an SDK change of 2026-09). The SDK's own linker
+  script reserves `__sce_headroom` when it is defined; the CMake file
+  defines it (16 KiB) for every target.
+
+**To try it**: install `build/vita/omk_vita.vpk`, have
+`ur0:data/libshacccg.suprx`, copy the data to `ux0:data/omk/gamedata/`, and
+read `ux0:data/omk/omk-play.log` after. A first run with `--nofmv` in
+`ux0:data/omk/args.txt` skips the ~143 s of intro movies. **None of this has
+run on a console**: SDL2-vitagl's window size, `std::filesystem` on `ux0:`,
+the audio device and the frame rate are all the device's to answer.
+
 ---
 
 ## 1. The issues, and what is missing
@@ -136,20 +191,16 @@ Ordered by how much they can sink the port, not by how much work they are.
 
 1. **The device factor is unknown** (`handoff-vita.md` §1). Everything below
    is sized against it. The bench now exists; it needs one device run.
-2. **`play.cpp` is the game loop AND the SDL frontend AND the CLI harness**, in
-   20233 lines. There is no Vita entry point without editing it. It has two
+2. ~~**`play.cpp` has no Vita entry point**~~ - **DONE 2026-09-18** (F1, F4:
+   `omk_vita.vpk` builds). What stays true: it is the game loop AND the SDL
+   frontend AND the CLI harness in ~20300 lines (`todo/play-split.md`). It has two
    window modes (SDL_Renderer upload; Vulkan direct) chosen by
    `#if defined(OMK_VULKAN)` blocks, and the GLES path has to be a third
    (F1). Only ~120 SDL calls, so it is an `#if`, not a rewrite.
-3. **Input: `HostInput` has no joystick**, and `play.cpp` builds
-   `DeviceState.keyboard` only. The engine's own tables carry a joystick (all
-   four groups share one default: axis 0 turn, axis 4 move, button k → slot
-   4+k), which is the faithful pad. **And the joystick AXIS arm is not
-   ported**: `Input::poll` skips code 0 and one code serves two slots, so the
-   direction must come from `Input_ReadOneControl`'s joystick arm, which
-   nobody has read. `vitapad.h` routes the buttons through the joystick and
-   the directions through the group's own keyboard slots as a labelled
-   stand-in.
+3. ~~**Input: no joystick, and its axis arm unread**~~ - **DONE 2026-09-18**
+   (F2, F3): `Input_Poll`'s axes and keyboard fixes ported and checked, the
+   pad in through `src/input/pad.h`. Open: the button layout and the dead
+   zone are choices waiting for a play test.
 4. **A frame with an interface on it round-trips through the CPU**
    (`handoff-vita.md` §5): `readback()` → CPU compose → `presentSurface`. On a
    Vita `glReadPixels` is a full pipeline stall every such frame, and that is
@@ -209,10 +260,10 @@ Steps marked ✎ edit an existing file and wait until its owner is free.
 
 ### Phase 1 — measure on the device (no `play.cpp`)
 
-* **B1** — Install VitaSDK (`vdpm vitaGL sdl2`), `cmake -S engine/backends/vita
+* **B1** ✓ DONE 2026-09-18 — Install VitaSDK (`vdpm vitaGL sdl2`), `cmake -S engine/backends/vita
   -B build-vita`, build `omk_bench`. Fix whatever the first compile of
   `src/*/*.cpp` under arm-vita-eabi says; each fix is a portable change.
-* **B2** — `std::filesystem` on the SDK: `fs_selftest` built for the device,
+* **B2** ✓ COMPILES (behaviour on `ux0:` unknown) — `std::filesystem` on the SDK: `fs_selftest` built for the device,
   or the POSIX shim ✎ `platform/datafs.cpp` if it fails.
 * **P1** — Run `omk_bench` on the device at 444 MHz. **Divide by the M1's
   1.311 ms.** That ratio replaces `handoff-vita.md` §1's missing-number
@@ -228,23 +279,23 @@ Steps marked ✎ edit an existing file and wait until its owner is free.
 
 ### Phase 2 — the game boots on the Vita
 
-* **F1** ✎ `play.cpp`: an `OMK_GLES` window mode beside `OMK_VULKAN`: SDL GL
+* **F1** ✓ DONE 2026-09-18 (the GLES window mode; the world is still read back - G6) ✎ `play.cpp`: an `OMK_GLES` window mode beside `OMK_VULKAN`: SDL GL
   window + context (SDL2's Vita video driver on vitaGL, or `vglInit` directly
   if SDL2-vita's GL path does not coexist), `makeGlesRenderer`, and the two
   present calls in the two places `vulkanPresent*` are called
   (`play.cpp:1344`, `3436`, `20018`). The declarations are in
   `glesrender.cpp`'s tail; declare them the way the Vulkan ones are declared
   (`play.cpp:111`).
-* **F2** ✎ `play.cpp` + `platform/frontend.h`: `HostInput` gains `joystick`,
+* **F2** ✓ DONE 2026-09-18 (`src/input/pad.h`; `vitapad.h` superseded) ✎ `play.cpp` + `platform/frontend.h`: `HostInput` gains `joystick`,
   the SDL path fills it from `SDL_GameController`, and `DeviceState.joystick`
   is fed from it. With `vitapad.h` on the Vita side.
-* **F3** — READ `Input_ReadOneControl`'s joystick arm from the listing (the
+* **F3** ✓ DONE 2026-09-18 (`Input_Poll`, not `Input_ReadOneControl`, is the frame's reader) — READ `Input_ReadOneControl`'s joystick arm from the listing (the
   axis sign, the dead zone); port it ✎ `input/bindings.*` with a check shown
   to fail; then drop `vitapad.h`'s keyboard stand-in for the directions.
-* **F4** ✎ `play.cpp`: the Vita paths — data root `ux0:data/omk/gamedata`,
+* **F4** ✓ DONE 2026-09-18 (`backends/vita/vita_main.cpp`; the IME for the name field is open) ✎ `play.cpp`: the Vita paths — data root `ux0:data/omk/gamedata`,
   tables and config beside it, saves under `ux0:data/omk/`, no command line
   (defaults instead), 960x544, the SDL_GetKeyboardState paths guarded.
-* **B3** — `-DOMK_VITA_GAME=ON`, the VPK, LiveArea assets (`sce_sys/`), boot
+* **B3** ✓ BUILDS (`omk_vita.vpk`; LiveArea assets and a device boot still to do) — `-DOMK_VITA_GAME=ON`, the VPK, LiveArea assets (`sce_sys/`), boot
   to the menu. Title id `OMKE00001`.
 * **A1** — Audio: SDL2-vita's audio device through the existing `Frontend`
   audio calls; measure the music stream (M1) and the sound mixing cost.

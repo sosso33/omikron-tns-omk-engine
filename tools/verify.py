@@ -14831,7 +14831,10 @@ def c_engine_vita_build():
     `platform/threads.cpp` naming a private struct - all three had built on
     the host for weeks. This runs `make vita` (VitaSDK + CMake, the whole of
     `src/` cross-compiled, `omk_bench` and `omk_smoke` linked and packaged)
-    and asserts it succeeded. SKIPPED without a VitaSDK (`$VITASDK` or
+    and asserts it succeeded - since 2026-09-18 that includes THE GAME,
+    `play.cpp` through `backends/vita/vita_main.cpp`, so a change to the
+    viewer that breaks the Vita build turns this red. SKIPPED without a
+    VitaSDK (`$VITASDK` or
     `~/vitasdk`), like every optional target. Slow on a fresh build dir
     (~2 min), incremental after.
 
@@ -14845,10 +14848,11 @@ def c_engine_vita_build():
         return ("skipped",), ("skipped",), "no VitaSDK ($VITASDK or ~/vitasdk)"
     r = subprocess.run(["make", "-s", "vita"], cwd=eng, capture_output=True, text=True)
     vpks = tuple(os.path.exists(os.path.join(eng, "build", "vita", v))
-                 for v in ("omk_bench.vpk", "omk_smoke.vpk"))
+                 for v in ("omk_vita.vpk", "omk_bench.vpk", "omk_smoke.vpk"))
     errors = len(re.findall(r"error:", r.stdout + r.stderr))
-    return (r.returncode, errors, vpks), (0, 0, (True, True)), \
-        "make vita's exit status, compiler errors, and both VPKs present"
+    return (r.returncode, errors, vpks), (0, 0, (True, True, True)), \
+        "make vita's exit status, compiler errors, and the three VPKs present " \
+        "- the GAME (play.cpp on GLES + SDL2/vitaGL), the bench and the smoke test"
 
 
 def c_engine_tie_memory():
@@ -36276,6 +36280,10 @@ def c_licence_headers():
     8c7c24e..HEAD`. The Vita port adds **6**: `backends/gles/glesrender.cpp`,
     `gles_probe.cpp`, `backends/vita/bench_main.cpp`, `smoke_main.cpp`,
     `vitapad.h` and `tools/play_split_scan.py`.
+
+    **458 -> 460, the same day**: `backends/vita/vitapad.h` deleted
+    (superseded by `input/pad.h`), and `input/pad.h`,
+    `engine/tools/input_poll.cpp` and `backends/vita/vita_main.cpp` added.
     """
     import glob as _g
     TAG = "SPDX-License-Identifier: GPL-3.0-or-later"
@@ -36305,7 +36313,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (458, [], 1, []), \
+           (460, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
