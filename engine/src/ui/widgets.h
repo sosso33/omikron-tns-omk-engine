@@ -1007,7 +1007,9 @@ public:
     // carry gate 0 or gate 8 and never 1, so a combine begun with object 330
     // matches no recipe. It is modelled because the engine has it, not
     // because it can succeed.
-    void beginCombine(int objectId, bool isSpellItem);
+    // `row` is the CARRIED-LIST ROW, the same unit the second pick stores -
+    // not an OBJECTS id (see the caller in play.cpp).
+    void beginCombine(int row, bool isSpellItem);
     bool combining() const { return state_->combining; }
     // The three slots themselves - `dword_670BE4`, `670BE8` and `670BEC`, in
     // that order. The row's own draw hook `0x0049C090` compares a widget's

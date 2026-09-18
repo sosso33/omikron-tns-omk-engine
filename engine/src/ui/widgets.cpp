@@ -597,10 +597,10 @@ void UiWalk::bindRows(std::uint32_t list, int count, int window) {
 }
 
 // The comments on the declarations carry the evidence.
-void UiWalk::beginCombine(int objectId, bool isSpellItem) {
+void UiWalk::beginCombine(int row, bool isSpellItem) {
     state_->combining = true;
-    if (isSpellItem) { state_->combineA = objectId; state_->combineB = -1; }
-    else             { state_->combineA = -1;       state_->combineB = objectId; }
+    if (isSpellItem) { state_->combineA = row; state_->combineB = -1; }
+    else             { state_->combineA = -1;       state_->combineB = row; }
     state_->combineC = -1;
     // `sub_49BF30`'s tail, and the port had only the first line of it:
     //     sub_4290D0(&word_4DE318, 0x20000004, 1);  // the VERBS off

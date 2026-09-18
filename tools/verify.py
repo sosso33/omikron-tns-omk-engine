@@ -3542,6 +3542,82 @@ def c_engine_slot_pool():
             "the destination's - and at frame 800 it still stands 87 units open")
 
 
+def c_engine_sneak_verbs():
+    r"""`omk-play`: the sneak's two verbs DO what they say - a medkit heals, a combine combines.
+
+    Three faults a reader found in one play session (2026-09-18: *"Utiliser
+    sur does not work correctly (it means using on another object in the
+    sneak, not interacting with the environment) / impossible to use health
+    items"*), none of which any check here could see:
+
+    * **the consumable arm ran nothing.** `Game_HandleEvent` case 35's
+      `rec+4 & 1` branch is `Object_ApplyEffect(rec, player)` then
+      `ObjectList_RemoveAt(0, row)`; `Object_ApplyEffect` (0x00409780) maps
+      `rec+6` to a property (6 -> *Vie*) and adds `rec+8`. The port announced
+      it and applied nothing, so a medkit healed nobody and stayed in the bag.
+    * **`Utiliser sur` fell through into `Utiliser`.** It is `sub_49BF30`, which
+      opens the combine and returns; the viewer then ran the use decision for
+      BOTH verbs, took the object IN HAND and closed the device on the same
+      press.
+    * **the combine's first slot held the wrong unit.** Both slots hold a
+      carried-list ROW (`sub_49BC60` reads the widget's row tag); the viewer
+      opened the mode with the OBJECTS id, so the first slot was "row 18" and
+      every combine came back `-1 ''`. `combine_probe` made the same mistake,
+      which is part of why nothing caught it.
+
+    Two runs from the new-game world (the apartment key and one other in the
+    bag), each driven through the device by keys:
+
+    * a *Petit medikit* (object 16, effect 6, +20): *Vie* read back from the
+      DB player record at the end of the run - not from the use line - goes
+      10 -> 30, and the bag the ECHO BAR counts drops back from 3 to 2;
+    * *Petite boite* (18) `Utiliser sur` *Petite cle* (7), the shipped recipe
+      -> 33 *Petite boite ouverte*: the combine completes, nothing is taken in
+      hand, and the echo bar's count goes 4 -> 3 (two out, one in).
+
+    SHOWN TO FAIL three ways: the use-arm guard removed (the key goes IN HAND
+    and no combine completes), the property write removed (*Vie* stays 10), and
+    the first slot handed the object id again (the combine answers `-1 ''`).
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+    def run(give, hold, frames):
+        return subprocess.run(
+            [play, fr, os.path.join(ROOT, "tables"),
+             "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+             "--newgame-world", "--area", "0", "--stand", "1804,0,-6890,336",
+             "--sneak", "--give", give, "--frames", str(frames),
+             "--nofmv", "--nodelay", "--no-crowd", "--hold", hold],
+            capture_output=True, text=False,
+            env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout.decode("latin-1")
+    heal = run("16", "k*50,k208*1,k*20,k208*1,k*20,k28*1,k*30,k28*1,k*80", 300)
+    comb = run("18,7", "k*50,k208*1,k*20,k208*1,k*20,k28*1,k*30,k205*1,k*20,"
+               "k28*1,k*30,k208*1,k*20,k28*1,k*100", 380)
+    vie = re.search(r"player: Vie (-?\d+)", heal)
+    def counts(out):
+        return [int(n) for n in re.findall(r"echo bar - arm 6 .*?Inventaire  \((\d+) / 18\)", out)]
+    made = re.search(r"sneak: combine (-?\d+) .*?\+ (-?\d+) .*?-> (-?\d+)", comb)
+    hc, cc = counts(heal), counts(comb)
+    return (int(vie.group(1)) if vie else -1,
+            (hc[0], hc[-1]) if hc else (),
+            "IN HAND" in comb, "combine opened" in comb,
+            tuple(int(g) for g in made.groups()) if made else (),
+            (cc[0], cc[-1]) if cc else ()), \
+           (30, (3, 2), False, True, (18, 7, 33), (4, 3)), \
+           ("a medkit raises Vie 10 -> 30 and leaves the bag (3 -> 2 on the echo "
+            "bar), and Utiliser sur on the box then the key makes the open box "
+            "(18 + 7 -> 33, 4 -> 3) with nothing taken in hand")
+
+
 def c_engine_node_rest():
     r"""A PROGRAM THAT ENDS LEAVES ITS NODE WHERE IT PUT IT.
 
@@ -38307,6 +38383,7 @@ SLOW = [
     ("engine: lift doors", c_lift_doors,       "todo/next-tasks 7"),
     ("engine: node rest",  c_engine_node_rest, "todo/missing-ui 6d"),
     ("engine: slot pool",  c_engine_slot_pool, "todo/missing-ui 6f"),
+    ("engine: sneak verbs", c_engine_sneak_verbs, "todo/sneak.md"),
     ("object path anchor", c_object_path_anchor, "todo/next-tasks 7"),
     ("camera travel",      c_camera_travel_subjects, "engine/README"),
     ("program placement",  c_program_placement_holds, "engine/README"),

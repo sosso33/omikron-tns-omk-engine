@@ -17634,7 +17634,16 @@ int main(int argc, char** argv) {
                     // for anything else.
                     const int spellItem = omk::globalSpellItem(globalFile);
                     const bool isSpell = (objIdx == spellItem);
-                    walk->beginCombine(objIdx, isSpell);
+                    // The slot takes the ROW, not the object id: `sub_49BF30`
+                    // stores the selected widget's row tag (`[+3Ch]`), the
+                    // second pick stores its row the same way, and the
+                    // resolver below maps BOTH through the carried list.
+                    // Handing it `objIdx` made the first slot "row 18" - a
+                    // row that does not exist - so every combine came back
+                    // `-1 ''` and nothing could ever be made. The spell test
+                    // above still reads the object id, which is what event
+                    // 37 compares.
+                    walk->beginCombine(row, isSpell);
                     std::printf("sneak: Utiliser sur '%s' -> combine opened, "
                                 "gate %d%s. Pick a second object\n",
                                 rec->name.c_str(), isSpell ? 1 : 0,
@@ -17670,7 +17679,18 @@ int main(int argc, char** argv) {
                   // ...and THEN the decision. `sub_49BEA0` calls
                   // `sub_42B420` (the announce, above) and `sub_42B470` (this)
                   // in that order, so both happen on one confirm.
-                  if (!rec->usable()) {
+                  //
+                  // `Utiliser`'s ONLY. `Utiliser sur` is `sub_49BF30`, a
+                  // different callback that opens the combine and returns -
+                  // it never calls `sub_42B470`. This block used to run for
+                  // BOTH verbs, so `Utiliser sur` opened the combine and then,
+                  // on the same press, took the object IN HAND and closed the
+                  // device. A reader: *"Utiliser sur does not work correctly
+                  // (it means using on another object in the sneak, not
+                  // interacting with the environment)"*.
+                  if (verb != 0) {
+                    // the combine is open; the rows are waiting for object two
+                  } else if (!rec->usable()) {
                     // THE ARM THAT WORKS, and it is the one WITHOUT the
                     // usable bit. Case 35's `loc_407314` loads the object's
                     // own model from its stem and returns result **1**, and
@@ -17697,17 +17717,56 @@ int main(int argc, char** argv) {
                     // turns that into `[slot+8] = 3`.
                     useClosedSneak = true;
                 } else {
-                    // The consumable arm: `Object_ApplyEffect(rec, the
-                    // player)` runs inside case 35 itself, the result is
-                    // **2**, and `sub_42B470` plays interface sound 13.
+                    // ---- THE CONSUMABLE ARM, and it now CONSUMES ----------
+                    //
+                    // `Game_HandleEvent` case 35, the `rec+4 & 1` branch:
+                    //
+                    //     Object_ApplyEffect(rec, Actor_IdBySlot(Actor_Player()));
+                    //     ObjectList_RemoveAt(0, row);        // result 2
+                    //
+                    // `Object_ApplyEffect` (0x00409780), the consumable half
+                    // (`rec+4 & 0x20` clear): `rec+6` picks the property
+                    // (`omk::effectProperty` - 6 is *Vie*), `rec+8` is added
+                    // to the current value through `Actor_GetProperty` /
+                    // `Actor_SetProperty`, and a sum past 0xFFFF becomes
+                    // 0xFFFF (`v7 = -1`). The setter applies its own per-
+                    // property clamp, which `writeActorProperty` carries.
+                    //
+                    // This used to ANNOUNCE the apply and run nothing - "the
+                    // apply is announced and not run" - so a medkit did
+                    // nothing and stayed in the bag. A reader: *"impossible to
+                    // use health items"*.
+                    //
+                    // NOT ported, labelled: the `rec+4 & 0x20` arm (weapons,
+                    // ammunition, seteks, rings - the valuables), which writes
+                    // property 35's ammunition slots and 4/5; nothing usable
+                    // AND valuable reaches it through this verb in practice,
+                    // and it is left announcing rather than guessed.
+                    const int prop = omk::effectProperty(rec->effect);
+                    std::int32_t before = -1, after = -1;
+                    if (prop > 0 && !rec->valuable()) {
+                        const auto pr = state.rawMutable().subspan(
+                            static_cast<std::size_t>(omk::GameState::kPlayerRecord),
+                            static_cast<std::size_t>(omk::GameState::kPlayerRecordSize));
+                        omk::readActorProperty(pr, prop, before);
+                        std::int32_t next = before + rec->amount;
+                        if (next > 0xFFFF) next = 0xFFFF;             // `v7 = -1`
+                        omk::writeActorProperty(pr, prop, next);
+                        omk::readActorProperty(pr, prop, after);      // the setter's clamp
+                        state.listRemove(0, objIdx);                  // ObjectList_RemoveAt(0, row)
+                    }
                     blip(sndBack);
-                    std::printf("sneak: '%s' is a CONSUMABLE (record +4 bit 0 "
-                                "set), effect %d -> actor property %d; case 35 "
-                                "applies it and returns 2, so sound 13. "
-                                "Object_ApplyEffect is named and not read, so "
-                                "the apply is announced and not run\n",
-                                rec->name.c_str(), rec->effect,
-                                omk::effectProperty(rec->effect));
+                    if (after >= 0)
+                        std::printf("sneak: '%s' USED - property %d %d -> %d "
+                                    "(+%d, effect %d), and it leaves the bag "
+                                    "(case 35 result 2)\n",
+                                    rec->name.c_str(), prop, before, after,
+                                    rec->amount, rec->effect);
+                    else
+                        std::printf("sneak: '%s' is a consumable on the VALUABLES "
+                                    "arm of Object_ApplyEffect (effect %d), which "
+                                    "is not ported - announced, not run\n",
+                                    rec->name.c_str(), rec->effect);
                     // `sub_42B470` returned 0, so `sub_49BEA0` takes
                     // `loc_49BEF8`: reset the row list and
                     // `sub_42A370(screen, unk_4DEE50)` - back to the
