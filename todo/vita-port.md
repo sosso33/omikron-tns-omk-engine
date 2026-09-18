@@ -532,3 +532,9 @@ cutout blind spot is still open and is written into its check's docstring.
   bytes are missing. If a console still shows the empty set, the log now
   prints the chunk's nonzero count and the file's FNV-1a against the
   shipped `0x2e637003` - which separates a bad READ from a bad COPY.
+  **Answered the same day: a bad COPY, not a bad read.** The console's
+  `IAM\AREA` is 1253386 bytes (FNV-1a 0x9c68a65d) against the shipped 1253376
+  (0x2e637003): about ten bytes inserted before chunk 118's offset 579584, with
+  the directory untouched, so the chunk still reads 2516 bytes and 1563
+  nonzero ones - just starting ten bytes early, where +88 is not the set. Not
+  an ASCII-mode FTP conversion, which would have added 5643 bytes.
