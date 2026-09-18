@@ -28,6 +28,7 @@ bool SceneRunner::load(const std::string& scptDataDir, const std::string& iamDir
     ticks_ = 0;
     sprites_.clear();        // `Scene_LoadSCX` respawns every row's instance
     nodeScales_.clear();     // the set's nodes come back at 1/1/1
+    placements_.clear();     // ...and at their authored positions
     const auto st = readScxStream(d);
     if (st.valid && st.camSize && d.size() >= st.camOffset + st.camSize)
         cam_ = readCamFile(std::span<const std::byte>(d).subspan(st.camOffset, st.camSize));
@@ -429,6 +430,11 @@ void SceneRunner::tick(float dt) {
                                started_[i].actor, c});
         for (const auto& m : programs_[i]->motions()) motions_.push_back(m);
     }
+    // ...and the node KEEPS where the last sample put it. `placements()` has
+    // the handler's tail and the corpus argument; the record outlives the
+    // program that wrote it, which is the whole difference from `motions_`.
+    for (const auto& m : motions_)
+        if (m.placed && !m.name.empty()) placements_[m.name] = m;
     for (const auto& p : programs_)
         for (const auto& op : p->scaleOps()) {
             auto& ns = nodeScales_[op.name];

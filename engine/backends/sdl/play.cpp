@@ -5134,6 +5134,16 @@ int main(int argc, char** argv) {
         // mesh's own corners and soup triangles in ascending order under the
         // bounds the scans used.
         bool patchIndexReady = false;
+        // WHAT THE PATCH LAST WROTE, per mesh: s[3], pos[3], q[4], and the two
+        // flags packed into the eleventh. A node's placement PERSISTS now
+        // (`SceneRunner::placements()`), so the table is the same every frame
+        // once a door has finished opening and re-placing it would rewrite the
+        // same corners to the same values, bump `geo.revision`, and make the
+        // backend re-upload - every frame, for ever. This says what is already
+        // in the buffer, so only a placement that actually changed costs
+        // anything. Dropped with the slot (`w = WorldSlot{}`), which is right:
+        // a reloaded set is back at its authored corners.
+        std::unordered_map<int, std::array<float, 11>> appliedPatch;
         std::unordered_map<std::string, int> meshByLowerName;
         std::vector<std::vector<std::uint32_t>> cornersOfMesh, soupTrisOfMesh, steepTrisOfMesh;
         omk::TriangleSoup baseSoup, baseSteep;
@@ -5924,7 +5934,26 @@ int main(int argc, char** argv) {
                                 mo.name.c_str(), sr == &session.scene() ? "ACTIVE" : "OUTGOING",
                                 sr->file().c_str(), mo.pos[0], mo.pos[1], mo.pos[2],
                                 mo.rotated ? ", rotated" : "");
-                allMotions.push_back(mo);
+            }
+            // THE PATCH IS BUILT FROM WHERE THE NODES REST, not from what moved
+            // this tick. `Script_MoveObjectOnPath` ends in `o3de_SetNodePos`
+            // and leaves the node there, so a program that has finished still
+            // holds its node out of place - `SceneRunner::placements()` is that
+            // state and it outlives the program. Read from `motions()`, a mesh
+            // that is also SCALED kept its patch entry after its move ended,
+            // that entry had no motion, and the mesh was re-placed at its
+            // AUTHORED origin every frame from then on: a node a finished
+            // program had displaced, put back. 35 shipped mesh names are both
+            // scaled and moved by their scene (`node_rest`).
+            // `OMK_TRANSIENT_MOTIONS=1` takes the per-tick record instead -
+            // the old, wrong reading, kept so the two can be run a variable
+            // apart (`verify.py: engine: node rest`).
+            static const bool transientMotions =
+                std::getenv("OMK_TRANSIENT_MOTIONS") != nullptr;
+            if (transientMotions) {
+                for (const auto& mo : sr->motions()) allMotions.push_back(mo);
+            } else {
+                for (const auto& kv : sr->placements()) allMotions.push_back(kv.second);
             }
             for (const auto& ns : sr->nodeScales()) allScales[ns.first] = ns.second;
         }
@@ -6013,6 +6042,19 @@ int main(int argc, char** argv) {
                 for (const auto& kv : patches) {
                     const int mi = kv.first;
                     const Patch& pa = kv.second;
+                    // already in the buffer? then nothing to write - see
+                    // `appliedPatch`. Compared bit for bit, not by tolerance:
+                    // the question is whether the CORNERS would change.
+                    const std::array<float, 11> want{
+                        pa.s[0], pa.s[1], pa.s[2],
+                        pa.hasMotion ? pa.pos[0] : 0.0f,
+                        pa.hasMotion ? pa.pos[1] : 0.0f,
+                        pa.hasMotion ? pa.pos[2] : 0.0f,
+                        pa.q.w, pa.q.x, pa.q.y, pa.q.z,
+                        static_cast<float>((pa.hasMotion ? 1 : 0) | (pa.rotated ? 2 : 0))};
+                    const auto seen = w.appliedPatch.find(mi);
+                    if (seen != w.appliedPatch.end() && seen->second == want) continue;
+                    w.appliedPatch[mi] = want;
                     if (w.baseCorners.empty()) w.baseCorners = w.geo.corners;
                     if (w.baseSoup.empty()) w.baseSoup = w.soup;
                     if (w.baseSteep.empty()) w.baseSteep = w.steep;
@@ -6074,6 +6116,57 @@ int main(int argc, char** argv) {
                         w.geo.dirtyTo = w.geo.revision;
                         w.geo.dirtyCorners.swap(dirty);
                     }
+                }
+            }
+        }
+        // `OMK_MESH_AT=<mesh name>`: where that set mesh actually IS, read out
+        // of `w.geo.corners` - the vertex buffer this frame hands the renderer
+        // - rather than out of any motion record. A scene program's motion is
+        // gone from `SceneRunner::motions()` the tick it ends, so a line
+        // derived from a motion cannot say anything at all about where the
+        // node RESTS; this one is the drawn geometry and answers on every
+        // frame, moving or still. `verify.py: engine: node rest`.
+        {
+            static const char* meshAtName = std::getenv("OMK_MESH_AT");
+            if (meshAtName && *meshAtName) {
+                const auto lower = [](std::string n) {
+                    for (auto& ch : n) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+                    return n;
+                };
+                const std::string want = lower(meshAtName);
+                for (int sl = 0; sl < 2; ++sl) {
+                    const WorldSlot& w = worldSlots[static_cast<std::size_t>(sl)];
+                    if (w.geo.corners.empty() || w.meshes.empty()) continue;
+                    int mi = -1;
+                    for (std::size_t k = 0; k < w.meshes.size(); ++k)
+                        if (lower(std::string(w.meshes[k].name)) == want) { mi = static_cast<int>(k); break; }
+                    if (mi < 0) continue;
+                    // the DRAWN centroid and the AS-BUILT one, so the line
+                    // carries the displacement itself and not a number that
+                    // has to be compared against a mesh origin elsewhere.
+                    // `baseCorners` is the untouched load, filled by the first
+                    // patch; before any patch the two are the same buffer.
+                    double c[3] = {0, 0, 0}, b[3] = {0, 0, 0};
+                    long n = 0;
+                    const bool haveBase = w.baseCorners.size() == w.geo.corners.size();
+                    const std::size_t nc = std::min(w.geo.corners.size(), w.geo.cornerMesh.size());
+                    for (std::size_t k = 0; k < nc; ++k) {
+                        if (w.geo.cornerMesh[k] != mi) continue;
+                        c[0] += w.geo.corners[k].x; c[1] += w.geo.corners[k].y; c[2] += w.geo.corners[k].z;
+                        if (haveBase) {
+                            b[0] += w.baseCorners[k].x; b[1] += w.baseCorners[k].y; b[2] += w.baseCorners[k].z;
+                        } else {
+                            b[0] += w.geo.corners[k].x; b[1] += w.geo.corners[k].y; b[2] += w.geo.corners[k].z;
+                        }
+                        ++n;
+                    }
+                    if (!n) continue;
+                    std::printf("mesh at: frame %ld  slot %d  %s  drawn %.1f %.1f %.1f"
+                                "  built %.1f %.1f %.1f  moved %.1f %.1f %.1f  corners %ld\n",
+                                static_cast<long>(session.frameNo()), sl,
+                                w.meshes[static_cast<std::size_t>(mi)].name,
+                                c[0] / n, c[1] / n, c[2] / n, b[0] / n, b[1] / n, b[2] / n,
+                                (c[0] - b[0]) / n, (c[1] - b[1]) / n, (c[2] - b[2]) / n, n);
                 }
             }
         }

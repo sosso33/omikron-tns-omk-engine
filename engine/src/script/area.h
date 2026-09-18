@@ -245,7 +245,8 @@ public:
     // `engine: player program` and `line facing` are what caught it.
     bool parkedOnProgram() const {
         for (const auto& c : ctxs_)
-            if (c && c->status == 4 && scene_.programDrivesBody(c->waitingForProgram))
+            if (c && c->status == 4 &&
+                waitPool(*c).programDrivesBody(c->waitingForProgram))
                 return true;
         return false;
     }
@@ -262,7 +263,8 @@ public:
     // body, and that one moves him into ACTOR_STATE 4 besides.
     bool parkedOnPlayerProgram() const {
         for (const auto& c : ctxs_)
-            if (c && c->status == 4 && scene_.programDrivesPlayer(c->waitingForProgram))
+            if (c && c->status == 4 &&
+                waitPool(*c).programDrivesPlayer(c->waitingForProgram))
                 return true;
         return false;
     }
@@ -1376,6 +1378,10 @@ private:
         // cutscene's dialogue: AREA 118 shows Kay'l, starts his animation
         // with 60, and waits.
         int         waitingForProgram = -1;
+        // ...and IN WHICH POOL. The engine starts a context's object in
+        // `dword_69BC48[ctx+1F * 16]` - the scene of the context's OWN slot -
+        // so a program index means nothing without the pool it indexes.
+        bool        waitingInOut = false;
         // status 4's OTHER flavour. `Game_HandleEvent` case 3 resumes any
         // context at 4 and does not care what put it there, so the status
         // word alone cannot say what is being waited on: `waitingForProgram`
@@ -1595,6 +1601,25 @@ private:
     // belonging to `tr_.outArea`, which after a doorless route has already
     // completed is `sceneOut_` and not `scene_` (omk-play 70).
     SceneRunner& transitionPool(bool& outPool);
+    // THE POOL A SLOT'S SCRIPTS PLAY OBJECTS IN. `scx.play*` (handlers
+    // 0x004030E0 / 0x004031E0 and their actor siblings) resolve the object
+    // through `dword_69BC48[ctx+1F * 16]` - the object container of the slot
+    // the RUNNING CONTEXT belongs to, `+1F` being the context's slot byte
+    // (`Ctx::slot`, +31). Not "the newest scene".
+    //
+    // This port handed every `scx.play` to `scene_`, the pool loaded LAST.
+    // Across a transition that is the destination's, so a script still
+    // running in the shaft named ITS door by an id that now resolved in the
+    // destination's `.SCX` - a scene-local id meaning something else in
+    // another file (CLAUDE.md 1). Reported in play as "the lift door stays
+    // closed when I go to Captain Lea's office": AREA 157's level -4 car zone
+    // (record 60) sets its camera and then plays `obj 0x0012`, the level -4
+    // door, one frame after `lev-4.SCX` became `scene_`. Level -2 only ever
+    // worked by ordering - its door started one frame BEFORE the swap.
+    SceneRunner& poolForSlot(int slot, bool& out);
+    const SceneRunner& waitPool(const Ctx& c) const {
+        return c.waitingInOut ? sceneOut_ : scene_;
+    }
     // `Game_HandleEvent` case 3 for the transition's object.
     void transitionObjectEnded();
     void clearTransition();

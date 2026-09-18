@@ -571,11 +571,36 @@ the door at y ≈218, ≈212, ≈212 and back at 299:
   `showSet(179)` moves `curSlot_` and `finishScene()` makes `lev-2.SCX` the
   resident scene while `ACSPUITS` is still the shown set. It works only
   because `play.cpp` ticks both pools.
-* when the program ends at frame 215 the motion patch is **dropped** and the
-  mesh **snaps back** to its authored, closed position. The engine's
-  `Script_MoveObjectOnPath` ends in `o3de_SetNodePos` and leaves the node where
-  it put it. A door that opens and then shuts itself is a port bug in its own
-  right, and it is not confined to this lift.
+* ~~when the program ends at frame 215 the motion patch is **dropped** and the
+  mesh **snaps back** to its authored, closed position~~ — **the engine half is
+  right and the port half is REFUTED, measured 2026-09-18.** The engine's
+  `Script_MoveObjectOnPath` does end in `o3de_SetNodePos` and does leave the
+  node where it put it (confirmed in `readable/src/23_script.c` and in the raw
+  listing at `0x0046F400`: the tail is `call sub_4370A0`, `call sub_437160`,
+  the loop counter, `retn`, with no restore). But the port does **not** snap
+  back on screen. The frontend's patch writes `baseCorners -> geo.corners` only
+  for the meshes it patches and nothing rewrites the rest, so a mesh whose
+  program has ended simply keeps the last corners written. Probed through
+  `OMK_MESH_AT=CSPorte79h`, which reads the centroid of the vertex buffer the
+  frame hands the renderer: the door goes y 313.6 -> 226.6 over frames 178-214
+  and is **still at 226.6 at frame 258**, 43 frames after its program stopped.
+  Hall 40's `HA40DoorL` behaves the same over 260 frames. The snap-back was
+  inferred from `SceneRunner::motions()` being refilled every tick — which is
+  true — and never measured at the geometry.
+
+  **What was really wrong is narrower and is now fixed.** The port had no
+  representation of the node's position at all: the drawn set was right by
+  OMISSION. Where the omission does not save it is a mesh that is also
+  SCALED — `nodeScales()` persists, so such a mesh kept a patch entry with no
+  motion in it, and `at = mp` re-placed it at its **authored** origin every
+  frame from then on. **35 shipped mesh names are both scaled and moved by
+  their scene.** `SceneRunner::placements()` is now the node's position as
+  state, the frontend's patch is built from it, and
+  `verify.py: engine: node rest` pins it. The corpus: of 2461 objects that
+  move a node, 2315 end, **1277 of those leave a node displaced** — and
+  **1239 of the 1277 have a LINKED partner state** (`CSPorte79hopen` /
+  `CSPorte79hclosed`), which is the data's own argument that a node stays put,
+  since a partner that runs the path back would otherwise be redundant.
 
 ### 6e. Repro, and what it costs
 
@@ -592,6 +617,58 @@ the band was ruled out (the arrival then picks camera 2999, level −5's, and is
 
 **Nothing was changed.** `verify.py --only "engine: lift"` runs `engine: lift`
 and `engine: lift doors`, both green, on the tree as it stands.
+
+### 6f. Captain Lea's lift: the door stays shut because a script played it in the WRONG SCENE — FIXED 2026-09-18
+
+Reported in play: *"the lift door stays closed when I go to the captain Lea
+office (after the call on the sneak)"*. Not the door, not the snap-back of 6d,
+and not a race: **a scene-local object id resolved in another scene's file.**
+
+**What the engine does.** `scx.play.wait` (0x004031E0) resolves its object
+through `dword_69BC48[ctx+1F * 16]` - the object container of the slot the
+RUNNING CONTEXT belongs to (`+1F` is the context's slot byte, `Ctx::slot` at
++31 here). The port handed every `scx.play*` to `scene_`, the pool loaded
+LAST. Across a transition that is the destination's.
+
+**Why only after Lea's call.** SCENE 45 is the call, loaded over the shaft
+(AREA 157), and it takes the lift over:
+
+* its startup DISABLES level -4's own car zone 2552 (and 2551) - the zone whose
+  enter script (AREA 157 record 60) plays `obj 0x0012` and opens the door on
+  every other ride;
+* its zone 2636 does `ui.open 4`, then on `Etage == 4`: close the -2 door,
+  `actor.goto_address 453`, `area.goto 181`, `area.arrive -1`, and **only then**
+  `scx.play.wait obj 0x0012` - the level -4 door.
+
+By that line `lev-4.SCX` is the newest pool, so `0x12` named some object of
+AREA 181's scene and the shaft's door never moved. Deterministic. On every
+OTHER ride the door worked by ORDER: record 60's enter script started it one
+frame before the swap, so it bound to `puits.SCX` and ran on in the outgoing
+pool. That is also why 6d's harness (a ride from level 0, no call) could never
+see this.
+
+**The fix** (`Session::poolForSlot`): a context plays objects in its own slot's
+pool - `sceneOut_` when its slot's area is the outgoing one, else `scene_` -
+and a context parked on a program remembers WHICH pool it is parked in
+(`Ctx::waitingInOut`), so its release and the two "parked on a program"
+queries read the same pool. Five edits in `area.{h,cpp}`.
+
+**Measured on the post-call route** (`--scene-chunk 45`, zone 2548 off and
+2636 on as the call leaves them, -2 -> -4, door mesh `CSPorte08h` read through
+`OMK_MESH_AT` - the vertex buffer the frame draws):
+
+| | `CSPorte08h` at frame 800 |
+|---|---|
+| fix OFF | `moved 0.0 0.0 0.0` - never opens: the reported bug |
+| fix ON  | `moved -0.0 -87.1 0.1` - opens 87 units, the same travel as level -2's door, and stays open |
+
+With the fix the log says the door was started by the OUTGOING pool
+(`puits.SCX`) AFTER `lev-4.SCX` became resident - exactly the case the rule
+exists for. `verify.py: engine: slot pool` pins it.
+
+Two rides that already worked keep working, measured both ways: level 0 -> -4
+and -2 -> -4 WITHOUT the call, in fast-forward and at real-time pacing - the
+door opens 87 units in all four.
 
 ## 7. The dialogue camera in the ceiling — READ, and three attempts REVERTED
 

@@ -170,6 +170,32 @@ public:
     // crates of the Impasse are four of them.
     const std::vector<Program::NodeMotion>& motions() const { return motions_; }
 
+    // WHERE EVERY MOVED NODE NOW RESTS - the placements the scene's programs
+    // have made, by mesh name, PERSISTING the way the node's own position
+    // does. `motions()` above is an EVENT ("this tick a path sample was
+    // written"); this is STATE ("the node is here"), and the engine keeps the
+    // second, not the first.
+    //
+    // `Script_MoveObjectOnPath` (0x0046F400) ends in `o3de_SetNodePos(node, x,
+    // y, z)` - the last thing it does before the loop counter and `retn`, in
+    // the decompilation and in the raw listing alike (`call sub_4370A0`, then
+    // `call sub_437160` for the node's 3x3). `o3de_SetNodePos` writes the
+    // node's own `+36/+40/+44`, or `+128/+132/+136` under a parent. Nothing in
+    // the handler and nothing in `Script_PlayScript` puts it back, so the
+    // final placement stands until something else moves the node.
+    //
+    // The data says the same thing twice over: of the 1277 shipped programs
+    // that end with a node displaced, **1239 have a LINKED PARTNER STATE** -
+    // `CSPorte79hopen` against `CSPorte79hclosed` - and a partner whose whole
+    // job is to run the path back would be redundant if the node came home by
+    // itself (`engine/tools/node_rest.cpp`).
+    //
+    // Cleared by `load`, because a set that is loaded again brings its nodes
+    // back at their authored places.
+    const std::map<std::string, Program::NodeMotion>& placements() const {
+        return placements_;
+    }
+
     // THE SCENE'S SPRITE INSTANCES - what `Script_Display3DSprite` and the
     // rest of the sprite family (program.h, the ids) have done to them.
     // `Scene_LoadSCX` chunk 4 spawns one instance per sprite row and the
@@ -382,6 +408,7 @@ private:
     std::vector<ActiveEditing> editings_;
     std::vector<FiredSound>    sounds_;
     std::vector<Program::NodeMotion> motions_;
+    std::map<std::string, Program::NodeMotion> placements_;   // and where they rest
     std::map<int, SceneSprite> sprites_;
     std::map<std::string, NodeScale> nodeScales_;
     float anchor_[3] = {0, 0, 0};

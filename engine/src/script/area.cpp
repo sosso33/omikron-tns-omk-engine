@@ -732,6 +732,16 @@ SceneRunner& Session::transitionPool(bool& outPool) {
     return scene_;
 }
 
+SceneRunner& Session::poolForSlot(int slot, bool& out) {
+    const int area = slots_[static_cast<std::size_t>(slot & 1)].area;
+    if (area >= 0 && area != sceneArea_ && area == sceneOutArea_ && sceneOut_.loaded()) {
+        out = true;
+        return sceneOut_;
+    }
+    out = false;
+    return scene_;
+}
+
 // `ScriptObject_Start(obj, a1[3], a1[1], 1)`: the object of the OUTGOING
 // block - resolved against the scene the player is still standing in (416 of
 // 448 shipped pairs land there, 84 in the destination's) - started with the
@@ -2685,8 +2695,10 @@ void Session::execute(int i) {
     if (c->status == 4 && c->waitingForMove >= 0) return;  // ...and the walk
     if (c->status == 4) {
         // parked on a scene object's program until it ends (event 3)
-        if (c->waitingForProgram >= 0 && scene_.programRunning(c->waitingForProgram)) return;
+        if (c->waitingForProgram >= 0 &&
+            waitPool(*c).programRunning(c->waitingForProgram)) return;
         c->waitingForProgram = -1;
+        c->waitingInOut = false;
         c->status = 1;
     }
     if (c->status != 1) {
@@ -2763,9 +2775,11 @@ void Session::execute(int i) {
             if (visibleOp(call.op)) c->flags40 |= 0x10;
         for (const auto& call : r.calls) onCall(i, call);
         if (!ctxs_[static_cast<std::size_t>(i)]) return;  // freed by its own scene.load
-        // every `scx.play*` starts its object on the resident scene; a
-        // WAITING variant parks this context on the program it started
-        const int waitOn = scene_.handle(r.calls);
+        // every `scx.play*` starts its object in THE CONTEXT'S OWN SLOT's
+        // pool (`poolForSlot`); a WAITING variant parks this context on the
+        // program it started, and remembers which pool that was
+        bool inOut = false;
+        const int waitOn = poolForSlot(c->slot, inOut).handle(r.calls);
         // the three transition opcodes, after their handler's announcement
         for (const auto& call : r.calls) {
             if (call.op == 47 && call.fields.size() >= 3) {
@@ -2895,7 +2909,11 @@ void Session::execute(int i) {
             // either, and a replica that parked anyway would stop where the
             // game runs on. That is the difference between modelling the wait
             // and inventing a deadlock. Either way this frame's run ends.
-            if (waitOn >= 0) { c->status = 4; c->waitingForProgram = waitOn; }
+            if (waitOn >= 0) {
+                c->status = 4;
+                c->waitingForProgram = waitOn;
+                c->waitingInOut = inOut;
+            }
             return;
         case RunStatus::MoveWait:
             // `Player_GoToMove(address, ctx+30)` and then status 4 - two

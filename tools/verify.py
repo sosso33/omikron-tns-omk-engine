@@ -3474,6 +3474,205 @@ def c_lift_doors():
            "by the active pool"
 
 
+def c_engine_slot_pool():
+    r"""`omk-play`: a script plays objects in ITS OWN SLOT's scene - Captain Lea's lift.
+
+    Reported in play, 2026-09-18: *"the lift door stays closed when I go to the
+    captain Lea office (after the call on the sneak)"*.
+
+    `scx.play*` (handlers 0x004030E0 / 0x004031E0 and their actor siblings)
+    resolve the object through `dword_69BC48[ctx+1F * 16]` - the object
+    container of the slot the RUNNING CONTEXT belongs to, `+1F` being the
+    context's slot byte. This port handed every `scx.play` to the pool loaded
+    LAST, and a scene-local id means nothing in another scene's file.
+
+    After Lea's call SCENE 45 is loaded over the shaft (AREA 157) and runs the
+    lift itself: its startup DISABLES level -4's own car zone 2552 - the one
+    whose enter script opens the door on any other ride - and its zone 2636
+    does `ui.open 4`, `area.goto 181`, `area.arrive -1` and only THEN
+    `scx.play.wait obj 0x0012`, the level -4 door. By that line `lev-4.SCX` is
+    the newest pool, so `0x12` resolved in the wrong file and the door never
+    moved. Deterministic, not a race: the play comes after the arrive in the
+    same script. On every OTHER ride the door happened to work, because the
+    car zone's enter script started it one frame before the swap.
+
+    The run reproduces the post-call state (`--scene-chunk 45`, the car's own
+    panel zone 2548 off and SCENE 45's 2636 on, exactly as the call leaves
+    them), rides -2 -> -4, and reads the door mesh `CSPorte08h`'s drawn
+    position at the end through `OMK_MESH_AT` - the vertex buffer the frame
+    hands the renderer, not the program's intention.
+
+    SHOWN TO FAIL: `poolForSlot` forced to the newest pool - the door stays at
+    its authored place, `moved 0.0 0.0 0.0`, which is the reported bug.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+    hold = ("k*40,k28*2,k*200,k208*2,k*20,k205*2,k*20,k205*2,k*30,k28*2,k*500")
+    out = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--area", "157", "--scene-chunk", "45", "--address", "449",
+         "--zone-disable", "2548", "--zone-enable", "2636",
+         "--frames", "800", "--res", "320x240",
+         "--nofmv", "--nodelay", "--no-crowd", "--hold", hold],
+        capture_output=True, text=True, errors="replace",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy",
+                 OMK_MESH_AT="CSPorte08h")).stdout
+    ans = re.search(r"screen 4 answered (\d+)", out)
+    lev4 = "resident scene is now lev-4.SCX" in out
+    rows = re.findall(r"mesh at: frame (\d+)\s+slot \d+\s+CSPorte08h .*?moved "
+                      r"(-?[\d.]+) (-?[\d.]+) (-?[\d.]+)", out)
+    last = rows[-1] if rows else None
+    dy = round(float(last[2])) if last else None
+    return ("action: zone 2636 activated" in out,
+            int(ans.group(1)) if ans else -1, lev4,
+            int(last[0]) if last else -1, dy), \
+           (True, 4, True, 800, -87), \
+           ("after Lea's call SCENE 45's own lift zone rides -2 -> -4 and opens "
+            "the level -4 door AFTER the arrival - found in the shaft's pool, not "
+            "the destination's - and at frame 800 it still stands 87 units open")
+
+
+def c_engine_node_rest():
+    r"""A PROGRAM THAT ENDS LEAVES ITS NODE WHERE IT PUT IT.
+
+    `Script_MoveObjectOnPath` (0x0046F400) is the game's most-used scene
+    function, and its tail is the whole of this check. Past the loop test it
+    re-samples the path at the end it was running to and then:
+
+        o3de_SetNodePos(node, x, y, z);       // call sub_4370A0
+        sub_437160(node, m);                  // the node's own 3x3
+        ...                                   // the run counter, then retn
+
+    read in `readable/src/23_script.c` and again in the raw listing at
+    `0x0046F400` (`tools/asmfn.py 46F400 470060`), which is where it matters,
+    because there is NO restore anywhere after it. `o3de_SetNodePos`
+    (0x004370A0) writes the node's own `+36/+40/+44`, or `+128/+132/+136`
+    under a parent. So the placement is STATE and it stands until something
+    else moves the node.
+
+    **The data says it twice over.** Of the 1277 shipped object programs that
+    end with a node displaced, **1239 have a LINKED PARTNER STATE** -
+    `CSPorte79hopen` against `CSPorte79hclosed`, paired by name at load - and a
+    partner whose whole job is to run the path back would be redundant if a
+    node came home by itself.
+
+    The port modelled a motion as an EVENT: `SceneRunner::motions()` is
+    refilled by every `tick`, so the tick a program ended, the record vanished.
+    `placements()` is the state beside it.
+
+    **What this does NOT claim, because it was measured and is false.** The
+    drawn set did not visibly snap back. The frontend's patch writes
+    `baseCorners -> geo.corners` for the meshes it patches and nothing rewrites
+    the rest, so a mesh whose program had ended simply kept the last corners
+    written - right, but by omission. Where the omission does NOT save it is a
+    mesh that is also SCALED: `nodeScales()` persists, so such a mesh kept a
+    patch entry with no motion in it, and `at = mp` re-placed it at its
+    AUTHORED origin every frame from then on. **35 shipped mesh names are both
+    scaled and moved by their scene.**
+
+    The live case is Anekbah Hall 40's centre lift, which
+    `engine: lift doors` establishes is ungated - zone 512's enter script is a
+    bare `scx.play` and `end`. Two readings of it, and they have to agree:
+
+    * `node_rest --lift` drives a real `Session` with no SDL and reads
+      `SceneRunner::placements()` - the MODEL. The door's last motion is at
+      frame 36 and 124 frames later both leaves are still displaced.
+    * `omk-play` with `OMK_MESH_AT=HA40DoorL` reads the centroid of
+      `w.geo.corners` - the vertex buffer the frame hands the renderer, so the
+      line is what the CONSUMER produced and not what a motion record said.
+      A motion-derived line would print nothing at all here, which is the
+      trap this is written around.
+
+    SHOWN TO FAIL: dropping the `placements_[m.name] = m` store from
+    `SceneRunner::tick` (so the map stays empty) - `--lift` then reports
+    `0 nodes placed` and neither door line is printed.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    mk = subprocess.run(["make", "-s", "build/node_rest", "play"],
+                        cwd=eng, capture_output=True, text=True)
+    tool = os.path.join(eng, "build", "node_rest")
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(tool):
+        return ("build failed",), ("built",), "engine/ must build"
+
+    # ---- the corpus
+    cen = subprocess.run([tool, fr], capture_output=True, text=True).stdout
+    def num(pat, s=cen):
+        m = re.search(pat, s)
+        return int(m.group(1)) if m else -1
+    corpus = (num(r"scx (\d+)"),
+              num(r"objects that move a node (\d+)"),
+              num(r"end (\d+), endless"),
+              num(r"END: (\d+) leave a node DISPLACED"),
+              num(r"DISPLACED, (\d+) leave every"),
+              num(r"(\d+) end on the absolute arm"),
+              num(r"nodes left displaced (\d+)"))
+    partner = num(r"programs, (\d+) have a LINKED partner")
+    scaled = num(r"both SCALES and MOVES (\d+)")
+
+    # ---- the MODEL: a real Session, no SDL
+    lift = subprocess.run([tool, fr, os.path.join(ROOT, "tables"), "--lift"],
+                          capture_output=True, text=True).stdout
+    lastMotion = num(r"last motion at frame (-?\d+)", lift)
+    placed = num(r"(\d+) nodes placed", lift)
+    rests = {}
+    for m in re.finditer(r"lift: (\S+)\s+rests\s+(\S+)\s+(\S+)\s+(\S+)\s+\|d\|\s+(\S+)", lift):
+        rests[m.group(1)] = round(float(m.group(5)), 1)
+
+    # ---- the PICTURE: the vertex buffer the frame hands the renderer
+    drawn = ("no sdl", "no sdl")
+    if os.path.exists(play):
+        env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_MESH_AT="HA40DoorL")
+        r = subprocess.run(
+            [play, fr, os.path.join(ROOT, "tables"),
+             "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+             "--area", "13", "--stand", "3923,-19,-1200,42",
+             "--frames", "120", "--res", "640x480",
+             "--nofmv", "--nodelay", "--no-crowd"],
+            capture_output=True, text=True, env=env, errors="replace")
+        rows = re.findall(r"mesh at: frame (\d+).*?moved (\S+) (\S+) (\S+)",
+                          r.stdout + r.stderr)
+        if rows:
+            f0, *d0 = rows[0]
+            fN, *dN = rows[-1]
+            # it starts home, and the LAST frame of the run - long after the
+            # program stopped - still has it open
+            drawn = (tuple(round(float(v), 1) for v in d0),
+                     tuple(round(float(v), 1) for v in dN))
+    return (corpus[:7], partner, scaled, lastMotion, placed,
+            sorted(rests.items()), drawn), \
+           ((220, 2461, 2315, 1277, 804, 234, 2308), 1239, 35, 36, 2,
+            [("HA40DoorL", 24.1), ("HA40DoorR", 23.8)],
+            ((0.0, 0.0, 0.0), (17.9, 0.1, 16.1))), \
+           "the corpus census - scenes, objects that move a node, how many " \
+           "programs END, and of those how many leave a node DISPLACED, how " \
+           "many leave every node home and how many end on the absolute arm " \
+           "alone; the nodes left displaced; how many of the displacing " \
+           "programs have a LINKED partner state (the object that runs the " \
+           "path back, which is the data's own argument that a node stays " \
+           "put); the mesh names a scene both scales and moves (the one place " \
+           "the port really did put a finished program's node back); then " \
+           "Anekbah Hall 40's centre lift - the frame its door's last motion " \
+           "ran and the two leaves still placed 124 frames later, read from " \
+           "`SceneRunner::placements()` through a real Session; and last the " \
+           "DRAWN geometry, the door's corner centroid at the first frame and " \
+           "at frame 120, out of the buffer the frame hands the renderer"
+
+
 def c_object_path_anchor():
     r"""A MOVED OBJECT'S PATH IS A DISPLACEMENT, not a place to stand.
 
@@ -37509,6 +37708,8 @@ SLOW = [
     ("engine: screen scale", c_engine_screen_scale, "PORTING A1; UI 3b"),
     ("engine: name field", c_engine_name_field, "UI 3b; PORTING A1"),
     ("engine: lift doors", c_lift_doors,       "todo/next-tasks 7"),
+    ("engine: node rest",  c_engine_node_rest, "todo/missing-ui 6d"),
+    ("engine: slot pool",  c_engine_slot_pool, "todo/missing-ui 6f"),
     ("object path anchor", c_object_path_anchor, "todo/next-tasks 7"),
     ("camera travel",      c_camera_travel_subjects, "engine/README"),
     ("program placement",  c_program_placement_holds, "engine/README"),
