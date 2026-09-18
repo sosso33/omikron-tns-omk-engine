@@ -6,6 +6,8 @@
 #include "ui/iamtext.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <cmath>
 
 namespace omk {
 namespace {
@@ -56,6 +58,40 @@ constexpr std::uint32_t kDrawLoadRows = 0x0047B180;
 // `IAM\Menu` is its last line, "Entrez votre nom".
 constexpr int kNameFieldLabel = 13;
 
+// `sub_476860` - `Ui_ItemStringDefault`, TRANSCRIBED, because the echo bar
+// calls it seven times and one of its two arms is not the one the composer's
+// ordinary text path takes:
+//
+//     if (!out) return;                         // nothing written
+//     if (item->+1C < 0) return;                // no string id, ditto
+//     str = the item->+1C'th NUL-separated string of screen->+30
+//     if (I2D_TestFlag(item, 0x80000200))  strcpy(out, str);
+//     else if (item->+1E != -1)            sub_43FEA0(item->+1E, str, out);
+//     else                                 strcpy(out, str);
+//
+// `0x80000200` is bank C, so the test is `flags[2] & 0x200`. **None of the
+// sneak's items carries it** (the verbs and the bar itself ship bank C
+// `0x80000011`), so every one of them takes the `+30` branch - and `+30` is
+// **0**, not -1, on the three verbs, on `Oui`/`Non` and on eighteen more
+// items across the tree.
+//
+// `IAM\Sneak` contains no `[`, so `extractTextSection(.., 0)` runs off the
+// end of the field, sets its failure flag and returns
+// `"{TEXT ERROR!}Utiliser"`. **That is what the engine composes too**, and it
+// is invisible only because `parseMarkup` swallows `{`..`}` whole. Neither
+// half may be "repaired": drop the `+30` branch and the port stops running
+// the function the engine runs; print the prefix and the bar says
+// `{TEXT ERROR!}` in the game's own face.
+std::string itemStringDefault(const UiItem& it,
+                              const std::vector<std::string>& text) {
+    const int id = it.label();
+    if (id < 0 || id >= static_cast<int>(text.size())) return {};
+    const std::string& str = text[static_cast<std::size_t>(id)];
+    if (it.flags[2] & 0x200u) return str;
+    if (it.textArg != -1) return extractTextSection(&str, it.textArg);
+    return str;
+}
+
 // `Ui_DrawItemFill`'s quad, with the blend `sub_480AC0`'s mode-4 arm sets:
 // SRCBLEND = INVSRCALPHA (6) and DESTBLEND = SRCALPHA (5), the INVERSE of the
 // usual source-over, so
@@ -96,6 +132,106 @@ void fillQuad(Surface& fb, int x0, int y0, int x1, int y1,
 }
 
 }  // namespace
+
+// ---- THE SNEAK'S ECHO BAR - `sub_0049DC20`, transcribed ----------------
+//
+// The `+32` text callback of item 0x004DEBC0, and the ONLY place the player's
+// seteks and anneaux are shown. `Ui_DrawItem` calls it as
+// `v5(screen, item, Destination)` with `Destination` pre-cleared, so a branch
+// that writes nothing leaves the bar blank - which two of them do.
+//
+//     if (Ui_OscillatorFlags(Ui_Oscillator(0), 1)) { strcpy(out, byte_6A4CA0);
+//                                                    return 1; }
+//     panel = screen->+1C;          if (!panel) return 1;      // blank
+//     sel   = Ui_PanelSelectedItem(panel); if (!sel) return 0;  // blank
+//     row = Ui_ListSelectedItem(&word_4DE6F0);
+//     if (row) sub_42AA00(screen, row, B);          // B IS NEVER READ AGAIN
+//     if (sel == 0x4DE338) { sprintf(out, "%s %d", str(sel), sub_42B1C0(4)); }
+//     if (sel == 0x4DE380) { sprintf(out, "%s %d", str(sel), sub_42B1C0(5)); }
+//     if (sel == 0x4DE3C8) { str(sel) }
+//     if (sel == 0x4DE230 || sel == 0x4DE278)        // the two first verbs
+//                          { sel->+1E = 1; str(sel); sel->+1E = 0; }
+//     if (sel == 0x4DE2C0 || sel == 0x4DE710)        // Examiner, examine box
+//                          { word_4DE2DE = 1; str(sel); word_4DE2DE = 0; }
+//     tab = Ui_ListSelectedItem(&unk_4DE210);  if (!tab) return 1;  // blank
+//     if (tab == 0x4DE040) { str(tab); strcat(out, sprintf("  (%d / 18)",
+//                                                          dword_4DE708)); }
+//     else                 { str(tab) }
+//
+// NOT PORTED, and it is one call: `sub_42AA00(screen, row, B)` at
+// `0x0049DCA6`. It fills a second 0x100-byte stack buffer with the selected
+// row's object name and **nothing ever reads it** - the only references to
+// `esp+12Ch` are its `[0] = 0` and the `lea` that passes it. Its one effect
+// is raising the inventory channel's event 33 once per draw of the bar, and
+// whether that was intended cannot be told from the listing. Left out
+// because it changes no text; recorded because it changes a raise count.
+//
+// `dword_4DE708` is `0x004DE6F0 + 0x18` - the ROW LIST's own bound count,
+// what `sub_42ADD0` writes from `Game_HandleEvent(29)`, which is why this is
+// `walk.boundCount(kListSneakRows)` and not the number of widgets drawn. The
+// 18 is a literal in the format string, not a field.
+std::string ScreenComposer::echoBarText(const UiWalk& walk,
+                                        const std::vector<std::string>& text,
+                                        int* arm) const {
+    *arm = -1;
+    // 1. A TRANSIENT MESSAGE WINS OUTRIGHT, for the 5000 ms of oscillator 0.
+    if (echoMsg_) { *arm = 0; return *echoMsg_; }
+    // 2. ...otherwise what is SELECTED, on whatever panel the walk is on.
+    if (!walk.panel()) return {};
+    const UiItem* sel = walk.selected();
+    if (!sel) return {};
+    const auto withCount = [&](int n) {
+        return itemStringDefault(*sel, text) + " " + std::to_string(n);
+    };
+    // The three 50x50 tiles of list 0x004DE420, in the order the sneak's open
+    // loads their models: setek, anneau, imager. The first two are COUNTERS
+    // and the third is not - its arm has no `sub_42B1C0` and no format, just
+    // the bare string, which is what settles that `imager` is a map reader.
+    if (sel->addr == 0x004DE338u) { *arm = 1; return withCount(seteks_); }
+    if (sel->addr == 0x004DE380u) { *arm = 2; return withCount(anneaux_); }
+    if (sel->addr == 0x004DE3C8u) { *arm = 3; return itemStringDefault(*sel, text); }
+    // `Utiliser` and `Utiliser sur` force their OWN `+1E` to 1 across the
+    // call. Both ship `+1E = 0`, and index 0 and index 1 of a field with no
+    // brackets extract the same span, so the write changes nothing visible -
+    // transcribed because it is what the function does.
+    if (sel->addr == 0x004DE230u || sel->addr == 0x004DE278u) {
+        UiItem forced = *sel;
+        forced.textArg = 1;
+        *arm = 4;
+        return itemStringDefault(forced, text);
+    }
+    // `Examiner` and the examine page's 400x260 BOX share one arm, and the
+    // store in it is ABSOLUTE (`66 c7 05 de e2 4d 00 01 00`, i.e.
+    // `0x004DE2C0 + 0x1E`) - so on the box's arm it pokes the OTHER item's
+    // field and the box is read unmodified. Compiler fold or authoring slip;
+    // the two cannot be told apart, and it is visible either way only through
+    // a bracket `IAM\Sneak` does not contain. The box ships `+28 = -1`, so
+    // its arm writes NOTHING and the bar goes blank while the examine page is
+    // up - nothing found in this pass binds a string into that field.
+    if (sel->addr == 0x004DE2C0u) {
+        UiItem forced = *sel;
+        forced.textArg = 1;
+        *arm = 5;
+        return itemStringDefault(forced, text);
+    }
+    if (sel->addr == 0x004DE710u) { *arm = 5; return itemStringDefault(*sel, text); }
+    // 3. ...and failing all six, the CURRENT TAB's own label - which is what
+    // the bar shows for the whole time the selection sits in the row list.
+    const UiList* tabs = w_->listAt(kListSneakTabs);
+    const int t = walk.selectionOf(kListSneakTabs);
+    if (!tabs || t < 0 || static_cast<std::size_t>(t) >= tabs->items.size())
+        return {};
+    const UiItem& tab = tabs->items[static_cast<std::size_t>(t)];
+    *arm = 6;
+    std::string s = itemStringDefault(tab, text);
+    if (tab.addr == 0x004DE040u) {          // the Inventaire tab, and only it
+        char n[32];
+        std::snprintf(n, sizeof n, "  (%d / 18)",
+                      walk.boundCount(kListSneakRows));
+        s += n;
+    }
+    return s;
+}
 
 int ScreenComposer::background(Surface& fb, const UiPanel& p,
                               const Surface& sheet) const {
@@ -786,8 +922,18 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                 // entire. Extracted once and used for both the measure and
                 // the draw, since the scroll bound is measured from what is
                 // actually laid out.
-                const std::string body = it.textArg >= 0
-                    ? extractTextSection(examine_, it.textArg) : *examine_;
+                // ...and the SECTION a builder wrote over the record's `+30`,
+                // when there is one. The hint shop's body box ships -1 and
+                // is driven to 0 (the memo) or 1 (the clue it sells).
+                int sectionArg = it.textArg;
+                if (section_) {
+                    const auto sc = section_->find(it.addr);
+                    if (sc != section_->end()) sectionArg = sc->second;
+                }
+                const std::string body = sectionArg >= 0
+                    ? extractTextSection(examine_, sectionArg) : *examine_;
+                if (reportText_ && reportText_->count(it.addr))
+                    out.itemText[it.addr] = body;
                 TextBlock probe = blk;
                 probe.measureOnly = true;
                 const int total = lay_->layOutBlock(nullptr, body, probe);
@@ -856,6 +1002,130 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                 noise_.apply(fb, scaleX(it.x + q->offsetX), scaleY(it.y + q->offsetY),
                              scaleX(it.w), scaleY(it.h));
                 ++out.noiseBoxes;
+            }
+
+            // ---- THE CITY MAP'S BITMAP: draw hook 0x00477CA0 ---------------
+            //
+            // `if (!item->tag) return;` and then one blit: `Ui_ItemScreenX/Y`,
+            // `I2D_ScaleX/Y` of that and of the far corner (`+4`/`+6` ADDED to
+            // the near one first - unlike the interference box above, which
+            // scales the size), a source rect of {0, 0, 0, 0} and
+            // `sub_4287A0(dest, bitmap, 0, item->layer - 1)`. The tag is
+            // `dword_4DECB4`, what `sub_49D9E0` loaded, so a page whose
+            // `fopen` failed draws nothing at all - and the engine would
+            // already have left that page.
+            //
+            // The source rect being zeroed is the loader's "whole bitmap":
+            // `I2D_BlitBitmap` takes the file's own extent when the rect is
+            // empty, which for these four is 640x480 - the same size as the
+            // item.
+            if (cityMap_ && it.drawFn == kDrawSneakMapSheet) {
+                if (cityMap_->sheet && cityMap_->sheet->valid()) {
+                    const int x0 = scaleX(it.x + q->offsetX);
+                    const int y0 = scaleY(it.y + q->offsetY);
+                    blt(fb, {x0, y0, scaleX(it.x + q->offsetX + it.w),
+                             scaleY(it.y + q->offsetY + it.h)},
+                        *cityMap_->sheet,
+                        {0, 0, cityMap_->sheet->w, cityMap_->sheet->h},
+                        kBltWait, /*srcKey*/ 0, /*dstKey*/ 0, filter_);
+                    out.mapSheet = true;
+                }
+            }
+
+            // ---- THE PIN AND THE MARKERS: draw hook 0x0049E6F0 -------------
+            //
+            // Transcribed call by call. The item's `+0x3C` tag is the city id
+            // the open hook stored; the hook scans the compiled table for the
+            // row carrying it and returns at once when there is none, which is
+            // the `-1` a location outside the four cities gets.
+            //
+            // THE PIN (`sub_49E5B0`) is a TRIANGLE, not a dot, and it carries
+            // the player's heading: with `b = 90 - facing` degrees, its three
+            // points are the player's own place and `b + 30` / `b - 30` at a
+            // radius of 40, each offset scaled on its own axis. Point 0 is
+            // BLUE at half the pulse's alpha (`I2D_PackColour(osc2 / 2, 0, 0,
+            // 255)`), the other two white - and only point 0's colour reaches
+            // the screen, because `surface.h`'s mode-2 triangle takes its
+            // colour from the FIRST point and draws three lines with no fill.
+            //
+            // EACH MARKER is the same primitive at flags 4: a 10-wide, 10-tall
+            // triangle pointing up, `I2D_PackColour(osc2, 255, 0, 0)` - RED
+            // against the pin's blue.
+            //
+            // Both are labelled, in one 200x80 box at (+10, -10) from their
+            // own point: the pin with the player's NAME (`sub_42B1F0(6)`,
+            // event 44 property 6, the same one the identity page's "Nom" row
+            // shows) and a marker with the place name the city prefix was
+            // stripped from.
+            if (cityMap_ && it.drawFn == kDrawSneakMapPins && cityMap_->row) {
+                const CityMapRow& row = *cityMap_->row;
+                const int ox = it.x + q->offsetX, oy = it.y + q->offsetY;
+                // `Ui_ItemTextStyle(item, block, 0)` runs ONCE, before the
+                // pin, so the pin's label and every marker's share one style.
+                std::uint8_t tr = 255, tg = 255, tb = 255;
+                if (!(eff0[2] & 1)) {
+                    tr = static_cast<std::uint8_t>(rgb[0]);
+                    tg = static_cast<std::uint8_t>(rgb[1]);
+                    tb = static_cast<std::uint8_t>(rgb[2]);
+                }
+                if (!litText) { tr >>= 1; tg >>= 1; tb >>= 1; }
+                const int mapStyle = (eff0[2] & 0x10) ? 8 : (eff0[2] & 0x08) ? 4 : 2;
+                const auto caption = [&](const std::string& s, int px, int py) {
+                    if (s.empty()) return;
+                    TextBlock blk;
+                    blk.left = scaleX(px + 10);
+                    blk.top = scaleY(py - 10);
+                    blk.right = scaleX(px + 210);
+                    blk.bottom = scaleY(py + 70);
+                    blk.font = it.face('C');
+                    blk.style = mapStyle;
+                    blk.rgb[0] = tr; blk.rgb[1] = tg; blk.rgb[2] = tb;
+                    blk.blinkOn = blink;
+                    blk.screenW = fb.w; blk.screenH = fb.h;
+                    lay_->layOutBlock(&fb, s, blk);
+                };
+                const int L = 0, R = fb.w - 1, T = 0, B = fb.h - 1;
+                // `I2D_PackColour`'s first byte, from oscillator 2 - halved
+                // for the pin, whole for a marker. It is ALPHA, and the
+                // software triangle drops it (see `mapPulse`), so it is
+                // reported and not applied.
+                const int pulse = cityMapPulse(clockMs_);
+
+                int px = 0, py = 0;
+                cityMapProject(row, cityMap_->playerX, cityMap_->playerZ,
+                               ox, oy, it.w, it.h, &px, &py);
+                {
+                    const double base = 90.0 - cityMap_->playerFacing;
+                    const double kRad = 0.017453292519943295;  // dbl_4BCF00
+                    const double kArm = 40.0;                  // dbl_4BCF08
+                    const double a1 = (base + 30.0) * kRad;     // flt_4BCEFC = -30
+                    const double a2 = (base - 30.0) * kRad;     // flt_4BCF10 = +30
+                    const int sx = scaleX(px), sy = scaleY(py);
+                    const int xy[6] = {
+                        sx, sy,
+                        sx + scaleX(static_cast<int>(std::cos(a1) * kArm)),
+                        sy + scaleY(static_cast<int>(std::sin(a1) * kArm)),
+                        sx + scaleX(static_cast<int>(std::cos(a2) * kArm)),
+                        sy + scaleY(static_cast<int>(std::sin(a2) * kArm))};
+                    // point 0's colour, and the software triangle uses no other
+                    drawTriangleWire(fb, xy, rgb565(0, 0, 255), L, R, T, B);
+                    out.mapPin = true;
+                    out.mapPinAt[0] = px;
+                    out.mapPinAt[1] = py;
+                    caption(cityMap_->playerName, px, py);
+                }
+                out.mapPulse = pulse;
+                for (const auto& m : cityMap_->markers) {
+                    int mx = 0, my = 0;
+                    cityMapProject(row, m.x, m.z, ox, oy, it.w, it.h, &mx, &my);
+                    const int sx = scaleX(mx), sy = scaleY(my);
+                    const int xy[6] = {sx - scaleX(5), sy,
+                                       sx + scaleX(5), sy,
+                                       sx,             sy - scaleY(10)};
+                    drawTriangleWire(fb, xy, rgb565(255, 0, 0), L, R, T, B);
+                    caption(m.name, mx, my);
+                    out.mapMarkers.push_back({m.name, {mx, my}});
+                }
             }
 
             // ---- THE IDENTITY PAGE'S "IDENTITE": draw hook 0x0049C2B0 ------
@@ -1189,7 +1459,10 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                                            hr, hg, hb, deltaMs_);
                 ++out.cursorQuads;
             }
-            if (eff0[1] & 0x10) {
+            // `Ui_DrawItemFill` (0x00476FE0) ON THIS ITEM - one call, made
+            // from two places, which is why it is a lambda: the row hook
+            // below makes it and so does the bank-B bit under that.
+            const auto itemFill = [&] {
                 int fr = rgb[0], fg = rgb[1], fb2 = rgb[2];
                 if (eff0[1] & 0x02000000) { fr = 255; fg = 50; fb2 = 50; }
                 const int alpha = (eff0[1] & 0x10) ? 200
@@ -1199,6 +1472,60 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                 const int x1 = scaleX(it.x + q->offsetX + it.w);
                 const int y1 = scaleY(it.y + q->offsetY + it.h);
                 fillQuad(fb, x0, y0, x1, y1, fr, fg, fb2, alpha);
+            };
+
+            // ---- THE ROW MARK: the `+20` hook `0x0049C090` -------------
+            //
+            // Transcribed:
+            //
+            //     tag = item->+3C;  if (tag == -1) return;
+            //     if (screen->+1C != off_4DEEB8) return;   // the VERB panel
+            //     if (!dword_670BE0)
+            //         hit = Ui_ListSelectedItem(&word_4DE6F0) == item;
+            //     else
+            //         hit = tag == dword_670BE4 || == 670BE8 || == 670BEC;
+            //     if (hit) Ui_DrawItemFill(screen, panel, item);
+            //
+            // so it shows ONLY while a verb is being chosen, and during a
+            // `Utiliser sur` it marks the one or two rows already picked -
+            // the page's only feedback for that operation.
+            //
+            // `Ui_DrawItem` runs the `+20` hook FIRST, before the text and
+            // before the flag fill, so this quad goes down before the one
+            // below. They are the same quad, so the order decides nothing;
+            // what it decides is the COUNT. The nine rows carry bank B
+            // `0x40000210`, so every drawn row already fills once, and the
+            // marked one fills TWICE - `src*(1-a)` applied twice takes it
+            // from 0.216 of the page's tint to 0.385. **That correction is
+            // this port's**: the read this was ported from called bank A's
+            // zero "nothing in the record asks for a fill", but the fill is
+            // gated on bank B (`I2D_TestFlag` picks the word from the mask's
+            // top bits), and there the bit is set.
+            if (it.drawFn == kDrawSneakRowFill) {
+                const int tag = walk.rowOf(it.addr);
+                const UiPanel* vp = walk.panel();
+                if (tag != -1 && vp && vp->addr == kPanelSneakVerbs) {
+                    bool hit = false;
+                    if (!walk.combining()) {
+                        const UiList* rows = w_->listAt(kListSneakRows);
+                        const int r = walk.selectionOf(kListSneakRows);
+                        hit = rows && r >= 0 &&
+                              static_cast<std::size_t>(r) < rows->items.size() &&
+                              rows->items[static_cast<std::size_t>(r)].addr == it.addr;
+                    } else {
+                        for (int k = 0; k < 3 && !hit; ++k)
+                            hit = tag == walk.combineSlot(k);
+                    }
+                    if (hit) {
+                        itemFill();
+                        ++out.rowMarks;
+                        out.rowMarked.push_back(tag);
+                    }
+                }
+            }
+
+            if (eff0[1] & 0x10) {
+                itemFill();
                 ++out.fillsDrawn;
             }
 
@@ -1267,11 +1594,27 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                 if (r != rows_->end() && !r->second.empty()) run_ = &r->second;
             }
             const bool ownString = it.textFn == kTextFnString;
-            if (!run_ && !ownString) continue;
+            // ---- THE SNEAK'S ECHO BAR, `sub_0049DC20` -----------------
+            //
+            // A THIRD source of text, beside the record's own string and the
+            // runtime row map: a `+32` callback that composes its line out of
+            // the device's own state. See `kTextFnSneakEcho`; the arm it took
+            // goes into the frame whether or not anything was drawn, so an
+            // empty bar can be told from a bar the walk never reached.
+            const bool isEcho = it.textFn == kTextFnSneakEcho;
+            std::string echoText;
+            if (isEcho) {
+                int arm = -1;
+                echoText = echoBarText(walk, text, &arm);
+                out.echoArm = arm;
+            }
+            if (!run_ && !ownString && !isEcho) continue;
             const int id = it.label();
-            if (!run_ && (id < 0 || id >= static_cast<int>(text.size()))) continue;
-            const std::string& s =
-                run_ ? *run_ : text[static_cast<std::size_t>(id)];
+            if (!run_ && !isEcho &&
+                (id < 0 || id >= static_cast<int>(text.size()))) continue;
+            const std::string& s = run_ ? *run_
+                                 : isEcho ? echoText
+                                          : text[static_cast<std::size_t>(id)];
             if (s.empty()) continue;
 
             // ---- THE TEXT COLOUR IS THE ITEM'S OWN --------------------
@@ -1369,6 +1712,7 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             row.blinkOn = blink;
             row.screenW = fb.w;
             row.screenH = fb.h;
+            if (reportText_ && reportText_->count(it.addr)) out.itemText[it.addr] = s;
             BlockResult rr;
             lay_->layOutBlock(&fb, s, row, &rr);
             // `drawRun` returned the pen ADVANCE, not a pixel count - the
@@ -1377,6 +1721,10 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             out.textAdvance += rr.advance;
             out.centred += (eff[2] & 0x10) ? 1 : 0;
             ++out.itemsDrawn;
+            // ...and the echo bar's line, taken HERE - after the layout ran
+            // on it - so what is reported is what the bar drew and not what
+            // anything handed the composer (CLAUDE.md 1).
+            if (isEcho) out.echoBar = s;
         }
     }
     for (auto px : fb.px) if (px) ++out.painted;

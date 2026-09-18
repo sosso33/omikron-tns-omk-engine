@@ -835,7 +835,18 @@ def t_ui_widgets(e):
     #               the row's tag stored in `dword_4E393C`, which NOTHING in
     #               the image reads: one 400x260 box whose `+44` child is the
     #               shop panel, so confirming it goes back.
-    CODE_NAMED = {0x004DEE50: [0x004DEEB8],
+    # THE CITY MAP `0x004DF190`, added 2026-09-18. `Lire plan` - the third
+    # 50x50 tile of the Inventaire page, item `0x004DE3C8` - has callback
+    # `0x0049BC40`, and that callback is seven instructions:
+    #
+    #     mov eax, [esp+4]; push offset off_4DF190; push eax;
+    #     call sub_42A370; add esp, 8; mov eax, 1; retn
+    #
+    # `off_4DF190` has exactly TWO references in the 54 MB listing - this push
+    # and its own `dd offset unk_4DEE50` definition - so nothing in the tree
+    # points at it and the lift had never seen the panel at all. Its record
+    # agrees: `+0` is 0x004DEE50, the Inventaire page it came from.
+    CODE_NAMED = {0x004DEE50: [0x004DEEB8, 0x004DF190],
                   0x004DEEB8: [0x004DEF20],
                   0x004CF2E8: [0x004CF3B8, 0x004CF350],
                   0x004E2ED8: [0x004E2FB0],
@@ -859,7 +870,20 @@ def t_ui_widgets(e):
                   # `sub_49D870` zeroes `dword_6A5090`, the scroll offset the
                   # examine page zeroes too, and its `+16` hook is 0, so
                   # nothing moves between its lists and BACK is the way out.
-                  0x004DEF88: [0x004DEFF0]}
+                  0x004DEF88: [0x004DEFF0],
+                  # THE HINT SHOP'S PURCHASE CONFIRM, added 2026-09-18.
+                  # `Indices` on screen 30 (item 0x004E28B0) descends into
+                  # 0x004E3018 through its `+44`, so the shop itself is in the
+                  # tree - but its confirm is reached only from code: the row
+                  # callback `0x004AE220` ends
+                  # `sub_42A370(screen, off_4E3080)` once the player's anneaux
+                  # cover the price. The record reads cleanly at the family's
+                  # stride - parent 0x004E3018, five lists - and two of those
+                  # five (0x004E2B60 the body box, 0x004E2D40 the footer) are
+                  # the shop's OWN, re-used at a different Y. Its two new ones
+                  # are 0x004E2C18, where `Acheter` and `Annuler` live, and
+                  # 0x004E2C88, the "Cet indice te coutera :" line.
+                  0x004E3018: [0x004E3080]}
     out, skipped, seen = [], [], set()   # `seen` tracks CHILD panels only
     for sid in sorted(u.screens):
         try:
@@ -1064,9 +1088,26 @@ def c_ui_widgets(rows, e):
             # DISTINCT list or item record, because it carries the very same
             # ones the memory page does, which is why the two "distinct"
             # counts below do not move.
-            ("child panels", len(kids), 27),
-            ("lists", len(lists), 170),
-            ("items", len(items), 718),
+            # 27/170/718 -> 28/171/721 on 2026-09-18: the CITY MAP 0x004DF190,
+            # the Inventaire page's second CODE_NAMED child, with its one list
+            # 0x004DED60 and three items - the bitmap 0x004DEC78 (whose `+44`
+            # goes back to the Inventaire page), the pin/marker layer
+            # 0x004DECC0 and the interference box 0x004DED08. All three are
+            # 640x480 and none of them is shared with another panel, so every
+            # one of these three counts moves.
+
+            # 27/170/718 -> 28/175/725 on 2026-09-18: the HINT SHOP's purchase
+            # confirm 0x004E3080, CODE_NAMED under 0x004E3018, with its five
+            # lists (2 buttons + 1 body + 1 price line + 2 footer + 1 backdrop
+            # = 7 items). Unlike the memo reader it DOES add distinct records -
+            # 0x004E2C18 and 0x004E2C88 are its own, and the other three lists
+            # are the shop's, counted again for this panel.
+            # MERGED 2026-09-18: both of the above landed, so the counts are
+            # neither branch's - they are re-derived from the regenerated
+            # table with both panels in it.
+            ("child panels", len(kids), 29),
+            ("lists", len(lists), 176),
+            ("items", len(items), 728),
             ("item records inside the image",
              sum(1 for i in items if mapped(i["addr"])), len(items)),
             # 75 across the whole tree but only 16 distinct item RECORDS
@@ -1075,14 +1116,30 @@ def c_ui_widgets(rows, e):
             # of its child-naming items is counted once per panel.
             # 96 -> 103 on 2026-09-16: the memo reader carries the tab column
             # too, and seven of its eight icons name a page.
+            # 103 -> 104 on 2026-09-18: the city map's bitmap item 0x004DEC78,
+            # whose `+44` is the Inventaire page - confirming the map is how
+            # the player leaves it.
+            # 103 -> 104 on 2026-09-18: the hint confirm's `Annuler`
+            # (0x004E2BC8) names 0x004E2ED8, the save screen's root panel - so
+            # cancelling a purchase leaves the shop entirely rather than going
+            # back to its row list.
             ("items naming a child panel",
-             sum(1 for i in items if i["child"]), 103),
+             # MERGED: both of the above, so 103 + 2
+             sum(1 for i in items if i["child"]), 105),
             ("...of which distinct item records",
-             len({i["addr"] for i in items if i["child"]}), 23),
+             # MERGED 2026-09-18: 23 + the city map's bitmap 0x004DEC78 and
+             # the hint confirm's `Annuler` 0x004E2BC8, which are distinct
+             # records rather than shared ones - so 25, not the 24 either
+             # branch alone arrived at.
+             len({i["addr"] for i in items if i["child"]}), 25),
             # 60 -> 62 on 2026-09-16: the memo reader's copy of the row list
             # (`0x0049C050`) and of the body box's list (`0x0042A9A0`, the
             # scroller that makes the page scroll at all).
-            ("lists with a non-default input hook", len(hooks), 62),
+            # 62 -> 63 on 2026-09-18: the hint confirm's button list
+            # 0x004E2C18, whose `+4` is `0x0042A930` - `Ui_MoveSelection` with
+            # LEFT and RIGHT in place of UP and DOWN, which is what `Acheter`
+            # and `Annuler` sitting side by side at y=380 need.
+            ("lists with a non-default input hook", len(hooks), 63),
             # The two RUNTIME fields, and only where the open callback writes
             # them. Neither was in this table before 2026-09-04, because the
             # scan had no reason to look: `panel+24` is the CURRENT LIST and
@@ -1137,9 +1194,15 @@ def c_ui_widgets(rows, e):
             # 4 "Options", 5 "Quitter". Without them the confirm dialog comes
             # up with no heading, which is what the port drew.
             ("items with a bound string",
-             sum(1 for i in items if "string" in (i.get("bind") or {})), 45),
+             # 45 -> 46 on 2026-09-18: the hint confirm's builder
+             # `sub_4AE3A0` writes `word_4E2D0C = 6` over the footer item
+             # 0x004E2CF0, the same bind the shop's own builder makes -
+             # counted once per panel that carries the record.
+             sum(1 for i in items if "string" in (i.get("bind") or {})), 46),
             ("items with a bound tag",
-             sum(1 for i in items if "tag" in (i.get("bind") or {})), 25),
+             # 25 -> 26 on 2026-09-18: the hint confirm's copy of the body
+             # box 0x004E2B10, whose `dword_4E2B4C` its builder writes.
+             sum(1 for i in items if "tag" in (i.get("bind") or {})), 26),
             ("TERMINAL's bound strings",
              sorted(i["bind"]["string"] for p in ps if p["screen"] == 5
                     for l in p["lists"] for i in l["items"]
@@ -1161,15 +1224,27 @@ def c_ui_widgets(rows, e):
                   and not p["tilesAt"])],
              # tiles 27 -> 28 on 2026-09-16: the memo reader's `+20` is the
              # family's own tile array `0x004DDF60`, like every sneak page.
-             [21, 1, 28, 8]),
+             # no-tile-array 8 -> 9 on 2026-09-18: the CITY MAP ships `+20` 0
+             # and `+76` 0, so it draws NO background of its own - the bitmap
+             # item covers the whole 640x480 and is the page.
+             # ...and 8 -> 9 on 2026-09-18: the hint confirm ships
+             # `+76 = 0x40001800` with no tile array at all, exactly as the
+             # shop panel it sits on does.
+             # MERGED 2026-09-18: both landed, so 8 + 2 = 10.
+             [21, 1, 28, 10]),
             ("the one panel that blits its sheet whole",
              [p["screen"] for p in ps
               if not p["flagsB"] & 0x2000 and p["flagsB"] & 0x4000], [36]),
             ("distinct hooks among them", len(set(hooks)), 13),
             # 106 -> 108 on 2026-09-16: the memo reader's tab column and echo
             # bar, the two of its four lists that take the default walk.
+            # 108 -> 109 on 2026-09-18: the city map's single list, whose `+4`
+            # is 0.
             ("lists taking Ui_MoveSelection, the default walk",
-             sum(1 for l in lists if not l["hook"]), 108),
+
+             # 108 -> 112 on 2026-09-18: four of the hint confirm's five
+             # lists carry no `+4` - only its button list does.
+             sum(1 for l in lists if not l["hook"]), 113),
             ("the LIFT grid hook is present", rows["gridHook"] in hooks, True),
             # It is here only because the walk follows `+44`: the name field
             # is in the start menu's confirm dialog, a CHILD panel. A lift
@@ -1420,6 +1495,95 @@ def c_shoot_weapons(rows, e):
     ]
 
 
+def t_city_maps(e):
+    r"""THE SNEAK'S CITY MAP - the two tables behind `Lire plan` (screen 9).
+
+    Confirming the third 50x50 tile of the sneak's Inventaire page runs
+    `0x0049BC40`, which installs panel `0x004DF190`. That panel's open hook
+    `sub_49D9E0` loads `Images\<SET>.bmp` - the basename of the resident decor
+    node's path (`dword_93076C + 0x30`) with its last four characters
+    dropped - and then `_strupr`s that name and looks it up in a **52-byte**
+    table at `0x004DF1F8`, bounded by `0x004DF2CC`, storing the record's first
+    dword in `dword_4DECFC`. Four rows: ANEKBAH, QALISAR, JAUNPUR, LAHOREH,
+    numbered 0..3, and all four bitmaps ship.
+
+    `dword_4DECFC` is item `0x004DECC0`'s own `+0x3C` tag, and that item's
+    draw hook `0x0049E6F0` scans the same table back for the record carrying
+    it. The record's four trailing floats are what the whole page rests on:
+
+        px = item.x + (X - f0) * item.w / f2
+        py = item.y + (Z - f1) * item.h / f3
+
+    over the item's 640x480 - so `f0/f1` are the map's top-left corner in
+    WORLD units and `f2/f3` its span, the second of them negative because the
+    bitmap's y runs against the world's z.
+
+    The second table, at `0x004DF2C8` (stride **44**, bounded by
+    `aNoOne_1` = `0x004DF55C`), is a per-place OVERRIDE. The hook walks the
+    ENABLED slider destinations (`sub_40E8E0` / `sub_42B220`, `GLOBAL +16`
+    filtered by the DB's AddressEnabled bits), keeps those whose name begins
+    with the city's, strips the `" - "` and looks the remainder up here; a hit
+    supplies the marker's position from the record's `+32` (x) and `+40` (z),
+    and a miss falls back on `sub_40E630`, the address the destination's own
+    bit names. Fifteen rows - the same three places in five languages
+    (English, French, German, Italian, Spanish) - and they are NOT copies of
+    the addresses: `Librairie secteur 9` sits 3652 units from the address
+    that positions it.
+
+    The checks are the ones the data could fail: the four ids must be their
+    own row numbers, the names must be the four shipped bitmaps, every span
+    must be non-zero, and the fifteen places must be five groups of three
+    sharing a position.
+    """
+    def city(i):
+        b = e.read(0x004DF1F8 + 52 * i, 52)
+        name = b[4:36].split(b"\0")[0].decode("latin-1")
+        f = struct.unpack_from("<4f", b, 36)
+        return {"id": struct.unpack_from("<I", b, 0)[0], "name": name,
+                "x0": round(f[0], 3), "z0": round(f[1], 3),
+                "xspan": round(f[2], 3), "zspan": round(f[3], 3)}
+
+    def place(i):
+        b = e.read(0x004DF2C8 + 44 * i, 44)
+        return {"name": b[:32].split(b"\0")[0].decode("latin-1"),
+                "x": round(struct.unpack_from("<f", b, 32)[0], 3),
+                "y": round(struct.unpack_from("<f", b, 36)[0], 3),
+                "z": round(struct.unpack_from("<f", b, 40)[0], 3)}
+
+    return {"cities": {"at": "0x004DF1F8", "stride": 52,
+                       "rows": [city(i) for i in
+                                range((0x004DF2CC - 0x004DF1F8) // 52)]},
+            "places": {"at": "0x004DF2C8", "stride": 44,
+                       "rows": [place(i) for i in
+                                range((0x004DF55C - 0x004DF2C8) // 44)]}}
+
+
+def c_city_maps(rows, e):
+    cities = rows["cities"]["rows"]
+    places = rows["places"]["rows"]
+    bypos = {}
+    for p in places:
+        bypos.setdefault((p["x"], p["z"]), []).append(p["name"])
+    return [
+        ("four cities", len(cities), 4),
+        ("...indexing themselves", [c["id"] for c in cities], [0, 1, 2, 3]),
+        ("...named for the four shipped bitmaps",
+         [c["name"] for c in cities], ["ANEKBAH", "QALISAR", "JAUNPUR", "LAHOREH"]),
+        ("every span non-zero",
+         all(c["xspan"] and c["zspan"] for c in cities), True),
+        ("...and every z span NEGATIVE - the bitmap's y runs against world z",
+         [c["zspan"] < 0 for c in cities], [True] * 4),
+        ("fifteen places", len(places), 15),
+        ("...three positions", len(bypos), 3),
+        ("...five names each", sorted(len(v) for v in bypos.values()), [5, 5, 5]),
+        ("the French row of each", sorted(
+            n for v in bypos.values() for n in v
+            if n in ("Librairie secteur 9", "Cache 8250 Konera St.",
+                     "Jardin - 572 Iliam Rd")),
+         ["Cache 8250 Konera St.", "Jardin - 572 Iliam Rd", "Librairie secteur 9"]),
+    ]
+
+
 _TABLES = [
     ("vm_opcodes",     t_vm_opcodes,     c_vm_opcodes,     "SCRIPT_VM"),
     ("special_moves",  t_special_moves,  c_special_moves,  "ASSETS"),
@@ -1432,6 +1596,7 @@ _TABLES = [
     ("shoot_ai",       t_shoot_ai,       c_shoot_ai,       "ASSETS"),
     ("shoot_weapons",  t_shoot_weapons,  c_shoot_weapons,  "ASSETS"),
     ("fight_ai_moves", t_fight_ai_moves, c_fight_ai_moves, "ASSETS"),
+    ("city_maps",      t_city_maps,      c_city_maps,      "UI"),
 ]
 
 

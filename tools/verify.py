@@ -7974,15 +7974,55 @@ def c_slider_address_join():
         if bit in cache[area]: resolved += 1
     areas = sorted(cache)
     counts = [len(cache[k]) for k in areas]
-    return (n, resolved, areas, counts), \
-           (39, 39, [0, 1, 64, 101], [34, 34, 7, 3]), \
+
+    # ...AND WHICH COORDINATE SPACE THOSE POSITIONS ARE IN, settled the same
+    # way and added 2026-09-18 for the sneak's CITY MAP (`docs/UI.md` 3g-bis).
+    #
+    # The map's pin hook `0x0049E6F0` reads a marker's coordinates out of this
+    # very record with `fild`, an INTEGER load, and projects them through the
+    # compiled per-city rectangle (`tables/city_maps.json`). So the record's
+    # `+0`/`+8` must already be WORLD units by the time a draw hook sees them -
+    # which is exactly what `Area_Load` does, converting through `rawToWorld`
+    # and storing the truncated result back into the int32 field
+    # (`o3de/worldcam.cpp`).
+    #
+    # That is a claim the shipped data can refuse, and the two readings are
+    # cleanly separated: under the WORLD one every destination lands inside its
+    # own city's 640x480 rectangle, under the RAW one none of them does.
+    cities = {0: (-5850.394, 4940.945, 26062.992, -19421.260),   # ANEKBAH
+              1: (3551.181, 16799.213, 20118.109, -15122.047),   # JAUNPUR
+              64: (2000.0, 29299.213, 17248.031, -12791.339),    # LAHOREH
+              101: (8051.181, -1248.031, 19488.189, -15299.213)}  # QALISAR
+    def raw_to_world(v):
+        return float(int(float(100 * v) * 0.00390625 * 0.3937007874015748 - 1.0))
+    inside_world = inside_raw = 0
+    for bit, area in dest:
+        row = cities.get(area)
+        k = cache.get(area, {}).get(bit)
+        if row is None or k is None: continue
+        c = chunks[area]
+        o = struct.unpack_from("<i", c, 60)[0]
+        rx, _, rz = struct.unpack_from("<iii", c, o + 16 * k)
+        x0, z0, xs, zs = row
+        for x, z, which in ((raw_to_world(rx), raw_to_world(rz), "w"),
+                            (float(rx), float(rz), "r")):
+            px, py = int((x - x0) * 640 / xs), int((z - z0) * 480 / zs)
+            if 0 <= px < 640 and 0 <= py < 480:
+                if which == "w": inside_world += 1
+                else: inside_raw += 1
+
+    return (n, resolved, areas, counts, inside_world, inside_raw), \
+           (39, 39, [0, 1, 64, 101], [34, 34, 7, 3], 39, 0), \
         "the 39 sneak destinations, and all 39 resolving to an ADDRESS in " \
         "their own area (the record's `+2`) keyed by the record's own DB bit " \
         "against the address's `+14` - which is how `sub_40E630` finds a " \
         "position for a record that carries none. The four areas they name " \
         "declare 34, 34, 7 and 3 addresses between them; the join is asserted " \
         "in the direction that can fail, since most addresses are " \
-        "`actor.goto_address` targets with no destination behind them"
+        "`actor.goto_address` targets with no destination behind them. The " \
+        "last two are the CITY MAP's coordinate space: 39 of 39 land inside " \
+        "their own city's rectangle read as WORLD units, 0 of 39 read as the " \
+        "raw file value"
 
 
 def c_engine_slider_travel():
@@ -13065,6 +13105,199 @@ def c_engine_high_score():
             "panel hook steps the page, and the five names and times written into "
             "the SAVE HEADER's +724 come back out in order - page 0 is the shipped "
             "blank, page 1 is the fixture")
+
+
+def c_engine_hint_shop():
+    r"""`omk-play`: `Indices`, THE HINT SHOP on the SAVE screen.
+
+    `todo/pending/ui-remainder-survey.md` 2a. Screen 30's root panel carries
+    three buttons and the middle one, `Indices`, descends into 0x004E3018 -
+    a panel nothing here modelled, so the port drew five blank rows, a blank
+    body and a footer reading `Indice achete !`, the one string the shop's
+    own builder HIDES.
+
+    **What it sells, and the price, are two independent readings that agree.**
+    `sub_4AE120`'s first instruction is `Game_HandleEvent(42)`, whose whole
+    arm is `Message_RunHandlers(25, area, -1)` and then
+    `Var_Get(*(int16 *)(GLOBAL + 72))`. `GLOBAL + 72` is **198**, and the
+    only message-25 subscription in the shipped data - `IAM\GLOBAL`'s, at
+    offset 5006 - is `set.var.i8 198, 3; end`. Two sides that could disagree
+    and do not: **a hint costs three anneaux.**
+
+    The ROWS are `sub_42ADD0(rows, 0, 2)` - OBJECT LIST 2, the memo journal,
+    the same list and the same call the sneak's `Memoire` page makes - and
+    what a purchase reveals is the SECOND bracketed section of the selected
+    memo's description, the CLUE `engine: sneak memos` already found in 37 of
+    `IAM\OBJECT`'s 1002 records. `Acheter` is `Game_HandleEvent(38, {price})`,
+    and case 38 has an arm for exactly this list: `u16(player + 174) -= price`
+    with a refusal when there is not enough. No object changes hands.
+
+    Three runs from the apartment's save point (AREA 237's zone 4107, which
+    is where `traces/save-appart.bin` was written), at 320x240 because
+    nothing here reads a pixel:
+
+    * **rich** - `--rings 5 --give 2:913,2:915` - walks shop, confirm,
+      `Acheter`. The shop shows memo 913's section 0 and the ring count; the
+      confirm shows the price and hides the body; the purchase pays 3, shows
+      section 1 (the Lahoreh riddle) and `Indice achete !`, and hides
+      everything else.
+    * **poor** - the save's own **2** anneaux against a price of 3. The row's
+      confirm does NOT install the confirm panel: it rewrites the footer
+      item's string id to 8 in place, so the page stays put under `Je n'ai
+      pas assez d'Anneaux pour faire ca !`.
+    * **empty** - no memos at all. `dword_4E2B08` is 0, so the builder puts
+      the focus on list **1** (the body box, skipping the rows) and the
+      footer's first arm prints string 5.
+
+    **Every text on these lines is read back out of `ScreenFrame::itemText`**
+    - the string the COMPOSER laid out, not the map the viewer handed it - so
+    an item the builders hid has no entry and shows as `-`. Three of the four
+    are `-` on a correct page, which is the half a handed-over map cannot say
+    (CLAUDE.md 1, the log-line rule).
+
+    **And the `{TEXT ERROR!}` on the price line is the ENGINE's, transcribed.**
+    `sub_4AE340` calls `Ui_ItemStringDefault` on item 0x004E2C38, whose bank C
+    carries no `0x200` and whose `+30` is **0** - so the string goes through
+    `sub_43FEA0(0, ...)`, the section extractor, and `Cet indice te coutera :`
+    has no brackets at all. The function's own failure arm writes
+    `{TEXT ERROR!}` and then the whole string; the layout swallows the brace
+    as an unknown directive, so the line reads correctly on screen. Asserted
+    here rather than tidied away.
+
+    **AND THE SHOP ALWAYS HAS SOMETHING TO SELL.** The survey left open
+    whether object list 2 ever holds a hint in a shipped playthrough; it does,
+    and the two halves come from different files. `inventory.add` (opcode 50)
+    with list 2 in field 0 names **49 distinct objects** across `IAM\AREA` and
+    `IAM\SCENE`, and **49 of those 49** carry a second bracketed section in
+    their `IAM\OBJECT` description - there is not one memo the scripts hand
+    out whose clue is missing. (59 records in the file carry the shape; the
+    ten the scripts never give are the remainder.) So the empty page below is
+    the state before the first memo, not a shipped dead end.
+
+    NOT ported, and labelled: the interface SOUND `Acheter` might play (no
+    call is traced), and the row selection has no effect on what is shown or
+    sold - `dword_4E2B4C` is written only by the two builders, from a
+    selection `sub_42ADD0` has just reset to 0, and the row list's hook is
+    the generic `sub_42AFF0`, which cannot write a page global. So the page
+    shows and sells the FIRST memo's clue whatever is highlighted. Read from
+    the code; the check pins it by never moving off row 0.
+
+    SHOWN TO FAIL: make `Acheter` write section 0 instead of 1 - the body
+    then repeats the memo the shop already showed instead of the clue, and
+    the `bought` row changes.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))
+            and os.path.exists(save)):
+        return ("skipped",), ("skipped",), "engine/, gamedata/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    base = [play, fr, os.path.join(ROOT, "tables"), "--save", save, "--slot", "0",
+            "--software", "--nofmv", "--nodelay", "--no-crowd", "--res", "320x240"]
+
+    def run(extra, hold, frames):
+        r = subprocess.run(base + extra + ["--frames", str(frames), "--hold", hold],
+                           capture_output=True, env=env)
+        text = r.stdout.decode("cp1252", "replace")
+        return [ln.strip() for ln in text.splitlines() if ln.startswith("indices:")]
+
+    # ENTER opens screen 30, DOWN reaches `Indices`, then one ENTER a page.
+    rich = run(["--rings", "5", "--give", "2:913,2:915"],
+               "k*10,k28*4,k*8,k208*4,k*8,k28*4,k*8,k28*4,k*8,k28*4,k*20", 90)
+    poor = run(["--give", "2:913,2:915"],
+               "k*10,k28*4,k*8,k208*4,k*8,k28*4,k*8,k28*4,k*20", 80)
+    none = run([], "k*10,k28*4,k*8,k208*4,k*8,k28*4,k*20", 70)
+
+    # ---- and the CORPUS behind it: what ever reaches object list 2 ------
+    #
+    # `inventory.add` is opcode 50 and its FIELD 0 is the list (the same
+    # selector ops 49 and 51 take), so the sites that fill the memo journal
+    # are the ones whose field 0 is 2. Every id they name is then looked up
+    # in `IAM\OBJECT` - 1002 records of 2048 bytes, the description a C
+    # string at `+0x118` - and counted for a SECOND bracketed section, which
+    # is what `sub_43FEA0(1, ...)` cuts out and what a purchase reveals.
+    import dialog_disasm as _D, script_dump as _S
+    from dialog_triggers import archive as _arch
+    given = set()
+    for arch in ("AREA", "SCENE"):
+        chunks = _arch(omkpaths.data("IAM/" + arch))
+        for ci, blk in sorted(chunks.items()):
+            if len(blk) < 100: continue
+            try: scripts = _S.scripts_of(arch, ci)[1]
+            except Exception: continue
+            for _lab, off in scripts:
+                try: ops, _st = _D.disasm(blk, off, len(blk))
+                except Exception: continue
+                for _pc, op, raw in ops:
+                    if op == 50 and len(raw) >= 4:
+                        lst, obj = struct.unpack_from("<hh", raw, 0)
+                        if lst == 2: given.add(obj)
+    objs = open(omkpaths.data("IAM/OBJECT"), "rb").read()
+    def clued(i):
+        o = i * 2048 + 0x118
+        end = objs.find(b"\0", o)
+        d = objs[o:end if 0 <= end < o + 1024 else o + 1024]
+        return d.count(b"[") >= 2 and d.count(b"]") >= 2
+    withClue = sum(1 for i in sorted(given) if 0 <= i < len(objs) // 2048 and clued(i))
+
+    def find(lines, needle):
+        for ln in lines:
+            if needle in ln: return ln
+        return ""
+
+    def short(ln, n=60):
+        # the body texts are long and carry the game's own punctuation; the
+        # opening of each is enough to name WHICH memo section it is
+        at = ln.find("body '")
+        return ln[:at] + "body '" + ln[at + 6:at + 6 + n] if at >= 0 else ln
+
+    got = (
+        find(rich, "variable 198"),
+        short(find(rich, "the shop, 2 rows"), 40),
+        find(rich, "the purchase confirm, 2 rows, list 0"),
+        find(rich, "paid 3 anneaux"),
+        short(find(rich, "list 1, 1 items drawn"), 40),
+        find(poor, "assez"),
+        find(none, "variable 198"),
+        find(none, "0 rows"),
+        (len(given), withClue),
+    )
+    want = (
+        "indices: variable 198 = 3 anneaux, object list 2 holds 2 hints",
+        "indices: the shop, 2 rows, list 0, 3 items drawn; "
+        "body 'Ces symboles sont certainement la cl\xe9 de",
+        "indices: the purchase confirm, 2 rows, list 0, 4 items drawn; body '-' | "
+        "price '{C}{TEXT ERROR!}Cet indice te co\xfbtera : 3' | "
+        "foot '{C}Anneaux en votre possession : 5' | done '-'",
+        "indices: paid 3 anneaux, 2 left on the player record's +174",
+        "indices: the purchase confirm, 2 rows, list 1, 1 items drawn; "
+        "body 'D'Ymarli la carte est la cl\xe9",
+        "indices: the shop, 2 rows, list 0, 3 items drawn; body 'Ces symboles sont "
+        "certainement la cl\xe9 de quelque chose, mais je pourrais m'amuser avec toute "
+        "la journ\xe9e et ne rien trouver... Il doit y avoir un moyen de comprendre "
+        "\xe0 quoi ils servent. ' | price '-' | "
+        "foot 'Je n'ai pas assez d'Anneaux pour faire \xe7a !' | done '-'",
+        "indices: variable 198 = 3 anneaux, object list 2 holds 0 hints",
+        "indices: the shop, 0 rows, list 1, 1 items drawn; body '-' | price '-' | "
+        "foot 'Aucun indice disponible' | done '-'",
+        (49, 49),
+    )
+    return got, want, \
+           "the hint shop end to end: the price (GLOBAL+72's variable 198, set to 3 " \
+           "by the one message-25 handler), the rows out of object list 2, the " \
+           "purchase confirm's price line, the payment off the player record's " \
+           "+174 and the CLUE it reveals - then the refusal at 2 anneaux and the " \
+           "empty shop, all four texts read back from what the composer drew - " \
+           "and the corpus behind it, the objects `inventory.add` ever puts in " \
+           "list 2 and how many of them carry a clue to sell (49 of 49)"
 
 
 def c_engine_terminal_family():
@@ -21552,6 +21785,16 @@ def c_ui_geometry():
     every sneak page shares one map at 0x004DDF60 - and 572 items rather than
     411, of which 571 have a positive width and height. The one that does not
     is the same one as before.
+
+    **718/718/717/58 -> 721/721/720/59 on 2026-09-18**, and the cause is named
+    so the next reader does not have to bisect for it: the sneak's CITY MAP
+    panel `0x004DF190` entered the lift (`exetables.py`'s `CODE_NAMED`,
+    `docs/UI.md` 3g-bis). Its one list holds THREE items, all 640x480 at
+    (0, 0), so all three are in the frame and all three are sized; the panel
+    itself is the +1. It ships `+20 = 0`, so it has no tile map and neither
+    `maps` nor `clean` moves - which is the shape a lift of a real panel
+    should have, and is why these six numbers moving together is not itself
+    evidence of anything going wrong.
     """
     sys.path.insert(0, os.path.join(ROOT, "tools"))
     import json
@@ -21569,9 +21812,29 @@ def c_ui_geometry():
     menuMap = bool(menu and menu[0]["tiles"])
     lift = [p for p in r["panels"] if p["screen"] == 4]
     xy = [(it["x"], it["y"]) for l in lift[0]["lists"] for it in l["items"]][:7] if lift else []
+    # MERGED 2026-09-18, and the fourth number is the lesson. Two branches
+    # each added ONE code-named panel and each re-baselined `len(panels)`
+    # 58 -> 59; merged it is **60**, because both landed. Three of the four
+    # numbers here were summed by hand correctly and this one was not - the
+    # run is what said so, which is the whole point of re-deriving a census
+    # from the regenerated table instead of adding up two branches' deltas.
+    # 718/718/717/58 -> 728/728/727/60: the CITY MAP 0x004DF190 (one list,
+    # three items) and the HINT SHOP's purchase confirm 0x004E3080 (five
+    # lists, seven widgets) joining `exetables.py`'s CODE_NAMED.
+    #
+    # The older note, kept because it is the per-panel accounting:
+    # ...every one of the four is the HINT SHOP's purchase confirm joining
+    # `exetables.py`'s CODE_NAMED: one panel, seven widgets (two buttons, the
+    # body box, the price line, the footer's two and the backdrop), all seven
+    # inside 640x480 and all seven with a positive width and height. The map
+    # counts do NOT move - it ships `+76 = 0x40001800` with no tile array at
+    # all - and neither does any BEHAVIOURAL element below: the map lengths,
+    # the start menu's missing map and the LIFT's seven coordinates are
+    # untouched. A census of a table that deliberately grew, re-derived rather
+    # than accepted (`todo/sweep-log.md`'s fifth-census note).
     return (len(items), inb, sized, len(r["panels"]), len(maps), lens, clean,
             menuMap, xy), \
-           (718, 718, 717, 58, 41, [80], 41,
+           (728, 728, 727, 60, 41, [80], 41,
             False,
             [(278, 194), (321, 194), (370, 194),
              (284, 241), (325, 242), (371, 242), (325, 288)]), \
@@ -22334,6 +22597,104 @@ def c_engine_sneak_character():
            "and the frame Anim_SetFrame applies"
 
 
+def c_engine_sneak_map():
+    r"""engine: `Lire plan` - the sneak's CITY MAP (`docs/UI.md` 3g-bis).
+
+    The third 50x50 tile of the Inventaire page did nothing in the port.
+    Confirming it runs `0x0049BC40`, seven instructions that install panel
+    `0x004DF190` - a panel with TWO references in the whole listing, that push
+    and its own definition, so no item's `+44` reaches it and the widget lift
+    had never seen it. `exetables.py`'s CODE_NAMED names it now.
+
+    Its open hook `sub_49D9E0` builds `Images\<stem>.bmp` from the RESIDENT
+    DECOR NODE's path (`dword_93076C + 0x30`, the basename minus four
+    characters), tests it with `fopen` and **re-installs `0x004DEE50` at once
+    when it is not there**; then it uppercases the stem and matches it against
+    the compiled 52-byte table at `0x004DF1F8`, storing the row's id in the pin
+    item's own `+0x3C`. The pin hook `0x0049E6F0` re-finds the row and projects
+    the player and every enabled destination of that city through the row's
+    four floats.
+
+    Two runs, and they are the two arms:
+
+    * **ANEKBAH** (AREA 0). `Images/ANEKBAH.bmp` ships, so the page stands.
+    * **AIMPASSE** (AREA 222, where the intro begins, `AREA +88` = `AIMPASSE`).
+      No `Images/AIMPASSE.bmp` ships, so `sub_49D9E0`'s `fopen` fails and the
+      page bounces back to the Inventaire tab before anything is drawn - the
+      viewer's line for the map panel never appears at all, which is the arm
+      being asserted.
+
+    The route is the engine's own: `--sneak` opens the device standing on the
+    ROW list, two RIGHTs reach the three 50x50 tiles (list `0x004DE420` - the
+    first is spent on the frame before the screen exists), two DOWNs reach the
+    third, and `Action / Utiliser` confirms it.
+
+    WHAT IS ASSERTED IS WHAT THE TWO HOOKS DREW, not what the viewer handed
+    the composer (CLAUDE.md 1, the log-line rule): `mapSheet` is set inside the
+    blit's own `if`, and every point is the PROJECTION's output computed in the
+    hook. The player stands at x 1804, z -6890; ANEKBAH's row is x0 -5850.394,
+    z0 4940.945, xspan 26062.992, zspan -19421.260, so
+
+        px = (1804 + 5850.394) * 640 / 26062.992    = 187
+        py = (-6890 - 4940.945) * 480 / -19421.260  = 292
+
+    Get the corner, the span or the SIGN of `zspan` wrong and the pin leaves
+    the 640x480 sheet.
+
+    The two markers are the same arithmetic over the ADDRESS the destination's
+    own bit names, which `Area_Load` has already put through `rawToWorld` and
+    TRUNCATED back into its int32 field - `Appartement de Kay'l` ships raw
+    (31475, -4398), which is world (4839, -677) and (262, 138), and
+    `Sas vers Qalisar` raw (44409, -61791) -> (6828, -9503) -> (311, 356). The
+    truncation is worth carrying: computed from the exact float those two land
+    on (263, 139) and (311, 357), one pixel out in each axis.
+
+    The markers are the ENABLED slider destinations whose name begins with
+    `Anekbah` - the fixture save has two - positioned through the resident
+    chunk's ADDRESS table, which is the port's substitution for `sub_40E630`
+    (the TRANSPORT, which would `Area_Load` from a draw hook) and is labelled
+    in `ui/citymap.h`. `0 unplaced` is the claim that the substitution costs
+    nothing here.
+
+    SHOWN TO FAIL: `cityMapProject` dividing the second axis by `xspan`
+    instead of `zspan` - the pin moves from (187, 292) to (187, -217), off the
+    sheet, and both markers with it.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not (os.path.isdir(eng) and os.path.exists(save)):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "omk-play did not build"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+
+    def run(extra):
+        r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                            "--software", "--nofmv", "--nodelay", "--no-crowd",
+                            "--res", "640x480", "--save", save, "--sneak",
+                            "--frames", "140",
+                            "--keys", "0xCD,0xCD,0xCD,0xD0,0xD0,0x1C",
+                            "--keydelay", "20"] + extra,
+                           capture_output=True, env=env)
+        return r.stdout.decode("cp1252", "replace")
+
+    city = run(["--area", "0", "--stand", "1804,0,-6890,336"])
+    away = run(["--area", "222", "--address", "654"])
+    pick = lambda t: tuple(ln.strip() for ln in t.splitlines()
+                           if ln.startswith("sneak map:"))
+    return (pick(city), pick(away)), \
+           ((r"sneak map: set 'ANEKBAH' -> Images/ANEKBAH.bmp 640x480, "
+             r"city ANEKBAH id 0, 2 markers, 0 unplaced",
+             r"sneak map: the sheet blitted, the pin at 187,292, 2 markers: "
+             r"Appartement de Kay'l at 262,138 | Sas vers Qalisar at 311,356"),
+            ()), \
+           "the sneak's CITY MAP, drawn in Anekbah and bounced in the Impasse, " \
+           "reported from what the two draw hooks put on the frame"
+
+
 def c_engine_sneak_memos():
     r"""engine: the sneak's MEMORY page lists the MEMO JOURNAL (object list 2).
 
@@ -22510,6 +22871,121 @@ def c_engine_sneak_memos():
            "the scroller: three DOWN presses step the offset 8 each and the " \
            "draw's clamp cuts 24 to 3, the real overflow of a seven-line memo " \
            "in a 110-tall box"
+
+
+def c_engine_sneak_echo_bar():
+    r"""engine: the sneak's ECHO BAR, and the row MARK under a verb.
+
+    Two native callbacks on the device's Inventaire page, read out of the raw
+    image (neither has a `proc` label - they are dwords in the widget table,
+    CLAUDE.md 1's trap - so `asmfn.py` returns a neighbour and both ranges had
+    to be dumped by hand).
+
+    **`sub_0049DC20`, the `+32` text callback of item 0x004DEBC0** (411x24 at
+    180,398, font 'J'), the only selectable item of list 0x004DEC58 - the LAST
+    list of every sneak page. It is the ONLY place in the whole interface
+    where the player's seteks and anneaux are shown, and it was blank in the
+    replica: `screendraw.cpp` modelled two of the fifteen text callbacks and
+    this was one of the thirteen it did not. In order:
+
+      0 a TRANSIENT message, `byte_6A4CA0`, while oscillator 0 (5000 ms) runs;
+      1 `"%s %d"` of the setek tile's label and `sub_42B1C0(4)` - the player
+        record's `+172`;
+      2 the same for the anneau tile and `(5)`, `+174`;
+      3 the imager tile's bare label - no count, which is what settles that
+        `imager` is a MAP READER and not ammunition;
+      4 a verb's label, with its `+30` forced to 1 across the call;
+      5 `Examiner` or the examine BOX (whose `+28` ships -1, so that arm draws
+        nothing at all);
+      6 failing all of those, the CURRENT TAB's label - plus `"  (%d / 18)"`
+        from `dword_4DE708` on the Inventaire tab, which is
+        `0x004DE6F0 + 0x18`, the ROW LIST's own bound count, written by
+        `sub_42ADD0` from `Game_HandleEvent(29)`.
+
+    **`sub_0049C090`, the `+20` draw hook of the nine row widgets**: a second
+    `Ui_DrawItemFill` behind the marked row, gated on the current panel being
+    the VERB panel 0x004DEEB8 - so it shows only while a verb is being chosen
+    - on the SELECTED row ordinarily, and on the rows whose tag matches
+    `dword_670BE4/BE8/BEC` while a `Utiliser sur` is pending.
+
+    **One correction to the reading this was ported from.** It recorded the
+    rows' flag bank A as 0 and concluded "this hook is the only fill a row
+    ever gets". The fill is gated on bank **B** - `I2D_TestFlag` picks the
+    word from the mask's own top bits, and `0x40000010` is a bank-B mask -
+    and the rows ship `0x40000210` there. So every drawn row already fills
+    once and the marked one fills TWICE: `src * (1 - 200/255)` applied twice
+    takes it from 0.216 of the page's tint to 0.385, which is the bar a
+    reader sees behind one row of three.
+
+    The route stands in Anekbah with the sneak open and three objects, steps
+    the selection DOWN one row, walks LEFT into the three tiles and DOWN
+    through them, comes back RIGHT and confirms - so one run reaches five of
+    the seven arms and both branches of the mark's gate. `--give 18,7` is what
+    makes `(3 / 18)` evidence: a count read from anywhere but the row list's
+    `+24` would not follow the bag.
+
+    Every field comes from `ScreenFrame`, filled where the drawing happens -
+    `echoBar` is taken AFTER `layOutBlock` ran on it and `rowMarked` is pushed
+    inside the hook's own `if` - so no part of the line can be satisfied by
+    something the viewer computed and handed over (CLAUDE.md 1, the log-line
+    rule, which two checks in this file failed).
+
+    `{TEXT ERROR!}` in three of the lines is the ENGINE's: `Ui_ItemStringDefault`
+    sends any item whose `+30` is not -1 through `sub_43FEA0`, `IAM\Sneak` has
+    no `[`, and the extractor prefixes its failure literal. It is invisible in
+    the game because the text scanner swallows `{`..`}`, and it is asserted
+    here so neither half can be "repaired" away.
+
+    NOT COVERED, and both are ported rather than guessed: arm 0, whose only
+    two writers are inside `sub_49BC60` (screen string 42 when a slider call
+    refuses, 35 when a combination finds no recipe) and neither is reachable
+    from this route; and the mark's COMBINE branch, because with the port's
+    current `Utiliser sur` the device closes on the same press
+    (`sub_49BEA0`'s arm runs too - a fault this check does not fix and does
+    not hide).
+
+    SHOWN TO FAIL: the panel gate dropped from the row hook - the mark then
+    draws on the inventory page as well, and the five lines that read
+    `0 row marks` read `1` instead.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not (os.path.isdir(eng) and os.path.exists(save)):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "omk-play did not build"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                        "--software", "--nofmv", "--nodelay", "--no-crowd",
+                        "--save", save, "--area", "0",
+                        "--stand", "1804,0,-6890,336", "--sneak",
+                        "--give", "18,7", "--frames", "340", "--res", "640x480",
+                        "--hold", "k*50,k208*1,k*20,k203*1,k*20,k208*1,k*20,"
+                                  "k208*1,k*20,k205*1,k*20,k28*1,k*60"],
+                       capture_output=True, env=env)
+    text = r.stdout.decode("cp1252", "replace")
+    got = tuple(ln.strip() for ln in text.splitlines()
+                if ln.startswith("sneak: echo bar"))
+    return got, \
+           ("sneak: echo bar - arm 6 '{TEXT ERROR!}Inventaire  (3 / 18)', 0 row marks",
+            "sneak: echo bar - arm 1 'Seteks en votre possession : 0', 0 row marks",
+            "sneak: echo bar - arm 2 'Anneaux en votre possession : 2', 0 row marks",
+            "sneak: echo bar - arm 3 'Lire plan', 0 row marks",
+            "sneak: echo bar - arm 6 '{TEXT ERROR!}Inventaire  (3 / 18)', 0 row marks",
+            "sneak: echo bar - arm 4 '{TEXT ERROR!}Utiliser', 1 row marks (tags 1)"), \
+           "the sneak's status line, composed by the port's transcription of " \
+           "`sub_0049DC20` and read back out of the frame it drew: the " \
+           "Inventaire tab with the row list's own `+24` after it, the two " \
+           "COUNTS (0 seteks and 2 anneaux, the shipped fixture's), the map " \
+           "reader with no count, and the verb - and beside it the row hook " \
+           "`sub_0049C090`, which marks NOTHING on the page itself and the " \
+           "one selected row once the verb panel is up. The tag is 1, the row " \
+           "the DOWN moved to, not the 0 a hook reading the widget rather " \
+           "than the selection would give; `(3 / 18)` follows `--give`, which " \
+           "a constant could not"
 
 
 def c_engine_sneak_quit():
@@ -29084,9 +29560,9 @@ def c_exe_tables():
     import exetables
     return (exetables.check(), sorted(exetables.OUT and
             [n for n, _, _, _ in exetables._TABLES])), \
-           ([], ["adpcm", "camera_presets", "fight_ai_moves", "key_bindings",
-                 "shoot_ai", "shoot_weapons", "special_moves", "ui",
-                 "ui_widgets", "vm_announce", "vm_opcodes"]), \
+           ([], ["adpcm", "camera_presets", "city_maps", "fight_ai_moves",
+                 "key_bindings", "shoot_ai", "shoot_weapons", "special_moves",
+                 "ui", "ui_widgets", "vm_announce", "vm_opcodes"]), \
            "complaints from exetables --check (stale, missing or failing a " \
            "table's own check), and the tables that must be present"
 
@@ -37621,6 +38097,7 @@ SLOW = [
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),
     ("engine: xachen", c_engine_xachen, "todo/missing-ui 5d"),
     ("engine: high score", c_engine_high_score, "todo/missing-ui 5e"),
+    ("engine: hint shop", c_engine_hint_shop, "todo/pending/ui-remainder-survey 2a"),
     ("engine: terminal family", c_engine_terminal_family, "todo/missing-ui 3"),
     ("engine: water entry", c_engine_water_entry, "todo/swimming.md 1"),
     ("engine: fight library", c_engine_fight_library, "todo/fight-mode 15.2"),
@@ -37737,6 +38214,9 @@ SLOW = [
     ("engine: sneak character", c_engine_sneak_character, "UI; todo/sneak.md 5"),
     ("engine: sneak quit", c_engine_sneak_quit, "UI; todo/sneak.md 5"),
     ("engine: sneak memos", c_engine_sneak_memos, "UI; todo/sneak.md 2c"),
+    ("engine: sneak echo bar", c_engine_sneak_echo_bar,
+     "UI; todo/sneak.md"),
+    ("engine: sneak map", c_engine_sneak_map, "UI 3g-bis"),
     ("cursor highlight",  c_cursor_highlight,   "UI 3b"),
     ("slider destinations", c_slider_destinations, "UI 3g"),
     ("sneak previews",   c_sneak_previews,     "UI 3g"),

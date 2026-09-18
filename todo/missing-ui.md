@@ -417,6 +417,39 @@ the base, the stride and the `+0x20` are each testable rather than asserted.
 Shown to fail by moving the base one record (724 -> 760): the five names shift
 by one row and the fifth goes blank.
 
+### 5f. `Lire plan` — the SNEAK'S CITY MAP, done 2026-09-18
+
+Not on the survey table above, because it is not a SCREEN: it is a PANEL of
+screen 9 that nothing in `tables/ui_widgets.json` reached. The full read is
+`docs/UI.md` §3g-bis; the short form:
+
+* item `0x004DE3C8`, the third 50x50 tile, callback `0x0049BC40` =
+  `sub_42A370(screen, off_4DF190)`. `off_4DF190` has **two** references in the
+  54 MB listing - that push and its own definition - so no `+44` names it;
+  `exetables.py`'s `CODE_NAMED` lifts it now, as the Inventaire page's second
+  code-installed child. Its neighbour `0x0049BC30` on the ANNEAUX tile is
+  `mov eax, 1; retn` and is INERT in the original; the port transcribes it as
+  inert rather than "implementing" it.
+* the panel's `+4` `sub_49D9E0` builds `Images\<resident set>.bmp` from the
+  decor node's own path and **bounces back to the Inventaire page when the
+  `fopen` fails**, which is every location but the four cities.
+* two compiled tables lifted to `tables/city_maps.json`: four map rectangles
+  (`0x004DF1F8`, stride 52) and fifteen per-place position overrides
+  (`0x004DF2C8`, stride 44 - three places in five languages).
+* three draw hooks, of which the port already had one: `0x00477CA0` blits the
+  bitmap, `0x0049E6F0` draws the player's blue heading ARROW and a red triangle
+  per enabled destination of that city, each labelled, and `0x00477ED0` is the
+  interference box.
+
+Ported as `engine/src/ui/citymap.*` plus two arms in the composer and one in
+the walk; `verify.py: engine: sneak map`. **Deliberately not reproduced and
+labelled in the port**: `sub_40E630`, which the marker loop falls back on, is
+the TRANSPORT and `Area_Load`s a non-resident area - the port resolves a marker
+only against the resident chunk's address table and reports any it drops (0 in
+the shipped data, because every destination of a city carries that city's area
+id). Watched: Anekbah's map draws with its street plan, the scanlines, the two
+enabled markers on their streets and the arrow where the player stands.
+
 ### 3b. The terminal's HEADER BAR — done 2026-09-18
 
 The last of the terminal family's gaps, and eleven bytes of code. `unk_4E3FE0`

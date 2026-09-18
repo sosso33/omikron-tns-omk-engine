@@ -40,6 +40,10 @@ std::int32_t globalSpellItem(std::span<const std::byte> d) {
     return i16(d, 64);
 }
 
+std::int32_t globalHintPriceVar(std::span<const std::byte> d) {
+    return i16(d, 72);
+}
+
 std::vector<Destination> globalDestinations(std::span<const std::byte> d) {
     std::vector<Destination> out;
     const auto base = u32(d, 16);

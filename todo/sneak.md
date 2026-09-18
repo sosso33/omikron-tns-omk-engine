@@ -30,7 +30,44 @@ the device closing itself on a successful use. `engine: sneak`,
 `engine: used object`, and `engine: UI` (0 disagreements with `tools/sim`
 across 31 screens).
 
+**And since 2026-09-18, the ECHO BAR and the ROW MARK** — the two native
+callbacks on the Inventaire page that `screendraw.cpp` had listed among "the
+other thirteen [that] draw nothing". `sub_0049DC20` composes the device's
+status line (`ScreenComposer::echoBarText`), which is the only place the
+player's seteks and anneaux are shown anywhere in the interface, and
+`sub_0049C090` puts a second `Ui_DrawItemFill` behind the row a verb will act
+on. `docs/UI.md` 3b has both; `verify.py: engine: sneak echo bar` walks one
+route through five of the bar's seven arms and both branches of the mark's
+gate.
+
+Two things that came out of porting them, both recorded where they belong:
+the rows already fill once from their own bank-B `0x10`, so the hook's fill
+is a SECOND quad and not the only one a row gets; and the tile previews pass
+distance **0** to `sub_478DE0` and take its bounding-box fit — `0x42EC3871`,
+which `engine/src/ui/models.h`'s header called the sneak's, is pushed at one
+site in the listing and it is the identity page's character view.
+
 ## 2. What is left
+
+### 2z. What the echo bar and the row mark did NOT close
+
+* **The bar's TRANSIENT arm** (`byte_6A4CA0`, oscillator 0, 5000 ms) is
+  ported and has no writer in the port. Its two writers in the image are both
+  inside `sub_49BC60`: `loc_49BD23` flashes screen string **42** when the
+  slider call `sub_452570` refuses, and `loc_49BE30` string **35** when a
+  combination finds no recipe. `ScreenComposer::setEchoMessage` is where
+  either would arrive.
+* **The mark's COMBINE branch** is ported and unexercised, and the reason is
+  §2b, which is less closed than that section now reads: the mode itself IS
+  ported (`beginCombine`, the two slots, the verb list off), but a single
+  press still runs `sub_49BEA0`'s arm as well - measured 2026-09-18, the log
+  reads `Utiliser sur ... combine opened, gate 0` and then
+  `'Notice MK400' -> IN HAND`, and the device closes on the use. So there is
+  no frame in which the walk stands on the verb panel with the mode open, and
+  nothing can mark from the slots. A verb-dispatch fault, not a drawing one.
+* **The dead call at `0x0049DCA6`** — `sub_42AA00(screen, row, B)` into a
+  buffer nothing reads. Left out; its only effect is one extra event-33 raise
+  per draw of the bar.
 
 ### 2a. Row scrolling — the one that makes the device WRONG, not just thin
 
