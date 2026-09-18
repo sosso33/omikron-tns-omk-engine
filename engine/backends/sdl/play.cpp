@@ -4485,6 +4485,8 @@ int main(int argc, char** argv) {
     std::set<int> spriteWanted, spritePooled;
     bool poolOverflowTold = false;
     const bool stagedProbe = std::getenv("OMK_STAGE_PROBE") != nullptr;
+    // `engine: camera obstruction` - one line per frame from `sub_417070`.
+    const bool obstructProbe = std::getenv("OMK_CAM_OBSTRUCT_PROBE") != nullptr;
     // A DIAGNOSTIC for the sign of the scene call's Euler: CLAUDE.md 5's
     // rule is that leaving the game's space reflects one axis and so
     // reverses the sense of every rotation about it.
@@ -12458,6 +12460,26 @@ int main(int argc, char** argv) {
                 // `sub_417070` exists to keep is that nothing solid lies
                 // between the camera's target and its eye. Cast the segment
                 // and say so.
+                // THE OBSTRUCTION PASS, per frame and at full precision -
+                // `sub_417070`'s `+208`, `+328` and the height it is pushing
+                // the eye to. `todo/camera-obstruction.md` 5 is the
+                // transcription this reports on; the staged probe below is a
+                // different question (does a solid face lie in the segment)
+                // and stays every tenth frame so its own check is unmoved.
+                if (obstructProbe) {
+                    const omk::FollowCamera& c = player->followCamera();
+                    const float* p = player->pos();
+                    // `+312 + +156` = -0.7 x the pelvis height, plus the
+                    // subject's own y - the height a fully pinched eye rides.
+                    const float lift = p[1] - 1.7f * player->cameraLift();
+                    std::printf("obstruct %ld block %d kept %.4f eye %.4f %.4f %.4f "
+                                "at %.4f %.4f %.4f lift %.4f\n",
+                                n, player->cameraBlockState(),
+                                double(player->cameraKeptDistance()),
+                                double(c.eye[0]), double(c.eye[1]), double(c.eye[2]),
+                                double(c.at[0]), double(c.at[1]), double(c.at[2]),
+                                double(lift));
+                }
                 if (stagedProbe && (n % 10) == 0) {
                     const omk::FollowCamera& c = player->followCamera();
                     const double at[3] = {c.at[0], c.at[1], c.at[2]};

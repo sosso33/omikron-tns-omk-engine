@@ -16959,6 +16959,125 @@ def c_engine_camera_collision():
          "collision pass and with it")
 
 
+def c_engine_camera_obstruction():
+    r"""`sub_417070` read WHOLE - its SCOPE, and the height push converging.
+
+    `todo/camera-obstruction.md` 5 and 6. The pass was ported three times onto
+    the restaurant's dialogue crane (4194 -> 4195) and the lift's arrival
+    camera (2986) and reverted three times. Read whole, it can reach neither:
+
+    * `Camera_LoadParams` ends `+356 = 0; +356 |= 1`; `Camera_Request` then
+      `memset(cam + 208, 0, 0x94)`; and `sub_414520` is the only thing that
+      puts flag 4 (the section) or 8 (the arm) back. It dispatches on the EYE
+      SUBJECT `+140`: 0 -> `sub_413C00` (`4|8|0x10`), 5 -> `sub_4141F0`
+      (`4|8`), 6 -> `sub_414100`, **anything else - `-1` included - nothing**.
+      The tick's `test al, 4 / jz` (0x00417E7A) then skips the whole section.
+    * `Dialog_ApplyLineCameras` also CLEARS flag 4 outright after each of its
+      `Camera_Request(12, ...)` calls (`push 0 / push 4 / call sub_4137D0`).
+
+    So the first half is the scope, from the port's own loaders: dialog 387's
+    44 cameras are all ABSOLUTE, the lift's 2986 is absolute, and of the 5381
+    world cameras only the 406 whose eye subject is 0 can arm the pass - the
+    follow-camera ones the port already routes through `PlayerController`.
+    That is the thing that stops a fourth attempt.
+
+    The second half is the follow camera, where the pass does run:
+
+    * THE PUSH CONVERGES. `+312 + +156` is 0.7 x the pelvis height above the
+      subject, and the ease is toward `+24`/`+36` - LAST FRAME'S final eye and
+      target y, which `sub_4133B0`/`sub_4133E0` write back at the end of every
+      tick. On AREA 46's deepest pinch the eye settles 93% of the way from
+      the pass-off eye to the pushed height; anchored on an in-frame value, as
+      the port did until 2026-09-18, it holds a fixed fraction instead.
+    * AN UNOBSTRUCTED SHOT DOES NOT MOVE: a stand where nothing is in the way
+      gives the SAME eye and target, every frame, with the pass and with
+      `OMK_NO_CAM_COLLIDE=1`.
+
+    SHOWN TO FAIL: the height ease anchored back on the in-frame eye and
+    target y (the pre-2026-09-18 code) - the settled push falls below 75%.
+
+    Needs SDL; reports the expected values without it (PORTING A8).
+    """
+    import subprocess, tempfile
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    tb = os.path.join(ROOT, "tables")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(fr) or not os.path.exists(save):
+        return ("no data",), ("data",), "needs the shipped tree and traces/save-appart.bin"
+    mk = subprocess.run(["make", "-s", "play", "build/dlgcam", "build/dump_world_cameras"],
+                        cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    dlg = os.path.join(eng, "build", "dlgcam")
+    wcd = os.path.join(eng, "build", "dump_world_cameras")
+    if mk.returncode != 0 or not (os.path.exists(dlg) and os.path.exists(wcd)):
+        return ("build failed",), ("built",), "engine/ must build"
+
+    # ---- the SCOPE, from the port's own loaders --------------------------
+    o = subprocess.run([dlg, fr, "387"], capture_output=True, text=True).stdout
+    rows = re.findall(r"^cam .*$", o, re.M)
+    abs387 = sum(1 for r in rows if r.rstrip().endswith("ABSOLUTE"))
+    total = eye0 = 0
+    lift2986 = []
+    with tempfile.TemporaryDirectory() as tmp:
+        out = os.path.join(tmp, "wc.txt")
+        subprocess.run([wcd, fr, out], capture_output=True, text=True)
+        for ln in open(out):
+            f = ln.split()
+            if len(f) < 13 or f[0] not in ("AREA", "SCENE", "GLOBAL"):
+                continue
+            total += 1
+            if int(f[-2]) == 0:
+                eye0 += 1
+            if f[2] == "2986":
+                lift2986.append((int(f[-2]), int(f[-1])))
+
+    # ---- the follow camera ------------------------------------------------
+    if not os.path.exists(play):
+        return (len(rows), abs387, lift2986, total, eye0, True, True, True, 0.0), \
+               (44, 44, [(-1, -1)], 5381, 406, True, True, True, 0.0), \
+               "no SDL - the frontend is optional (PORTING A8); scope only"
+
+    def run(stand, off):
+        env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_CAM_OBSTRUCT_PROBE="1")
+        if off:
+            env["OMK_NO_CAM_COLLIDE"] = "1"
+        t = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
+                            "--no-crowd", "--save", save, "--area", "46",
+                            "--stand", stand, "--frames", "60"],
+                           capture_output=True, text=True, env=env,
+                           errors="replace").stdout
+        return [(int(m.group(1)), int(m.group(2)),
+                 [float(x) for x in m.group(3, 4, 5, 6, 7, 8)], float(m.group(9)))
+                for m in re.finditer(r"^obstruct (\d+) block (\d) kept \S+ "
+                                     r"eye (\S+) (\S+) (\S+) at (\S+) (\S+) (\S+) "
+                                     r"lift (\S+)$", t, re.M)]
+
+    # the deepest pinch of `engine: camera collision`'s sixteen views
+    on, off = run("6980,30,880,0", False), run("6980,30,880,0", True)
+    if len(on) < 50 or len(off) < 50:
+        return ("probe read %d / %d lines" % (len(on), len(off)),), ("59 / 59",), \
+               "the probe's output must parse before anything is derived from it"
+    blocked = all(r[1] == 1 for r in on[1:])
+    last, lastOff = on[-1], off[-1]
+    free = lastOff[2][1]
+    pushed = (free - last[2][1]) / (free - last[3]) if free != last[3] else 0.0
+    # and an OPEN view: nothing in the way, so the pass must change nothing
+    openOn, openOff = run("7100,30,600,0", False), run("7100,30,600,0", True)
+    neverBlocked = bool(openOn) and all(r[1] == 0 for r in openOn)
+    maxd = max((abs(a - b) for x, y in zip(openOn, openOff)
+                for a, b in zip(x[2], y[2])), default=-1.0)
+    return (len(rows), abs387, lift2986, total, eye0,
+            blocked, pushed > 0.75, neverBlocked, round(maxd, 4)), \
+           (44, 44, [(-1, -1)], 5381, 406, True, True, True, 0.0), \
+           ("dialog 387's cameras and how many are absolute; the lift's 2986's "
+            "subjects; the world cameras and how many have eye subject 0 - the "
+            "only ones sub_414520 arms the pass for. Then the follow camera: "
+            "AREA 46's deepest pinch stays blocked and its eye settles more than "
+            "75% of the way to the pushed height (93% measured); an open view "
+            "never blocks and moves 0.0 against the pass switched off")
+
+
 def c_engine_shoot_pose():
     r"""`engine/`: a SHOOT-mode character is posed from the area's `.ani`, by
     his character type - the 41 bodies that had no pose at all.
@@ -38122,6 +38241,7 @@ SLOW = [
     ("engine: scene facing", c_engine_scene_facing, "todo/omk-play"),
     ("engine: shoot pose", c_engine_shoot_pose, "todo/reader-followups"),
     ("engine: camera collision", c_engine_camera_collision, "todo/reader-followups"),
+    ("engine: camera obstruction", c_engine_camera_obstruction, "todo/camera-obstruction 5-6"),
     ("engine: tunnel door walk", c_engine_tunnel_door_walk, "todo/collision-scenes-transitions"),
     ("engine: arrival wait", c_engine_arrival_wait, "todo/omk-play"),
     ("engine: linked rings", c_engine_linked_rings, "todo/omk-play"),
