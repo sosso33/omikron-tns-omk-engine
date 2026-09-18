@@ -17646,6 +17646,25 @@ int main(int argc, char** argv) {
             // and `sub_49BC60`'s tail plays interface sound 12 on the success
             // and shows text 35 on the failure, then reinstalls the inventory
             // page either way. The gate is the one `beginCombine` set.
+            // THE INTERFACE SOUNDS BY THEIR OWN ID. `sub_482D90(n)` takes an
+            // index into the 45-row table (`tables/ui.json` sounds), not a
+            // screen's slot - so 12 is `SNK009` and 13 `SNK012`, where
+            // `sndConfirm` / `sndBack` are the screen's slots 1 and 2 (`SNK003`
+            // and `SNK001` on the sneak). A reader: *"there should be a sound
+            // effect when a new object is created"*.
+            const auto uiSound = [&](int id) -> const std::vector<float>& {
+                static std::map<int, std::vector<float>> cache;
+                auto it = cache.find(id);
+                if (it == cache.end()) {
+                    std::vector<float> v;
+                    const std::string& nm = w.soundNameById(id);
+                    if (!nm.empty())
+                        if (const auto path = fs.resolve("I2D/sounds/" + nm + ".wav"))
+                            v = wavToDevice(omk::DataFs::readPath(*path), 44100);
+                    it = cache.emplace(id, std::move(v)).first;
+                }
+                return it->second;
+            };
             if (int ra = -1, rb = -1; walk->takeCombine(ra, rb)) {
                 const auto bag = omk::objectList(state, omk::ObjectList::Carried);
                 const auto at = [&](int r) {
@@ -17660,7 +17679,7 @@ int main(int argc, char** argv) {
                     state.listRemove(0, a);
                     state.listRemove(0, b);
                     state.listAdd(0, made);          // InsertFront
-                    blip(sndConfirm);                // interface sound 12
+                    blip(uiSound(12));               // `push 0Ch; call sub_482D90`
                     std::printf("sneak: combine %d '%s' + %d '%s' (gate %d) -> "
                                 "%d '%s'\n", a, session.objectName(a).c_str(),
                                 b, session.objectName(b).c_str(), gate,
@@ -17674,6 +17693,12 @@ int main(int argc, char** argv) {
                                 b, session.objectName(b).c_str(), gate, gate);
                 }
                 walk->endCombine();
+                // read back from the walk, after the combine closed: is the
+                // verb still flashing, and which list holds the focus
+                std::printf("sneak: combine closed - `Utiliser sur` %s, focus on list %d\n",
+                            (walk->itemFlagsOn(omk::kItemSneakUseOn) & 0x2u) ? "STILL FLASHING"
+                                                                             : "no longer lit",
+                            walk->currentList());
             }
             if (const int verb = walk->takeVerb(); verb >= 0) {
                 const auto carried =
@@ -17835,7 +17860,7 @@ int main(int argc, char** argv) {
                         omk::readActorProperty(pr, prop, after);      // the setter's clamp
                         state.listRemove(0, objIdx);                  // ObjectList_RemoveAt(0, row)
                     }
-                    blip(sndBack);
+                    blip(uiSound(13));               // `sub_42B470`: interface sound 13
                     if (after >= 0)
                         std::printf("sneak: '%s' USED - property %d %d -> %d "
                                     "(+%d, effect %d), and it leaves the bag "

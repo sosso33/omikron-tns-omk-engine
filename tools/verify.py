@@ -3606,13 +3606,18 @@ def c_engine_sneak_verbs():
     def counts(out):
         return [int(n) for n in re.findall(r"echo bar - arm 6 .*?Inventaire  \((\d+) / 18\)", out)]
     made = re.search(r"sneak: combine (-?\d+) .*?\+ (-?\d+) .*?-> (-?\d+)", comb)
+    # ...and how the combine CLOSES: `loc_49BE51` puts `Utiliser sur`'s flash
+    # out (`sub_428FF0(0x4DE278, 0x40000002, 0)`); left lit, the verb went on
+    # blinking as if it were still the selection.
+    closed = re.search(r"sneak: combine closed - `Utiliser sur` (.*?), focus", comb)
     hc, cc = counts(heal), counts(comb)
     return (int(vie.group(1)) if vie else -1,
             (hc[0], hc[-1]) if hc else (),
             "IN HAND" in comb, "combine opened" in comb,
             tuple(int(g) for g in made.groups()) if made else (),
-            (cc[0], cc[-1]) if cc else ()), \
-           (30, (3, 2), False, True, (18, 7, 33), (4, 3)), \
+            (cc[0], cc[-1]) if cc else (),
+            closed.group(1) if closed else ""), \
+           (30, (3, 2), False, True, (18, 7, 33), (4, 3), "no longer lit"), \
            ("a medkit raises Vie 10 -> 30 and leaves the bag (3 -> 2 on the echo "
             "bar), and Utiliser sur on the box then the key makes the open box "
             "(18 + 7 -> 33, 4 -> 3) with nothing taken in hand")
