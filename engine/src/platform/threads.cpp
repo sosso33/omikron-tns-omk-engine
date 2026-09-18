@@ -103,10 +103,15 @@ struct Threads::Impl {
         lo = from + kk * each + std::min(kk, extra);
         hi = lo + each + (kk < extra ? 1u : 0u);
     }
+
+    // The worker's entry point. A MEMBER, because `Impl` is private to
+    // `Threads`: the first version was a free function in an anonymous
+    // namespace, which cannot name it - and nobody knew, because this half had
+    // never been compiled until the first VitaSDK build (2026-09-18).
+    static int workerMain(SceSize, void* argp);
 };
 
-namespace {
-int vitaWorkerMain(SceSize, void* argp) {
+int Threads::Impl::workerMain(SceSize, void* argp) {
     auto* w = *static_cast<Threads::Impl::Worker**>(argp);
     for (;;) {
         sceKernelWaitSema(w->pool->work, 1, nullptr);
@@ -124,7 +129,6 @@ int vitaWorkerMain(SceSize, void* argp) {
     }
     return sceKernelExitDeleteThread(0);
 }
-}  // namespace
 
 Threads::Threads(int workers) : impl_(new Impl) {
     const int want = workers > 0 ? workers : hardwareDefault();
@@ -137,7 +141,7 @@ Threads::Threads(int workers) : impl_(new Impl) {
         impl_->slots[i].index = i;
         char name[32];
         std::snprintf(name, sizeof name, "omk_worker%d", i);
-        const SceUID t = sceKernelCreateThread(name, vitaWorkerMain, kVitaPriority,
+        const SceUID t = sceKernelCreateThread(name, Impl::workerMain, kVitaPriority,
                                                kVitaStack, 0, kVitaAffinity, nullptr);
         if (t < 0) break;
         Impl::Worker* arg = &impl_->slots[i];

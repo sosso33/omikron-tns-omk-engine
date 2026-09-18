@@ -2,6 +2,7 @@
 #include "actor/walk.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace omk {
