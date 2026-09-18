@@ -452,58 +452,146 @@ the composer.
 | 3 | the SPECIAL screens: **12 GANDHAR DOOR** (§5b), **13 DEN'S LOCKER** (§5c), **14 XACHEN** (§5d), **36 HIGH-SCORE** (§5e) and the terminal's **header bar** (§3b) all done; 0 VIDEOPHONE left | §5 has each one's hooks |
 | 4 | play | |
 
-## 6. The lift arrives and the level is not drawn — the mechanism, and a REVERTED patch
+## 6. The lift arrives and the level is not drawn — the SLOT reading REFUTED, and the real occluder
 
 Reported in play, 2026-09-17: *"there is an issue with the camera inside it,
 which is not placed correctly so a part of the environment is just in front of
 the camera (it is not the only place where this issue occurs)"*, then *"this is
-a static camera, not the following one"*.
+a static camera, not the following one"*, and later that **the lift door does
+not open at arrival**.
 
-**It is not the camera, and the camera the port picks is right.** Riding to
-level -2 and photographing the arrival gives a frame 98% black. The camera up is
-2986 - AREA 179's own, at level -2's height - and with the zone height band
-REMOVED the port picks 2999 instead, which is level -5's, three storeys away. So
-the band (section 2) is doing its job here.
+**The reader's own first sentence was right and the diagnosis written here on
+2026-09-17 was wrong.** It is the camera, and a single mesh in front of it. The
+slot bookkeeping — `area.arrive -1` hiding the row that has just been loaded —
+is real, is still there, and has **nothing to do with the black frame**. What
+follows replaces the whole of the previous section; the old reading is kept
+only where it is refuted, because both of its premises looked solid.
 
-**The mechanism, measured.** The log:
+### 6a. What was measured, 2026-09-18
 
-    [slot] frame 179  SHOW area 179 in slot 1   (active slot 0 = area 157 ...)
-    [slot] frame 180  HIDE area 179 in slot 1
+Every number below is from the repro at the end of this section, `omk-play`
+headless under `SDL_VIDEODRIVER=dummy`, "dark" being pixels whose R+G+B ≤ 24
+out of 640×480.
 
-`area.arrive -1` hides the row that is NOT active, which is the engine's own
-line (`if (dword_69BC60) hide(slot0) else hide(slot1)`). The ACTIVE row only
-flips on event 9 - the player's feet on a new decor - and the port raises that
-from a per-frame probe that runs AFTER the script pump. So the destination is
-shown and hidden with no probe in between, the active row never moves, and the
-row that goes is the one just loaded.
+| what was changed at `area.arrive -1` | arrival frame | player walks, 300 frames of forward |
+|---|---|---|
+| nothing — the port as it stands (hides AREA 179) | **96.7% dark** | **377.7 units**, (5752.0, 342.5, −11485.0) → (6041.8, 346.5, −11242.9) |
+| hide NOTHING — both sets drawn all the way through | **96.7% dark** | 377.7 units, same end point |
+| hide `Transition::outArea` — the REVERTED patch | 82.3% dark | **0.0 units** |
+| the port, with the ONE mesh `CSPont04` displaced | **16.9% dark** | — |
 
-He IS standing on the destination's floor when it happens: feet at y 342.5 over
-ACSLEV-2's 345. One probe between the show and the hide would flip the row and
-both readings of the engine's line would name AREA 157, the shaft, which is what
-should go.
+So: **the hide is not the cause.** Drawing both sets changes the arrival frame
+by nothing at all — the same 96.7%, the same picture. And the reverted patch
+never really "made the arrival draw" either: 82.3% is still a black frame, and
+it strands the player, which is why a reader caught it in one sentence.
 
-**A patch that hid `Transition::outArea` instead was WRONG and is reverted.** It
-made the arrival draw - but it takes away the shaft the player is standing in,
-floor included, so he arrives somewhere he cannot walk: 400 frames of forward
-input moved him 0.1 units. The reader caught it in one sentence - *"the issue
-doesn't happen when I tested before ... this is a very recent regression"* - and
-the code says so at the line.
+### 6b. The occluder is `CSPont04` — the lift car
 
-**The fix is the ORDERING**, and it is not attempted here because it moves a
-rule every transition check depends on: the feet probe has to see a set that was
-shown this frame, either by running before the pump or by probing again after a
-`showSet`. The engine's own transition takes frames to reach state 8 (the staged
-load), which is what gives its probe the chance.
+`ACSpuits.3DO` mesh 36, flags `00000000` (drawable: `flags & 0x800043` is 0),
+492 corners, bounding box **x 5670..5798, y 228..346, z −11570..−11442** — a
+closed box 128 units square whose floor is at y 346 and whose ceiling is at
+228, i.e. the LIFT CAR at level −2. Camera 2986's eye (5708, 259, −11484) and
+the player (5752, 342.5, −11485) are both **inside it**, so the whole lens is
+the inside of the car.
 
-**Repro**, one command and 260 frames - the frame is 98% dark:
+Displacing that one mesh takes the arrival from 96.7% to **16.9% dark**.
+Displacing `CSPorte79h` (the level −2 lift door), `CSPorte80h` (its twin) or
+`CSNivo-2a` (the landing) instead leaves it at 96.7% each — so the door is not
+what blocks the view, and neither is the landing.
+
+**And it is not only the arrival.** The `CSPont` meshes are a stack of eight,
+one per level (`CSPont02` y 547.2 … `CSPont06b` y −303.1), pairing off against
+the `CSNivo-N` landings. At level 0 camera 2978 (eye 5706, −92, −11488) sits
+inside `CSPont06a` in exactly the same way, and the frames before the ride are
+37.5% / 38.2% dark showing the **same** repeated chevron wall as the arrival.
+One phenomenon at every level of the shaft; the arrival is just where it is
+total. That is the reader's *"it is not the only place where this issue
+occurs"*.
+
+**What the engine does about it is NOT settled** and is the next thing to read.
+Three candidates, none tested: it culls the box's faces from inside (but
+`ASSETS` 4b records `D3DCULL_NONE` on at least one path); it hides the car that
+is not in use; or `sub_417070` pulls the camera eye in to the first hit, which
+is gated on camera flag `+356 & 8` (`04_sys.c` 3800, the only call site) and
+has never been read for a scripted world camera. Do not guess between them.
+
+### 6c. The ordering fix cannot work — the premise is false
+
+The previous section said *"He IS standing on the destination's floor when it
+happens: feet at y 342.5 over ACSLEV-2's 345 … one probe between the show and
+the hide would flip the row"*. **Measured at exactly that frame, with both
+decors resident, `decorUnder` answers 157.** ACSLEV-2 has **no walkable floor
+under him at all**: over a 13×13 grid at 120-unit spacing (±720 units) around
+the arrival point, its 986-triangle walkable soup gives no floor in his own
+column at any height.
+
+The reason is structural and settles the question for good: **`ACSlev-2.3DO`
+is 71 meshes of FURNITURE AND DOORS ONLY** — `CSOTable*`, `CSOseat*`,
+`CSOffic*`, `CSOmulti*`, `CSPorte*` — with no floor and no walls anywhere in
+it. The structure of the whole security centre (the landings `CSNivo-N*`, the
+lift cars `CSPont*`, the shaft doors `CSPorte??h`, 99 meshes) is in
+`ACSpuits.3DO`, which is **AREA 157's** set. So the player stands on AREA
+157's decor on every level of the building, and no probe, at any moment and in
+any order, can ever raise event 9 for AREA 179. Running the feet probe before
+the pump, or again after a `showSet`, would change nothing.
+
+The engine's own line was re-read in the raw assembly rather than the
+decompiler (`0x004087B5`): `cmp dword_69BC60, ebx / jnz loc_4087C4 / push
+dword_69BC58 … loc_4087C4: push dword_69BC48`. It hides the NON-active slot,
+which is always the slot `area.goto` loaded into (`Area_LoadIntoSlot(1 - a2,
+a5)` with `a2 = dword_69BC60`), so only event 9 can ever make it name the
+outgoing area. The port's reading is right. And the ORDER is right too:
+`Game_Tick` runs `Script_PlayAllScripts` per decor slot and `Actors_TickAll`
+after it, so the engine's probe sits between the show and the arrive exactly
+as the port's does — one frame, in both.
+
+**What is left open here**: with event 9 unable to name 179, the port never
+draws level −2's furniture at all, at any time — `area.arrive -1` hides it one
+frame after it is shown and nothing shows it again. That is a second, separate
+symptom of the same fact. Settling it means re-reading the engine's event-9
+raiser at the SCENE-ROOT level (`21_d3d.c` ≈3700 and `19_dsound.c` ≈1810: the
+test is the scene root of the surface the ground probe hit, against the actor
+node's own parent, and the decor slot must be in state 2), not the feet.
+
+### 6d. The lift DOOR does open — and two port faults beside it
+
+AREA 157 record 56 slot +0 is the level −2 arrival script and it runs in full:
+`camera.set 2986, 0, 2` / `zone.enable 2526` / `zone.enable 2559` /
+`scx.play.wait obj 0x3e`. Object 62 drives mesh **`CSPorte79h` 87 units up,
+y 299.2 → 212.1, over frames 177–215**, resolved through
+`Program::NodeMotion::placeOn` (the sample is a displacement off the mesh's
+authored position — reading `mo.pos` raw reports the sample, not the place).
+
+So "the door does not open" is not literally true of the port's model. Two
+real faults were found beside it, and **neither reaches the picture** — the
+arrival frame is 96.7% dark at 205, 216, 225 and 260 frames alike, i.e. with
+the door at y ≈218, ≈212, ≈212 and back at 299:
+
+* the door is driven from the **OUTGOING** pool from frame 178 on, because
+  `showSet(179)` moves `curSlot_` and `finishScene()` makes `lev-2.SCX` the
+  resident scene while `ACSPUITS` is still the shown set. It works only
+  because `play.cpp` ticks both pools.
+* when the program ends at frame 215 the motion patch is **dropped** and the
+  mesh **snaps back** to its authored, closed position. The engine's
+  `Script_MoveObjectOnPath` ends in `o3de_SetNodePos` and leaves the node where
+  it put it. A door that opens and then shuts itself is a port bug in its own
+  right, and it is not confined to this lift.
+
+### 6e. Repro, and what it costs
 
     build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
         --area 157 --address 446 --frames 260 --nofmv --nodelay --no-crowd \
         --hold 'k*40,k28*2,k*60,k208*2,k*30,k28*2,k*200' --dump out.bin
 
+For the walk test, replace the trailing `k*200` with `k*40,k200*300` and pass
+`--frames 500`; the end-of-run `walked N` line is the number.
+
 `OMK_NO_ZONE_BAND=1` turns the height band off for the same run, which is how
-the band was ruled out (the arrival then picks the wrong camera and is 66%
-dark).
+the band was ruled out (the arrival then picks camera 2999, level −5's, and is
+66% dark). The band stays.
+
+**Nothing was changed.** `verify.py --only "engine: lift"` runs `engine: lift`
+and `engine: lift doors`, both green, on the tree as it stands.
 
 ## 7. The dialogue camera in the ceiling — READ, and three attempts REVERTED
 
