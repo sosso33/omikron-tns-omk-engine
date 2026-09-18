@@ -195,6 +195,11 @@ build/vita_bench: backends/vita/bench_main.cpp $(SRCOBJS)
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) -o $@ backends/vita/bench_main.cpp $(SRCOBJS)
 
+# The Vita's printf format rewrite (`backends/vita/c99format.h`), on the host.
+build/vita_c99format_test: backends/vita/c99format_test.cpp backends/vita/c99format.h
+	@mkdir -p $(@D)
+	$(CXX) $(CXXFLAGS) -Ibackends/vita -o $@ backends/vita/c99format_test.cpp
+
 # The GLES2 backend against the software reference, headless. macOS only: it
 # makes its GL context with CGL, and the legacy OpenGL framework is always
 # there, so it needs nothing installed either. Elsewhere it says so.
