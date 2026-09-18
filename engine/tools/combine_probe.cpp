@@ -69,7 +69,7 @@ int main(int argc, char** argv) {
         omk::UiWalk walk(w, st);
         walk.open(omk::kScreenSneak);
         const bool before = walk.combining();
-        walk.beginCombine(18, false);
+        walk.beginCombine(0, false);          // a ROW - the unit the mode stores
         const bool opened = walk.combining();
         // leaving the verb panel: the walk is on it only after a row confirm,
         // so drive the hook directly the way `sub_42A370` would.
