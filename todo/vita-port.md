@@ -197,6 +197,18 @@ latest.dmg`) runs homebrew and needs the Vita firmware (`PSVUPDAT.PUP` /
   launched with `-r <TITLEID>`;
 * the bench runs to completion headless-enough (its window opens and closes).
 
+**Driven by one command**: `scripts/vita3k-run.sh setup` fetches the emulator
+into `engine/build/vita3k/` (gitignored, with its storage `fs/` and the data
+symlink); `scripts/vita3k-run.sh bench|smoke|game [seconds]` unpacks that VPK
+into `fs/ux0/app/` and launches it, the log in `engine/build/vita3k/<target>.log`
+and the programs' output in `fs/ux0/data/omk/`. Vita3K keeps ONE storage path,
+in its GLOBAL config (`~/Library/Application Support/Vita3K/Vita3K/config.yml`),
+and checks `-r` against it before any `-c` config applies - so the script
+points that global setting at `fs/` each run (a machine using Vita3K for other
+things should know). The firmware comes from Vita3K's own setup window the
+first time. **The shader compiler goes at
+`engine/build/vita3k/fs/ur0/data/libshacccg.suprx`.**
+
 **What it gave, in the first hour:**
 
 1. **A CRASH A CONSOLE WOULD HAVE HAD, fixed**: the SDK's newlib has no C99
