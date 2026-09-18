@@ -553,6 +553,10 @@ public:
     // right one: look at the original code.
     float headLift() const { return headLift_; }
     const FollowCamera& followCamera() const { return cam_; }
+    // `+208` and `+328`, for a probe. 0 clear / 1 blocked / 2 recovering, and
+    // the distance the pass is keeping.
+    int   cameraBlockState() const { return camBlock_; }
+    float cameraKeptDistance() const { return camDist_; }
     // --- the camera's COLLISION pass ------------------------------------
     // `sub_413C00` sets the ordinary follow camera's flags to `0x1C` - 4 | 8 |
     // 0x10 - and in the tick `sub_417CF0` flag 4 opens the collision branch,
@@ -686,6 +690,19 @@ private:
     const SplitSoupGrid* camGridB_ = nullptr;
     float camDist_ = 0.0f;             // +328
     int   camBlock_ = 0;               // +208
+    // `+24` and `+36`, LAST FRAME'S FINAL eye and target Y. The engine keeps
+    // them because `sub_4133B0`/`sub_4133E0` write `+20..+28` and `+32..+40`
+    // back from `+52`/`+64` at the end of every tick, and the height push
+    // eases toward them - so the push is a first-order filter that CONVERGES
+    // rather than a fixed fraction. `todo/camera-obstruction.md` 5a.
+    float camPrevEyeY_ = 0.0f;         // +24
+    float camPrevAtY_  = 0.0f;         // +36
+    bool  camPrevValid_ = false;       // nothing to ease from on the first tick
+    // `+340` and `+344`: `+156`, the eye subject's own Y, this frame and last.
+    // The tick does `+344 = +340; +340 = +156` immediately before the pass,
+    // and the second ray's blocked arm shifts both heights by the difference.
+    float camSubjY_     = 0.0f;        // +340
+    float camPrevSubjY_ = 0.0f;        // +344
     // FLAG 1, the "just changed" bit: `Camera_LoadParams` sets it, the tick
     // clears it on its way out, and while it is set BOTH of the collision
     // pass's easings are skipped and the camera snaps. `camFresh_` is the
