@@ -20,7 +20,22 @@ adds **one**. Counting commits ran this number to 13 when about nine tasks had
 been finished, which would have called for a half-hour sweep long before the
 rule intends one.
 
-**tasks since the last full sweep: 7** (2026-09-18: `Indices`, THE HINT SHOP on screen 30 - `todo/pending/ui-remainder-survey.md` 2a, one commit. One new check, `engine: hint shop`, shown to fail. It also touched shared code every screen walks - `ScreenComposer` gained a run-time SECTION index and `ScreenFrame::itemText`, and `tables/ui_widgets.json` was regenerated with a new CODE_NAMED panel - so `ui geometry` and `engine: UI`, which were ALREADY red for census drift, move again by +1 panel / +5 lists / +7 items. Deliberately not re-baselined, for the reason the note below gives; the numbers this task added are recorded in `tools/exetables.py`'s own comments.) (2026-09-17: THE VITA PORT, item 1 of `todo/handoff-vita.md` §2 - `omk::MeshNameIndex`, one commit, `optimization.md` step 13. Verified with `--only` over `engine: mesh name index` (new, shown to fail four ways) and the three shadow families, which cannot move because the index has **no consumer**: `play.cpp` was held by another session in the same tree, so the adoption is handed over in `pending/vita-meshidx-playcpp.md` and the frame is not faster yet.) (2026-09-17: SWIMMING - the reader's own
+**tasks since the last full sweep: 7** (2026-09-18: `Indices`, THE HINT SHOP on screen 30 - `todo/pending/ui-remainder-survey.md` 2a, one commit. One new check, `engine: hint shop`, shown to fail. It also touched shared code every screen walks - `ScreenComposer` gained a run-time SECTION index and `ScreenFrame::itemText`, and `tables/ui_widgets.json` was regenerated with a new CODE_NAMED panel - so `ui geometry` and `engine: UI`, which were ALREADY red for census drift, move again by +1 panel / +5 lists / +7 items. **`ui geometry` WAS GREEN and this task broke it, so it IS re-baselined** -
+718/718/717/58 -> 725/725/724/59, every one of the four accounted for by that
+one panel and its seven widgets, with the map counts and all three behavioural
+elements unmoved. **`ui item bindings` was ALREADY red and is NOT**: measured
+against the committed table it read (45, 25, 32, 32, 13) against a baseline of
+(42, 24, 32, 32, 10) BEFORE this task - three string binds, one tag and three
+`nofile` ahead, from the shops', MULTIPLAN's and the memo reader's own
+CODE_NAMED additions that nothing re-ran. This task adds exactly **one** of
+each: the confirm's copy of the footer item 0x004E2CF0 (string 6) and its copy
+of the body box 0x004E2B10 (the tag), so it now reads (46, 26, 32, 32, 14).
+Re-baselining it would bake in three bindings this task cannot account for.
+**`engine: UI`** was red before this task too and moves by the same census:
++1 panel, +5 lists, +7 items, +1 list with a hook, +4 without. Its last
+element - the port-vs-simulator DISAGREEMENT count, which is what the check
+exists for - is 0 and does not move. The numbers this task added are recorded
+in `tools/exetables.py`'s own comments.) (2026-09-17: THE VITA PORT, item 1 of `todo/handoff-vita.md` §2 - `omk::MeshNameIndex`, one commit, `optimization.md` step 13. Verified with `--only` over `engine: mesh name index` (new, shown to fail four ways) and the three shadow families, which cannot move because the index has **no consumer**: `play.cpp` was held by another session in the same tree, so the adoption is handed over in `pending/vita-meshidx-playcpp.md` and the frame is not faster yet.) (2026-09-17: SWIMMING - the reader's own
 item, `todo/swimming.md`, steps 0 to 5 in six commits: the entry, the water
 moves, the motion `sub_4A8F30`, the pitch on the drawn body, the breath gauge
 (`Hud_DrawBar` mode 1, the port's last unported arm of it) and the swim itself.

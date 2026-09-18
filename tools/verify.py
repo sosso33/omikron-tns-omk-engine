@@ -21517,9 +21517,19 @@ def c_ui_geometry():
     menuMap = bool(menu and menu[0]["tiles"])
     lift = [p for p in r["panels"] if p["screen"] == 4]
     xy = [(it["x"], it["y"]) for l in lift[0]["lists"] for it in l["items"]][:7] if lift else []
+    # 718/718/717/58 -> 725/725/724/59 on 2026-09-18, and every one of the
+    # four is the HINT SHOP's purchase confirm 0x004E3080 joining
+    # `exetables.py`'s CODE_NAMED: one panel, seven widgets (two buttons, the
+    # body box, the price line, the footer's two and the backdrop), all seven
+    # inside 640x480 and all seven with a positive width and height. The map
+    # counts do NOT move - it ships `+76 = 0x40001800` with no tile array at
+    # all - and neither does any BEHAVIOURAL element below: the map lengths,
+    # the start menu's missing map and the LIFT's seven coordinates are
+    # untouched. A census of a table that deliberately grew, re-derived rather
+    # than accepted (`todo/sweep-log.md`'s fifth-census note).
     return (len(items), inb, sized, len(r["panels"]), len(maps), lens, clean,
             menuMap, xy), \
-           (718, 718, 717, 58, 41, [80], 41,
+           (725, 725, 724, 59, 41, [80], 41,
             False,
             [(278, 194), (321, 194), (370, 194),
              (284, 241), (325, 242), (371, 242), (325, 288)]), \
