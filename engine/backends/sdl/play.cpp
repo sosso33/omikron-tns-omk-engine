@@ -5684,6 +5684,11 @@ int main(int argc, char** argv) {
                     std::printf("  %s: %ld frames shown, sound at %d Hz\n", name, shownAv, rate);
                     continue;
                 }
+                // SAID: a console log that showed only the software path gave
+                // no way to tell a missing copy from a player that refused it
+                // (avOpen names its own failures)
+                std::printf("  %s: no hardware copy at %s - decoding the MPEG-1 in software "
+                            "(scripts/vita-movies.sh makes one)\n", name, mp4.c_str());
             }
 #endif
             const auto real = fs.resolve(name);
