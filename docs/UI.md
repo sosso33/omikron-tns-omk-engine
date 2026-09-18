@@ -3850,6 +3850,14 @@ examine pages and the save panel's three refusals. Its record reads cleanly:
 parent `0x004E3018`, five lists, of which the body and the footer are the
 shop's own re-used at a different Y.
 
+**And the shop always has something to sell.** `inventory.add` (opcode 50)
+with **2** in its list field names **49 distinct objects** across `IAM\AREA`
+and `IAM\SCENE`, and **49 of those 49** carry a second bracketed section in
+their `IAM\OBJECT` description — there is not one memo the scripts hand out
+whose clue is missing. (59 records in the file carry the shape; the ten the
+scripts never give are the remainder.) So `Aucun indice disponible` is the
+state before the first memo, not a shipped dead end.
+
 **Two things read and deliberately NOT ported**, because the code does not
 settle them:
 

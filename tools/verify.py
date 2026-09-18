@@ -12925,6 +12925,16 @@ def c_engine_hint_shop():
     as an unknown directive, so the line reads correctly on screen. Asserted
     here rather than tidied away.
 
+    **AND THE SHOP ALWAYS HAS SOMETHING TO SELL.** The survey left open
+    whether object list 2 ever holds a hint in a shipped playthrough; it does,
+    and the two halves come from different files. `inventory.add` (opcode 50)
+    with list 2 in field 0 names **49 distinct objects** across `IAM\AREA` and
+    `IAM\SCENE`, and **49 of those 49** carry a second bracketed section in
+    their `IAM\OBJECT` description - there is not one memo the scripts hand
+    out whose clue is missing. (59 records in the file carry the shape; the
+    ten the scripts never give are the remainder.) So the empty page below is
+    the state before the first memo, not a shipped dead end.
+
     NOT ported, and labelled: the interface SOUND `Acheter` might play (no
     call is traced), and the row selection has no effect on what is shown or
     sold - `dword_4E2B4C` is written only by the two builders, from a
@@ -12967,6 +12977,38 @@ def c_engine_hint_shop():
                "k*10,k28*4,k*8,k208*4,k*8,k28*4,k*8,k28*4,k*20", 80)
     none = run([], "k*10,k28*4,k*8,k208*4,k*8,k28*4,k*20", 70)
 
+    # ---- and the CORPUS behind it: what ever reaches object list 2 ------
+    #
+    # `inventory.add` is opcode 50 and its FIELD 0 is the list (the same
+    # selector ops 49 and 51 take), so the sites that fill the memo journal
+    # are the ones whose field 0 is 2. Every id they name is then looked up
+    # in `IAM\OBJECT` - 1002 records of 2048 bytes, the description a C
+    # string at `+0x118` - and counted for a SECOND bracketed section, which
+    # is what `sub_43FEA0(1, ...)` cuts out and what a purchase reveals.
+    import dialog_disasm as _D, script_dump as _S
+    from dialog_triggers import archive as _arch
+    given = set()
+    for arch in ("AREA", "SCENE"):
+        chunks = _arch(omkpaths.data("IAM/" + arch))
+        for ci, blk in sorted(chunks.items()):
+            if len(blk) < 100: continue
+            try: scripts = _S.scripts_of(arch, ci)[1]
+            except Exception: continue
+            for _lab, off in scripts:
+                try: ops, _st = _D.disasm(blk, off, len(blk))
+                except Exception: continue
+                for _pc, op, raw in ops:
+                    if op == 50 and len(raw) >= 4:
+                        lst, obj = struct.unpack_from("<hh", raw, 0)
+                        if lst == 2: given.add(obj)
+    objs = open(omkpaths.data("IAM/OBJECT"), "rb").read()
+    def clued(i):
+        o = i * 2048 + 0x118
+        end = objs.find(b"\0", o)
+        d = objs[o:end if 0 <= end < o + 1024 else o + 1024]
+        return d.count(b"[") >= 2 and d.count(b"]") >= 2
+    withClue = sum(1 for i in sorted(given) if 0 <= i < len(objs) // 2048 and clued(i))
+
     def find(lines, needle):
         for ln in lines:
             if needle in ln: return ln
@@ -12987,6 +13029,7 @@ def c_engine_hint_shop():
         find(poor, "assez"),
         find(none, "variable 198"),
         find(none, "0 rows"),
+        (len(given), withClue),
     )
     want = (
         "indices: variable 198 = 3 anneaux, object list 2 holds 2 hints",
@@ -13006,13 +13049,16 @@ def c_engine_hint_shop():
         "indices: variable 198 = 3 anneaux, object list 2 holds 0 hints",
         "indices: the shop, 0 rows, list 1, 1 items drawn; body '-' | price '-' | "
         "foot 'Aucun indice disponible' | done '-'",
+        (49, 49),
     )
     return got, want, \
            "the hint shop end to end: the price (GLOBAL+72's variable 198, set to 3 " \
            "by the one message-25 handler), the rows out of object list 2, the " \
            "purchase confirm's price line, the payment off the player record's " \
            "+174 and the CLUE it reveals - then the refusal at 2 anneaux and the " \
-           "empty shop, all four texts read back from what the composer drew"
+           "empty shop, all four texts read back from what the composer drew - " \
+           "and the corpus behind it, the objects `inventory.add` ever puts in " \
+           "list 2 and how many of them carry a clue to sell (49 of 49)"
 
 
 def c_engine_terminal_family():
