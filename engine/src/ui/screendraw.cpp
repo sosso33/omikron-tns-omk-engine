@@ -922,8 +922,18 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                 // entire. Extracted once and used for both the measure and
                 // the draw, since the scroll bound is measured from what is
                 // actually laid out.
-                const std::string body = it.textArg >= 0
-                    ? extractTextSection(examine_, it.textArg) : *examine_;
+                // ...and the SECTION a builder wrote over the record's `+30`,
+                // when there is one. The hint shop's body box ships -1 and
+                // is driven to 0 (the memo) or 1 (the clue it sells).
+                int sectionArg = it.textArg;
+                if (section_) {
+                    const auto sc = section_->find(it.addr);
+                    if (sc != section_->end()) sectionArg = sc->second;
+                }
+                const std::string body = sectionArg >= 0
+                    ? extractTextSection(examine_, sectionArg) : *examine_;
+                if (reportText_ && reportText_->count(it.addr))
+                    out.itemText[it.addr] = body;
                 TextBlock probe = blk;
                 probe.measureOnly = true;
                 const int total = lay_->layOutBlock(nullptr, body, probe);
@@ -1702,6 +1712,7 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             row.blinkOn = blink;
             row.screenW = fb.w;
             row.screenH = fb.h;
+            if (reportText_ && reportText_->count(it.addr)) out.itemText[it.addr] = s;
             BlockResult rr;
             lay_->layOutBlock(&fb, s, row, &rr);
             // `drawRun` returned the pen ADVANCE, not a pixel count - the

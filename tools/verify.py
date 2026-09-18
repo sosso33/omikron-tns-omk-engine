@@ -12908,6 +12908,199 @@ def c_engine_high_score():
             "blank, page 1 is the fixture")
 
 
+def c_engine_hint_shop():
+    r"""`omk-play`: `Indices`, THE HINT SHOP on the SAVE screen.
+
+    `todo/pending/ui-remainder-survey.md` 2a. Screen 30's root panel carries
+    three buttons and the middle one, `Indices`, descends into 0x004E3018 -
+    a panel nothing here modelled, so the port drew five blank rows, a blank
+    body and a footer reading `Indice achete !`, the one string the shop's
+    own builder HIDES.
+
+    **What it sells, and the price, are two independent readings that agree.**
+    `sub_4AE120`'s first instruction is `Game_HandleEvent(42)`, whose whole
+    arm is `Message_RunHandlers(25, area, -1)` and then
+    `Var_Get(*(int16 *)(GLOBAL + 72))`. `GLOBAL + 72` is **198**, and the
+    only message-25 subscription in the shipped data - `IAM\GLOBAL`'s, at
+    offset 5006 - is `set.var.i8 198, 3; end`. Two sides that could disagree
+    and do not: **a hint costs three anneaux.**
+
+    The ROWS are `sub_42ADD0(rows, 0, 2)` - OBJECT LIST 2, the memo journal,
+    the same list and the same call the sneak's `Memoire` page makes - and
+    what a purchase reveals is the SECOND bracketed section of the selected
+    memo's description, the CLUE `engine: sneak memos` already found in 37 of
+    `IAM\OBJECT`'s 1002 records. `Acheter` is `Game_HandleEvent(38, {price})`,
+    and case 38 has an arm for exactly this list: `u16(player + 174) -= price`
+    with a refusal when there is not enough. No object changes hands.
+
+    Three runs from the apartment's save point (AREA 237's zone 4107, which
+    is where `traces/save-appart.bin` was written), at 320x240 because
+    nothing here reads a pixel:
+
+    * **rich** - `--rings 5 --give 2:913,2:915` - walks shop, confirm,
+      `Acheter`. The shop shows memo 913's section 0 and the ring count; the
+      confirm shows the price and hides the body; the purchase pays 3, shows
+      section 1 (the Lahoreh riddle) and `Indice achete !`, and hides
+      everything else.
+    * **poor** - the save's own **2** anneaux against a price of 3. The row's
+      confirm does NOT install the confirm panel: it rewrites the footer
+      item's string id to 8 in place, so the page stays put under `Je n'ai
+      pas assez d'Anneaux pour faire ca !`.
+    * **empty** - no memos at all. `dword_4E2B08` is 0, so the builder puts
+      the focus on list **1** (the body box, skipping the rows) and the
+      footer's first arm prints string 5.
+
+    **Every text on these lines is read back out of `ScreenFrame::itemText`**
+    - the string the COMPOSER laid out, not the map the viewer handed it - so
+    an item the builders hid has no entry and shows as `-`. Three of the four
+    are `-` on a correct page, which is the half a handed-over map cannot say
+    (CLAUDE.md 1, the log-line rule).
+
+    **And the `{TEXT ERROR!}` on the price line is the ENGINE's, transcribed.**
+    `sub_4AE340` calls `Ui_ItemStringDefault` on item 0x004E2C38, whose bank C
+    carries no `0x200` and whose `+30` is **0** - so the string goes through
+    `sub_43FEA0(0, ...)`, the section extractor, and `Cet indice te coutera :`
+    has no brackets at all. The function's own failure arm writes
+    `{TEXT ERROR!}` and then the whole string; the layout swallows the brace
+    as an unknown directive, so the line reads correctly on screen. Asserted
+    here rather than tidied away.
+
+    **AND THE SHOP ALWAYS HAS SOMETHING TO SELL.** The survey left open
+    whether object list 2 ever holds a hint in a shipped playthrough; it does,
+    and the two halves come from different files. `inventory.add` (opcode 50)
+    with list 2 in field 0 names **49 distinct objects** across `IAM\AREA` and
+    `IAM\SCENE`, and **49 of those 49** carry a second bracketed section in
+    their `IAM\OBJECT` description - there is not one memo the scripts hand
+    out whose clue is missing. (59 records in the file carry the shape; the
+    ten the scripts never give are the remainder.) So the empty page below is
+    the state before the first memo, not a shipped dead end.
+
+    NOT ported, and labelled: the interface SOUND `Acheter` might play (no
+    call is traced), and the row selection has no effect on what is shown or
+    sold - `dword_4E2B4C` is written only by the two builders, from a
+    selection `sub_42ADD0` has just reset to 0, and the row list's hook is
+    the generic `sub_42AFF0`, which cannot write a page global. So the page
+    shows and sells the FIRST memo's clue whatever is highlighted. Read from
+    the code; the check pins it by never moving off row 0.
+
+    SHOWN TO FAIL: make `Acheter` write section 0 instead of 1 - the body
+    then repeats the memo the shop already showed instead of the clue, and
+    the `bought` row changes.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))
+            and os.path.exists(save)):
+        return ("skipped",), ("skipped",), "engine/, gamedata/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    base = [play, fr, os.path.join(ROOT, "tables"), "--save", save, "--slot", "0",
+            "--software", "--nofmv", "--nodelay", "--no-crowd", "--res", "320x240"]
+
+    def run(extra, hold, frames):
+        r = subprocess.run(base + extra + ["--frames", str(frames), "--hold", hold],
+                           capture_output=True, env=env)
+        text = r.stdout.decode("cp1252", "replace")
+        return [ln.strip() for ln in text.splitlines() if ln.startswith("indices:")]
+
+    # ENTER opens screen 30, DOWN reaches `Indices`, then one ENTER a page.
+    rich = run(["--rings", "5", "--give", "2:913,2:915"],
+               "k*10,k28*4,k*8,k208*4,k*8,k28*4,k*8,k28*4,k*8,k28*4,k*20", 90)
+    poor = run(["--give", "2:913,2:915"],
+               "k*10,k28*4,k*8,k208*4,k*8,k28*4,k*8,k28*4,k*20", 80)
+    none = run([], "k*10,k28*4,k*8,k208*4,k*8,k28*4,k*20", 70)
+
+    # ---- and the CORPUS behind it: what ever reaches object list 2 ------
+    #
+    # `inventory.add` is opcode 50 and its FIELD 0 is the list (the same
+    # selector ops 49 and 51 take), so the sites that fill the memo journal
+    # are the ones whose field 0 is 2. Every id they name is then looked up
+    # in `IAM\OBJECT` - 1002 records of 2048 bytes, the description a C
+    # string at `+0x118` - and counted for a SECOND bracketed section, which
+    # is what `sub_43FEA0(1, ...)` cuts out and what a purchase reveals.
+    import dialog_disasm as _D, script_dump as _S
+    from dialog_triggers import archive as _arch
+    given = set()
+    for arch in ("AREA", "SCENE"):
+        chunks = _arch(omkpaths.data("IAM/" + arch))
+        for ci, blk in sorted(chunks.items()):
+            if len(blk) < 100: continue
+            try: scripts = _S.scripts_of(arch, ci)[1]
+            except Exception: continue
+            for _lab, off in scripts:
+                try: ops, _st = _D.disasm(blk, off, len(blk))
+                except Exception: continue
+                for _pc, op, raw in ops:
+                    if op == 50 and len(raw) >= 4:
+                        lst, obj = struct.unpack_from("<hh", raw, 0)
+                        if lst == 2: given.add(obj)
+    objs = open(omkpaths.data("IAM/OBJECT"), "rb").read()
+    def clued(i):
+        o = i * 2048 + 0x118
+        end = objs.find(b"\0", o)
+        d = objs[o:end if 0 <= end < o + 1024 else o + 1024]
+        return d.count(b"[") >= 2 and d.count(b"]") >= 2
+    withClue = sum(1 for i in sorted(given) if 0 <= i < len(objs) // 2048 and clued(i))
+
+    def find(lines, needle):
+        for ln in lines:
+            if needle in ln: return ln
+        return ""
+
+    def short(ln, n=60):
+        # the body texts are long and carry the game's own punctuation; the
+        # opening of each is enough to name WHICH memo section it is
+        at = ln.find("body '")
+        return ln[:at] + "body '" + ln[at + 6:at + 6 + n] if at >= 0 else ln
+
+    got = (
+        find(rich, "variable 198"),
+        short(find(rich, "the shop, 2 rows"), 40),
+        find(rich, "the purchase confirm, 2 rows, list 0"),
+        find(rich, "paid 3 anneaux"),
+        short(find(rich, "list 1, 1 items drawn"), 40),
+        find(poor, "assez"),
+        find(none, "variable 198"),
+        find(none, "0 rows"),
+        (len(given), withClue),
+    )
+    want = (
+        "indices: variable 198 = 3 anneaux, object list 2 holds 2 hints",
+        "indices: the shop, 2 rows, list 0, 3 items drawn; "
+        "body 'Ces symboles sont certainement la cl\xe9 de",
+        "indices: the purchase confirm, 2 rows, list 0, 4 items drawn; body '-' | "
+        "price '{C}{TEXT ERROR!}Cet indice te co\xfbtera : 3' | "
+        "foot '{C}Anneaux en votre possession : 5' | done '-'",
+        "indices: paid 3 anneaux, 2 left on the player record's +174",
+        "indices: the purchase confirm, 2 rows, list 1, 1 items drawn; "
+        "body 'D'Ymarli la carte est la cl\xe9",
+        "indices: the shop, 2 rows, list 0, 3 items drawn; body 'Ces symboles sont "
+        "certainement la cl\xe9 de quelque chose, mais je pourrais m'amuser avec toute "
+        "la journ\xe9e et ne rien trouver... Il doit y avoir un moyen de comprendre "
+        "\xe0 quoi ils servent. ' | price '-' | "
+        "foot 'Je n'ai pas assez d'Anneaux pour faire \xe7a !' | done '-'",
+        "indices: variable 198 = 3 anneaux, object list 2 holds 0 hints",
+        "indices: the shop, 0 rows, list 1, 1 items drawn; body '-' | price '-' | "
+        "foot 'Aucun indice disponible' | done '-'",
+        (49, 49),
+    )
+    return got, want, \
+           "the hint shop end to end: the price (GLOBAL+72's variable 198, set to 3 " \
+           "by the one message-25 handler), the rows out of object list 2, the " \
+           "purchase confirm's price line, the payment off the player record's " \
+           "+174 and the CLUE it reveals - then the refusal at 2 anneaux and the " \
+           "empty shop, all four texts read back from what the composer drew - " \
+           "and the corpus behind it, the objects `inventory.add` ever puts in " \
+           "list 2 and how many of them carry a clue to sell (49 of 49)"
+
+
 def c_engine_terminal_family():
     r"""`omk-play`: Kay'l's TERMINAL and the FIGHT SIMULATOR - the keypad family.
 
@@ -21420,9 +21613,19 @@ def c_ui_geometry():
     menuMap = bool(menu and menu[0]["tiles"])
     lift = [p for p in r["panels"] if p["screen"] == 4]
     xy = [(it["x"], it["y"]) for l in lift[0]["lists"] for it in l["items"]][:7] if lift else []
+    # 718/718/717/58 -> 725/725/724/59 on 2026-09-18, and every one of the
+    # four is the HINT SHOP's purchase confirm 0x004E3080 joining
+    # `exetables.py`'s CODE_NAMED: one panel, seven widgets (two buttons, the
+    # body box, the price line, the footer's two and the backdrop), all seven
+    # inside 640x480 and all seven with a positive width and height. The map
+    # counts do NOT move - it ships `+76 = 0x40001800` with no tile array at
+    # all - and neither does any BEHAVIOURAL element below: the map lengths,
+    # the start menu's missing map and the LIFT's seven coordinates are
+    # untouched. A census of a table that deliberately grew, re-derived rather
+    # than accepted (`todo/sweep-log.md`'s fifth-census note).
     return (len(items), inb, sized, len(r["panels"]), len(maps), lens, clean,
             menuMap, xy), \
-           (721, 721, 720, 59, 41, [80], 41,
+           (728, 728, 727, 59, 41, [80], 41,
             False,
             [(278, 194), (321, 194), (370, 194),
              (284, 241), (325, 242), (371, 242), (325, 288)]), \
@@ -37685,6 +37888,7 @@ SLOW = [
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),
     ("engine: xachen", c_engine_xachen, "todo/missing-ui 5d"),
     ("engine: high score", c_engine_high_score, "todo/missing-ui 5e"),
+    ("engine: hint shop", c_engine_hint_shop, "todo/pending/ui-remainder-survey 2a"),
     ("engine: terminal family", c_engine_terminal_family, "todo/missing-ui 3"),
     ("engine: water entry", c_engine_water_entry, "todo/swimming.md 1"),
     ("engine: fight library", c_engine_fight_library, "todo/fight-mode 15.2"),

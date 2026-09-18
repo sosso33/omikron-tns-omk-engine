@@ -156,6 +156,10 @@ struct ScreenFrame {
     //
     // -1, -1 means the item was not drawn as a sprite at all this frame.
     std::map<std::uint32_t, std::pair<int, int>> spriteSrc;
+    // THE TEXT EACH ASKED-ABOUT ITEM WAS LAID OUT WITH - one entry per item
+    // named in `setReportText`, and an item that drew no text at all has
+    // none, which is the half a handed-over map cannot say.
+    std::map<std::uint32_t, std::string> itemText;
     // FNV-1a of the whole framebuffer. The counts above say what was drawn;
     // this says WHERE, and it is the only field that moves when a glyph
     // shifts by a pixel - without it the check reported "4 centred" whether
@@ -326,6 +330,21 @@ public:
     // serve both without guessing which field a caller meant, so there are
     // two - and `spriteSrc` reports whichever was used either way.
     void setItemLitSource(const std::map<std::uint32_t, std::pair<int, int>>* m) { litMoved_ = m; }
+    // ...and an item's SECTION INDEX, `+30`, when a builder has written it
+    // over the record's. The hint shop is the case: item 0x004E2B10 ships
+    // `+30 = -1` (draw the description whole) and both of its pages'
+    // builders write 0 - the memo - while `Acheter` writes 1, the CLUE. The
+    // field is a static record in the engine, so it cannot be read off the
+    // widget tree at all once anything has moved it.
+    void setItemSection(const std::map<std::uint32_t, int>* m) { section_ = m; }
+    // ITEMS THE CALLER WANTS THE DRAWN TEXT OF, by address - the same shape
+    // as `setItemSource`/`spriteSrc`, and for the same reason. What a row
+    // finally lays out is decided HERE: the run-time text wins over the
+    // string id, an item with neither draws nothing, and a hidden one is
+    // skipped before any of that. A log line built from the map a caller
+    // HANDED over reports the intention; this reports the output, and an
+    // item that drew nothing simply has no entry.
+    void setReportText(const std::set<std::uint32_t>* s) { reportText_ = s; }
     // THE HIGH-SCORE ROWS. Twenty (name, milliseconds) pairs - four pages of
     // five - out of the SAVE HEADER's +724, and which page the panel hook has
     // stepped to. Null means the screen draws its title and nothing else,
@@ -426,6 +445,8 @@ private:
     const std::map<std::uint32_t, std::pair<int, int>>* moved_ = nullptr;
     const std::map<std::uint32_t, std::pair<int, int>>* srcMoved_ = nullptr;
     const std::map<std::uint32_t, std::pair<int, int>>* litMoved_ = nullptr;
+    const std::map<std::uint32_t, int>* section_ = nullptr;
+    const std::set<std::uint32_t>* reportText_ = nullptr;
     const std::array<std::pair<std::string, int>, 20>* scores_ = nullptr;
     int scorePage_ = 0;
     const CityMapView* cityMap_ = nullptr;
