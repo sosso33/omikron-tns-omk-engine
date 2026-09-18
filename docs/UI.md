@@ -837,6 +837,38 @@ to a door or a lift — and a player reported exactly that: *"I tried using the
 Kay'l apartment key on the lift leading to his apartment, it doesn't work."*
 The port had the two arms the wrong way round and beeped instead.
 
+#### ...and the consumable arm HEALS, and `Utiliser sur` is not a use at all (2026-09-18)
+
+Three faults a player found in one session (*"Utiliser sur does not work
+correctly (it means using on another object in the sneak, not interacting with
+the environment) / impossible to use health items"*), each read in the
+listing and each fixed:
+
+* **The consumable arm is `Object_ApplyEffect` (0x00409780), and its
+  consumable half is small.** `rec+6` names the property (6 is `Vie`),
+  `rec+8` is ADDED to it through the actor property getter and setter, and a
+  sum past 0xFFFF becomes 0xFFFF; then case 35 removes the row
+  (`ObjectList_RemoveAt(0, row)`). A *Petit medikit* takes `Vie` 10 -> 30.
+  The sound is interface sound **13** of the 45-row table (`SNK012`), not a
+  slot of the screen's own. The valuables half (`rec+4 & 0x20`) is still
+  only announced.
+* **`Utiliser sur` is `sub_49BF30`, which opens the COMBINE and returns.**
+  It never reaches `sub_42B470`, so it never makes the use decision; treating
+  it as a use sent the object in hand and closed the device on the same press.
+* **Both combine slots hold a carried-list ROW**, not an object id:
+  `sub_49BC60` reads the widget's row tag and case 37 maps it through the
+  list. Box + key gives the open box (18 + 7 -> 33), the shipped recipe.
+* **The combine's tail**, `loc_49BDFB` / `loc_49BE51`: on success
+  `sub_42ADD0(rows, -1, -1)` and interface sound **12** (`SNK009`); on failure
+  text 35 through oscillator 0, the echo bar's five-second message; on both,
+  back to the inventory page (`sub_42A370(screen, 0x4DEE50)`) and
+  `sub_428FF0(0x4DE278, 0x40000002, 0)`, which puts out `Utiliser sur`'s own
+  flash - without it the verb blinks on as if still selected.
+
+Not ported, labelled: the failure's text 35 (the echo bar's transient arm has
+no writer in the port yet). `verify.py: engine: sneak verbs`, shown to fail
+four ways (the verb guard, the property write, the row unit, the flash clear).
+
 #### ...and the half that reaches the WORLD is a MESSAGE
 
 `sub_49BEA0` calls `sub_42B420` *and then* `sub_42B470`, and the first is the
@@ -863,6 +895,7 @@ used — you cannot just walk around with the key in your hand."*
 and never called — its own comment said "nothing in the Session POSTS a message
 yet". `Utiliser` is what posts one.
 
+*(The consumable half is ported since 2026-09-18 - the section below.)*
 Neither arm's *effect* is ported beyond that: `Object_ApplyEffect` is `named` in
 `readable/INDEX.md` with its body still as generated, and the hand attach
 reaches into the actor runtime. What is ported is the message, which arm runs
@@ -2842,6 +2875,47 @@ The two already-read writers re-derive from the same enumeration: the **LIFT**
 (`UI_GridMenuInput`) answers `slot − 1` with slot 0 giving **6**, and the start
 menu's `Confirmer` answers **1**, gated on a non-empty name field (§3f).
 
+#### ...and the family WORKS - the display, the keypad, the header, and what an entry unlocks (2026-09-17/18)
+
+The answer table above was all the port had, so the terminal opened with its
+artwork and nothing could be read or chosen. Four functions, each read from
+the raw image (none has a `proc` label):
+
+* **the display**, `textFn` `0x004AF5D0`: two state queries, then a
+  seven-case jump table on the same fixed parameter, each arm one string of
+  the screen's own file - TERMINAL `IAM\Term` 12 (Kay'l's dossiers), FIGHT SIM
+  `IAM\Fsim` 5, MORGUE `IAM\Morg` 6, ARCHIVES `IAM\Arch` 5, and `IAM\Surv` 1 /
+  3 / 2 for the three SURV screens. The two query branches (strings 11 and 4 /
+  6) sit behind `sub_42B5E0(6)`/`sub_42B5F0`, an object lookup not read;
+  the default arm is what a first visit takes;
+* **the keypad**, list hook `sub_4AF300`: a 3x3 grid, a `0` cell (9) and the
+  big button (10). UP from 10 goes to 9 and from 9 to 7, nothing from the top
+  row, else -3; DOWN from the bottom row to 9, 9 to 10, else +3; LEFT/RIGHT
+  wrap inside a row and do nothing on 9 and 10. It returns 1 only when the
+  selection moved, so a confirm falls through to the activate callback above;
+* **the header bar**, `textFn` `0x004AF5A0`: `unk_4E3FE0` is the keypad's own
+  list (eleven items, `word_4E3FE2` its selection, `off_4E3FEC` its item
+  array), and the function hands the GENERIC string callback the item the
+  cursor is on - so the bar is the label of the highlighted cell (TERMINAL
+  strings 5..10, FIGHT SIM 0..2, ARCHIVES 0..3, MORGUE 0..4, the SURV screens
+  none). It is the lift's shape: a widget whose text belongs to another;
+* **the terminal's answer on the way OUT**, `sub_4AF0E0`:
+  `dword_68A600 ? 2 + (dword_68A5FC != 0) : (dword_68A5FC != 0)`.
+
+**What an entry unlocks.** AREA 179's script (Kay'l's office) branches on that
+answer: 1 sets `1-A-CS SecretFile` and, first time, plays *ZVO P251*, *DATA
+MEMORIZED* and gives memo 003; 2 sets `Dossier Bar` and `Mission Bar 56`,
+gives memo 056 and `address.enable 33` - **'Anekbah - Bar Zone 52'**. So
+reading a dossier OPENS A PLACE. Which row sets which of the two globals rests
+on the case-0 reading above, not on a fresh transcription.
+
+`verify.py: engine: terminal family` (the display, the walk, the answer, the
+header on two cells, `ADDRESS 33 ENABLED`), shown to fail by putting the keypad
+hook back among the unmodelled ones and by cutting the header off the
+composer. Still unread: the per-dossier BODY - the display does not yet switch
+to the chosen dossier (`IAM\Term` 0..4). The route is in `todo/missing-ui.md`
+§3.
+
 #### Which screens the writers serve, and the one cross-check that works
 
 A site belongs to the callback it sits in, and the widget tree names the
@@ -3135,6 +3209,64 @@ of a location is as likely to be staged for a screen as misplaced. Check what
 is under his feet before calling it a placement fault.
 
 ---
+
+### 3k. The special screens — GANDHAR'S DOOR, DEN'S LOCKER, XACHEN and the HIGH-SCORE board (2026-09-18)
+
+Screens with one `ui.open` site each, and each stopped the same way the
+terminal did: a native list hook the walk did not model, which makes it refuse
+every press, and an item callback that writes the answer. All their hooks were
+read from the raw image - none has a `proc` label - and each is ported, run and
+checked. The routes into each are in `todo/missing-ui.md` §5.
+
+**12 `GANDHAR DOOR`** (AREA 81) - `sub_4AFE90` moves a cursor over a **6x6
+grid**, rewriting the item's place to `col * 63 + 135`, `row * 63 + 61` (its
+authored place is the grid's origin) and its `+3C` to `(row << 16) | col`.
+`sub_4AFF90`, the press, drops the next of four marker widgets on the cell and
+ORs one bit of `byte_68A60C` for four cells - (0,5), (1,3), (4,2), (5,4).
+Mask **0x0F** answers **1**. The bits are ORed, so the symbols may come in any
+order. `verify.py: engine: gandhar door`.
+
+**13 `DEN`** (SCENE 43 over AREA 146, zone 2417 `Cache`) - one hook,
+`sub_4AFBE0`, both moves and answers; the screen has no item callback. UP/DOWN
+spin the wheel under the hand, LEFT/RIGHT move the hand - and they move it by
+the **list's own selection** (`word [esi+2]`), which is also what the draw's
+"lit = selected" reads. A wheel shows its digit through its UNLIT source,
+`digit * 46` into `+0x12`, over the strip of figures at x = 0 of `DEN00.BMP`,
+and the wheel under the hand blinks on `Ui_Oscillator(1)`. **The combination
+is compiled in: 7 2 1 3**, tested on the four wheels' `+3C` the moment the
+last one lands, answer **1**, no confirm. The zone is disabled by the chunk's
+own startup script until `VARIABLES[482] 'Cache Trouvee'` is 1. On the answer
+the script shows the cassette, the ventilation pass and the plan.
+`verify.py: engine: den locker`.
+
+**14 `XACHEN`** (AREA 58, zone 1130 `Cartouches`, Dakobah's cartridges) -
+`sub_4AF9D0`. A button's `+3C` is a POINTER to its symbol widget, written by
+the screen's open callback; a press steps the symbol's value along
+`dword_4E42E8`, a fourteen-entry ring that is **not in numerical order**
+(`7, 11, 1, 8, 3, 5, 12, 2, 4, 10, 14, 13, 6, 9`), and writes the value's
+51x23 cell of `Xanoir1.bmp` into the widget's LIT source. The open sets the
+symbols to 1, 2, 3, 4 whatever the record ships; the code at `unk_4E4320` is
+**10, 14, 7, 9**, which from the opening is 7, 3, 10 and 5 presses; answer
+**1**, and the script opens Xendar's door and plays dialog 227.
+`verify.py: engine: xachen`.
+
+**36 `HIGH-SCORE`** (AREA 59, the shooting range) - `sub_4ADA80` moves no
+selection: LEFT/RIGHT step the screen's own `+4` through four pages.
+`sub_4ADAD0`, the one item's draw hook, IS the screen: `IAM\HScore` string 3
+as the title, string 6 on page 0 or `"%s %d"` of string 5 and the page, then
+five rows `"%d.- %s"` left and `"%d'%02d\"%02d"` right. The rows live in the
+**save file's settings header**, `byte_90E180 + 724`, four pages of five
+36-byte records with the time in milliseconds at `+0x20` -
+`docs/GAME_STATE.md` §8a. The screen answers nothing.
+`verify.py: engine: high score` writes five names into a copy of the save
+fixture and reads them back off the drawn screen.
+
+**Not ported, and labelled in each source**: the interface sounds these
+screens play and the oscillator-5 timers their success arms start (in the
+engine Den's wheels blink for two seconds, XACHEN's lamps for four, before the
+screen closes; the port closes at once), and the high-score board's last line,
+behind the same unread `sub_42B5E0(0)`/`sub_42B5F0` pair as the terminal's
+query branches. Screen 0, the VIDEOPHONE, is the one left of the survey.
 
 ## 3e. The inventory screen's data channel — `Game_HandleEvent` 25..42
 
@@ -3463,6 +3595,29 @@ confirm answers **`slot − 1`, with slot 0 giving 6** — so slot 1, "Niveau 0"
 the entrance, answers **0**, and slot 0, "Niveau 1", the only floor above
 ground, answers **6**. All **18** `ui.open 4` sites store that in variable
 **496, `Etage`**.
+
+#### ...why it never arrived: the zone scan has a HEIGHT (2026-09-17)
+
+AREA 157's lift zones stack over one footprint, one pair per level up the
+shaft. `Zone_ContainsPoint` (0x0048C880) tests the quad in x and z only - it
+takes the y and never reads it - so **the filter is the iterator**:
+`Actor_ScanZones` seeds `sub_431D40` with the actor's (x, y, z) and it builds
+a box of `+88` in all three axes, and only zones at his height are yielded.
+Without that the port armed every level's lift zone at once, five scripts
+parked on five `ui.open 4`, and the one answer went to the wrong one.
+**Reconstruction, labelled**: the port bands by the quad's own y extent plus a
+metre, not the record's `+88` radius, which is unread; over all 4558 zones the
+quad's y spread is 0.0 at the median and zones stacked on one footprint sit a
+median 389.7 apart, so the choice does not decide anything shipped.
+`verify.py: engine: lift`.
+
+**The box under the grid** is one 475x105 text item in font 67 whose text is
+a native `textFn`, `0x004B01C0`, and what it shows is `IAM\Lift`, whose seven
+strings are the seven slots in grid order - `Niveau -2 :` with Kay'l 669, Den
+415 and the rest, `Niveau -4 : ... Bureau du capitaine Léa`. The function's
+body (the inventory channel's event 0x24, then a formatter) is not
+transcribed; the port hands the item the selected slot's string, which is what
+it produces for all seven.
 
 ### The options screen
 

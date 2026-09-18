@@ -2143,6 +2143,39 @@ a fresh one on the way back, so a city came out of a building with **0 of its
 32 programs running and 0 of its 153 ambient emitters bound**, dead for the
 rest of the session (`verify.py: engine: city return`, `todo/omk-play.md` 79).
 
+#### ...and a script plays objects in ITS OWN slot's pool (2026-09-18)
+
+`scx.play.wait` (0x004031E0) - and the rest of the `scx.play*` family -
+resolves its object id through `dword_69BC48[ctx+1F * 16]`: the container of
+the slot the RUNNING CONTEXT belongs to (`+1F`, the context's slot byte), not
+the scene loaded last. A scene-local id means nothing in another scene's
+file (CLAUDE.md §1's trap, at run time).
+
+The shipped case that shows it is Captain Léa's call. SCENE 45, loaded over
+the security centre's shaft (AREA 157), disables level -4's own car zone and
+takes the lift over with zone 2636: `ui.open 4`, then on `Etage == 4` close
+the -2 door, `area.goto 181`, `area.arrive -1` - and only then
+`scx.play.wait obj 0x0012`, the level -4 door. By that line `lev-4.SCX` is
+resident in the other slot; the context is the shaft's, so `0x12` is the
+shaft's door. Every other ride worked by ORDER - the car zone's enter script
+started the door a frame before the swap - which is why a ride without the
+call could never show it. The port had handed every `scx.play*` to the newest
+pool and the door stayed shut; `Session::poolForSlot` is the engine's rule,
+and a context parked on a program remembers which pool it is parked in.
+`verify.py: engine: slot pool` reads the door's drawn vertex buffer:
+`moved 0.0` without the rule, 87 units open with it.
+
+**And a node stays where a program put it.** `Script_MoveObjectOnPath`
+(0x0046F400) ends in `o3de_SetNodePos` and returns - no restore - so a door
+opened by a program stays open after the program ends. Over the corpus, 1277
+of the 2315 objects that move a node and end leave it displaced, and 1239 of
+those 1277 have a LINKED partner state (`CSPorte79hopen` /
+`CSPorte79hclosed`) - the data's own argument, since a partner that runs the
+path back would otherwise be redundant. The port had no record of a node's
+position at all and was right by omission, except for the 35 shipped meshes a
+scene both scales and moves, which snapped back to their authored place every
+frame. `verify.py: engine: node rest`.
+
 ### Two resident slots
 
 The engine keeps **two** areas loaded. The table at `0x0069BC40` is two 16-byte
@@ -2292,6 +2325,32 @@ every shown soup, and it raises `playerOnArea` the way `Walk_ProbeGround`
 raises event 9. The viewer draws every shown slot and keeps the player across
 the change. `verify.py: engine: airlock walk` — shown to fail under the
 one-set model (2 and 2 read 1 and 1).
+
+### A HIDDEN set is still SOLID, and its floor turns the player back (2026-09-18)
+
+Show and hide (`sub_419AF0` / `sub_419A90`) only link a decor into and out of
+the RENDER list (`sub_441170` / `sub_441200`). The COLLISION array is a
+separate list: a set joins it when it finishes loading (`sub_443300`, in
+`sub_4195C0` right after `Area_LoadSet`) and leaves it only on unload or
+eviction (`sub_443320`), and `o3de_ForEachMeshInBox` walks that array. So a
+hidden set keeps its walls.
+
+And its floor refuses him. `Walk_ProbeGround`'s tail (0x00467030), read whole:
+when the floor under the actor belongs to another scene, a slot in state 2
+relinks him and raises event 9 (the section above); a slot in **state 1**
+gets `o3de_MoveNodeBy(node, -(this frame's move))` - the step is undone.
+
+That is the security centre's whole design. Each level's corridor is the
+SHAFT's set (`ACSpuits.3DO`: the landings `CSNivo-N`, the lift cars `CSPont*`,
+the shaft doors - 99 meshes), and `ACSlev-N.3DO` holds only that level's
+furniture and doors, loaded and hidden until a door zone's
+`area.goto 181, 22, 23` brings it in. Its walls hold him in the corridor and
+its floor turns him back. The port had dropped a set from collision when it
+hid it, and a player went through the barriers; it now keeps every loaded
+set solid, draws only the shown ones, raises event 9 only for a shown one,
+and undoes a step onto a hidden one's floor. The rails themselves also needed
+the body sweep to meet EDGES (`docs/ASSETS.md` §7, the walker);
+`verify.py: engine: security rail`.
 
 ### The objects are doors
 
