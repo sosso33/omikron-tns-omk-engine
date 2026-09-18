@@ -102,6 +102,24 @@ int main(int, char**) {
     std::printf("\n");
     std::fflush(stdout);
 
+    // THE SHADER COMPILER. vitaGL compiles GLSL at run time with Sony's
+    // `libshacccg.suprx`, which only comes extracted from a console - and when
+    // it is not there, vitaGL (at the SDK's commit) does not refuse: its
+    // `glLinkProgram` goes on with a NULL program and faults inside SceGxm
+    // (a console crash dump, 2026-09-18: R0 = 0 at the fault, LR in
+    // glLinkProgram <- GlesRenderer::init). Nothing can draw without it - even
+    // SDL's own renderer is vitaGL shaders - so it is checked HERE, said
+    // plainly in the log, and the game exits instead of crashing.
+    if (!exists("ur0:data/libshacccg.suprx") && !exists("ur0:data/external/libshacccg.suprx")) {
+        std::printf("FATAL: the shader compiler is missing - put libshacccg.suprx at "
+                    "ur0:data/libshacccg.suprx (extract it on the console with "
+                    "ShaRKBR33D or VitaShell's 'Extract libshacccg'); vitaGL cannot "
+                    "compile a shader without it\n");
+        std::fprintf(stderr, "FATAL: ur0:data/libshacccg.suprx missing\n");
+        sceKernelExitProcess(2);
+        return 2;
+    }
+
     // what the heap actually holds, first - the line a memory report starts
     // from (`arena` is the newlib block reached so far, not its capacity)
     std::printf("heap: %d MB reserved for newlib, %d bytes in use at main\n",
