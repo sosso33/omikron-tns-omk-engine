@@ -62,6 +62,11 @@ public:
     // reversed. Nearest-neighbour, because a filter is a resampler nobody here
     // can check.
     bool nextFrame(Surface& dst);
+    // Decode the next frame and DISCARD it - no conversion, no scaling. An
+    // MPEG frame cannot be skipped undecoded (the next ones predict from it),
+    // but everything after the decode can: this is how a player that has
+    // fallen behind its own sound catches up (`play.cpp`'s movie loop).
+    bool skipFrame();
     long framesDecoded() const { return frames_; }
 
     // One block of interleaved stereo float samples, or an empty span at the
