@@ -1,908 +1,105 @@
-# What to test in play — the pass at `c63a110`
+# What is committed and NOT yet confirmed by a person
 
-Everything below is committed on `main` and passes its own checks, and **none
-of it has been confirmed by a person** except where it says so. Written
-2026-09-07, after four tasks: the sneak's two bugs, `Text_LayOutBlock`, and
-the slider.
+Rewritten 2026-09-18, replacing the previous pass. **Everything below has a
+check behind it and none of it has been played.** Every frame quoted was read
+by eye from a render, which is not the same thing.
 
-**Section 7 was added 2026-09-09** and is a second, later batch: the whole of
-that day's render work — the dither, the shimmer, three shadow qualities,
-per-pixel lighting and supersampling — none of it judged by a person. If you
-have five minutes and not thirty, do 7 and leave 1 to 6.
-
-The order is deliberate — **4 is the one to try first**, because it is the
-whole slider feature end to end and it is new. 1 to 3 are quick and
-independent, 5 needs a save with several objects, and 6 is the harness route
-into the same flight model.
-
-```
-cd engine && make play
-build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
-    --area 0 --stand 1804,0,-6890,336
-```
-
-is the shortest way into Anekbah with the device usable. `--slot 2` on
-`../traces/games-resto.bin` puts you in the restaurant instead.
-
-**Getting around the sneak**, because three of these need it: `TAB` opens it on
-the inventory page with the rows selected. `RIGHT` moves to the tab column and
-`UP`/`DOWN` walk it, `ENTER` opens a page. On the **slider** page the cursor
-starts on the *"Appel du slider"* header, so press `DOWN` to reach the
-destinations. On the **inventory** page `ENTER` on a row drops into the verb
-bar, where `LEFT`/`RIGHT` move between *Utiliser*, *Utiliser sur* and
-*Examiner*.
+The data root on this machine is `~/Documents/omk/fr`. Each command below opens
+a real window; drive it yourself.
 
 ---
 
-## 1. The pause screen still suspends the music — 30 seconds
-
-`ESC` in the street. The music should stop **at once**, not fade out over a
-second, and come back when you leave the screen. The world behind it should
-still be drawn — the pause menu is one of only three screens that keep it.
-
-Fixed 2026-09-07 (`032a2cb`); you reported it and I never heard the verdict, so
-it is here to close rather than because I doubt it.
-
-## 2. The examine page's long text scrolls — 1 minute
-
-`TAB`, `ENTER` on a carried object, `RIGHT` `RIGHT` to *Examiner*, `ENTER`.
-
-* The page should come up **on the text**, not with the highlight on the tab
-  column at the left.
-* `DOWN` should scroll the description 8 pixels a press; `UP` back.
-* At the bottom you should reach the signature line — on the *Notice MK400*
-  that is *"Khonsu, la technologie de demain."* in its own gold face, which
-  **flashes red** about twice a second. Both are correct.
-* The line straddling the top edge should be **cut mid-glyph**, not vanish and
-  reappear.
-
-Wrong looks like: nothing moves at all (the page is standing in the wrong
-list), or the text spills above the box over the device's frame art.
-
-## 3. The wrap and the line spacing, everywhere — 2 minutes
-
-`Text_LayOutBlock` is ported, so this changed the layout of **every** piece of
-interface text at once, not only the examine page. It reproduced the old
-output pixel for pixel wherever nothing wraps, so what to look for is the
-places that *do*:
-
-* a menu row or a shop line whose text is longer than its box — it should now
-  **wrap inside the box** where it used to run off the end in one line;
-* the subtitles under a conversation: the line pitch changed from 19 px to the
-  engine's 20, and a long line breaks in a slightly different place. Look for
-  lines that overlap, or a reply stack that has drifted off its box.
-
-**One thing I could not settle and would like your eye on.** `docs/UI.md`
-recorded from a capture of the original that it fits *about four more lines in
-the same box* than the port did. The engine's own pitch is now read, and it is
-**looser** than the port's old guess (20 against 19, and 20 against 12 for a
-blank line) — so the gap widened rather than closed. If your captures still
-show more lines than this build, the difference is something other than the
-line pitch and I would rather chase it than leave it recorded as a mystery.
-
-## 4. CALL a slider and be TAKEN — the one to try first
-
-**CONFIRMED IN PLAY, 2026-09-08** — three rounds of reports, each fixed and re-tested by the reader; the last: *"ok, it works"*. What follows is kept as the recipe.
-
-Two ways in, and they end differently, exactly as the original does:
-
-**A. Choose a destination.** `TAB`, `RIGHT`, `UP`, `ENTER` (the slider tab),
-`DOWN`, `ENTER` on a row. **You should not move.** The camera should cut to a
-slider spawning at the top of the nearest road and driving down it toward
-you, behind and above it. It stops on the road within about 3 m of the kerb
-nearest you. Now walk to **the door side** and press `ENTER`.
-
-The door side is real, and it is the engine's own test (`MDACTION`
-0x0046AEC0): you must be within **4.00 m** of the seat *and* on the slider's
-own **−X** side, or nothing happens. If nothing happens the viewer says which
-of the two failed — *"he is on the WRONG SIDE"* or *"too far away"*, with the
-distance — so walk around it and try again. **Whether that is the side a
-person would call the door is the thing to judge here**, because the reading
-was settled by three numbers agreeing and not by a picture.
-
-Press `ENTER` on the right side and he is snapped to the door, `H_SLDIN`
-plays (72 frames — the door, the step in, the door shut) with the camera over
-his shoulder from 4 m, and at the end of the clip the slider page opens by
-itself as screen 7 — and because you chose a destination, **it closes again at
-once and the slider drives you there**, you on it, the camera on the vehicle.
-At the destination you are put out and the slider leaves.
-
-**B. "Appel du slider".** Same page, `ENTER` on the header instead of a row.
-A slider comes the same way. Board it and the page opens and **stays**: the
-header now reads *Automatique* / *Manuelle*. `Manuelle` hands you the controls
-— arrows steer, up/down thrust, SPACE stops. `Automatique` moves the cursor to
-the destinations; confirm one and it drives you there.
-
-What to judge: whether it takes a sensible route, whether it stops somewhere
-you can reach, whether boarding feels like boarding, and whether the journey's
-route and stop look right.
-
-**What to judge now** (2026-09-08, after a first pass found six faults):
-the door swings up as he steps in (`SLF_112.3DA`, 71.4 degrees) and down as
-he gets out; he ends the entry IN the seat, 48 cm off the centreline on the
-door side (the two clips agree on that point); he gets out where the slider
-STOPPED, not at the destination's address; and once you walk 300 units away
-and are in front of it the terminal prints `slider: RELEASED` and it drives
-off as ordinary traffic. **Say if he sits 50 cm too far forward or back**:
-the slider is drawn about `SlBasB`'s origin and the clips are authored about
-`SlBassin`'s, 19.7 apart along the length, and that residual is not settled.
-
-**The reader's standing fact, 2026-09-08, from the original replayed on
-video**: Kay'l REALLY enters the slider - through the open door into a body
-that is not a flat shell at that moment - and never passes through a face.
-Any render or run where he crosses the hull is wrong, whatever the log says.
-
-**Also to judge, added later the same day**: the vehicle under you should
-be the COCKPIT body from the moment you press ENTER at the door - an open
-red well along the flank, the door on it - and the plain shell again once
-you are out (`sub_4521E0`'s swap; the shells have no door at all). And a
-destination in ANOTHER city (`--area 1 --address 34` in Jaunpur, then the
-Anekbah row): the load, then the slider is already at the destination's
-kerb with you aboard and you get out there - the engine skips the drive
-too. The camera should drop in behind you as you step out (camera 17).
-
-**And a REINCARNATION**: the viewer now rebuilds the player's controller when
-the player becomes another actor (`player.become`), and keeps it across an
-area load. If you have a save past a reincarnation, ride the slider in the
-other body: he must stay visible through the load and board as that body.
-
-**Knowingly missing**: the optional cutscene of the slider on its road; and
-a called slider you never board does not yet give up after its 600 frames.
-
-## 4b. The slider takes you somewhere — 1 minute
-
-`TAB`, `RIGHT`, `UP`, `ENTER` (the slider tab), `DOWN` (onto the
-destinations), `ENTER` on a row.
-
-The screen should close and you should be **standing at that place**, with the
-follow camera back and a fade in. From `save-appart.bin` three destinations are
-enabled; the first is *"Anekbah - Appartement de Kay'l"*.
-
-What is deliberately missing: no slider appears and drives you there. The
-engine only does that where the area has vehicle lanes; without a pool its own
-code teleports, and that is the arm this build takes everywhere.
-
-## 5. A sneak verb uses the row you are actually on — needs 10+ objects
-
-**This one cannot be tested from `save-appart.bin`**, which carries one
-object. It needs a save with **more than nine** carried items, because the bug
-was in the scroll: the nine row widgets are a window onto a longer list, and
-the verbs used the widget rather than the row.
-
-With ten or more: scroll to the bottom of the inventory, pick the last row,
-and *Examiner* it. The page should describe **that** object. Before the fix it
-described the one three rows above.
-
-Same for *Utiliser* — and for *Utiliser sur*, which should open the combine
-with the object you chose.
-
-## 6. Flying a slider — 2 minutes, and the one most likely to look wrong
+## 1. Den's locker — screen 13
 
 ```
-build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
-    --area 0 --ride
+build/omk-play ~/Documents/omk/fr ../tables --save ../traces/save-appart.bin \
+    --area 146 --scene-chunk 43 --var 482=1 \
+    --stand 522,-10,343,178 --zone-disable 2419
 ```
+ENTER on the cache, then arrows. **The combination is 7 2 1 3** and there is no
+confirm — it opens the moment the fourth wheel lands. Expect the wheel under
+your hand to BLINK; that is the engine's own oscillator and not a fault. On
+opening it you should get `Cassette Den`, `Pass Ventilos` and `Plan Ventilos`.
 
-`--ride` is still there and is still a harness — it skips the call entirely.
-Item 4 is the real path now, and this is the quick way to the flight model.
+## 2. XACHEN — screen 14, Dakobah's cartridges
 
-* **left / right arrows** steer, **up / down** accelerate and brake,
-  **SPACE** stops the ride once you are under about 10 units of speed
-  (group 0's bit `0x20`, *Annuler / Sauter*).
-* The camera is the engine's ride camera, 3 m up and 7 m back, and its subject
-  is the **vehicle** rather than the player — so it does not swing round
-  behind you the way the follow camera does.
-* Held over, the bank should reach a hard **11 degrees** and no further.
-* Parked, it should **idle up and down** by about two units; moving, it should
-  hold its height. That pair is the one number I would most like a second
-  opinion on, because it comes from a comparison the decompilation lost and I
-  recovered from the raw listing.
+```
+build/omk-play ~/Documents/omk/fr ../tables --save ../traces/save-appart.bin \
+    --area 58 --var 28=1,57=0 --stand -1471,150,133,290
+```
+ENTER, then the four buttons with LEFT/RIGHT and ENTER to step a symbol. They
+start at 1 2 3 4 and the code is 10 14 7 9 — **7, 3, 10 and 5 presses**, because
+the ring is not in numerical order. The Xendar door should open and
+Dakobah/Xendar should play.
 
-**Under `--ride` Kay'l flies standing up on nothing, and that is expected** —
-the harness has no vehicle. Come in through **item 4** instead and the slider
-you called is drawn under him, because the ride moves the vehicle with it the
-way `sub_457F50` moves the slider's node.
+## 3. The terminal's header bar — screens 5, 11, 15..19
+
+```
+build/omk-play ~/Documents/omk/fr ../tables --save ../traces/save-appart.bin \
+    --area 179 --stand 5468,336,-12118,120
+```
+The bar at the top should name the keypad cell the cursor is on
+(*Consulter le dossier n°1*) and follow it as you move. **On the three SURV
+screens it is rightly empty** — those screens bind no labels.
+
+## 4. The HIGH-SCORE board — screen 36
+
+```
+build/omk-play ~/Documents/omk/fr ../tables --save ../traces/save-appart.bin \
+    --area 59 --stand 5412,15199,-3546,1
+```
+LEFT/RIGHT step four pages. The rows will be BLANK unless a save has scores in
+it — that is correct, the shipped ones are empty. **Known and not a fault of
+this screen**: the world behind it shows a stretched mesh close to the camera.
+
+## 5. The sneak's ECHO BAR — the one to look at hardest
+
+```
+build/omk-play ~/Documents/omk/fr ../tables --save ../traces/save-appart.bin \
+    --area 0 --stand 1804,0,-6890,336 --sneak
+```
+The wide bar at the bottom was **blank before today**, and it is the only place
+the game shows your seteks and anneaux. Walking the page it should read in
+turn: `Inventaire  (n / 18)`, `Seteks en votre possession : N`,
+`Anneaux en votre possession : N`, `Lire plan` (no number — the imager counts
+nothing), and a verb's name. Also look for **the three small 3D objects** down
+the left: they had stopped drawing entirely and are back.
+
+## 6. The sneak's CITY MAP — `Lire plan`
+
+From the same run, the third 50x50 tile. Expect Anekbah's street plan, red
+triangles on its destinations, and a **blue arrow labelled with your own name**
+where you stand. Outside the four cities with maps the button should silently
+bounce back to the Inventaire tab — that is the engine's own behaviour.
+
+## 7. The HINT SHOP — `Indices` on the save screen
+
+Reach a save point and pick the middle button. It was an **empty page** before
+today. Expect the memo rows, the memo's text in the body, and
+*Anneaux en votre possession : N* at the foot; buying costs **three anneaux**
+and reveals the memo's second bracketed section. With no memos it should say
+*Aucun indice disponible*; with fewer than three rings,
+*Je n'ai pas assez d'Anneaux pour faire ça !*
+
+**Known and deliberate**: the row selection has no effect — the page sells the
+FIRST memo's clue whatever is highlighted. That is read from the code
+(`dword_4E2B4C` is only ever written by the two builders), not a shortcut.
 
 ---
 
-## 7. THE RENDER WORK OF 2026-09-09 — **CONFIRMED IN PLAY 2026-09-13**
-
-**Confirmed by the reader, 2026-09-13** (*"section 7 and jump are confirmed"*). What follows is kept as the recipe.
-
-Six things landed in one day and **not one has been judged by a person.**
-Every check behind them measures a number a metric can compute, and each says
-in its own docstring what it cannot see. This section is that list.
-
-```
-cd engine && make play
-build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
-    --area 0 --stand 1804,0,-6890,336 --vulkan
-```
-
-Anekbah's main street, with the crowd and the neon, on the backend that has
-all of it. Add `--enhance-all` to see every enhancement at once, then take
-them away one at a time.
-
-**On by default, and the two that are FIDELITY rather than enhancement — look
-at these first, because if either is wrong the port is now further from the
-original than it was.**
-
-* **The dither.** Look at a large smooth wall or the sky and ask whether it
-  reads as a fine noise or as visible speckle. `--no-dither` for the contrast:
-  the bands it replaces are what the 16-bit target does without it. What no
-  check can see is whether the noise reads as *smoother* than the band — the
-  arithmetic is proved, the judgement is not. Also worth one look: the frame
-  must not appear brighter with the dither on than off. A centred dither is
-  what makes that true and the measurement says it is centred to 0.249 of 255,
-  but a systematic lift is exactly the kind of thing a number can pass and an
-  eye can catch.
-* **The shimmer.** The far skyline of any city — Lahoreh has 132 of the 233
-  meshes. It should breathe slowly, not strobe. It is on the frame clock at
-  2 a frame wrapping at 256, so the period is long; if it looks like a flicker
-  the clock is being advanced somewhere else as well.
-
-**Off by default — turn each on alone.**
-
-* `--shadow-quality fitted` then `mapped`. Fitted should lay the blob on the
-  step or the kerb the body stands on instead of on a flat plane; mapped
-  should put a real shadow at the player's feet under a street lamp. Walk him
-  between lamps: the direction should change and the shadow should not swim.
-* `--lighting perpixel`. The gain is almost all on the CROWD, whose models
-  ship white and whose shading IS the lights; on a lamp-lit thigh a falloff
-  that used to bend across one big triangle should now bend across the leg.
-  A body the engine never lights keeps its baked shading, so watch that Kay'l
-  does not become a silhouette away from the lamps.
-* `--ssaa 2` or `4`. The place to look is a GRILLE, a railing or a sign — the
-  cutout edges, whose silhouette is a colour key inside a triangle and which
-  MSAA never touches. `--aa 4` beside it should NOT fix those, which is the
-  whole reason both exist.
-
-Nothing here is a regression hunt; all six pass their checks. What is missing
-is the one judgement none of the checks makes, which is whether the picture
-is better.
-
----
-
-## 8. THE JUMP — **CONFIRMED IN PLAY 2026-09-13**
-
-**Confirmed by the reader, 2026-09-13**, with section 7. What follows is kept as the recipe.
-
-The same day, `todo/player-vertical.md` steps 1-3 landed: the walk no longer
-floats, and the jump has an impulse for the first time. The walk half is
-settled by measurement (the drawn foot is centred on the floor, and it was a
-constant offset off it before). **The jump half is not, and cannot be.**
-
-```
-cd engine && make play
-build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
-    --area 0 --stand 1804,0,-6890,336
-```
-
-Walk with UP, then press SPACE (*Annuler / Sauter*, the Aventure scheme's
-bit 32).
-
-What the port now does, every number of it read out of the engine and none of
-it invented:
-
-* **14 frames of hang** (0.47 s), from the `.CTL` entry's own `+12`;
-* **22.9 cm of lift** — the apex, `-g * N/2` integrated;
-* **2.5 m of forward reach**, `dword_910348` rotated by his facing.
-
-**So it is a flat running LEAP, not a vertical hop, and that is the thing to
-judge.** Every check behind it is Tier 5 — no capture from the trace rig can
-reach a special-move handler, so the oracle is the shipped data's own
-arithmetic and *not* the original's behaviour. If 23 cm looks too low or 2.5 m
-too far, that is evidence about `N` (the reading this repo is least sure of,
-because `entry+12`'s low half is a ROLE code in the combat banks) and it is
-worth saying so — the alternative readings were tested and refuted, but a
-person watching it is a better instrument than any of them.
-
-Two more things a check here cannot see:
-
-* **the landing.** A flat leap lands in band 2 and must play NO landing
-  reaction. Jumping off something 1.5 m or higher should put him into
-  `ACTOR_STATE 18` with bank group 2 — that arm is transcribed from
-  `MDJUMP03` and **has never been executed**, by any check or by anyone. The
-  band table itself is run at all four of its edges; what it *does* is not.
-* **whether he goes through anything.** The leap is swept against the same
-  walls a walk is, so a jump into a wall should stop dead rather than pass
-  through.
-
----
-
-## 9. WALK OUT OF A SHOP — **DONE, CONFIRMED 2026-09-09**
-
-The fix for `todo/omk-play.md` 94. The reader walked it the day it landed and
-reported it good, so this section is kept as the recipe rather than as an
-outstanding test. From Anekbah's main street:
-
-```
-build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
-    --area 0 --stand 3703,0,-9010,180
-```
-
-puts you outside the drugstore by the security centre, facing its door.
-
-* Walk in. The city's doors slide apart in front of you, as they always did.
-* Turn round and walk back at the doorway. **The shop's own doors should now
-  slide apart** — before the fix they stayed shut, you slid sideways along
-  them, and the street was put away again after a few seconds.
-* You should end up in the street, with the shop unloaded behind you.
-
-Wrong looks like: you reach the door and stop dead, drifting sideways along an
-invisible line while the world outside flickers in and out.
-
-**Still unwatched**: the same fault was in ten other interiors — the bank, the
-armoury, the bookshop — and the one worth a look for its own sake is
-**Qalisar's temple**, where the same parameter drives `Qtrappe`, the trapdoor
-of the reincarnation beat. The drugstore's confirmation covers the mechanism
-for all of them; the trapdoor is a different question, because it is a story
-beat that has presumably never opened in this port.
-
-## 10. SHOOT MODE - FIRE, 2 minutes (committed 2026-09-10, `cc3d1f9` + `96fab56`)
-
-**PLAYED 2026-09-10 - *"Ok"***. Missing, and planned in `todo/shoot-mode.md` §8: the FIRE SOUND and the shoot HUD. Still unanswered: which side of the view the bolt leaves from.
-
-```
-build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
-    --area 59 --stand 5000,0,-2900,180 --shoot
-```
-
-(the Shooting gallery; the supermarket phase is `--area 230 --scene-chunk 56`).
-Fire with the LEFT MOUSE BUTTON or RIGHT SHIFT - the *Tirer* scheme's `Tir`.
-
-* **A tap fires ONE green bolt, a moment after the press** - about six frames
-  if you have not fired for a second, because the weapon has to come back up
-  first. That delay is the engine's (the shoot record's `+176`), not lag.
-* **Holding fires every 10 frames** with the Waver - three shots a second.
-* The bolt **stretches into a streak** over its first eight frames and
-  **stops at the first wall**: it should vanish where it meets the geometry.
-* **Which side it leaves from.** The gun hangs on `Maing`, the LEFT hand, and
-  a headless frame puts the bolt slightly RIGHT of centre. One still frame
-  cannot settle a handedness; watching can. Say which side it is.
-
-Wrong looks like: a bolt on the press frame itself (the gate bypassed), one
-bolt per frame while held (no rate), a bolt from the eye rather than low in
-the view, or a bolt that goes through walls.
-
-**Now expected to work (ported after the play, 2026-09-10)**: hitting a
-gunman. Three Waver bolts should kill one; he should play a death clip
-and stay down, and later bolts should stop at his body. The hit test uses
-boxes, so a bolt skimming just over a shoulder can still count - that is
-the engine's own test (`todo/shoot-mode.md` §7j), not a fault.
-
-**CONFIRMED IN PLAY 2026-09-10 (the supermarket, *"ok, good"*): the ARM
-RAISE**, ported the same day after *"The animation of the arm when firing is
-missing"*. At rest the gun hangs low at the
-bottom right, mostly off screen. Press fire and the arm swings it up to the
-middle of the view over about six frames, the bolt leaves from it THERE, and
-a second after you let go it sinks back to the bottom right (0.1 a frame).
-Held, it stays up. Looking up and down with the mouse should tilt the raised
-arm with the view - it follows the look pitch at up to 30 degrees a frame,
-but only while the trigger is held. Wrong looks like: the gun jumping between
-the two places with nothing in between, a bolt leaving from the low gun, the
-arm staying up after release, or the arm twisted (a key picked from the wrong
-band - `todo/shoot-mode.md` §8.0).
-
-**CONFIRMED IN PLAY 2026-09-10 (the supermarket, *"ok, the move is good"*):
-MOVING IN FIRST PERSON**, ported the same day after *"don't forget the
-integration of moving while in fps mode"*. The shoot scheme's
-keys: UP / DOWN walk forward and back, LEFT / RIGHT arrows SIDE-STEP, NUMPAD 4
-/ 6 turn (the mouse still turns too), RIGHT CTRL crouches. He should speed up
-over about a second (27 frames to full speed) and stop within a fifth of one
-when you let go; side-steps get going twice as fast; crouched he moves at half
-speed. Walls and the gunmen's bodies should stop him. Wrong looks like: a
-jerk to full speed on the first frame, a slide after release, moving in the
-wrong direction for the way you face, or walking through a crate. There is no
-head bob and no footstep sound yet - both are known.
-
-**Now expected (ported 2026-09-10): THE GUNFIRE NOISE.** A shot, and every
-bolt that lands on a wall or a body, now ALERTS the robbers who can hear it -
-each within his own hearing range (the first robber in the supermarket hears
-20 grid cells, about 20 m) and on the same floor - even ones who have not
-seen you. So a robber out of sight should come to life when you fire nearby,
-instead of waiting until he sees you. Their own shots are still not wired.
-Wrong looks like: robbers across the shop reacting to every shot, or none
-ever reacting until they see you. (Played 2026-09-10: *"Ok, good"*; 5
-robbers alerted in the session. Fixed after: robbers standing off the grid
-were never alerted - their floor was misread.)
-
-**Reported in play 2026-09-11, *"Outside the appearance events, ennemies have
-no animation and do not move"* - the ANIMATION half is fixed:** between his
-entrance and his death a robber now plays his action's clip on a loop (the
-aim stance, 19 frames in the supermarket's library) where he stood frozen on
-its first frame. Wrong looks like: a robber still rigid, or one twitching back
-to his first pose every second. He still does NOT WALK - that is the larger
-half, planned in `todo/shoot-mode.md` §8 item 6B.
-**And, after *"They shoot but without a shooting animation"*, THE AIM:** while
-he fights, a robber's arms come UP and turn toward you - his gun on you - and
-drop back when he stops. Wrong looks like: arms raised the wrong way (the gun
-pointing to his other side), arms snapping up and down every frame, or a
-robber twisted at the waist. They hit you a little less often in the gallery
-now: their bolts aim at your hips with a small scatter and your body's hit
-boxes are narrow. (Your screenshots of 2026-09-11 showed robbers facing away
-and empty-handed: the robbers who come on through an entrance event were drawn
-at the heading their entrance left while their brains aimed from another, and
-their guns were never drawn. Both fixed: every robber now holds his gun on his
-left hand, and his body faces where his brain aims. Not yet judged by eye.)
-(Then, *"Ok, better"*, and *"when an ennemy die and its dying animation run,
-they float in the air"*: fixed - a robber's death clip now carries him down to
-the floor and slides him as it falls, the pelvis ending a few units above the
-ground. **CONFIRMED IN PLAY 2026-09-11** (*"Yes, it is fixed, the bodies reach
-the floor"*). Wrong looks like: a corpse still lying at waist height, one sinking
-into the floor, or one sliding through a wall - the engine's wall stop is
-ported now, so that last would be a fault.)
-
-**NOT YET PLAYED (2026-09-11): THE ROBBERS WALK, and walls stop them.** Once a
-robber's brain has him, his clip moves him: in the gallery the three gunmen
-come toward you at a walking pace while they shoot, and when one meets a wall
-he slides along it or turns. Wrong looks like: a robber gliding with his legs
-still (the walk and the clip out of step), walking THROUGH a wall or a shelf,
-sliding sideways at running speed, or sinking/rising as he goes. EXPECTED and
-not a fault yet (the path-finder is not ported): a robber that walks into a
-wall, turns, and walks into it again, over and over; robbers walking through
-each other; and one walking right up to you. Say which of these you see.
-(PLAYED 2026-09-11, *"Ok, good progress"*: a robber CLIMBED a little at every
-loop until he hung from the ceiling - fixed, every clip start now puts his
-height back as the engine does, **CONFIRMED IN PLAY 2026-09-11** (*"I didn't see
-a robber rising off the floor"*); and robbers walked INTO you, *"like I had no
-collider"* - the original pushes YOU out of their bodies, and now so does
-this. Look for: no robber rising off the floor however long he walks into a
-wall; a robber that reaches you shoving you back instead of standing inside
-you. EXPECTED, and the path-finder's to fix: two robbers can shove you a long
-way across the room. (Played: *"they kept pushing me to the point I finished
-outside the environnement"* - fixed: the push is now swept against the walls
-as the engine sweeps it, so they can pin you to a wall but not push you
-through one. Wrong looks like: ending outside the level again. **CONFIRMED IN
-PLAY 2026-09-11** - *"they can't push me outside the env"*. Still reported:
-*"the robbers continue to push and can stuck me in places I can't get out
-(probably because of colliders being too close from each other)"* - fixed
-the same day (todo/shoot-mode.md B5): the bodies now push with the model's
-own collision spheres, about a person wide, where they pushed like balls
-some 90 units across. Look for: robbers able to stand near you without
-boxing you in, and gaps between two robbers you can walk through. Wrong
-looks like: walking through a robber, or still being trapped where there is
-visibly room. **CONFIRMED IN PLAY 2026-09-11** - *"Ok, good progress, I didn't
-get stuck anymore"*.)
-
-**NOT YET PLAYED (2026-09-11): DYING.** Let the robbers shoot you until your
-health runs out. You should drop - the death animation plays, your weapon
-stops, you cannot walk - and the scene's death camera takes over; about two
-seconds later the phase is LOST: shoot mode ends and the Meditek sequence
-begins (its voice-over plays). The robbers stop advancing the moment you die.
-Wrong looks like: fighting on at no health (the old behaviour), dying and
-never coming out of it, or the death animation not playing. NOT PORTED yet,
-so do not report: the camera change on the death itself if the scene does not
-make one, and your body showing or hiding.
-
-**NOT YET PLAYED (2026-09-11): THE ROBBERS STEER.** A robber who cannot shoot
-you - out of sight or out of range - now follows the floor's own path toward
-you, around shelves and walls and around the other robbers (each one's spot
-is blocked to the others), turning smoothly or on a turn animation for a
-sharp corner. Hide behind a shelf and watch one come round it. EXPECTED and
-not a fault yet: a robber who CAN shoot you still walks straight at you while
-he fires - for a while. **And now they STOP (the actions, same day)**: each
-robber advances for the time his character gives him (15 seconds for the
-gallery's gunmen, 25 for the supermarket's first robber) and then crouches or
-stands where he is to shoot. So expect the rush first and the stand after.
-Wrong looks like: a robber sunk into the floor while crouching (his pelvis
-drops about 22 units, his legs must bend with it), one sliding while standing,
-or one flickering between standing and crouching every frame. EXPECTED: the
-gallery's third gunman never advances at all (his patrol is not ported), and
-the supermarket's first robber, caught turning against a wall, may not reach
-his stop. Wrong looks
-like: a robber spinning in place, walking away from you, or two robbers
-standing inside each other. Wrong looks like: being thrown far in one frame, or
-pushed by an empty spot - a dead robber's body still pushes, since nothing
-the engine was read doing removes it.)
-
-**NOT YET PLAYED (2026-09-11): THE GUNMEN FIRE - and turn round to do it.**
-In the supermarket the robber nearest the entrance (actor 77) starts with
-you behind him: he should turn round on his own clip over about a second as
-the phase begins, then fire at you every half-second. Wrong looks like: a
-robber spinning on the spot in a stiff pose, turning more than once for no
-reason, or firing with his back to you. (Your session of 2026-09-11, from its
-log: 77 turned and fired, and every robber fired - but 519 and 521, placed by
-their records, stayed stuck mid-turn: 519 restarted a turn every half-second
-facing the same way. Fixed after: the placement was putting their facing back
-every frame. Not yet judged by eye.) (Your second session the same day, from
-its log: the phase run to its end, 18 robbers killed and reported; 93 bolts
-on you, each through your Body Shield in the engine's order; 519 turned and
-fired. You were KILLED twice - the gauge froze at 4 each time, as it should -
-and each time a medikit on the floor BROUGHT YOU BACK, to 20 and then to 104.
-That is the unported death, not the game: the kit adds to the stored health
-property, which the killing hit never lowers. It goes when `sub_423FC0` is
-ported. Not yet judged by eye.) The gallery harness shows two gunmen already
-facing you:
-
-```
-build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
-    --area 59 --stand 5000,0,-2900,0 --shoot
-```
-
-Both open fire at once: one bolt every 10 frames from the DBWAVER on the
-left, one every 4 from the HEXAGUN, each with its firing sound, flying at
-you with a small scatter, **and now they hit you**: the gauge drops by 4 a hit
-(5 through your Body Shield), and a kit you carry should be used by itself
-once you are under 40. At 0 the game would kill you; that is not ported yet,
-so you play on with the gauge frozen at its last value. Their arms do not come
-up to aim (the aim pose is not ported for them). Wrong looks like: bolts flying off at a
-wide angle from you, or leaving from somewhere other than the gun in the
-hand.
-
-**CONFIRMED IN PLAY 2026-09-10 (*"yes, it was correct"*): HEALTH ITEMS IN A
-SHOOT PHASE**, fixed the same day after *"grabbing a health item does not
-restore your health"* and your correction that shoot mode uses them at once. Walking onto a medikit in the
-supermarket should now raise the gauge at once - +50 for a medium, +100 for a
-large, +16 for a small (its subtitle says +15) - with the pickup line. The kits
-you carry from adventure mode are used by themselves when a hit leaves you
-under 40 health; nothing can hit you yet, so that part waits for the robbers'
-shots. Wrong looks like: the pickup line with no change on the gauge. (The reader's
-session of 2026-09-10 logs all three: the medium kit 10 -> 60, the small 60 ->
-76, the large 76 -> 176, each through `sub_423A40` to the gauge. Not yet
-judged by eye. The HUD's own log line then printed every frame at 176 -
-its empty-part pixel probe sat in the gauge's scrolling fill - and no longer
-compares the probes.)
-
-**CONFIRMED IN PLAY 2026-09-10 (*"Good"*): THE MOUSE LOOK, the engine's own.** The
-mouse turns and tilts the first-person view with the game's own settings -
-your save's options 23 and 24, sensitivities 20 and 15 - so turning is a
-touch faster than before (0.20 degrees a pixel against 0.18) and the tilt now
-stops at 45 degrees up or down instead of 70. The tilt is 0.15 degrees a pixel
-at 30 frames a second, and the engine scales it by the frame time, so at a
-higher frame rate it tilts less per pixel. The DIRECTIONS are unchanged -
-yours. The shoot scheme's *Regarder En-Haut / En-Bas*, if bound, now tilt in
-steps. Wrong looks like: a direction reversed, or a tilt past 45 degrees.
-
-**CONFIRMED IN PLAY 2026-09-10 (*"It looks good"*), then CORRECTED the same
-day: THE RADAR.** The reader did not remember it from the original, and the
-game agrees: in the supermarket and six other arenas a script turns it on only
-when Kay'l carries object 980, "Radar activé", which nothing in the game gives
-- so it is now HIDDEN there, as shipped. `radar = always` under
-`[Enhancements]` (or `--radar always`) brings it back, in the human HUD's own
-box (top right, 180x180) with the camera 9 m behind you. The Archives (AREA 63
-and 67) turn it on by themselves. What to judge: that the supermarket shows no
-radar by default. **`radar = always` CONFIRMED IN PLAY 2026-09-10** (*"ok,
-good"*, the supermarket in the human HUD's own 180x180 box); the hidden
-default has not been looked at by a person.
-
-**CONFIRMED IN PLAY 2026-09-10 (the supermarket, *"ok, good"*): THE SHOOT HUD,
-parts 1-3**, ported the same day after *"no UI"*.
-In shoot mode the screen should carry: at the top left a box with your ring
-count under it (the *anneaux* - 244 in your frames of the original, 2 with the
-test save), at the bottom left a box with the weapon's name over it (`Waver`)
-and, for a weapon with a magazine, the rounds left just above, and a small
-white cross at the centre of the screen, and in the two boxes the RING and
-the WEAPON turning slowly (one turn every five seconds, the sneak's own
-turntable), and down the LEFT EDGE the health gauge - a black column with a
-diamond at each end, the fill rising from the bottom (the save's player is
-at 10 of 200, so only a sliver) with a coloured column scrolling through it
-and small green sparks drifting up and out from its top. NOT there yet,
-known: the radar at the top right (the supermarket is one of the nine places that have
-one). Say whether the boxes' grey matches the original.
-
-**CONFIRMED IN PLAY 2026-09-10 (*"ok, good"*; the log walks him out through
-areas 60 and 245): THE RETURN**, fixed the same day after *"the return to
-adventure mode (after the cutscene) is buggy: invisble character, impossible
-to move, weird camera"*. After the supermarket's ending hands you back you
-should see Kay'l again from the ordinary follow camera, behind and above him,
-and walk with the adventure keys. The last hostage talking to you is part of
-the script; control comes back when it ends.
-
-**CONFIRMED IN PLAY 2026-09-10 (*"The event is triggered, and the ending
-cutscene is triggered"*): THE PHASE ENDS**, fixed the same day after *"i
-can't finish the supermarket shoot sequence"*. The RETURN to adventure after
-the ending was reported broken, and is fixed and confirmed - see the entry
-above and `todo/shoot-mode.md` 8.5e. Each robber's death is now reported to the
-scene when his death animation finishes (the terminal says `death clip over:
-message 3 ... handler scene +0x433f`). The supermarket's ending is keyed to ONE
-of them - actor 84, the script's *Braqueur 15* - whose death plays a victory
-track and opens the end zone at the back of the shop, around (13806, 1658),
-where the hostages and the doctor are. Walk into it and the end cutscene
-should run: the gunmen vanish, the camera takes two shots of the room, and
-you are handed back. Wrong looks like: no music when 84 falls, or nothing
-when you reach the back.
-
-**CONFIRMED IN PLAY 2026-09-10 (*"Ok, this event issue is fixed"*): ENEMY
-ENTRANCES ARE GAMEPLAY**, fixed the same day after *"some events (like some
-ennemie appearing with a special animation) are considered as cutscenes,
-stops move and change camera"*. When a gunman makes his
-entrance - vaulting in, stepping out from a shelf - you should keep walking,
-turning and shooting through it, and the first-person view should stay yours.
-If Kay'l still stops or the view jumps, the terminal says why on a line
-starting `adventure OFF in shoot mode`.
-
-**Now expected (ported 2026-09-10, after *"no fire sound effect"*): THE SHOT'S
-SOUNDS.** Every shot of the Gun Waver should play its fire sound (WAVER2.WAV)
-the moment the bolt leaves, and every bolt that stops - on a wall, a crate or
-a body - its impact sound (WIMP1.WAV), quieter the further away it lands.
-Wrong looks like: a sound on the press rather than on the shot (the shot
-comes a moment later while the gun comes up), a sound per frame while the
-bolt flies, or the impact sound for a bolt that went out of range. The muzzle
-flash and the impact sparks that go with them are not drawn yet.
-
-**And look at where people STAND, here and elsewhere.** Every body placed
-by its record and turned by its facing now turns about its pelvis instead
-of its model origin. For most characters that moves nothing you would see;
-for the gallery's gunmen it moved them up to 770 units, onto the spots
-their own AI thought they were on. Anyone suddenly standing somewhere odd
-- in a wall, off a ledge - after this change is the thing to report.
-
-## 11. THE GUNMEN'S SIGHT — walls, rays and cutouts (committed 2026-09-13, `1a31eb4`..`374db06`), 5 minutes
-
-**NOT YET PLAYED.** Until 2026-09-13 every gunman on your floor could see you
-through anything. Now each one sees the way the engine's `sub_426E00` does
-(`todo/shoot-sight.md`): an ordinary gunman needs the floor GRID clear between
-you, and inside half his range a clear RAY decides whether he holds or closes
-in; a SPECTRE needs you inside his cone AND a clear ray, and otherwise walks
-his beat; and a gunman's sight passes through CUTOUTS (fences, foliage, grilles
-- mesh flag 0x800) that still stop a bolt.
-
-**The supermarket** (`--area 230 --scene-chunk 56`, stand still):
-* robber 77 cannot see you from behind the counter at first. He walks round
-  it, sees you at about frame **441**, and **rushes** you;
-* he hits you at **442** from the side (the sound, no tip of the view) and at
-  **471 from the front - a four-frame downward tip of the view** with
-  `IMPACT03.WAV`; the third bolt kills you at **513**, the phase is lost at
-  **573**.
-
-Wrong looks like: a robber shooting you through the counter before he has come
-round it, or one that sees you and then stands still at close range.
-
-**The Shooting gallery** (`--area 59 --stand 5000,0,-2900,0 --shoot --var 342=1`):
-
-> **Add `--var 342=1`, or dying looks broken.** `--shoot` only starts the mode
-> where you stand; the game starts trial 3 through zone 1171 "StartAction Level
-> 3" (AREA 59 record 26), whose script also sets `Level 3` (VARIABLES 342). The
-> area's phase-lost handler (message 1) restarts whichever trial that variable
-> names - health back to 100, the trial's gunmen released and hidden, its zones
-> re-armed, a scene program, and the player put back at "Début Level 3". Without
-> the variable the handler only ends the mode, and the reader saw exactly that:
-> *"when I die, I just switch to adventure mode with frozen gunmen"*. **With it,
-> CONFIRMED IN PLAY 2026-09-13**: *"I was sent to the begining then I leave the
-> training zone"*. Seen in that session's log, and **FIXED the same day**: a
-> bolt still in flight killed the player a SECOND time on the restart frame
-> (111). It was the port's: `Shoot_Leave` opens with `sub_44CDB0(0)`, which
-> frees every entry of the projectile pool at 0x531348, and the port never
-> emptied its pool. (`dword_90E0FC`, suspected first, is never written - the
-> refusal it gates never fires.) `verify.py: engine: shoot restart`.
-
-* the gunmen behind the walls do not fire at once: 237 steps out from behind
-  his wall and fires at about frame 43, walking toward you; 238 comes through
-  the gap in the far wall and fires from there;
-* close gunmen come right up to you - their bodies push you, and your own
-  bolts can hit them.
-
-Wrong looks like: a bolt leaving a gunman who is still behind a wall, or all
-three firing in the first half-second as they used to.
-
-**The catacombs** (`--area 141 --zone-enable 2295 --stand 42786,854,-2380,0`,
-then walk forward into the zone to start the phase - **A HARNESS, not the phase's
-real start**: the reader, 2026-09-13, *"this point is not the actual start of
-this shoot phase, it start elsewhere, then a dialog start when you arrive at
-your checkpoint then the shoot phase continue"*): the ghostly SPECTRES
-patrol their beats, and they see only what is in front of them with nothing
-solid between.
-* with rock between you they **keep walking their beat**, even when they face
-  you - measured on two routes, every spectre stayed on patrol;
-* step into the open in front of one, within about **30 m** (1170 units): he
-  should **stop his patrol**, turn to you and aim - a spectre's group never
-  fires (`todo/shoot-patrol.md`: *"he aims and never shoots"*);
-* break the line again - behind rock, or out of his cone - and he should **go
-  back to his beat**. **CONFIRMED IN PLAY 2026-09-13** (*"they did continue
-  their patrol when they didn't see me anymore"*): all four spectres saw the
-  player on the harness route and all four went back to patrolling. Asked in
-  the same breath: *"aren't spectres to shoot on me?"* - see
-  `todo/shoot-patrol.md` on the fire test. **Answered by the reader**: the
-  patrolling spectres do NOT shoot in the original - doors release other
-  spectres, and the wrong ones shoot at you. Not ported yet (the doors and
-  the release).
-
-**The one thing no headless run has shown**, and so the one worth your eyes:
-a spectre actually SEEING you and then losing you. Neither route put a spectre
-facing you with a clear line. Wrong looks like: a spectre that leaves his
-patrol while rock is between you, one that never reacts when you stand in the
-open in front of him, or one that sees you and never goes back to his beat.
-
-**Also seen on the way, and not a sight fault:** walking west from the zone
-(`k77*9` then forward) drops you about 200 units onto a lower floor near
-x 42235, where you can barely move and the shoot grid finds no standable cell
-under you. Tell me if the original lets you walk out of there.
-
-## 12. THE SHOPS — buy, sell, scroll, close — **CONFIRMED IN PLAY 2026-09-15** (*"I tested it, all good"*, after the icons, the dim, Analyser and the child-page fixes, `2a1ac71`..`c30b6e4`)
-
-Steps 1-5 of `todo/shops.md`, played headless only. Every shop is a zone you
-press ENTER in: the seller talks, you pick *Je voudrais acheter quelque
-chose*, and the shop screen opens; closing it plays the goodbye.
-
-**Keys in a shop**: the four buttons down the right (Acheter / Vente,
-Examiner, Quitter) start focused - UP/DOWN move among them; LEFT crosses into
-the item rows (and ENTER on a button does the same); UP/DOWN walk the rows;
-ENTER on a row does what the selected BUTTON says; TAB or *Quitter* leaves.
-
-**(a) The pharmacy - a purchase.** Already open if you launched it:
-
-```
-build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
-    --area 39 --money 300 --nofmv --no-crowd
-```
-
-`--money` is a harness write (the save has no seteks). Right looks like: the
-rows and header in pale blue, *Grand médikit* and *Petit médikit* in the rows,
-*Acheter* on the second header line, *Seteks en votre possession : 300* and a
-price that follows the cursor (200, 50). ENTER on the large medikit: money
-drops to 100 and the second line reads *Objet acheté !* for five seconds;
-ENTER again: *Pas assez de seteks ! !*.
-
-**(b) The bank - a sale.**
-
-```
-build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
-    --area 83 --stand 13875,-6,20441,321 --give 191 --nofmv --no-crowd
-```
-
-The bank shows what YOU carry, in a deeper blue, titled *Banque - vente*,
-with *Vente* on the second line. The price is HALF: the Hypra reads 2500.
-ENTER on it: *Voulez-vous vraiment vendre cet objet ?*, its name, and *Oui* /
-*Non* (LEFT/RIGHT). *Oui*: money 2500, the Hypra gone, back on the rows. On
-*Notice MK400* (price 0) the sale is refused: *Vente non autorisée !*.
-Known and kept: a weapon's name reads *Hypra - 0* (an unidentified count).
-
-**(c) The Lahoreh library - sixteen rows through nine.**
-
-```
-build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
-    --area 86 --stand 12784,80,24673,138 --nofmv --no-crowd
-```
-
-No conversation here: ENTER at a shelf opens it. LEFT into the books, then
-DOWN: the cursor stops at the middle row and the list scrolls under it to the
-sixteenth book.
-
-**(d) Examiner / Analyser.** In any shop, select *Examiner*, cross into the
-rows and press ENTER: the item turns in 3D in the middle of the screen, over
-the dimmed shop, with this shop's title still on top; ENTER takes you back.
-(This said "a box with nothing in it" until you corrected it - the draw hook
-reads the box's own tag field, which the first reading missed.)
-
-**(e) Leaving.** TAB and *Quitter* both close a shop into the seller's
-goodbye. **Changed on the way, on other screens:** SPACE no longer backs out
-of the start menu, the pause screen or OPTIONS, because the engine's input
-routine only lets a screen close when its data says so. Tell me if the
-original lets SPACE leave any of those.
-
-Wrong looks like: rows in dark red (the placeholder), a cursor that cannot
-leave the four buttons, a price that stays 0, money that does not move, a
-confirm that opens on the buttons, or TAB doing nothing.
-
-## 13. MULTIPLAN — the storage kiosk — **CONFIRMED IN PLAY 2026-09-15** (*"Ok, i tested it, no issues"*, `e9bedfd`..`921fa83`)
-
-Kept as the recipe. Steps 1-5 of `todo/multiplan.md`.
-The pharmacy has a kiosk; stand at it and press ENTER:
-
-```
-build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
-    --area 39 --stand 14591,-251,11771,0 --nofmv --no-crowd
-```
-
-**Keys**: the four icons down the right start focused (UP/DOWN); ENTER on an
-icon (or LEFT) crosses into the rows; UP/DOWN walk them; ENTER on a row does
-what the selected ICON says; TAB leaves.
-
-* **(a) The rows follow the icon.** On *vers le multiplan* (yellow) the rows are
-  your sneak - *Notice MK400*; on the other three they are the shared storage -
-  *Documentation multiplan* and *5 Anneaux magiques - 5*. The header names the
-  icon.
-* **(b) The box flickers like a monitor**: every so often the rows jolt
-  sideways, grey dots burst for a moment, and a band of bright lines sweeps
-  down. It is the original's own effect, and the one thing here only an eye
-  can judge - say if it is too busy, too rare, or missing.
-* **(c) Deposit and withdraw.** *vers le multiplan*, ENTER, ENTER on the notice:
-  the header reads *Objet transféré !* for five seconds and the focus goes back
-  to the icons (the sneak is empty). *vers le sneak*, ENTER, ENTER on the rings:
-  they leave the storage and count on YOU (2 -> 7 anneaux) instead of taking a
-  row. Refusals: a Waver (`--give 12`) cannot be deposited (*Transfert non
-  autorisé*); a full sneak refuses a withdrawal (*sneak plein*).
-* **(d) Examiner.** The eye icon, ENTER, ENTER on *Documentation multiplan*: its
-  text in the box, scrollable with UP/DOWN. An ordinary object shows its model
-  turning, then the text.
-* **(e) Détruire.** The green icon, ENTER, ENTER on the documentation: *Détruire
-  définitivement cet objet*, its name, *Oui* / *Non*. *Oui* removes it silently;
-  on the rings *Oui* refuses with *Impossible de détruire cet objet*.
-* **(f) Leaving**: TAB closes the kiosk.
-
-**Say especially**: whether the storage really is shared - deposit here and
-open another kiosk (AREA 178 has five) and it should be there; and whether the
-original shows a message when a destroy succeeds (this build shows none,
-which is what the code reads).
-
-## 14. THE SNEAK'S IDENTITY PAGE, and its QUIT tab (committed 2026-09-15/16, `837eca5`..`a3aa792`), 5 minutes
-
-**(a)-(d) CONFIRMED IN PLAY 2026-09-16** - the reader: *"the identity page is
-good"*. **(e) the QUIT tab is still unjudged** - they did not say whether they
-pressed it - and **(f) Options is expected empty** (step 5, blocked: the port
-has never drawn screen 35).
-
-> **THE MEMORY (Mémoire) PAGE WAS NOT EMPTY, and this file said it was.** The
-> reader played it, then played the ORIGINAL beside it, and three separate
-> faults came out of that comparison - all now fixed (`7e56033`..`1093e9c`,
-> `todo/sneak.md` §2c). The paragraph that used to stand here, saying the page
-> is "empty by the code", was wrong in the same way the docs were.
->
-> **(g) THE MEMORY PAGE - the one to judge next**, and it needs memos, which
-> `save-appart.bin` has none of. Either load `traces/games-resto.bin` slot 2
-> (three memos - *Kay'l :*, *Capitaine Lea :*, *Telis :*), or add
-> `--give 2:913,2:915,2:336` to the street command above.
->
-> * **the list is REACHABLE**: on the Mémoire tab, `LEFT`/`RIGHT` moves the
->   highlight from the tab column INTO the memo list. That was dead before -
->   *"I can't select anything in the memo list (I can just select the page)"*.
-> * **the preview appears ON SELECTION**, not a press later: the moment the
->   line is selected its text shows in the box below. `UP`/`DOWN` then walks
->   the memos and the text follows.
-> * **no clue text.** Each memo's record holds the memo AND a clue - the kind
->   sold at the save screen - in one field, and the port used to draw both:
->   *"you added some texts to the memo ... which are not in the original"*.
->   Only the memo should show now.
-> * **`ENTER` opens the READER**, which is where the text SCROLLS: the page
->   comes up standing in the text box, `UP`/`DOWN` scroll it, and BACK leaves.
->   A short memo will not scroll at all - that is the draw's clamp, not a dead
->   key - so try it on a long one (*Kay'l :*, seven lines).
->
-> Nothing here is confirmed by a person yet; the headless runs and the checks
-> only say the lines and offsets move.
-
-`todo/sneak.md` §5, next-tasks 10 - the device's first new
-pages since it was built. From Anekbah's main street:
-
-```
-build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
-    --area 0 --stand 1804,0,-6890,336
-```
-
-`TAB` opens the sneak; `RIGHT` crosses to the tab column down the left,
-`UP`/`DOWN` walk it, `ENTER` opens a page. The IDENTITY tab is the blue one at
-the top.
-
-* **(a) The two tabs.** The page opens on *Identité* with *Caractéristiques*
-  greyed beside it. `RIGHT` switches between them and the content changes with
-  the tab; `LEFT` off the first tab (or `RIGHT` off the second) goes back to
-  the tab column. **Worth an eye**: coming back onto the row with `LEFT` lands
-  on *Caractéristiques*, the FAR tab, which is what the original's code says.
-* **(b) Identité.** Nom *KAY'L 669*, Age 30, Sexe M, Groupe sanguin K-, Taille
-  178, Poids 80, Yeux Vert, Profession *Agent-Enquêteur*, then two wrapping
-  lines - *Signes particuliers* (the police training) and *Centres d'intérêt*
-  (*Néant.*). Labels white, values in the page's blue.
-* **(c) Caractéristiques.** Energie 10, Attaque 70, Résistance corporelle 30,
-  Vitesse 70, Esquive 60, Mana 10, each as a number over a thin grey bar filled
-  to the value - and *Maîtrise du combat* as a WORD, *Initié*, with no bar.
-  **Say whether the number should sit ON the bar**: that is where the original's
-  code puts it, and no capture here settles it.
-* **(d) The character.** Kay'l stands at the left of the page, turning slowly,
-  with the text over his right side. He is a STILL pose - the original sets it
-  once and never animates it - and the animation is the female bank `F1AVNT`
-  whoever the player is, because the code names that file outright. **Say if he
-  is posed oddly**: the pose binds by bone name across a prefix change, and a
-  wrong bone would show as a twisted limb.
-* **(e) Quitter le jeu**, the icon at the bottom right of the tab column.
-  `ENTER` on it should show NOTHING and move the highlight into the page you
-  are on. That is not a port fault: the confirm shows a Oui/Non list that
-  belongs to a page the game never installs (`docs/UI.md`, "a page built out of
-  reach"). **This is the one to check against the original** - if the real game
-  shows *Oui / Non* there, the reading is wrong and I want to know.
-* **(f) Options**, the tab above it, does nothing yet: it hosts the real
-  options menu (screen 35), which this port has never drawn (next-tasks 9).
-
-Wrong looks like: the tab row not switching, values from another character,
-labels without values, a T-posed or floating body, or the identity text drawn
-over the character rather than beside him.
-
-## What is NOT worth testing yet
-
-* ~~the videophone's own picture inside the sneak~~ — **CONFIRMED IN PLAY
-  2026-09-08**, nothing left to test here. For the record, what was ported: the panel's own viewport item now renders the world into
-  its 500x280 rectangle through the live camera, so the caller's face should
-  be back in the device during the restaurant call (`--call 386` is the
-  headless repro). What to look for: the face fills the rectangle the way
-  the original's capture shows, the frame of the device is drawn around it,
-  and the street is NOT visible anywhere else on the sneak.
+## What is NOT fixed, so do not report it as new
+
+* **The lift arrival is still black** and the camera is inside the lift-car
+  mesh `CSPont04`. Identified, measured, not fixed — `todo/missing-ui.md` §6b,
+  which also records the three candidate mechanisms and why guessing between
+  them was refused.
+* **The lift door opens and then shuts itself.** The program moves it, then the
+  port drops the motion patch. Being worked on separately; §6d.
+* **Tab strips switch pages on the confirm, not on the move.**
+  `todo/ui-child-on-move.md` — nine lines, held back because they change the
+  shared walk.
+* **The overwrite dialog does not name the file** and the start menu's
+  `Quitter` is not the real exit — `todo/ui-save-confirm-and-quit.md`, both
+  decoded and ready to transcribe.
+* `engine: UI`, `ui item bindings` and `licence headers` are red for census
+  drift that predates all of this; `todo/sweep-log.md` has the attribution.
