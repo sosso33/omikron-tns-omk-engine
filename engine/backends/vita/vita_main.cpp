@@ -13,6 +13,7 @@
 //                               JSON - packaged in the VPK, read-only
 //   ux0:data/omk/saves/GAMES    where saves go (the port never writes into
 //                               the data tree - CLAUDE.md §1)
+//   ux0:data/omk/omk-play-YYYYMMDD-HHMMSS.log / .err   each run's log, dated
 //   ux0:data/omk/omk.ini        the game's own config file, when present
 //   ux0:data/omk/args.txt       EXTRA arguments, one per line, when present -
 //                               how a device run is given `--area`, `--save`,
@@ -27,6 +28,7 @@
 #include <psp2/io/stat.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/power.h>
+#include <psp2/rtc.h>
 
 #include <cstdio>
 #include <fstream>
@@ -82,8 +84,22 @@ int main(int, char**) {
     // standard streams to the TTY regardless (`printf_c99.cpp`), so the
     // redirect is done where every printf already passes. Unbuffered, so a
     // crash cannot take the last lines with it.
-    omk_vita_redirect(std::fopen("ux0:data/omk/omk-play.log", "w"),
-                      std::fopen("ux0:data/omk/omk-play.err", "w"));
+    //
+    // ONE PAIR A RUN, DATED: `omk-play-YYYYMMDD-HHMMSS.log` / `.err`, so the
+    // runs sort by name and a report never overwrites the one before it
+    // (the reader's request, 2026-09-18). The console's local clock.
+    char stamp[32] = "undated";
+    {
+        SceDateTime t{};
+        if (sceRtcGetCurrentClockLocalTime(&t) >= 0)
+            std::snprintf(stamp, sizeof stamp, "%04u%02u%02u-%02u%02u%02u",
+                          static_cast<unsigned>(t.year), static_cast<unsigned>(t.month),
+                          static_cast<unsigned>(t.day), static_cast<unsigned>(t.hour),
+                          static_cast<unsigned>(t.minute), static_cast<unsigned>(t.second));
+    }
+    const std::string logPath = std::string("ux0:data/omk/omk-play-") + stamp + ".log";
+    const std::string errPath = std::string("ux0:data/omk/omk-play-") + stamp + ".err";
+    omk_vita_redirect(std::fopen(logPath.c_str(), "w"), std::fopen(errPath.c_str(), "w"));
 
     std::vector<std::string> args = {"omk-play", kRoot, kTables,
                                      "--saves", kSaves, "--res", "960x544"};
@@ -98,6 +114,7 @@ int main(int, char**) {
     std::vector<char*> argv;
     for (auto& a : args) argv.push_back(a.data());
     argv.push_back(nullptr);
+    std::printf("run %s\n", stamp);
     for (const auto& a : args) std::printf("%s ", a.c_str());
     std::printf("\n");
     std::fflush(stdout);
