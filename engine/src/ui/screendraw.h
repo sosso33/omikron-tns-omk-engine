@@ -21,6 +21,7 @@
 #pragma once
 
 #include "platform/datafs.h"
+#include "ui/citymap.h"
 #include "ui/cloud.h"
 #include "ui/cursor.h"
 #include "ui/interference.h"
@@ -108,6 +109,25 @@ struct ScreenFrame {
     // every other item's.
     int  rowMarks = 0;
     std::vector<int> rowMarked;
+    // ---- THE CITY MAP, reported from what the two hooks DREW -------------
+    //
+    // `mapSheet` is true only once `0x00477CA0` has actually blitted the
+    // bitmap - its arm is `if (item->tag)`, so a page whose `fopen` failed
+    // draws nothing and says so - and `mapPin` only once `0x0049E6F0` found
+    // the city row the tag names and put a triangle down. `mapMarkers` are
+    // the destination triangles, each with the screen point it landed on, so
+    // a check reads the PROJECTION's output rather than the world position
+    // the viewer handed over.
+    bool mapSheet = false;
+    bool mapPin = false;
+    int  mapPinAt[2] = {-1, -1};
+    std::vector<std::pair<std::string, std::pair<int, int>>> mapMarkers;
+    // Oscillator 2's value this frame (`cityMapPulse`), which is the ALPHA
+    // both primitives pack. Reported rather than applied: `surface.h`'s
+    // mode-2 triangle is three lines whose colour comes from point 0's low
+    // three bytes, so the software back end the port stands on DROPS the
+    // alpha byte. -1 when the hook did not run.
+    int  mapPulse = -1;
     // Lines the examine page's description wrapped to.
     int  textLines = 0;
     // ...and how many CHARACTERS were handed to the layout for it, which is
@@ -314,6 +334,28 @@ public:
         scores_ = s; scorePage_ = page;
     }
 
+    // ---- THE CITY MAP (`ui/citymap.h`) ----------------------------------
+    //
+    // What `sub_49D9E0` resolved and the panel's two draw hooks then need:
+    // the loaded `Images\<set>.bmp`, the row of the compiled 52-byte table
+    // that the open hook matched (null when it matched none, which is the
+    // engine's `dword_4DECFC = -1`), where the player stands and which way he
+    // faces, and the destination markers the caller has already placed. The
+    // composer PROJECTS them - it does not decide which exist.
+    struct CityMapView {
+        const Surface*    sheet = nullptr;   // `dword_4DECB4`, item +0x3C
+        const CityMapRow* row = nullptr;     // `dword_4DECFC`, item +0x3C
+        float playerX = 0, playerZ = 0;      // actor +0xF4 / +0xFC
+        float playerFacing = 0;              // actor +0x1A4, degrees
+        // `sub_42B1F0(6)` - event 44 property 6, the player's NAME, which is
+        // the caption beside his pin and the same string the identity page's
+        // "Nom" row shows.
+        std::string playerName;
+        struct Marker { std::string name; float x = 0, z = 0; };
+        std::vector<Marker> markers;
+    };
+    void setCityMap(const CityMapView* m) { cityMap_ = m; }
+
     // THE 3D VIEW INSIDE A PANEL. The frontend renders the world through the
     // live camera into a picture the size of the viewport item's rectangle
     // and hands it here; `draw` blits it at that item's place, at that
@@ -386,6 +428,7 @@ private:
     const std::map<std::uint32_t, std::pair<int, int>>* litMoved_ = nullptr;
     const std::array<std::pair<std::string, int>, 20>* scores_ = nullptr;
     int scorePage_ = 0;
+    const CityMapView* cityMap_ = nullptr;
     const Surface*   view3d_ = nullptr;
     long             frame_ = 0;
     long             clockMs_ = 0;

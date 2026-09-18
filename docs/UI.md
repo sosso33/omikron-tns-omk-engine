@@ -2592,6 +2592,100 @@ that `SaveDir_Build` writes. A loader that restores only the DB leaves the
 game at day 0 — invisible for as long as nothing draws a clock, which in
 `engine/` was until this row existed. `verify.py: save clock`.
 
+### 3g-bis. `Lire plan` — the CITY MAP, and the panel nothing points at
+
+The third of those three tiles is the only one that DOES anything. Its
+callback `0x0049BC40` is seven instructions —
+`sub_42A370(screen, off_4DF190)` — and `off_4DF190` has exactly **two**
+references in the whole 54 MB listing: that push, and its own
+`dd offset unk_4DEE50` definition. So no item's `+44` reaches the panel and
+the widget lift had never seen it; `exetables.py`'s `CODE_NAMED` names it now,
+as the Inventaire page's second code-installed child beside the verb panel.
+Its neighbour `0x0049BC30`, on the ANNEAUX tile, is `mov eax, 1; retn` — six
+bytes whose only purpose is to stop `Ui_ConfirmSelection` descending into that
+item's `+44`. **It is inert in the original**; do not implement it.
+
+The panel is three 640×480 items on one list, each a whole layer:
+
+| item | draw hook | what it is |
+|---|---|---|
+| `0x004DEC78` | `0x00477CA0` | the BITMAP. Its `+44` is the Inventaire page, and it is the only selectable one — confirming the map is how you leave it |
+| `0x004DECC0` | `0x0049E6F0` | the player's PIN and the destination MARKERS |
+| `0x004DED08` | `0x00477ED0` | the interference box §1 already describes |
+
+**The page names its own file from the resident DECOR.** `sub_49D9E0`, the
+panel's `+4`, takes `dword_93076C + 0x30` — the scene node's own path — keeps
+the basename after the last `\`, drops the last four characters and builds
+`Images\<that>.bmp`. `MESHES\DECORS\ANEKBAH.3DO` becomes `Images\ANEKBAH.bmp`,
+and four such files ship: `anekbah`, `qalisar`, `jaunpur`, `lahoreh`. It tests
+the path with `fopen`/`fclose` and **on failure re-installs `0x004DEE50` at
+once**, so outside those four locations the button silently bounces back to the
+Inventaire tab. `sub_49DB80`, the `+8`, frees the bitmap.
+
+It then `_strupr`s the stem and matches it against a **52-byte** table at
+`0x004DF1F8` (bounded by `0x004DF2CC`), storing the row's first dword in
+`dword_4DECFC` — which is the PIN ITEM's own `+0x3C` tag — or `-1`. Four rows,
+each `{int id; char name[32]; float x0, z0, xspan, zspan}` and each indexing
+itself 0..3. The four floats are the whole page:
+
+    px = item.x + (int)((X - x0) * item.w / xspan)
+    py = item.y + (int)((Z - z0) * item.h / zspan)
+
+over the item's own 640×480, the result then passed through `I2D_ScaleX/Y`. All
+four `zspan` are NEGATIVE, which is what turns the world's +z into the bitmap's
+−y.
+
+**The pin is an ARROW and it carries the heading.** `sub_49E5B0` builds an
+`I2D_DrawTriangle` whose first point is the player's own place and whose other
+two sit at `b + 30°` and `b − 30°` for `b = 90 − facing`, at a radius of 40
+(`flt_4BCEF8` 90.0, `flt_4BCEFC` −30.0, `flt_4BCF10` 30.0, `dbl_4BCF08` 40.0),
+each offset scaled on its own axis. Point 0 is `I2D_PackColour(osc/2, 0, 0,
+255)` — **blue** — and the other two white; a marker is the same primitive,
+10 wide and 10 tall pointing up, in `I2D_PackColour(osc, 255, 0, 0)` — **red**.
+`osc` is **oscillator 2**'s `+0x18`, a triangle between 45 and 200 on a 1000 ms
+period, so both pulse. It is an ALPHA, and §1's mode-2 triangle is three lines
+taking their colour from point 0's low three bytes, so the software back end
+drops it. The player's position and facing are `dword_930724 + 0xF4`, `+0xFC`
+and `+0x1A4`.
+
+Both are labelled in one 200×80 box at (+10, −10) from their own point: the pin
+with `sub_42B1F0(6)`, the player's NAME — the same event-44 property the
+identity page's *Nom* row shows — and a marker with its place name.
+
+**The markers are the ENABLED SLIDER DESTINATIONS**, the `GLOBAL +16` list
+§3g's slider page already shows. For each, the hook keeps the row whose first
+`len` characters uppercase to the city's name, strips the separator (3
+characters when `name[len]` is a space, 2 otherwise — `"Anekbah - Morgue zone
+42"` gives `"Morgue zone 42"`) and looks the remainder up in a second compiled
+table at `0x004DF2C8`, stride **44**, bounded by `aNoOne_1`: fifteen rows of
+`{char name[32]; float x, y, z}`, which are the **same three places in five
+languages** (English, French, German, Italian, Spanish) — the bookshop, the
+hide-out and the garden, all three in Jaunpur. A hit takes that row's `+32` and
+`+40`; a miss falls back on `sub_40E630`, the destination's own ADDRESS.
+
+Those three are **overrides, not copies**: `Librairie secteur 9` sits **3652**
+units from the address that positions it, `Jardin - 572 Iliam Rd` 945, and
+`Cache 8250 Konera St.` 110.
+
+**And the addresses are in the same space as the rectangles — which the data
+had to agree to.** `sub_40E630` returns the 16-byte address RECORD and the hook
+reads it with `fild`, an integer load. `Area_Load` converts an address through
+`rawToWorld` and stores the truncated result back into that int32 field, so
+what `fild` sees is the WORLD value; read that way **39 of 39** shipped
+destinations land inside their own city's rectangle, and read as the raw file
+value **0 of 39** do.
+
+Both tables are `.data`, so they are lifted to `tables/city_maps.json`.
+Ported as `engine/src/ui/citymap.*` plus two hooks in the composer;
+`verify.py: engine: sneak map`. **One part is deliberately not reproduced and
+is labelled in the port**: `sub_40E630` is not a lookup but the TRANSPORT, and
+its first act is to `Area_Load` the destination's area when that area is not
+resident — which a draw hook must not do. The port resolves a marker only
+against the resident chunk's own address table and reports any it had to drop.
+In the shipped data that costs nothing: every destination of a city carries
+that city's area id, so the engine's own same-area fast path
+(`cmp ecx, edx; jz loc_40E886`) is the one that runs whenever the map is open.
+
 ### The rows are a WINDOW, and the gate is per row
 
 `sub_42AAE0(list, window)` binds the nine row widgets:

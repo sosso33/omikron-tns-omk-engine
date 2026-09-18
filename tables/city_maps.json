@@ -1,0 +1,235 @@
+{
+ "_": "Lifted from gamedata/Runtime 2.exe by tools/exetables.py - do not hand-edit; run the tool. These tables are compiled into the executable and are NOT in the shipped gamedata/ data, which is why a replica engine needs this file.",
+ "table": "city_maps",
+ "documented_in": "docs/UI.md",
+ "about": "THE SNEAK'S CITY MAP - the two tables behind `Lire plan` (screen 9).\n\nConfirming the third 50x50 tile of the sneak's Inventaire page runs\n`0x0049BC40`, which installs panel `0x004DF190`. That panel's open hook\n`sub_49D9E0` loads `Images\\<SET>.bmp` - the basename of the resident decor\nnode's path (`dword_93076C + 0x30`) with its last four characters\ndropped - and then `_strupr`s that name and looks it up in a **52-byte**\ntable at `0x004DF1F8`, bounded by `0x004DF2CC`, storing the record's first\ndword in `dword_4DECFC`. Four rows: ANEKBAH, QALISAR, JAUNPUR, LAHOREH,\nnumbered 0..3, and all four bitmaps ship.\n\n`dword_4DECFC` is item `0x004DECC0`'s own `+0x3C` tag, and that item's\ndraw hook `0x0049E6F0` scans the same table back for the record carrying\nit. The record's four trailing floats are what the whole page rests on:\n\n    px = item.x + (X - f0) * item.w / f2\n    py = item.y + (Z - f1) * item.h / f3\n\nover the item's 640x480 - so `f0/f1` are the map's top-left corner in\nWORLD units and `f2/f3` its span, the second of them negative because the\nbitmap's y runs against the world's z.\n\nThe second table, at `0x004DF2C8` (stride **44**, bounded by\n`aNoOne_1` = `0x004DF55C`), is a per-place OVERRIDE. The hook walks the\nENABLED slider destinations (`sub_40E8E0` / `sub_42B220`, `GLOBAL +16`\nfiltered by the DB's AddressEnabled bits), keeps those whose name begins\nwith the city's, strips the `\" - \"` and looks the remainder up here; a hit\nsupplies the marker's position from the record's `+32` (x) and `+40` (z),\nand a miss falls back on `sub_40E630`, the address the destination's own\nbit names. Fifteen rows - the same three places in five languages\n(English, French, German, Italian, Spanish) - and they are NOT copies of\nthe addresses: `Librairie secteur 9` sits 3652 units from the address\nthat positions it.\n\nThe checks are the ones the data could fail: the four ids must be their\nown row numbers, the names must be the four shipped bitmaps, every span\nmust be non-zero, and the fifteen places must be five groups of three\nsharing a position.",
+ "checks": [
+  {
+   "what": "four cities",
+   "got": 4,
+   "want": 4
+  },
+  {
+   "what": "...indexing themselves",
+   "got": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "want": [
+    0,
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "what": "...named for the four shipped bitmaps",
+   "got": [
+    "ANEKBAH",
+    "QALISAR",
+    "JAUNPUR",
+    "LAHOREH"
+   ],
+   "want": [
+    "ANEKBAH",
+    "QALISAR",
+    "JAUNPUR",
+    "LAHOREH"
+   ]
+  },
+  {
+   "what": "every span non-zero",
+   "got": true,
+   "want": true
+  },
+  {
+   "what": "...and every z span NEGATIVE - the bitmap's y runs against world z",
+   "got": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "want": [
+    true,
+    true,
+    true,
+    true
+   ]
+  },
+  {
+   "what": "fifteen places",
+   "got": 15,
+   "want": 15
+  },
+  {
+   "what": "...three positions",
+   "got": 3,
+   "want": 3
+  },
+  {
+   "what": "...five names each",
+   "got": [
+    5,
+    5,
+    5
+   ],
+   "want": [
+    5,
+    5,
+    5
+   ]
+  },
+  {
+   "what": "the French row of each",
+   "got": [
+    "Cache 8250 Konera St.",
+    "Jardin - 572 Iliam Rd",
+    "Librairie secteur 9"
+   ],
+   "want": [
+    "Cache 8250 Konera St.",
+    "Jardin - 572 Iliam Rd",
+    "Librairie secteur 9"
+   ]
+  }
+ ],
+ "rows": {
+  "cities": {
+   "at": "0x004DF1F8",
+   "stride": 52,
+   "rows": [
+    {
+     "id": 0,
+     "name": "ANEKBAH",
+     "x0": -5850.394,
+     "z0": 4940.945,
+     "xspan": 26062.992,
+     "zspan": -19421.26
+    },
+    {
+     "id": 1,
+     "name": "QALISAR",
+     "x0": 8051.181,
+     "z0": -1248.031,
+     "xspan": 19488.189,
+     "zspan": -15299.213
+    },
+    {
+     "id": 2,
+     "name": "JAUNPUR",
+     "x0": 3551.181,
+     "z0": 16799.213,
+     "xspan": 20118.109,
+     "zspan": -15122.047
+    },
+    {
+     "id": 3,
+     "name": "LAHOREH",
+     "x0": 2000.0,
+     "z0": 29299.213,
+     "xspan": 17248.031,
+     "zspan": -12791.339
+    }
+   ]
+  },
+  "places": {
+   "at": "0x004DF2C8",
+   "stride": 44,
+   "rows": [
+    {
+     "name": "Bookstore Sector 9",
+     "x": 14842.52,
+     "y": 22.835,
+     "z": 13582.677
+    },
+    {
+     "name": "Hide Out 8250 Kon. St",
+     "x": 11811.023,
+     "y": -94.488,
+     "z": 12834.646
+    },
+    {
+     "name": "Garden - 572 Iliam Rd",
+     "x": 17637.795,
+     "y": -275.591,
+     "z": 7322.834
+    },
+    {
+     "name": "Librairie secteur 9",
+     "x": 14842.52,
+     "y": 22.835,
+     "z": 13582.677
+    },
+    {
+     "name": "Cache 8250 Konera St.",
+     "x": 11811.023,
+     "y": -94.488,
+     "z": 12834.646
+    },
+    {
+     "name": "Jardin - 572 Iliam Rd",
+     "x": 17637.795,
+     "y": -275.591,
+     "z": 7322.834
+    },
+    {
+     "name": "Buchgeschäft Sektor 9",
+     "x": 14842.52,
+     "y": 22.835,
+     "z": 13582.677
+    },
+    {
+     "name": "Versteck Kon. St 8250",
+     "x": 11811.023,
+     "y": -94.488,
+     "z": 12834.646
+    },
+    {
+     "name": "Garten - Iliam Rd 572",
+     "x": 17637.795,
+     "y": -275.591,
+     "z": 7322.834
+    },
+    {
+     "name": "Libreria zona 9",
+     "x": 14842.52,
+     "y": 22.835,
+     "z": 13582.677
+    },
+    {
+     "name": "Covo, Konera St 8250",
+     "x": 11811.023,
+     "y": -94.488,
+     "z": 12834.646
+    },
+    {
+     "name": "Giardino, Iliam Rd 572",
+     "x": 17637.795,
+     "y": -275.591,
+     "z": 7322.834
+    },
+    {
+     "name": "Libreria sector 9",
+     "x": 14842.52,
+     "y": 22.835,
+     "z": 13582.677
+    },
+    {
+     "name": "Calle Konera, 8250",
+     "x": 11811.023,
+     "y": -94.488,
+     "z": 12834.646
+    },
+    {
+     "name": "Jardín - C/Iliam, 572",
+     "x": 17637.795,
+     "y": -275.591,
+     "z": 7322.834
+    }
+   ]
+  }
+ }
+}
