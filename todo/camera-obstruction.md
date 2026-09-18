@@ -262,8 +262,13 @@ says nobody had read:
 None of the four can move a camera through a wall, which is why
 `engine: camera collision` never saw them: that check tests only the invariant
 "nothing solid between the target and the eye", and all four are about the
-HEIGHT and the recovery. All four are fixed as of 2026-09-18 and
-`engine: camera obstruction` asserts the first and the third.
+HEIGHT and the recovery. All four are fixed as of 2026-09-18, plus a fifth
+found beside them: `Camera_Request`'s `memset` clears `+208` and `+328` on
+every camera change, and the port kept both across a new camera (attempt 2's
+fault, still latent in the controller). `engine: camera obstruction` asserts
+the first; the second-ray arm (3) is transcribed but NOT separately asserted
+— the probe does not report which ray fired, and no measurement here was
+built to reach that arm, so it is labelled unmeasured.
 
 ---
 
@@ -351,5 +356,31 @@ With the port as it stands the §1/§4 repro gives **90.3% dark** (277445 of
 307200 pixels at R+G+B <= 24), and the run's own tail says
 `last camera 2986` — an absolute world camera, no `PlayerController`, so
 nothing in the obstruction family is even in the path. Fixing the four faults
-in §5d moves that number by **0.0 points**, which is the correct outcome and
-not a failure of the fix.
+in §5d moves that number by **0.0 points** — the same 277445 pixels — which is
+the correct outcome and not a failure of the fix.
+
+### 6e. The rest of the measurements, 2026-09-18
+
+* **dialog 387, frame by frame.** Reached headlessly from
+  `traces/games-resto.bin` slot 2, standing in zone 3732
+  (`--stand 2547,22,-6930,314`, action at frame 30, NEXT every 120 frames):
+  2859 dialogue frames, 22 distinct camera pairs, the crane 4194 -> 4195
+  among them. Two identical runs differ in 0 frames (determinism), and the
+  pass switched off entirely (`OMK_NO_CAM_COLLIDE=1`) against on also differs
+  in **0 frames of 22 shots** — so no version of this pass can move a
+  dialogue shot, which is what §6 predicts.
+* **the follow camera, AREA 46's sixteen views.** 11 never block, and their
+  eye and target are **bit-identical** with the pass off (max difference
+  0.000 over 119 frames each). 5 block, as `engine: camera collision` has
+  always counted. On the deepest pinch (`6980,30,880,0`) the eye rises to
+  **93.3%** of the pushed height over ~20 frames and holds there — a smooth,
+  monotone curve, frame 1 being flag 1's snap. With the ease anchored on
+  in-frame values (the code before this task) it settles at **60.3%**.
+* **the walk.** The lift, `k*40,k200*300` after the arrival: **377.7 units**,
+  the §6a figure unchanged. AREA 46 with forward held for 360 frames:
+  `6980,30,450,180` walks 389.7 and `7100,30,600,0` 82.7, **identical** with
+  the pass on and off; `6980,30,880,0` walks 0.0 either way, because that
+  stand faces him into a wall (the pass cannot be what stops him — it is off
+  in one of the two runs).
+* `engine: camera obstruction` asserts the scope and the two follow-camera
+  facts, and was shown to fail on that 60.3% mutation.
