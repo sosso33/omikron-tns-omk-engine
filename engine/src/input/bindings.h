@@ -90,11 +90,32 @@ inline constexpr std::uint32_t kUiRepeatMask = 0x203Fu;
 // control is held; the codes live in `Input_ReadOneControl`'s one space -
 // a keyboard scan 1..255, a mouse button 12..14, a joystick button index + 48
 // (with 0 and 4 the two axes).
+//
+// **A joystick code is a BYTE OFFSET into DirectInput's 80-byte `DIJOYSTATE`**
+// (`Input_Poll`, 0x0043E0D0, reads the device with `GetDeviceState(80, ...)`
+// and tests `i8i(state, code) < 0`): `lX` is at 0, `lY` at 4, `rgbButtons[k]`
+// at 48 + k. That is why the table's axis codes are 0 and 4 - and why they are
+// never matched as codes: see `joyX` below.
 struct DeviceState {
     std::vector<int> keyboard, mouse, joystick;
+    // THE STICK, in the engine's own range: `sub_43D0B0` sets DIPROP_RANGE on
+    // `lX` and `lY` (by offset) to `dword_4C65AC`..`dword_4C65B0` =
+    // -1000..1000, 0 at rest. `Input_Poll` compares each against
+    // `dword_52F498`, a global no instruction stores to (`dd ?`, so 0), and
+    // the engine sets NO dead zone - that was the Windows driver's. A frontend
+    // with an analog stick must therefore apply its own and say so.
+    int joyX = 0, joyY = 0;
     const std::vector<int>& of(Device d) const;
     bool holds(Device d, int code) const;
 };
+
+// `Input_Poll`'s KEYBOARD FIXES, applied to the scan-code array before any
+// binding is matched: LEFT SHIFT and RIGHT SHIFT each set the other (42 <-> 54),
+// LEFT CONTROL sets RIGHT CONTROL (29 -> 157, one way), and TAB is dropped
+// while ALT (56) is down, so alt-tab never opens the sneak. The adventure
+// scheme binds RUN to 54 and the sidestep / swim to 157, so without these a
+// left-hand Shift or Ctrl does nothing. -> the codes as the bindings see them.
+std::vector<int> keyboardAsPolled(const std::vector<int>& held);
 
 // The four compiled schemes, lifted to `tables/key_bindings.json`.
 class ControlSchemes {
