@@ -18,22 +18,33 @@
 //                               how a device run is given `--area`, `--save`,
 //                               `--fps` or `--nofmv` without a rebuild
 //
-// The frame is 640x480, the resolution the interface is authored at; the
-// GLES backend scales it into the 960x544 screen at its own aspect.
+// The frame is the Vita's own 960x544, drawn 1:1 (the reader's choice,
+// 2026-09-18). The 3D keeps its proportions - the camera's field of view is
+// horizontal and the vertical follows the frame - but the INTERFACE is
+// authored at 640x480 and the engine's own I2D scaling (`v * w / 640`,
+// `v * h / 480`) stretches it to 16:9. `--res 640x480` in args.txt gives the
+// 4:3 frame back, pillarboxed into the screen.
 #include <psp2/io/stat.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/power.h>
 
 #include <cstdio>
 #include <fstream>
+#include <malloc.h>
+#include <new>
 #include <string>
 #include <vector>
 
-// The newlib heap: the M1 measured a 137 MB live heap on a street
-// (`handoff-vita.md` §1), and vitaGL keeps its own copies on top. 300 MB is
-// what a homebrew title can ask for without the extended-memory mode.
+// The newlib heap. The SDK's start-up reserves this whole block with
+// `sceKernelAllocMemBlock` BEFORE `main` - and if the system refuses it, there
+// is no heap at all: every `new` throws, starting with the first static
+// initialiser. 300 MB did exactly that on a real Vita (2026-09-18: a crash
+// dump, `std::map` built before `main` -> `operator new` -> `bad_alloc` ->
+// `abort`), while Vita3K, which hands out more, ran it. 192 MB is what the
+// bench runs with; the M1 measured a 137 MB live heap on a busy street with
+// 64-bit pointers, and vitaGL takes its own memory OUTSIDE this block.
 extern "C" {
-int _newlib_heap_size_user = 300 * 1024 * 1024;
+int _newlib_heap_size_user = 192 * 1024 * 1024;
 // `play.cpp`'s `main` is one function of ~18800 lines with ~470 locals in a
 // single frame; the Vita's default main-thread stack is 256 KiB. 8 MiB leaves
 // room for that frame and the recursion below it.
@@ -75,7 +86,7 @@ int main(int, char**) {
                       std::fopen("ux0:data/omk/omk-play.err", "w"));
 
     std::vector<std::string> args = {"omk-play", kRoot, kTables,
-                                     "--saves", kSaves, "--res", "640x480"};
+                                     "--saves", kSaves, "--res", "960x544"};
     if (exists(kIni)) { args.push_back("--config"); args.push_back(kIni); }
     if (std::ifstream extra{kExtra}) {
         std::string line;
@@ -91,7 +102,20 @@ int main(int, char**) {
     std::printf("\n");
     std::fflush(stdout);
 
-    const int rc = omk_play_main(static_cast<int>(args.size()), argv.data());
+    // what the heap actually holds, first - the line a memory report starts
+    // from (`arena` is the newlib block reached so far, not its capacity)
+    std::printf("heap: %d MB reserved for newlib, %d bytes in use at main\n",
+                _newlib_heap_size_user / (1024 * 1024), mallinfo().uordblks);
+    int rc = 1;
+    try {
+        rc = omk_play_main(static_cast<int>(args.size()), argv.data());
+    } catch (const std::bad_alloc&) {
+        // out of memory is SAID, not a silent abort: this log is the only
+        // report a console run leaves
+        std::printf("FATAL: out of memory (std::bad_alloc) - %d bytes in use of the %d MB heap\n",
+                    mallinfo().uordblks, _newlib_heap_size_user / (1024 * 1024));
+        std::fprintf(stderr, "FATAL: out of memory\n");
+    }
     std::fflush(stdout);
     std::fflush(stderr);
     sceKernelExitProcess(rc);
