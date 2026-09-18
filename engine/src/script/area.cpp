@@ -13,7 +13,6 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
-#include <filesystem>
 #include <fstream>
 #include <sstream>
 
@@ -252,9 +251,8 @@ int Session::loadSlicesFor(int area) const {
     const DataFs fs(root);
     const auto real = fs.resolve("MESHES/DECORS/" + set + ".3DO");
     if (!real) return 0;
-    std::error_code ec;
-    const auto n = std::filesystem::file_size(*real, ec);
-    if (ec || n == 0) return 0;
+    const long long n = fileSize(*real);
+    if (n <= 0) return 0;
     return static_cast<int>((n + sliceBytes_ - 1) / sliceBytes_);
 }
 

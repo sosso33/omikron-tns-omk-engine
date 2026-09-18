@@ -297,6 +297,38 @@ scripts, open audio and the pad, and stay up" - which found two crashes the
 console would have had - but not "is the picture right" or "is it fast
 enough". Those stay the console's.
 
+### 2026-09-18: THE START-UP CRASH - vitaGL and a uniform ARRAY
+
+The game died at start on every path but the street start: newlib's
+`_malloc_r` on a free-list pointer of **0xBD20A0A1**, the same value every run.
+Found by bisection, not by guessing:
+
+* the game's log in the emulator is written but not flushed to the host file
+  before a kill; the emulator's own log records every `sceIoWrite` SIZE, and
+  those sizes match the Mac log line for line - so the last line printed is
+  readable even from an empty file;
+* **heap checkpoints** (`OMK_HEAPCHECK`, Vita only, `mallinfo` walks the free
+  lists) at each start-up banner of `play.cpp`: the heap was whole before the
+  RENDERER section and corrupt before the MUSIC one - the GL set-up;
+* the corrupt pointer, read as a float, is **-10/255**: a value of the
+  SHIMMER table, which `GlesRenderer::init` uploaded as `uniform float
+  uWave[32]` with `glUniform1fv(loc, 32, ...)`. **vitaGL (at the SDK's commit)
+  sizes a uniform float ARRAY's storage short and writes the rest over the
+  heap.** Now eight `vec4` uniforms and an index picked by arithmetic.
+
+After it: the normal start, the save start and the street start all run with
+0 invalid reads; the normal start reaches the start menu. **Rule for the GLES
+backend: no uniform arrays.**
+
+Also removed on the way, on the reader's point that the standard library's
+OS layer is not to be trusted on the Vita: `std::filesystem` (DataFs's
+directory walk, `create_directories`, `file_size` - `sceIo` calls on the Vita,
+`makeDirectories` / `fileSize` in `datafs.h`) and the audio mixer's
+`std::mutex` (SDL's mutex now). Neither was THE crash - the heap checkpoints
+say so - but both sit on SDK glue the engine does not need. And
+`-DOMK_VITA_ASSERTS=ON` builds with libstdc++'s bounds checks, for the next
+overwrite of this kind (it found nothing here: the write was vitaGL's).
+
 ---
 
 ## 1. The issues, and what is missing

@@ -5,7 +5,6 @@
 
 #include <algorithm>
 #include <cstdio>
-#include <filesystem>
 #include <fstream>
 
 namespace omk {
@@ -279,9 +278,8 @@ std::vector<std::byte> readSaveFile(const std::string& writablePath,
 
 bool writeSaveFile(const std::string& path, std::span<const std::byte> file) {
     if (!safeOutputPath(path)) return false;
-    std::error_code ec;
-    const auto dir = std::filesystem::path(path).parent_path();
-    if (!dir.empty()) std::filesystem::create_directories(dir, ec);
+    const auto cut = path.find_last_of("/\\");
+    if (cut != std::string::npos) makeDirectories(path.substr(0, cut));
     std::ofstream f(path, std::ios::binary | std::ios::trunc);
     if (!f) {
         std::fprintf(stderr, "save: cannot write %s\n", path.c_str());

@@ -57,6 +57,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # float result against the host's - the bench's hash is only comparable across
 # machines if both compute the same operations (`bench_main.cpp`).
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -Wall -Wextra -mfpu=neon -mfloat-abi=hard -ffp-contract=off")
+# `-DOMK_VITA_ASSERTS=ON`: libstdc++'s bounds checks (vector / string / span
+# indexing), so an out-of-range write ABORTS at its line with a message instead
+# of corrupting newlib's heap silently - the Vita has no sanitizer.
+option(OMK_VITA_ASSERTS "libstdc++ bounds checks, for hunting a heap overwrite" OFF)
+if(OMK_VITA_ASSERTS)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_GLIBCXX_ASSERTIONS")
+endif()
 # ROOM FOR THE SCE DATA. `vita-elf-create` appends the module's import stubs
 # at the END of the code segment, and the data segment starts at the next
 # 64 KiB boundary after it - so whether they fit is luck of where the code

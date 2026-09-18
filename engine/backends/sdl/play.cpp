@@ -103,6 +103,16 @@
 #include <set>
 #include <string>
 
+// A HEAP CHECKPOINT on the Vita (`backends/vita/printf_c99.cpp`): newlib's
+// `mallinfo` walks every free list, so a checkpoint AFTER a heap overwrite
+// crashes there - the last label logged brackets the overwrite. A no-op
+// everywhere else. (todo/vita-port.md, the start-up heap corruption.)
+#if defined(__vita__)
+extern "C" void omk_vita_heap_check(const char* where);
+#  define OMK_HEAPCHECK(w) omk_vita_heap_check(w)
+#else
+#  define OMK_HEAPCHECK(w) ((void)0)
+#endif
 #if defined(__vita__)
 // The Vita's on-screen keyboard (`backends/vita/ime.h`), for the name field.
 namespace omk::vita {
@@ -659,6 +669,25 @@ const std::map<int, char>& charmap() {
     return m;
 }
 
+// A scope lock over an SDL mutex - `std::lock_guard`'s shape, SDL's lock.
+class AudioLock {
+public:
+#if defined(OMK_SDL3)
+    explicit AudioLock(SDL_Mutex* m) : m_(m) { SDL_LockMutex(m_); }
+#else
+    explicit AudioLock(SDL_mutex* m) : m_(m) { SDL_LockMutex(m_); }
+#endif
+    ~AudioLock() { SDL_UnlockMutex(m_); }
+    AudioLock(const AudioLock&) = delete;
+    AudioLock& operator=(const AudioLock&) = delete;
+private:
+#if defined(OMK_SDL3)
+    SDL_Mutex* m_;
+#else
+    SDL_mutex* m_;
+#endif
+};
+
 class SdlFrontend : public omk::Frontend {
 public:
     bool open(int w, int h, const std::string& title) override {
@@ -866,7 +895,7 @@ public:
         auto* self = static_cast<SdlFrontend*>(user);
         auto* dst = reinterpret_cast<float*>(out);
         const std::size_t n = static_cast<std::size_t>(len) / sizeof(float);
-        std::lock_guard<std::mutex> lk(self->amx_);
+        AudioLock lk(self->amx_);
         for (std::size_t i = 0; i < n; ++i) {
             float v = 0.0f;
             if (self->sHead_ < self->stream_.size()) v += self->stream_[self->sHead_++] * self->musicGain_;
@@ -920,13 +949,13 @@ public:
     }
 
     void setMusicGain(float g) override {
-        std::lock_guard<std::mutex> lk(amx_);
+        AudioLock lk(amx_);
         musicGain_ = g < 0.0f ? 0.0f : (g > 1.0f ? 1.0f : g);
     }
 
     void queueAudio(std::span<const float> s) override {
         if (s.empty()) return;
-        std::lock_guard<std::mutex> lk(amx_);
+        AudioLock lk(amx_);
         // NO DEVICE, NOTHING QUEUED (todo/optimization.md step 5). With no
         // device the callback that consumes the stream never runs and
         // `queuedSeconds` answers 0 for ever, so the music's "keep a second
@@ -951,7 +980,7 @@ public:
     int playSound(std::span<const float> s, bool loop = false,
                   float gain = 1.0f) override {
         if (s.empty()) return -1;
-        std::lock_guard<std::mutex> lk(amx_);
+        AudioLock lk(amx_);
         // A cap, because a held key would otherwise stack voices without end.
         if (shots_.size() >= 8) shots_.erase(shots_.begin());
         const int id = nextShot_++;
@@ -961,17 +990,17 @@ public:
 
     void stopSound(int handle) override {
         if (handle < 0) return;
-        std::lock_guard<std::mutex> lk(amx_);
+        AudioLock lk(amx_);
         std::erase_if(shots_, [handle](const Shot& o) { return o.id == handle; });
     }
 
     void flushAudio() override {
-        std::lock_guard<std::mutex> lk(amx_);
+        AudioLock lk(amx_);
         stream_.clear(); sHead_ = 0;
     }
 
     double queuedSeconds() override {
-        std::lock_guard<std::mutex> lk(amx_);
+        AudioLock lk(amx_);
         const double per = arate_ > 0 ? 1.0 / (arate_ * achan_) : 0.0;
         return static_cast<double>(stream_.size() - sHead_) * per;
     }
@@ -1015,7 +1044,16 @@ private:
     struct Shot { std::vector<float> pcm; std::size_t pos; int id; bool loop = false;
                   float gain = 1.0f; };
     int                 nextShot_ = 1;
-    std::mutex          amx_;
+    // SDL's own mutex, not `std::mutex`: on the Vita the standard library's
+    // threading sits on the SDK's pthread layer, and the engine keeps to the
+    // platform's own calls there (`todo/vita-port.md`); SDL's is built on
+    // them. The audio callback runs on SDL's thread, so every touch of the
+    // mixer's state below takes it.
+#if defined(OMK_SDL3)
+    SDL_Mutex*          amx_ = SDL_CreateMutex();
+#else
+    SDL_mutex*          amx_ = SDL_CreateMutex();
+#endif
     float musicGain_ = 1.0f;      // Music_SetVolume, applied to the stream in feed()
     std::vector<float>  stream_;
     std::size_t         sHead_ = 0;
@@ -1506,6 +1544,7 @@ static void turnRootBy(omk::NodeTracks& t, float yawDeg) {
 }
 
 int main(int argc, char** argv) {
+    OMK_HEAPCHECK("main");
     // `--help` anywhere on the line, and the same text the argument check
     // prints. Kept in one place so a flag cannot be added without a line here.
     const auto usage = [](std::FILE* to) {
@@ -2286,6 +2325,7 @@ int main(int argc, char** argv) {
     in.installScheme(0);
     in.setRepeatMask(0x203F);          // `Ui_BeginScreen`
 
+    OMK_HEAPCHECK("before boot chain");
     // ---- the boot chain, because the app does not start at a menu --------
     //
     // `docs/BOOT.md`: launch -> the three FLIS movies -> Game_Start
@@ -2310,6 +2350,7 @@ int main(int argc, char** argv) {
                 br.bootScene.c_str(), br.bootSprites, br.bootSounds,
                 br.startArea);
 
+    OMK_HEAPCHECK("before live session");
     // ---- THE LIVE SESSION -----------------------------------------------
     //
     // `boot()` runs the chain and reports; this RUNS it, frame by frame, with
@@ -2887,6 +2928,7 @@ int main(int argc, char** argv) {
     int openScreen = -1, conversations = 0, lastArea = -1;
     constexpr int kScreenPause = 31;   // PAUSE GAME - the only screen that
                                        // sets dword_4E9728, the pause flag
+    OMK_HEAPCHECK("before sneak call");
     // ---- THE SNEAK CALL (screen 0, `VIDEOPHONE`) ----------------------
     //
     // The device the game shows a caller on, and the ONE screen in the game
@@ -3198,6 +3240,7 @@ int main(int argc, char** argv) {
     bool  rollTold = false;
     int fxSpriteWas = -2;
 
+    OMK_HEAPCHECK("before adventure mode");
     // ---- ADVENTURE MODE ------------------------------------------------
     //
     // The Impasse's cutscene ends `camera.set 0,0,2` + `scene.load 237,57` +
@@ -3406,6 +3449,7 @@ int main(int argc, char** argv) {
     }
     long handoverFrame = -1;
 
+    OMK_HEAPCHECK("before interface sounds");
     // ---- the INTERFACE SOUNDS.
     //
     // `docs/UI.md`: every screen names up to twelve, and the slots are
@@ -3427,6 +3471,7 @@ int main(int argc, char** argv) {
     std::printf("display %dx%d (the interface is authored at 640x480 and "
                 "scaled by I2D_ScaleX/Y)\n", dispW, dispH);
 
+    OMK_HEAPCHECK("before renderer");
     // ---- THE RENDERER ---------------------------------------------------
     //
     // Vulkan when the machine has it, the software reference otherwise - and
@@ -3603,6 +3648,7 @@ int main(int argc, char** argv) {
     // it - which is what lets a blip and the music coexist.
     const auto blip = [&](const std::vector<float>& v) { front.playSound(v); };
 
+    OMK_HEAPCHECK("before music");
     // ---- THE MUSIC.
     //
     // Which track and whether it loops are the SCRIPT's decisions: AREA 118's
@@ -3624,6 +3670,7 @@ int main(int argc, char** argv) {
     omk::VoiceOverPlayer voices(voiceLib);
     int voiceOverShot = -1;
 
+    OMK_HEAPCHECK("before world");
     // ---- THE WORLD ------------------------------------------------------
     //
     // What is on screen after the menu is the SCRIPT's answer, not this
@@ -3657,6 +3704,7 @@ int main(int argc, char** argv) {
     // no props and no `.SCX` scene objects in the picture, only the decor set;
     // and the frame is drawn by the software reference rasterizer, which
     // `PORTING` B6 carries as a reference implementation and not as a port.
+    OMK_HEAPCHECK("before speaker");
     // ---- THE SPEAKER --------------------------------------------------
     //
     // A conversation's cameras all aim at the character speaking it, so
@@ -3698,6 +3746,7 @@ int main(int argc, char** argv) {
     bool  dialogMode = false;
     bool  shootMode  = false;      // ops 80/81, `actor/shootmode.h`
 
+    OMK_HEAPCHECK("before every body");
     // ---- EVERY BODY THE SESSION SAYS IS ON SCREEN (issue 41) -----------
     //
     // `Actor_Attach` (0x0041CCA0) puts an actor in the o3de tree and
@@ -4739,6 +4788,7 @@ int main(int argc, char** argv) {
         return &charBanks.emplace(name, std::move(b)).first->second;
     };
     // ...and that clip as a pose, at FRAME 0. The recipe is
+    OMK_HEAPCHECK("before melee");
     // ---- MELEE, `todo/fight-mode.md` step 2 -----------------------------
     //
     // `fight.begin` (op 62) parks its script at status 3 and hands the
@@ -5084,6 +5134,7 @@ int main(int argc, char** argv) {
     // machine has it, the software reference otherwise. Everything below
     // submits DECISIONS and never touches an API, which is what lets the two
     // be swapped by assigning a pointer.
+    OMK_HEAPCHECK("before effect sprites");
     // ---- THE EFFECT SPRITES -------------------------------------------
     //
     // A section C effect names its sprite by an index into the GLOBAL library
