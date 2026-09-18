@@ -126,9 +126,20 @@ constexpr const char* kSceneVert = R"(
 uniform mat4  uMvp;
 uniform vec2  uTexSize;
 uniform float uShimmerClock;
-// the 32-step wave, `kShimmerWave / 255` - set once. Indexed in the VERTEX
-// stage, where GLSL ES 1.00 guarantees dynamic indexing of uniforms.
-uniform float uWave[32];
+// the 32-step wave, `kShimmerWave / 255`, as EIGHT vec4s and not one float
+// array: vitaGL (at the SDK's commit) sizes a uniform float ARRAY's storage
+// short and `glUniform1fv(loc, 32, ...)` writes the rest over newlib's heap -
+// the Vita's start-up crash of 2026-09-18, found by heap checkpoints and by
+// the corrupt free-list pointer being -10/255, this table's own value.
+uniform vec4 uWave0; uniform vec4 uWave1; uniform vec4 uWave2; uniform vec4 uWave3;
+uniform vec4 uWave4; uniform vec4 uWave5; uniform vec4 uWave6; uniform vec4 uWave7;
+float waveAt(float i) {
+    float b = floor(i / 4.0);
+    vec4 v = b < 1.0 ? uWave0 : b < 2.0 ? uWave1 : b < 3.0 ? uWave2 : b < 4.0 ? uWave3 :
+             b < 5.0 ? uWave4 : b < 6.0 ? uWave5 : b < 7.0 ? uWave6 : uWave7;
+    float c = i - b * 4.0;
+    return c < 1.0 ? v.x : c < 2.0 ? v.y : c < 3.0 ? v.z : v.w;
+}
 attribute vec3  aPos;
 attribute vec2  aUV;
 attribute vec3  aCol;
@@ -143,7 +154,7 @@ void main() {
         // ((int(clock) >> 2) + int(phase)) & 31, with no integer operators:
         // both are non-negative, so floor(x / 4) is the shift and mod the mask
         float i = mod(floor(floor(uShimmerClock) / 4.0) + floor(aPhase), 32.0);
-        wave = uWave[int(i)];
+        wave = waveAt(i);
     }
     vCol = aCol + vec3(wave);
     gl_Position = uMvp * vec4(aPos, 1.0);
@@ -337,7 +348,8 @@ private:
     bool ready_ = false;
     GLuint prog_ = 0, present_ = 0;
     // uniform locations, looked up once
-    GLint uMvp_ = -1, uTexSize_ = -1, uClock_ = -1, uWave_ = -1, uTex_ = -1,
+    GLint uMvp_ = -1, uTexSize_ = -1, uClock_ = -1, uWave_[8] = {-1, -1, -1, -1, -1, -1, -1, -1},
+          uTex_ = -1,
           uCutout_ = -1, uFogStart_ = -1, uFogEnd_ = -1, uFogColour_ = -1;
     GLint pDst_ = -1, pPic_ = -1, pBayer_ = -1, pPicSize_ = -1, pTexSize_ = -1, pFlip_ = -1,
           pDither_ = -1, pQuant_ = -1;
@@ -394,7 +406,10 @@ bool GlesRenderer::init(int w, int h) {
     uMvp_       = glGetUniformLocation(prog_, "uMvp");
     uTexSize_   = glGetUniformLocation(prog_, "uTexSize");
     uClock_     = glGetUniformLocation(prog_, "uShimmerClock");
-    uWave_      = glGetUniformLocation(prog_, "uWave");
+    for (int k = 0; k < 8; ++k) {
+        const std::string n = "uWave" + std::to_string(k);
+        uWave_[k] = glGetUniformLocation(prog_, n.c_str());
+    }
     uTex_       = glGetUniformLocation(prog_, "uTex");
     uCutout_    = glGetUniformLocation(prog_, "uCutout");
     uFogStart_  = glGetUniformLocation(prog_, "uFogStart");
@@ -414,7 +429,7 @@ bool GlesRenderer::init(int w, int h) {
     glUseProgram(prog_);
     float wave[32];
     for (int i = 0; i < 32; ++i) wave[i] = static_cast<float>(kShimmerWave[i]) / 255.0f;
-    glUniform1fv(uWave_, 32, wave);
+    for (int k = 0; k < 8; ++k) glUniform4fv(uWave_[k], 1, wave + 4 * k);
     glUniform1i(uTex_, 0);
 
     // THE RENDER TARGET. Offscreen, at the ENGINE's size, because three

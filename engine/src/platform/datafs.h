@@ -86,6 +86,20 @@ private:
     const std::map<std::string, std::string>* indexOf(const std::string& dir) const;
 };
 
+// ---- THE PLATFORM'S FILE CALLS, in one place (`todo/vita-port.md`) ------
+//
+// `std::filesystem` is used on every host but the PS VITA, where the
+// VitaSDK's libstdc++ sits on newlib's directory calls and the game's
+// start-up corrupted the heap while listing the data tree
+// (2026-09-18, in Vita3K: `_malloc_r` on a garbage free-list pointer right
+// after the first `read_dir`s). There the same four answers come from the
+// kernel's own `sceIo` calls, and nothing else in the engine touches either.
+//
+// Create `dir` and every missing parent. -> true when it exists afterwards.
+bool makeDirectories(const std::string& dir);
+// The size of a file in bytes, or -1 when it cannot be read.
+long long fileSize(const std::string& path);
+
 // REFUSE TO WRITE OVER SHIPPED GAME DATA.
 //
 // `gamedata/` is INPUT and CLAUDE.md 2 says it is never edited. Nothing in the tree

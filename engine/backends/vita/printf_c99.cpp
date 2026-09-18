@@ -19,6 +19,7 @@
 
 #include <cstdarg>
 #include <cstdio>
+#include <malloc.h>
 
 extern "C" {
 int __real_vfprintf(FILE*, const char*, va_list);
@@ -42,6 +43,13 @@ void omk_vita_redirect(FILE* out, FILE* err) {
     g_err = err;
     if (g_out) setvbuf(g_out, nullptr, _IONBF, 0);
     if (g_err) setvbuf(g_err, nullptr, _IONBF, 0);
+}
+// A heap checkpoint: `mallinfo` walks newlib's free lists, so it faults on a
+// corrupted one - the checkpoint's label, logged first, says where.
+void omk_vita_heap_check(const char* where) {
+    if (g_out) { std::fputs("heapcheck: ", g_out); std::fputs(where, g_out); std::fputc('\n', g_out); }
+    const struct mallinfo mi = mallinfo();
+    if (g_out) std::fprintf(g_out, "heapcheck: ok, %d bytes in use\n", mi.uordblks);
 }
 int __real_vsnprintf(char*, size_t, const char*, va_list);
 int __real_vsprintf(char*, const char*, va_list);
