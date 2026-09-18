@@ -5636,10 +5636,41 @@ int main(int argc, char** argv) {
                         mov.info().height, mov.info().duration);
             // 44100 stereo, the stream's own rate - NOT the engine's 22050
             // primary, which these never went through.
-            front.openAudio(mov.info().sampleRate ? mov.info().sampleRate : 44100, 2);
+            const bool audioOk =
+                front.openAudio(mov.info().sampleRate ? mov.info().sampleRate : 44100, 2);
             const double fps = mov.info().framerate > 0 ? mov.info().framerate : 30.0;
+            // THE CLOCK THE PICTURE FOLLOWS: what the audio device has
+            // PLAYED - decoded minus still queued - when there is a device,
+            // and the wall clock when there is none. Without that second
+            // half a run with no audio device measures "heard" as the
+            // DECODER's position (nothing is queued, so nothing is
+            // subtracted), which races ahead of real time, and the
+            // frame-dropping below would discard nearly every frame.
+            const Uint32 movieStart = SDL_GetTicks();
+            const auto heardSeconds = [&] {
+                return audioOk ? mov.audioSeconds() - front.queuedSeconds()
+                               : (SDL_GetTicks() - movieStart) / 1000.0;
+            };
             long shown = 0;
-            while (mov.nextFrame(mv)) {
+            // THE FILM AT ITS OWN SIZE on a GPU present: the GLES pass fits a
+            // surface to the window itself, so scaling 320x240 up to the
+            // display on the CPU first was pure cost - on a Vita, most of a
+            // frame (`todo/vita-port.md`). The SDL upload path keeps the
+            // display-sized surface: its texture is the window's size.
+            omk::Surface film(mov.info().width, mov.info().height, 0);
+            omk::Surface& target = glRen ? film : mv;
+            // A FRAME THAT IS LATE IS DECODED AND DROPPED. The sound runs at
+            // its own rate on the audio device; the loop used to wait when the
+            // picture was early and never catch up when it was late, so on a
+            // slow CPU the picture crawled behind a sound at normal speed.
+            const auto late = [&] {
+                if (frames) return false;
+                return heardSeconds() - (shown + 1) / fps > 1.0 / fps;
+            };
+            long dropped = 0;
+            for (;;) {
+                const bool behind = late();
+                if (behind ? !mov.skipFrame() : !mov.nextFrame(target)) break;
                 omk::HostInput h;
                 if (!front.pump(h)) { skipAll = true; break; }
                 // `docs/BOOT.md` 2: ANY key ends the movie playing, and left
@@ -5652,8 +5683,9 @@ int main(int argc, char** argv) {
                 }
                 for (auto blk = mov.nextAudio(); !blk.empty(); blk = mov.nextAudio())
                     front.queueAudio(blk);
-                present(mv);
                 ++shown;
+                if (behind) { ++dropped; continue; }
+                present(target);
 
                 // PACE BY THE AUDIO, not by a fixed delay. Sleeping 1000/fps
                 // after each frame adds the DECODE time to every frame, so the
@@ -5661,10 +5693,10 @@ int main(int argc, char** argv) {
                 // own rate. The audio device is the only clock running at the
                 // rate a person hears: what has been decoded, minus what is
                 // still queued, is the moment being heard now. Wait only while
-                // the picture is ahead of it, and never when it is behind.
+                // the picture is ahead of it - and when it is behind, `late`
+                // above drops frames until it is not.
                 if (!frames) {
-                    const double heard = mov.audioSeconds() - front.queuedSeconds();
-                    const double ahead = shown / fps - heard;
+                    const double ahead = shown / fps - heardSeconds();
                     if (ahead > 0.001 && ahead < 1.0)
                         SDL_Delay(static_cast<Uint32>(ahead * 1000.0));
                 }
@@ -5675,6 +5707,9 @@ int main(int argc, char** argv) {
             // Whatever the decoder ran ahead into is still in the device, and
             // a skipped movie must not go on playing under what follows.
             front.flushAudio();
+            if (dropped)
+                std::printf("  %s: %ld of %ld frames dropped to keep up with the sound\n",
+                            name, dropped, shown);
         }
         std::printf("movies %s\n",
                     !skipAll        ? "played (any key skips one, ALT skips all)"
@@ -6011,6 +6046,9 @@ int main(int argc, char** argv) {
         if (walk) in.setRepeatMask(omk::kUiRepeatMask | (shootMode ? 0x100u : 0u));
         else if (adventure) in.setRepeatMask(0);
         std::uint32_t bits = in.frame(st);
+        // ...and the word HELD this frame, before any edge filter - what a
+        // "while held" rule reads (the dialogue line's scroll, below).
+        const std::uint32_t heldBits = in.poll(st);
         if (boardPress) { bits |= 0x10u; boardPress = false; }   // `--board`, one press
         // The EDGES, taken here rather than at each consumer so a frame that
         // never reaches one - a dialogue, a cutscene, a screen - cannot leave
@@ -20017,10 +20055,16 @@ int main(int argc, char** argv) {
             // ONE PIXEL A TICK WHILE HELD, clamped to the overflow - the
             // engine's own rule. Only the spoken line scrolls; the reply
             // stack is anchored by its own height and never clipped.
+            //
+            // Read from the ENGINE'S INPUT WORD, slots 2 and 3 (Avancer /
+            // Reculer - UP and DOWN on the keyboard), not from SDL's keyboard:
+            // that was a host key read around the bindings, so on a Vita - no
+            // keyboard - the long intro line could not be scrolled at all.
+            // The word carries the keyboard arrows, the pad's stick and d-pad
+            // (Input_Poll's hardwired axes) and any rebinding alike.
             if (!inMenu && lineOverflow > 0) {
-                const Uint8* ks = SDL_GetKeyboardState(nullptr);
-                if (ks[SDL_SCANCODE_DOWN] && lineScroll < lineOverflow) ++lineScroll;
-                if (ks[SDL_SCANCODE_UP]   && lineScroll > 0)            --lineScroll;
+                if ((heldBits & 0x8u) && lineScroll < lineOverflow) ++lineScroll;   // down
+                if ((heldBits & 0x4u) && lineScroll > 0)            --lineScroll;   // up
             }
             drawSubtitle(fb, lay,
                          inMenu ? std::string() : dlg.lineText(),

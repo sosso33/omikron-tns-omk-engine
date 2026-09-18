@@ -16,6 +16,11 @@ namespace omk {
 struct Movie::Impl {
     plm_t* plm = nullptr;
     std::vector<std::uint8_t> rgb;      // one decoded frame, 24-bit
+    // the scale's column map and one source row in 565 (`nextFrame`)
+    std::vector<int> colSrc;
+    std::vector<std::uint16_t> row565;
+    int mapW = -1;
+    double mapFit = 0.0;
     ~Impl() { if (plm) plm_destroy(plm); }
 };
 
@@ -74,20 +79,50 @@ bool Movie::nextFrame(Surface& dst) {
                                 static_cast<double>(dst.h) / sh);
     const int outW = static_cast<int>(sw * fit), outH = static_cast<int>(sh * fit);
     const int ox = (dst.w - outW) / 2, oy = (dst.h - outH) / 2;
+    // THE SAME MAPPING, computed once rather than per pixel
+    // (`todo/vita-port.md`: on a Vita the per-pixel double division and the
+    // 565 conversion of every DESTINATION pixel was most of a movie frame).
+    // `sx(dx) = int(dx / fit)` is tabled once per size, and each SOURCE pixel
+    // is converted to 565 once and then replicated - the output is the same
+    // bytes, which `run_movies` checks.
+    if (p_->mapW != outW || p_->mapFit != fit) {
+        p_->colSrc.assign(static_cast<std::size_t>(outW), -1);
+        for (int dx = 0; dx < outW; ++dx) {
+            const int sx = static_cast<int>(dx / fit);
+            p_->colSrc[static_cast<std::size_t>(dx)] = (sx >= 0 && sx < sw) ? sx : -1;
+        }
+        p_->mapW = outW;
+        p_->mapFit = fit;
+    }
+    p_->row565.resize(static_cast<std::size_t>(sw));
+    int lastSy = -1;
     for (int dy = 0; dy < outH; ++dy) {
         const int sy = static_cast<int>(dy / fit);
         if (sy < 0 || sy >= sh) continue;
         const int ty = oy + dy;
         if (ty < 0 || ty >= dst.h) continue;
+        if (sy != lastSy) {
+            const std::uint8_t* s = &p_->rgb[static_cast<std::size_t>(sy) * sw * 3];
+            for (int x = 0; x < sw; ++x, s += 3)
+                p_->row565[static_cast<std::size_t>(x)] = quantise888(s[0], s[1], s[2]);
+            lastSy = sy;
+        }
+        std::uint16_t* out = dst.px.data() + static_cast<std::size_t>(ty) * dst.w;
         for (int dx = 0; dx < outW; ++dx) {
-            const int sx = static_cast<int>(dx / fit);
-            if (sx < 0 || sx >= sw) continue;
+            const int sx = p_->colSrc[static_cast<std::size_t>(dx)];
+            if (sx < 0) continue;
             const int tx = ox + dx;
             if (tx < 0 || tx >= dst.w) continue;
-            const std::uint8_t* s = &p_->rgb[(static_cast<std::size_t>(sy) * sw + sx) * 3];
-            dst.set(tx, ty, quantise888(s[0], s[1], s[2]));
+            out[tx] = p_->row565[static_cast<std::size_t>(sx)];
         }
     }
+    ++frames_;
+    return true;
+}
+
+bool Movie::skipFrame() {
+    if (!p_->plm) return false;
+    if (!plm_decode_video(p_->plm)) return false;
     ++frames_;
     return true;
 }
