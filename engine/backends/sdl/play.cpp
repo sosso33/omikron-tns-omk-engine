@@ -5668,8 +5668,14 @@ int main(int argc, char** argv) {
                 return heardSeconds() - (shown + 1) / fps > 1.0 / fps;
             };
             long dropped = 0;
+            int droppedInARow = 0;
             for (;;) {
-                const bool behind = late();
+                // At most THREE drops in a row. When decoding one frame costs
+                // more than a frame lasts - a Vita, where only the SOUND of the
+                // films came through - "late" never clears, and dropping every
+                // late frame dropped them all. This shows one frame in four at
+                // worst: a slower picture, still in step with the sound.
+                const bool behind = droppedInARow < 3 && late();
                 if (behind ? !mov.skipFrame() : !mov.nextFrame(target)) break;
                 omk::HostInput h;
                 if (!front.pump(h)) { skipAll = true; break; }
@@ -5677,14 +5683,19 @@ int main(int argc, char** argv) {
                 // ALT latches and ends all three. Accepting only ALT and ESC -
                 // which is what this did - means a player pressing space or
                 // return sits through the whole thing.
-                if (!h.held.empty()) {
+                // ...and ANY PAD BUTTON too: a pad's buttons are the game's
+                // joystick, not keys in `held` (only START is), so on a Vita
+                // nothing but START could skip - and a film drawing slowly
+                // polls it seldom.
+                if (!h.held.empty() || h.pad.buttons != 0) {
                     if (h.held.count(0x38)) skipAll = true;      // DIK_LMENU
                     break;
                 }
                 for (auto blk = mov.nextAudio(); !blk.empty(); blk = mov.nextAudio())
                     front.queueAudio(blk);
                 ++shown;
-                if (behind) { ++dropped; continue; }
+                if (behind) { ++dropped; ++droppedInARow; continue; }
+                droppedInARow = 0;
                 present(target);
 
                 // PACE BY THE AUDIO, not by a fixed delay. Sleeping 1000/fps
@@ -5707,6 +5718,14 @@ int main(int argc, char** argv) {
             // Whatever the decoder ran ahead into is still in the device, and
             // a skipped movie must not go on playing under what follows.
             front.flushAudio();
+            // the button that skipped this film must come UP before the next
+            // one starts, or one press skips them all
+            for (int guard = 0; guard < 300; ++guard) {
+                omk::HostInput h;
+                if (!front.pump(h)) break;
+                if (h.held.empty() && h.pad.buttons == 0) break;
+                SDL_Delay(10);
+            }
             if (dropped)
                 std::printf("  %s: %ld of %ld frames dropped to keep up with the sound\n",
                             name, dropped, shown);
@@ -5784,7 +5803,7 @@ int main(int argc, char** argv) {
     // gone before it drew. A game edge-triggers; this is the frame-zero half.
     for (int guard = 0; guard < 300; ++guard) {
         if (!front.pump(host)) break;
-        if (host.held.empty()) break;
+        if (host.held.empty() && host.pad.buttons == 0) break;   // pad buttons too
         SDL_Delay(10);
     }
     Uint32 lastMs = SDL_GetTicks();
