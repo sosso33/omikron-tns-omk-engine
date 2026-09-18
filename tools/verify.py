@@ -12703,6 +12703,80 @@ def c_engine_den_locker():
             "wheel's landing on 3 answers in the same frame")
 
 
+def c_engine_xachen():
+    r"""`omk-play`: XACHEN - Dakobah's four CARTRIDGES, and Xendar's door.
+
+    `todo/missing-ui.md` 5d. Screen 14, and `sub_4AF9D0` read from the raw
+    image (no `proc` label). Four BUTTONS on the ordinary left/right mover sit
+    under four SYMBOL widgets in a list flagged `0x20000004`, so nothing can
+    select those; a button's `+3C` is a POINTER to its symbol, written by the
+    screen's own open callback and not by the record, and the symbol's `+3C` is
+    its value.
+
+    * a press steps that value along `dword_4E42E8` - a FOURTEEN-entry ring
+      that is not in numerical order, `[7, 11, 1, 8, 3, 5, 12, 2, 4, 10, 14,
+      13, 6, 9]` - and writes the new symbol's 51x23 cell of `Xanoir1.bmp`
+      into the widget's LIT source (`+0x0C`/`+0x0E`), which is what it draws,
+      because it carries bank B `0x8`.
+    * the open callback sets the four to **1, 2, 3, 4** whatever the record
+      says (it ships 7, 8, 11, 3), so the puzzle always starts the same way.
+    * `unk_4E4320` is the code: **10, 14, 7, 9**. On it the hook lights every
+      button (lit source (0, 23) and `0x40000008`), plays interface sound 0x2B
+      and writes the ANSWER **1**.
+
+    THE ROUTE: AREA 58's zone 1130 'Cartouches', which the chunk's own startup
+    script enables on `2-BE Rencontre Dakobah == 1 && 2-BE Porte Xendar Ouv ==
+    0` - so the run sets both. On the answer the script teleports the player,
+    opens ZONES 1129 'Porte Xendar' and plays DIALOGS 227 'Dakobah/Xendar',
+    which is what the screen is FOR and is asserted here beside the answer.
+
+    From 1, 2, 3, 4 the ring makes the code 7, 3, 10 and 5 presses - the run
+    walks exactly those, so a wrong ring cannot reach it by accident.
+
+    THE SYMBOLS ARE READ BACK FROM THE DRAW (`ScreenFrame::spriteSrc`): the
+    viewer turns the rect the composer sampled back into a value through the
+    same table the hook used, so the line says the symbol reached the SCREEN
+    and not merely the walk.
+
+    SHOWN TO FAIL: the ring put in numerical order - the same 25 presses walk
+    to 8, 5, 13, 9 and nothing answers.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(os.path.join(fr, "SCPTDATA"))):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("no sdl",), ("no sdl",), "needs SDL to render"
+    press, right = "k28*2,k*5", "k205*2,k*5"
+    hold = ",".join(["k*60", "k28*8", "k*60"] +
+                    [press] * 7 + [right] + [press] * 3 + [right] +
+                    [press] * 10 + [right] + [press] * 5 + ["k*80"])
+    out = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--area", "58", "--var", "28=1,57=0",
+         "--stand", "-1471,150,133,290", "--frames", "600",
+         "--nofmv", "--nodelay", "--no-crowd", "--hold", hold],
+        capture_output=True, text=True, errors="replace").stdout
+    rows = re.findall(r"xachen: the cartridges show ([-0-9 ]+)\(", out)
+    ans = re.search(r"screen 14 answered (\d+) -> the script resumes \(variable (\d+) now", out)
+    return ("screen 14 is asking" in out,
+            rows[0].split() if rows else [], rows[-1].split() if rows else [],
+            len(rows), int(ans.group(1)) if ans else -1,
+            int(ans.group(2)) if ans else -1,
+            "DIALOGS 227" in out or "dialog 227" in out or "dialogue mode ENTER" in out), \
+           (True, ["1", "2", "3", "4"], ["10", "14", "7", "6"], 25, 1, 19, True), \
+           ("the cartridges open on 1 2 3 4 as the screen's own open callback sets "
+            "them, twenty-five presses walk the ring to 10 14 7 9, the screen answers "
+            "1 and Dakobah talks to Xendar - the last READING is 10 14 7 6 because "
+            "the fourth cartridge's landing on 9 answers in the same frame")
+
+
 def c_engine_terminal_family():
     r"""`omk-play`: Kay'l's TERMINAL and the FIGHT SIMULATOR - the keypad family.
 
@@ -12759,19 +12833,33 @@ def c_engine_terminal_family():
             "k*40,k28*2,k*40,k208*2,k*20,k28*2,k*20,k15*2,k*150", 400)
     tsay = re.search(r"terminal family: screen 5 - the display says '(.*)", t)
     tans = re.search(r"screen 5 answered (\d+) -> the script resumes \(variable (\d+) now", t)
+    # THE HEADER BAR - `textFn` 0x004AF5A0, the last of this family's gaps:
+    # eleven bytes that hand `sub_476860` the KEYPAD item the cursor is on, so
+    # the bar at (40, 28) is the highlighted cell's own label. Taken from the
+    # bar's own line, which is printed from the text the composer will draw.
+    tbar = re.findall(r"terminal family: screen 5 cell (\d+) - the bar says '(.*)'", t)
     # the simulator: open, confirm the first cell
     f = run(["--area", "237", "--address", "680"], "k*40,k28*2,k*80,k28*2,k*700", 900)
     fsay = re.search(r"terminal family: screen 11 - the display says '(.*)", f)
     fans = re.search(r"screen 11 answered (\d+) -> the script resumes \(variable (\d+) now", f)
+    # the bar on the cell the run walks to, and the CELL it names - two rows,
+    # because a bar that never changed would satisfy either one alone
+    # ...with the non-ASCII stripped: the shipped text is cp1252 and the
+    # subprocess is read as UTF-8 with replacement, so the degree sign in
+    # "dossier n\xb01" is not a stable thing for a check to assert.
+    bars = {int(c): "".join(ch for ch in b if ch.isascii()) for c, b in tbar}
     return ("Dossiers agents Kay" in (tsay.group(1) if tsay else ""),
             int(tans.group(1)) if tans else -1, int(tans.group(2)) if tans else -1,
             "Simulateur de combat" in (fsay.group(1) if fsay else ""),
             int(fans.group(1)) if fans else -1,
             "FIGHT BEGINS against CHARACTERS 331" in f,
-            "DATA MEMORIZED" in t, "ADDRESS 33 ENABLED" in t), \
-           (True, 2, 19, True, 1, True, True, True), \
-           ("the terminal lists Kay'l's dossiers and answers 2 on the way out, and "
-            "the simulator's first cell answers 1 and starts the training fight")
+            "DATA MEMORIZED" in t, "ADDRESS 33 ENABLED" in t,
+            bars.get(0, ""), bars.get(3, "")), \
+           (True, 2, 19, True, 1, True, True, True,
+            "{fC}Consulter le dossier n1", "{fC}Consulter le dossier n4"), \
+           ("the terminal lists Kay'l's dossiers and answers 2 on the way out, the "
+            "header bar names the keypad cell the cursor is on, and the simulator's "
+            "first cell answers 1 and starts the training fight")
 
 
 def c_engine_lift():
@@ -37241,6 +37329,7 @@ SLOW = [
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),
+    ("engine: xachen", c_engine_xachen, "todo/missing-ui 5d"),
     ("engine: terminal family", c_engine_terminal_family, "todo/missing-ui 3"),
     ("engine: water entry", c_engine_water_entry, "todo/swimming.md 1"),
     ("engine: fight library", c_engine_fight_library, "todo/fight-mode 15.2"),

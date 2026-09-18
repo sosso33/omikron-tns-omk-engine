@@ -204,14 +204,14 @@ survey, from `tables/ui_widgets.json`:
 |---|---|---|---|---|---|
 | 12 `GANDHAR DOOR` | 0x4E4CB8 | 0x004AFE90 **PORTED** | 5 | 0x004AFF90 **PORTED** | done - see below |
 | 13 `DEN` | 0x4E4990 | 0x004AFBE0 **PORTED** | 6 | none | done - see 5c; four digit wheels and two lamps, the hook itself answers |
-| 14 `XACHEN` | 0x4E4620 | 0x0042A930 (`kMoveSelectionLR`, ported) + a 4-item list | 4 | **0x004AF9D0** | the mover is already modelled; only the callback is missing |
+| 14 `XACHEN` | 0x4E4620 | 0x0042A930 (`kMoveSelectionLR`, ported) + a 4-item list | 4 | 0x004AF9D0 **PORTED** | done - see 5d; Dakobah's four cartridges |
 | 0 `VIDEOPHONE` | 0x4DF128 | none | 8 | 0x0049DBF0, `textFn` 0x0049E090 | the SNEAK family's - 0x49E090 is already supplied by the viewer |
 | 36 `HIGH-SCORE` | 0x4E22F0 | none | 1 | 0x0042A990 | one item, the family's generic button |
 
-Two of the six are done (12 and 13, below). What is left is three callbacks -
-0x004AF9D0 (XACHEN), 0x0049DBF0 (VIDEOPHONE) and 0x0042A990 (HIGH-SCORE) - all
-in the same page of the image the terminal's came from, and none of them needs
-a new list hook.
+Three of the six are done (12, 13 and 14, below). What is left is the
+VIDEOPHONE (0x0049DBF0, the SNEAK family's) and the HIGH-SCORE, whose own item
+callback 0x0042A990 is the family's generic button - what that screen needs is
+its DRAW HOOK, 0x004ADAD0, and its panel builder 0x004ADA80.
 
 ### 5b. GANDHAR'S DOOR — done 2026-09-18
 
@@ -315,6 +315,79 @@ changed to 7 2 1 4 nothing answers and the cache stays shut, and with the hand
 no longer written to the list's selection six frames draw a blank wheel that is
 not the one under the hand.
 
+### 5d. XACHEN — Dakobah's CARTRIDGES, done 2026-09-18
+
+`sub_4AF9D0` read from the raw image (no `proc` label). Screen 14 is the panel
+in front of Xendar's door: four BUTTONS on the ordinary left/right mover
+(`0x0042A930`, already ported) under four SYMBOL widgets in a list flagged
+`0x20000004`, so nothing can select those.
+
+* A button's `+3C` is a **pointer to its symbol** - `dword_4E43BC =
+  0x4E44D0` and its three neighbours, written by the screen's own OPEN
+  callback and not by the record - and the symbol's own `+3C` is its value.
+* A press steps that value along `dword_4E42E8`, a fourteen-entry **ring that
+  is not in numerical order**: `7, 11, 1, 8, 3, 5, 12, 2, 4, 10, 14, 13, 6, 9`.
+  A value the ring does not hold gives index -1, so the press lands on entry 0.
+* It then writes that symbol's 51x23 cell of `Xanoir1.bmp` into the widget's
+  **LIT** source (`+0x0C`/`+0x0E`), and the widget carries bank B `0x8`, always
+  lit, so that is what draws. The cells are `word_4E42A8[value * 4]`, three
+  columns at x = 488 / 539 / 590 and five rows 23 apart; values 0 and 15 are
+  (0, 0), which is why the hook refuses anything outside 1..14.
+* The open callback sets the four symbols to **1, 2, 3, 4** whatever the
+  record says (it ships 7, 8, 11, 3), clears `0x40000008` on the four buttons
+  and puts the selection on the first.
+* `unk_4E4320` is the code: **10, 14, 7, 9**. On it the hook gives every button
+  lit source (0, 23) with `0x40000008` set - the lamps come on - plays
+  interface sound 0x2B, writes the ANSWER **1** and starts a 4000 ms
+  oscillator 5 on the screen.
+
+From the opening 1, 2, 3, 4 the ring makes the code **7, 3, 10 and 5 presses**.
+
+**The route**: AREA 58's zone 1130 'Cartouches', enabled by the chunk's own
+startup script on `2-BE Rencontre Dakobah == 1 && 2-BE Porte Xendar Ouv == 0`:
+
+    build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
+        --area 58 --var 28=1,57=0 --stand -1471,150,133,290
+
+On the answer the script teleports the player, enables ZONES 1129 'Porte
+Xendar' and plays DIALOGS 227 'Dakobah/Xendar'.
+
+**The composer gained `setItemLitSource`** for this, beside the `setItemSource`
+Den's locker needed. The two screens write different halves of one record -
+Den moves `+0x12`, the unlit y, on a wheel that draws UNLIT; XACHEN moves
+`+0x0C`/`+0x0E` on a symbol that draws LIT - and one map cannot serve both
+without guessing which field a caller meant.
+
+NOT ported, labelled: the sound and the 4000 ms timer.
+
+`verify.py: engine: xachen`, shown to fail by putting the ring in numerical
+order: the same twenty-five presses walk to 8, 5, 13, 9 and nothing answers.
+
+### 3b. The terminal's HEADER BAR — done 2026-09-18
+
+The last of the terminal family's gaps, and eleven bytes of code. `unk_4E3FE0`
+is the **keypad's own list** - `db 0Bh` at +0 is its eleven items,
+`word_4E3FE2` at +2 its selection, `sub_4AF300` at +4 its hook and
+`off_4E3FEC` at +0x0C its item array - so `textFn` 0x004AF5A0 is
+
+    movsx ecx, word_4E3FE2 ; mov edx, off_4E3FEC
+    ... sub_476860(screen, [edx+ecx*4], out)
+
+which hands the GENERIC string callback the keypad item **the cursor is on**,
+in place of the header's own. The 430x17 bar at (40, 28) is therefore the
+label of the highlighted cell, and it is the same shape as the lift's
+description box: a widget whose text belongs to another widget.
+
+The labels are the ones each screen's open callback binds (`item+28`, lifted
+as `bind.string`): TERMINAL 5..9 on the first five cells and 10 on the big
+button, FIGHT SIM 0..2, ARCHIVES 0..3, MORGUE 0..4 - and the three SURV
+screens bind none at all, so on those the bar is rightly empty. Kay'l's
+terminal now reads *"Consulter le dossier n°1"* under the cursor.
+
+Asserted inside `verify.py: engine: terminal family` (two cells, so a bar that
+never changed would satisfy neither), shown to fail by cutting the header off
+the composer.
+
 ## 4. The steps
 
 | step | what | state |
@@ -322,7 +395,7 @@ not the one under the hand.
 | 0 | where every screen is opened from | **done 2026-09-17** - §1 |
 | 1 | the LIFT: why it never arrived | **done 2026-09-17** - §2, `verify.py: engine: lift` |
 | 2 | the terminal FAMILY: the display, the keypad and the answers - 7 screens | **done 2026-09-17** - §3, `verify.py: engine: terminal family` |
-| 3 | the SPECIAL screens: **12 GANDHAR DOOR done** (§5b), **13 DEN'S LOCKER done** (§5c); 14 XACHEN, 0 VIDEOPHONE, 36 HIGH-SCORE left, and the terminal's own dossier pages | §5 has each one's hooks |
+| 3 | the SPECIAL screens: **12 GANDHAR DOOR** (§5b), **13 DEN'S LOCKER** (§5c), **14 XACHEN** (§5d) and the terminal's **header bar** (§3b) all done; 0 VIDEOPHONE and 36 HIGH-SCORE left | §5 has each one's hooks |
 | 4 | play | |
 
 ## 6. The lift arrives and the level is not drawn — the mechanism, and a REVERTED patch

@@ -206,6 +206,8 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
     // that mattered here, and a missing key reads like a missing question.
     if (srcMoved_)
         for (const auto& [addr, xy] : *srcMoved_) { (void)xy; out.spriteSrc[addr] = {-1, -1}; }
+    if (litMoved_)
+        for (const auto& [addr, xy] : *litMoved_) { (void)xy; out.spriteSrc[addr] = {-1, -1}; }
     const UiPanel* p = w_->screen(screenId);
     if (!p) return out;
     // The cursor's quads, held back to layer 8 (see the collect below).
@@ -1123,6 +1125,14 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                         src = srcOverride;
                     }
                 }
+                if (litMoved_) {
+                    const auto lm = litMoved_->find(it.addr);
+                    if (lm != litMoved_->end() && lit) {
+                        srcOverride[0] = lm->second.first;
+                        srcOverride[1] = lm->second.second;
+                        src = srcOverride;
+                    }
+                }
                 const int x0 = it.x + q->offsetX, y0 = it.y + q->offsetY;
                 blt(fb, {scaleX(x0), scaleY(y0),
                          scaleX(x0 + it.w), scaleY(y0 + it.h)},
@@ -1132,7 +1142,8 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                 // ...and, for an item the caller asked about, WHERE FROM -
                 // the lit source as readily as the moved unlit one, because
                 // the difference between them is the whole fault this is for.
-                if (srcMoved_ && srcMoved_->count(it.addr))
+                if ((srcMoved_ && srcMoved_->count(it.addr)) ||
+                    (litMoved_ && litMoved_->count(it.addr)))
                     out.spriteSrc[it.addr] = {src[0], src[1]};
             }
 

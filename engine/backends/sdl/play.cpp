@@ -18265,9 +18265,38 @@ int main(int argc, char** argv) {
         // x = 0. The tree carries (0, 0) - digit zero - so the mover says which
         // row of the strip each wheel is on.
         static std::map<std::uint32_t, std::pair<int, int>> itemSource;
+        static std::map<std::uint32_t, std::pair<int, int>> itemLitSource;
         static std::vector<std::uint32_t> denWheelItems;
+        static std::vector<std::uint32_t> xachenItems;
         itemSource.clear();
+        itemLitSource.clear();
         denWheelItems.clear();
+        xachenItems.clear();
+        // ---- XACHEN'S CARTRIDGES: the four symbols above the buttons ------
+        //
+        // `sub_4AF9D0` writes the symbol's 51x23 cell into the widget's LIT
+        // source, and the widget carries bank B `0x8` so that is what it
+        // draws. The symbols are the list the mover cannot reach (flags
+        // `0x20000004`); the buttons are the one it can, and on the code all
+        // four of THOSE take lit source (0, 23) with `0x40000008` set, which
+        // is the lamp coming on.
+        if (walk && openScreen == 14 && walk->panel()) {
+            const omk::UiList* syms = nullptr;
+            const omk::UiList* btns = nullptr;
+            for (const auto& l : walk->panel()->lists) {
+                if (l.hook == 0x0042A930u) btns = &l;
+                else if (l.items.size() == 4) syms = &l;
+            }
+            if (syms)
+                for (std::size_t k = 0; k < 4 && k < syms->items.size(); ++k) {
+                    int xy[2];
+                    omk::UiWalk::xachenSprite(walk->xachen(static_cast<int>(k)), xy);
+                    itemLitSource[syms->items[k].addr] = {xy[0], xy[1]};
+                    xachenItems.push_back(syms->items[k].addr);
+                }
+            if (btns && walk->xachenSolved())
+                for (const auto& e : btns->items) itemLitSource[e.addr] = {0, 23};
+        }
         if (walk && openScreen == 13 && walk->panel()) {
             for (const auto& l : walk->panel()->lists) {
                 if (l.hook != omk::kHookDenDial) continue;
@@ -18317,11 +18346,75 @@ int main(int argc, char** argv) {
                     for (const auto& e : l.items)
                         if (e.textFn == 0x004AF5D0u)
                             sneakRows[e.addr] = txt[static_cast<std::size_t>(f.str)];
+                // ---- AND THE HEADER BAR, `textFn` 0x004AF5A0 -------------
+                //
+                // Eleven bytes of code, and the whole of what was left of this
+                // family. `unk_4E3FE0` is the KEYPAD'S OWN LIST - `db 0Bh` at
+                // +0 is its eleven items, `word_4E3FE2` at +2 its selection,
+                // `sub_4AF300` at +4 its hook and `off_4E3FEC` at +0x0C its
+                // item array - so
+                //
+                //     movsx ecx, word_4E3FE2 ; mov edx, off_4E3FEC
+                //     ... sub_476860(screen, [edx+ecx*4], out)
+                //
+                // hands the GENERIC string callback the keypad item the cursor
+                // is on, in place of the header's own. The bar at (40, 28) is
+                // therefore the LABEL OF THE HIGHLIGHTED CELL, and it is the
+                // same shape as the lift's description box: a widget whose
+                // text belongs to another widget.
+                //
+                // The labels are the ones each screen's OPEN callback binds
+                // (`item+28`, lifted as `bind.string`): TERMINAL 5..9 on the
+                // first five cells and 10 on the big button, FIGHT SIM 0..2,
+                // ARCHIVES 0..3 with tags 6..9, MORGUE 0..4, and the three
+                // SURV screens bind none at all - so on those the bar is
+                // rightly empty, which is what the record says and not a gap.
+                {
+                    const omk::UiList* pad = nullptr;
+                    for (const auto& l : walk->panel()->lists)
+                        if (l.hook == omk::kHookTerminalPad) pad = &l;
+                    const int cell = pad ? walk->selectionOf(*pad) : -1;
+                    const int id = pad && cell >= 0 &&
+                                   cell < static_cast<int>(pad->items.size())
+                                 ? pad->items[static_cast<std::size_t>(cell)].label() : -1;
+                    if (id >= 0 && id < static_cast<int>(txt.size()))
+                        for (const auto& l : walk->panel()->lists)
+                            for (const auto& e : l.items)
+                                if (e.textFn == 0x004AF5A0u)
+                                    sneakRows[e.addr] = txt[static_cast<std::size_t>(id)];
+                    // printed from what the BAR will draw, and from the cell
+                    // the WALK is on - not from the id, which is the value
+                    // handed over rather than the one used
+                    static std::string padTold;
+                    std::string bar;
+                    for (const auto& l : walk->panel()->lists)
+                        for (const auto& e : l.items)
+                            if (e.textFn == 0x004AF5A0u) {
+                                const auto r = sneakRows.find(e.addr);
+                                if (r != sneakRows.end()) bar = r->second;
+                            }
+                    std::string one;
+                    for (char c : bar.substr(0, 60)) one += (c == '\r' || c == '\n') ? ' ' : c;
+                    const std::string said = std::to_string(openScreen) + "/" +
+                                             std::to_string(cell) + ": " + one;
+                    if (said != padTold) {
+                        padTold = said;
+                        std::printf("terminal family: screen %d cell %d - the bar says "
+                                    "'%s'\n", openScreen, cell, one.c_str());
+                    }
+                }
                 static int famTold = -1;
                 if (famTold != openScreen) {
                     famTold = openScreen;
+                    // the BODY item's own row, named rather than "the last
+                    // thing in the map" - the map gained the header bar above
                     std::string shown;
-                    for (const auto& r : sneakRows) shown = r.second;
+                    for (const auto& l : walk->panel()->lists)
+                        for (const auto& e : l.items)
+                            if (e.textFn == 0x004AF5D0u) {
+                                const auto r = sneakRows.find(e.addr);
+                                if (r != sneakRows.end()) shown = r->second;
+                            }
                     std::string one;
                     for (char c : shown.substr(0, 80)) one += (c == '\r' || c == '\n') ? ' ' : c;
                     std::printf("terminal family: screen %d - the display says '%s'\n",
@@ -18853,6 +18946,7 @@ int main(int argc, char** argv) {
             comp.setHidden(sneakHidden.empty() ? nullptr : &sneakHidden);
             comp.setItemMove(itemMoved.empty() ? nullptr : &itemMoved);
             comp.setItemSource(itemSource.empty() ? nullptr : &itemSource);
+            comp.setItemLitSource(itemLitSource.empty() ? nullptr : &itemLitSource);
             // THE CLOUD IS THE MENU'S BACKGROUND, NOT EVERY SCREEN'S.
             //
             // A reader's screenshots of the original settle it from both
@@ -18910,6 +19004,34 @@ int main(int argc, char** argv) {
                         denTold = read;
                         std::printf("den locker: the display reads %s(the hand is on %d, "
                                     "and that wheel blinks)\n", read.c_str(), walk->denWheel());
+                    }
+                }
+                // ---- XACHEN, reported from the draw for the same reason ---
+                //
+                // The symbol is a CELL of the artwork, so what a check can see
+                // is the rect the composer sampled; turning it back into the
+                // value through the same table the hook used says the symbol
+                // reached the screen rather than only the walk.
+                if (openScreen == 14 && !xachenItems.empty()) {
+                    std::string read;
+                    for (const std::uint32_t a : xachenItems) {
+                        const auto sr = sf.spriteSrc.find(a);
+                        int v = -1;
+                        if (sr != sf.spriteSrc.end())
+                            for (int k = 1; k <= 14; ++k) {
+                                int xy[2];
+                                omk::UiWalk::xachenSprite(k, xy);
+                                if (xy[0] == sr->second.first && xy[1] == sr->second.second)
+                                    { v = k; break; }
+                            }
+                        read += (v < 0 ? std::string("-") : std::to_string(v)) + " ";
+                    }
+                    static std::string xaTold;
+                    if (read != xaTold) {
+                        xaTold = read;
+                        std::printf("xachen: the cartridges show %s(%s)\n", read.c_str(),
+                                    walk->xachenSolved() ? "10 14 7 9 - the door opens"
+                                                         : "not the code");
                     }
                 }
                 // ...and the memo body is reported from the DRAW: `textLines`

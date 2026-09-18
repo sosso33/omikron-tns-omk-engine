@@ -142,6 +142,16 @@ inline constexpr std::uint32_t kHookTerminalPad      = 0x004AF300u;
 // DEN'S LOCKER (screen 13): four digit wheels on one hook, which both moves
 // and answers - it has no item callback at all.
 inline constexpr std::uint32_t kHookDenDial          = 0x004AFBE0u;
+// XACHEN (screen 14), Dakobah's CARTRIDGES: four buttons on the ordinary
+// left/right mover, each one advancing the symbol above it. `sub_4AF9D0`.
+inline constexpr std::uint32_t kCbXachenCartridge    = 0x004AF9D0u;
+// `dword_4E42E8` - the ORDER the button steps the symbols through, which is
+// not 1..14: a press finds the current value in this ring and takes the next,
+// wrapping. A value the ring does not hold gives index -1, so the press lands
+// on entry 0.
+inline constexpr int kXachenRing[14] = {7, 11, 1, 8, 3, 5, 12, 2, 4, 10, 14, 13, 6, 9};
+// `unk_4E4320` - and it is the whole puzzle: the four symbols the door wants.
+inline constexpr int kXachenCode[4] = {10, 14, 7, 9};
 inline constexpr std::uint32_t kHookGandharGrid      = 0x004AFE90u;
 inline constexpr std::uint32_t kCbGandharCell        = 0x004AFF90u;
 inline constexpr std::uint32_t kPanelShopSellConfirm = 0x004E3A40u;
@@ -975,6 +985,25 @@ public:
     // Den's locker, for the viewer that draws the wheels.
     int denWheel() const { return denWheel_; }
     int denDigit(int i) const { return denDigit_[i & 3]; }
+    // XACHEN's four cartridges, for the viewer that draws their symbols, and
+    // whether the four are the code (which lights the buttons).
+    int  xachen(int i) const { return xachen_[i & 3]; }
+    bool xachenSolved() const {
+        for (int i = 0; i < 4; ++i)
+            if (xachen_[i] != kXachenCode[i]) return false;
+        return true;
+    }
+    // `word_4E42A8[value * 4]` / `+2` - the 51x23 cell each symbol is cut
+    // from in `Xanoir1.bmp`, indexed by the symbol's own value. Value 0 and
+    // 15 are (0, 0), which is why the hook refuses anything outside 1..14.
+    static void xachenSprite(int value, int out[2]) {
+        static const short kT[16][2] = {
+            {0, 0},  {488, 0},  {488, 23}, {488, 46}, {488, 69}, {488, 92},
+            {539, 0}, {539, 23}, {539, 46}, {539, 69}, {539, 92},
+            {590, 0}, {590, 23}, {590, 46}, {590, 69}, {0, 0}};
+        const int v = (value >= 0 && value < 16) ? value : 0;
+        out[0] = kT[v][0]; out[1] = kT[v][1];
+    }
     const std::vector<std::string>& log() const { return log_; }
 
     // THE COLOUR A PAGE PAINTS ITSELF IN - `sub_4296D0` (0x004296D0), and
@@ -1205,6 +1234,11 @@ private:
     // the four digits (each wheel item's `+3C`).
     int         denWheel_ = 0;
     int         denDigit_[4] = {0, 0, 0, 0};
+    // XACHEN's four cartridges. The RECORD ships 7, 8, 11 and 3 and the
+    // screen's own open callback overwrites all four - `dword_4E450C = 1`,
+    // `4E4554 = 2`, `4E459C = 3`, `4E45E4 = 4` - so the puzzle always starts
+    // at 1, 2, 3, 4 however the widgets were authored.
+    int         xachen_[4] = {1, 2, 3, 4};
     std::vector<std::string> log_;
     // Item address -> the RGB a page builder wrote into `+8/+9/+10`.
 };

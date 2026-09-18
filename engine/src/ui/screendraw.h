@@ -230,6 +230,14 @@ public:
     // its four wheels by writing the unlit source's y (`digit * 46`), which
     // cuts a different digit out of the artwork's strip.
     void setItemSource(const std::map<std::uint32_t, std::pair<int, int>>* m) { srcMoved_ = m; }
+    // ...and the LIT source, which is a different field and a different set of
+    // items. The engine's two special screens write different halves of the
+    // record: Den's locker moves `+0x12`, the unlit y, on a wheel that draws
+    // unlit; XACHEN moves `+0x0C`/`+0x0E`, the lit pair, on a symbol that
+    // carries bank B `0x8` and therefore always draws LIT. One map cannot
+    // serve both without guessing which field a caller meant, so there are
+    // two - and `spriteSrc` reports whichever was used either way.
+    void setItemLitSource(const std::map<std::uint32_t, std::pair<int, int>>* m) { litMoved_ = m; }
 
     // THE 3D VIEW INSIDE A PANEL. The frontend renders the world through the
     // live camera into a picture the size of the viewport item's rectangle
@@ -290,6 +298,7 @@ private:
     const std::set<std::uint32_t>* hidden_ = nullptr;
     const std::map<std::uint32_t, std::pair<int, int>>* moved_ = nullptr;
     const std::map<std::uint32_t, std::pair<int, int>>* srcMoved_ = nullptr;
+    const std::map<std::uint32_t, std::pair<int, int>>* litMoved_ = nullptr;
     const Surface*   view3d_ = nullptr;
     long             frame_ = 0;
     long             clockMs_ = 0;

@@ -1549,6 +1549,55 @@ bool UiWalk::confirm() {
         // same one twice does not count twice. NOT ported: the marker widgets'
         // placement (the viewer draws the cursor, not the stamps) and the two
         // sounds.
+        // ---- XACHEN'S CARTRIDGES (`sub_4AF9D0`), read from the image ----
+        //
+        // Screen 14 is Dakobah's puzzle in front of Xendar's door: four
+        // BUTTONS on the ordinary left/right mover (`0x0042A930`), and above
+        // them four SYMBOL widgets in a list flagged `0x20000004` so nothing
+        // can select them. A button's `+3C` is a POINTER to its symbol -
+        // written by the screen's open callback, not by the record - and the
+        // symbol's own `+3C` is its value.
+        //
+        // A press steps that value along `dword_4E42E8`, a fourteen-entry
+        // RING that is not in numerical order, and writes the new symbol's
+        // 51x23 cell into the widget's LIT source (`+0x0C`/`+0x0E`). The
+        // symbols carry bank B `0x8`, always lit, so that source is what
+        // draws; the buttons carry none of `8/4/2`, so the SELECTED button
+        // draws `Xanoir1.bmp`'s (0, 0) and the other three draw their own
+        // place, which is the plain artwork.
+        //
+        // When all four match `unk_4E4320` - 10, 14, 7, 9 - the hook lights
+        // every button (lit source (0, 23) and `0x40000008` on each), plays
+        // interface sound 0x2B, writes the ANSWER 1 and starts a 4000 ms
+        // oscillator 5 on the screen. AREA 58's zone 1130 'Cartouches' is
+        // what opens it, and on `Interface == 1` it opens the Xendar door and
+        // plays the Dakobah/Xendar conversation (DIALOGS 227).
+        //
+        // NOT ported, labelled: the sound and the 4000 ms timer.
+        if (it->callback == kCbXachenCartridge) {
+            const UiList* l = curList();
+            int idx = -1;
+            if (l)
+                for (std::size_t k = 0; k < l->items.size(); ++k)
+                    if (l->items[k].addr == it->addr) idx = static_cast<int>(k);
+            if (idx < 0 || idx > 3) return false;
+            int& v = xachen_[idx];
+            int at = -1;
+            for (int k = 0; k < 14; ++k)
+                if (kXachenRing[k] == v) { at = k; break; }
+            const int next = kXachenRing[(at + 1) % 14];
+            // `cmp eax, 0Eh / jg` and `cmp eax, 0 / jle` - the ring holds only
+            // 1..14, so this can never refuse, and it is transcribed because
+            // it is what makes 0 and 15 mean "no symbol" in the sprite table.
+            if (next > 0 && next <= 14) v = next;
+            log_.push_back("xachen: cartridge " + std::to_string(idx) + " = " +
+                           std::to_string(v));
+            if (xachenSolved()) {
+                answer_ = 1;
+                log_.push_back("xachen: 10 14 7 9 - the door opens");
+            }
+            return true;
+        }
         if (it->callback == kCbGandharCell) {
             const unsigned cell = (unsigned(gandRow_) << 16) | unsigned(gandCol_);
             ++gandPresses_;
