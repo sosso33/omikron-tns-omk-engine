@@ -44,16 +44,13 @@ void dbWrite(GameState& s, std::size_t off, const void* src, std::size_t n) {
 }
 
 std::vector<std::byte> readFile(const std::string& p) {
-    std::ifstream f(p, std::ios::binary | std::ios::ate);
     // SAID, not silent: an unreadable IAM\AREA leaves every area EMPTY - no
     // startup script, no set, no scene - and a run that just never starts
-    // (a console, 2026-09-18). One line names the file.
-    if (!f) { std::fprintf(stderr, "session: cannot read %s\n", p.c_str());
-              std::printf("session: cannot read %s\n", p.c_str()); return {}; }
-    const auto n = static_cast<std::size_t>(f.tellg());
-    std::vector<std::byte> d(n);
-    f.seekg(0);
-    f.read(reinterpret_cast<char*>(d.data()), static_cast<std::streamsize>(n));
+    // (a console, 2026-09-18). One line names the file; `readWholeFile` names
+    // a short read itself.
+    auto d = readWholeFile(p);
+    if (d.empty()) { std::fprintf(stderr, "session: cannot read %s\n", p.c_str());
+                     std::printf("session: cannot read %s\n", p.c_str()); }
     return d;
 }
 
@@ -282,6 +279,20 @@ void Session::areaLoad(int area, int slot) {
         std::printf("session: AREA %d has no chunk - %s/AREA read %zu bytes, "
                     "%zu chunks populated\n", area, iam_.c_str(), file.size(),
                     arch.populated());
+    } else if (headerName(s.areaChunk, 88, 9).empty() && startupScript(s.areaChunk) == 0) {
+        // A chunk with neither a set nor a startup script is what a ZEROED
+        // read looks like (area 118 on a console, 2026-09-18). Its size, how
+        // many of its bytes are nonzero, and the whole file's FNV-1a, which
+        // the shipped IAM\AREA (1253376 bytes) gives as 0x2e637003.
+        const auto file = readFile(iam_ + "/AREA");
+        std::uint32_t h = 2166136261u;
+        for (const auto b : file) h = (h ^ static_cast<std::uint8_t>(b)) * 16777619u;
+        std::size_t nz = 0;
+        for (const auto b : s.areaChunk) nz += b != std::byte{0};
+        std::printf("session: AREA %d's chunk is %zu bytes, %zu of them nonzero, "
+                    "with no set and no startup script - %s/AREA is %zu bytes, "
+                    "FNV-1a 0x%08x\n", area, s.areaChunk.size(), nz, iam_.c_str(),
+                    file.size(), h);
     }
     s.scene = sceneOverArea(state_, area);
     if (s.scene != -1) {

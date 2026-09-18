@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "script/gamestate.h"
+#include "platform/datafs.h"
 
 #include <cmath>
 
@@ -23,13 +24,7 @@ GameState GameState::fromBytes(std::span<const std::byte> d) {
 }
 
 GameState GameState::fromFile(const std::string& path) {
-    std::ifstream f(path, std::ios::binary | std::ios::ate);
-    if (!f) return fromBytes({});
-    const auto n = static_cast<std::size_t>(f.tellg());
-    std::vector<std::byte> d(n);
-    f.seekg(0);
-    f.read(reinterpret_cast<char*>(d.data()), static_cast<std::streamsize>(n));
-    return fromBytes(d);
+    return fromBytes(readWholeFile(path));
 }
 
 std::uint32_t GameState::u32(std::size_t o) const {
