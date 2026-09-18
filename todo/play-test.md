@@ -98,6 +98,45 @@ fall. Also worth a look: nothing that used to be walkable should now snag, e.g.
 doorframes, stair edges, or table and stool corners in the restaurant.
 `verify.py: engine: security rail`.
 
+## 9. LEFT SHIFT runs, LEFT CTRL sidesteps and dives — the keyboard fixes
+
+```
+build/omk-play ~/Documents/omk/fr ../tables --save ../traces/save-appart.bin \
+    --area 0 --stand 1804,0,-6890,336
+```
+Walk with the arrows and hold **LEFT** Shift: he should RUN, which he did not
+before (only right Shift did). Left Ctrl should sidestep / half-turn, and in
+water it dives. And ALT+TAB must NOT open the sneak. These are `Input_Poll`'s
+own rules (`todo/vita-port.md` F3).
+
+## 10. A GAMEPAD — any SDL-supported controller
+
+The same command with a pad plugged in (the log prints `pad: <name>`). Left
+stick or d-pad walks and turns, A/CROSS is Action and the UI's confirm, B/
+CIRCLE cancels / jumps, the right shoulder RUNS, BACK/SELECT opens the sneak,
+START is the pause screen. **The button layout and the stick's dead zone are
+this port's choices** (`src/input/pad.h`) - say if they feel wrong.
+
+## 11. THE GAME THROUGH THE VITA'S RENDERER, on this Mac
+
+```
+make play-gles
+build/omk-play-gles ~/Documents/omk/fr ../tables --save ../traces/save-appart.bin \
+    --area 0 --stand 1804,0,-6890,336 --res 640x480
+```
+The same street through the GLES2 backend the Vita draws with. It should look
+like `build/omk-play --software`; the headless comparison says 0.99 coverage.
+
+## 12. THE GAME ON A PS VITA — `engine/build/vita/omk_vita.vpk`
+
+Copy the game data to `ux0:data/omk/gamedata/` (MESHES/, IAM/... inside it),
+have `ur0:data/libshacccg.suprx`, install the VPK, launch. `ux0:data/omk/
+args.txt` takes extra arguments one per line (`--nofmv` skips the ~143 s of
+movies; the street start above works too). Send back `ux0:data/omk/
+omk-play.log` and `.err` whatever happens - nothing of this has run on a
+console yet. `omk_bench.vpk` and `omk_smoke.vpk` (same folder) are the two
+measurements (`todo/vita-port.md` §0).
+
 ## What is NOT fixed, so do not report it as new
 
 * **The lift arrival is still black** and the camera is inside the lift-car

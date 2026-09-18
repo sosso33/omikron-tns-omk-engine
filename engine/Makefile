@@ -184,8 +184,9 @@ else
 	    cmake -S backends/vita -B build/vita-cmake >/dev/null
 	VITASDK=$(VITASDK_DIR) PATH="$(VITASDK_DIR)/bin:$$PATH" \
 	    cmake --build build/vita-cmake -j$(NPROC)
-	cp build/vita-cmake/omk_bench.vpk build/vita-cmake/omk_smoke.vpk build/vita/
-	@echo "built build/vita/omk_bench.vpk and build/vita/omk_smoke.vpk"
+	cp build/vita-cmake/omk_bench.vpk build/vita-cmake/omk_smoke.vpk \
+	    build/vita-cmake/omk_vita.vpk build/vita/
+	@echo "built build/vita/omk_vita.vpk (the game), omk_bench.vpk and omk_smoke.vpk"
 endif
 
 # The Vita bench on THIS machine - the same source, so a device run divides
@@ -210,6 +211,22 @@ build/gles_probe: backends/gles/gles_probe.cpp backends/gles/glesrender.cpp $(SR
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) -o $@ backends/gles/gles_probe.cpp \
 	    backends/gles/glesrender.cpp $(SRCOBJS) -framework OpenGL
+
+# THE GAME THROUGH THE GLES2 BACKEND on this machine - the Vita's renderer,
+# drawn in a desktop window (macOS's legacy GL 2.1; `-lGLESv2` elsewhere).
+# Optional like `play`, and needs SDL the same way. `build/omk-play-gles`.
+GL_LIBS := $(if $(filter Darwin,$(UNAME_S)),-framework OpenGL,-lGLESv2)
+.PHONY: play-gles
+play-gles: $(SRCOBJS)
+ifeq ($(SDL_PKG),)
+	@echo "no SDL found - the GLES frontend is optional (PORTING A8)."
+else
+	@mkdir -p build
+	$(CXX) $(CXXFLAGS) $(SDL_CFLAGS) $(SDL_DEFS) -DOMK_GLES -o build/omk-play-gles \
+	    backends/sdl/play.cpp backends/gles/glesrender.cpp $(SRCOBJS) \
+	    $(SDL_LIBS) $(GL_LIBS)
+	@echo "built build/omk-play-gles against $(SDL_PKG) + GL"
+endif
 
 # One object per source. The mkdir is in the recipe rather than an order-only
 # prerequisite so a new subsystem directory needs no edit here either.

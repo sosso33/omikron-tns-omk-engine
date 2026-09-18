@@ -23,6 +23,7 @@
 // are down. Everything else is the engine's.
 #pragma once
 
+#include "input/pad.h"
 #include "ui/surface.h"
 
 #include <cstdint>
@@ -45,6 +46,11 @@ namespace omk {
 struct HostInput {
     std::set<int> held;          // DIK scan codes currently down
     bool quit = false;           // window closed, or the quit key
+    // A GAMEPAD, in platform-free terms (`input/pad.h`): the frontend fills
+    // it from whatever the host has - SDL's game controller, the Vita's own
+    // pad through SDL - and `pad::toDevices` turns it into the engine's
+    // JOYSTICK device. All zero when there is none.
+    pad::Pad pad;
     // Text the host reported this frame, already decoded from whatever the
     // keyboard layout is. A scan code is not a character - the name field on
     // the start menu takes what the PERSON typed, and deriving letters from
