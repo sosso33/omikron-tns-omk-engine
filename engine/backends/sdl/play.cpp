@@ -5111,6 +5111,12 @@ int main(int argc, char** argv) {
     struct WorldSlot {
         std::string stem;
         int area = -1;
+        // DRAWN, which is not the same as LOADED. `sub_419AF0` / `sub_419A90`
+        // (show / hide) only link the set into and out of the RENDER list
+        // (`sub_441170` / `sub_441200`); the COLLISION array is joined when the
+        // set finishes loading (`sub_443300` in `sub_4195C0`) and left only on
+        // unload or eviction (`sub_443320`). So a hidden set is still SOLID.
+        bool shown = false;
         omk::Geometry geo;
         std::vector<omk::Texture> tex;
         omk::MirrorPlane mirror;
@@ -5231,7 +5237,7 @@ int main(int argc, char** argv) {
     // `Area_LoadMiscModel`'s two constants.
     constexpr float kSkyScale = 12.5f;
     constexpr float kSkyLift  = 2250.0f;
-    std::vector<omk::DecorSoup> worldDecors; // the shown slots' soups, for decorUnder
+    std::vector<omk::DecorSoup> worldDecors; // every LOADED slot's soup, for decorUnder
     // A set's geometry is REBUILT on every area change, and a fresh
     // Geometry's revision is 0 - the same value the previous set was cached
     // under by the Vulkan backend, which keys its vertex buffer on the
@@ -6844,9 +6850,16 @@ int main(int argc, char** argv) {
                         // raise in `placeActorAt` stays the other source.
                         {
                             const float* pp = player->pos();
-                            const int under = noGroundGrid
+                            int under = noGroundGrid
                                 ? omk::decorUnder(worldDecors, pp[0], pp[1], pp[2])
                                 : omk::decorUnder(worldDecors, playerSoup, playerGrid, pp[0], pp[1], pp[2]);
+                            if (under >= 0) {                  // state 2 only, as above
+                                bool drawn = false;
+                                for (int sl = 0; sl < 2; ++sl)
+                                    if (worldSlots[static_cast<std::size_t>(sl)].area == under &&
+                                        worldSlots[static_cast<std::size_t>(sl)].shown) drawn = true;
+                                if (!drawn) under = -1;
+                            }
                             if (under >= 0) session.playerOnArea(under);
                         }
                         if (haveStand) {
@@ -9831,9 +9844,50 @@ int main(int argc, char** argv) {
                     const float* pp = player->pos();
                     // through the merged soup's grid unless `OMK_NO_GROUND_GRID`
                     static const bool noGroundGridHere = std::getenv("OMK_NO_GROUND_GRID") != nullptr;
-                    const int under = noGroundGridHere
+                    int under = noGroundGridHere
                         ? omk::decorUnder(worldDecors, pp[0], pp[1], pp[2])
                         : omk::decorUnder(worldDecors, playerSoup, playerGrid, pp[0], pp[1], pp[2]);
+                    // The probe finds the floor across EVERY loaded set - the
+                    // engine's collision array - and what happens next is
+                    // `Walk_ProbeGround`'s tail (0x00467030), read whole:
+                    //
+                    //   the floor's scene == the actor's own    -> nothing
+                    //   a DIFFERENT scene, its slot in state 2  -> relink the
+                    //       actor to it and `Game_RaiseEvent(9, slot)`
+                    //   a DIFFERENT scene, its slot in state 1  ->
+                    //       `o3de_MoveNodeBy(node, -(this frame's move))`: the
+                    //       STEP IS UNDONE
+                    //
+                    // So a hidden set is solid for walls and REFUSES to be
+                    // stood on. In the security centre that is the whole
+                    // design: each level's corridor is the SHAFT's set, the
+                    // offices behind their doors are `ACSLEV-N`, loaded and
+                    // hidden until a door zone's `area.goto 181, 22, 23`
+                    // brings them in - and until then their walls hold you in
+                    // the corridor and their floor turns you back.
+                    static float lastGood[3] = {0.0f, 0.0f, 0.0f};
+                    static bool  haveLastGood = false;
+                    static int   refusedTold = -1;
+                    bool drawn = false;
+                    if (under >= 0)
+                        for (int sl = 0; sl < 2; ++sl)
+                            if (worldSlots[static_cast<std::size_t>(sl)].area == under &&
+                                worldSlots[static_cast<std::size_t>(sl)].shown) drawn = true;
+                    if (under >= 0 && !drawn && under != session.activeArea() && haveLastGood) {
+                        player->rideAt(lastGood, player->facing());
+                        if (refusedTold != under) {
+                            refusedTold = under;
+                            std::printf("frame %ld: the floor ahead is AREA %d's, a HIDDEN set - "
+                                        "the step is undone (`Walk_ProbeGround`'s state-1 arm)\n",
+                                        n, under);
+                        }
+                        under = -1;
+                    } else {
+                        if (under >= 0 && !drawn) under = -1;   // his own hidden set: no event
+                        for (int k = 0; k < 3; ++k) lastGood[k] = player->pos()[k];
+                        haveLastGood = true;
+                        if (under == session.activeArea()) refusedTold = -1;
+                    }
                     static const bool verifyGround = std::getenv("OMK_VERIFY_GROUND") != nullptr;
                     if (verifyGround && n % 30 == 0) {
                         const auto& gv = omk::groundVerify();
@@ -10595,7 +10649,23 @@ int main(int argc, char** argv) {
             // miss there is not a refusal - it leaves `dword_4DECFC` at -1 and
             // the page stands, showing the bitmap with no pin on it. Only the
             // `fopen` bounces.
-            fresh->setCityMap(fs.exists("IMAGES/" + session.setName() + ".bmp"));
+            {
+                const std::string stem = session.setName();
+                const bool have = fs.exists("IMAGES/" + stem + ".bmp");
+                fresh->setCityMap(have);
+                // Said once per open of the SNEAK, because a map that refuses
+                // looks exactly like a map that is broken: the page bounces
+                // with the refusal sound either way. Only four sets ship a
+                // bitmap - ANEKBAH, QALISAR, JAUNPUR, LAHOREH, one AREA each,
+                // the four cities' main streets - so on a rooftop, in the
+                // Impasse or inside any building the engine bounces too.
+                if (want == omk::kScreenSneak)
+                    std::printf("sneak map: standing in set '%s' - %s\n", stem.c_str(),
+                                have ? "Images/" "<set>.bmp exists, `Lire plan` opens"
+                                     : "no Images/<set>.bmp, `Lire plan` bounces "
+                                       "back (only the four cities' main-street "
+                                       "sets ship one)");
+            }
             // whatever is held on the frame it opens does not count as input
             // to it (see the gate in the walk's dispatch below)
             screenOpenBits = bits;
@@ -11625,13 +11695,21 @@ int main(int argc, char** argv) {
             for (int slot = 0; slot < 2; ++slot) {
                 const auto& rs = session.residentSlot(slot);
                 const bool shown = session.slotShown(slot) && rs.area != -1;
-                const std::string want = shown ? rs.set : std::string();
-                const int wantArea = shown ? rs.area : -1;
-                const WorldSlot& w = worldSlots[static_cast<std::size_t>(slot)];
+                // THE SET STAYS WHILE THE SLOT HOLDS ITS AREA - hidden or not.
+                // This used to load only a SHOWN slot, so hiding a set dropped
+                // its floor and walls along with its picture. A reader,
+                // 2026-09-18: *"many times I went through the security center
+                // barriers and fall (not possible in the original game)"* -
+                // `area.arrive -1` hides the level the lift has just brought in
+                // (`ACSLEV-N`), and every railing, wall and floor of it went.
+                const std::string want = rs.area != -1 ? rs.set : std::string();
+                const int wantArea = rs.area;
+                WorldSlot& w = worldSlots[static_cast<std::size_t>(slot)];
                 if (want != w.stem || wantArea != w.area) {
                     loadWorldSlot(slot, want, wantArea);
                     changed = true;
                 }
+                w.shown = shown && !w.stem.empty();
                 // THE SKY IS GLOBAL AND EITHER SLOT CAN BRING IT.
                 //
                 // `Area_LoadMiscModel` keeps ONE model rather than one per
@@ -16754,6 +16832,8 @@ int main(int argc, char** argv) {
             std::size_t runsDrawn = 0, runsCulled = 0;
             for (int slot = 0; slot < 2; ++slot) {
                 const WorldSlot& w = worldSlots[static_cast<std::size_t>(slot)];
+                // loaded and solid, but not in the RENDER list (state 1)
+                if (!w.shown) continue;
                 const std::uint32_t texBase = static_cast<std::uint32_t>(worldTexBase[slot]);
                 if (w.runs.empty()) {          // no per-corner mesh: whole batches
                     for (const auto& b : w.geo.batches)
