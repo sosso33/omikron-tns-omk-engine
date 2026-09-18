@@ -516,3 +516,19 @@ cutout blind spot is still open and is written into its check's docstring.
 * **GLES2 REPEAT needs power-of-two textures.** All 2534 under `MESHES` are
   (max 256x256, counted 2026-09-18); the backend clamps and SAYS for any that
   is not.
+* **The films are decoded in HARDWARE, from H.264 copies** (2026-09-18).
+  `pl_mpeg` showed 41 of EIDOS's 386 frames on a console. `scripts/vita-movies.sh`
+  converts `FLIS/*.mpg` to Baseline H.264 + AAC at 320x240 under
+  `engine/build/vita-movies/`; copied to `ux0:data/omk/movies/`, the game plays
+  them through SceAvPlayer (`backends/vita/avmovie.*`) and falls back to the
+  MPEG-1 path when they are absent. The frame's chroma is **U first** (NV12):
+  read V-first, GAME's advert drew its red cap blue in Vita3K. Played at 60 fps
+  in the emulator; NOT yet seen on a console.
+* **A console read area 118's chunk as ZEROS** (`set ''`, no startup script,
+  so the run never leaves the splash) while Vita3K read the same build's
+  `IAM\AREA` whole. The binary loaders' `std::ifstream` + `tellg` read is
+  silent when short, so they now go through `readWholeFile` (`datafs.h`):
+  `sceIo` in 1 MiB reads on the Vita, and a `datafs: SHORT READ` line when
+  bytes are missing. If a console still shows the empty set, the log now
+  prints the chunk's nonzero count and the file's FNV-1a against the
+  shipped `0x2e637003` - which separates a bad READ from a bad COPY.

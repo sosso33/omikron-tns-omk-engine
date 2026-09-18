@@ -130,6 +130,7 @@ if(OMK_VITA_GAME)
   add_executable(omk_vita ${OMK_VITA_COMMON}
     ${CMAKE_CURRENT_SOURCE_DIR}/vita_main.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ime.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/avmovie.cpp
     ${ENGINE}/backends/sdl/play.cpp
     ${ENGINE}/backends/gles/glesrender.cpp)
   set_source_files_properties(${ENGINE}/backends/sdl/play.cpp
@@ -137,7 +138,7 @@ if(OMK_VITA_GAME)
   target_compile_definitions(omk_vita PRIVATE OMK_GLES=1)
   target_include_directories(omk_vita PRIVATE $ENV{VITASDK}/arm-vita-eabi/include/SDL2)
   target_link_libraries(omk_vita omk_engine SDL2 ${OMK_VITAGL_LIBS}
-    SceAudio_stub SceAudioIn_stub SceTouch_stub SceHid_stub SceMotion_stub SceRtc_stub
+    SceAudio_stub SceAudioIn_stub SceTouch_stub SceHid_stub SceMotion_stub SceRtc_stub SceAvPlayer_stub
     SceIofilemgr_stub pthread)
   vita_create_self(eboot.bin omk_vita UNSAFE)
   file(GLOB OMK_TABLES RELATIVE ${ENGINE}/../tables ${ENGINE}/../tables/*.json)
