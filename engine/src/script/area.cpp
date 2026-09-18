@@ -10,6 +10,7 @@
 #include "script/inventory.h"
 #include "script/objects.h"
 
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>

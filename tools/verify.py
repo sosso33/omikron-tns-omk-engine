@@ -14674,6 +14674,132 @@ def c_engine_mesh_name_index():
         "disagrees with the full scan, and finds for a name it was not built for"
 
 
+def c_engine_vita_bench():
+    r"""The Vita bench's per-body work gives the SAME BYTES inline and through
+    the thread pool (todo/vita-port.md §0, P1).
+
+    `backends/vita/bench_main.cpp` is the device-factor instrument: the same
+    source runs on this machine and on the console, and the ratio of the two
+    `total` lines is the number `handoff-vita.md` §1 could only frame. Its
+    timings are NOT asserted (machine load; CLAUDE.md §4). What is asserted is
+    the one exact claim it makes: posing and lighting 45 bodies through
+    `omk::Threads` produces the same corner bytes as doing it inline, which is
+    what makes the Vita's three game cores usable for this work at all
+    (`vita-port.md` P4). A DIFFERENT here is a pool bug or a shared static in
+    `composePose` / `applyPose` / `applyLights`, not rounding - each body writes
+    only its own geometry.
+
+    SHOWN TO FAIL, 2026-09-18: making every threaded body tick one frame later
+    (`tickBody(bodies[i], f + 1, ...)` in the threaded pass) -> DIFFERENT.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng) or not omkpaths.have_data():
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s", "build/vita_bench"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "vita_bench")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, omkpaths.data_root(), "45", "30"],
+                       capture_output=True, text=True)
+    models = re.findall(r"^model (\S+) +line (\S+) +meshes +(\d+)", r.stdout, re.M)
+    verdict = re.findall(r"threads: (EXACT|DIFFERENT)$", r.stdout, re.M)
+    lights = re.findall(r"^lights (\d+) from", r.stdout, re.M)
+    # a parse that reads nothing must fail AS A PARSE (CLAUDE.md 1)
+    if len(models) != 2 or len(verdict) != 1 or len(lights) != 1:
+        return (len(models), len(verdict), len(lights)), (2, 1, 1), \
+               "vita_bench output parsed - the tool's format changed"
+    return (tuple(m[:2] for m in models), int(lights[0]), verdict[0], r.returncode), \
+        ((("HO1_FNM", "125338"), ("PSH_FN", "125338")), 155, "EXACT", 0), \
+        "the two models on their line, Anekbah's lights, the threaded pass " \
+        "against the inline one, and the exit status"
+
+
+def c_engine_gles_backend():
+    r"""The GLES2 backend - the one the PS Vita draws with - against the
+    software reference, and its present pass EXACT against the readback
+    (todo/vita-port.md §0, G2).
+
+    `backends/gles/gles_probe.cpp`, headless through CGL on macOS (skipped on
+    any other host: it needs no window, but it does need CGL). Aapkayl through
+    dialog 402's camera, the set and camera the Vulkan backend's 0.995 is
+    quoted on. Two kinds of claim, kept apart as `run_vulkan` keeps them:
+
+    * COVERAGE agreement (both lit / either lit), plain and dithered - a GPU
+      backend is not judged per pixel, so this asserts only >= 0.99. Measured
+      0.9961 / 0.9977 on 2026-09-18.
+    * the PRESENT pass, which IS exact: the float-shader 888 -> 565 dither
+      against `quantise888DitherRow`, the world picture and a CPU-composed
+      surface, plain and dithered, plus a 640x352 letterbox at row 64 - five
+      `EXACT`s. Compared in 565, `ui/surface.h`'s rule: the host's 565 -> 888
+      expansion is not under test (the first version compared in 888 and
+      reported 113303 "differences" that were all the driver's rounding).
+
+    SHOWN TO FAIL, 2026-09-18, on scratch copies of `glesrender.cpp` asserted
+    to differ: the dither offset -8 -> -7 (46449 + 33324 red), the target's
+    row flip off by one (186802 red), the letterbox rows off by one (187442
+    red), the projection's Y sign (coverage 0.9495 red). **Blind to the
+    cutout rule**: removing the discard stays green - Aapkayl has 8 cutout
+    triangles and none in this shot. A camera on a cutout-heavy set is owed.
+    """
+    import platform
+    import subprocess
+    if platform.system() != "Darwin":
+        return ("skipped",), ("skipped",), "the probe makes its context with CGL (macOS)"
+    eng = os.path.join(ROOT, "engine")
+    model = omkpaths.data("MESHES/DECORS/Aapkayl.3DO")
+    if not os.path.isdir(eng) or not os.path.exists(model):
+        return ("skipped",), ("skipped",), "engine/ or Aapkayl.3DO absent"
+    b = subprocess.run(["make", "-s", "gles-probe"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "gles_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, omkpaths.data_root(), model, "3526,1015,-905",
+                        "3412,1032,-882", "83"], capture_output=True, text=True)
+    cov = re.findall(r"coverage ([0-9.]+)", r.stdout)
+    present = re.findall(r"present(?: world| surface)?: (EXACT|\d+ DIFFERENT)", r.stdout)
+    fails = re.findall(r"^failures (\d+)$", r.stdout, re.M)
+    if len(cov) != 2 or len(present) != 5 or len(fails) != 1:
+        return (len(cov), len(present), len(fails)), (2, 5, 1), \
+               "gles_probe output parsed - the tool's format changed, or no GL context"
+    return (tuple(float(c) >= 0.99 for c in cov), tuple(present), int(fails[0])), \
+        ((True, True), ("EXACT",) * 5, 0), \
+        "coverage >= 0.99 plain and dithered; world, surface (x2) and letterbox " \
+        "presents exact in 565; the probe's own failure count"
+
+
+def c_engine_vita_build():
+    r"""The engine still COMPILES FOR THE PS VITA (todo/vita-port.md B1).
+
+    The Vita's newlib does not pull in what the host's headers do
+    transitively, so a change can build here and fail there with nothing
+    saying so: the first VitaSDK build (2026-09-18) found `<cmath>` missing
+    from `actor/walk.cpp` and `script/area.cpp`, and the Vita half of
+    `platform/threads.cpp` naming a private struct - all three had built on
+    the host for weeks. This runs `make vita` (VitaSDK + CMake, the whole of
+    `src/` cross-compiled, `omk_bench` and `omk_smoke` linked and packaged)
+    and asserts it succeeded. SKIPPED without a VitaSDK (`$VITASDK` or
+    `~/vitasdk`), like every optional target. Slow on a fresh build dir
+    (~2 min), incremental after.
+
+    SHOWN TO FAIL, 2026-09-18: removing `#include <cmath>` from `walk.cpp`
+    turns it red; restored, touched, green.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    sdk = os.environ.get("VITASDK") or os.path.expanduser("~/vitasdk")
+    if not os.path.exists(os.path.join(sdk, "share", "vita.toolchain.cmake")):
+        return ("skipped",), ("skipped",), "no VitaSDK ($VITASDK or ~/vitasdk)"
+    r = subprocess.run(["make", "-s", "vita"], cwd=eng, capture_output=True, text=True)
+    vpks = tuple(os.path.exists(os.path.join(eng, "build", "vita", v))
+                 for v in ("omk_bench.vpk", "omk_smoke.vpk"))
+    errors = len(re.findall(r"error:", r.stdout + r.stderr))
+    return (r.returncode, errors, vpks), (0, 0, (True, True)), \
+        "make vita's exit status, compiler errors, and both VPKs present"
+
+
 def c_engine_tie_memory():
     r"""The depth tie's memory is almost all ONE group - the claimed keys - and
     the pass that measures it drops what the render drops (handoff-vita §2).
@@ -36091,6 +36217,14 @@ def c_licence_headers():
     Counted with `git diff --diff-filter=A 4078d16..HEAD`, so the number is
     attributed rather than merely accepted - which is what this check's own
     note about local state asks of anyone moving it.
+
+    **443 -> 458 on 2026-09-18.** It was ALREADY red at `202937c`: 452 tracked,
+    **9** added since the 443 was set (`8c7c24e`) - `platform/threads.{h,cpp}`,
+    `ui/citymap.{h,cpp}`, and five probes (`bank_swap`, `meshidx_equiv`,
+    `node_rest`, `thread_probe`, `tie_mem`), by `git diff --diff-filter=A
+    8c7c24e..HEAD`. The Vita port adds **6**: `backends/gles/glesrender.cpp`,
+    `gles_probe.cpp`, `backends/vita/bench_main.cpp`, `smoke_main.cpp`,
+    `vitapad.h` and `tools/play_split_scan.py`.
     """
     import glob as _g
     TAG = "SPDX-License-Identifier: GPL-3.0-or-later"
@@ -36120,7 +36254,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (443, [], 1, []), \
+           (458, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -38392,6 +38526,9 @@ SLOW = [
     ("engine: pose equivalence", c_engine_pose_equivalence, "todo/optimization.md 10; actor/pose.h"),
     ("engine: mesh name index", c_engine_mesh_name_index, "todo/handoff-vita.md 2; o3de/shadow.h"),
     ("engine: tie memory", c_engine_tie_memory, "todo/handoff-vita.md 2; o3de/depthtie.h"),
+    ("engine: vita bench", c_engine_vita_bench, "todo/vita-port.md 0; backends/vita/bench_main.cpp"),
+    ("engine: gles backend", c_engine_gles_backend, "todo/vita-port.md 0; backends/gles/glesrender.cpp"),
+    ("engine: vita build", c_engine_vita_build, "todo/vita-port.md B1; backends/vita/CMakeLists.txt"),
     ("engine: sweep grid", c_engine_sweep_grid, "todo/optimization.md 11; o3de/collision.h"),
     ("engine: props", c_engine_props, "todo/omk-play"),
     ("sprite ids scene-local", c_sprite_ids_are_scene_local, "docs/ASSETS"),

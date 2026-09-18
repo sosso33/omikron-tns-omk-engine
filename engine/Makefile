@@ -158,6 +158,59 @@ else
 endif
 endif
 
+# ------------------------------------------------------------ THE PS VITA
+#
+# `todo/vita-port.md`. The same rule as SDL and Vulkan: OPTIONAL, never in
+# `all`, and a machine without the SDK prints why and exits 0 (A8 rule 1).
+# The build itself is CMake, because VitaSDK ships its packaging (SELF, VPK)
+# as CMake functions; this target only drives it, so `make vita` is the one
+# command every host uses. The build directory persists, so a second run
+# recompiles only what changed.
+#
+# **Keep it compiling.** The Vita's newlib does not pull in what the host's
+# headers do transitively (`<cmath>` was missing from two sources the first
+# time), so a change can build here and break there without anything saying so
+# - which is what `verify.py: engine: vita build` is for.
+VITASDK_DIR := $(or $(VITASDK),$(wildcard $(HOME)/vitasdk))
+
+.PHONY: vita
+vita:
+ifeq ($(wildcard $(VITASDK_DIR)/share/vita.toolchain.cmake),)
+	@echo "no VitaSDK found (\$$VITASDK or ~/vitasdk) - the Vita build is optional;"
+	@echo "everything else builds and the suite passes without it (todo/vita-port.md)."
+else
+	@mkdir -p build/vita
+	VITASDK=$(VITASDK_DIR) PATH="$(VITASDK_DIR)/bin:$$PATH" \
+	    cmake -S backends/vita -B build/vita-cmake >/dev/null
+	VITASDK=$(VITASDK_DIR) PATH="$(VITASDK_DIR)/bin:$$PATH" \
+	    cmake --build build/vita-cmake -j$(NPROC)
+	cp build/vita-cmake/omk_bench.vpk build/vita-cmake/omk_smoke.vpk build/vita/
+	@echo "built build/vita/omk_bench.vpk and build/vita/omk_smoke.vpk"
+endif
+
+# The Vita bench on THIS machine - the same source, so a device run divides
+# by it (`backends/vita/bench_main.cpp`). Needs nothing installed.
+build/vita_bench: backends/vita/bench_main.cpp $(SRCOBJS)
+	@mkdir -p $(@D)
+	$(CXX) $(CXXFLAGS) -o $@ backends/vita/bench_main.cpp $(SRCOBJS)
+
+# The GLES2 backend against the software reference, headless. macOS only: it
+# makes its GL context with CGL, and the legacy OpenGL framework is always
+# there, so it needs nothing installed either. Elsewhere it says so.
+UNAME_S := $(shell uname -s)
+.PHONY: gles-probe
+ifeq ($(UNAME_S),Darwin)
+gles-probe: build/gles_probe
+else
+gles-probe:
+	@echo "gles-probe makes its context with CGL (macOS); on this host it is skipped."
+endif
+
+build/gles_probe: backends/gles/gles_probe.cpp backends/gles/glesrender.cpp $(SRCOBJS)
+	@mkdir -p $(@D)
+	$(CXX) $(CXXFLAGS) -o $@ backends/gles/gles_probe.cpp \
+	    backends/gles/glesrender.cpp $(SRCOBJS) -framework OpenGL
+
 # One object per source. The mkdir is in the recipe rather than an order-only
 # prerequisite so a new subsystem directory needs no edit here either.
 $(OBJDIR)/%.o: %.cpp
