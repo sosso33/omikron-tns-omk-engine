@@ -42,11 +42,11 @@ Anything less explicit than that is not a request to regenerate.
 
 | | |
 |---|---|
-| **Generated** | 2026-09-07 |
-| **Repository commit** | `aa5dfc7` |
-| **Sources at that commit** | `CLAUDE.md`, `README.md`, `docs/PORTING.md` and `docs/BOOT.md` whole, the sections needed of the other eight `docs/`, `engine/README.md` §Coverage by grep, `tables/ui.json` and `tables/ui_widgets.json` read directly, `python3 tools/verify.py --list` (341 checks), `git log` over the 134 commits since the last snapshot, and the play-report entries `todo/omk-play.md` 77–81 |
+| **Generated** | 2026-09-18 |
+| **Repository commit** | `4b71e07` |
+| **Sources at that commit** | `CLAUDE.md`, `README.md`, `docs/PORTING.md` and `docs/BOOT.md` whole, the sections needed of the other eight `docs/` (the new ones: `UI.md` §3k and the sneak's verbs, `SCRIPT_VM.md` on slot pools and solid hidden sets, `ASSETS.md` §7 on the walker, the water, the fall, the obstruction pass), `engine/README.md` §Coverage by grep, `tables/ui_widgets.json` read directly, `python3 tools/verify.py --list` (480 entries, 479 checks), `git log` over the 448 commits since the last snapshot, the `docs/RECONSTRUCTION.md` log rows since 2026-09-07, and the task records `todo/handoff-shoot-mode.md`, `handoff-vita.md`, `missing-ui.md`, `swimming.md`, `falls.md`, `camera-obstruction.md` |
 | **Chapters** | 13 |
-| **Status of the port** | plays the opening end to end — three intro movies, splash, start menu, the Kay'l intro conversation, the Impasse's camera editings — then adventure mode with a follow camera and a walkable floor that stops at walls, area transitions that keep two sets resident and play the doors between them, the sneak, the two-stage take of a world object, **saving and loading through the game's own panels** with a ring charged as the game charges it, and the **pause screen** on Escape. Cities carry their crowd, their road traffic, their ambient fire and neon, and the lights baked into the set. Nothing past what a reader has confirmed in play is claimed. |
+| **Status of the port** | plays the opening end to end, then adventure mode — walking, jumping and falling, swimming, area transitions with two resident sets — and from there the sneak with its verbs, memos, identity page and city map; the slider, called, boarded and flown; the shops, MULTIPLAN, the lift, the terminals and the one-off puzzle screens; saving and loading; the pause; **melee** and **shoot mode**, both running and both without an oracle. The city carries its crowd, its traffic, the set's lights and the engine's blob shadows. What a person has not yet confirmed is listed in `todo/play-test.md`, and nothing past what a reader has confirmed is claimed as confirmed. |
 
 ## The rules of this document
 
@@ -172,13 +172,13 @@ surviving three regenerations because nobody re-read it.
 | 2 | [Boot, and the frame](02-boot-and-frame.md) | icon → movies → the first frame; where "one frame" comes from |
 | 3 | [The data](03-the-data.md) | the shipped tree, the archives, the format families |
 | 4 | [The script VM](04-the-script-vm.md) | the 153-opcode machine that runs the game |
-| 5 | [The world](05-the-world.md) | areas, scenes, trigger zones, the two resident slots, saved state |
-| 6 | [Actors](06-actors.md) | the state-machine channel, the walker, combat, the street crowd and its traffic |
-| 7 | [Conversations and cutscenes](07-conversations-and-cutscenes.md) | dialogue, staging, camera editings, and what happens between two beats |
-| 8 | [Rendering](08-rendering.md) | the 3D path, the lights, the 2D layer, RGB565 |
+| 5 | [The world](05-the-world.md) | areas, scenes, trigger zones, the two resident slots, hidden-but-solid sets, saved state |
+| 6 | [Actors](06-actors.md) | the state-machine channel, the walker, the jump and the fall, the water, the slider, melee, shoot mode, the street |
+| 7 | [Conversations and cutscenes](07-conversations-and-cutscenes.md) | dialogue, staging, camera editings, what happens between two beats, and what the letterbox means |
+| 8 | [Rendering](08-rendering.md) | the 3D path, the render states, the lights and shadows, the 2D layer, RGB565, the enhancements |
 | 9 | [Audio](09-audio.md) | ADPCM, the voice pool, and the mixer that isn't there |
-| 10 | [The interface](10-the-interface.md) | 37 screens, the widget tree, fonts, input, save and load |
-| 11 | [The port](11-the-port.md) | how `engine/` is built, and the boundary that shapes it |
+| 10 | [The interface](10-the-interface.md) | 37 screens, the widget tree, text and its layout, input, the sneak, the shops, the lift and the terminals |
+| 11 | [The port](11-the-port.md) | how `engine/` is built, the boundary that shapes it, the enhancements, speed and the handheld |
 | 12 | [Evidence](12-evidence.md) | the six tiers, the golden traces, what a green tick means |
 | 13 | [Open questions](13-open-questions.md) | what is not known, and what has been ruled out |
 

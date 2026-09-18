@@ -12,18 +12,23 @@ Walk into a doorway and a script runs. It is bytecode — one byte per
 instruction, operands following — interpreted by a 153-entry table compiled
 into the executable. There are 5 785 of these scripts in the shipped game, and
 they are what says *this conversation starts here*, *this door opens*, *this
-camera watches*, *this variable is now 1*.
+camera watches*, *this variable is now 1*, *this gunman patrols that corridor*.
 
 The one idea worth carrying out of this chapter is how a script **waits**. It
 does not block, and nothing polls. A script that opens a menu, or starts a
-cutscene, or asks the player to walk somewhere, simply **parks**: it writes a
-number into its own status word and stops, with its program counter and stack
-intact. Later something else — a screen closing, an animation finishing, a
-camera arriving — writes 1 back and it carries on from the next instruction.
+cutscene, or starts a fight, simply **parks**: it writes a number into its own
+status word and stops, with its program counter and stack intact. Later
+something else — a screen closing, an animation finishing, a fight ending —
+writes 1 back and it carries on from the next instruction.
 
 That is why a conversation can interrupt a cutscene, why an area transition can
 take three seconds of streaming without the game stopping, and why the whole
 engine is one loop with no threads in it.
+
+The second idea is newer and cost more to learn: **a script belongs to a
+place.** When it names a scene object by number, the number means something
+only inside the scene of the slot the script came from — and two places are
+loaded at once.
 
 ## In detail
 
@@ -79,9 +84,20 @@ decodes 5 785 of 5 785 scripts with **2 056 fewer instructions**: exactly the
 four surplus bytes per site, which at 2 had been decoding as phantom
 instructions.
 
-So a corpus verdict is only as good as the rest of the table, and where the
-assembly is unambiguous a disagreement is a symptom to locate rather than a
-verdict to accept.
+And one correction that nobody followed up for two weeks. `fight.begin`, opcode
+62, was corrected from 4 operand bytes to 6 on 2026-09-02 — and the question
+"which fight-AI profile does a shipped fight select?" stayed recorded as
+unanswerable, because it had been decided under the old length. Re-read under
+the new one, **the third field is the AI level**, pushed as `Fight_Engage`'s
+second argument; every one of the 108 sites is a `case` on the variable
+*Niveau Combat*, with three copies of the call, 36 / 36 / 36 over levels 0, 1
+and 2. The scripts raise that variable when the last fight cost the player
+under 30 life and lower it at 70 or more — **the game's fight difficulty is
+adaptive**, and the fourth profile, the sparring partner, is never selected.
+
+So a corpus verdict is only as good as the rest of the table, and a conclusion
+drawn from a table that has since changed is worth re-running rather than
+re-reading.
 
 ### The status word — how a script waits
 
@@ -103,7 +119,7 @@ every resume is an event or a step of the pump.
 | 10 | waiting on the area transition | the pump's tail |
 | 11 | the transition's last step is done | case 3's `else` arm |
 
-Two details of the plumbing that a reader reconstructs wrongly otherwise:
+Details of the plumbing that a reader reconstructs wrongly otherwise:
 
 * **Queued actions do not overtake a parked script.** The dispatcher refuses to
   arm anything while the status is non-zero, so an action waits behind the
@@ -111,6 +127,42 @@ Two details of the plumbing that a reader reconstructs wrongly otherwise:
 * **Status 5 has no resumer anywhere in the image.** A transition caller that a
   second transition supersedes is parked for good. That is the engine's own
   shape, not a gap in the reading.
+* **A fight's result is dropped.** Case 2 releases the first context at status
+  3 and discards the result code it is handed; the scripts learn who won by
+  re-reading the player's life.
+* **A screen can answer its own question.** `ui.open` parks its caller at 6 —
+  but the videophone's screen answers the moment it opens, so the next
+  instruction runs at once and a call looks like it never waited (chapter 10).
+
+### Which pool a script plays objects in
+
+`scx.play` and its variants name a scene object by a small number, and scene
+object numbers are reused in every scene file. `scx.play.wait` (0x004031E0)
+resolves the number through `dword_69BC48[ctx+1F * 16]` — the object container
+of **the slot the running context belongs to** — not through the scene loaded
+last.
+
+The shipped case that shows it is a lift door after a phone call. The call's
+scene takes the security centre's lift over, and its zone does `area.goto 181`,
+`area.arrive -1`, and only then `scx.play.wait obj 0x0012` — the door. By that
+line the destination's scene is resident in the other slot; the script is the
+shaft's, so `0x12` is the shaft's door. A replica that hands every `scx.play*`
+to the newest scene opens an object of the wrong file, and the door stays shut.
+Every other ride worked **by order** — the lift's own zone had started the door
+one frame before the swap — which is why no test that rode the lift without the
+call could see it.
+
+Two more rules from the same family, both learned from play reports:
+
+* **A waiting `scx.play` is not a cutscene.** Opcode 58 leaves its caller parked
+  while a door slides, exactly as a cutscene beat does; asking "is some context
+  parked on some program" treats a door as a cutscene and takes the player's
+  control for the length of it. A beat poses a body; a door does not.
+* **`player.move` is the stop.** A tutorial opens `actor.goto_address …;
+  player.move 100; player.anim.hold`, and `Player_GoToMove` puts the player's
+  machine on the group's default entry that tick — which is how the original
+  stops you dead when a cutscene triggers instead of letting each step
+  re-trigger it.
 
 ### What the corpus exercises
 
@@ -126,6 +178,11 @@ installs against 15 restores, and 74 of the 82 instructions between them are
 camera and fade opcodes. So the game has **black-and-white cutscenes**, and the
 opcodes are `render.grey.on` / `render.grey.off`.
 
+Shoot mode's opcodes carry most of its content. `shoot.actor.enter` brings a
+gunman in, and `shoot.actor.action` gives him something to do: of its 319
+shipped sites, 116 are **action 1, a patrol** along a route in the level's
+`MAP2D` file, and 113 are action 3.
+
 ### The accident that makes the original observable
 
 Every handler announces its operand by name, through `GetPrivateProfileStringA`
@@ -135,17 +192,18 @@ anyone watching the Win32 profile-string API, with no patch, no shim and no
 debugger.
 
 That is the whole basis of the golden traces in chapter 12, and it is luck
-rather than design.
+rather than design. It is also why fights and shoot phases have no such oracle:
+the opcodes that start them announce nothing the logger keeps.
 
 ## Where it lives
 
 | | |
 |---|---|
-| the finding | `docs/SCRIPT_VM.md` — the table, the status word, the naming |
+| the finding | `docs/SCRIPT_VM.md` — the table, the status word, the naming, which pool a script plays in |
 | the table | `tables/vm_opcodes.json`, `tables/vm_announce.json` |
-| the port | `engine/src/script/interp.cpp` (the handlers), `area.cpp` (the pump and the contexts) |
+| the port | `engine/src/script/interp.cpp` (the handlers), `area.cpp` (the pump, the contexts, `poolForSlot`) |
 | the readers | `tools/dialog_disasm.py`, `tools/script_dump.py`, and `/world` in the web viewer |
-| the checks | `verify.py: vm table sources`, `dialogue scripts`, `startup scripts` |
+| the checks | `verify.py: vm table sources`, `dialogue scripts`, `startup scripts`, `engine: slot pool`, `fight & become` |
 
 ## What is not settled
 

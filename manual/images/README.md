@@ -29,7 +29,10 @@ RGB565 framebuffers; `tools/frame.py:write_png` turns one into a PNG.
 The same set, through the same camera, as `traces/frames/dlg402-47.png` — drawn
 by the port's software rasterizer. The capture also carries Telis, the props
 and a subtitle; the render draws the set alone, which is exactly the asymmetry
-the silhouette metric in `verify.py: engine silhouette` is built around.
+the silhouette metric in `verify.py: engine: silhouette` is built around.
+Re-run on 2026-09-18 its pixels differ from the 2026-09-07 file because the
+port now dithers by default (`docs/ASSETS.md` §4); `--no-dither` reproduces the
+undithered frame for laying beside the older one.
 
 ```sh
 cd engine && ./build/omk-play "$DATA" ../tables --scene Aapkayl \
@@ -46,6 +49,9 @@ Re-run on 2026-09-07 it carries three things it did not when it was first
 taken: the set's **ambient emitters** (the flame on the left, the neon), the
 **lights** the decor's own `.3DO` table supplies to the moving population, and
 the painted **sky**. Same command — the picture changed because the port did.
+Re-run on 2026-09-18 it changed again, for the same reason: the characters now
+cast the engine's **blob shadows** (option row 5, on in the save's settings),
+and the frame carries the **dither** the original's render states turn on.
 
 ```sh
 cd engine && ./build/omk-play "$DATA" ../tables \
@@ -87,6 +93,8 @@ game's data.
 
 ## When these were last refreshed
 
-**2026-09-07**, against commit `aa5dfc7`, by re-running every command above.
-All three still run. The text render still paints exactly **6 132** pixels,
-which is the figure chapters 8 and 10 quote.
+**2026-09-18**, against commit `4b71e07`, by re-running every command above
+with the existing build (`SDL_VIDEODRIVER=dummy` so no window opens). All three
+still run. The text render still paints exactly **6 132** pixels, which is the
+figure chapters 8 and 10 quote, and its PNG is byte-identical to the previous
+one; the other two changed for the reasons given under each.
