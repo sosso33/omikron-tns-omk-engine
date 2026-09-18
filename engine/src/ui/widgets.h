@@ -922,6 +922,16 @@ public:
     // because it can succeed.
     void beginCombine(int objectId, bool isSpellItem);
     bool combining() const { return state_->combining; }
+    // The three slots themselves - `dword_670BE4`, `670BE8` and `670BEC`, in
+    // that order. The row's own draw hook `0x0049C090` compares a widget's
+    // row tag against all three while the mode is open, which is the only
+    // mark the page gives for a combination in progress; nothing else reads
+    // the third slot.
+    int  combineSlot(int k) const {
+        return k == 0 ? state_->combineA
+             : k == 1 ? state_->combineB
+             : k == 2 ? state_->combineC : -1;
+    }
     // The pair whose combine is due, once both slots are full - as ROW
     // INDICES into the open list, which is what the engine's slots hold
     // (`item+0x3C`, mapped through `ObjectList_Header` by case 37). Reading

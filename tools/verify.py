@@ -22313,6 +22313,121 @@ def c_engine_sneak_memos():
            "in a 110-tall box"
 
 
+def c_engine_sneak_echo_bar():
+    r"""engine: the sneak's ECHO BAR, and the row MARK under a verb.
+
+    Two native callbacks on the device's Inventaire page, read out of the raw
+    image (neither has a `proc` label - they are dwords in the widget table,
+    CLAUDE.md 1's trap - so `asmfn.py` returns a neighbour and both ranges had
+    to be dumped by hand).
+
+    **`sub_0049DC20`, the `+32` text callback of item 0x004DEBC0** (411x24 at
+    180,398, font 'J'), the only selectable item of list 0x004DEC58 - the LAST
+    list of every sneak page. It is the ONLY place in the whole interface
+    where the player's seteks and anneaux are shown, and it was blank in the
+    replica: `screendraw.cpp` modelled two of the fifteen text callbacks and
+    this was one of the thirteen it did not. In order:
+
+      0 a TRANSIENT message, `byte_6A4CA0`, while oscillator 0 (5000 ms) runs;
+      1 `"%s %d"` of the setek tile's label and `sub_42B1C0(4)` - the player
+        record's `+172`;
+      2 the same for the anneau tile and `(5)`, `+174`;
+      3 the imager tile's bare label - no count, which is what settles that
+        `imager` is a MAP READER and not ammunition;
+      4 a verb's label, with its `+30` forced to 1 across the call;
+      5 `Examiner` or the examine BOX (whose `+28` ships -1, so that arm draws
+        nothing at all);
+      6 failing all of those, the CURRENT TAB's label - plus `"  (%d / 18)"`
+        from `dword_4DE708` on the Inventaire tab, which is
+        `0x004DE6F0 + 0x18`, the ROW LIST's own bound count, written by
+        `sub_42ADD0` from `Game_HandleEvent(29)`.
+
+    **`sub_0049C090`, the `+20` draw hook of the nine row widgets**: a second
+    `Ui_DrawItemFill` behind the marked row, gated on the current panel being
+    the VERB panel 0x004DEEB8 - so it shows only while a verb is being chosen
+    - on the SELECTED row ordinarily, and on the rows whose tag matches
+    `dword_670BE4/BE8/BEC` while a `Utiliser sur` is pending.
+
+    **One correction to the reading this was ported from.** It recorded the
+    rows' flag bank A as 0 and concluded "this hook is the only fill a row
+    ever gets". The fill is gated on bank **B** - `I2D_TestFlag` picks the
+    word from the mask's own top bits, and `0x40000010` is a bank-B mask -
+    and the rows ship `0x40000210` there. So every drawn row already fills
+    once and the marked one fills TWICE: `src * (1 - 200/255)` applied twice
+    takes it from 0.216 of the page's tint to 0.385, which is the bar a
+    reader sees behind one row of three.
+
+    The route stands in Anekbah with the sneak open and three objects, steps
+    the selection DOWN one row, walks LEFT into the three tiles and DOWN
+    through them, comes back RIGHT and confirms - so one run reaches five of
+    the seven arms and both branches of the mark's gate. `--give 18,7` is what
+    makes `(3 / 18)` evidence: a count read from anywhere but the row list's
+    `+24` would not follow the bag.
+
+    Every field comes from `ScreenFrame`, filled where the drawing happens -
+    `echoBar` is taken AFTER `layOutBlock` ran on it and `rowMarked` is pushed
+    inside the hook's own `if` - so no part of the line can be satisfied by
+    something the viewer computed and handed over (CLAUDE.md 1, the log-line
+    rule, which two checks in this file failed).
+
+    `{TEXT ERROR!}` in three of the lines is the ENGINE's: `Ui_ItemStringDefault`
+    sends any item whose `+30` is not -1 through `sub_43FEA0`, `IAM\Sneak` has
+    no `[`, and the extractor prefixes its failure literal. It is invisible in
+    the game because the text scanner swallows `{`..`}`, and it is asserted
+    here so neither half can be "repaired" away.
+
+    NOT COVERED, and both are ported rather than guessed: arm 0, whose only
+    two writers are inside `sub_49BC60` (screen string 42 when a slider call
+    refuses, 35 when a combination finds no recipe) and neither is reachable
+    from this route; and the mark's COMBINE branch, because with the port's
+    current `Utiliser sur` the device closes on the same press
+    (`sub_49BEA0`'s arm runs too - a fault this check does not fix and does
+    not hide).
+
+    SHOWN TO FAIL: the panel gate dropped from the row hook - the mark then
+    draws on the inventory page as well, and the five lines that read
+    `0 row marks` read `1` instead.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not (os.path.isdir(eng) and os.path.exists(save)):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "omk-play did not build"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                        "--software", "--nofmv", "--nodelay", "--no-crowd",
+                        "--save", save, "--area", "0",
+                        "--stand", "1804,0,-6890,336", "--sneak",
+                        "--give", "18,7", "--frames", "340", "--res", "640x480",
+                        "--hold", "k*50,k208*1,k*20,k203*1,k*20,k208*1,k*20,"
+                                  "k208*1,k*20,k205*1,k*20,k28*1,k*60"],
+                       capture_output=True, env=env)
+    text = r.stdout.decode("cp1252", "replace")
+    got = tuple(ln.strip() for ln in text.splitlines()
+                if ln.startswith("sneak: echo bar"))
+    return got, \
+           ("sneak: echo bar - arm 6 '{TEXT ERROR!}Inventaire  (3 / 18)', 0 row marks",
+            "sneak: echo bar - arm 1 'Seteks en votre possession : 0', 0 row marks",
+            "sneak: echo bar - arm 2 'Anneaux en votre possession : 2', 0 row marks",
+            "sneak: echo bar - arm 3 'Lire plan', 0 row marks",
+            "sneak: echo bar - arm 6 '{TEXT ERROR!}Inventaire  (3 / 18)', 0 row marks",
+            "sneak: echo bar - arm 4 '{TEXT ERROR!}Utiliser', 1 row marks (tags 1)"), \
+           "the sneak's status line, composed by the port's transcription of " \
+           "`sub_0049DC20` and read back out of the frame it drew: the " \
+           "Inventaire tab with the row list's own `+24` after it, the two " \
+           "COUNTS (0 seteks and 2 anneaux, the shipped fixture's), the map " \
+           "reader with no count, and the verb - and beside it the row hook " \
+           "`sub_0049C090`, which marks NOTHING on the page itself and the " \
+           "one selected row once the verb panel is up. The tag is 1, the row " \
+           "the DOWN moved to, not the 0 a hook reading the widget rather " \
+           "than the selection would give; `(3 / 18)` follows `--give`, which " \
+           "a constant could not"
+
+
 def c_engine_sneak_quit():
     r"""engine: the sneak's QUIT tab, and a page that is built and unreachable.
 
@@ -37536,6 +37651,8 @@ SLOW = [
     ("engine: sneak character", c_engine_sneak_character, "UI; todo/sneak.md 5"),
     ("engine: sneak quit", c_engine_sneak_quit, "UI; todo/sneak.md 5"),
     ("engine: sneak memos", c_engine_sneak_memos, "UI; todo/sneak.md 2c"),
+    ("engine: sneak echo bar", c_engine_sneak_echo_bar,
+     "UI; todo/sneak.md"),
     ("cursor highlight",  c_cursor_highlight,   "UI 3b"),
     ("slider destinations", c_slider_destinations, "UI 3g"),
     ("sneak previews",   c_sneak_previews,     "UI 3g"),

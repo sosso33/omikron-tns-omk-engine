@@ -1129,6 +1129,89 @@ these are), and the **camera** turns about the model rather than the model
 under the camera — the same picture for a rigid body with baked per-vertex
 colour, and nothing in the engine's data can tell them apart.
 
+### The ECHO BAR — `sub_0049DC20`, and the only place the money is shown
+
+Item `0x004DEBC0`, 411×24 at (180, 398), font `J`, the only selectable item of
+list `0x004DEC58` — **the last list of every one of the device's pages**. Its
+`+32` text callback composes the device's status line, and it is the ONLY
+place in the whole interface where the player's *seteks* and *anneaux* appear.
+Neither has a `proc` label (nothing calls them: they are dwords in the widget
+table), so the range had to be dumped out of the raw image by hand.
+
+`Ui_DrawItem` pre-clears its buffer and then draws whatever the callback left,
+so a branch that writes nothing leaves the bar blank. In order:
+
+| # | when | what |
+|---|---|---|
+| 0 | `Ui_OscillatorFlags(Ui_Oscillator(0), 1)` | `byte_6A4CA0`, a 5000 ms TRANSIENT message, **and nothing else** |
+| — | no current panel, or nothing selected on it | blank |
+| 1 | selection is `0x004DE338`, the setek tile | `"%s %d"` of its label and `sub_42B1C0(4)` |
+| 2 | `0x004DE380`, the anneau tile | the same with `(5)` |
+| 3 | `0x004DE3C8`, the imager tile | its bare label — **no count** |
+| 4 | `0x004DE230` / `0x004DE278`, the first two verbs | the label, `+30` forced to 1 across the call |
+| 5 | `0x004DE2C0` *Examiner*, or `0x004DE710` the examine box | the label; the box ships `+28 = -1`, so that arm draws nothing |
+| 6 | anything else | the CURRENT TAB's label, plus `"  (%d / 18)"` on the Inventaire tab |
+
+Three things it settles.
+
+* **`sub_42B1C0(n)`** raises `Game_HandleEvent(44)` on the player, whose
+  `sub_40B360` answers case 4 from the player record's `+172` and case 5 from
+  `+174` — the seteks and the anneaux. The corroboration is from the other
+  end: `sub_4AE060` refuses to save when property 5 reads zero, and a save
+  costs one *anneau*.
+* **`dword_4DE708` is `0x004DE6F0 + 0x18`** — the row list's own bound count,
+  what `sub_42ADD0` writes from the channel's event 29. So the `(n / 18)` is
+  the inventory's occupancy against an 18-slot capacity, and the 18 is a
+  literal in the format string rather than a field anywhere.
+* **The imager counts NOTHING.** Its arm has no `sub_42B1C0` and no format,
+  which is what settles that it is a map reader and not ammunition — and that
+  `Seteks en votre possession :` is echo-bar text for the setek tile, never a
+  caption beside it.
+
+**One call in it is dead**, at `0x0049DCA6`: `sub_42AA00(screen, row, B)`
+fills a second 0x100-byte buffer with the selected row's object name and
+nothing ever reads it — the only references to that stack slot are its
+`[0] = 0` and the `lea` that passes it. Its one effect is raising event 33
+once per draw of the bar. Whether that was intended cannot be told from the
+listing, so the port leaves it out and says so.
+
+**And `{TEXT ERROR!}` is the engine's, not a fault.** `Ui_ItemStringDefault`
+(`sub_476860`) sends any item whose `+30` is not −1 through `sub_43FEA0`, the
+bracketed-section extractor; `IAM\Sneak` contains no `[`, and the three verbs
+(plus `Oui`/`Non` and eighteen more items across the tree) ship `+30 = 0`. So
+every draw of the verb row really does compose `"{TEXT ERROR!}Utiliser"`. It
+is invisible because the text scanner treats `{` as opening a markup command
+and swallows everything to `}`. A port must not print the prefix, and must not
+"repair" the bar by dropping the `+30` path — both halves are the engine.
+
+### The ROW MARK — `sub_0049C090`, the second fill
+
+The `+20` draw hook of the nine row widgets `0x004DE440`..`0x004DE680`:
+
+```c
+tag = item->+3C;                      if (tag == -1) return;
+if (screen->+1C != off_4DEEB8) return;            // the VERB panel, only
+if (!dword_670BE0) hit = Ui_ListSelectedItem(&word_4DE6F0) == item;
+else               hit = tag == dword_670BE4 || == 670BE8 || == 670BEC;
+if (hit) Ui_DrawItemFill(screen, panel, item);
+```
+
+so a bar appears behind the row a verb is about to act on **only while the
+verb panel is up**, and during a `Utiliser sur` it marks the one or two rows
+already chosen — the page's only feedback for that operation.
+
+**It is a SECOND fill, not the only one.** The nine rows carry bank B
+`0x40000210`, and `0x40000010` is what `Ui_DrawItem` tests before calling
+`Ui_DrawItemFill` — the mask's top bits pick the bank, so bank A being zero
+says nothing about it. Every drawn row therefore fills once already and the
+marked one fills twice: with the inverse blend above, `src × (1 − 200/255)`
+applied twice takes the row from 0.216 of the page's tint to 0.385. That is
+the difference a player sees.
+
+`verify.py: engine: sneak echo bar` walks one route that reaches five of the
+bar's seven arms and both branches of the mark's gate, reading every field out
+of the frame the composer drew.
+
 ### `sub_49C050` — the row list's own hook, and why nothing moved inside it
 
 The sneak's nine row widgets are a list with a hook of its own, and the port

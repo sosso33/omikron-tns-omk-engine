@@ -6,6 +6,7 @@
 #include "ui/iamtext.h"
 
 #include <algorithm>
+#include <cstdio>
 
 namespace omk {
 namespace {
@@ -56,6 +57,40 @@ constexpr std::uint32_t kDrawLoadRows = 0x0047B180;
 // `IAM\Menu` is its last line, "Entrez votre nom".
 constexpr int kNameFieldLabel = 13;
 
+// `sub_476860` - `Ui_ItemStringDefault`, TRANSCRIBED, because the echo bar
+// calls it seven times and one of its two arms is not the one the composer's
+// ordinary text path takes:
+//
+//     if (!out) return;                         // nothing written
+//     if (item->+1C < 0) return;                // no string id, ditto
+//     str = the item->+1C'th NUL-separated string of screen->+30
+//     if (I2D_TestFlag(item, 0x80000200))  strcpy(out, str);
+//     else if (item->+1E != -1)            sub_43FEA0(item->+1E, str, out);
+//     else                                 strcpy(out, str);
+//
+// `0x80000200` is bank C, so the test is `flags[2] & 0x200`. **None of the
+// sneak's items carries it** (the verbs and the bar itself ship bank C
+// `0x80000011`), so every one of them takes the `+30` branch - and `+30` is
+// **0**, not -1, on the three verbs, on `Oui`/`Non` and on eighteen more
+// items across the tree.
+//
+// `IAM\Sneak` contains no `[`, so `extractTextSection(.., 0)` runs off the
+// end of the field, sets its failure flag and returns
+// `"{TEXT ERROR!}Utiliser"`. **That is what the engine composes too**, and it
+// is invisible only because `parseMarkup` swallows `{`..`}` whole. Neither
+// half may be "repaired": drop the `+30` branch and the port stops running
+// the function the engine runs; print the prefix and the bar says
+// `{TEXT ERROR!}` in the game's own face.
+std::string itemStringDefault(const UiItem& it,
+                              const std::vector<std::string>& text) {
+    const int id = it.label();
+    if (id < 0 || id >= static_cast<int>(text.size())) return {};
+    const std::string& str = text[static_cast<std::size_t>(id)];
+    if (it.flags[2] & 0x200u) return str;
+    if (it.textArg != -1) return extractTextSection(&str, it.textArg);
+    return str;
+}
+
 // `Ui_DrawItemFill`'s quad, with the blend `sub_480AC0`'s mode-4 arm sets:
 // SRCBLEND = INVSRCALPHA (6) and DESTBLEND = SRCALPHA (5), the INVERSE of the
 // usual source-over, so
@@ -96,6 +131,106 @@ void fillQuad(Surface& fb, int x0, int y0, int x1, int y1,
 }
 
 }  // namespace
+
+// ---- THE SNEAK'S ECHO BAR - `sub_0049DC20`, transcribed ----------------
+//
+// The `+32` text callback of item 0x004DEBC0, and the ONLY place the player's
+// seteks and anneaux are shown. `Ui_DrawItem` calls it as
+// `v5(screen, item, Destination)` with `Destination` pre-cleared, so a branch
+// that writes nothing leaves the bar blank - which two of them do.
+//
+//     if (Ui_OscillatorFlags(Ui_Oscillator(0), 1)) { strcpy(out, byte_6A4CA0);
+//                                                    return 1; }
+//     panel = screen->+1C;          if (!panel) return 1;      // blank
+//     sel   = Ui_PanelSelectedItem(panel); if (!sel) return 0;  // blank
+//     row = Ui_ListSelectedItem(&word_4DE6F0);
+//     if (row) sub_42AA00(screen, row, B);          // B IS NEVER READ AGAIN
+//     if (sel == 0x4DE338) { sprintf(out, "%s %d", str(sel), sub_42B1C0(4)); }
+//     if (sel == 0x4DE380) { sprintf(out, "%s %d", str(sel), sub_42B1C0(5)); }
+//     if (sel == 0x4DE3C8) { str(sel) }
+//     if (sel == 0x4DE230 || sel == 0x4DE278)        // the two first verbs
+//                          { sel->+1E = 1; str(sel); sel->+1E = 0; }
+//     if (sel == 0x4DE2C0 || sel == 0x4DE710)        // Examiner, examine box
+//                          { word_4DE2DE = 1; str(sel); word_4DE2DE = 0; }
+//     tab = Ui_ListSelectedItem(&unk_4DE210);  if (!tab) return 1;  // blank
+//     if (tab == 0x4DE040) { str(tab); strcat(out, sprintf("  (%d / 18)",
+//                                                          dword_4DE708)); }
+//     else                 { str(tab) }
+//
+// NOT PORTED, and it is one call: `sub_42AA00(screen, row, B)` at
+// `0x0049DCA6`. It fills a second 0x100-byte stack buffer with the selected
+// row's object name and **nothing ever reads it** - the only references to
+// `esp+12Ch` are its `[0] = 0` and the `lea` that passes it. Its one effect
+// is raising the inventory channel's event 33 once per draw of the bar, and
+// whether that was intended cannot be told from the listing. Left out
+// because it changes no text; recorded because it changes a raise count.
+//
+// `dword_4DE708` is `0x004DE6F0 + 0x18` - the ROW LIST's own bound count,
+// what `sub_42ADD0` writes from `Game_HandleEvent(29)`, which is why this is
+// `walk.boundCount(kListSneakRows)` and not the number of widgets drawn. The
+// 18 is a literal in the format string, not a field.
+std::string ScreenComposer::echoBarText(const UiWalk& walk,
+                                        const std::vector<std::string>& text,
+                                        int* arm) const {
+    *arm = -1;
+    // 1. A TRANSIENT MESSAGE WINS OUTRIGHT, for the 5000 ms of oscillator 0.
+    if (echoMsg_) { *arm = 0; return *echoMsg_; }
+    // 2. ...otherwise what is SELECTED, on whatever panel the walk is on.
+    if (!walk.panel()) return {};
+    const UiItem* sel = walk.selected();
+    if (!sel) return {};
+    const auto withCount = [&](int n) {
+        return itemStringDefault(*sel, text) + " " + std::to_string(n);
+    };
+    // The three 50x50 tiles of list 0x004DE420, in the order the sneak's open
+    // loads their models: setek, anneau, imager. The first two are COUNTERS
+    // and the third is not - its arm has no `sub_42B1C0` and no format, just
+    // the bare string, which is what settles that `imager` is a map reader.
+    if (sel->addr == 0x004DE338u) { *arm = 1; return withCount(seteks_); }
+    if (sel->addr == 0x004DE380u) { *arm = 2; return withCount(anneaux_); }
+    if (sel->addr == 0x004DE3C8u) { *arm = 3; return itemStringDefault(*sel, text); }
+    // `Utiliser` and `Utiliser sur` force their OWN `+1E` to 1 across the
+    // call. Both ship `+1E = 0`, and index 0 and index 1 of a field with no
+    // brackets extract the same span, so the write changes nothing visible -
+    // transcribed because it is what the function does.
+    if (sel->addr == 0x004DE230u || sel->addr == 0x004DE278u) {
+        UiItem forced = *sel;
+        forced.textArg = 1;
+        *arm = 4;
+        return itemStringDefault(forced, text);
+    }
+    // `Examiner` and the examine page's 400x260 BOX share one arm, and the
+    // store in it is ABSOLUTE (`66 c7 05 de e2 4d 00 01 00`, i.e.
+    // `0x004DE2C0 + 0x1E`) - so on the box's arm it pokes the OTHER item's
+    // field and the box is read unmodified. Compiler fold or authoring slip;
+    // the two cannot be told apart, and it is visible either way only through
+    // a bracket `IAM\Sneak` does not contain. The box ships `+28 = -1`, so
+    // its arm writes NOTHING and the bar goes blank while the examine page is
+    // up - nothing found in this pass binds a string into that field.
+    if (sel->addr == 0x004DE2C0u) {
+        UiItem forced = *sel;
+        forced.textArg = 1;
+        *arm = 5;
+        return itemStringDefault(forced, text);
+    }
+    if (sel->addr == 0x004DE710u) { *arm = 5; return itemStringDefault(*sel, text); }
+    // 3. ...and failing all six, the CURRENT TAB's own label - which is what
+    // the bar shows for the whole time the selection sits in the row list.
+    const UiList* tabs = w_->listAt(kListSneakTabs);
+    const int t = walk.selectionOf(kListSneakTabs);
+    if (!tabs || t < 0 || static_cast<std::size_t>(t) >= tabs->items.size())
+        return {};
+    const UiItem& tab = tabs->items[static_cast<std::size_t>(t)];
+    *arm = 6;
+    std::string s = itemStringDefault(tab, text);
+    if (tab.addr == 0x004DE040u) {          // the Inventaire tab, and only it
+        char n[32];
+        std::snprintf(n, sizeof n, "  (%d / 18)",
+                      walk.boundCount(kListSneakRows));
+        s += n;
+    }
+    return s;
+}
 
 int ScreenComposer::background(Surface& fb, const UiPanel& p,
                               const Surface& sheet) const {
@@ -1179,7 +1314,10 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                                            hr, hg, hb, deltaMs_);
                 ++out.cursorQuads;
             }
-            if (eff0[1] & 0x10) {
+            // `Ui_DrawItemFill` (0x00476FE0) ON THIS ITEM - one call, made
+            // from two places, which is why it is a lambda: the row hook
+            // below makes it and so does the bank-B bit under that.
+            const auto itemFill = [&] {
                 int fr = rgb[0], fg = rgb[1], fb2 = rgb[2];
                 if (eff0[1] & 0x02000000) { fr = 255; fg = 50; fb2 = 50; }
                 const int alpha = (eff0[1] & 0x10) ? 200
@@ -1189,6 +1327,60 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                 const int x1 = scaleX(it.x + q->offsetX + it.w);
                 const int y1 = scaleY(it.y + q->offsetY + it.h);
                 fillQuad(fb, x0, y0, x1, y1, fr, fg, fb2, alpha);
+            };
+
+            // ---- THE ROW MARK: the `+20` hook `0x0049C090` -------------
+            //
+            // Transcribed:
+            //
+            //     tag = item->+3C;  if (tag == -1) return;
+            //     if (screen->+1C != off_4DEEB8) return;   // the VERB panel
+            //     if (!dword_670BE0)
+            //         hit = Ui_ListSelectedItem(&word_4DE6F0) == item;
+            //     else
+            //         hit = tag == dword_670BE4 || == 670BE8 || == 670BEC;
+            //     if (hit) Ui_DrawItemFill(screen, panel, item);
+            //
+            // so it shows ONLY while a verb is being chosen, and during a
+            // `Utiliser sur` it marks the one or two rows already picked -
+            // the page's only feedback for that operation.
+            //
+            // `Ui_DrawItem` runs the `+20` hook FIRST, before the text and
+            // before the flag fill, so this quad goes down before the one
+            // below. They are the same quad, so the order decides nothing;
+            // what it decides is the COUNT. The nine rows carry bank B
+            // `0x40000210`, so every drawn row already fills once, and the
+            // marked one fills TWICE - `src*(1-a)` applied twice takes it
+            // from 0.216 of the page's tint to 0.385. **That correction is
+            // this port's**: the read this was ported from called bank A's
+            // zero "nothing in the record asks for a fill", but the fill is
+            // gated on bank B (`I2D_TestFlag` picks the word from the mask's
+            // top bits), and there the bit is set.
+            if (it.drawFn == kDrawSneakRowFill) {
+                const int tag = walk.rowOf(it.addr);
+                const UiPanel* vp = walk.panel();
+                if (tag != -1 && vp && vp->addr == kPanelSneakVerbs) {
+                    bool hit = false;
+                    if (!walk.combining()) {
+                        const UiList* rows = w_->listAt(kListSneakRows);
+                        const int r = walk.selectionOf(kListSneakRows);
+                        hit = rows && r >= 0 &&
+                              static_cast<std::size_t>(r) < rows->items.size() &&
+                              rows->items[static_cast<std::size_t>(r)].addr == it.addr;
+                    } else {
+                        for (int k = 0; k < 3 && !hit; ++k)
+                            hit = tag == walk.combineSlot(k);
+                    }
+                    if (hit) {
+                        itemFill();
+                        ++out.rowMarks;
+                        out.rowMarked.push_back(tag);
+                    }
+                }
+            }
+
+            if (eff0[1] & 0x10) {
+                itemFill();
                 ++out.fillsDrawn;
             }
 
@@ -1257,11 +1449,27 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                 if (r != rows_->end() && !r->second.empty()) run_ = &r->second;
             }
             const bool ownString = it.textFn == kTextFnString;
-            if (!run_ && !ownString) continue;
+            // ---- THE SNEAK'S ECHO BAR, `sub_0049DC20` -----------------
+            //
+            // A THIRD source of text, beside the record's own string and the
+            // runtime row map: a `+32` callback that composes its line out of
+            // the device's own state. See `kTextFnSneakEcho`; the arm it took
+            // goes into the frame whether or not anything was drawn, so an
+            // empty bar can be told from a bar the walk never reached.
+            const bool isEcho = it.textFn == kTextFnSneakEcho;
+            std::string echoText;
+            if (isEcho) {
+                int arm = -1;
+                echoText = echoBarText(walk, text, &arm);
+                out.echoArm = arm;
+            }
+            if (!run_ && !ownString && !isEcho) continue;
             const int id = it.label();
-            if (!run_ && (id < 0 || id >= static_cast<int>(text.size()))) continue;
-            const std::string& s =
-                run_ ? *run_ : text[static_cast<std::size_t>(id)];
+            if (!run_ && !isEcho &&
+                (id < 0 || id >= static_cast<int>(text.size()))) continue;
+            const std::string& s = run_ ? *run_
+                                 : isEcho ? echoText
+                                          : text[static_cast<std::size_t>(id)];
             if (s.empty()) continue;
 
             // ---- THE TEXT COLOUR IS THE ITEM'S OWN --------------------
@@ -1367,6 +1575,10 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             out.textAdvance += rr.advance;
             out.centred += (eff[2] & 0x10) ? 1 : 0;
             ++out.itemsDrawn;
+            // ...and the echo bar's line, taken HERE - after the layout ran
+            // on it - so what is reported is what the bar drew and not what
+            // anything handed the composer (CLAUDE.md 1).
+            if (isEcho) out.echoBar = s;
         }
     }
     for (auto px : fb.px) if (px) ++out.painted;
