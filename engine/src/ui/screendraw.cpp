@@ -6,6 +6,7 @@
 #include "ui/iamtext.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace omk {
 namespace {
@@ -846,6 +847,130 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
                 noise_.apply(fb, scaleX(it.x + q->offsetX), scaleY(it.y + q->offsetY),
                              scaleX(it.w), scaleY(it.h));
                 ++out.noiseBoxes;
+            }
+
+            // ---- THE CITY MAP'S BITMAP: draw hook 0x00477CA0 ---------------
+            //
+            // `if (!item->tag) return;` and then one blit: `Ui_ItemScreenX/Y`,
+            // `I2D_ScaleX/Y` of that and of the far corner (`+4`/`+6` ADDED to
+            // the near one first - unlike the interference box above, which
+            // scales the size), a source rect of {0, 0, 0, 0} and
+            // `sub_4287A0(dest, bitmap, 0, item->layer - 1)`. The tag is
+            // `dword_4DECB4`, what `sub_49D9E0` loaded, so a page whose
+            // `fopen` failed draws nothing at all - and the engine would
+            // already have left that page.
+            //
+            // The source rect being zeroed is the loader's "whole bitmap":
+            // `I2D_BlitBitmap` takes the file's own extent when the rect is
+            // empty, which for these four is 640x480 - the same size as the
+            // item.
+            if (cityMap_ && it.drawFn == kDrawSneakMapSheet) {
+                if (cityMap_->sheet && cityMap_->sheet->valid()) {
+                    const int x0 = scaleX(it.x + q->offsetX);
+                    const int y0 = scaleY(it.y + q->offsetY);
+                    blt(fb, {x0, y0, scaleX(it.x + q->offsetX + it.w),
+                             scaleY(it.y + q->offsetY + it.h)},
+                        *cityMap_->sheet,
+                        {0, 0, cityMap_->sheet->w, cityMap_->sheet->h},
+                        kBltWait, /*srcKey*/ 0, /*dstKey*/ 0, filter_);
+                    out.mapSheet = true;
+                }
+            }
+
+            // ---- THE PIN AND THE MARKERS: draw hook 0x0049E6F0 -------------
+            //
+            // Transcribed call by call. The item's `+0x3C` tag is the city id
+            // the open hook stored; the hook scans the compiled table for the
+            // row carrying it and returns at once when there is none, which is
+            // the `-1` a location outside the four cities gets.
+            //
+            // THE PIN (`sub_49E5B0`) is a TRIANGLE, not a dot, and it carries
+            // the player's heading: with `b = 90 - facing` degrees, its three
+            // points are the player's own place and `b + 30` / `b - 30` at a
+            // radius of 40, each offset scaled on its own axis. Point 0 is
+            // BLUE at half the pulse's alpha (`I2D_PackColour(osc2 / 2, 0, 0,
+            // 255)`), the other two white - and only point 0's colour reaches
+            // the screen, because `surface.h`'s mode-2 triangle takes its
+            // colour from the FIRST point and draws three lines with no fill.
+            //
+            // EACH MARKER is the same primitive at flags 4: a 10-wide, 10-tall
+            // triangle pointing up, `I2D_PackColour(osc2, 255, 0, 0)` - RED
+            // against the pin's blue.
+            //
+            // Both are labelled, in one 200x80 box at (+10, -10) from their
+            // own point: the pin with the player's NAME (`sub_42B1F0(6)`,
+            // event 44 property 6, the same one the identity page's "Nom" row
+            // shows) and a marker with the place name the city prefix was
+            // stripped from.
+            if (cityMap_ && it.drawFn == kDrawSneakMapPins && cityMap_->row) {
+                const CityMapRow& row = *cityMap_->row;
+                const int ox = it.x + q->offsetX, oy = it.y + q->offsetY;
+                // `Ui_ItemTextStyle(item, block, 0)` runs ONCE, before the
+                // pin, so the pin's label and every marker's share one style.
+                std::uint8_t tr = 255, tg = 255, tb = 255;
+                if (!(eff0[2] & 1)) {
+                    tr = static_cast<std::uint8_t>(rgb[0]);
+                    tg = static_cast<std::uint8_t>(rgb[1]);
+                    tb = static_cast<std::uint8_t>(rgb[2]);
+                }
+                if (!litText) { tr >>= 1; tg >>= 1; tb >>= 1; }
+                const int mapStyle = (eff0[2] & 0x10) ? 8 : (eff0[2] & 0x08) ? 4 : 2;
+                const auto caption = [&](const std::string& s, int px, int py) {
+                    if (s.empty()) return;
+                    TextBlock blk;
+                    blk.left = scaleX(px + 10);
+                    blk.top = scaleY(py - 10);
+                    blk.right = scaleX(px + 210);
+                    blk.bottom = scaleY(py + 70);
+                    blk.font = it.face('C');
+                    blk.style = mapStyle;
+                    blk.rgb[0] = tr; blk.rgb[1] = tg; blk.rgb[2] = tb;
+                    blk.blinkOn = blink;
+                    blk.screenW = fb.w; blk.screenH = fb.h;
+                    lay_->layOutBlock(&fb, s, blk);
+                };
+                const int L = 0, R = fb.w - 1, T = 0, B = fb.h - 1;
+                // `I2D_PackColour`'s first byte, from oscillator 2 - halved
+                // for the pin, whole for a marker. It is ALPHA, and the
+                // software triangle drops it (see `mapPulse`), so it is
+                // reported and not applied.
+                const int pulse = cityMapPulse(clockMs_);
+
+                int px = 0, py = 0;
+                cityMapProject(row, cityMap_->playerX, cityMap_->playerZ,
+                               ox, oy, it.w, it.h, &px, &py);
+                {
+                    const double base = 90.0 - cityMap_->playerFacing;
+                    const double kRad = 0.017453292519943295;  // dbl_4BCF00
+                    const double kArm = 40.0;                  // dbl_4BCF08
+                    const double a1 = (base + 30.0) * kRad;     // flt_4BCEFC = -30
+                    const double a2 = (base - 30.0) * kRad;     // flt_4BCF10 = +30
+                    const int sx = scaleX(px), sy = scaleY(py);
+                    const int xy[6] = {
+                        sx, sy,
+                        sx + scaleX(static_cast<int>(std::cos(a1) * kArm)),
+                        sy + scaleY(static_cast<int>(std::sin(a1) * kArm)),
+                        sx + scaleX(static_cast<int>(std::cos(a2) * kArm)),
+                        sy + scaleY(static_cast<int>(std::sin(a2) * kArm))};
+                    // point 0's colour, and the software triangle uses no other
+                    drawTriangleWire(fb, xy, rgb565(0, 0, 255), L, R, T, B);
+                    out.mapPin = true;
+                    out.mapPinAt[0] = px;
+                    out.mapPinAt[1] = py;
+                    caption(cityMap_->playerName, px, py);
+                }
+                out.mapPulse = pulse;
+                for (const auto& m : cityMap_->markers) {
+                    int mx = 0, my = 0;
+                    cityMapProject(row, m.x, m.z, ox, oy, it.w, it.h, &mx, &my);
+                    const int sx = scaleX(mx), sy = scaleY(my);
+                    const int xy[6] = {sx - scaleX(5), sy,
+                                       sx + scaleX(5), sy,
+                                       sx,             sy - scaleY(10)};
+                    drawTriangleWire(fb, xy, rgb565(255, 0, 0), L, R, T, B);
+                    caption(m.name, mx, my);
+                    out.mapMarkers.push_back({m.name, {mx, my}});
+                }
             }
 
             // ---- THE IDENTITY PAGE'S "IDENTITE": draw hook 0x0049C2B0 ------

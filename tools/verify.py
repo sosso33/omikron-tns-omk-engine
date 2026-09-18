@@ -7775,15 +7775,55 @@ def c_slider_address_join():
         if bit in cache[area]: resolved += 1
     areas = sorted(cache)
     counts = [len(cache[k]) for k in areas]
-    return (n, resolved, areas, counts), \
-           (39, 39, [0, 1, 64, 101], [34, 34, 7, 3]), \
+
+    # ...AND WHICH COORDINATE SPACE THOSE POSITIONS ARE IN, settled the same
+    # way and added 2026-09-18 for the sneak's CITY MAP (`docs/UI.md` 3g-bis).
+    #
+    # The map's pin hook `0x0049E6F0` reads a marker's coordinates out of this
+    # very record with `fild`, an INTEGER load, and projects them through the
+    # compiled per-city rectangle (`tables/city_maps.json`). So the record's
+    # `+0`/`+8` must already be WORLD units by the time a draw hook sees them -
+    # which is exactly what `Area_Load` does, converting through `rawToWorld`
+    # and storing the truncated result back into the int32 field
+    # (`o3de/worldcam.cpp`).
+    #
+    # That is a claim the shipped data can refuse, and the two readings are
+    # cleanly separated: under the WORLD one every destination lands inside its
+    # own city's 640x480 rectangle, under the RAW one none of them does.
+    cities = {0: (-5850.394, 4940.945, 26062.992, -19421.260),   # ANEKBAH
+              1: (3551.181, 16799.213, 20118.109, -15122.047),   # JAUNPUR
+              64: (2000.0, 29299.213, 17248.031, -12791.339),    # LAHOREH
+              101: (8051.181, -1248.031, 19488.189, -15299.213)}  # QALISAR
+    def raw_to_world(v):
+        return float(int(float(100 * v) * 0.00390625 * 0.3937007874015748 - 1.0))
+    inside_world = inside_raw = 0
+    for bit, area in dest:
+        row = cities.get(area)
+        k = cache.get(area, {}).get(bit)
+        if row is None or k is None: continue
+        c = chunks[area]
+        o = struct.unpack_from("<i", c, 60)[0]
+        rx, _, rz = struct.unpack_from("<iii", c, o + 16 * k)
+        x0, z0, xs, zs = row
+        for x, z, which in ((raw_to_world(rx), raw_to_world(rz), "w"),
+                            (float(rx), float(rz), "r")):
+            px, py = int((x - x0) * 640 / xs), int((z - z0) * 480 / zs)
+            if 0 <= px < 640 and 0 <= py < 480:
+                if which == "w": inside_world += 1
+                else: inside_raw += 1
+
+    return (n, resolved, areas, counts, inside_world, inside_raw), \
+           (39, 39, [0, 1, 64, 101], [34, 34, 7, 3], 39, 0), \
         "the 39 sneak destinations, and all 39 resolving to an ADDRESS in " \
         "their own area (the record's `+2`) keyed by the record's own DB bit " \
         "against the address's `+14` - which is how `sub_40E630` finds a " \
         "position for a record that carries none. The four areas they name " \
         "declare 34, 34, 7 and 3 addresses between them; the join is asserted " \
         "in the direction that can fail, since most addresses are " \
-        "`actor.goto_address` targets with no destination behind them"
+        "`actor.goto_address` targets with no destination behind them. The " \
+        "last two are the CITY MAP's coordinate space: 39 of 39 land inside " \
+        "their own city's rectangle read as WORLD units, 0 of 39 read as the " \
+        "raw file value"
 
 
 def c_engine_slider_travel():
@@ -21353,6 +21393,16 @@ def c_ui_geometry():
     every sneak page shares one map at 0x004DDF60 - and 572 items rather than
     411, of which 571 have a positive width and height. The one that does not
     is the same one as before.
+
+    **718/718/717/58 -> 721/721/720/59 on 2026-09-18**, and the cause is named
+    so the next reader does not have to bisect for it: the sneak's CITY MAP
+    panel `0x004DF190` entered the lift (`exetables.py`'s `CODE_NAMED`,
+    `docs/UI.md` 3g-bis). Its one list holds THREE items, all 640x480 at
+    (0, 0), so all three are in the frame and all three are sized; the panel
+    itself is the +1. It ships `+20 = 0`, so it has no tile map and neither
+    `maps` nor `clean` moves - which is the shape a lift of a real panel
+    should have, and is why these six numbers moving together is not itself
+    evidence of anything going wrong.
     """
     sys.path.insert(0, os.path.join(ROOT, "tools"))
     import json
@@ -21372,7 +21422,7 @@ def c_ui_geometry():
     xy = [(it["x"], it["y"]) for l in lift[0]["lists"] for it in l["items"]][:7] if lift else []
     return (len(items), inb, sized, len(r["panels"]), len(maps), lens, clean,
             menuMap, xy), \
-           (718, 718, 717, 58, 41, [80], 41,
+           (721, 721, 720, 59, 41, [80], 41,
             False,
             [(278, 194), (321, 194), (370, 194),
              (284, 241), (325, 242), (371, 242), (325, 288)]), \
@@ -22133,6 +22183,104 @@ def c_engine_sneak_character():
            "player's model, the literal bank the sneak's open names, the default " \
            "entry Cef_DefaultClip picks and its clip, the tracks bound by bone, " \
            "and the frame Anim_SetFrame applies"
+
+
+def c_engine_sneak_map():
+    r"""engine: `Lire plan` - the sneak's CITY MAP (`docs/UI.md` 3g-bis).
+
+    The third 50x50 tile of the Inventaire page did nothing in the port.
+    Confirming it runs `0x0049BC40`, seven instructions that install panel
+    `0x004DF190` - a panel with TWO references in the whole listing, that push
+    and its own definition, so no item's `+44` reaches it and the widget lift
+    had never seen it. `exetables.py`'s CODE_NAMED names it now.
+
+    Its open hook `sub_49D9E0` builds `Images\<stem>.bmp` from the RESIDENT
+    DECOR NODE's path (`dword_93076C + 0x30`, the basename minus four
+    characters), tests it with `fopen` and **re-installs `0x004DEE50` at once
+    when it is not there**; then it uppercases the stem and matches it against
+    the compiled 52-byte table at `0x004DF1F8`, storing the row's id in the pin
+    item's own `+0x3C`. The pin hook `0x0049E6F0` re-finds the row and projects
+    the player and every enabled destination of that city through the row's
+    four floats.
+
+    Two runs, and they are the two arms:
+
+    * **ANEKBAH** (AREA 0). `Images/ANEKBAH.bmp` ships, so the page stands.
+    * **AIMPASSE** (AREA 222, where the intro begins, `AREA +88` = `AIMPASSE`).
+      No `Images/AIMPASSE.bmp` ships, so `sub_49D9E0`'s `fopen` fails and the
+      page bounces back to the Inventaire tab before anything is drawn - the
+      viewer's line for the map panel never appears at all, which is the arm
+      being asserted.
+
+    The route is the engine's own: `--sneak` opens the device standing on the
+    ROW list, two RIGHTs reach the three 50x50 tiles (list `0x004DE420` - the
+    first is spent on the frame before the screen exists), two DOWNs reach the
+    third, and `Action / Utiliser` confirms it.
+
+    WHAT IS ASSERTED IS WHAT THE TWO HOOKS DREW, not what the viewer handed
+    the composer (CLAUDE.md 1, the log-line rule): `mapSheet` is set inside the
+    blit's own `if`, and every point is the PROJECTION's output computed in the
+    hook. The player stands at x 1804, z -6890; ANEKBAH's row is x0 -5850.394,
+    z0 4940.945, xspan 26062.992, zspan -19421.260, so
+
+        px = (1804 + 5850.394) * 640 / 26062.992    = 187
+        py = (-6890 - 4940.945) * 480 / -19421.260  = 292
+
+    Get the corner, the span or the SIGN of `zspan` wrong and the pin leaves
+    the 640x480 sheet.
+
+    The two markers are the same arithmetic over the ADDRESS the destination's
+    own bit names, which `Area_Load` has already put through `rawToWorld` and
+    TRUNCATED back into its int32 field - `Appartement de Kay'l` ships raw
+    (31475, -4398), which is world (4839, -677) and (262, 138), and
+    `Sas vers Qalisar` raw (44409, -61791) -> (6828, -9503) -> (311, 356). The
+    truncation is worth carrying: computed from the exact float those two land
+    on (263, 139) and (311, 357), one pixel out in each axis.
+
+    The markers are the ENABLED slider destinations whose name begins with
+    `Anekbah` - the fixture save has two - positioned through the resident
+    chunk's ADDRESS table, which is the port's substitution for `sub_40E630`
+    (the TRANSPORT, which would `Area_Load` from a draw hook) and is labelled
+    in `ui/citymap.h`. `0 unplaced` is the claim that the substitution costs
+    nothing here.
+
+    SHOWN TO FAIL: `cityMapProject` dividing the second axis by `xspan`
+    instead of `zspan` - the pin moves from (187, 292) to (187, -217), off the
+    sheet, and both markers with it.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not (os.path.isdir(eng) and os.path.exists(save)):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "omk-play did not build"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+
+    def run(extra):
+        r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                            "--software", "--nofmv", "--nodelay", "--no-crowd",
+                            "--res", "640x480", "--save", save, "--sneak",
+                            "--frames", "140",
+                            "--keys", "0xCD,0xCD,0xCD,0xD0,0xD0,0x1C",
+                            "--keydelay", "20"] + extra,
+                           capture_output=True, env=env)
+        return r.stdout.decode("cp1252", "replace")
+
+    city = run(["--area", "0", "--stand", "1804,0,-6890,336"])
+    away = run(["--area", "222", "--address", "654"])
+    pick = lambda t: tuple(ln.strip() for ln in t.splitlines()
+                           if ln.startswith("sneak map:"))
+    return (pick(city), pick(away)), \
+           ((r"sneak map: set 'ANEKBAH' -> Images/ANEKBAH.bmp 640x480, "
+             r"city ANEKBAH id 0, 2 markers, 0 unplaced",
+             r"sneak map: the sheet blitted, the pin at 187,292, 2 markers: "
+             r"Appartement de Kay'l at 262,138 | Sas vers Qalisar at 311,356"),
+            ()), \
+           "the sneak's CITY MAP, drawn in Anekbah and bounced in the Impasse, " \
+           "reported from what the two draw hooks put on the frame"
 
 
 def c_engine_sneak_memos():
@@ -28885,9 +29033,9 @@ def c_exe_tables():
     import exetables
     return (exetables.check(), sorted(exetables.OUT and
             [n for n, _, _, _ in exetables._TABLES])), \
-           ([], ["adpcm", "camera_presets", "fight_ai_moves", "key_bindings",
-                 "shoot_ai", "shoot_weapons", "special_moves", "ui",
-                 "ui_widgets", "vm_announce", "vm_opcodes"]), \
+           ([], ["adpcm", "camera_presets", "city_maps", "fight_ai_moves",
+                 "key_bindings", "shoot_ai", "shoot_weapons", "special_moves",
+                 "ui", "ui_widgets", "vm_announce", "vm_opcodes"]), \
            "complaints from exetables --check (stale, missing or failing a " \
            "table's own check), and the tables that must be present"
 
@@ -37536,6 +37684,7 @@ SLOW = [
     ("engine: sneak character", c_engine_sneak_character, "UI; todo/sneak.md 5"),
     ("engine: sneak quit", c_engine_sneak_quit, "UI; todo/sneak.md 5"),
     ("engine: sneak memos", c_engine_sneak_memos, "UI; todo/sneak.md 2c"),
+    ("engine: sneak map", c_engine_sneak_map, "UI 3g-bis"),
     ("cursor highlight",  c_cursor_highlight,   "UI 3b"),
     ("slider destinations", c_slider_destinations, "UI 3g"),
     ("sneak previews",   c_sneak_previews,     "UI 3g"),
