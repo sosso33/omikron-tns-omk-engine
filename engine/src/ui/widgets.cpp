@@ -1970,6 +1970,39 @@ bool UiWalk::confirm() {
         // Oui/Non list belongs to that page alone, so on the inventory page
         // this shows a list nothing draws and moves the focus to the page's
         // own list 1. Transcribed as it is, including that.
+        // `Lire plan`, the third inventory tile - `sub_42A370(screen,
+        // off_4DF190)`, seven instructions, and then the PANEL'S OWN `+4`
+        // decides whether the page survives. `sub_49D9E0` bounces straight
+        // back to `0x004DEE50` when `Images\<set>.bmp` cannot be opened, so
+        // the tile does nothing at all outside the four cities - which is not
+        // a refusal the callback makes, but one its page makes on arrival.
+        //
+        // `setCityMap` is what the caller has resolved: whether the bitmap
+        // opened. Without it the walk cannot know, so it installs the page and
+        // says the bitmap was not tested rather than guessing either way.
+        if (it->callback == kCbSneakMapOpen) {
+            if (!installPanel(kPanelSneakMap)) return false;
+            if (!cityMapKnown_) {
+                approx_ = true;
+                log_.push_back("sneak map: installed, the bitmap untested");
+                return true;
+            }
+            if (!cityMapAvailable_) {
+                log_.push_back("sneak map: no Images bitmap - bounced back");
+                return installPanel(kPanelSneakInventory);
+            }
+            log_.push_back("sneak map: the city map page");
+            return true;
+        }
+        // `0x0049BC30`, the ANNEAUX tile: `mov eax, 1; retn`. It consumes the
+        // confirm so `Ui_ConfirmSelection` does not descend into the item's
+        // `+44`, and does nothing else. Transcribed BECAUSE it is inert - the
+        // default below would descend, which is the behaviour it exists to
+        // prevent.
+        if (it->callback == kCbSneakRingsInert) {
+            log_.push_back("sneak: anneaux tile - inert (mov eax,1; retn)");
+            return true;
+        }
         if (it->callback == kCbSneakQuitShow) {
             setListOff(kListSneakQuit, false);
             selMap()[kListSneakQuit] = 1;                  // `Non`

@@ -2891,6 +2891,13 @@ int main(int argc, char** argv) {
     // use 54 distinct names against the table's 66 rows.
     omk::SpecialMoves specialMoves =
         omk::SpecialMoves::loadJson(tb.empty() ? std::string() : tb + "/special_moves.json");
+    // The sneak's CITY MAP tables - the four map rectangles and the fifteen
+    // place overrides, both `.data` in the executable (`ui/citymap.h`).
+    const omk::CityMaps cityMaps =
+        omk::CityMaps::loadJson(tb.empty() ? std::string() : tb + "/city_maps.json");
+    if (!cityMaps.valid())
+        std::printf("sneak map: tables/city_maps.json not read - `Lire plan` will "
+                    "bounce back, because no city can be matched\n");
     if (!specialMoves.valid())
         std::printf("special moves: tables/special_moves.json not read - the take will "
                     "still work, but a fired move cannot name its row\n");
@@ -10473,6 +10480,16 @@ int main(int argc, char** argv) {
             // refuses without. `Actor_GetProperty` case 5 is the player
             // record's +174, and `GameState::rings` reads it.
             fresh->setRings(state.rings());
+            // ...and whether `Images\\<resident set>.bmp` EXISTS, which is
+            // what `sub_49D9E0` tests with `fopen` and what decides whether
+            // `Lire plan` opens a page or bounces straight back to the
+            // Inventaire tab. The walk cannot reach a file, so it is told.
+            //
+            // THE BITMAP ALONE. The city-table lookup is a separate step and a
+            // miss there is not a refusal - it leaves `dword_4DECFC` at -1 and
+            // the page stands, showing the bitmap with no pin on it. Only the
+            // `fopen` bounces.
+            fresh->setCityMap(fs.exists("IMAGES/" + session.setName() + ".bmp"));
             // whatever is held on the frame it opens does not count as input
             // to it (see the gate in the walk's dispatch below)
             screenOpenBits = bits;
@@ -17530,6 +17547,94 @@ int main(int argc, char** argv) {
                 }
             }
             comp.setExamineText(nullptr);
+            // ---- THE CITY MAP (`ui/citymap.h`) ---------------------------
+            //
+            // `Lire plan` installs panel 0x004DF190, whose open hook
+            // `sub_49D9E0` loads `Images\\<resident set>.bmp` and matches the
+            // uppercased stem against the compiled four-row table. Everything
+            // the two draw hooks then need is resolved HERE, because none of
+            // it is a property of the widget tree: the bitmap, the city row,
+            // where the player stands and which way he faces, and the markers.
+            //
+            // THE MARKERS are the ENABLED slider destinations whose names
+            // begin with the city's - the same `GLOBAL +16` list the slider
+            // page shows, filtered by the DB's AddressEnabled bits. The
+            // engine positions each through the 15-row OVERRIDE table first
+            // and falls back on `sub_40E630`, which is the TRANSPORT and
+            // would `Area_Load` from a draw hook; the port instead resolves
+            // only against the RESIDENT chunk's own address table and counts
+            // what it had to drop (`ui/citymap.h` says why that costs nothing
+            // in the shipped data: every destination of a city carries that
+            // city's area id, so the engine takes its same-area fast path).
+            static omk::ScreenComposer::CityMapView cityView;
+            comp.setCityMap(nullptr);
+            if (pn && pn->addr == omk::kPanelSneakMap) {
+                static std::string cityBmpStem;
+                static omk::Surface cityBmp;
+                const std::string stem = session.setName();
+                if (stem != cityBmpStem) {
+                    cityBmpStem = stem;
+                    // `sprintf("Images\\%s.bmp")` then `fopen`. DataFs
+                    // resolves case-insensitively, which is what the shipped
+                    // lower-case `anekbah.bmp` against an upper-case set name
+                    // needs.
+                    cityBmp = omk::surfaceFromBmp(fs.read("IMAGES/" + stem + ".bmp"));
+                }
+                cityView = omk::ScreenComposer::CityMapView{};
+                cityView.sheet = cityBmp.valid() ? &cityBmp : nullptr;
+                cityView.row = cityMaps.findCity(stem);
+                cityView.playerX = session.playerPos()[0];
+                cityView.playerZ = session.playerPos()[2];
+                cityView.playerFacing = session.playerYaw();
+                {
+                    const auto raw = state.raw();
+                    const std::size_t rec =
+                        static_cast<std::size_t>(omk::GameState::kPlayerRecord);
+                    for (std::size_t i = rec + 8;
+                         i < raw.size() && raw[i] != std::byte{0}; ++i)
+                        cityView.playerName.push_back(static_cast<char>(raw[i]));
+                }
+                int unplaced = 0;
+                if (cityView.row) {
+                    const auto& rs = session.residentSlot(session.activeSlot());
+                    for (const auto& d : destinations) {
+                        if (!state.bit(omk::StateArray::AddressEnabled, d.bit)) continue;
+                        const std::string place =
+                            omk::cityMapPlaceName(d.name, cityView.row->name);
+                        if (place.empty()) continue;
+                        omk::ScreenComposer::CityMapView::Marker mk;
+                        mk.name = place;
+                        if (const omk::CityPlaceRow* pr = cityMaps.findPlace(place)) {
+                            mk.x = pr->pos[0];
+                            mk.z = pr->pos[2];
+                        } else {
+                            const omk::Address* ad = nullptr;
+                            for (const auto& x : rs.addresses)
+                                if (x.id == d.bit) ad = &x;
+                            if (!ad) { ++unplaced; continue; }
+                            mk.x = ad->pos[0];
+                            mk.z = ad->pos[2];
+                        }
+                        cityView.markers.push_back(mk);
+                    }
+                }
+                comp.setCityMap(&cityView);
+                static std::string mapTold;
+                const std::string said =
+                    "set '" + stem + "' -> " +
+                    (cityBmp.valid() ? "Images/" + stem + ".bmp " +
+                         std::to_string(cityBmp.w) + "x" + std::to_string(cityBmp.h)
+                                     : std::string("no bitmap")) +
+                    ", city " + (cityView.row ? cityView.row->name + " id " +
+                                 std::to_string(cityView.row->id)
+                                              : std::string("none (tag -1)")) +
+                    ", " + std::to_string(cityView.markers.size()) +
+                    " markers, " + std::to_string(unplaced) + " unplaced";
+                if (said != mapTold) {
+                    mapTold = said;
+                    std::printf("sneak map: %s\n", said.c_str());
+                }
+            }
             // ---- THE IDENTITY PAGE'S SHEET (todo/sneak.md §5e step 2) -------
             //
             // What `Actor_GetProperty` (event 44) hands the identity hooks for
@@ -19033,6 +19138,31 @@ int main(int argc, char** argv) {
                     if (said != hsTold) {
                         hsTold = said;
                         std::printf("high score: %s\n", said.c_str());
+                    }
+                }
+                // ---- THE CITY MAP, reported from the DRAW ----------------
+                //
+                // The line above says what the viewer RESOLVED; this one says
+                // what the two hooks put on the frame - `mapSheet` is set
+                // inside the blit's own `if (item->tag)` arm, and every point
+                // is the projection's own output. A run that matched the city
+                // and then drew nothing would read differently here, which is
+                // the half a line printed at the hand-over cannot see.
+                if (openScreen == omk::kScreenSneak && sf.mapPin) {
+                    static std::string mapDrawTold;
+                    std::string said = std::string("the sheet ") +
+                        (sf.mapSheet ? "blitted" : "MISSING") + ", the pin at " +
+                        std::to_string(sf.mapPinAt[0]) + "," +
+                        std::to_string(sf.mapPinAt[1]) + ", " +
+                        std::to_string(sf.mapMarkers.size()) + " markers:";
+                    for (const auto& m : sf.mapMarkers)
+                        said += " " + m.first + " at " +
+                                std::to_string(m.second.first) + "," +
+                                std::to_string(m.second.second) + " |";
+                    if (!said.empty() && said.back() == '|') said.resize(said.size() - 2);
+                    if (said != mapDrawTold) {
+                        mapDrawTold = said;
+                        std::printf("sneak map: %s\n", said.c_str());
                     }
                 }
                 // ---- XACHEN, reported from the draw for the same reason ---

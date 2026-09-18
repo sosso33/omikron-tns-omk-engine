@@ -21,33 +21,33 @@
   },
   {
    "what": "child panels",
-   "got": 27,
-   "want": 27
+   "got": 28,
+   "want": 28
   },
   {
    "what": "lists",
-   "got": 170,
-   "want": 170
+   "got": 171,
+   "want": 171
   },
   {
    "what": "items",
-   "got": 718,
-   "want": 718
+   "got": 721,
+   "want": 721
   },
   {
    "what": "item records inside the image",
-   "got": 718,
-   "want": 718
+   "got": 721,
+   "want": 721
   },
   {
    "what": "items naming a child panel",
-   "got": 103,
-   "want": 103
+   "got": 104,
+   "want": 104
   },
   {
    "what": "...of which distinct item records",
-   "got": 23,
-   "want": 23
+   "got": 24,
+   "want": 24
   },
   {
    "what": "lists with a non-default input hook",
@@ -123,13 +123,13 @@
     21,
     1,
     28,
-    8
+    9
    ],
    "want": [
     21,
     1,
     28,
-    8
+    9
    ]
   },
   {
@@ -148,8 +148,8 @@
   },
   {
    "what": "lists taking Ui_MoveSelection, the default walk",
-   "got": 108,
-   "want": 108
+   "got": 109,
+   "want": 109
   },
   {
    "what": "the LIFT grid hook is present",
@@ -6536,6 +6536,150 @@
         "flags": [
          0,
          1073741840,
+         0
+        ],
+        "setflag": [],
+        "bind": {}
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "screen": -1,
+    "panel": 5108112,
+    "parent": 5107280,
+    "hook": 0,
+    "offset": [
+     0,
+     0
+    ],
+    "slide": [
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    "tilesAt": 0,
+    "tiles": [],
+    "current": -1,
+    "flags": 536870944,
+    "flagsB": 0,
+    "lists": [
+     {
+      "addr": 5107040,
+      "hook": 0,
+      "flags": 0,
+      "flagsB": 0,
+      "select": -1,
+      "broadcast": [],
+      "listflag": [],
+      "layout": {},
+      "items": [
+       {
+        "addr": 5106808,
+        "string": -1,
+        "x": 0,
+        "y": 0,
+        "w": 640,
+        "h": 480,
+        "rgb": [
+         255,
+         255,
+         255
+        ],
+        "layer": 6,
+        "font": 83,
+        "text": 0,
+        "textFn": 0,
+        "drawFn": 4684960,
+        "textArg": -1,
+        "lit": [
+         0,
+         0
+        ],
+        "unlit": [
+         0,
+         0
+        ],
+        "callback": 0,
+        "child": 5107280,
+        "flags": [
+         0,
+         0,
+         0
+        ],
+        "setflag": [],
+        "bind": {}
+       },
+       {
+        "addr": 5106880,
+        "string": -1,
+        "x": 0,
+        "y": 0,
+        "w": 640,
+        "h": 480,
+        "rgb": [
+         255,
+         0,
+         0
+        ],
+        "layer": 6,
+        "font": 67,
+        "text": 0,
+        "textFn": 0,
+        "drawFn": 4843248,
+        "textArg": -1,
+        "lit": [
+         0,
+         0
+        ],
+        "unlit": [
+         0,
+         0
+        ],
+        "callback": 0,
+        "child": 0,
+        "flags": [
+         0,
+         1073741832,
+         2147483649
+        ],
+        "setflag": [],
+        "bind": {}
+       },
+       {
+        "addr": 5106952,
+        "string": -1,
+        "x": 0,
+        "y": 0,
+        "w": 640,
+        "h": 480,
+        "rgb": [
+         0,
+         60,
+         120
+        ],
+        "layer": 7,
+        "font": 67,
+        "text": 0,
+        "textFn": 0,
+        "drawFn": 4685520,
+        "textArg": 0,
+        "lit": [
+         0,
+         0
+        ],
+        "unlit": [
+         0,
+         0
+        ],
+        "callback": 0,
+        "child": 0,
+        "flags": [
+         536870916,
+         0,
          0
         ],
         "setflag": [],
