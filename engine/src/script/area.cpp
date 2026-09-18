@@ -272,6 +272,17 @@ void Session::areaLoad(int area, int slot) {
     s = ResidentSlot{};
     s.area = area;
     s.areaChunk = readChunk(iam_, "AREA", area);
+    // An area with NO chunk still "loads" - no script, no set, no scene, and
+    // a run that never starts (a console, 2026-09-18, `set ''`). Say what the
+    // file gave: its size and its chunk count, which the Mac knows are
+    // 1253376 bytes and 259 for the shipped IAM\AREA.
+    if (s.areaChunk.empty()) {
+        const auto file = readFile(iam_ + "/AREA");
+        const auto arch = IamArchive::open(file);
+        std::printf("session: AREA %d has no chunk - %s/AREA read %zu bytes, "
+                    "%zu chunks populated\n", area, iam_.c_str(), file.size(),
+                    arch.populated());
+    }
     s.scene = sceneOverArea(state_, area);
     if (s.scene != -1) {
         s.sceneChunk = readChunk(iam_, "SCENE", s.scene);
