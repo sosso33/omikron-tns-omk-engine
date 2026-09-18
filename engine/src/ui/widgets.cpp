@@ -632,6 +632,13 @@ void UiWalk::endCombine() {
     // `sub_42A370(screen, unk_4DEE50)` - the inventory page comes back
     // whichever way the combine went.
     installPanel(kPanelSneakInventory);
+    // ...and `sub_428FF0(&unk_4DE278, 0x40000002, 0)` right after it
+    // (`loc_49BE51`): `Utiliser sur`'s FLASH goes off. `beginCombine` lit it
+    // and nothing put it out, so the verb went on blinking after the combine
+    // as if it were still the selection - a reader: *"the menu selection
+    // should go back to the items list (instead of staying in the verb
+    // sections)"*.
+    state_->flagOn[kItemSneakUseOn] &= ~0x40000002u;
 }
 
 int UiWalk::rowWindow(std::uint32_t list) const {
