@@ -3626,6 +3626,38 @@ Not ported: the player's RIDE (`Slider_TickRide`, `ACTOR_STATE` 7/8,
 `sub_456530` states 1..7), the engine's LOD selection for an actor's four
 skeletons (the viewer draws the first), the bump's `camera.shake`.
 
+**And 2026-09-17/18, the WATER, the FALLS, the rest of the INTERFACE and the
+security centre** - each with its record in `todo/` and its finding in `docs/`:
+
+* the water (`docs/ASSETS.md` §7): states 11..14 through `sub_4A8F30` in
+  `PlayerController::waterTick`, the 40-second breath on `Hud_DrawBar` mode 1
+  (`HudBar::breath`), drowning as message 12. Played. `engine: water entry`;
+* the fall reaction and the run-over (§7): `sub_414DE0`'s camera requests, the
+  ledge bands and landing groups, messages 10/11/17. There is no adventure
+  death to port. `engine: fall reaction`, `engine: run over`;
+* the screens with one or two sites (`docs/UI.md` §3d-bis, §3f, §3k): the
+  lift's height band and description box, the seven terminal screens' display,
+  keypad, header and answer, GANDHAR'S DOOR, DEN'S LOCKER, XACHEN, the
+  HIGH-SCORE board, `Lire plan`, the hint shop and the echo bar. Not
+  ported: screen 0, the VIDEOPHONE, and those screens' interface sounds and
+  success timers (labelled in each source);
+* the sneak's verbs: `Object_ApplyEffect`'s consumable half and `Utiliser sur`
+  as a combine over carried-list rows. `engine: sneak verbs`;
+* a script plays objects in its own slot's pool, and a node stays where a
+  program put it (`docs/SCRIPT_VM.md`). `engine: slot pool`, `engine: node
+  rest`;
+* a hidden set stays in collision and its floor undoes the step, and the body
+  sweep meets edges and corners - the latter a RECONSTRUCTION, since
+  `Sweep_PolygonKernel` is not transcribed. `engine: security rail`;
+* `sub_417070` read whole, with four faults in the follow camera's height push
+  and recovery fixed. Its scope excludes every absolute camera, so the lift's
+  dark arrival (the car mesh `CSPont04` around the lens) stays open.
+  `engine: camera obstruction`.
+
+The PS Vita port that began on 2026-09-17 is a separate backend and is
+recorded in `todo/handoff-vita.md` and its own session's notes; it is not part of this
+audit.
+
 Re-audited row by row against `CLAUDE.md` §4 on 2026-08-31, **41 content
 rows**. This table has now been wrong twice — once with a count that had
 quietly dropped the rows it judged unportable, once with a figure left stale by

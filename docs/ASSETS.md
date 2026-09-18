@@ -2774,9 +2774,12 @@ by writing the facing Euler directly.
   (`Walk_ClampNormal`).
 * if the probe under the actor (`Walk_ProbeGround`) finds a floor,
   `Walk_GroundResponse` snaps and handles the slope; **if it finds none the
-  position reverts** — nobody walks into the void. A ground mesh flagged as a
-  ladder switches the actor to `.CTL` group 300, scripted-state 11, and
-  requests camera mode 21.
+  position reverts** — nobody walks into the void. A ground mesh flagged
+  `0x8000000` switches the actor to `.CTL` group 300, scripted-state 11, and
+  requests camera mode 21 — **and that is the WATER, not a ladder**
+  (corrected 2026-09-17): the decompiler's comment says "ladder", but group
+  300 is `H_HFL-IN`, dropping in, and in Jaunpur `0x8000000` is the canal's
+  bed and banks. See "The water" below.
 * `Walk_GroundResponse` (0x00465460) carries the rest of the walking rules:
   a rise is clamped so the head keeps **50 cm** (19.685 in) of ceiling
   clearance (an upward ray against the world); a step down larger than the
@@ -2785,7 +2788,8 @@ by writing the facing Euler directly.
   the slide — while one past 30° clears it; ground-mesh flags
   `0x10/0x20/0x40/0x80` are **conveyor surfaces**, pushing ±2 units/frame in
   x/z; and the accumulated fall distance (actor `+280`) grades the landing
-  at **3 m** (118.1 in) and **5 m** (196.9 in) — the injury and death tiers —
+  at **3 m** (118.1 in) and **5 m** (196.9 in) — the injury tiers (messages
+  10 and 11; *not* a death, see "The fall reaction" below) —
   with `.CTL` **group 2** as the falling state and camera mode 18 its shot.
 * **THE STEP REFUSAL HAS THREE ARMS, not two** (read 2026-09-07, `21_d3d.c`
   2644). The mover refuses to step up when
@@ -2941,6 +2945,62 @@ entered from and not what the file says. Two entries of `Sham.CTL`
 (flags `0xC0084813`, reached from `SH_STAND`) ship with **no** authored GoTo at
 all and are only reachable *because* of it. `verify.py: engine actor states`.
 
+#### The body sweep meets EDGES and CORNERS — a RECONSTRUCTION (2026-09-18)
+
+`Actor_Move`'s narrow phase is `Sweep_ActorMove` (0x004AD360) over
+`Sweep_PolygonKernel` (0x004A9D30, 930 lines of x87), and neither is
+transcribed. The port's stand-in swept each body sphere against a triangle's
+INTERIOR only: the point where the sphere meets the plane had to lie inside
+the face. On a wide wall that never shows; on a thin bar it is everything. The
+security centre's handrails are 8-unit bars at waist height (y 303..311 over a
+floor at 346.5 on level -2), so a sphere meeting a rail's edge passed through
+it, and a player ran through the rail and down the shaft - *"not possible in
+the original game"*, a reader's report.
+
+The sweep now also meets each corner as a point (a quadratic in t) and each
+edge as a cylinder of the sphere's radius, kept only where the contact falls on
+the segment (the standard completion, Ericson 5.5.6). **Only a contact met
+from outside counts**: a first version also counted an edge the sphere
+already overlapped while "closing" on it, and a player stood among a bar
+stool's edges (AREA 46) read every sub-centimetre idle drift as closing and
+was thrown round the stool. Rays (radius 0 - the camera, the shots, the lines
+of sight) keep the face test alone. What the engine's kernel does at an edge
+is **not read**; this is the geometry that makes the rails hold, and it is
+labelled as such in `engine/src/o3de/collision.cpp`.
+`verify.py: engine: security rail` runs the route that fell (0 falls, on the
+floor at 346.5), shown to fail with the edge tests skipped.
+
+#### The fall reaction — and there is no adventure death (2026-09-17)
+
+`sub_414DE0(actor, mode, flag)` is a **camera request**, not an ACTOR_STATE
+write: it points both subjects at the actor and requests mode 0 (only when 19
+is up, 90 frames), 16 (when 18 is up, 30), 18 (when nothing holds it, 30 or
+60) or 19 (when 18 is up, 60). Preset rows 18/19 are an overhead shot three
+metres up. `MDJUMP03`'s `sub_414DE0(actor, 18, 1)` had been read as an
+"ACTOR_STATE 18", which does not exist.
+
+`Walk_GroundResponse`, stepping off a ledge (not in a jump), bands the
+clearance below once per fall: under 7.87 snap, under 1.5 m nothing, else
+`+1304` = 1 / 3 / 4 for 1.5 / 3 / 5 m, `.CTL` group 2 (`H_FALL`) and camera
+18. On landing, by the accumulated fall: under 1.5 m back to group 100;
+1.5..3 m group 4 (`H_LFL`); 3..5 m group 4 and **message 10**; 5 m and more
+group 5 (`H_HFL` -> `H_SOL`, lying), **message 11** and camera 19 - and
+`H_SOL-SD`'s `MDRAISE0` (0x0046BED0) is `sub_414DE0(actor, 0, 0)`, the
+90-frame travel home. The band runs on every airborne tick until it bands,
+because a drop can begin as a slide.
+
+**Vehicle hits**: `Sliders_Tick` probes the player's ground each frame; on the
+ROAD (a mesh whose name starts with `X` or `OP`) a vehicle closing within 195
+brakes, and one still above 1706.67 that touches him raises **message 17**,
+latched 90 frames. Anekbah's handler knocks him flat (`H_IMPACT`) and costs
+`Vie` 15.
+
+**Every handler that costs health outside a fight or a shoot phase floors it
+at 5** - IAM\GLOBAL's landings, AREA 2's and SCENE 62's, the run-over in AREAs
+0, 1, 64 and 101 - and the one without a floor (AREA 141, message 11) is the
+catacombs, a shoot phase. So nothing in adventure mode kills the player.
+`verify.py: engine: fall reaction`, `engine: run over`; `todo/falls.md`.
+
 ### `ACTOR_STATE` 0..17 — the machine the channel hangs off
 
 **read from `Actors_TickAll` (0x004681C0) and every writer of the slot, and
@@ -2962,7 +3022,7 @@ while a conversation or an interface screen holds the body.
 | 8 | `Actor_TickChannelOnly` | the slider RIDE — `.CTL` **group 61** |
 | 9 | `Actor_TickUiHeld` | an interface screen holds the body |
 | 10 | `sub_466E70` | a full-screen bitmap holds it; leaves to `[102]` |
-| 11 | `Actor_TickNpc` | the ladder (`Actor_ApplyMotion`, group 300, camera 21) |
+| 11 | `Actor_TickNpc` | **entering the WATER** (`Actor_ApplyMotion` on a `0x8000000` floor, group 300, camera 21) - read as "the ladder" until 2026-09-17 |
 | 12 / 13 | `Actor_TickNpc` | scripted variants; free-look is allowed in 1 and 13 only |
 | 14 | `Actor_TickNpc` | **the water state** |
 | 16 | `Actor_TickDialogue` | dialogue: group 400, input cut, `Dialog_TickUI` from the phase global |
@@ -3005,6 +3065,39 @@ lists exactly which constraints, including the one the corpus cannot decide
 contested decisions).
 
 
+#### The water — states 11..14 and `sub_4A8F30` (2026-09-17)
+
+`Actor_ApplyMotion` hands states 11..14 to `sub_4A8F30` INSTEAD of gravity and
+the ground probe. In Jaunpur, where it was settled from the loader, `0x8000000`
+is the canal's BED and banks and **`0x20000000` the SURFACE** (`Eau`,
+`eaubassin*`, additive transparent) - the same bit the step refusal and the
+camera's see-through pair name.
+
+* **11 / 12**: the clip carries him, vertical included (`sub_4A9470(actor,
+  0)`).
+* **13, at the surface**: held 11.81 under a `0x20000000` mesh unless diving
+  (`+1288 & 2`, set by `MDDIVBEG`).
+* **14, underwater**: pulled under by the surface; over the bed, drifting up
+  `0.15*dt` with the pitch turning `+0.2*dt`, the pitch clamped to 200..340
+  degrees (under 180 reset to 270); a **40 000 ms breath** from the first
+  underwater tick, drawn by `Hud_DrawBar(..., 1)` - mode 1, the horizontal
+  gauge - and at zero **message 12** once, which AREA 1 answers with the
+  drowning, a teleport to the bank and `Vie` lost; with neither mesh above
+  him, back to group 301, state 13, **message 21**.
+* the special moves (`tab_special_move[]`, read from the raw image):
+  `MDDIVEND` state 14 and message 22, `MDSW2SD` and `RSTAVNT` state 1,
+  `RSTNAGE` state 14, `MDDIVBEG` the dive flag.
+* bank groups **300** (dropping in), **301** (the surface: `H_WAITON`,
+  `H_SWIMON`, `H_SWIM2`) and **302** (underwater: `H_WAITIN`, `H_SWIMIN`).
+  **Underwater the DIVE key swims**: `H_WAITIN` -> `H_SWIMIN` matches 0x20,
+  which in control scheme 1 (`Nager`) is `Plonger`. The body is drawn through
+  the whole Euler (actor +288), so the swim pitch lies him down.
+
+Ported (`PlayerController::waterTick`, `HudBar::breath`) and played - nine
+play reports, `todo/swimming.md` §8. **Open**: state 13 has not been reached
+by a run, and whether the engine keeps a PLACED body on a `0x20000000` mesh
+(the rescue drops him back in) is unread. `verify.py: engine: water entry`.
+
 ### The camera modes
 
 **read from `Camera_Request` (CLEAN) and its preset table** at `0x4C20C8`
@@ -3022,7 +3115,7 @@ metric like everything else — fov, flags). The modes met across the engine:
 | 14 | script hold | |
 | 16 | head-look release (`Actors_TickAll`) | request-driven |
 | 18/19 | falling (`Walk_GroundResponse`) | 3 m up, tight |
-| 21 | ladder climb (`Actor_ApplyMotion`) | 2 m up, 0.5 m back |
+| 21 | entering the water (`Actor_ApplyMotion`) - read as a ladder until 2026-09-17 | 2 m up, 0.5 m back |
 
 **How mode 0 follows, read from the tick** (`sub_417CF0`, 04_sys.c 3672,
 and its two resolvers). `Camera_LoadParams` puts the preset's eye offset at
@@ -3038,16 +3131,43 @@ degrees, and sets the eye to `subjectPos - R(+76) * eyeOffset`, chasing by
 `+416/+420/+424` of the actor at +144 (subject type 0). So mode 0's row -
 `(0,0,-118.11) / (0,0,0) / 75 / 3, 8, 8` - is a target a third of the way
 per frame, a yaw an eighth, and an eye an eighth of the way to 3.00 m behind
-the lagged yaw. **Not read to the end**: `sub_414520` case 0 (`sub_413C00`)
+the lagged yaw. `sub_414520` case 0 (`sub_413C00`)
 gives the mode flags 4|8|0x10 and tunables (+312/+316 = -0.7 x the actor's
 height at +276, +300 = 1.2, +320 = 8, +324 = 4); flag 8 runs `sub_417070`,
 271 lines that ray-test from the target toward the eye (`sub_444810`) and
-pull the camera in and up to 0.7 x height behind a wall; flag 0x10 runs
+pull the camera in and up to 0.7 x height behind a wall - **read whole
+2026-09-18**, see "The obstruction pass" below; flag 0x10 runs
 `sub_416450`, a floor clamp re-probed when the subject drops more than two
 inches. A world camera whose eye subject is 0 takes the same path (case 12
 -> LABEL_19), so SCENE 55's camera 0 - eye (-1, 26, -119), target just
 ahead - IS a mode-0 camera with its own offsets. `engine/src/actor/player.h`
 ports the resolve and the lag and labels the two passes unported.
+
+#### The obstruction pass, `sub_417070` — read whole, and its SCOPE (2026-09-18)
+
+Transcribed in full in `todo/camera-obstruction.md` §5. One entry ray from the
+target over-reaching the eye by `+300`; on a hit the eye is pulled in to it
+and the kept distance `+328` eases back OUT over `+320` frames; while
+recovering, a second ray from the camera's UNLAGGED target to its unlagged eye
+decides whether it may; and a HEIGHT push lifts the eye up to 0.7 x the
+subject's height for as long as it is inside half its free distance, easing
+toward LAST frame's height a quarter of the way per frame. A hit on a
+`0x20000000` mesh is ignored when the camera carries `0x1000`. The port had
+four faults in the height and recovery half, all fixed and measured (the
+deepest pinch now settles at 93.3% of the push, where it had stuck at 60.3%).
+
+**Its scope is narrow, and it decides where it may be used.** Every camera
+change starts from flags `1` (`Camera_LoadParams`) and a `memset` of the block
+from `+208` (`Camera_Request`), and only `sub_414520` puts flags 4 and 8 back:
+for mode 0, and for mode 12/20 when the EYE subject is 0 (or 5). An ABSOLUTE
+camera - subjects `-1, -1` - runs no collision pass at all, and
+`Dialog_ApplyLineCameras` clears flag 4 explicitly on both of a line's
+cameras. Of 5381 world-camera records only the 406 with eye subject 0 take the
+pass. So it is **not** what clears the restaurant dialogue's high crane or
+the lift's dark arrival (camera 2986, absolute): measured, switching the pass
+off moves 0 frames of dialog 387's 22 shots. The lift's arrival is the car
+mesh `CSPont04` around the lens, and what the engine does about it is open.
+`verify.py: engine: camera obstruction`, `engine: camera collision`.
 
 ---
 
