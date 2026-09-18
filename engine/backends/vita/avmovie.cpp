@@ -4,10 +4,12 @@
 
 #include <psp2/avplayer.h>
 #include <psp2/gxm.h>
+#include <psp2/io/dirent.h>
 #include <psp2/io/stat.h>
 #include <psp2/kernel/sysmem.h>
 #include <psp2/sysmodule.h>
 
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -53,6 +55,40 @@ bool moduleLoaded = false;
 inline int clamp8(int v) { return v < 0 ? 0 : (v > 255 ? 255 : v); }
 
 }  // namespace
+
+std::string avFind(const std::string& stem, const std::string& dataRoot,
+                   std::string& report) {
+    auto lower = [](std::string s) {
+        for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return s;
+    };
+    const std::string want = lower(stem) + ".mp4";
+    const std::string dirs[] = {"ux0:data/omk/movies", dataRoot + "/FLIS", "app0:movies"};
+    report.clear();
+    for (const auto& dir : dirs) {
+        const SceUID d = sceIoDopen(dir.c_str());
+        if (d < 0) {
+            char e[48];
+            std::snprintf(e, sizeof e, " cannot open (0x%08X);", static_cast<unsigned>(d));
+            report += "\n    " + dir + ":" + e;
+            continue;
+        }
+        std::string seen;
+        std::string found;
+        SceIoDirent ent;
+        std::memset(&ent, 0, sizeof ent);
+        while (sceIoDread(d, &ent) > 0) {
+            const std::string n = ent.d_name;
+            if (found.empty() && lower(n) == want) found = dir + "/" + n;
+            if (seen.size() < 200) seen += " '" + n + "'";
+            std::memset(&ent, 0, sizeof ent);
+        }
+        sceIoDclose(d);
+        if (!found.empty()) return found;
+        report += "\n    " + dir + ": holds" + (seen.empty() ? std::string(" nothing") : seen);
+    }
+    return {};
+}
 
 struct AvFilm {
     SceAvPlayerHandle handle = 0;

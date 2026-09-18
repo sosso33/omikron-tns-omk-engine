@@ -25,6 +25,13 @@ namespace omk::vita {
 
 struct AvFilm;
 
+// Where a film's hardware copy is: `<dir>/<stem>.mp4` in ux0:data/omk/movies,
+// then the data tree's FLIS folder, then the package's app0:movies, the NAME
+// matched case-insensitively (a copy tool may change its case). Empty when
+// none holds it - and then `report` says what each folder DID hold, or the
+// kernel's error for it, so a log tells a wrong folder from a wrong name.
+std::string avFind(const std::string& stem, const std::string& dataRoot,
+                   std::string& report);
 // Open a film. nullptr when it cannot be played (no file, no decoder, no
 // memory) - the caller then falls back to the software path.
 AvFilm* avOpen(const std::string& path);

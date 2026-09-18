@@ -538,3 +538,13 @@ cutout blind spot is still open and is written into its check's docstring.
   the directory untouched, so the chunk still reads 2516 bytes and 1563
   nonzero ones - just starting ten bytes early, where +88 is not the set. Not
   an ASCII-mode FTP conversion, which would have added 5643 bytes.
+  **And the ten bytes are FileZilla's ASCII mode, reproduced exactly**: the
+  file holds ten CR LF pairs, and turning each into CR CR LF gives 1253386
+  bytes and FNV-1a 0x9c68a65d - the console's file to the byte. FileZilla
+  treats a file with NO EXTENSION as text, and that is every IAM archive (54
+  files: AREA, SCENE, DIALOG, GLOBAL, START, OBJECT, the screens' text...).
+  Copy `gamedata/` with the transfer type forced to BINARY.
+* The film lookup matches the name case-insensitively in
+  `ux0:data/omk/movies`, `<data>/FLIS` and `app0:movies`, and when it finds
+  none it lists what each folder held (or the kernel's error), so a console
+  log tells a wrong folder from a wrong name.
