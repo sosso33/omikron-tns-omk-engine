@@ -156,3 +156,21 @@ int main(int, char**) {
     sceKernelExitProcess(rc);
     return rc;
 }
+
+
+// A REFUSED ALLOCATION SAYS ITS SIZE. The city's load died of `bad_alloc` with
+// 86 MB in use of 192 (console log 2026-09-18) - so one request, not the sum,
+// and nothing said which. Global `operator new` on the Vita build only.
+#include <new>
+void* operator new(std::size_t n) {
+    if (void* p = std::malloc(n ? n : 1)) return p;
+    const struct mallinfo mi = mallinfo();
+    std::printf("new: %u bytes REFUSED - %d in use, %d free in the arena of %d\n",
+                static_cast<unsigned>(n), mi.uordblks, mi.fordblks, mi.arena);
+    throw std::bad_alloc();
+}
+void* operator new[](std::size_t n) { return operator new(n); }
+void operator delete(void* p) noexcept { std::free(p); }
+void operator delete[](void* p) noexcept { std::free(p); }
+void operator delete(void* p, std::size_t) noexcept { std::free(p); }
+void operator delete[](void* p, std::size_t) noexcept { std::free(p); }

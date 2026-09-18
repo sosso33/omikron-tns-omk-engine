@@ -118,7 +118,31 @@ bool blt(Surface& dst, Rect dr, const Surface& src, Rect sr,
     // the key ones LEFT OUT and the weights renormalised over the rest. The
     // set of pixels written is therefore identical to nearest, texel for
     // texel, and only their colours move.
+    // THE COLUMN TABLES, built once per blit (2026-09-18). Every per-pixel
+    // `x * sw / dw` and `(x + 0.5) * sw / dw - 0.5` below was a division, and
+    // the Vita's Cortex-A9 has NO integer divide instruction: each one is a
+    // library call. The start menu scaled to 960x544 spent ~360 ms a frame in
+    // them on the console. The same expressions, evaluated once per column
+    // instead of once per pixel, so the output is byte-identical.
+    thread_local std::vector<int> colNear, colX0, colX1;
+    thread_local std::vector<double> colWx;
+    colNear.resize(static_cast<std::size_t>(dw));
+    for (int x = 0; x < dw; ++x) colNear[static_cast<std::size_t>(x)] = sw == dw ? x : x * sw / dw;
     if (filter >= 1 && (sw != dw || sh != dh)) {
+        colX0.resize(static_cast<std::size_t>(dw));
+        colX1.resize(static_cast<std::size_t>(dw));
+        colWx.resize(static_cast<std::size_t>(dw));
+        for (int x = 0; x < dw; ++x) {
+            const double fx = (x + 0.5) * sw / dw - 0.5;
+            int x0 = static_cast<int>(std::floor(fx));
+            const double wx = fx - x0;
+            int x1 = x0 + 1;
+            x0 = x0 < 0 ? 0 : x0 > sw - 1 ? sw - 1 : x0;
+            x1 = x1 < 0 ? 0 : x1 > sw - 1 ? sw - 1 : x1;
+            colX0[static_cast<std::size_t>(x)] = x0;
+            colX1[static_cast<std::size_t>(x)] = x1;
+            colWx[static_cast<std::size_t>(x)] = wx;
+        }
         for (int y = 0; y < dh; ++y) {
             // Pixel CENTRES, which is what puts the resampled grid where the
             // nearest one is rather than half a texel off it.
@@ -130,17 +154,14 @@ bool blt(Surface& dst, Rect dr, const Surface& src, Rect sr,
             y1 = y1 < 0 ? 0 : y1 > sh - 1 ? sh - 1 : y1;
             const int ny = sh == dh ? y : y * sh / dh;   // the nearest path's row
             for (int x = 0; x < dw; ++x) {
-                const int nx = sw == dw ? x : x * sw / dw;
+                const int nx = colNear[static_cast<std::size_t>(x)];
                 const std::uint16_t nearest = src.at(sr.left + nx, sr.top + ny);
                 if (keySrc && nearest == srcKey) continue;
                 if (keyDest && dst.at(dr.left + x, dr.top + y) != dstKey) continue;
 
-                const double fx = (x + 0.5) * sw / dw - 0.5;
-                int x0 = static_cast<int>(std::floor(fx));
-                const double wx = fx - x0;
-                int x1 = x0 + 1;
-                x0 = x0 < 0 ? 0 : x0 > sw - 1 ? sw - 1 : x0;
-                x1 = x1 < 0 ? 0 : x1 > sw - 1 ? sw - 1 : x1;
+                const int x0 = colX0[static_cast<std::size_t>(x)];
+                const int x1 = colX1[static_cast<std::size_t>(x)];
+                const double wx = colWx[static_cast<std::size_t>(x)];
 
                 const std::uint16_t t[4] = {src.at(sr.left + x0, sr.top + y0),
                                             src.at(sr.left + x1, sr.top + y0),
@@ -181,7 +202,7 @@ bool blt(Surface& dst, Rect dr, const Surface& src, Rect sr,
         // thing is a row copy with two optional tests.
         const int sy = sr.top + (sh == dh ? y : y * sh / dh);
         for (int x = 0; x < dw; ++x) {
-            const int sx = sr.left + (sw == dw ? x : x * sw / dw);
+            const int sx = sr.left + colNear[static_cast<std::size_t>(x)];
             const std::uint16_t v = src.at(sx, sy);
             if (keySrc && v == srcKey) continue;
             if (keyDest && dst.at(dr.left + x, dr.top + y) != dstKey) continue;
