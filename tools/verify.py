@@ -14821,6 +14821,45 @@ def c_engine_gles_backend():
         "presents exact in 565; the probe's own failure count"
 
 
+def c_engine_vita_printf():
+    r"""The Vita's printf format rewrite (`backends/vita/c99format.h`), on the
+    host.
+
+    FOUND IN THE EMULATOR, 2026-09-18: the VitaSDK's newlib has no C99 printf
+    formats, so `%zu` prints "zu" and consumes no argument. The bench's
+    `lights %zu from %s` then handed the light count (155) to `%s` as a
+    pointer - Vita3K logged the invalid read at 0x98 and went on; a console
+    faults. The engine has 125 such formats. On the Vita `size_t` and
+    `ptrdiff_t` are 32-bit, so `printf_c99.cpp` (linked into every Vita target
+    through `-Wl,--wrap`) drops the `z` / `t` modifier before newlib sees the
+    format. After it, the bench in Vita3K printed `meshes 20 corners 2409
+    frames 922` and `lights 155 from MESHES/DECORS/Anekbah.3DO`, the host's own
+    lines, with 0 invalid reads.
+
+    This drives the rewrite over 12 cases - widths, `.*`, `%%zu` left literal,
+    `%jd` left alone (it is 64-bit), a format too long for the buffer passed
+    through untouched. SHOWN TO FAIL, 2026-09-18: letting the `%%` arm fall
+    through turns `%%zu is literal` BAD.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s", "build/vita_c99format_test"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "vita_c99format_test")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp], capture_output=True, text=True)
+    verdicts = re.findall(r"^case (\d+) (OK|BAD)", r.stdout, re.M)
+    fails = re.findall(r"^failures (\d+)$", r.stdout, re.M)
+    if len(verdicts) != 12 or len(fails) != 1:
+        return (len(verdicts), len(fails)), (12, 1), \
+               "c99format_test output parsed - the tool's format changed"
+    return (tuple(v for _, v in verdicts), int(fails[0])), (("OK",) * 12, 0), \
+        "each rewrite case OK, and the tool's own failure count"
+
+
 def c_engine_vita_build():
     r"""The engine still COMPILES FOR THE PS VITA (todo/vita-port.md B1).
 
@@ -36284,6 +36323,8 @@ def c_licence_headers():
     **458 -> 460, the same day**: `backends/vita/vitapad.h` deleted
     (superseded by `input/pad.h`), and `input/pad.h`,
     `engine/tools/input_poll.cpp` and `backends/vita/vita_main.cpp` added.
+    **460 -> 464**: the Vita's printf fix (`backends/vita/c99format.h`,
+    `printf_c99.cpp`, `c99format_test.cpp`) and `scripts/vita-vitagl.sh`.
     """
     import glob as _g
     TAG = "SPDX-License-Identifier: GPL-3.0-or-later"
@@ -36313,7 +36354,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (460, [], 1, []), \
+           (464, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -38588,6 +38629,7 @@ SLOW = [
     ("engine: vita bench", c_engine_vita_bench, "todo/vita-port.md 0; backends/vita/bench_main.cpp"),
     ("engine: gles backend", c_engine_gles_backend, "todo/vita-port.md 0; backends/gles/glesrender.cpp"),
     ("engine: vita build", c_engine_vita_build, "todo/vita-port.md B1; backends/vita/CMakeLists.txt"),
+    ("engine: vita printf", c_engine_vita_printf, "todo/vita-port.md; backends/vita/c99format.h"),
     ("engine: sweep grid", c_engine_sweep_grid, "todo/optimization.md 11; o3de/collision.h"),
     ("engine: props", c_engine_props, "todo/omk-play"),
     ("sprite ids scene-local", c_sprite_ids_are_scene_local, "docs/ASSETS"),

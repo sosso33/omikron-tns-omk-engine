@@ -66,6 +66,15 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -Wall -Wextra -mfpu=neon -mfloat-abi
 # `__sce_headroom` bytes there when the symbol is defined; 16 KiB, for every
 # target, so a build cannot start failing because some code grew.
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--defsym,__sce_headroom=0x4000")
+# `%zu` - the VitaSDK's newlib has no C99 printf formats, so `%zu` prints "zu"
+# and shifts every later argument (found in Vita3K, 2026-09-18; a `%s` after
+# it reads a size as a pointer). Every target links `printf_c99.cpp` and routes
+# the printf family through it (`c99format.h`).
+set(OMK_PRINTF_WRAP printf fprintf snprintf sprintf vprintf vfprintf vsnprintf vsprintf)
+foreach(fn ${OMK_PRINTF_WRAP})
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--wrap=${fn}")
+endforeach()
+set(OMK_VITA_COMMON ${CMAKE_CURRENT_SOURCE_DIR}/printf_c99.cpp)
 
 # ---- the engine: every ported source, exactly the Makefile's glob
 file(GLOB OMK_SRC ${ENGINE}/src/*/*.cpp)
@@ -75,19 +84,29 @@ target_include_directories(omk_engine PUBLIC ${ENGINE}/src ${ENGINE}/third_party
 # compiler defines; OMK_THREADS stays 1.
 
 # ---- omk_bench: the device factor
-add_executable(omk_bench ${CMAKE_CURRENT_SOURCE_DIR}/bench_main.cpp)
+add_executable(omk_bench ${CMAKE_CURRENT_SOURCE_DIR}/bench_main.cpp ${OMK_VITA_COMMON})
 target_link_libraries(omk_bench omk_engine ScePower_stub)
 vita_create_self(omk_bench.self omk_bench UNSAFE)
 vita_create_vpk(omk_bench.vpk ${OMK_TITLE_BENCH} omk_bench.self
   VERSION ${VITA_VERSION} NAME "OMK bench")
 
 # ---- omk_smoke: the GLES2 backend on vitaGL
+# vitaGL: OUR build when `scripts/vita-vitagl.sh` has made one - the SDK's has
+# a boot splash that opens a second sceGxm context, which Vita3K refuses, so
+# nothing built on it runs in the emulator - and the SDK's otherwise.
+set(OMK_VITAGL ${ENGINE}/build/vitagl/libvitaGL.a)
+if(EXISTS ${OMK_VITAGL})
+  message(STATUS "vitaGL: ${OMK_VITAGL} (no splash screen; runs in Vita3K)")
+else()
+  set(OMK_VITAGL vitaGL)
+  message(WARNING "vitaGL: the SDK's - it will NOT run in Vita3K; run scripts/vita-vitagl.sh")
+endif()
 set(OMK_VITAGL_LIBS
-  vitaGL vitashark SceShaccCgExt mathneon taihen_stub
+  ${OMK_VITAGL} vitashark SceShaccCgExt mathneon taihen_stub
   SceShaccCg_stub SceKernelDmacMgr_stub SceGxm_stub SceDisplay_stub
   SceSysmodule_stub SceAppMgr_stub SceCommonDialog_stub SceIme_stub
   SceCtrl_stub ScePower_stub m)
-add_executable(omk_smoke
+add_executable(omk_smoke ${OMK_VITA_COMMON}
   ${CMAKE_CURRENT_SOURCE_DIR}/smoke_main.cpp
   ${ENGINE}/backends/gles/glesrender.cpp)
 target_link_libraries(omk_smoke omk_engine ${OMK_VITAGL_LIBS})
@@ -101,7 +120,7 @@ vita_create_vpk(omk_smoke.vpk ${OMK_TITLE_SMOKE} omk_smoke.self
 # line, so it supplies the arguments (see that file). The tables compiled into
 # the exe travel IN the VPK as `app0:tables/`; the game data does not.
 if(OMK_VITA_GAME)
-  add_executable(omk_vita
+  add_executable(omk_vita ${OMK_VITA_COMMON}
     ${CMAKE_CURRENT_SOURCE_DIR}/vita_main.cpp
     ${ENGINE}/backends/sdl/play.cpp
     ${ENGINE}/backends/gles/glesrender.cpp)

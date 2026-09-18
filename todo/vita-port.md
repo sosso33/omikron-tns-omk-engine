@@ -183,6 +183,54 @@ read `ux0:data/omk/omk-play.log` after. A first run with `--nofmv` in
 run on a console**: SDL2-vitagl's window size, `std::filesystem` on `ux0:`,
 the audio device and the frame rate are all the device's to answer.
 
+### 2026-09-18: THE EMULATOR - Vita3K runs our VPKs, and found a crash
+
+**Vita3K** (continuous build of 2026-09-17, native macOS arm64, `macos-arm64-
+latest.dmg`) runs homebrew and needs the Vita firmware (`PSVUPDAT.PUP` /
+`PSP2UPDAT.PUP`, installed from its setup window). How it is driven here:
+
+* a config of its own (`-c <dir>/config.yml`) with `pref-path` set, so the
+  emulated storage is a scratch folder and the user's own Vita3K is untouched;
+* `ux0:data/omk/gamedata` a SYMLINK to the data tree - no 1.7 GB copy;
+* the VPKs INSTALLED BY HAND (a VPK is a zip; unzip it to `ux0/app/<TITLEID>/`)
+  - this build's Qt window ignores a VPK given on the command line - and
+  launched with `-r <TITLEID>`;
+* the bench runs to completion headless-enough (its window opens and closes).
+
+**What it gave, in the first hour:**
+
+1. **A CRASH A CONSOLE WOULD HAVE HAD, fixed**: the SDK's newlib has no C99
+   printf formats, so `%zu` prints "zu" and consumes NO argument - every later
+   argument shifts. The bench's `lights %zu from %s` passed the light count to
+   `%s` as a pointer (Vita3K: invalid read at 0x98, `r0 = 0x9b` = 155). The
+   engine has **125** `%zu`/`%zx` (`play.cpp` 66), so the game would have
+   faulted in its first log line with one. Fixed at the platform edge:
+   `backends/vita/printf_c99.cpp`, linked into every target via
+   `-Wl,--wrap=<printf family>`, strips `z`/`t` (32-bit on the Vita, so
+   exact) before newlib sees the format. Re-run: the model lines are the
+   host's, 0 invalid reads. `verify.py: engine: vita printf`.
+2. **The bench's plumbing works**: `ux0:` reads through `DataFs` (so
+   `std::filesystem` behaves there), the Vita thread pool starts 3 runners,
+   2.78x, threaded output EXACT. **Its TIMINGS are the emulator's, not the
+   device's** (35 ms against the M1's 1.3 - a JIT on an M3), so they are not
+   the device factor and are not quoted as one. And the emulated hash
+   (`166ee410...`) differs from the M1's (`14de822f...`): the Vita build turns
+   FMA contraction off and the host compiler may not - noted, not chased.
+3. **vitaGL's boot splash opens a SECOND sceGxm context**, which Vita3K
+   refuses (`ALREADY_INITIALIZED`, then a fault at 0x78). `scripts/vita-
+   vitagl.sh` builds vitaGL at the SDK package's own commit (`cd3791e`, whose
+   header is byte-identical to the SDK's) with `NO_SPLASHSCREEN=1
+   HAVE_VITA3K_SUPPORT=1` into `engine/build/vitagl/`, and the CMake file
+   links it when present. A game wants no vitaGL logo on a console either, so
+   one library serves both.
+4. **The GPU path then stops at the SHADER COMPILER**: vitaGL loads
+   `ur0:data/libshacccg.suprx`, Sony's runtime compiler from the PSM runtime,
+   which only exists extracted from a console. Without it every fragment
+   program is invalid and `omk_smoke` faults. **Nothing GL - the smoke test,
+   the game, even SDL's own renderer on vitaGL - can be tested in Vita3K until
+   a `libshacccg.suprx` is placed in its `ur0/data/`.** This repo does not
+   fetch it; it has to come from the user's own console.
+
 ---
 
 ## 1. The issues, and what is missing
