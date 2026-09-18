@@ -17897,7 +17897,7 @@ int main(int argc, char** argv) {
                         std::printf("sneak: memory page - %s\n", said.c_str());
                     }
                 }
-                // ---- THE ECHO BAR and THE CLOCK ---------------------
+                // ---- THE CLOCK, and WHAT THE ECHO BAR NEEDS ---------
                 //
                 // Two of the device's rows are filled by callbacks of its
                 // own, and both are readable - `sub_0049DC20` and
@@ -17906,57 +17906,28 @@ int main(int argc, char** argv) {
                 // so `asmfn.py` returns a neighbour and the range has to be
                 // dumped by hand.
                 //
-                // **The echo bar shows whatever is SELECTED**, not the
-                // hovered verb as the picture suggested. `sub_0049DC20`
-                // takes the panel's current item and dispatches on its
-                // ADDRESS:
+                // THE ECHO BAR IS NO LONGER COMPOSED HERE. It was: this
+                // block used to put the selected item's own label into
+                // `sneakRows` for it, which is right for three of the
+                // function's seven arms and silent for the other four - and
+                // the four include the one the page spends its time in, the
+                // TAB LABEL with `  (n / 18)` after it, so the bar was blank
+                // whenever the selection sat in the row list, which is
+                // whenever the player is looking at his inventory.
+                // `ScreenComposer::echoBarText` runs the whole function now,
+                // and reports what it drew in `ScreenFrame::echoBar` - a
+                // line composed where the drawing happens can be asserted;
+                // one composed here could only report the intention.
                 //
-                //     0x004DE338  "%s %d" of its string and `sub_42B1C0(4)`
-                //     0x004DE380  "%s %d" of its string and `sub_42B1C0(5)`
-                //     0x004DE3C8  its string alone
-                //     0x004DE230  its string, with `+30` forced to 1
-                //     ...
-                //
-                // which SETTLES what list 1 is: the three 50x50 icons are
-                // the setek and anneau COUNTERS and the map reader, and
-                // their strings - 8, 9 and 41, the ones a `+28`-keyed drawer
-                // printed across the page - belong to them and are rendered
-                // HERE. "Seteks en votre possession :" is echo-bar text for
-                // the setek icon, never a caption beside it.
-                //
-                // It also answers what `imager` counts: NOTHING. Its arm has
-                // no `sub_42B1C0` and no format - just the bare string "Lire
-                // plan". It is a map reader, not ammunition.
-                //
-                // The two counts come from `Game_RaiseEvent(44, {4|5})`,
-                // which is not modelled, so those two rows show their label
-                // without its number and say so rather than inventing one.
+                // What the bar cannot get for itself is the two counts:
+                // `sub_42B1C0(4)` and `(5)` raise `Game_HandleEvent(44)` on
+                // the player, whose cases 4 and 5 are the player record's
+                // `+172` and `+174` - the seteks and the anneaux.
+                comp.setPlayerCounts(state.money(), state.rings());
                 {
-                    const auto sneakText = omk::iamStrings(fs, "IAM/Sneak");
-                    const omk::UiItem* selItem = walk->selected();
                     for (const auto& l : pn->lists) {
                         for (const auto& e : l.items) {
-                            if (e.textFn == 0x0049DC20u && selItem) {
-                                const int id = selItem->label();
-                                if (id >= 0 &&
-                                    id < static_cast<int>(sneakText.size())) {
-                                    std::string t = sneakText[
-                                        static_cast<std::size_t>(id)];
-                                    // The two COUNTER arms format "%s %d",
-                                    // and the number is `Game_RaiseEvent(44,
-                                    // {4|5})` -> `sub_40B360` cases 4 and 5,
-                                    // which read the player record's +172 and
-                                    // +174. The third model, `imager`, has no
-                                    // count at all - its arm is the bare
-                                    // string - which is what settles that it
-                                    // is a map reader and not ammunition.
-                                    if (selItem->addr == 0x004DE338u)
-                                        t += " " + std::to_string(state.money());
-                                    else if (selItem->addr == 0x004DE380u)
-                                        t += " " + std::to_string(state.rings());
-                                    sneakRows[e.addr] = t;
-                                }
-                            } else if (e.textFn == 0x0049E090u) {
+                            if (e.textFn == 0x0049E090u) {
                                 // The clock. Both halves are the engine's own
                                 // formatters, already ported and checked
                                 // (`sub_0041E690`'s integer division); the
@@ -19061,6 +19032,33 @@ int main(int argc, char** argv) {
                         std::printf("xachen: the cartridges show %s(%s)\n", read.c_str(),
                                     walk->xachenSolved() ? "10 14 7 9 - the door opens"
                                                          : "not the code");
+                    }
+                }
+                // ---- THE SNEAK'S ECHO BAR, reported from the DRAW ------
+                //
+                // `sf.echoBar` is the string the composer's transcription of
+                // `sub_0049DC20` handed the LAYOUT, taken after it ran, and
+                // `sf.echoArm` is which of the function's seven branches
+                // produced it - so an empty bar (the examine box's arm, or a
+                // panel with nothing selected) reads differently from a bar
+                // the walk never reached at all, and no part of the line can
+                // be satisfied by something this file computed.
+                //
+                // `sf.rowMarks` is the row hook `0x0049C090`'s own fills, and
+                // `rowMarked` the row tags it marked - the second mark being
+                // what a `Utiliser sur` shows and nothing else in the device
+                // does.
+                if (openScreen == 9) {
+                    static std::string echoTold;
+                    std::string marks;
+                    for (int t : sf.rowMarked) marks += " " + std::to_string(t);
+                    const std::string said =
+                        "arm " + std::to_string(sf.echoArm) + " '" + sf.echoBar +
+                        "', " + std::to_string(sf.rowMarks) + " row marks" +
+                        (marks.empty() ? std::string() : " (tags" + marks + ")");
+                    if (said != echoTold) {
+                        echoTold = said;
+                        std::printf("sneak: echo bar - %s\n", said.c_str());
                     }
                 }
                 // ...and the memo body is reported from the DRAW: `textLines`

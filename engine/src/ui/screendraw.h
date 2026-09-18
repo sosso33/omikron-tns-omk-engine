@@ -45,6 +45,21 @@ namespace omk {
 // and an item with no `+24` and no `+32` has NO TEXT AT ALL.
 inline constexpr std::uint32_t kTextFnString = 0x00476860u;
 
+// `sub_0049DC20` - THE SNEAK'S ECHO BAR, the `+32` text callback of item
+// 0x004DEBC0 (411x24 at 180,398, font 'J'), the only selectable item of list
+// 0x004DEC58 - which is the LAST list of every one of the device's pages. It
+// is the only place in the whole interface where the player's seteks and
+// anneaux are shown. `ScreenComposer::draw` transcribes it; `ScreenFrame::
+// echoBar` reports what came out.
+inline constexpr std::uint32_t kTextFnSneakEcho = 0x0049DC20u;
+
+// `sub_0049C090` - the `+20` DRAW hook of the sneak's nine inventory row
+// widgets (0x004DE440..0x004DE680). A SECOND `Ui_DrawItemFill` over the row
+// the verb about to be chosen will act on - the rows already fill from their
+// own bank-B `0x10`, so what this adds is a second identical quad and the
+// marked row comes out at 0.385 of the page's tint against the others' 0.216.
+inline constexpr std::uint32_t kDrawSneakRowFill = 0x0049C090u;
+
 // What a composed frame reports about itself, so a headless check can assert
 // it without a window or a PNG decoder.
 struct ScreenFrame {
@@ -76,6 +91,23 @@ struct ScreenFrame {
     std::vector<std::string> scoreRows;
     // Bars the Caracteristiques hook (0x0049CA30 -> `sub_49CE60`) drew: six.
     int  characteristicBars = 0;
+    // WHAT THE SNEAK'S ECHO BAR SAID, and it is taken from the string the
+    // composer's transcription of `sub_0049DC20` actually laid out - not from
+    // anything a caller handed over (CLAUDE.md 1, the log-line rule). Empty
+    // when the bar drew nothing, which is what the engine's `sel == 0` arm
+    // and its empty-string arms produce.
+    std::string echoBar;
+    // ...and which of its seven arms produced it, so a check can tell an
+    // empty bar apart from a bar that was never reached:
+    //   -1 not drawn   0 transient message   1 seteks   2 anneaux
+    //    3 the map reader   4 a verb   5 the examine box   6 the tab label
+    int  echoArm = -1;
+    // Extra `Ui_DrawItemFill` quads the row hook `0x0049C090` drew, and the
+    // ROW TAGS it marked, in draw order. The count is of the hook's own fills
+    // alone; the rows' bank-B `0x10` fills are counted in `fillsDrawn` with
+    // every other item's.
+    int  rowMarks = 0;
+    std::vector<int> rowMarked;
     // Lines the examine page's description wrapped to.
     int  textLines = 0;
     // ...and how many CHARACTERS were handed to the layout for it, which is
@@ -221,6 +253,34 @@ public:
     // exactly as before.
     void setRowText(const std::map<std::uint32_t, std::string>* t) { rows_ = t; }
 
+    // ---- WHAT THE ECHO BAR ASKS FOR FROM OUTSIDE ----------------------
+    //
+    // `sub_42B1C0(n)` builds `{n, ...}`, calls `Actor_Player()` and raises
+    // `Game_HandleEvent(44)`, whose `sub_40B360` answers case 4 from the
+    // player record's `+172` (the SETEKS, unsigned) and case 5 from `+174`
+    // (the ANNEAUX, signed) - `GameState::money()` and `rings()`. The bar
+    // formats each as `"%s %d"` behind its tile's own label, and they are
+    // shown nowhere else in the interface.
+    void setPlayerCounts(int seteks, int anneaux) {
+        seteks_ = seteks; anneaux_ = anneaux;
+    }
+    // THE TRANSIENT MESSAGE, and it comes FIRST - before the selection, the
+    // counts and the tab. `sub_0049DC20` opens with
+    // `Ui_OscillatorFlags(Ui_Oscillator(0), 1)`, the RUNNING bit of the
+    // 5000 ms oscillator 0, and on it copies `byte_6A4CA0` out and returns:
+    // while a message is up the bar shows it and nothing else.
+    //
+    // `byte_6A4CA0` has ONE writer in the image, `sub_42B660` - which is
+    // oscillator 0's own start function and is reached only as a dword in
+    // that table, through `sub_42B820(0, ms, text)`. Two of the 35 sites
+    // start oscillator 0, both inside `sub_49BC60`, the inventory row's
+    // confirm: `loc_49BD23` flashes screen string **42** when the slider
+    // call `sub_452570` refuses, and `loc_49BE30` screen string **35** when
+    // a combination finds no recipe. The caller owns the clock - pass
+    // nullptr once 5000 ms have passed, which is what the oscillator's
+    // expiry does.
+    void setEchoMessage(const std::string* m) { echoMsg_ = m; }
+
     // ITEMS THE RUNTIME HAS SWITCHED OFF, by address.
     //
     // `sub_42AAE0` binds a list's widgets to a window and sets `0x40000001`
@@ -302,6 +362,13 @@ private:
     // makes 10x64 = 640 and 7x64 + 32 = 480 come out exactly.
     int background(Surface& fb, const UiPanel& p, const Surface& sheet) const;
 
+    // `sub_0049DC20` transcribed - the sneak's echo bar. `arm` reports which
+    // of its seven branches answered (see `ScreenFrame::echoArm`); the return
+    // is the line, empty where the engine leaves its buffer untouched.
+    std::string echoBarText(const UiWalk& walk,
+                            const std::vector<std::string>& text,
+                            int* arm) const;
+
     const MenuCloud* cloud_ = nullptr;
     UiCursor*        cursor_ = nullptr;
     UiModels*        models_ = nullptr;
@@ -310,6 +377,9 @@ private:
     int* scroll_ = nullptr;              // dword_6A5090, clamped here
     long             deltaMs_ = 33;
     const std::map<std::uint32_t, std::string>* rows_ = nullptr;
+    // `sub_42B1C0(4)` and `(5)`, and the running message of oscillator 0.
+    int seteks_ = 0, anneaux_ = 0;
+    const std::string* echoMsg_ = nullptr;
     const std::set<std::uint32_t>* hidden_ = nullptr;
     const std::map<std::uint32_t, std::pair<int, int>>* moved_ = nullptr;
     const std::map<std::uint32_t, std::pair<int, int>>* srcMoved_ = nullptr;
