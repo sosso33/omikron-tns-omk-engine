@@ -81,6 +81,7 @@
 #include "platform/movie.h"
 #include "platform/datafs.h"
 #include "platform/frontend.h"
+#include "ui/overlay.h"
 #include "ui/hudbar.h"
 #include "ui/iamtext.h"
 #include "ui/radar.h"
@@ -281,40 +282,10 @@ std::vector<float> wavToDevice(std::span<const std::byte> file, int deviceRate) 
 // supported here.
 enum class SubBox { None, Line, Replies };
 
-// THE OVERLAY'S SIDE PLANES (`todo/vita-port.md` G6 step 2). On the GLES
-// window a frame with a subtitle or a conversation is not composed over a
-// readback of the world: the world's rows of `fb` hold a KEY, and the GPU
-// blends the finished frame over its own picture as `C + world * M`. Opaque
-// drawing simply overwrites the key (C = the pixel, M = 0). The few passes
-// that READ the picture - the two dialogue boxes, the two screen fades - are
-// all affine in it (`new = A * old + B`), so on a key pixel they run on these
-// planes instead: the law itself on C, which starts at 0, and A on M, which
-// starts at 255. Exact, not a special case per pass.
-// SPARSE: a row of the planes is initialised the first time a pass touches it
-// (`row`), so a frame costs the rows its boxes and bands cover, not the screen.
-struct OverlayPlanes {
-    bool on = false;
-    int w = 0;
-    std::vector<std::uint16_t> c;
-    std::vector<std::uint8_t>  m;
-    std::vector<std::uint8_t>  rowInit;
-    void begin(int width, int height) {
-        on = true;
-        w = width;
-        const std::size_t count = static_cast<std::size_t>(width) * height;
-        if (c.size() != count) { c.assign(count, 0); m.assign(count, 255); }
-        rowInit.assign(static_cast<std::size_t>(height), 0);
-    }
-    void row(std::size_t index) {
-        const std::size_t y = index / static_cast<std::size_t>(w);
-        if (rowInit[y]) return;
-        rowInit[y] = 1;
-        std::fill(c.begin() + y * w, c.begin() + (y + 1) * w, std::uint16_t(0));
-        std::fill(m.begin() + y * w, m.begin() + (y + 1) * w, std::uint8_t(255));
-    }
-};
-OverlayPlanes g_ov;
-constexpr std::uint16_t kOverlayKey = 0xF81F;
+// THE OVERLAY'S SIDE PLANES live in `ui/overlay.h` (G6 steps 2 and 3), shared
+// with the HUD's blended quads.
+omk::OverlayPlanes& g_ov = omk::overlayPlanes();
+using omk::kOverlayKey;
 
 void drawSubtitleBox(omk::Surface& fb, SubBox kind, int top, int dispW, int dispH) {
     if (kind == SubBox::None) return;
@@ -17956,18 +17927,6 @@ int main(int argc, char** argv) {
 #endif
                 else if (mst.active && !mst.native) keep = "cpu mirror";
                 else if (shootMode && hudWalk) keep = "shoot hud";
-                // ...and the FIGHT HUD, under the same test that draws it: the
-                // gauges go into `fb` every melee frame outside a KO replay. It
-                // was missing from this list, so on the Vulkan window the gauges
-                // showed only while another gate (the fight's opening fade) held
-                // the frame on the CPU - a reader: *"The health disappear after
-                // some time (only the stats should disappear)"*.
-                else if (fightRun.active && fightRun.fight && fightRun.fight->koCounter() == 0 &&
-                         !std::getenv("OMK_NOUI")) keep = "fight hud";
-                // ...and the BREATH gauge, under the test that draws it - the
-                // same GPU-present gap the fight's gauges fell into
-                else if (player && player->breathLeftMs() >= 0.0 &&
-                         !std::getenv("OMK_NOUI")) keep = "breath gauge";
                 else if (!flickerDir.empty() || !snapsDir.empty() || std::getenv("OMK_CLIPLOG")) keep = "instrument";
                 else if (lastDumped) keep = "dump";
                 // THE SOFT GATES, last: what these three draw goes OVER the
@@ -17985,12 +17944,33 @@ int main(int argc, char** argv) {
                 else if (mediaBmp.w > 0 && mediaBmp.h > 0) { keep = "media bitmap"; softGate = true; }
                 else if (mediaTextFrames > 0) { keep = "media line"; softGate = true; }
                 else if (session.dialogOpen()) { keep = "conversation"; softGate = true; }
+                // G6 step 3: both gauges are `Hud_DrawBar`, whose only reads of
+                // the picture are `fillQuadD3d`'s three blends - affine, so they
+                // run on the overlay's planes. SOFT, and therefore after every
+                // hard gate: a soft gate that answered first would hide a dump.
+                // ...and the FIGHT HUD, under the same test that draws it: the
+                // gauges go into `fb` every melee frame outside a KO replay. It
+                // was missing from this list, so on the Vulkan window the gauges
+                // showed only while another gate (the fight's opening fade) held
+                // the frame on the CPU - a reader: *"The health disappear after
+                // some time (only the stats should disappear)"*.
+                else if (fightRun.active && fightRun.fight && fightRun.fight->koCounter() == 0 &&
+                         !std::getenv("OMK_NOUI")) { keep = "fight hud"; softGate = true; }
+                // ...and the BREATH gauge, under the test that draws it - the
+                // same GPU-present gap the fight's gauges fell into
+                else if (player && player->breathLeftMs() >= 0.0 &&
+                         !std::getenv("OMK_NOUI")) { keep = "breath gauge"; softGate = true; }
 #if defined(OMK_GLES)
                 {
                     static const bool noOverlay = std::getenv("OMK_NO_OVERLAY") != nullptr;
                     overlayFrame = softGate && !noOverlay && !verifyGpuPresent &&
                                    glRen && &world == glRen;
-                    if (overlayFrame) keep = "overlay";
+                    if (overlayFrame) {
+                        // the statistics name the soft gate behind the overlay
+                        static std::string overlayWhy;
+                        overlayWhy = std::string("overlay (") + keep + ")";
+                        keep = overlayWhy.c_str();
+                    }
                 }
 #endif
                 gpuFrame = keep == nullptr;

@@ -399,6 +399,32 @@ GPU and truncates on 565 on the CPU). `OMK_NO_OVERLAY=1` turns it off. The HARD
 gates stay on the CPU: an open screen, the CPU mirror, the shoot / fight HUDs
 and the breath gauge (not yet read for whether they read the picture).
 
+**G6 step 3 - the GAUGES on the overlay** (2026-09-21, not yet seen on a
+console). The fight HUD and the breath gauge were HARD gates, so every frame of
+a melee and every frame underwater still paid the readback. Both are
+`Hud_DrawBar`, and its only reads of the picture are `fillQuadD3d`'s three
+blends - alpha (`src*(1-a) + dst*a`), multiply (`dst*(1-src)`, always the grey
+0xE0E0E0 in the HUD, so ONE factor plane is enough) and additive - all affine,
+so on a key pixel they now run on the planes like the dialogue boxes do. The
+planes moved out of `play.cpp` into `src/ui/overlay.h` so `hudbar.cpp` can
+reach them. The two gates moved BELOW the hard ones: a soft gate that answers
+first would hide `dump` and `instrument`. `OMK_GPU_PRESENT_STATS` now names the
+soft gate behind an overlay frame (`overlay (fight hud)`). Measured on the Mac,
+`OMK_GLES_WINDUMP` against `OMK_NO_OVERLAY=1 --dump`, in 565:
+`--fight-supermarket` at frames 470 and 500 (gauges and the stat card up):
+**230 and 197 pixels of 480000 differ, none by more than one 565 level**, all
+inside the gauges' rows; the canal dive (`engine: swim`'s own run) at frame
+350: **0 differ**. Host `make`, `make play`, `make play-gles` and `make vita`
+build.
+
+**What is left of G6 (step 4)**: the SHOOT HUD and an OPEN SCREEN. Both draw
+through `ScreenComposer`, whose readers are `fillQuad` (alpha - affine, same
+treatment) and `Surface`'s mode-2 quads, modes 1/2/3 = 50% blend, saturating
+ADD and saturating SUBTRACT. The subtract is the one that does not fit
+`C + world * M` with an unsigned C (it needs a signed C or a second pass), so
+step 4 starts with a census of which screens use mode 3 over the WORLD rather
+than over their own artwork.
+
 ---
 
 ## 1. The issues, and what is missing

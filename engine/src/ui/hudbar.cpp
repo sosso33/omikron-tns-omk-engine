@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "ui/hudbar.h"
 
+#include "ui/overlay.h"
 #include "ui/text.h"
 
 #include <algorithm>
@@ -60,8 +61,20 @@ long fillQuadD3d(Surface& dst, const int x[4], const int y[4],
         const int xa = std::max(0, static_cast<int>(std::ceil(xl)));
         const int xb = std::min(dst.w, static_cast<int>(std::ceil(xr)));
         for (int px = xa; px < xb; ++px) {
-            std::uint16_t& d = dst.px[static_cast<std::size_t>(py) * static_cast<std::size_t>(dst.w) +
-                                     static_cast<std::size_t>(px)];
+            // on an overlay frame's KEY pixel the law runs on the side planes
+            // (`ui/overlay.h`): itself on C, its factor on M. The multiply's
+            // factor is taken from GREEN - M is one channel, and every
+            // multiply the HUD draws is a grey (0xE0E0E0).
+            OverlayPlanes& ov = overlayPlanes();
+            const std::size_t ovI = static_cast<std::size_t>(py) * static_cast<std::size_t>(dst.w) +
+                                    static_cast<std::size_t>(px);
+            const bool ovKey = ov.on && dst.px[ovI] == kOverlayKey;
+            if (ovKey && (flags & 7u)) {
+                ov.row(ovI);
+                if (flags & 4u)      ov.m[ovI] = static_cast<std::uint8_t>(ov.m[ovI] * a / 255);
+                else if (flags & 2u) ov.m[ovI] = static_cast<std::uint8_t>(ov.m[ovI] * (255 - sg) / 255);
+            }
+            std::uint16_t& d = ovKey && (flags & 7u) ? ov.c[ovI] : dst.px[ovI];
             int dr, dg, db;
             unpack(d, dr, dg, db);
             // `sub_480AC0`: bit 2 is tested last and wins, then bit 1, then 0
