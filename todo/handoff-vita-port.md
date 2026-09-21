@@ -71,7 +71,9 @@ its Vulkan backend crashes on vitaGL.
    subtitles, conversations, the three gauges, the shoot HUD and every open
    screen but three go over the GPU picture with no readback. Not yet seen on a
    console - the `present` line of the next log says how many frames took it.
-3. Precompiled shaders (drop the `libshacccg` dependency for players).
+3. Precompiled shaders: the machinery is in (2026-09-21, `vita-port.md`), the
+   cache is NOT made - it needs one run where `libshacccg.suprx` is, then
+   `scripts/vita-shader-cache.sh` and `make vita`.
 4. P2..P6 in `vita-port.md` §2 - the CPU plan; `pending/vita-meshidx-playcpp.md`
    is P2, ready to apply.
 5. The `play.cpp` split is PLANNED ONLY ([`play-split.md`](play-split.md),

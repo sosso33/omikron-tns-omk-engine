@@ -25,6 +25,7 @@
 // authored at 640x480 and the engine's own I2D scaling (`v * w / 640`,
 // `v * h / 480`) stretches it to 16:9. `--res 640x480` in args.txt gives the
 // 4:3 frame back, pillarboxed into the screen.
+#include <psp2/io/dirent.h>
 #include <psp2/io/stat.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/power.h>
@@ -66,6 +67,27 @@ constexpr const char* kExtra  = "ux0:data/omk/args.txt";
 bool exists(const char* path) {
     SceIoStat st;
     return sceIoGetstat(path, &st) >= 0;
+}
+
+// Copy every file under `from` that `to` has not got; -> how many were copied.
+// `app0:` is read-only and vitaGL writes its cache, so the cache cannot simply
+// be pointed at the package.
+int seedTree(const std::string& from, const std::string& to) {
+    const SceUID d = sceIoDopen(from.c_str());
+    if (d < 0) return 0;
+    sceIoMkdir(to.c_str(), 0777);
+    int copied = 0;
+    SceIoDirent e{};
+    while (sceIoDread(d, &e) > 0) {
+        const std::string src = from + "/" + e.d_name, dst = to + "/" + e.d_name;
+        if (SCE_S_ISDIR(e.d_stat.st_mode)) { copied += seedTree(src, dst); continue; }
+        if (exists(dst.c_str())) continue;
+        std::ifstream in(src, std::ios::binary);
+        std::ofstream out(dst, std::ios::binary);
+        if (in && out) { out << in.rdbuf(); ++copied; }
+    }
+    sceIoDclose(d);
+    return copied;
 }
 }  // namespace
 
@@ -119,23 +141,22 @@ int main(int, char**) {
     std::printf("\n");
     std::fflush(stdout);
 
-    // THE SHADER COMPILER. vitaGL compiles GLSL at run time with Sony's
-    // `libshacccg.suprx`, which only comes extracted from a console - and when
-    // it is not there, vitaGL (at the SDK's commit) does not refuse: its
-    // `glLinkProgram` goes on with a NULL program and faults inside SceGxm
-    // (a console crash dump, 2026-09-18: R0 = 0 at the fault, LR in
-    // glLinkProgram <- GlesRenderer::init). Nothing can draw without it - even
-    // SDL's own renderer is vitaGL shaders - so it is checked HERE, said
-    // plainly in the log, and the game exits instead of crashing.
-    if (!exists("ur0:data/libshacccg.suprx") && !exists("ur0:data/external/libshacccg.suprx")) {
-        std::printf("FATAL: the shader compiler is missing - put libshacccg.suprx at "
-                    "ur0:data/libshacccg.suprx (extract it on the console with "
-                    "ShaRKBR33D or VitaShell's 'Extract libshacccg'); vitaGL cannot "
-                    "compile a shader without it\n");
-        std::fprintf(stderr, "FATAL: ur0:data/libshacccg.suprx missing\n");
-        sceKernelExitProcess(2);
-        return 2;
-    }
+    // THE SHADERS, PRECOMPILED (2026-09-21). vitaGL compiles GLSL at run time
+    // with Sony's `libshacccg.suprx`, which only comes extracted from a
+    // console. Our vitaGL is built with its shader CACHE and one patch
+    // (`scripts/vita-vitagl-patch.py`): a shader found in the cache as
+    // `<hash of its source>.gxp` needs no compiler. The VPK carries the cache
+    // (`app0:shader_cache`, made by `scripts/vita-shader-cache.sh` in Vita3K)
+    // and this copies what is missing into vitaGL's own folder, so a player
+    // never needs the compiler; a developer who changed a shader does, once -
+    // the miss is compiled and cached as before.
+    const int seeded = seedTree("app0:shader_cache", "ux0:data/shader_cache");
+    const bool compiler = exists("ur0:data/libshacccg.suprx") ||
+                          exists("ur0:data/external/libshacccg.suprx");
+    std::printf("shaders: %d precompiled file(s) copied into ux0:data/shader_cache; "
+                "the runtime compiler (libshacccg.suprx) is %s\n",
+                seeded, compiler ? "present" : "ABSENT - a shader that is not in the cache "
+                                               "will fail to link, and the log will say so");
 
     // what the heap actually holds, first - the line a memory report starts
     // from (`arena` is the newlib block reached so far, not its capacity)

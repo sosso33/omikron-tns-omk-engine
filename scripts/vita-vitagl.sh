@@ -44,8 +44,18 @@ if ! cmp -s "$src/source/vitaGL.h" "$VITASDK/arm-vita-eabi/include/vitaGL.h"; th
     echo "the header the port compiles against may not agree" >&2
 fi
 
+# THE SHADER CACHE, and the one patch that makes it worth shipping: with
+# HAVE_SHADER_CACHE=1 a compiled shader is kept as <hash of its source>.gxp,
+# and scripts/vita-vitagl-patch.py lets a cache HIT run with no
+# libshacccg.suprx at all (todo/vita-port.md, "precompiled shaders").
+git -C "$src" checkout -q -- source/custom_shaders.c
+python3 "$here/scripts/vita-vitagl-patch.py" "$src/source/custom_shaders.c"
+
 make -C "$src" clean >/dev/null 2>&1 || true
 make -C "$src" -j"$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)" \
-    NO_SPLASHSCREEN=1 HAVE_VITA3K_SUPPORT=1 >/dev/null
+    NO_SPLASHSCREEN=1 HAVE_VITA3K_SUPPORT=1 HAVE_SHADER_CACHE=1 >/dev/null 2>&1 ||
+    # a parallel build straight after `clean` can lose a race on a generated
+    # header (seen 2026-09-21: ffp.o and egl.o); the second pass is serial
+    make -C "$src" NO_SPLASHSCREEN=1 HAVE_VITA3K_SUPPORT=1 HAVE_SHADER_CACHE=1 >/dev/null
 cp "$src/libvitaGL.a" "$out/libvitaGL.a"
-echo "built $out/libvitaGL.a (vitaGL $COMMIT, NO_SPLASHSCREEN=1 HAVE_VITA3K_SUPPORT=1)"
+echo "built $out/libvitaGL.a (vitaGL $COMMIT + the OMK cache patch, NO_SPLASHSCREEN=1 HAVE_VITA3K_SUPPORT=1 HAVE_SHADER_CACHE=1)"

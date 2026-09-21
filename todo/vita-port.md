@@ -471,6 +471,48 @@ track's 4 MB. **Not confirmed on a console**: the next log's
 `new: N bytes REFUSED` line names the size if something still fails - 8745984
 would be the corner list.
 
+### 2026-09-21: PRECOMPILED SHADERS - the machinery is in, THE CACHE ITSELF IS NOT YET MADE
+
+There is no offline compiler a homebrew may ship, so "precompiled" means
+vitaGL's own **shader cache**, made once where the compiler is and carried in
+the VPK:
+
+* **vitaGL is built with `HAVE_SHADER_CACHE=1`** (`scripts/vita-vitagl.sh`):
+  a compiled shader is kept as `ux0:data/shader_cache/OMKE00001/v<N>/{v,f}/<XXH3
+  of its source>.gxp`. GLSL is compiled at LINK time here (`VGL_MODE_POSTPONED`
+  is the default), and `glLinkProgram` looks in the cache first.
+* **One patch, `scripts/vita-vitagl-patch.py`**, because at the pinned commit a
+  full cache STILL needed the compiler: `glCompileShader` starts
+  `libshacccg.suprx` before it looks at anything and gives up when it is
+  missing. Patched so the start is not fatal and only a cache MISS with no
+  compiler refuses (in `glCompileShader` and in `glLinkProgram`'s postponed
+  compile, which before would go on into SceGxm with a NULL program - the
+  2026-09-18 crash dump). Three asserted anchors; the script re-applies it on a
+  clean checkout.
+* **The VPK carries `engine/backends/vita/shader_cache/**.gxp`** as
+  `app0:shader_cache/` (CMake logs the count - **0 today**), and `vita_main`
+  copies what is missing into `ux0:data/shader_cache` at start (`app0:` is
+  read-only and vitaGL writes its cache) and logs `shaders: N precompiled
+  file(s) copied ...; the runtime compiler is present/ABSENT`. A missing
+  compiler is no longer FATAL at start.
+* **All three GLES programs link at start** - the overlay's was linked on first
+  use, so a short cache-making run could have missed it.
+* `scripts/vita-shader-cache.sh [folder]` collects the `.gxp` from the Vita3K
+  storage or from a copy of a console's `ux0:data/shader_cache`.
+
+**What is missing is the run that writes the cache**: this machine's Vita3K
+storage has no `libshacccg.suprx` any more (`engine/build/vita3k/fs/ur0/data`
+is empty), so nothing here can compile. Either put the module back and run
+`scripts/vita3k-run.sh game 60`, or run the new VPK once on the console and
+copy `ux0:data/shader_cache` off it IN BINARY MODE, then
+`scripts/vita-shader-cache.sh <that folder> && make vita`. **Untested end to
+end**: that a console with the cache and WITHOUT the module starts is the claim
+to check, by renaming the module once the cache is in.
+
+vitaGL's own fixed-function shaders have a cache of their own
+(`ux0:data/shader_cache/v<M>/`); the collect script takes every `.gxp` under
+the folder, so they travel too if anything made them.
+
 ---
 
 ## 1. The issues, and what is missing

@@ -146,7 +146,19 @@ if(OMK_VITA_GAME)
   foreach(t ${OMK_TABLES})
     list(APPEND OMK_TABLE_FILES FILE ${ENGINE}/../tables/${t} tables/${t})
   endforeach()
+  # THE PRECOMPILED SHADERS: vitaGL's shader cache as one Vita3K run wrote it
+  # (`scripts/vita-shader-cache.sh`), carried as `app0:shader_cache/` and
+  # copied into vitaGL's folder at start (`vita_main.cpp`). With none the
+  # game still runs, on a console that has `libshacccg.suprx`.
+  file(GLOB_RECURSE OMK_GXP RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/shader_cache
+       ${CMAKE_CURRENT_SOURCE_DIR}/shader_cache/*.gxp)
+  set(OMK_GXP_FILES)
+  foreach(g ${OMK_GXP})
+    list(APPEND OMK_GXP_FILES FILE ${CMAKE_CURRENT_SOURCE_DIR}/shader_cache/${g} shader_cache/${g})
+  endforeach()
+  list(LENGTH OMK_GXP OMK_GXP_COUNT)
+  message(STATUS "precompiled shaders: ${OMK_GXP_COUNT} .gxp in the VPK")
   vita_create_vpk(omk_vita.vpk ${OMK_TITLE_GAME} eboot.bin
     VERSION ${VITA_VERSION} NAME ${VITA_APP_NAME}
-    ${OMK_TABLE_FILES})
+    ${OMK_TABLE_FILES} ${OMK_GXP_FILES})
 endif()

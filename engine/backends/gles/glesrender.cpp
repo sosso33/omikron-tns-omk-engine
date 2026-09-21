@@ -304,6 +304,32 @@ GpuVert gpuVert(const omk::Corner& c) {
 
 constexpr GLuint kAttrPos = 0, kAttrUV = 1, kAttrCol = 2, kAttrPhase = 3;
 
+// ---- THE INTERFACE AS AN OVERLAY (`todo/vita-port.md` G6 step 2) ----------
+//
+// The frame the CPU composed, with the world's rows left as a KEY, blended
+// over the world the GPU already presented - so a frame with a subtitle or a
+// conversation on it needs no readback. Three 565 values mean something
+// `play.cpp` resolves its key into two planes - C, the 565 frame, and M, an
+// 8-bit "how much of the world shows through" - and this draws
+// `C + world * M` in one blend (GL_ONE, GL_SRC_ALPHA).
+constexpr const char* kOverlayFrag = R"(
+uniform sampler2D uPic;
+uniform sampler2D uMask;
+uniform vec4  uFade;       // rgb + weight
+uniform vec2  uPicSize;
+varying vec2  vPic;
+void main() {
+    vec2 uv = (floor(vPic * uPicSize) + 0.5) / uPicSize;
+    vec3 c = texture2D(uPic, uv).rgb;
+    // the KEY (0xF81F) is "the world shows here", untouched by any pass
+    vec3 k = floor(c * vec3(31.0, 63.0, 31.0) + 0.5);
+    vec4 o = vec4(c, texture2D(uMask, uv).r);
+    if (k.r > 30.5 && k.g < 0.5 && k.b > 30.5) o = vec4(0.0, 0.0, 0.0, 1.0);
+    // the colour fade, over everything: new = old * (1 - f) + colour * f
+    gl_FragColor = vec4(o.rgb * (1.0 - uFade.a) + uFade.rgb * uFade.a, o.a * (1.0 - uFade.a));
+}
+)";
+
 }  // namespace
 
 namespace omk {
@@ -444,6 +470,10 @@ bool GlesRenderer::init(int w, int h) {
                                           {kAttrCol, "aCol"}, {kAttrPhase, "aPhase"}});
     present_ = link(kPresentVert, kPresentFrag, {{0, "aPos"}});
     if (!prog_ || !present_) return false;
+    // ALL THREE PROGRAMS AT START: a shader first linked mid-game would be
+    // missing from a shader cache made by one short run (`todo/vita-port.md`,
+    // the precompiled shaders). Its uniforms are still looked up on first use.
+    overlay_ = link(kPresentVert, kOverlayFrag, {{0, "aPos"}});
     uMvp_       = glGetUniformLocation(prog_, "uMvp");
     uTexSize_   = glGetUniformLocation(prog_, "uTexSize");
     uClock_     = glGetUniformLocation(prog_, "uShimmerClock");
@@ -938,36 +968,11 @@ bool GlesRenderer::presentSurface(const Surface& s, int winW, int winH) {
     return true;
 }
 
-// ---- THE INTERFACE AS AN OVERLAY (`todo/vita-port.md` G6 step 2) ----------
-//
-// The frame the CPU composed, with the world's rows left as a KEY, blended
-// over the world the GPU already presented - so a frame with a subtitle or a
-// conversation on it needs no readback. Three 565 values mean something
-// `play.cpp` resolves its key into two planes - C, the 565 frame, and M, an
-// 8-bit "how much of the world shows through" - and this draws
-// `C + world * M` in one blend (GL_ONE, GL_SRC_ALPHA).
-constexpr const char* kOverlayFrag = R"(
-uniform sampler2D uPic;
-uniform sampler2D uMask;
-uniform vec4  uFade;       // rgb + weight
-uniform vec2  uPicSize;
-varying vec2  vPic;
-void main() {
-    vec2 uv = (floor(vPic * uPicSize) + 0.5) / uPicSize;
-    vec3 c = texture2D(uPic, uv).rgb;
-    // the KEY (0xF81F) is "the world shows here", untouched by any pass
-    vec3 k = floor(c * vec3(31.0, 63.0, 31.0) + 0.5);
-    vec4 o = vec4(c, texture2D(uMask, uv).r);
-    if (k.r > 30.5 && k.g < 0.5 && k.b > 30.5) o = vec4(0.0, 0.0, 0.0, 1.0);
-    // the colour fade, over everything: new = old * (1 - f) + colour * f
-    gl_FragColor = vec4(o.rgb * (1.0 - uFade.a) + uFade.rgb * uFade.a, o.a * (1.0 - uFade.a));
-}
-)";
 
 bool GlesRenderer::presentOverlay(const Surface& s, const unsigned char* mask, const unsigned char* maskRows,
                                   const float fade[4], int vy, int vh, int winW, int winH) {
-    if (!overlay_) {
-        overlay_ = link(kPresentVert, kOverlayFrag, {{0, "aPos"}});
+    if (!maskTex_) {
+        if (!overlay_) overlay_ = link(kPresentVert, kOverlayFrag, {{0, "aPos"}});
         if (!overlay_) return false;
         oDst_ = glGetUniformLocation(overlay_, "uDst");
         oPic_ = glGetUniformLocation(overlay_, "uPic");
