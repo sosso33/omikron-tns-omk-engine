@@ -40,6 +40,20 @@ private:
     std::vector<std::int32_t> step_, index_;
 };
 
+// ONE STEREO FRAME AT A TIME. A stereo stream has no header and no blocks -
+// each byte is one frame, the high nibble left and the low right - so a player
+// can keep the file's own bytes and decode as it goes (`audio/music.h`).
+class AdpcmStereoStream {
+public:
+    explicit AdpcmStereoStream(const AdpcmTables& t) : t_(&t) { reset(); }
+    void reset();
+    // the next byte of the file -> its left and right samples
+    void frame(std::byte b, std::int16_t& left, std::int16_t& right);
+private:
+    const AdpcmTables* t_;
+    std::int32_t pred_[2], idx_[2], step_[2];
+};
+
 // -> interleaved 16-bit PCM. `stereo` decodes two independent channels.
 std::vector<std::int16_t> adpcmDecode(std::span<const std::byte> in,
                                       bool stereo, const AdpcmTables& t);

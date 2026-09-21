@@ -446,6 +446,31 @@ What still reads back on the GLES window after this: those three screens, the
 CPU mirror, the instruments and a `--dump`'s last frame. **G6 is done as far as
 the Mac can show it; what it is worth is a console number.**
 
+### 2026-09-21: THE CITY'S LOAD - the 16 MB the heap refused was the MUSIC
+
+The console dies (the reader: *freezes*) when a city loads, of `bad_alloc` with
+~106 MB of the 192 free - one request, not the sum. Measured on the Mac with an
+interposed `operator new` logging every request of 2 MB or more through
+`--area 0`: **the four largest were all `MusicPlayer::play`** - `adpcmDecode`'s
+`push_back` growing 4, 8, then 16 MB in one piece, and then a 16 MB COPY of the
+finished track (`std::move` of a `const` vector copies). So a city's
+three-minute track asked for 16 MB contiguous twice, with 8 + 16 and then
+16 + 16 MB live, on a heap the load has just fragmented.
+
+A stereo `.ADP` has no header and no blocks - one byte is one frame - so the
+player now keeps the FILE'S 4 MB and decodes forward as `pull` advances
+(`AdpcmStereoStream`, `formats/adpcm.h`), restarting the decoder on the loop's
+wrap; it also stops decoding three minutes of audio inside the load, which on
+an A9 is a stall of its own. `build/music_equiv` (the old player kept verbatim)
+over tracks 2, 5 and 12, looped and not: **0 mismatches in 82 million
+samples**. `adpcmDecode` reserves its output for its other callers.
+
+After it the load's largest requests are `buildGeometry`'s corner list (2.2,
+4.4, 8.7 MB - doubling, per bucket), the GPU light list (6.7 MB) and the
+track's 4 MB. **Not confirmed on a console**: the next log's
+`new: N bytes REFUSED` line names the size if something still fails - 8745984
+would be the corner list.
+
 ---
 
 ## 1. The issues, and what is missing

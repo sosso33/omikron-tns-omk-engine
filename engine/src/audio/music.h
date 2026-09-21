@@ -27,6 +27,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <memory>
 #include <vector>
 
 namespace omk {
@@ -52,20 +53,27 @@ public:
     // going silent when it does not. Appends to `out` interleaved.
     void pull(std::vector<float>& out, std::size_t frames);
 
-    void stop() { src_.clear(); outFrames_ = 0; outPos_ = 0; track_ = -1; }
+    void stop() { adpcm_.clear(); adpcm_.shrink_to_fit(); stream_.reset(); outFrames_ = 0; outPos_ = 0; track_ = -1; }
 
 private:
     int    rate_;
     int    track_ = -1;
     bool   loop_ = false;
-    // THE TRACK AT ITS OWN RATE (todo/optimization.md step 5). It used to be
-    // resampled to the device's rate as interleaved floats when it started - a
-    // three-minute track was 64 MB, the largest single allocation in the
-    // process. It is kept as the decoder's 16-bit stereo at 22050 Hz, a quarter
-    // of that, and `pull` resamples on the way out with the same nearest index
-    // (`size_t(i * step)`) and the same scaling, so the samples that leave are
-    // the ones that left before (`verify.py: engine: music storage`).
-    std::vector<std::int16_t> src_;       // interleaved stereo at kAdpcmRate
+    // THE TRACK AS THE FILE'S OWN BYTES, decoded as it plays (2026-09-21). It
+    // was first resampled whole to the device's rate as floats (64 MB for a
+    // three-minute track), then kept as the decoder's 16-bit stereo (16 MB,
+    // todo/optimization.md step 5) - and that 16 MB, asked for in ONE piece
+    // while a city loads, is what a Vita's heap refused with 106 MB free. A
+    // stereo stream is a byte a frame with no header, so the 4 MB of ADPCM is
+    // kept instead and `pull` decodes forward to the frame the same nearest
+    // index (`size_t(i * step)`) names; a loop restarts the decoder. The
+    // samples that leave are the ones that left before
+    // (`verify.py: engine: music storage`).
+    std::vector<std::byte> adpcm_;        // the file: one stereo frame a byte
+    AdpcmTables   tables_;
+    std::size_t   decoded_ = 0;           // frames decoded so far; `cur_` is frame decoded_ - 1
+    std::int16_t  cur_[2] = {0, 0};
+    std::unique_ptr<AdpcmStereoStream> stream_;
     std::size_t srcFrames_ = 0;
     double      step_ = 0.0;              // kAdpcmRate / rate_
     std::size_t outFrames_ = 0;           // the resampled track's length, in frames

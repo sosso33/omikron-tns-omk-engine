@@ -65,6 +65,9 @@ std::vector<std::int16_t> adpcmDecode(std::span<const std::byte> in, bool stereo
                                       const AdpcmTables& t) {
     std::vector<std::int16_t> out;
     if (!t.valid()) return out;
+    // two samples a byte, known before the first: grown by doubling, a
+    // three-minute track asked for 4, 8 and then 16 MB in one piece
+    out.reserve(in.size() * 2);
     const int nch = stereo ? 2 : 1;
     Channel ch[2];
     for (int c = 0; c < nch; ++c) ch[c].step = t.step()[0];
@@ -95,6 +98,34 @@ std::vector<std::int16_t> adpcmDecode(std::span<const std::byte> in, bool stereo
         out.push_back(nibble(ch[stereo ? 1 : 0], byte & 0xF));
     }
     return out;
+}
+
+void AdpcmStereoStream::reset() {
+    for (int c = 0; c < 2; ++c) {
+        pred_[c] = 0;
+        idx_[c] = 0;
+        step_[c] = t_->valid() ? t_->step()[0] : 7;
+    }
+}
+
+// `adpcmDecode`'s own nibble law, a channel a nibble
+void AdpcmStereoStream::frame(std::byte b, std::int16_t& left, std::int16_t& right) {
+    const auto byte = static_cast<std::uint8_t>(b);
+    const int nibs[2] = {(byte >> 4) & 0xF, byte & 0xF};
+    for (int c = 0; c < 2; ++c) {
+        const int nib = nibs[c];
+        std::int32_t d = 0;
+        if (nib & 4) d  = 4 * step_[c];
+        if (nib & 2) d += 2 * step_[c];
+        if (nib & 1) d += step_[c];
+        d >>= 2;
+        pred_[c] = clampSample(pred_[c] + ((nib & 8) ? -d : d));
+        idx_[c] += t_->index()[static_cast<std::size_t>(nib)];
+        idx_[c] = idx_[c] < 0 ? 0 : (idx_[c] > 88 ? 88 : idx_[c]);
+        step_[c] = t_->step()[static_cast<std::size_t>(idx_[c])];
+    }
+    left = static_cast<std::int16_t>(pred_[0]);
+    right = static_cast<std::int16_t>(pred_[1]);
 }
 
 }  // namespace omk
