@@ -12562,6 +12562,15 @@ int main(int argc, char** argv) {
                                                               : w.screen(openScreen))
             : nullptr;
         comp.attachView3D(nullptr);
+        bool screenReadsPicture = false;
+        if (walk && openScreen >= 0) {
+            constexpr std::uint32_t kDrawInterference = 0x00477ED0u;   // `ui/interference.h`
+            screenReadsPicture = openScreen == 30;                     // SAVE GAME
+            if (const omk::UiPanel* rp = walk->panel() ? walk->panel() : w.screen(openScreen))
+                for (const auto& l : rp->lists)
+                    for (const auto& it : l.items)
+                        if (it.drawFn == kDrawInterference) screenReadsPicture = true;
+        }
         // THE PRESENT PASS (todo/optimization.md step 4b): set where the world
         // is placed into `fb`, read where the frame is presented.
         bool gpuFrame = false;
@@ -17921,12 +17930,16 @@ int main(int argc, char** argv) {
                 const char* keep = nullptr;
                 if (noGpuPresent) keep = "off";
                 else if (!onVulkan) keep = "not vulkan";
-                else if (vpItem || walk) keep = "screen";
+                // an open screen is a HARD gate only where something reads the
+                // picture by a law the overlay cannot carry (G6 step 4): the
+                // viewport item (the world goes INTO the screen), SAVE GAME
+                // (the slot's thumbnail is taken from `fb` itself) and a panel
+                // with the monitors' INTERFERENCE (row shifts and an OR mask).
+                else if (vpItem || (walk && screenReadsPicture)) keep = "screen";
 #if defined(OMK_VULKAN)
                 else if (vkRen && &world == vkRen && !omk::vulkanCanPresentWorld(&world)) keep = "supersampling";
 #endif
                 else if (mst.active && !mst.native) keep = "cpu mirror";
-                else if (shootMode && hudWalk) keep = "shoot hud";
                 else if (!flickerDir.empty() || !snapsDir.empty() || std::getenv("OMK_CLIPLOG")) keep = "instrument";
                 else if (lastDumped) keep = "dump";
                 // THE SOFT GATES, last: what these three draw goes OVER the
@@ -17960,6 +17973,14 @@ int main(int argc, char** argv) {
                 // same GPU-present gap the fight's gauges fell into
                 else if (player && player->breathLeftMs() >= 0.0 &&
                          !std::getenv("OMK_NOUI")) { keep = "breath gauge"; softGate = true; }
+                // G6 step 4: the SHOOT HUD. Its readers are the composer's alpha
+                // fill and 50% quad, the gauge's and the radar's `fillQuadD3d` -
+                // all on the planes; the turning models, the crosshair and the
+                // text write opaque pixels.
+                else if (shootMode && hudWalk) { keep = "shoot hud"; softGate = true; }
+                // ...and every other OPEN SCREEN: the composer's readers are the
+                // alpha fill (the panel dim among them) and the 50% quad
+                else if (walk) { keep = "open screen"; softGate = true; }
 #if defined(OMK_GLES)
                 {
                     static const bool noOverlay = std::getenv("OMK_NO_OVERLAY") != nullptr;

@@ -67,8 +67,10 @@ its Vulkan backend crashes on vitaGL.
 
 1. The next console log: films found? area 118 = `GRID`? then how fast is a
    frame in the apartment (the first real P1 number on hardware).
-2. **G6** - stop reading back the world: compose the 2D layer on the GPU and
-   present directly. It is the largest known per-frame cost on GLES.
+2. ~~**G6**~~ - DONE on the Mac 2026-09-21 (steps 1-4, `vita-port.md`): fades,
+   subtitles, conversations, the three gauges, the shoot HUD and every open
+   screen but three go over the GPU picture with no readback. Not yet seen on a
+   console - the `present` line of the next log says how many frames took it.
 3. Precompiled shaders (drop the `libshacccg` dependency for players).
 4. P2..P6 in `vita-port.md` §2 - the CPU plan; `pending/vita-meshidx-playcpp.md`
    is P2, ready to apply.

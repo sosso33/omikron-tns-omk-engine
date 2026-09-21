@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "ui/screendraw.h"
+#include "ui/overlay.h"
 
 #include "script/savefile.h"
 
@@ -117,7 +118,16 @@ void fillQuad(Surface& fb, int x0, int y0, int x1, int y1,
     const int add  = 255 - alpha;        // src weight
     for (int y = y0; y < y1; ++y) {
         for (int x = x0; x < x1; ++x) {
-            std::uint16_t& d = fb.px[static_cast<std::size_t>(y) * fb.w + x];
+            // on an overlay frame's KEY pixel the blend runs on the side
+            // planes (`ui/overlay.h`): the law on C, its dst weight on M
+            OverlayPlanes& ov = overlayPlanes();
+            const std::size_t ovI = static_cast<std::size_t>(y) * fb.w + x;
+            const bool ovKey = ov.on && fb.px[ovI] == kOverlayKey;
+            if (ovKey) {
+                ov.row(ovI);
+                ov.m[ovI] = static_cast<std::uint8_t>(ov.m[ovI] * keep / 255);
+            }
+            std::uint16_t& d = ovKey ? ov.c[ovI] : fb.px[ovI];
             const int dr = ((d >> 11) & 31) * 255 / 31;
             const int dg = ((d >> 5) & 63) * 255 / 63;
             const int db = (d & 31) * 255 / 31;

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "ui/surface.h"
+#include "ui/overlay.h"
 
 #include <cmath>
 
@@ -386,7 +387,19 @@ long fillQuad(Surface& dst, const int x[4], const int y[4],
     long written = 0;
     for (int py = t; py <= b; ++py) {
         for (int px = l; px <= last; ++px) {
-            const std::uint16_t d = dst.at(px, py);
+            // on an overlay frame's KEY pixel (`ui/overlay.h`) the 50% blend
+            // and the add run on the side planes: the law on C, and the 50%'s
+            // halving on M. The SUBTRACT is not affine in an unsigned C; no
+            // caller draws one over the world, so it is left as it was.
+            OverlayPlanes& ov = overlayPlanes();
+            const std::size_t ovI = static_cast<std::size_t>(py) * static_cast<std::size_t>(dst.w) +
+                                    static_cast<std::size_t>(px);
+            const bool ovKey = ov.on && (mode == 1 || mode == 2) && dst.px[ovI] == kOverlayKey;
+            if (ovKey) {
+                ov.row(ovI);
+                if (mode == 1) ov.m[ovI] = static_cast<std::uint8_t>(ov.m[ovI] >> 1);
+            }
+            const std::uint16_t d = ovKey ? ov.c[ovI] : dst.at(px, py);
             std::uint16_t v = colour;
             switch (mode) {
                 case 0: break;
@@ -405,7 +418,7 @@ long fillQuad(Surface& dst, const int x[4], const int y[4],
                                                    satSub(d, colour, kMaskB));
                     break;
             }
-            dst.set(px, py, v);
+            if (ovKey) ov.c[ovI] = v; else dst.set(px, py, v);
             ++written;
         }
     }

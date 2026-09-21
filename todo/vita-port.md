@@ -417,13 +417,34 @@ inside the gauges' rows; the canal dive (`engine: swim`'s own run) at frame
 350: **0 differ**. Host `make`, `make play`, `make play-gles` and `make vita`
 build.
 
-**What is left of G6 (step 4)**: the SHOOT HUD and an OPEN SCREEN. Both draw
-through `ScreenComposer`, whose readers are `fillQuad` (alpha - affine, same
-treatment) and `Surface`'s mode-2 quads, modes 1/2/3 = 50% blend, saturating
-ADD and saturating SUBTRACT. The subtract is the one that does not fit
-`C + world * M` with an unsigned C (it needs a signed C or a second pass), so
-step 4 starts with a census of which screens use mode 3 over the WORLD rather
-than over their own artwork.
+**G6 step 4 - the SHOOT HUD and the OPEN SCREENS** (2026-09-21, not yet seen
+on a console). The census first, and it removed the worry step 3 ended on:
+`ScreenComposer` calls `Surface`'s mode-2 quad only as `quadMode(4)` and
+`quadMode(0xC)`, which are both MODE 1, the 50% blend - **nothing draws the
+saturating SUBTRACT at all**, and no composer blit is destination-keyed. So the
+composer has two readers, its own alpha fill (`Ui_DrawPanelDim` among its
+callers) and the 50% quad, and both now run on the planes; the add does too,
+the subtract is left alone and says so. The turning models, the crosshair, the
+radar's dots and the text write opaque pixels.
+
+* **The shoot HUD is a soft gate.** `--area 230 --scene-chunk 56` at frame 400
+  against the CPU compose: 14581 pixels differ, **249 by more than one level,
+  every one inside the ring's and the weapon's boxes** - the two turning
+  models spin on `SDL_GetTicks`, and two CPU runs of the same command differ
+  there too (911 pixels).
+* **An open screen is a soft gate, with three HARD exceptions**, each a reader
+  the planes cannot carry: the VIEWPORT item (the world goes into the screen),
+  **SAVE GAME** (screen 30: the slot's thumbnail is taken from `fb` itself) and
+  a panel with the monitors' **INTERFERENCE** (`0x00477ED0`: row shifts and an
+  OR mask). The pharmacy's shop (`--area 39`, four ENTERs, frame 330), whose
+  panel dims the whole world: outside the spinning preview, 413108 pixels
+  differ by ONE level and 517 by two, none by more - the dim's `* 40 / 255`
+  truncates on 565 on the CPU and rounds on 8 bits on the GPU, the same
+  one-level law as the conversation box, over the whole picture.
+
+What still reads back on the GLES window after this: those three screens, the
+CPU mirror, the instruments and a `--dump`'s last frame. **G6 is done as far as
+the Mac can show it; what it is worth is a console number.**
 
 ---
 
