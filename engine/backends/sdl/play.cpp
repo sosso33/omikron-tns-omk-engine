@@ -140,6 +140,7 @@ Renderer* makeGlesRenderer();
 bool glesPresentSurface(Renderer*, const Surface&, int winW, int winH);
 bool glesPresentWorld(Renderer*, int vy, int vh, int frameW, int frameH, int winW, int winH);
 void glesTakeTimings(double out[4]);
+std::string glesFrameReport();
 long glesTakeOverlayRows(Renderer*);
 bool glesPresentOverlay(Renderer*, const Surface&, const unsigned char* mask, const unsigned char* maskRows,
                         const float fade[4], int vy, int vh, int winW, int winH);
@@ -20746,6 +20747,15 @@ int main(int argc, char** argv) {
                             (now - paceLeft) * 1000.0,
                             player ? (" at " + std::to_string(int(player->pos()[0])) + " " +
                                       std::to_string(int(player->pos()[2]))).c_str() : "");
+            // ...and a VERY slow one says where it went: this frame's own
+            // simulation-and-submission span, and the GL backend's counts
+            if (paceLeft > 0.0 && now - paceLeft > 0.5) {
+                std::printf("frame %ld: of which sim+draw %.0f ms", n, (phRb0 - phTop) * 1000.0);
+#if defined(OMK_GLES)
+                if (glRen) std::printf("; %s", omk::glesFrameReport().c_str());
+#endif
+                std::printf("\n");
+            }
             if (paceNext <= 0.0 || now > paceNext + kPeriod) paceNext = now;
             while (now < paceNext) {
                 const double left = paceNext - now;

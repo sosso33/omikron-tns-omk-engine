@@ -340,6 +340,13 @@ namespace omk {
 // the texture upload of a CPU frame, and the present draw.
 namespace {
 double g_glesMs[4] = {0, 0, 0, 0};
+// ONE FRAME'S OWN COUNTS, reset at `begin` - what a SLOW FRAME line quotes
+// (`glesFrameReport`). A console's 8.4 s city frame (2026-09-21) had nothing
+// in the log to say which GL call it was.
+struct GlesFrameCounts {
+    double uploadMs = 0, tieMs = 0, drawMs = 0, texMs = 0;
+    long uploads = 0, uploadBytes = 0, patches = 0, patchedBuffers = 0, draws = 0;
+} g_glesFrame;
 double glesClockMs() {
     return std::chrono::duration<double, std::milli>(
                std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -348,6 +355,18 @@ double glesClockMs() {
 long glesTakeOverlayRows(Renderer* r);
 void glesTakeTimings(double out[4]) {
     for (int i = 0; i < 4; ++i) { out[i] = g_glesMs[i]; g_glesMs[i] = 0.0; }
+}
+
+// the last world frame's own counts, for a SLOW FRAME line
+std::string glesFrameReport() {
+    char b[256];
+    std::snprintf(b, sizeof b,
+                  "gles frame: %ld draws %.0f ms, %ld uploads (%ld KB) %.0f ms, ties %.0f ms, "
+                  "%ld buffer patches",
+                  g_glesFrame.draws, g_glesFrame.drawMs, g_glesFrame.uploads,
+                  g_glesFrame.uploadBytes / 1024, g_glesFrame.uploadMs, g_glesFrame.tieMs,
+                  g_glesFrame.patches);
+    return b;
 }
 
 class GlesRenderer : public Renderer {
@@ -609,6 +628,29 @@ void GlesRenderer::setTextures(std::span<const Texture> t) {
     }
 }
 
+// A SMALL WRITE INTO THE BOUND ARRAY BUFFER. On a host it is glBufferSubData.
+// On vitaGL that call, for any buffer drawn in the last frames, ALLOCATES A
+// NEW BUFFER OF THE WHOLE SIZE AND COPIES THE OLD ONE INTO IT
+// (`glNamedBufferSubData`, buffers.c) - so the depth tie's three-vertex patches
+// into Anekbah's 5 MB set buffer, made before each of its 21 batches, cost up
+// to 21 whole copies and 21 allocations a frame, freed only frames later.
+// `glMapBuffer` hands out the buffer's own memory, so the patch is written in
+// place. The GPU may still be reading that buffer: a tie patch touches only
+// its own batch's range, which this frame has not submitted yet, and last
+// frame's scene has been kicked.
+static void patchArrayBuffer(std::size_t offset, std::size_t size, const void* data) {
+    ++g_glesFrame.patches;
+#if defined(__vita__)
+    if (void* base = glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY)) {
+        std::memcpy(static_cast<unsigned char*>(base) + offset, data, size);
+        glUnmapBuffer(GL_ARRAY_BUFFER);
+        return;
+    }
+#endif
+    glBufferSubData(GL_ARRAY_BUFFER, static_cast<GLintptr>(offset),
+                    static_cast<GLsizeiptr>(size), data);
+}
+
 bool GlesRenderer::uploadGeometry(const Geometry* g) {
     // The Vulkan backend's contract, verbatim in intent: cached by POINTER
     // while the revision holds; the same object with new vertices refills in
@@ -618,6 +660,8 @@ bool GlesRenderer::uploadGeometry(const Geometry* g) {
     if (it != vbo_.end() && it->second.rev == g->revision) return true;
     if (g->corners.empty()) return false;
     std::vector<GpuVert> v;
+    ++g_glesFrame.uploads;
+    g_glesFrame.uploadBytes += static_cast<long>(g->corners.size() * sizeof(GpuVert));
     if (it != vbo_.end() && it->second.n == g->corners.size()) {
         Vbo& vb = it->second;
         static const bool noDirty = std::getenv("OMK_NO_DIRTY") != nullptr;
@@ -637,8 +681,7 @@ bool GlesRenderer::uploadGeometry(const Geometry* g) {
                 if (hi < g->corners.size()) {
                     v.resize(hi - lo + 1);
                     for (std::uint32_t k = lo; k <= hi; ++k) v[k - lo] = gpuVert(g->corners[k]);
-                    glBufferSubData(GL_ARRAY_BUFFER, static_cast<GLintptr>(lo * sizeof(GpuVert)),
-                                    static_cast<GLsizeiptr>(v.size() * sizeof(GpuVert)), v.data());
+                    patchArrayBuffer(lo * sizeof(GpuVert), v.size() * sizeof(GpuVert), v.data());
                 }
                 i = j + 1;
             }
@@ -689,8 +732,7 @@ void GlesRenderer::resolveTies(const Draw& d, Vbo& vb) {
         const std::size_t c = 3 * k;
         if (c + 2 >= vb.n || c + 2 >= g->corners.size()) continue;
         for (int j = 0; j < 3; ++j) tri[j] = gpuVert(g->corners[c + j]);
-        glBufferSubData(GL_ARRAY_BUFFER, static_cast<GLintptr>(c * sizeof(GpuVert)),
-                        sizeof tri, tri);
+        patchArrayBuffer(c * sizeof(GpuVert), sizeof tri, tri);
     }
     for (const std::size_t k : losers) {
         const std::size_t c = 3 * k;
@@ -701,14 +743,14 @@ void GlesRenderer::resolveTies(const Draw& d, Vbo& vb) {
             tri[j].y = g->corners[c].y;
             tri[j].z = g->corners[c].z;
         }
-        glBufferSubData(GL_ARRAY_BUFFER, static_cast<GLintptr>(c * sizeof(GpuVert)),
-                        sizeof tri, tri);
+        patchArrayBuffer(c * sizeof(GpuVert), sizeof tri, tri);
     }
     t.dropped += static_cast<long>(losers.size());
     t.touched = true;
 }
 
 void GlesRenderer::begin(const View& view) {
+    g_glesFrame = GlesFrameCounts{};
     st_ = RasterStats{};
     view_ = view;
     fog_ = view.fog;
@@ -768,9 +810,14 @@ void GlesRenderer::begin(const View& view) {
 
 void GlesRenderer::submit(const Draw& d) {
     if (!recording_ || !d.geo || !d.count) return;
-    if (!uploadGeometry(d.geo)) return;
+    const double fu0 = glesClockMs();
+    const bool uploaded = uploadGeometry(d.geo);
+    g_glesFrame.uploadMs += glesClockMs() - fu0;
+    if (!uploaded) return;
     Vbo& vb = vbo_[d.geo];
+    const double ft0 = glesClockMs();
     resolveTies(d, vb);
+    g_glesFrame.tieMs += glesClockMs() - ft0;
     st_.triangles += static_cast<long>(d.count / 3);
 
     switch (d.blend) {
@@ -819,7 +866,10 @@ void GlesRenderer::submit(const Draw& d) {
     glVertexAttribPointer(kAttrUV, 2, GL_FLOAT, GL_FALSE, st, reinterpret_cast<const void*>(12));
     glVertexAttribPointer(kAttrCol, 3, GL_FLOAT, GL_FALSE, st, reinterpret_cast<const void*>(20));
     glVertexAttribPointer(kAttrPhase, 1, GL_FLOAT, GL_FALSE, st, reinterpret_cast<const void*>(32));
+    const double fd0 = glesClockMs();
     glDrawArrays(GL_TRIANGLES, static_cast<GLint>(d.start), static_cast<GLsizei>(d.count));
+    g_glesFrame.drawMs += glesClockMs() - fd0;
+    ++g_glesFrame.draws;
     st_.drawn += static_cast<long>(d.count / 3);
 }
 

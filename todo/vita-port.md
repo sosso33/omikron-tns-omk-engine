@@ -513,6 +513,41 @@ vitaGL's own fixed-function shaders have a cache of their own
 (`ux0:data/shader_cache/v<M>/`); the collect script takes every `.gxp` under
 the folder, so they travel too if anything made them.
 
+### 2026-09-21, the console log of 21:15: THE CITY LOADS - and a frame of it takes 8.4 SECONDS
+
+The music fix held: no `REFUSED` line, no `bad_alloc`, `world: slot 1 set
+ANEKBAH (AREA 0) - 139245 corners, 21 batches` and the area shown at frame
+3326. The intro before it runs at 17-54 ms of sim+draw a frame with every
+held frame on the overlay (G6 works on hardware; 30 of 60 frames straight from
+the GPU once the fades end). Then **seven frames in a row of 8343-10453 ms**,
+which a player reads as a freeze, and nothing in the log to split them.
+
+**The suspect, read out of vitaGL and not yet confirmed on the console:**
+`glNamedBufferSubData` (buffers.c), for any buffer drawn within
+`FRAME_PURGE_FREQ` frames, **allocates a new buffer of the WHOLE size, copies
+the old one into it and frees the old one some frames later** - the same trap
+as its `glTexSubImage2D`. The depth tie (`resolveTies`) patches three vertices
+at a time, before each batch's draw; the draw marks the buffer used again; so
+Anekbah's 5 MB set buffer is copied, and 5 MB allocated, up to 21 times a
+frame, with the frees deferred. The partial (dirty-corner) upload has the same
+shape. Both now go through `patchArrayBuffer`, which on the Vita writes IN
+PLACE through `glMapBuffer` (vitaGL hands out the buffer's own memory): a tie
+patch touches only its own batch's range, not yet submitted this frame.
+A whole-buffer rewrite (a posed body) still takes vitaGL's copy path, which
+for `offset 0, size all` is one allocation and one copy of the new data.
+
+**And the log can now say**: a frame over 500 ms prints
+`frame N: of which sim+draw X ms; gles frame: D draws .. ms, U uploads (KB) ..
+ms, ties .. ms, P buffer patches`. If the next log still shows seconds, that
+line splits CPU from GL, and uploads from ties from draws. `OMK_NO_TIE=1` in
+`ux0:data/omk/args.txt`... is an environment variable and cannot be set there;
+the tie's switch on a console is a rebuild.
+
+**The shader cache came back from the console** (5 files: three fragment, two
+vertex - the three programs) and is committed under
+`engine/backends/vita/shader_cache/`; the VPK carries it. The no-compiler start
+is still to be tried: rename `ur0:data/libshacccg.suprx` and launch.
+
 ---
 
 ## 1. The issues, and what is missing
