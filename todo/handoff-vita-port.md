@@ -94,9 +94,9 @@ its Vulkan backend crashes on vitaGL.
 2. **P4 is BUILT for the walkers and off by default** (2026-09-22): the
    crowd's pose pass is split serial-resolve / parallel-body / merge, the
    frame is byte-identical with `--thread-bodies`, and the pass halves on the
-   M1. On the console: run `omk_bench.vpk` first - if it says `threads: EXACT`
-   there, add `--thread-bodies` to `ux0:data/omk/args.txt` and read the `ped
-   bodies (wall)` span. The STAGED bodies (the larger section) are still
+   M1. The console's `omk_bench` said `threads: EXACT`, 2.71x on three
+   runners (2026-09-22), so it is ON BY DEFAULT since 2026-09-23 - nothing
+   to add to `args.txt`; `--no-thread-bodies` there turns it off. The STAGED bodies (the larger section) are still
    serial and are the next candidate.
 3. **P5** - the crowd's lights in the vertex shader (`applyLights` is now the
    largest engine leaf on the M1; needs the normal back in the GLES vertex).

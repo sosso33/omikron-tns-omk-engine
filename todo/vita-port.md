@@ -890,6 +890,14 @@ own vertex buffers held to the tie's expectation every draw:
 backend has the delta**; the Vulkan backend still writes every loser, which is
 correct and only slower.
 
+**Threaded bodies are the DEFAULT since 2026-09-23.** The one reason they
+started off - a Vita half that had never executed - is gone with the console's
+`threads: EXACT`, and they are not an enhancement in the off-by-default sense:
+the frame is bit-identical either way. `--no-thread-bodies` puts the crowd back
+on one core for an A/B; `engine: threaded bodies` now compares that against
+the default. The golden record, captured single-threaded, matches all six
+scenes with threads on.
+
 ---
 
 ## 1. The issues, and what is missing

@@ -1417,10 +1417,9 @@ int main(int argc, char** argv) {
 "  --stand x,y,z[,facing]   an explicit spot instead of an address\n"
 "  --density 0..4   how much crowd - the options menu\'s own row 6\n"
 "  --shadows 0|1    the character shadows - options row 5 (--no-shadows too)\n"
-"  --thread-bodies  pose the crowd over several cores (`omk::Threads`); the\n"
-"                   frame is bit-identical to one core, and it is OFF by\n"
-"                   default because the pool's Vita half is unproven on a\n"
-"                   device (--no-thread-bodies too)\n"
+"  --no-thread-bodies  pose the crowd on ONE core. The default poses it over\n"
+"                   several (`omk::Threads`), bit-identical to one core and\n"
+"                   proven on a console (--thread-bodies asks for the default)\n"
 "  --detail 0..2    how many bones cast one - options row 7\n"
 "  --world-vulkan   draw the WORLD through an offscreen Vulkan renderer (a\n"
 "                   harness: it needs no window, so the GPU-only enhancements\n"
@@ -1718,7 +1717,7 @@ int main(int argc, char** argv) {
     int clipArg = 0;
     int skyFlag = -1;      // --sky 0|1, options row 4; -1 = take it from the settings
     int shadowFlag = -1;   // --shadows 0|1, options row 5; -1 = the settings'
-    int threadFlag = 0;    // --thread-bodies: pose the crowd over several cores
+    int threadFlag = 1;    // --no-thread-bodies: pose the crowd on one core
     int detailFlag = -1;   // --detail 0..2, options row 7; -1 = the settings'
     int aaFlag = -1;       // --aa N, [Enhancements] antialiasing; -1 = the settings'
     int filterFlag = -1;   // --filter nearest|bilinear|trilinear, [Enhancements] texturefiltering
@@ -2254,14 +2253,17 @@ int main(int argc, char** argv) {
     const bool drawSky = skyFlag >= 0 ? skyFlag != 0 : settings.v.sky;
     // Options rows 5 and 7, with a flag beating the save the way --sky does.
     const bool drawShadows = shadowFlag >= 0 ? shadowFlag != 0 : settings.v.shadows;
-    // THREADED BODIES (`todo/vita-port.md` P4). Off by default: the posing is
-    // bit-identical either way (`omk::Threads`' chunks are disjoint and the
-    // merge is in index order), but the pool's VITA half has never run on a
-    // device, so the console turns it on in `args.txt` once `omk_bench` says
-    // `threads: EXACT` there. `--thread-bodies` / `--no-thread-bodies`.
+    // THREADED BODIES (`todo/vita-port.md` P4). ON by default since 2026-09-23:
+    // the posing is bit-identical either way (`omk::Threads`' chunks are
+    // disjoint and the merge is in index order), so this is not an enhancement
+    // in the off-by-default sense - nothing the player sees changes - and the
+    // one reason it started off, a Vita half that had never run on a device,
+    // is gone: `omk_bench` on a real console said `threads: EXACT` with the
+    // inline pass's own hash, 2.71x on three runners. `--no-thread-bodies`
+    // puts it back on one core, for an A/B.
     const bool threadBodies = threadFlag > 0;
     if (threadBodies)
-        std::printf("bodies: posed over %d runners (`--thread-bodies`); the frame is "
+        std::printf("bodies: posed over %d runners (the default; --no-thread-bodies for one); the frame is "
                     "bit-identical to one runner\n", omk::Threads::shared().runners());
     // The ENHANCEMENT, and it is subordinate to the option above: with row 5
     // off nothing draws whatever this says. Default 0 = what the engine draws.

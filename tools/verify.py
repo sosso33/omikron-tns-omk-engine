@@ -14176,7 +14176,9 @@ def c_engine_threaded_bodies():
         return ("build failed",), ("built",), "omk-play must build"
     env = dict(os.environ, SDL_VIDEODRIVER="dummy")
     out = []
-    for extra in ([], ["--thread-bodies"]):
+    # serial is the one that has to be ASKED for since threads became the
+    # default (2026-09-23) - so the pair is `--no-thread-bodies` against nothing
+    for extra in (["--no-thread-bodies"], []):
         dump = os.path.join(tempfile.gettempdir(), "omk_thr%d.bin" % len(extra))
         r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
                             "--save", save, "--area", "0",
@@ -14188,18 +14190,19 @@ def c_engine_threaded_bodies():
             # drawing something different, so that is reported as itself
             return ("exit %d%s" % (r.returncode, "" if os.path.exists(dump) else ", no frame"),), \
                 ("exit 0, a frame",), \
-                ("the %s run did not finish: " % ("threaded" if extra else "serial")) + r.stdout[-160:]
+                ("the %s run did not finish: " % ("serial" if extra else "threaded")) + r.stdout[-160:]
         with open(dump, "rb") as f:
             out.append(f.read())
         os.remove(dump)
         # ...and the run must have SAID it threaded, or the comparison is vacuous
-        if extra and "bodies: posed over" not in r.stdout:
+        if not extra and "bodies: posed over" not in r.stdout:
             return ("not threaded",), ("threaded",), "--thread-bodies did not take"
     same = out[0] == out[1]
     differ = sum(1 for a, b2 in zip(out[0], out[1]) if a != b2)
     return (len(out[0]) == len(out[1]), same, differ), (True, True, 0), \
         "the same frame size, the same bytes, and how many differ - serial " \
-        "against --thread-bodies over Anekbah's crowd at density 4"
+        "(--no-thread-bodies) against the default, threaded, over Anekbah's crowd " \
+        "at density 4"
 
 
 def c_engine_body_tie():
