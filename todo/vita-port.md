@@ -640,6 +640,21 @@ The marks also print to a TENTH of a millisecond now: at `%.0f` a section
 costing 0.4 ms printed `0 ms`, which is what made the scripted-motion split
 unreadable on the Mac.
 
+**The GLES backend's scratch buffers are kept** (same day): `uploadGeometry`
+built a fresh `std::vector<GpuVert>` on every call and `resolveTies` a fresh
+pair of loser lists on every draw - so a street frame allocated and freed
+~16 KB per posed body plus two vectors per draw, on a device whose allocator is
+not the M1's. They are members now, cleared rather than rebuilt. Proved with
+`build/gles_probe`, which makes its own CGL context and so runs with the
+display off: its whole report is IDENTICAL before and after (world and surface
+presents EXACT, coverage 0.9977, the letterbox row), and `engine: gles backend`
+is green.
+
+**A note for whoever profiles next**: on a Mac with the DISPLAY OFF the GL
+window blocks in `SDL_GL_SwapWindow` and Vita3K never starts, so `omk-play-gles`
+and the emulator cannot be run at all; `gles_probe` and the software renderer
+under `SDL_VIDEODRIVER=dummy` are what is left.
+
 ---
 
 ## 1. The issues, and what is missing

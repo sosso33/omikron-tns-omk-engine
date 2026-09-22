@@ -425,6 +425,11 @@ private:
     GLuint prog_ = 0, present_ = 0;
     GLuint overlay_ = 0;
     GLuint maskTex_ = 0;
+    // SCRATCH, kept between calls. `uploadGeometry` built a fresh vector every
+    // call - a posed body rewrites its whole buffer every frame, so that was an
+    // allocation and a free of ~16 KB per body per frame (2026-09-22).
+    std::vector<GpuVert> up_;
+    std::vector<std::size_t> losers_, restore_;
     GLint oDst_ = -1, oPic_ = -1, oPicSize_ = -1, oMask_ = -1, oFade_ = -1;
     std::vector<std::uint32_t> lastMask_;
     std::vector<std::uint32_t> lastOverlay_;   // a hash a row of what `surfTex_` holds
@@ -659,7 +664,8 @@ bool GlesRenderer::uploadGeometry(const Geometry* g) {
     auto it = vbo_.find(g);
     if (it != vbo_.end() && it->second.rev == g->revision) return true;
     if (g->corners.empty()) return false;
-    std::vector<GpuVert> v;
+    std::vector<GpuVert>& v = up_;
+    v.clear();
     ++g_glesFrame.uploads;
     g_glesFrame.uploadBytes += static_cast<long>(g->corners.size() * sizeof(GpuVert));
     if (it != vbo_.end() && it->second.n == g->corners.size()) {
@@ -723,7 +729,10 @@ void GlesRenderer::resolveTies(const Draw& d, Vbo& vb) {
     if (!tieOn_) return;
     const Geometry* g = d.geo;
     auto& t = tie_[g];
-    std::vector<std::size_t> losers, restore;
+    std::vector<std::size_t>& losers = losers_;
+    std::vector<std::size_t>& restore = restore_;
+    losers.clear();
+    restore.clear();
     t.resolve(*g, d.start, d.count, d.blend == Blend::Opaque, losers, restore);
     if (losers.empty() && restore.empty()) return;
     glBindBuffer(GL_ARRAY_BUFFER, vb.id);
