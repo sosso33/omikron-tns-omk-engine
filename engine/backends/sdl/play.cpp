@@ -60,6 +60,7 @@
 #include "o3de/collision.h"
 #include "o3de/geom3do.h"
 #include "o3de/particles.h"
+#include "app/playhelpers.h"
 #include "o3de/shadow.h"
 #include "platform/threads.h"
 #include "o3de/shimmer.h"
@@ -176,162 +177,21 @@ constexpr int kTypeMarker = -1;
 // which nothing sends, so the first real one is -10 for backspace.
 constexpr int kCharMarker = -2;
 
-// ------------------------------------------------------ THE INTERFACE SOUNDS
-//
-// `docs/UI.md`: every screen names up to twelve sounds and the slots are
-// POSITIONAL - **slot 0 is the selection move, slot 1 the confirm, slot 2 the
-// screen opening**. The start menu's are 1, 2, 0, which the table resolves to
-// `men002`, `men003`, `men001`. Both halves were already lifted; nothing was
-// playing them, which is what a player reported.
-//
-// The samples are the engine's own 22050/16-bit mono or stereo and the device
-// is running at the movie's 44100 float stereo, so they are converted here.
-// That conversion is the FRONTEND's: `PORTING` A8 rule 3 forbids a dependency
-// doing work a reference implementation ports, and there is no ported mixer to
-// step on - `Sound_Init` hands a DirectSound primary buffer to the driver and
-// DirectSound sums into it, so the summing never had a portable half
-// (`src/audio/mixer.h`).
-// An angle difference on the SHORT arc, wrapped to (-180, 180]. A camera roll
-// is stored 4096-per-turn and a small negative one reads as ~+359; the two are
-// the same rotation standing still and a full turn apart once interpolated
-// (CLAUDE.md 1, and `verify.py: camera roll`).
-float shortArc(float deg) {
-    while (deg > 180.0f)  deg -= 360.0f;
-    while (deg <= -180.0f) deg += 360.0f;
-    return deg;
-}
-
-std::vector<float> wavToDevice(std::span<const std::byte> file, int deviceRate) {
-    const omk::audio::WavLoad w = omk::audio::loadWav(file);
-    if (w.reject != omk::audio::WavReject::Ok || w.fmt.bits != 16 || !w.fmt.rate) return {};
-    const auto* pcm = reinterpret_cast<const std::int16_t*>(file.data() + w.dataOffset);
-    const std::size_t frames = w.dataBytes / (2u * (w.fmt.channels ? w.fmt.channels : 1));
-    const double step = static_cast<double>(w.fmt.rate) / deviceRate;
-    const std::size_t out = static_cast<std::size_t>(frames / step);
-    std::vector<float> o;
-    o.reserve(out * 2);
-    for (std::size_t i = 0; i < out; ++i) {
-        // Nearest-neighbour, deliberately: the alternative is a resampler,
-        // and `PORTING` B5's argument applies - what a menu blip sounds like
-        // through DirectSound's own resampler is the driver's, has no
-        // reachable tier, and is not something to imitate precisely.
-        const std::size_t src = static_cast<std::size_t>(i * step);
-        if (src >= frames) break;
-        const std::int16_t l = pcm[src * w.fmt.channels];
-        const std::int16_t r = w.fmt.channels > 1 ? pcm[src * w.fmt.channels + 1] : l;
-        o.push_back(l / 32768.0f);
-        o.push_back(r / 32768.0f);
-    }
-    return o;
-}
-
-// THE DIALOGUE SUBTITLE.
-//
-// The BOX is the engine's, read out of `Dialog_TickUI` (0x0046A200) rather
-// than chosen:
-//
-//     v3 = height << 6
-//     Text_DrawBlock(32, 0, (width - 64) + 32, v3 / 480, text, params)
-//     dword_6A52C4 = height - v3 / 480        <- where it is placed
-//     dword_907961 = 0xFFFFFF                 <- the ink
-//     off_4C71A8   = &unk_808080              <- the second colour
-//
-// `Text_DrawBlock(left, top, right, bottom, ...)`, so at 640x480 that is a
-// block inset **32 pixels from each side** and **64 tall**, placed against the
-// BOTTOM of the screen - which `Text_DrawBlock`'s own docstring says in as
-// many words ("0x0041E040 measures once to place a subtitle against the bottom
-// of the screen"). Both numbers scale with the display: `width - 64` and
-// `height * 64 / 480`.
-//
-// **What is NOT recovered**: the reply menu has no recovered placement at all
-// and is stacked under the line, with the selected row in the ink and the rest
-// in the 0x808080 the engine also loads. So the BOX is read from the engine
-// and the STACK inside it is a reconstruction; they are labelled differently
-// on purpose. The WRAP is no longer among them - `Text_LayOutBlock` is ported
-// (2026-09-07) and `drawSubtitle` lays every string through it.
-//
-// `wrapInto` was this file's own greedy break on spaces and has gone with it.
-
-// THE SUBTITLE BOX, and both of its blends.
-//
-// `Dialog_TickUI` draws no box - it makes no call but `Text_DrawBlock`. The
-// box is the TEXT RENDERER's: `sub_4400D0` (0x004400D0), called from
-// `Game_Tick` as `sub_4400D0(0, dword_6A52C4, dword_6A52C0, height - 1, ...)`,
-// submits one quad before the glyphs and switches on `off_4C71A8`, the second
-// colour `Dialog_TickUI` sets:
-//
-//     off_4C71A8 == 0x80002040  ->  flags 4, top = a2 - 32      the REPLIES
-//     off_4C71A8 == 0x00808080  ->  flags 2, top = a2 - 4       the LINE
-//     x 18 .. width-18,  y (top - 8) .. height - 18
-//     I2D_SubmitQuad(&v21, flags, 10)
-//
-// `I2D_SubmitQuad` copies 48 bytes - four vertices of (x, y, colour) plus the
-// flag word - and `sub_480BD0` fills all four corners from the FIRST one
-// unless flag 8 is set, which neither of these sets: both are a flat fill.
-//
-// The flags are the BLEND, through `sub_480AC0`, which sets D3D render states
-// 19 (SRCBLEND) and 20 (DESTBLEND):
-//
-//     & 1   src 2 ONE,          dst 2 ONE            additive
-//     & 2   src 1 ZERO,         dst 4 INVSRCCOLOR    dst *= (1 - src)
-//     & 4   src 6 INVSRCALPHA,  dst 5 SRCALPHA       src*(1-a) + dst*a
-//
-// So the LINE's box is `dst * (1 - 0x808080/255)`, a 50% DARKENING - which
-// over the black letterbox band is invisible, and is why a reader watching
-// the original could not say whether a plain subtitle had a box. The REPLY
-// box is 50% of the navy 0x002040. Each is gated on a driver-capability test
-// (`sub_464730/40/50`) that can clear the bit and blank the colour; both are
-// supported here.
-enum class SubBox { None, Line, Replies };
-
 // THE OVERLAY'S SIDE PLANES live in `ui/overlay.h` (G6 steps 2 and 3), shared
 // with the HUD's blended quads.
 omk::OverlayPlanes& g_ov = omk::overlayPlanes();
 using omk::kOverlayKey;
 
-void drawSubtitleBox(omk::Surface& fb, SubBox kind, int top, int dispW, int dispH) {
-    if (kind == SubBox::None) return;
-    // The 18, 8, 4 and 32 are LITERAL pixels in `sub_4400D0` - `v21 = 18`,
-    // `(uint16_t)g_ScreenSize - 18`, `v6 - 8`, `a2 - 32` - not scaled by the
-    // display, unlike the block's own `height * 64 / 480`. Scaling them put
-    // the box a few rows lower than the engine does.
-    // `top` is the TEXT's top, and the box is always `v6 - 8` from it: the
-    // -4 (line) and -32 (replies) in `sub_4400D0` are how `v6` is derived
-    // from `a2`, not a second offset on the box. Applying both put the reply
-    // box 32 rows too high above its own text.
-    const int x0 = 18, x1 = dispW - 18;
-    const int y0 = top - 8;
-    const int y1 = dispH - 18;
-    (void)kind;
-    if (x1 <= x0 || y1 <= y0) return;
-    for (int y = y0 < 0 ? 0 : y0; y < y1 && y < fb.h; ++y) {
-        for (int x = x0 < 0 ? 0 : x0; x < x1 && x < fb.w; ++x) {
-            const std::size_t ovI = static_cast<std::size_t>(y) * static_cast<std::size_t>(fb.w) +
-                                    static_cast<std::size_t>(x);
-            const bool ovKey = g_ov.on && fb.px[ovI] == kOverlayKey;
-            if (ovKey) {
-                g_ov.row(ovI);
-                g_ov.m[ovI] = static_cast<std::uint8_t>(
-                    g_ov.m[ovI] * (kind == SubBox::Line ? 255 - 0x80 : 0x80) / 255);
-            }
-            std::uint16_t& px = ovKey ? g_ov.c[ovI] : fb.px[ovI];
-            int r = ((px >> 11) & 31) << 3, g = ((px >> 5) & 63) << 2, b = (px & 31) << 3;
-            if (kind == SubBox::Line) {
-                // dst *= (1 - src), src = 0x808080
-                r = r * (255 - 0x80) / 255;
-                g = g * (255 - 0x80) / 255;
-                b = b * (255 - 0x80) / 255;
-            } else {
-                // src*(1-a) + dst*a, src = 0x002040, a = 0x80
-                const int a = 0x80;
-                r = (0x00 * (255 - a) + r * a) / 255;
-                g = (0x20 * (255 - a) + g * a) / 255;
-                b = (0x40 * (255 - a) + b * a) / 255;
-            }
-            px = static_cast<std::uint16_t>(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
-        }
-    }
-}
+// ...and the four file-level helpers that used to sit here are in
+// `src/app/playhelpers.h` since `todo/play-split.md` S1: `shortArc`,
+// `wavToDevice`, `SubBox` + `drawSubtitleBox` and `cp1252ToUtf8`. They are
+// named unqualified below exactly as before.
+using omk::cp1252ToUtf8;
+using omk::drawSubtitleBox;
+using omk::shortArc;
+using omk::SubBox;
+using omk::wavToDevice;
+
 
 // POSITIONED TEXT - a string that carries `{X}` moves.
 //
@@ -572,31 +432,6 @@ void drawSubtitle(omk::Surface& fb, const omk::TextLayout& lay,
         if (y >= clipTop && y + lineH <= clipBot) lay.drawRun(fb, left, y, pt.run);
         y += lineH;
     }
-}
-
-// cp1252 to UTF-8, for the CONSOLE only. The dialogue pool is cp1252 - which
-// is what `FONTS/*.FNT` is indexed by, so the strings stay cp1252 everywhere
-// that matters and this converts a copy on its way to a terminal.
-std::string cp1252ToUtf8(const std::string& in) {
-    static const unsigned short kHigh[32] = {   // 0x80..0x9F, the only holes
-        0x20AC,0,0x201A,0x0192,0x201E,0x2026,0x2020,0x2021,0x02C6,0x2030,
-        0x0160,0x2039,0x0152,0,0x017D,0,0,0x2018,0x2019,0x201C,0x201D,0x2022,
-        0x2013,0x2014,0x02DC,0x2122,0x0161,0x203A,0x0153,0,0x017E,0x0178};
-    std::string o;
-    for (unsigned char c : in) {
-        unsigned cp = c;
-        if (c >= 0x80 && c <= 0x9F) { cp = kHigh[c - 0x80]; if (!cp) continue; }
-        if (cp < 0x80) { o.push_back(static_cast<char>(cp)); }
-        else if (cp < 0x800) {
-            o.push_back(static_cast<char>(0xC0 | (cp >> 6)));
-            o.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
-        } else {
-            o.push_back(static_cast<char>(0xE0 | (cp >> 12)));
-            o.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
-            o.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
-        }
-    }
-    return o;
 }
 
 // Raw int16 PCM to the device's interleaved float, the same nearest-neighbour

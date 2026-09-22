@@ -208,11 +208,43 @@ function must change a dump. The `engine:` checks that drive `omk-play` run
 per the usual rule — `--only` over what the step could plausibly break, and
 the sweep counter in `sweep-log.md` as normal.
 
+### S1, done — and what actually proves it
+
+The four helpers that touch neither SDL nor any of `main`'s 468 names moved to
+`src/app/playhelpers.{h,cpp}`. `play.cpp` 21182 -> **20998**. Both builds glob
+`src/*/*.cpp`, so the Makefile and the Vita `CMakeLists.txt` did not change;
+host, GLES and Vita all build. The names are re-declared `using omk::...` in
+`play.cpp`'s anonymous namespace, so **every call site is unchanged**.
+
+**What proves it is NOT the golden record, and that is worth writing down.**
+All six scenes are identical after the move - but they are also identical with
+the subtitle box shifted a pixel, and with `cp1252ToUtf8` returning a wrong
+string, because these runs never draw a subtitle box and never convert a
+string for the console. `subtitle box` is a check on the ENGINE's colours, not
+on the port's drawing, and it stays green under that same mutation. So:
+
+* the **compiler** covers the signatures, and every one of the four is called
+  from `play.cpp`, so a mismatch cannot link;
+* the **move was mechanical** - the bodies were extracted from the file by
+  script rather than retyped - and that is checkable directly: normalising
+  whitespace and the two declared substitutions (`g_ov` ->
+  `overlayPlanes()`, which is a reference to that same object, and
+  `omk::Surface` -> `Surface` inside `namespace omk`), all four bodies are
+  **textually IDENTICAL** to what was removed;
+* the golden record covers what the move could break AROUND them - the loop
+  that calls them - and it is green.
+
+**A gap found on the way, pre-existing and not this step's**: nothing checks
+that the port DRAWS the subtitle box correctly. A one-pixel shift passes every
+check in the suite.
+
 ### The steps, cheapest and least coupled first
 
 | step | what moves | names touched | risk |
 |---|---|---|---|
-| **S1** | file-level helpers → `sdlfront.{h,cpp}` and `src/app/*` (lines 1-1416) | 0 — they are outside `main` | none: no state |
+| ~~S1~~ **DONE 2026-09-22** | the four PURE helpers (`shortArc`, `wavToDevice`, `SubBox` + `drawSubtitleBox`, `cp1252ToUtf8`) -> `src/app/playhelpers.{h,cpp}`; 184 lines out of `play.cpp`. `src/*/*.cpp` is globbed by BOTH builds, so no build file changed. See below |
+| S1b | the SDL half still in `play.cpp`: `AudioLock`, `SdlFrontend` (647-966), `keymap`/`charmap`, `ViewCam`, `relight` |
+| **S1 (original)** | file-level helpers → `sdlfront.{h,cpp}` and `src/app/*` (lines 1-1416) | 0 — they are outside `main` | none: no state |
 | **S2** | `PlayOptions` + `parseArgs` (1420-2198). Tactic: bind each old local as a REFERENCE to the struct field (`auto& startVulkan = opt.startVulkan;`) so not one line of the loop changes in this step | the 84 flags | low |
 | **S3** | `Game` introduced, sub-struct by sub-struct, same reference-alias trick: the loop keeps compiling unchanged while ownership moves. One sub-struct a commit | all 468, 40 or so at a time | medium: lifetimes (the caches return pointers into maps - must not move) |
 | **S4** | the LEAF phases become `Game` methods in their own files: HUDs, screens' rows (each 0-31 names), fades, fps, quit/load, sounds, save writing | ≤40 each | low |

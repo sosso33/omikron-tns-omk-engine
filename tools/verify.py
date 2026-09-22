@@ -36523,6 +36523,9 @@ def c_licence_headers():
     planes), `tools/body_tie.cpp` (the rigid body tie's probe),
     `scripts/vita-vitagl-patch.py` (the one patch to the pinned vitaGL) and
     `scripts/play-golden.sh` (the refactor record).
+    **474 -> 476**: `src/app/playhelpers.{h,cpp}`, the first step of
+    `todo/play-split.md` - a MOVE out of `play.cpp`, so the count rises while
+    the authored lines do not.
     """
     import glob as _g
     TAG = "SPDX-License-Identifier: GPL-3.0-or-later"
@@ -36552,7 +36555,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (474, [], 1, []), \
+           (476, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
