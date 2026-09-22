@@ -234,6 +234,19 @@ on the port's drawing, and it stays green under that same mutation. So:
 * the golden record covers what the move could break AROUND them - the loop
   that calls them - and it is green.
 
+**S1b, the same day**: `ViewCam` (the free-look camera), `Light` and
+`relight` (the vertex-light toggle) are pure too and followed - `play.cpp`
+20998 -> **20913**, both bodies again textually identical to what was removed,
+the record green.
+
+**And the Vita build earned its keep immediately.** `ViewCam`'s inline trig
+uses `std::sin`/`std::cos`; on macOS clang finds `<cmath>` through another
+header and the Vita's GCC does not, so the header had to include it. This is
+exactly `vita-port.md`'s standing warning - a change to `src/` that adds an
+include can build on one toolchain and break the other - and it is why a step
+of this refactor is not done until `make`, `make play`, `make play-gles` AND
+`make vita` have all run.
+
 **A gap found on the way, pre-existing and not this step's**: nothing checks
 that the port DRAWS the subtitle box correctly. A one-pixel shift passes every
 check in the suite.
@@ -243,7 +256,8 @@ check in the suite.
 | step | what moves | names touched | risk |
 |---|---|---|---|
 | ~~S1~~ **DONE 2026-09-22** | the four PURE helpers (`shortArc`, `wavToDevice`, `SubBox` + `drawSubtitleBox`, `cp1252ToUtf8`) -> `src/app/playhelpers.{h,cpp}`; 184 lines out of `play.cpp`. `src/*/*.cpp` is globbed by BOTH builds, so no build file changed. See below |
-| S1b | the SDL half still in `play.cpp`: `AudioLock`, `SdlFrontend` (647-966), `keymap`/`charmap`, `ViewCam`, `relight` |
+| ~~S1b~~ **DONE 2026-09-22** | `ViewCam`, `Light` and `relight` joined them - also pure. `play.cpp` -> **20913** |
+| S1c | the SDL half still in `play.cpp`: `AudioLock`, `SdlFrontend`, `keymap`/`charmap`. These need the three Makefile lines and the Vita `CMakeLists.txt` to name a new `backends/sdl/*.cpp`, which is why they are their own step |
 | **S1 (original)** | file-level helpers → `sdlfront.{h,cpp}` and `src/app/*` (lines 1-1416) | 0 — they are outside `main` | none: no state |
 | **S2** | `PlayOptions` + `parseArgs` (1420-2198). Tactic: bind each old local as a REFERENCE to the struct field (`auto& startVulkan = opt.startVulkan;`) so not one line of the loop changes in this step | the 84 flags | low |
 | **S3** | `Game` introduced, sub-struct by sub-struct, same reference-alias trick: the loop keeps compiling unchanged while ownership moves. One sub-struct a commit | all 468, 40 or so at a time | medium: lifetimes (the caches return pointers into maps - must not move) |

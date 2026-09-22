@@ -106,4 +106,16 @@ std::string cp1252ToUtf8(const std::string& in) {
     }
     return o;
 }
+
+Geometry relight(const Geometry& src, Light mode) {
+    if (mode == Light::Colour) return src;
+    Geometry g = src;
+    for (auto& c : g.corners) {
+        if (mode == Light::Off) { c.r = c.g = c.b = 1.0f; continue; }
+        const float y = 0.299f * c.r + 0.587f * c.g + 0.114f * c.b;
+        c.r = c.g = c.b = y;
+    }
+    return g;
+}
+
 }  // namespace omk

@@ -19,6 +19,8 @@
 #include "o3de/renderer.h"
 #include "ui/overlay.h"
 
+#include <cmath>     // `ViewCam`'s inline trig - clang finds it through
+                     // another header and the Vita's GCC does not
 #include <cstddef>
 #include <span>
 #include <string>
@@ -114,5 +116,87 @@ void drawSubtitleBox(Surface& fb, SubBox kind, int top, int dispW, int dispH);
 // is what `FONTS/*.FNT` is indexed by, so the strings stay cp1252 everywhere
 // that matters and this converts a copy on its way to a terminal.
 std::string cp1252ToUtf8(const std::string& in);
+
+
+// ----------------------------------------------------- THE SCENE VIEWER
+//
+//     omk-play <gamedata> <tables> --scene Aapkayl [--cam N] [--eye x,y,z]
+//                            [--at x,y,z] [--fov F] [--letterbox] [--vulkan]
+//
+// **This is an INSTRUMENT, not a slice of the port**, and the distinction is
+// the one `docs/PORTING.md` B6 makes about the rasterizer it drives: the
+// engine has no software 3D rasterizer, so there is nothing here to
+// transcribe. What this adds is not a ported behaviour but the ability to
+// LOOK, which the tree did not have - `src/o3de/raster.*` only ever wrote
+// `.bin` files for `verify.py`, so every claim about the 3D path was a number
+// only a checker could judge.
+//
+// That is a real gap and it is the reason this exists. CLAUDE.md 1 has a rule
+// about it - *a suite that only compares this repo to itself cannot see a
+// wrong reading applied consistently* - and the two worked examples in that
+// section, the dialogue staging and the Anekbah panels, were both caught by
+// somebody watching rather than by anything here. A frame on screen is the
+// cheapest instrument in the tree for that class of error, and it costs five
+// seconds instead of a capture rig.
+//
+// What it draws is exactly what `verify.py: engine silhouette` measures: the
+// same `drawGeometry`, the same batch order, the same blend modes, into the
+// same RGB565 surface the window uploads unmodified. So a fault you can see
+// here is a fault in the thing the checks check, not in a second renderer
+// written to look at.
+//
+// The letterbox is the default because the game's camera mode is letterboxed -
+// 640x352 inside 480, 1.818:1, which `traces/frames/dlg402-*.png` show and
+// which the vertical fov follows from (`tanv = tanh / (W/H)`). `--full` opens
+// it to the whole framebuffer, which is a different vertical fov and therefore
+// a different picture; it is for looking around, not for comparing.
+struct ViewCam {
+    float eye[3] = {0, 0, 0};
+    float yaw = 0, pitch = 0;      // radians; yaw about the world Y
+    float fov = 60.0f;
+
+    // The game's Y points DOWN, so a positive pitch must LOWER the forward
+    // vector's y to look up. Getting that backwards is invisible standing
+    // still and inverts the mouse the moment anything moves, which is the
+    // shape of error CLAUDE.md 1 calls "invisible at rest".
+    void forward(float f[3]) const {
+        f[0] = std::sin(yaw) * std::cos(pitch);
+        f[1] = -std::sin(pitch);
+        f[2] = std::cos(yaw) * std::cos(pitch);
+    }
+    // The strafe axis is taken the way `basisOf` takes it - s = f x (0,-1,0) -
+    // rather than re-derived, so flying sideways moves the way the picture
+    // says it should.
+    void right(float r[3]) const {
+        float f[3]; forward(f);
+        const float up[3] = {0.0f, -1.0f, 0.0f};
+        r[0] = f[1] * up[2] - f[2] * up[1];
+        r[1] = f[2] * up[0] - f[0] * up[2];
+        r[2] = f[0] * up[1] - f[1] * up[0];
+        const float m = std::sqrt(r[0] * r[0] + r[1] * r[1] + r[2] * r[2]);
+        if (m > 0) { r[0] /= m; r[1] /= m; r[2] /= m; }
+    }
+    void aim(float eye_at[3]) const {
+        float f[3]; forward(f);
+        for (int k = 0; k < 3; ++k) eye_at[k] = eye[k] + f[k] * 100.0f;
+    }
+    void lookAt(const float e[3], const float t[3]) {
+        for (int k = 0; k < 3; ++k) eye[k] = e[k];
+        float d[3] = {t[0] - e[0], t[1] - e[1], t[2] - e[2]};
+        const float m = std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+        if (m <= 0) return;
+        for (int k = 0; k < 3; ++k) d[k] /= m;
+        yaw = std::atan2(d[0], d[2]);
+        pitch = std::asin(std::clamp(-d[1], -1.0f, 1.0f));
+    }
+};
+
+// The baked per-vertex light, cycled the way both web viewers' `lights` button
+// cycles it (CLAUDE.md 5). COLOUR is what the game draws and the only mode to
+// compare against a screenshot; GREY is THIS REPO'S OWN BUG before 2026-08-29,
+// the green byte read as a brightness, kept so the two can be seen on one
+// frame; OFF is full bright, for looking at the textures alone.
+enum class Light { Colour, Grey, Off };
+Geometry relight(const Geometry& src, Light mode);
 
 }  // namespace omk
