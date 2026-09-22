@@ -15891,7 +15891,9 @@ int main(int argc, char** argv) {
                         continue;
                     }
                 }
-                omk::applyPose(s.posed, restUsed, s.mo->meshes, pose, &s.mo->face, &fv);
+                spanned("staged skin", [&] {
+                    omk::applyPose(s.posed, restUsed, s.mo->meshes, pose, &s.mo->face, &fv);
+                });
                 // THE ROOT MOTION: `Anim_RootDelta`'s running sum, weighted by
                 // how much of the pose is the scene's, so a line stands where
                 // it was staged and a fade lerps the position too.
@@ -16256,6 +16258,7 @@ int main(int argc, char** argv) {
                     }
                 }
                 const bool turn = std::fabs(bodyYaw) > 0.01f;
+                const double stagedPlace0 = phaseNow();
                 float bcs, bsn;
                 omk::yawSinCos(bodyYaw, bcs, bsn);      // once, not per corner
                 for (auto& c : s.posed.corners) {
@@ -16272,6 +16275,7 @@ int main(int argc, char** argv) {
                     }
                     c.x += off[0]; c.y += off[1]; c.z += off[2];
                 }
+                phSpan["staged place"] += phaseNow() - stagedPlace0;
                 // Where he ENDED UP, which is the placement plus the clip's
                 // root motion - not the offset, which carries the model's own
                 // authoring origin.
@@ -16464,10 +16468,17 @@ int main(int argc, char** argv) {
                     int frame = static_cast<int>(std::floor(w.clock)) - 1;
                     if (frame < 0) frame = 0;
                     if (p.tracks && frame >= p.tracks->frames) frame = p.tracks->frames - 1;
-                    const auto pose = p.tracks
-                        ? omk::composePose(p.mo->meshes, *p.tracks, frame, false)
-                        : omk::composePose(p.mo->meshes, omk::NodeTracks{}, 0, false);
-                    omk::applyPose(p.posed, rest, p.mo->meshes, pose);
+                    // the spans below are per-body sums, printed in the
+                    // `spans` line every 60 frames: a console's "pedestrians
+                    // 35 ms" and "staged bodies 46" named no call inside them
+                    // (todo/vita-port.md 2026-09-22).
+                    std::vector<omk::MeshPose> pose;
+                    spanned("ped skin", [&] {
+                        pose = p.tracks
+                            ? omk::composePose(p.mo->meshes, *p.tracks, frame, false)
+                            : omk::composePose(p.mo->meshes, omk::NodeTracks{}, 0, false);
+                        omk::applyPose(p.posed, rest, p.mo->meshes, pose);
+                    });
                     // THE HEIGHT is the engine's rule, `sub_437F80(inst, x, body.y
                     // + footY - radius, z)`: the model origin stands one root
                     // radius (41.9 for PSH_FN - the pelvis-to-feet height) above
@@ -16496,6 +16507,7 @@ int main(int argc, char** argv) {
                     // corner - the same bits, since the angle does not change
                     float wcs, wsn;
                     omk::yawSinCos(w.facing, wcs, wsn);
+                    const double pedPlace0 = phaseNow();
                     for (auto& c : p.posed.corners) {
                         const float in[3] = {c.x - rootXZ[0], c.y, c.z - rootXZ[1]};
                         float r[3];
@@ -16509,6 +16521,7 @@ int main(int argc, char** argv) {
                         omk::rotateYawCS(wcs, wsn, n, rn);
                         c.nx = rn[0]; c.ny = rn[1]; c.nz = rn[2];
                     }
+                    phSpan["ped place"] += phaseNow() - pedPlace0;
                     // `Slider_PlaceShadow`'s two nodes, on the same transform.
                     p.footKnown = false;
                     {
@@ -16551,6 +16564,7 @@ int main(int argc, char** argv) {
                     // ...unless the GPU is going to do it per pixel, in which
                     // case the corners keep their black base and `Draw::lit`
                     // carries the decision to the shader.
+                    const double pedLight0 = phaseNow();
                     if (lightCrowd && lighting == 0) {
                         // THE BASE IS BLACK, and that is the part that had to
                         // be read rather than assumed. A lit instance does not
@@ -16570,6 +16584,7 @@ int main(int argc, char** argv) {
                                 pedLit += omk::applyLights(p.posed, 0, p.posed.corners.size(),
                                                            at, ws2.lights);
                     }
+                    phSpan["ped light"] += phaseNow() - pedLight0;
                     p.posed.revision = ++worldGeoRev;
                     p.drawn = true;
                     ++pedDrawn;

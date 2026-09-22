@@ -655,6 +655,26 @@ window blocks in `SDL_GL_SwapWindow` and Vita3K never starts, so `omk-play-gles`
 and the emulator cannot be run at all; `gles_probe` and the software renderer
 under `SDL_VIDEODRIVER=dummy` are what is left.
 
+**THE PER-BODY SPANS, and what they said** (same day). The two body sections
+named no call inside them, so `ped skin`, `ped place`, `ped light`, `staged
+skin` and `staged place` are accumulated per body and printed in the `spans`
+line every 60 frames. On the M1's street: **`ped light` 0.4 ms, `ped skin` 0.2,
+`staged skin` 0.1**, the two `place` sums below 0.05 - so the crowd's LIGHT is
+the largest single thing in either section, and at the ~40x ratio it is ~16 ms
+of the console's 35. Replacing its three `lightRamp` lookups with constants
+takes it 0.4 -> 0.3, so a quarter of it is the ramp and the rest is the walk.
+
+`applyLights` now **walks the corners ONCE, not once per light**: the reaching
+lights are gathered first and each corner takes them in the same order, so
+every corner's colour is the same sequence of additions and clamps - the street
+render is BYTE-IDENTICAL, and `engine vertex light`, `light consumers`, `city
+crowd`, `street frame`, `per-pixel lighting` and `crowd nan` are green. **It
+changes nothing measurable on the M1** (0.4 ms either way): a body's 21 KB of
+corners fits this machine's cache, so reading it five times costs nothing here.
+The reason to keep it is the A9's - five times less traffic through a 32 KB L1
+- and THAT IS UNPROVEN until a console log shows the `ped light` span. If it
+does not move there, this is revertible on its own.
+
 ---
 
 ## 1. The issues, and what is missing
