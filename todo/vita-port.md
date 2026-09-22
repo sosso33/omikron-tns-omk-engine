@@ -731,6 +731,32 @@ pool's Vita half has still never run on a device: the console turns it on in
 are not threaded** - that loop queries the scene runner, logs, and calls back
 into the Session, so it is not a disjoint-chunk shape without more work.
 
+**The STAGED section, apportioned** (same day, after P4). It is the larger of
+the two on the console (46 ms against 35) and it is NOT mostly skinning: on the
+M1 `staged resolve` 0.1 (the pose source, the scene runner's queries, the clip,
+the look-at, the ground probe, `composePose`), `staged skin` 0.1, the mesh
+placement about 0.1, `staged place` below 0.05. So threading it the way the
+walkers were threaded would reach only a third of it, and its serial half is
+the part that queries the Session - which is why it is still serial.
+
+Two things were fixed in it anyway, both BYTE-IDENTICAL in both cities and
+both **below what this machine can measure**, so they are kept on the reading
+and not on a number:
+
+* **the three ground probes go through the GRID.** `floorUnder(playerSoup, ...)`
+  with no grid is a linear scan of the whole city's walkable soup - 15137
+  triangles in Anekbah - and the rest of the frame already used the grid form,
+  whose header contract is "the same answers, visiting only the candidates"
+  (and `OMK_VERIFY_SPLIT` compares the two every moving frame). It shows
+  nothing here because most city extras are pelvis-anchored and never reach
+  that arm; a scene of floor-anchored bodies is where it counts.
+* **one `cos`/`sin` a body in the MESH loop.** It turns every mesh's origin and
+  each of its three axes, so a crowd model's 76 meshes cost four apiece - ~4900
+  a frame across the staged bodies. The two angles it ever uses are the body's
+  and zero, and `cos`/`sin` of zero are exactly 1 and 0. On the M1 that is
+  ~0.05 ms; on an A9, where `sincos` is a library call rather than an
+  instruction, it is worth several times that.
+
 ---
 
 ## 1. The issues, and what is missing

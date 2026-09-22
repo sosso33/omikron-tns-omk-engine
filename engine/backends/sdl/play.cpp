@@ -13787,6 +13787,9 @@ int main(int argc, char** argv) {
             int stagedFar = 0;                 // beyond the clip distance: not skinned
             for (auto& up : staged) {
                 Staged& s = *up;
+                // everything before the skinning: the pose SOURCE, the scene
+                // runner's queries, the clip, the look-at, the ground probe
+                const double stagedResolve0 = phaseNow();
                 s.drawn = false;
                 if (!s.mo || !s.mo->ready) {
                     // A model with nothing to draw. `PA1_FN.3DO` is 1236
@@ -15923,6 +15926,7 @@ int main(int argc, char** argv) {
                         continue;
                     }
                 }
+                phSpan["staged resolve"] += phaseNow() - stagedResolve0;
                 spanned("staged skin", [&] {
                     omk::applyPose(s.posed, restUsed, s.mo->meshes, pose, &s.mo->face, &fv);
                 });
@@ -16055,7 +16059,14 @@ int main(int argc, char** argv) {
                 if (!s.pelvis && !playerSoup.empty()) {
                     // `Walk_ProbeGround`'s own direction: down from just above
                     // the authored point (walk_set.cpp's `seatOnFloor`).
-                    if (const auto g = omk::floorUnder(playerSoup, s.at[0],
+                    // THROUGH THE GRID, which the header's own contract makes
+                    // the same answer bit for bit ("the same answers as the
+                    // linear versions, visiting only the candidates"; the
+                    // `OMK_VERIFY_SPLIT` probe compares the two every moving
+                    // frame). A linear probe is the whole city's walkable soup
+                    // - 15137 triangles in Anekbah - and there are three of
+                    // them per staged body per frame (todo/vita-port.md).
+                    if (const auto g = omk::floorUnder(playerSoup, playerGrid, s.at[0],
                                                        s.at[1] - 1.0, s.at[2])) {
                         const float drop = static_cast<float>(*g) - s.at[1];
                         // A body height. Further than that and the authored
@@ -16096,7 +16107,8 @@ int main(int argc, char** argv) {
                     // is probed under it here, for the report only
                     float floorY = ground;
                     if (s.pelvis && !playerSoup.empty())
-                        if (const auto g = omk::floorUnder(playerSoup, s.at[0], s.at[1] - 1.0, s.at[2]))
+                        if (const auto g = omk::floorUnder(playerSoup, playerGrid, s.at[0],
+                                                           s.at[1] - 1.0, s.at[2]))
                             floorY = static_cast<float>(*g);
                     std::printf("frame %ld: actor %d %s - dead: his pelvis %.1f above the floor\n",
                                 n, s.actor, s.model.c_str(),
@@ -16253,9 +16265,17 @@ int main(int argc, char** argv) {
                 }
                 // ...and every mesh, on the same transform, for the shadow.
                 s.meshAt.assign(pose.size() * 3, 0.0f);
+                // ONE `cos`/`sin` A BODY for this loop too: it turns every
+                // mesh's origin and each of its three axes, so a crowd model's
+                // 76 meshes cost FOUR of them apiece. The two angles it ever
+                // turns by are the body's and zero, and `cos`/`sin` of zero are
+                // exactly 1 and 0, so both pairs are known up front.
+                float bcs, bsn;
+                omk::yawSinCos(bodyYaw, bcs, bsn);
+                const bool spins = std::fabs(bodyYaw) > 0.01f;
+                const float scs = spins ? bcs : 1.0f, ssn = spins ? bsn : 0.0f;
                 for (std::size_t mi = 0; mi < pose.size(); ++mi) {
                     float r[3];
-                    const bool spins = std::fabs(bodyYaw) > 0.01f;
                     if (spins && !aboutPelvis) {
                         // ...ON THE CORNERS' OWN TRANSFORM: a body turned
                         // about its MODEL origin is `R * pos + off` (the loop
@@ -16266,13 +16286,13 @@ int main(int argc, char** argv) {
                         // his facing: the projectile sweep found actor 240's
                         // pelvis at (2875, 4466) with him drawn at (4516,
                         // -2797), and his shadow's bones were there too.
-                        omk::rotateYaw(bodyYaw, pose[mi].pos, r);
+                        omk::rotateYawCS(bcs, bsn, pose[mi].pos, r);
                         for (int k = 0; k < 3; ++k) r[k] += off[k];
                     } else {
                         const float mp[3] = {pose[mi].pos[0] - pelvis[0],
                                              pose[mi].pos[1] - pelvis[1],
                                              pose[mi].pos[2] - pelvis[2]};
-                        omk::rotateYaw(spins ? bodyYaw : 0.0f, mp, r);
+                        omk::rotateYawCS(scs, ssn, mp, r);
                         for (int k = 0; k < 3; ++k) r[k] += pelvis[k] + off[k];
                     }
                     for (int k = 0; k < 3; ++k) s.meshAt[mi * 3 + static_cast<std::size_t>(k)] = r[k];
@@ -16284,15 +16304,13 @@ int main(int argc, char** argv) {
                                             ax == 2 ? 1.0f : 0.0f};
                         float qv[3], wv[3];
                         omk::qrot(pose[mi].q, e, qv);
-                        omk::rotateYaw(spins ? bodyYaw : 0.0f, qv, wv);
+                        omk::rotateYawCS(scs, ssn, qv, wv);
                         for (int k = 0; k < 3; ++k)
                             s.meshRot[mi * 9 + static_cast<std::size_t>(ax * 3 + k)] = wv[k];
                     }
                 }
-                const bool turn = std::fabs(bodyYaw) > 0.01f;
+                const bool turn = spins;
                 const double stagedPlace0 = phaseNow();
-                float bcs, bsn;
-                omk::yawSinCos(bodyYaw, bcs, bsn);      // once, not per corner
                 for (auto& c : s.posed.corners) {
                     if (turn && !aboutPelvis) {
                         const float in[3] = {c.x, c.y, c.z};
@@ -16389,7 +16407,7 @@ int main(int argc, char** argv) {
                 // rather than over one waiter.
                 if (stagedProbe && (n % 20) == 0 && !playerSoup.empty() &&
                     s.sceneTracks.valid()) {
-                    const auto g = omk::floorUnder(playerSoup, s.drawAt[0],
+                    const auto g = omk::floorUnder(playerSoup, playerGrid, s.drawAt[0],
                                                    s.drawAt[1] - 120.0, s.drawAt[2]);
                     std::printf("    floor %ld actor %d %s at %.0f %.0f %.0f  %s\n", n,
                                 s.actor, s.model.c_str(), s.drawAt[0], s.drawAt[1],
