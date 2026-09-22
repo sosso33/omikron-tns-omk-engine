@@ -56,6 +56,7 @@ unsigned int sceUserMainThreadStackSize = 8 * 1024 * 1024;
 
 int omk_play_main(int argc, char** argv);
 extern "C" void omk_vita_redirect(std::FILE* out, std::FILE* err);   // printf_c99.cpp
+extern "C" void omk_vita_log_flush();                                // ...and its drain
 
 namespace {
 constexpr const char* kRoot   = "ux0:data/omk/gamedata";
@@ -174,6 +175,7 @@ int main(int, char**) {
     }
     std::fflush(stdout);
     std::fflush(stderr);
+    omk_vita_log_flush();          // the log is drained by a thread; the exit must not lose its tail
     sceKernelExitProcess(rc);
     return rc;
 }

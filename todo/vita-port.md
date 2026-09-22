@@ -898,6 +898,45 @@ on one core for an A/B; `engine: threaded bodies` now compares that against
 the default. The golden record, captured single-threaded, matches all six
 scenes with threads on.
 
+### 2026-09-23: the reader - "still laggy, even more in the city and at transitions to and from cutscenes"
+
+The only log on hand (`omk-play-20260922-213727.log`) PREDATES the tie delta
+and threaded bodies (214 tie patches a frame, no `bodies: posed over` line), so
+it cannot judge those two. It does show the TRANSITIONS, and they are a
+different thing from the city's steady lag - single frames of **1-3.5 s**:
+
+| frame | where the time went |
+|---|---|
+| 606 | `props, guns` 1089 ms, `game frame` 655, `screens` 227, `world begin, set` 107 |
+| 5656 | `world begin, set` **1472** - the ANEKBAH set arriving (139245 corners) |
+| 5673 | `game frame` 1415, `props, guns` 1198, `screens` 461, `staged bodies` 238 |
+| 1440, 4380 | **27 and 9 ms marked, 1197 and 1114 ms measured** |
+
+The first three are LOADS DONE INSIDE A FRAME - models and props read from the
+card and built (`props, guns`), the area and scene chunks (`game frame`), the
+whole city set (`world begin, set`), the player's own model on a hand-over
+(`screens`, which holds WHOEVER IS ON SCREEN). The original hides such loads
+behind its fades; the port does them mid-frame. **Not yet addressed** - the
+first question is whether they are RE-loads of assets already resident (a cache
+the port evicts) before any threading of loads.
+
+**The last two are the LOG.** Both fall on a multiple of 60 - the frame that
+prints the six report lines - and across the whole log the slow frames on a
+report boundary average **201 ms against 130** elsewhere. The Vita log was
+opened UNBUFFERED, so every line was its own synchronous write to the memory
+card, on the frame that printed it, and the card now and then takes a second
+over one. In the city every frame is slow, so every frame wrote its own `SLOW
+FRAME` and `sections` lines: the instrument fed the slowness it reported.
+
+**Fixed, built, NOT YET RUN ANYWHERE** (Vita3K would not start with the
+display asleep): stdout and stderr are `funopen` MEMORY streams - a write copies
+bytes into a buffer under a lightweight mutex and returns - and a thread one
+priority below the game's drains them to the card every 250 ms. Every exit
+drains synchronously (`omk_vita_log_flush`, and `atexit`). The price is the
+last ~250 ms on a HARD crash, so an empty **`ux0:data/omk/log-sync`** file
+restores the old unbuffered log for hunting one; any failure to set the stream
+or the thread up falls back to it too.
+
 ---
 
 ## 1. The issues, and what is missing

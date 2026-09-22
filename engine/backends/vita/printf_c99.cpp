@@ -17,9 +17,15 @@
 // on the host links it. A format that needs no change goes through untouched.
 #include "c99format.h"
 
+#include <psp2/io/stat.h>
+#include <psp2/kernel/threadmgr.h>
+
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <malloc.h>
+#include <vector>
 
 extern "C" {
 int __real_vfprintf(FILE*, const char*, va_list);
@@ -36,13 +42,108 @@ FILE* route(FILE* f) {
 }
 }  // namespace
 
-// Point stdout / stderr at these files (unbuffered - a crash must not take
-// the last lines with it). Null leaves that stream on the TTY.
-void omk_vita_redirect(FILE* out, FILE* err) {
+// ---- THE LOG IS WRITTEN OFF THE FRAME (2026-09-23) --------------------------
+//
+// It used to be UNBUFFERED, so every line was its own synchronous write to the
+// memory card, on the frame that printed it. A console log of the city showed
+// what that costs: frames on the 60-frame report boundary, which print six
+// lines, averaged 201 ms against 130 for the other slow frames, and single
+// report frames stalled for 1.1-1.2 s with 8-27 ms of marked work - the card
+// taking its time over a write. And in the city every frame is slow, so every
+// frame wrote its own SLOW FRAME and sections lines: the instrument fed the
+// slowness it was reporting.
+//
+// So stdout and stderr are MEMORY streams now (`funopen`): a write copies the
+// bytes into a buffer under a lightweight mutex and returns - no syscall on the
+// frame - and a low-priority thread drains them to the card every 250 ms.
+// `omk_vita_log_flush` drains synchronously, and every exit path calls it.
+// What this gives up is the last ~250 ms on a HARD crash (a fault, not a
+// bad_alloc), so an empty `ux0:data/omk/log-sync` file brings back the old
+// unbuffered writes for hunting one.
+namespace {
+struct AsyncLog {
+    FILE* real = nullptr;
+    std::vector<char> pending, spare;
+};
+AsyncLog g_logs[2];
+SceKernelLwMutexWork g_queue;      // guards `pending`
+SceKernelLwMutexWork g_io;         // guards the real files
+bool g_async = false;
+
+int logWrite(void* cookie, const char* data, int n) {
+    AsyncLog* l = static_cast<AsyncLog*>(cookie);
+    sceKernelLockLwMutex(&g_queue, 1, nullptr);
+    l->pending.insert(l->pending.end(), data, data + n);
+    sceKernelUnlockLwMutex(&g_queue, 1);
+    return n;
+}
+
+void drainAll() {
+    sceKernelLockLwMutex(&g_io, 1, nullptr);
+    for (AsyncLog& l : g_logs) {
+        if (!l.real) continue;
+        sceKernelLockLwMutex(&g_queue, 1, nullptr);
+        l.pending.swap(l.spare);
+        sceKernelUnlockLwMutex(&g_queue, 1);
+        if (!l.spare.empty()) {
+            std::fwrite(l.spare.data(), 1, l.spare.size(), l.real);
+            std::fflush(l.real);
+            l.spare.clear();
+        }
+    }
+    sceKernelUnlockLwMutex(&g_io, 1);
+}
+
+int logWriterMain(SceSize, void*) {
+    for (;;) {
+        sceKernelDelayThread(250 * 1000);
+        drainAll();
+    }
+    return 0;
+}
+
+FILE* asyncStream(AsyncLog& l, FILE* real) {
+    l.real = real;
+    l.pending.reserve(64 * 1024);
+    l.spare.reserve(64 * 1024);
+    FILE* f = funopen(&l, nullptr, logWrite, nullptr, nullptr);
+    if (f) setvbuf(f, nullptr, _IONBF, 0);   // hand every write to `logWrite` at once
+    return f;
+}
+
+void unbuffered(FILE* out, FILE* err) {        // the old way: every line to the card now
     g_out = out;
     g_err = err;
     if (g_out) setvbuf(g_out, nullptr, _IONBF, 0);
     if (g_err) setvbuf(g_err, nullptr, _IONBF, 0);
+}
+}  // namespace
+
+// Point stdout / stderr at these files. Null leaves that stream on the TTY.
+void omk_vita_redirect(FILE* out, FILE* err) {
+    SceIoStat st;
+    if (sceIoGetstat("ux0:data/omk/log-sync", &st) >= 0) { unbuffered(out, err); return; }
+    sceKernelCreateLwMutex(&g_queue, "omk_logq", 0, 0, nullptr);
+    sceKernelCreateLwMutex(&g_io, "omk_logio", 0, 0, nullptr);
+    FILE* o = out ? asyncStream(g_logs[0], out) : nullptr;
+    FILE* e = err ? asyncStream(g_logs[1], err) : nullptr;
+    if ((out && !o) || (err && !e)) { unbuffered(out, err); return; }   // no funopen
+    // below the game's own threads (0x10000100 is the default), so the card
+    // write never takes a core from the frame
+    const SceUID t = sceKernelCreateThread("omk_log", logWriterMain, 0x10000110,
+                                           16 * 1024, 0, 0, nullptr);
+    if (t < 0 || sceKernelStartThread(t, 0, nullptr) < 0) { unbuffered(out, err); return; }
+    g_out = o;
+    g_err = e;
+    g_async = true;
+    std::atexit(drainAll);   // an `exit()` that skips main's own drain loses nothing either
+}
+
+// Everything logged so far, onto the card, now. Every exit calls this.
+void omk_vita_log_flush() {
+    if (g_async) { drainAll(); return; }
+    if (g_out) std::fflush(g_out);
+    if (g_err) std::fflush(g_err);
 }
 // A heap checkpoint: `mallinfo` walks newlib's free lists, so it faults on a
 // corrupted one - the checkpoint's label, logged first, says where.
