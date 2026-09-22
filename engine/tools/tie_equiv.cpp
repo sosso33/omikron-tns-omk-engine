@@ -161,6 +161,46 @@ int main(int argc, char** argv) {
             }
             vboRev = g.revision;
         };
+        // THE DELTA STRATEGY (`backends/gles/glesrender.cpp` since 2026-09-22),
+        // on its own tie and its own buffer, fed the identical sequence. Every
+        // upload keeps the buffer equal to the tie's applied set - a dirty
+        // upload widened to whole triangles and folded, a same-size full one
+        // folded with NO `vboReplaced()` - so a draw writes only the triangles
+        // the tie NEWLY marks (`newlyApplied`), plus the restores. The old
+        // strategy above writes every loser every draw. Both buffers are held
+        // to the same reference expectation.
+        omk::DepthTie now2;
+        std::vector<float> vbo2;
+        std::uint64_t vbo2Rev = 0;
+        long vbo2Bad = 0, oldWrites = 0, deltaWrites = 0;
+        std::vector<std::size_t> ln2, rs2;
+        const auto putTri = [&](std::vector<float>& buf, std::size_t t, bool degenerate) {
+            for (std::size_t k = 0; k < 3; ++k) {
+                const std::size_t src = degenerate ? 3 * t : 3 * t + k;
+                buf[3 * (3 * t + k)]     = g.corners[src].x;
+                buf[3 * (3 * t + k) + 1] = g.corners[src].y;
+                buf[3 * (3 * t + k) + 2] = g.corners[src].z;
+            }
+        };
+        const auto upload2 = [&]() {
+            const bool partial = !vbo2.empty() && g.dirtyTo != 0 && g.dirtyTo == g.revision &&
+                                 vbo2Rev == g.dirtyFrom;
+            if (partial) {
+                std::vector<std::uint32_t> tris;
+                for (const std::uint32_t c : g.dirtyCorners)
+                    if (c < g.corners.size()) tris.push_back(c / 3);
+                std::sort(tris.begin(), tris.end());
+                tris.erase(std::unique(tris.begin(), tris.end()), tris.end());
+                for (const std::uint32_t t : tris) putTri(vbo2, t, now2.isApplied(t));
+            } else if (vbo2.size() == 3 * g.corners.size()) {
+                for (std::size_t t = 0; t < ntri; ++t) putTri(vbo2, t, now2.isApplied(t));
+            } else {
+                vbo2.assign(3 * g.corners.size(), 0.0f);
+                for (std::size_t t = 0; t < ntri; ++t) putTri(vbo2, t, false);
+                now2.vboReplaced();
+            }
+            vbo2Rev = g.revision;
+        };
         std::vector<std::uint8_t> refLoser(ntri, 0), drawn(ntri, 0);
         std::uint64_t flagsRev = ~0ull;
 
@@ -200,6 +240,14 @@ int main(int argc, char** argv) {
                 for (int k = 1; k < 3; ++k)
                     for (int j = 0; j < 3; ++j) vbo[3 * (c + k) + j] = vbo[3 * c + j];
             }
+            // the delta strategy, same draw
+            if (vbo2.empty() || vbo2Rev != g.revision) upload2();
+            ln2.clear(); rs2.clear();
+            now2.resolve(g, b.start, b.count, writes, ln2, rs2);
+            for (const std::size_t t : rs2) if (t < ntri) putTri(vbo2, t, false);
+            for (const std::size_t t : now2.newlyApplied()) if (t < ntri) putTri(vbo2, t, true);
+            oldWrites += static_cast<long>(rs.size() + ln.size());
+            deltaWrites += static_cast<long>(rs2.size() + now2.newlyApplied().size());
             for (const std::size_t t : lr) refLoser[t] = 1;
             const std::size_t t1 = std::min(ntri, (b.start + b.count) / 3);
             for (std::size_t t = b.start / 3; t < t1; ++t) drawn[t] = 1;
@@ -217,6 +265,13 @@ int main(int argc, char** argv) {
                     bad = std::memcmp(want, &vbo[3 * (3 * t + k)], sizeof want) != 0;
                 }
                 if (bad) ++vboBad;
+                bool bad2 = false;
+                for (std::size_t k = 0; k < 3 && !bad2; ++k) {
+                    const std::size_t src = refLoser[t] ? 3 * t : 3 * t + k;
+                    const float want[3] = {g.corners[src].x, g.corners[src].y, g.corners[src].z};
+                    bad2 = std::memcmp(want, &vbo2[3 * (3 * t + k)], sizeof want) != 0;
+                }
+                if (bad2) ++vbo2Bad;
             }
         };
         const auto writesOf = [](const omk::Batch& b) { return b.blend == omk::Blend::Opaque; };
@@ -324,11 +379,13 @@ int main(int argc, char** argv) {
         std::printf("%s triangles %zu batches %zu | static losers %ld | draws %ld losers %ld "
                     "mismatches %ld | ref_ms %.1f new_ms %.1f | replay frames: draws %ld losers %ld "
                     "mismatches %ld | vbo frames %ld bad triangles %ld | revisions: replayed %ld walked %ld "
-                    "fallbacks %ld | replay ref_ms %.1f new_ms %.1f\n",
+                    "fallbacks %ld | replay ref_ms %.1f new_ms %.1f | delta: bad triangles %ld "
+                    "writes %ld against %ld\n",
                     stem.c_str(), ntri, g.batches.size(), staticLosers, draws, losers, mismatches,
                     refMs, newMs, rDraws, rLosers, rMismatches, vboFrames, vboBad,
-                    now.replays, now.walks, now.fallbacks, rRefMs, rNewMs);
-        total += mismatches + rMismatches + vboBad;
+                    now.replays, now.walks, now.fallbacks, rRefMs, rNewMs,
+                    vbo2Bad, deltaWrites, oldWrites);
+        total += mismatches + rMismatches + vboBad + vbo2Bad;
     }
     std::printf("mismatches %ld\n", total);
     return total == 0 ? 0 : 3;

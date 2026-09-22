@@ -80,6 +80,21 @@ public:
     // The backend uploaded every corner again: nothing is degenerated any more.
     void vboReplaced();
 
+    // THE TRIANGLES THE BUFFER CURRENTLY HOLDS DEGENERATE, and the predicate for
+    // one of them. A backend that rewrites a whole vertex buffer every frame -
+    // a posed body - can re-apply these AS IT BUILDS it and leave this class's
+    // state alone, instead of `vboReplaced()` and patching each back. The list
+    // may name a triangle restored since, so a caller tests `isApplied`.
+    const std::vector<std::uint32_t>& appliedTriangles() const { return appliedList_; }
+    bool isApplied(std::size_t tri) const {
+        return tri < applied_.size() && applied_[tri] != 0;
+    }
+    // ...and the triangles the LAST `resolve` newly marked - the ones a backend
+    // whose buffer already holds every earlier loser degenerate actually has to
+    // write. `losers` keeps its meaning (every loser of the draw, which is what
+    // `engine: tie equivalence` asserts); this is only the delta beside it.
+    const std::vector<std::size_t>& newlyApplied() const { return newly_; }
+
     // The backend's bookkeeping, reset with the state as it always was, except
     // `logged`, which survives a revision so the report prints once.
     long dropped = 0;
@@ -132,6 +147,7 @@ private:
     // What the backend has degenerated, per triangle, and the list of them.
     std::vector<std::uint8_t> applied_;
     std::vector<std::uint32_t> appliedList_;
+    std::vector<std::size_t> newly_;   // marked by the last `resolve`
     std::size_t appliedCount_ = 0;
 
     // THE LOG of a tracked geometry's walk. A unit is one face visited - a

@@ -14122,15 +14122,16 @@ def c_engine_tie_equivalence():
         r"draws (\d+) losers (\d+) mismatches (\d+) \| ref_ms \S+ new_ms \S+ \| "
         r"replay frames: draws (\d+) losers (\d+) mismatches (\d+) \| "
         r"vbo frames (\d+) bad triangles (\d+) \| "
-        r"revisions: replayed (\d+) walked (\d+) fallbacks (\d+)", r.stdout, re.M)
+        r"revisions: replayed (\d+) walked (\d+) fallbacks (\d+)"
+        r".*? \| delta: bad triangles (\d+) writes (\d+) against (\d+)", r.stdout, re.M)
     # a parse that reads nothing must fail AS A PARSE, not answer
     if len(rows) != 3:
         return (len(rows),), (3,), "tie_equiv rows parsed - the tool's output " \
             "format no longer matches this check"
     got = tuple((row[0],) + tuple(int(x) for x in row[1:]) for row in rows)
-    return got, (("Anekbah", 46415, 248, 792, 4646, 0, 1145, 14613, 0, 101, 0, 64, 31, 29),
-                 ("Lahoreh", 37457, 532, 896, 10073, 0, 1273, 31776, 0, 101, 0, 59, 36, 24),
-                 ("PSH_FN", 790, 3, 158, 479, 0, 249, 2337, 0, 101, 0, 80, 15, 41)), \
+    return got, (("Anekbah", 46415, 248, 792, 4646, 0, 1145, 14613, 0, 101, 0, 64, 31, 29, 0, 18621, 27260),
+                 ("Lahoreh", 37457, 532, 896, 10073, 0, 1273, 31776, 0, 101, 0, 59, 36, 24, 0, 40355, 59114),
+                 ("PSH_FN", 790, 3, 158, 479, 0, 249, 2337, 0, 101, 0, 80, 15, 41, 0, 2354, 3784)), \
         "per model: triangles, losers of one pass in batch order (Anekbah's is " \
         "sign tie's 248), draws replayed, losers over all of them, and draws " \
         "whose losers differ from the pre-2026-09-13 pass in content or order; " \
@@ -14242,18 +14243,21 @@ def c_engine_body_tie():
     rows = re.findall(
         r"^(\S+)\.3DO face (.+?) \| triangles (\d+) batches \d+ \| draws (\d+) losers ref (\d+) "
         r"new (\d+) \| mismatches new (\d+) pos (\d+) cross (\d+) \(at rest (\d+)\) "
-        r"frames-with-any (\d+) \| walks (\d+) replays (\d+) fallbacks (\d+)", r.stdout, re.M)
+        r"frames-with-any (\d+) \| walks (\d+) replays (\d+) fallbacks (\d+)"
+        r".*? \| buffer: bad triangles (\d+) writes (\d+) against (\d+)", r.stdout, re.M)
     if len(rows) != 4:
         return (len(rows),), (4,), "body_tie rows parsed - the tool's output format changed"
     got = tuple((row[0],) + tuple(int(x) for x in row[2:]) for row in rows)
-    return got, (("PSH_FN", 790, 960, 720, 720, 0, 0, 0, 0, 0, 1, 239, 0),
-                 ("FSH_FN", 856, 240, 720, 720, 0, 0, 0, 0, 0, 1, 239, 0),
-                 ("HO1_FN", 542, 480, 0, 0, 0, 0, 0, 0, 0, 1, 239, 0),
-                 ("HO1_FNM", 803, 720, 0, 0, 0, 0, 0, 0, 0, 5, 235, 0)), \
+    return got, (("PSH_FN", 790, 960, 720, 720, 0, 0, 0, 0, 0, 1, 239, 0, 0, 3, 720),
+                 ("FSH_FN", 856, 240, 720, 720, 0, 0, 0, 0, 0, 1, 239, 0, 0, 3, 720),
+                 ("HO1_FN", 542, 480, 0, 0, 0, 0, 0, 0, 0, 1, 239, 0, 0, 0, 0),
+                 ("HO1_FNM", 803, 720, 0, 0, 0, 0, 0, 0, 0, 5, 235, 0, 0, 0, 0)), \
         "per model: triangles, draws, losers (reference, class-keyed), mismatches " \
         "(class-keyed vs reference, position-only vs reference, class vs position - " \
-        "the cross-mesh coincidences - and those at rest), frames with any, and the " \
-        "revisions walked / replayed / abandoned"
+        "the cross-mesh coincidences - and those at rest), frames with any, the " \
+        "revisions walked / replayed / abandoned; then the BACKEND'S BUFFER under " \
+        "the delta strategy - drawn triangles not as the tie says, and the " \
+        "triangles written against what writing every loser every draw costs"
 
 
 def c_engine_pixel_tables():

@@ -435,6 +435,10 @@ private:
 
     bool uploadGeometry(const Geometry* g);
     void resolveTies(const Draw& d, Vbo& vb);
+    // Write the tie's applied losers degenerate into `v`, which holds corners
+    // [lo, hi] of `g` about to be uploaded - so the buffer keeps holding every
+    // loser degenerate and `resolveTies` only writes what is new.
+    void foldTies(const Geometry& g, std::vector<GpuVert>& v, std::uint32_t lo, std::uint32_t hi);
     void destRect(int picW, int picH, int winW, int winH, float out[4]) const;
     // One picture onto the window: `picW x picH` pixels of a `texW x texH`
     // texture, into the NDC rectangle `dst`.
@@ -706,10 +710,22 @@ bool GlesRenderer::uploadGeometry(const Geometry* g) {
             while (i < dc.size()) {
                 std::size_t j = i;
                 while (j + 1 < dc.size() && dc[j + 1] == dc[j] + 1) ++j;
-                const std::uint32_t lo = dc[i], hi = dc[j];
+                // WHOLE TRIANGLES. A run that cut through a triangle the tie
+                // holds degenerate would leave its corners outside the run at
+                // the OLD first-corner position - still zero area, but not the
+                // buffer the tie describes. Widened, `foldTies` rewrites all
+                // three, and a non-degenerate triangle's extra corners are
+                // rewritten with the values they already hold.
+                const std::uint32_t lo = dc[i] / 3 * 3;
+                const std::uint32_t hi = std::min<std::uint32_t>(
+                    dc[j] / 3 * 3 + 2, static_cast<std::uint32_t>(g->corners.size() - 1));
                 if (hi < g->corners.size()) {
                     v.resize(hi - lo + 1);
                     for (std::uint32_t k = lo; k <= hi; ++k) v[k - lo] = gpuVert(g->corners[k]);
+                    // a run that crosses a triangle the tie holds degenerate
+                    // must write it degenerate again, or the buffer stops
+                    // matching `applied_` - see `foldTies`
+                    foldTies(*g, v, lo, hi);
                     patchArrayBuffer(lo * sizeof(GpuVert), v.size() * sizeof(GpuVert), v.data());
                 }
                 i = j + 1;
@@ -717,9 +733,9 @@ bool GlesRenderer::uploadGeometry(const Geometry* g) {
         } else {
             v.resize(g->corners.size());
             for (std::size_t k = 0; k < v.size(); ++k) v[k] = gpuVert(g->corners[k]);
+            foldTies(*g, v, 0, static_cast<std::uint32_t>(v.size() - 1));
             glBufferSubData(GL_ARRAY_BUFFER, 0,
                             static_cast<GLsizeiptr>(v.size() * sizeof(GpuVert)), v.data());
-            tie_[g].vboReplaced();
         }
         vb.rev = g->revision;
         return true;
@@ -742,6 +758,25 @@ bool GlesRenderer::uploadGeometry(const Geometry* g) {
     return true;
 }
 
+void GlesRenderer::foldTies(const Geometry& g, std::vector<GpuVert>& v,
+                            std::uint32_t lo, std::uint32_t hi) {
+    if (!tieOn_) return;
+    const auto it = tie_.find(&g);
+    if (it == tie_.end()) return;
+    const DepthTie& t = it->second;
+    // the triangles overlapping [lo, hi]; a degenerate triangle has all three
+    // positions set to its FIRST corner's, which `resolveTies` also writes
+    for (std::size_t tri = lo / 3; tri <= hi / 3; ++tri) {
+        if (!t.isApplied(tri)) continue;
+        const Corner& a = g.corners[3 * tri];
+        for (std::size_t j = 0; j < 3; ++j) {
+            const std::size_t c = 3 * tri + j;
+            if (c < lo || c > hi) continue;
+            v[c - lo].x = a.x; v[c - lo].y = a.y; v[c - lo].z = a.z;
+        }
+    }
+}
+
 void GlesRenderer::resolveTies(const Draw& d, Vbo& vb) {
     // THE DEPTH TIE, the Vulkan backend's rule (`o3de/depthtie.h`): the engine
     // shows the FIRST-drawn of two coincident faces, a GPU's float compare
@@ -757,7 +792,7 @@ void GlesRenderer::resolveTies(const Draw& d, Vbo& vb) {
     losers.clear();
     restore.clear();
     t.resolve(*g, d.start, d.count, d.blend == Blend::Opaque, losers, restore);
-    if (losers.empty() && restore.empty()) return;
+    if (t.newlyApplied().empty() && restore.empty()) return;
     g_glesInTie = true;
     glBindBuffer(GL_ARRAY_BUFFER, vb.id);
     GpuVert tri[3];
@@ -767,7 +802,13 @@ void GlesRenderer::resolveTies(const Draw& d, Vbo& vb) {
         for (int j = 0; j < 3; ++j) tri[j] = gpuVert(g->corners[c + j]);
         patchArrayBuffer(c * sizeof(GpuVert), sizeof tri, tri);
     }
-    for (const std::size_t k : losers) {
+    // ONLY THE DELTA. Every upload keeps the buffer equal to the tie's applied
+    // set (`foldTies`), so a loser the tie had already marked is ALREADY
+    // degenerate here and writing it again is a map/unmap for nothing - which
+    // is what the SET did every frame: its moving cargo sends it down the
+    // replay path, the replay reports the call's whole loser set, and all ~150
+    // were written back although the dirty upload never touched them.
+    for (const std::size_t k : t.newlyApplied()) {
         const std::size_t c = 3 * k;
         if (c + 2 >= vb.n || c + 2 >= g->corners.size()) continue;
         for (int j = 0; j < 3; ++j) {

@@ -157,6 +157,7 @@ void DepthTie::markApplied(const std::vector<std::size_t>& losers, std::size_t f
             applied_[t] = 1;
             appliedList_.push_back(static_cast<std::uint32_t>(t));
             ++appliedCount_;
+            newly_.push_back(t);
         }
     }
 }
@@ -165,6 +166,7 @@ void DepthTie::markApplied(const std::vector<std::size_t>& losers, std::size_t f
 
 void DepthTie::resolve(const Geometry& g, std::size_t start, std::size_t count, bool writes,
                        std::vector<std::size_t>& losers, std::vector<std::size_t>& restore) {
+    newly_.clear();
     const std::size_t ntri = g.corners.size() / 3;
     if (applied_.size() != ntri) {        // a new size is a new buffer: nothing degenerated
         applied_.assign(ntri, 0);

@@ -154,6 +154,25 @@ int main(int argc, char** argv) {
         long framesBad = 0, restCross = 0;
         double msRef = 0, msNew = 0, msPos = 0;
         std::vector<std::size_t> lr, ln, lp, restore;
+        // THE BACKEND'S BUFFER under the DELTA strategy (`glesrender.cpp`,
+        // 2026-09-22), on a tie of its own: a same-size full rewrite FOLDS the
+        // applied losers in and keeps the tie's state, and a draw writes only
+        // what the tie NEWLY marks. A posed body is the case that needs the
+        // fold - its coincident pairs move rigidly and stay tied, so they are
+        // never newly marked again and only the fold keeps them degenerate.
+        omk::DepthTie tieD;
+        std::vector<float> vb;
+        std::vector<std::size_t> lnD, rsD;
+        std::vector<std::uint8_t> loserD, drawnD;
+        long vbBad = 0, vbWrites = 0, vbWritesOld = 0;
+        const auto putTri = [&](const omk::Geometry& gg, std::size_t t, bool degenerate) {
+            for (std::size_t k = 0; k < 3; ++k) {
+                const std::size_t src = degenerate ? 3 * t : 3 * t + k;
+                vb[3 * (3 * t + k)]     = gg.corners[src].x;
+                vb[3 * (3 * t + k) + 1] = gg.corners[src].y;
+                vb[3 * (3 * t + k) + 2] = gg.corners[src].z;
+            }
+        };
         for (int step = 0; step < 240; ++step) {
             // the rest pose first (every mesh at its own place), then random
             const std::vector<omk::MeshPose> pose = step == 0
@@ -166,6 +185,17 @@ int main(int argc, char** argv) {
             gPos.tieClass.clear();
             gPos.tieRigidFrom = 0;
             bool frameBad = false;
+            // this pose's upload, as the backend does it
+            const std::size_t ntriD = gNew.corners.size() / 3;
+            if (vb.size() != 3 * gNew.corners.size()) {
+                vb.assign(3 * gNew.corners.size(), 0.0f);
+                for (std::size_t t = 0; t < ntriD; ++t) putTri(gNew, t, false);
+                tieD.vboReplaced();
+            } else {
+                for (std::size_t t = 0; t < ntriD; ++t) putTri(gNew, t, tieD.isApplied(t));
+            }
+            loserD.assign(ntriD, 0);
+            drawnD.assign(ntriD, 0);
             for (const auto& b : gNew.batches) {
                 const bool writes = b.blend == omk::Blend::Opaque;
                 lr.clear(); ln.clear(); lp.clear(); restore.clear();
@@ -186,18 +216,39 @@ int main(int argc, char** argv) {
                 badNew += bn; badPos += bp; cross += cx;
                 if (step == 0) restCross += cx;
                 if (bn || bp) frameBad = true;
+                // the delta strategy's draw
+                lnD.clear(); rsD.clear();
+                tieD.resolve(gNew, b.start, b.count, writes, lnD, rsD);
+                for (const std::size_t t : rsD) if (t < ntriD) putTri(gNew, t, false);
+                for (const std::size_t t : tieD.newlyApplied()) if (t < ntriD) putTri(gNew, t, true);
+                vbWrites += static_cast<long>(rsD.size() + tieD.newlyApplied().size());
+                vbWritesOld += static_cast<long>(rsD.size() + lnD.size());
+                for (const std::size_t t : lnD) if (t < ntriD) loserD[t] = 1;
+                const std::size_t e = std::min(ntriD, (b.start + b.count) / 3);
+                for (std::size_t t = b.start / 3; t < e; ++t) drawnD[t] = 1;
+            }
+            // every drawn triangle as the tie says it must be
+            for (std::size_t t = 0; t < ntriD; ++t) {
+                if (!drawnD[t]) continue;
+                for (std::size_t k = 0; k < 3; ++k) {
+                    const std::size_t src = loserD[t] ? 3 * t : 3 * t + k;
+                    const float want[3] = {gNew.corners[src].x, gNew.corners[src].y, gNew.corners[src].z};
+                    if (std::memcmp(want, &vb[3 * (3 * t + k)], sizeof want) != 0) { ++vbBad; break; }
+                }
             }
             if (frameBad) ++framesBad;
         }
         // tieNew must have REPLAYED every rigid revision: one walk per class change
         std::printf("%s face %s | triangles %zu batches %zu | draws %ld losers ref %ld new %ld | "
                     "mismatches new %ld pos %ld cross %ld (at rest %ld) frames-with-any %ld | "
-                    "walks %ld replays %ld fallbacks %ld | ms ref %.1f new %.1f pos %.1f\n",
+                    "walks %ld replays %ld fallbacks %ld | ms ref %.1f new %.1f pos %.1f | "
+                    "buffer: bad triangles %ld writes %ld against %ld\n",
                     stem.c_str(), face.valid() ? "morphed 100 of 240" : "none", rest.corners.size() / 3,
                     rest.batches.size(), draws, losersRef,
                     losersNew, badNew, badPos, cross, restCross, framesBad, tieNew.walks,
-                    tieNew.replays, tieNew.fallbacks, msRef, msNew, msPos);
-        totalBad += badPos + (badNew - cross);
+                    tieNew.replays, tieNew.fallbacks, msRef, msNew, msPos,
+                    vbBad, vbWrites, vbWritesOld);
+        totalBad += badPos + (badNew - cross) + vbBad;
     }
     std::printf("bad %ld\n", totalBad);
     return totalBad == 0 ? 0 : 1;

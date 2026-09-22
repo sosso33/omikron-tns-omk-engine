@@ -837,79 +837,58 @@ And **6220 KB of vertex uploads a frame** is the other half: every posed body
 re-uploaded whole. That is P5's territory (GPU skinning) and P3's (skip a body
 whose pose did not change).
 
-### 2026-09-22, later: the tie FOLD was tried, bought nothing, and found something worse
+### 2026-09-22, later: THE TIE PATCHES, fixed - and a false claim of mine, withdrawn
 
-The plan above - fold the tie's degeneration into the full-buffer upload so the
-losers need no patching afterwards - was written, and it is **byte-identical**
-on a 400-frame Anekbah street at density 4 through the real GLES backend. It
-also saved **nothing**: 219 patches a frame before, 223 after.
+**A CORRECTION FIRST.** The entry that stood here said *"the rigid replay of
+2026-09-22 is not firing in the viewer at all"*, and commit `92595dd` says the
+same. **That was wrong.** The debug print behind it was capped at its first
+dozen lines, and those were all FIRST sightings of each body - where there is
+no previous walk to replay, so `replays 0` is simply correct. Printed only on
+later frames, every posed body reads `REPLAYED 1`. The replay works; the
+conclusion was an artefact of the instrument. Recorded here because it is
+exactly the CLAUDE.md 1 lesson with the sign flipped: a capped log is a sample
+of the START of a run, and it said so about nothing past it.
 
-A counter split by caller says why, and it is the useful part. Of 223 patches,
-**154 are the depth tie's** and the rest are the dirty-corner upload runs - so
-the tie is the right target. But at UPLOAD time the tie's applied set is
-**empty** (`folded 0`, every time), so there is nothing to fold in: whatever
-the tie marks during a frame is gone by the next frame's upload.
+**What the patches really were.** A windowed split of the tie's buffer
+patches by caller, on Anekbah's street at density 4: **~150 a frame, all on the
+SET, none on the bodies.** The set's revision bumps every frame because its
+cargo moves; that sends it down the dirty-REPLAY path, which reports each
+call's WHOLE loser set - and `resolveTies` wrote every one back, one
+`glMapBuffer`/`glUnmapBuffer` pair each, although the dirty upload had never
+touched those triangles and they were already degenerate.
 
-**And the counters say why THAT is**: for a posed body in the viewer the tie
-reports `walks 1 replays 0`, while `engine/tools/body_tie` reports 239 replays
-of 240 for the same models. **So the rigid replay of 2026-09-22 is not firing
-in the viewer at all** - the probe exercises it and the real path does not,
-which is exactly the shape CLAUDE.md 1 warns about (a check that passes beside
-code that does not run). The optimisation is committed, proven in isolation,
-and inert where it matters.
+**The fix keeps `losers`' contract and adds a delta beside it:**
 
-What is NOT yet established is which condition fails. `prepareReplay` wants
-`tracked_`, `g.tieRigidFrom == revision_`, `g.revision != revision_` and the
-per-triangle arrays to be the right size; `applyPose` sets `tieRigidFrom` to
-the revision it found and bumps `revision`, and then **`play.cpp` overwrites
-`revision` from the global `worldGeoRev`** - which may or may not preserve the
-relationship. That is the first thing to test, and it is cheap: print the four
-conditions for one body for one frame.
+* `DepthTie::newlyApplied()` - the triangles the last `resolve` NEWLY marked;
+* the GLES backend keeps its buffer equal to the tie's applied set on every
+  upload - a same-size full rewrite FOLDS the applied losers in instead of
+  `vboReplaced()`, and a dirty upload does the same over its runs, WIDENED TO
+  WHOLE TRIANGLES so a run cutting through a degenerate one cannot leave two of
+  its corners at the old first-corner position;
+* `resolveTies` writes only `newlyApplied()` and the restores.
 
-**What was kept**: only the split counter (`N buffer patches a frame (M the
-depth tie's)`, on the routine `gles` line, so a console log shows it without
-waiting for a half-second frame). The fold itself is reverted - it is correct
-and it is dead weight until the replay runs.
+**Measured**: the tie's patches on the street **~150 -> 0 a frame** (8 in a
+window where a loser genuinely changed), all patches 219 -> 69, and the frame
+**byte-identical** through the real GLES backend over 400 frames at density 4.
 
-### 2026-09-22: THE BENCH RAN ON THE CONSOLE - P1 answered, and the device factor is NOT uniform
+**And proved where the street cannot.** Neither fold is exercised in Anekbah:
+its moving meshes share no triangle with its losers, and its bodies (cut to
+one LOD skeleton) carry none. So the proof is in simulation, on both tools'
+own vertex buffers held to the tie's expectation every draw:
 
-`omk_bench` on a real Vita (444 MHz), beside the same binary's numbers on this
-M1 **with the same code on both sides** (the M1 figures in this file's earlier
-entry predate the light work and are not comparable):
+* `engine/tools/body_tie` - posed bodies, where a coincident pair moves
+  RIGIDLY and stays tied: **0 bad triangles, 3 writes against 720** for
+  PSH_FN and FSH_FN over 240 poses. **Without the full-rewrite fold: 717 bad**
+  - the fold is necessary and correct, which is the test the street could not
+  give;
+* `engine/tools/tie_equiv` - the set, with ties made and broken on purpose
+  through dirty corners: 0 bad triangles, 18621 writes against 27260 on
+  Anekbah. (Its moves never carry a tie along, so its fold is not exercised
+  there either - which `body_tie` is for.)
 
-| stage | M1 | Vita | factor |
-|---|---|---|---|
-| `composePose` | 0.154 | 7.250 | **47x** |
-| `applyPose` | 0.849 | 102.318 | **121x** |
-| `applyLights` | 0.306 | 35.455 | **116x** |
-| total | 1.312 | 146.085 | 111x |
-
-**`threads: EXACT` on the device, and 2.71x on its three runners** (146.1 ->
-53.9 ms). So the pool's Vita half - written from the SDK's documented shape and
-never executed until now - works, and the hash matches its own inline pass.
-`--thread-bodies` is cleared to turn on.
-
-**And the factor splits by what a stage TOUCHES, which is the finding.**
-`composePose` walks 76 meshes and is 47x; `applyPose` and `applyLights` walk
-2400 CORNERS and are ~120x. A body's corners are 2400 x 48 bytes = 115 KB,
-which does not fit the A9's 32 KB L1 and does fit this machine's cache many
-times over. **The body pipeline is memory-bound on the Vita, not
-arithmetic-bound** - which is why the light work that halved the arithmetic
-here took `ped light` to 0.0 there (it also stopped walking the corners five
-times), and it says where the remaining wins are:
-
-* write FEWER BYTES a corner - `applyPose` copies `u`, `v`, `phase` and the
-  colour every frame although only the position and the normal change (and the
-  colour is zeroed by the light pass immediately after);
-* or stop walking corners on the CPU at all - **P5, GPU skinning**, which is
-  now clearly the largest single win available rather than one option of
-  several.
-
-Not the compiler: the Vita build is `-O2 -mfpu=neon -mfloat-abi=hard` and
-`OMK_VITA_ASSERTS` (libstdc++'s bounds checks) is OFF by default, both checked.
-
-**`ux0:data/omk/bench.txt` is opened `"w"`** - every run truncates it, so a
-comparison needs a copy kept by hand.
+`engine: body tie` and `engine: tie equivalence` assert both. **Only the GLES
+backend has the delta**; the Vulkan backend still writes every loser, which is
+correct and only slower.
 
 ---
 
