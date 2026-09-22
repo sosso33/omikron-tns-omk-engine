@@ -78,6 +78,30 @@ its Vulkan backend crashes on vitaGL.
    the green tint the dither showed in Vita3K (possibly the emulator), and
    everything past the menu - frame rate above all.
 
+## 3b. THE FILMS DO NOT PLAY ON THE CONSOLE - the reader's report, and it had been lost
+
+*"The mp4 files do not play on the real Vita, I go directly to the splash
+screen"* - reported more than once and not written down until 2026-09-23. The
+console logs agree: each `.mp4` is found, opened and sized correctly (the three
+sizes match `engine/build/vita-movies/` to the byte, so it is not transfer
+damage), and then SceAvPlayer reports event `0x01` three times - STOP, in the
+SceAvPlayer family's numbering - and never `0x02` READY: `0 frames shown, sound
+at 0 Hz`. The files are what the decoder is documented to take (`ffprobe`:
+Constrained Baseline, level 3.0, 320x240, yuv420p, AAC-LC 44.1 kHz stereo).
+Vita3K plays them because it decodes through ffmpeg.
+
+The code's own history says each way of giving the decoder its frame buffers
+has ended the same way - a fresh CDRAM block, vitaGL's RAM pool, vitaGL's CDRAM
+pool. **The 2026-09-23 build runs an EXPERIMENT**: EIDOS keeps the vitaGL pool,
+QUANTIC gets a dedicated PHYCONT memblock and GAME a dedicated CDRAM memblock,
+both with the alignment guaranteed by the KERNEL
+(`SCE_KERNEL_ALLOC_MEMBLOCK_ATTR_HAS_ALIGNMENT`) - the one thing none of the
+earlier tries did. Each film logs `film: strategy N ... free: main / CDRAM /
+PHYCONT` and then its frame count, so one console run says which (if any)
+plays. `ux0:data/omk/film-alloc` holding one digit forces a strategy for all
+three. **If none plays**, the next suspect is the resolution: re-encode at
+480x272 or 960x544 and try again.
+
 ## 4. What to do next, in order
 
 0. Nothing below can be sized without **one console log from the city**. The

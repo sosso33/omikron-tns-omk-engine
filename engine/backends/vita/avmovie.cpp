@@ -42,7 +42,49 @@ void memFree(void*, void* p) { std::free(p); }
 // allocation is logged, so the next log says which path served it.
 std::set<void*> g_blockFrames;   // the ones from sceKernelAllocMemBlock
 std::map<void*, void*> g_poolFrames;   // aligned -> what vglAlloc returned
+// THE EXPERIMENT (2026-09-23). Every strategy so far ended "0 frames shown"
+// on a console - a fresh CDRAM block, vitaGL's RAM pool, vitaGL's CDRAM pool -
+// and the player never reported READY: it STOPS during set-up. What the three
+// share is that none gave the decoder a block whose alignment the KERNEL
+// guarantees; the common pattern elsewhere is a dedicated memblock with
+// `SCE_KERNEL_ALLOC_MEMBLOCK_ATTR_HAS_ALIGNMENT`. So each film tries one
+// strategy and the log says which produced frames - one console run answers
+// it. `ux0:data/omk/film-alloc` holding one digit forces it for all three.
+//   0  vitaGL's CDRAM pool, aligned by hand (what the game has done so far)
+//   1  a dedicated CDRAM memblock, the kernel aligning it
+//   2  a dedicated PHYCONT memblock (main RAM, physically contiguous), ditto
+int g_filmStrategy = 0;
+void* blockFrame(SceKernelMemBlockType type, uint32_t alignment, uint32_t size, const char* what) {
+    const uint32_t gran = type == SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW ? 256u * 1024u : 1024u * 1024u;
+    uint32_t al = alignment < gran ? gran : alignment;
+    const uint32_t sz = (size + gran - 1) & ~(gran - 1);
+    SceKernelAllocMemBlockOpt opt;
+    std::memset(&opt, 0, sizeof opt);
+    opt.size = sizeof opt;
+    opt.attr = SCE_KERNEL_ALLOC_MEMBLOCK_ATTR_HAS_ALIGNMENT;
+    opt.alignment = al;
+    const SceUID block = sceKernelAllocMemBlock("omk film frame", type, sz, &opt);
+    if (block < 0) {
+        std::printf("film: frame buffer %u bytes (align %u): %s block REFUSED 0x%08X\n",
+                    static_cast<unsigned>(size), static_cast<unsigned>(alignment), what,
+                    static_cast<unsigned>(block));
+        return nullptr;
+    }
+    void* base = nullptr;
+    sceKernelGetMemBlockBase(block, &base);
+    const int m = sceGxmMapMemory(base, sz, static_cast<SceGxmMemoryAttribFlags>(
+                                                SCE_GXM_MEMORY_ATTRIB_READ | SCE_GXM_MEMORY_ATTRIB_WRITE));
+    g_blockFrames.insert(base);
+    std::printf("film: frame buffer %u bytes (align %u) from a %s block, kernel-aligned to %u, "
+                "mapped %s\n", static_cast<unsigned>(size), static_cast<unsigned>(alignment), what,
+                static_cast<unsigned>(al), m < 0 ? "FAILED" : "ok");
+    return base;
+}
 void* frameAlloc(void*, uint32_t alignment, uint32_t size) {
+    if (g_filmStrategy == 1)
+        if (void* p = blockFrame(SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW, alignment, size, "CDRAM")) return p;
+    if (g_filmStrategy == 2)
+        if (void* p = blockFrame(SCE_KERNEL_MEMBLOCK_TYPE_USER_MAIN_PHYCONT_NC_RW, alignment, size, "PHYCONT")) return p;
     // GRAPHICS memory, not just any: `vglMemalign` served the 19:43 build from
     // vitaGL's RAM pool and the decoder then produced nothing. Over-allocate
     // from the CDRAM pool (then the physically contiguous one) and align by
@@ -152,6 +194,28 @@ AvFilm* avOpen(const std::string& path) {
             return nullptr;
         }
         moduleLoaded = true;
+    }
+    // which strategy this film tries (see `g_filmStrategy`), and what is free
+    {
+        std::string low = path;
+        for (auto& c : low) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        g_filmStrategy = low.find("eidos") != std::string::npos ? 0
+                       : low.find("quantic") != std::string::npos ? 2 : 1;
+        SceIoStat fs;
+        if (sceIoGetstat("ux0:data/omk/film-alloc", &fs) >= 0) {
+            char d = 0;
+            if (FILE* f = std::fopen("ux0:data/omk/film-alloc", "rb")) {
+                if (std::fread(&d, 1, 1, f) == 1 && d >= '0' && d <= '2') g_filmStrategy = d - '0';
+                std::fclose(f);
+            }
+        }
+        SceKernelFreeMemorySizeInfo fm;
+        std::memset(&fm, 0, sizeof fm);
+        fm.size = sizeof fm;
+        sceKernelGetFreeMemorySize(&fm);
+        std::printf("film: strategy %d (0 vitaGL pool, 1 CDRAM block, 2 PHYCONT block); free: "
+                    "main %d KB, CDRAM %d KB, PHYCONT %d KB\n", g_filmStrategy,
+                    fm.size_user / 1024, fm.size_cdram / 1024, fm.size_phycont / 1024);
     }
     SceAvPlayerInitData init;
     std::memset(&init, 0, sizeof init);
