@@ -129,6 +129,26 @@ struct Geometry {
     // crate changes a few hundred of Anekbah's 139245 corners a frame.
     std::uint64_t dirtyFrom = 0, dirtyTo = 0;
     std::vector<std::uint32_t> dirtyCorners;
+
+    // WHICH CORNERS CAN EVER COINCIDE - the depth tie's key, one level up.
+    //
+    // The tie (`o3de/depthtie.h`) keys a face by its corners' positions, and a
+    // posed body gets a new revision every frame, so every body was re-walked
+    // whole every frame - the largest single cost of a street frame on the
+    // Vita (2026-09-22). But a body is skinned RIGIDLY: `applyPose` moves each
+    // corner by its mesh's one transform, the same arithmetic for every corner
+    // of a mesh. So two corners of ONE mesh at the same position in one pose
+    // are at the same position in every pose (the transform is injective and
+    // deterministic), and two corners of DIFFERENT meshes coincide only by
+    // chance or in the one pose where a seam closes - a tie the engine would
+    // show for that frame only. With `tieClass` set (one int per corner: the
+    // mesh, or for a morphed face corner its own vertex, since two face
+    // vertices meet only when the mouth closes), the tie keys a corner by
+    // position AND class, and the walk's answer is the SAME for every
+    // revision, so `tieRigidFrom` names the revision whose walk this one may
+    // replay outright. Empty means what it always meant: positions alone.
+    std::vector<std::int32_t> tieClass;
+    std::uint64_t tieRigidFrom = 0;
 };
 
 // THE MIRROR PLANE - mesh flag 0x100000, and the engine reflects through it.

@@ -499,6 +499,24 @@ void applyPose(Geometry& g, const Geometry& rest,
     // These corners are new even though the object is not - see
     // `Geometry::revision`.
     g.revision = was + 1;
+    // THE TIE CLASS (`Geometry::tieClass`): the corner's mesh, or its own
+    // vertex where the face is morphed. The previous revision may be replayed
+    // only when the classes are what they were - the face's stream coming and
+    // going changes them.
+    const bool morphFaceOn =
+        face && face->valid() && faceVerts &&
+        faceVerts->size() == 3u * static_cast<std::size_t>(face->count) &&
+        rest.cornerVertex.size() == rest.corners.size();
+    {
+        static thread_local std::vector<std::int32_t> cls;
+        cls.resize(g.corners.size());
+        for (std::size_t i = 0; i < cls.size(); ++i) {
+            const std::int32_t mi = rest.cornerMesh[i];
+            cls[i] = (morphFaceOn && mi == face->mesh) ? (0x40000000 | rest.cornerVertex[i]) : mi;
+        }
+        g.tieRigidFrom = (g.tieClass == cls) ? was : 0;
+        g.tieClass = cls;
+    }
     // The face stream only fits when it supplies exactly the vertices the
     // model's face mesh has - the count check that agrees on 150 of 153
     // conversations. A mismatch draws the bind pose rather than a scrambled

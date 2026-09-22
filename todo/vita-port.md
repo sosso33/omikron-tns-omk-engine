@@ -567,6 +567,42 @@ still very laggy and the camera is shaking"*.
   log says which block of `play.cpp` holds the 190 ms. On the M1 a street
   frame is 2 ms top to last, so nothing to attribute here.
 
+### 2026-09-22, the console log of 08:44: the frame's SECTIONS - and the body tie made rigid
+
+The marks named 108-129 ms of a 209-225 ms frame: **staged bodies 46,
+pedestrians and traffic 35, scripted motion 17**, audio/controller/lights
+4-15 each; the rest sat after the last mark, so five more marks went in
+(the world submission, the screens, the fades, the present) for the next log.
+The same street on the M1 under the software renderer: staged bodies 1 ms,
+pedestrians 1 ms, scripted motion < 0.5 ms - a **uniform ~40x**, which is the
+A9 against the M1 and not a port-side anomaly in any one section. So the
+frame is cut by removing CPU work, not by finding a bug, and `handoff-vita.md`
+§2's order stands. Its first item is done:
+
+**THE BODY TIE IS REPLAYED, NOT RE-WALKED** (`Geometry::tieClass`,
+`tieRigidFrom`; `engine: body tie`). A posed body got a new revision every
+frame, so `DepthTie` re-keyed every face of every body every frame - ~1.0 ms
+of the M1's 6.0, ~40 ms of the console's 200. A body is skinned RIGIDLY
+(`applyPose`: one transform per mesh, the same arithmetic for every corner of
+it), so two corners of one mesh coincide in every pose or in none, and two of
+different meshes only by chance or where a seam closes for a frame. Keyed by
+position AND class (the mesh; the corner's own vertex where the face is
+morphed, since two face vertices meet only when the mouth closes) the walk's
+answer is pose-invariant, and the next revision REPLAYS it through the same
+machinery step 8 built for the set's moved cargo, with no moved units at all.
+`engine/tools/body_tie` holds it to the original per-frame pass over four
+models and 240 rigid poses: **0 mismatches, 0 cross-mesh ties, one walk per
+class change (HO1_FNM: 5 walks, 235 replays)**, the tie's cost per body per
+frame 0.12 ms -> 0.0004 on the M1. `engine: tie equivalence` and `pose
+equivalence` unchanged (the latter re-baselined for `sizeof(Geometry)` 192 ->
+224). Not yet seen on a console.
+
+Two Mac notes: the M1's GL window BLOCKS in `SwapWindow` while the display is
+off (`pmset -g log`: "Display is turned off" at 09:00), so no GLES run or
+profile is possible on a machine nobody is in front of - the software renderer
+under `SDL_VIDEODRIVER=dummy` is what runs; and the section marks print only
+on a PACED run (no `--frames`).
+
 ---
 
 ## 1. The issues, and what is missing

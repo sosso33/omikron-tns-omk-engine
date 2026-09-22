@@ -14133,6 +14133,61 @@ def c_engine_tie_equivalence():
         "the revisions were answered (replayed, walked, replays abandoned)"
 
 
+def c_engine_body_tie():
+    r"""A posed body's depth tie is REPLAYED, not re-walked, and it is the same
+    answer (`Geometry::tieClass`, todo/vita-port.md 2026-09-22).
+
+    Every posed body got a new revision every frame, so the tie re-keyed every
+    face of every body every frame - the largest single cost of a street frame
+    on the Vita. A body is skinned rigidly, one transform per mesh, so two
+    corners of one mesh coincide in every pose or in none; keyed by position
+    AND mesh (or, for a morphed face corner, its own vertex) the walk's answer
+    is pose-invariant and the next revision replays it. `engine/tools/body_tie`
+    poses four models through 240 rigid poses (rest first, then random, the
+    face stream toggled every 50) and compares, draw for draw, the class-keyed
+    replay and a position-only walk of the same corners against the original
+    per-frame pass: `new` mismatches may only be `cross` (faces of different
+    meshes coinciding, which the engine ties for that frame alone), `pos` must
+    be 0, and the model must be walked once per class change and replayed
+    otherwise. Shown to fail by disabling the rigid replay (`rigid = false` in
+    `prepareReplay`): PSH_FN walked 240 and replayed 0. Note what the four
+    models CANNOT show: all their ties are within one mesh (`cross` 0 at rest),
+    so a key that ignored the class would give the same answer here - the
+    class is argued from the skinning (one transform per mesh), not measured.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s", "build/body_tie"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "body_tie")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    models = []
+    for rel in ("MESHES/PERSOS/PSH_FN.3DO", "MESHES/PERSOS/FSH_FN.3DO",
+                "MESHES/PERSOS/HO1_FN.3DO", "MESHES/PERSOS/HO1_FNM.3DO"):
+        path = omkpaths.data(rel)
+        if not os.path.exists(path):
+            return ("skipped",), ("skipped",), "%s absent" % rel
+        models.append(path)
+    r = subprocess.run([binp] + models, capture_output=True, text=True)
+    rows = re.findall(
+        r"^(\S+)\.3DO face (.+?) \| triangles (\d+) batches \d+ \| draws (\d+) losers ref (\d+) "
+        r"new (\d+) \| mismatches new (\d+) pos (\d+) cross (\d+) \(at rest (\d+)\) "
+        r"frames-with-any (\d+) \| walks (\d+) replays (\d+) fallbacks (\d+)", r.stdout, re.M)
+    if len(rows) != 4:
+        return (len(rows),), (4,), "body_tie rows parsed - the tool's output format changed"
+    got = tuple((row[0],) + tuple(int(x) for x in row[2:]) for row in rows)
+    return got, (("PSH_FN", 790, 960, 720, 720, 0, 0, 0, 0, 0, 1, 239, 0),
+                 ("FSH_FN", 856, 240, 720, 720, 0, 0, 0, 0, 0, 1, 239, 0),
+                 ("HO1_FN", 542, 480, 0, 0, 0, 0, 0, 0, 0, 1, 239, 0),
+                 ("HO1_FNM", 803, 720, 0, 0, 0, 0, 0, 0, 0, 5, 235, 0)), \
+        "per model: triangles, draws, losers (reference, class-keyed), mismatches " \
+        "(class-keyed vs reference, position-only vs reference, class vs position - " \
+        "the cross-mesh coincidences - and those at rest), frames with any, and the " \
+        "revisions walked / replayed / abandoned"
+
+
 def c_engine_pixel_tables():
     r"""The frame's two pixel conversions by table give the functions' bits,
     checked exhaustively (todo/optimization.md step 4).
@@ -14586,7 +14641,7 @@ def c_engine_pose_equivalence():
         return (len(size), len(rows)), (1, 3), "pose_equiv output parsed - the tool's format changed"
     return (int(size[0]), tuple((st, int(c), int(cut), int(fc), int(calls), int(mm))
                                 for st, c, cut, fc, calls, mm in rows)), \
-        (192, (("HO1_FN", 1626, 624, 0, 241, 0), ("PSH_FN", 2370, 1074, 0, 241, 0),
+        (224, (("HO1_FN", 1626, 624, 0, 241, 0), ("PSH_FN", 2370, 1074, 0, 241, 0),
                ("JEN_FNM", 2388, 561, 132, 241, 0))), \
         "sizeof(Geometry) - the fields applyPose's in-place path must copy; then per model: " \
         "corners, the cut rest's corners, face vertices, calls compared and calls whose " \
@@ -38619,6 +38674,7 @@ SLOW = [
     ("engine: walker falls", c_engine_walker_falls, "todo/omk-play"),
     ("engine: probe grid", c_engine_probe_grid, "todo/optimization.md 2; o3de/collision.h"),
     ("engine: tie equivalence", c_engine_tie_equivalence, "todo/optimization.md 3; o3de/depthtie.h"),
+    ("engine: body tie", c_engine_body_tie, "todo/vita-port.md 2026-09-22; o3de/geom3do.h tieClass"),
     ("engine: pixel tables", c_engine_pixel_tables, "todo/optimization.md 4; ui/surface.h"),
     ("engine: music storage", c_engine_music_storage, "todo/optimization.md 5; audio/music.h"),
     ("engine: audio queue bound", c_engine_audio_queue_bound, "todo/optimization.md 5; backends/sdl/play.cpp"),

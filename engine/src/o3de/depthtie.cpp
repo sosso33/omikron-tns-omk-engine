@@ -18,9 +18,17 @@ inline std::uint32_t bits(float f) {
     return u;
 }
 
+// THE KEY'S POSITION - and, when the geometry carries a tie CLASS
+// (`Geometry::tieClass`), the class folded into the z bits: an odd multiplier
+// is injective mod 2^32, so two corners at one position compare equal exactly
+// when their classes do too. (`samePos`, the quad PAIRING, stays positional:
+// a quad's two triangles are consecutive faces of one mesh.)
 inline P posOf(const Geometry& g, std::size_t c) {
     const auto& p = g.corners[c];
-    return P{bits(p.x), bits(p.y), bits(p.z)};
+    std::uint32_t z = bits(p.z);
+    if (c < g.tieClass.size())
+        z ^= static_cast<std::uint32_t>(g.tieClass[c]) * 0x9E3779B1u;
+    return P{bits(p.x), bits(p.y), z};
 }
 
 inline bool samePos(const Geometry& g, std::size_t a, std::size_t b) {
@@ -204,7 +212,10 @@ void DepthTie::resetFor(const Geometry& g, std::size_t ntri, std::vector<std::si
     replaying_ = false;
     cursor_ = ncalls_ = 0;
     anyWriter_ = false;
-    tracked_ = g.dirtyTo != 0 && g.dirtyTo == g.revision;
+    // tracked (the walk kept, for a replay) when the revision names its moved
+    // corners - or when the geometry is RIGID under its tie class, whose next
+    // revision replays this walk with NO moved units at all
+    tracked_ = (g.dirtyTo != 0 && g.dirtyTo == g.revision) || !g.tieClass.empty();
     if (tracked_) {
         resetTracked(ntri);
         ++walks;
@@ -532,8 +543,13 @@ void DepthTie::linkUnit(const Geometry& g, std::uint32_t u) {
 }
 
 bool DepthTie::prepareReplay(const Geometry& g, std::size_t ntri, std::vector<std::size_t>& restore) {
-    if (!tracked_ || (replaying_ && cursor_ != ncalls_) || g.dirtyTo == 0 || g.dirtyTo != g.revision ||
-        g.dirtyFrom != revision_ || done_.size() != ntri || unitOfTri_.size() != ntri)
+    // a RIGID revision (`Geometry::tieRigidFrom`) replays the last walk with
+    // nothing moved in key space; a DIRTY one with the corners it names
+    const bool rigid = !g.tieClass.empty() && g.tieRigidFrom != 0 && g.tieRigidFrom == revision_ &&
+                       g.revision != revision_;
+    if (!tracked_ || (replaying_ && cursor_ != ncalls_) || done_.size() != ntri || unitOfTri_.size() != ntri)
+        return false;
+    if (!rigid && (g.dirtyTo == 0 || g.dirtyTo != g.revision || g.dirtyFrom != revision_))
         return false;
     if (++stamp_ == 0) {
         std::fill(stampTri_.begin(), stampTri_.end(), 0);
@@ -548,7 +564,8 @@ bool DepthTie::prepareReplay(const Geometry& g, std::size_t ntri, std::vector<st
     // The moved units, once each - and nothing changes until every one of them
     // is known to pair exactly as it was walked.
     affected_.clear();
-    for (const std::uint32_t c : g.dirtyCorners) {
+    static const std::vector<std::uint32_t> kNoCorners;
+    for (const std::uint32_t c : rigid ? kNoCorners : g.dirtyCorners) {
         const std::size_t t = c / 3;
         if (t >= ntri) return false;
         if (stampTri_[t] == stamp_) continue;
