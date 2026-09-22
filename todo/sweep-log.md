@@ -1,5 +1,24 @@
 # The full-sweep counter
 
+## 2026-09-22: the RED CHECKS, triaged
+
+The reader asked for the standing reds to be cleared before anything else.
+The fast list is **228 checks and ONE failed**; the rest were `engine:` checks,
+run by name. What they turned out to be:
+
+| check | verdict |
+|---|---|
+| `licence headers` | 470 -> **474**: `src/ui/overlay.h`, `tools/body_tie.cpp`, `scripts/vita-vitagl-patch.py`, `scripts/play-golden.sh`, all named in its docstring |
+| `play usage` | FIXED: five flags the usage block never named (`--fight-health`, `--rings`, `--water-cam`, and today's `--thread-bodies` / `--no-thread-bodies`) |
+| `engine: ui scaling` | **the check was wrong, the code right**: its fourth source test counted the composer's blits (`== 5`) and a correct sixth arrived with the city map and the hint shop. It compares the blits that carry the filter with the blits there are, and says `N of M` rather than `False` |
+| `engine: UI`, `ui item bindings` | the merged widget table's two new panels - a census step, re-baselined with the numbers attributed. `resolvable`/`ok` did not move, so every resolvable binding still resolves |
+| `engine: UI`'s `disagree` | was **7**, and NOT a census step: the TERMINAL FAMILY (5, 11, 15..19), whose keypad hook the port models and `tools/sim/ui.py` does not. The keypad is eleven items three wide, so DOWN the first column is 0, 3, 6, 9, 10 - what the port reports. Named and asserted by its exact pair, as screens 7 and 9 already were |
+| `sneak previews`, `ui geometry`, `engine: player jump` | GREEN on their own; the sweep log's notes about them are history |
+| `engine: shoot hit` | **still red, deliberately** (`todo/shoot-patrol.md`: baselining its empty lists would be worse than the red) |
+
+So the only red left is the one that is red on purpose.
+
+
 `python3 tools/verify.py` (the whole sweep) takes upwards of half an hour —
 longer than most tasks it validates. So it is **not** run per task. The rule
 (CLAUDE.md §4, set by the reader on 2026-09-07):

@@ -3033,8 +3033,14 @@ def c_ui_item_bindings():
                 resolvable += 1
                 if 0 <= b["string"] < len(st) and st[b["string"]].strip():
                     ok += 1
+    # RE-BASELINED 2026-09-22 with `engine: UI`: the city map and the hint
+    # shop add four string bindings and two tag bindings, and all four sit on
+    # a CHILD panel with no text file of its own (`nofile` 10 -> 14). What did
+    # NOT move is the pair that matters - 32 bindings resolve against a screen
+    # that has a text file and 32 of them name a non-empty string, so every
+    # resolvable binding still resolves and this is a census step, not a fault.
     return (nstr, ntag, resolvable, ok, nofile, sorted(terminal)), \
-           (42, 24, 32, 32, 10, [5, 6, 7, 8, 9, 10]), \
+           (46, 26, 32, 32, 14, [5, 6, 7, 8, 9, 10]), \
            "items whose open callback binds a string id and items it binds a " \
            "tag on - neither is in the item record, which ships -1 and 0; " \
            "then how many of those bindings sit on a screen that HAS a text " \
@@ -20558,6 +20564,19 @@ def c_engine_ui():
 
     ### The THIRD divergence - RESOLVED, and the record of it kept
 
+    ### The TERMINAL FAMILY, 2026-09-22, and the same verdict
+
+    Screens 5, 11, 15, 16, 17, 18 and 19 share panel `0x004E4108`, whose list
+    hook `sub_4AF300` the port has modelled since the terminal work of
+    2026-09-17 (`todo/missing-ui.md` 3, `engine: terminal family`, shown to
+    fail by putting that hook back among the unmodelled ones) and which
+    `tools/sim/ui.py` does not model at all. The keypad is eleven items three
+    wide, so DOWN the first column runs 0, 3, 6, 9, 10 - the `0` cell and then
+    the big button - which is what the port reports after four presses while
+    the reference stays where it started. Seven more rows where the port is
+    the faithful side, each asserted by its exact pair rather than allowed
+    away, exactly as 7 and 9 are.
+
     **`disagree` is 0 again** as of 2026-09-17, so what follows is history
     rather than a standing fault; it is kept because the next census drift
     will look exactly like it did and the difference matters.
@@ -20626,9 +20645,24 @@ def c_engine_ui():
     # GAME STATE, and the port models that binding where `tools/sim/ui.py`
     # walks the raw widgets. See the docstring - the port is the faithful side
     # here, so the disagreement is asserted exactly rather than allowed away.
-    bound = {7, 9}
+    # ...and the TERMINAL FAMILY, for the same reason and with the same
+    # treatment (2026-09-22). Screens 5, 11, 15, 16, 17, 18 and 19 share panel
+    # `0x004E4108`, whose list hook `sub_4AF300` the PORT models since the
+    # terminal work of 2026-09-17 and `tools/sim/ui.py` does not - it is among
+    # the sim's unmodelled hooks by design (CLAUDE.md: 28 screens are walked,
+    # the rest keep their native hooks). The keypad is eleven items three
+    # wide, so walking DOWN the first column is 0, 3, 6, 9 and then 10 - the
+    # `0` cell and the big button - which is exactly what the port reports
+    # after four presses, while the reference, modelling nothing, stays on 0.
+    # So the port is again the faithful side and the difference is asserted
+    # exactly below rather than allowed away.
+    bound = {7, 9, 5, 11, 15, 16, 17, 18, 19}
     disagree = sum(1 for a, b in zip(mine, ref) if a != b and a[0] not in bound) \
                + abs(len(mine) - len(ref))
+    if os.environ.get("OMK_UI_DIFF"):        # which screens, for a re-baseline
+        for a, b in zip(mine, ref):
+            if a != b and a[0] not in bound:
+                print("  screen %d: port %s  ref %s" % (a[0], a[1:], b[1:]))
     known = tuple(sorted((a[0], a[4], b[4]) for a, b in zip(mine, ref)
                          if a != b and a[0] in bound))
     # 51/145/628/567/52/93/51 -> 54/154/666/600/54/100/54 on 2026-09-14: the
@@ -20649,8 +20683,20 @@ def c_engine_ui():
     # settling on a list in range. `disagree` is 0 and `known` is unchanged,
     # so the WALK agreed throughout - which is why this is a re-baseline and
     # not a repair.
+    #
+    # RE-BASELINED AGAIN 2026-09-22, for the same reason one level on: the
+    # widget table gained the SNEAK'S CITY MAP (`Lire plan`, 0x004DF190) and
+    # the HINT SHOP, two panels that `tables/ui_widgets.json` now carries, so
+    # every census over that tree moves by exactly them - 58 -> 60 panels,
+    # 170 -> 176 lists, 718 -> 728 items, 645 -> 651 selectable. `ui geometry`
+    # took the same step when they landed and this check was left behind,
+    # which is why it read as a standing failure for four days. `disagree` is
+    # again 0 once the terminal family joins the named cases below - and that
+    # is a NAMING, not a tolerance: each of the seven asserts its exact pair.
     return (head, len(ref), disagree, known), \
-           ((58, 170, 718, 645, 62, 108, 58, 0), 31, 0, ((7, 0, 3), (9, 0, 4))), \
+           ((60, 176, 728, 651, 63, 113, 60, 0), 31, 0,
+            ((5, 10, 0), (7, 0, 3), (9, 0, 4), (11, 10, 0), (15, 10, 0),
+             (16, 10, 0), (17, 10, 0), (18, 10, 0), (19, 10, 0))), \
            "panels (31 screens + 15 children - 13 reached through an item +44 and TWO named only from CODE, the verb panel 0x004DEEB8 and the examine page 0x004DEF20, which `sub_42A370` installs from a callback so nothing in the tree points at them), " \
            "lists, items, SELECTABLE items - which FELL by ten once the " \
            "shops' branch was resolved and each of them started hiding the " \
@@ -25810,6 +25856,12 @@ def c_engine_ui_scaling():
 
     Shown to fail (2026-09-09) with the filter ignored in `blt`: the 800x600
     frames become identical and the gradient stops moving.
+
+    **2026-09-22**: the fourth source test counted the composer's blits
+    (`== 5`) and went red when a sixth arrived with the city map and the hint
+    shop - code that passes the filter correctly. It compares the blits that
+    carry the filter with the blits there are, and reports `N of M` rather
+    than `False`, so the next drift says what it found.
     """
     import subprocess, tempfile, shutil, re
     eng = os.path.join(ROOT, "engine")
@@ -25823,11 +25875,22 @@ def c_engine_ui_scaling():
     pl = open(os.path.join(eng, "backends", "sdl", "play.cpp")).read()
     sd = open(os.path.join(eng, "src", "ui", "screendraw.cpp")).read()
     i2 = open(os.path.join(eng, "src", "ui", "i2d.cpp")).read()
+    _nblt = len(re.findall(r"\bblt\(", sd))
+    _nfil = sd.count("filter_)")
     src_ok = (bool(re.search(r"int\s+uiScaling\s*=\s*0;", sh)),
               '"uiscaling"' in sc,
               "comp.setScaling(uiScaling)" in pl,
-              # every blit back end carries it: the composer's five and I2D's one
-              sd.count("filter_)") == 5 and "filter_)" in i2)
+              # EVERY blit back end carries it - the INVARIANT, not the call
+              # sites. This counted the composer's blits ("== 5") and so went
+              # red when the city map and the hint shop added a sixth that
+              # passes the filter correctly: a scan that lists the callers has
+              # to be updated by whoever adds one, and nothing makes them
+              # (CLAUDE.md 1). It now compares the blits that carry the filter
+              # with the blits there are, and says so rather than answering
+              # False; a file it cannot read at all fails as a parse.
+              ("all" if _nblt >= 5 and _nfil == _nblt and "filter_)" in i2
+               else "%d of %d blits carry it%s" % (_nfil, _nblt,
+                                                   "" if "filter_)" in i2 else ", and I2D does not")))
 
     b = subprocess.run(["make", "-s", "build/run_screen"], cwd=eng,
                        capture_output=True, text=True)
@@ -25871,7 +25934,7 @@ def c_engine_ui_scaling():
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
-    return (src_ok, out), ((True, True, True, True), (True, True, True, 0)), \
+    return (src_ok, out), ((True, True, True, "all"), (True, True, True, 0)), \
            "the source: `Settings::uiScaling` defaults to 0, the ini key is " \
            "read, omk-play hands the mode to the composer, and both blit back " \
            "ends carry it; then the start menu composed four ways - at the " \
@@ -36456,6 +36519,10 @@ def c_licence_headers():
     it came to be found two files short. **467 -> 470**: the hardware film
     player, `backends/vita/avmovie.h` and `avmovie.cpp`, and
     `scripts/vita-movies.sh`, which converts the films for it.
+    **470 -> 474** (2026-09-22): `src/ui/overlay.h` (the GPU overlay's side
+    planes), `tools/body_tie.cpp` (the rigid body tie's probe),
+    `scripts/vita-vitagl-patch.py` (the one patch to the pinned vitaGL) and
+    `scripts/play-golden.sh` (the refactor record).
     """
     import glob as _g
     TAG = "SPDX-License-Identifier: GPL-3.0-or-later"
@@ -36485,7 +36552,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (470, [], 1, []), \
+           (474, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
