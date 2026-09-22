@@ -152,7 +152,44 @@ be implemented once, not per backend.
 
 ## 4. The order, and the check that keeps each step honest
 
-### S0 — the golden record (before touching anything)
+### S0 — the golden record — **DONE 2026-09-22, `scripts/play-golden.sh`**
+
+    scripts/play-golden.sh <dir>            record
+    scripts/play-golden.sh <dir> --check    re-record beside it and diff
+
+Six scenes - the street at density 4, the flat, a shoot phase, a fight, the
+`--scene` viewer through dialog 402's camera, and the canal dive - each a
+headless software run with a fixed frame count, keeping BOTH its framebuffer
+and its stdout. Whole set: **65 seconds**.
+
+Three things had to be settled before it was an oracle, and each is a fact
+about the port worth knowing:
+
+* **the stdout must be filtered of everything that measures time** - the
+  phase, span, section, slow-frame and present lines - because those are wall
+  clock and differ run to run on one binary. Every other line, every decision
+  the engine prints, must match;
+* **the shoot scene is not deterministic with its HUD on.** The shoot HUD
+  turns a ring and the held weapon with `SDL_GetTicks`, so those two boxes
+  differ between two runs of the same binary (the same wall-clock spin that
+  made the fight's models differ by 911 pixels on 2026-09-22). It runs with
+  `OMK_NOUI=1`, which keeps the shoot world, the gunmen and the camera - all a
+  refactor could break - and drops the HUD, which its own checks cover;
+* **`${=args}` is the ZSH spelling and the script is bash**, where it is a
+  "bad substitution" - CLAUDE.md 5's word-splitting trap seen from the other
+  side. Unquoted `$args` under `set -f`, so the `--hold` pattern's `*` cannot
+  glob either.
+
+**Shown to fail, and the two results are not the same.** Dimming the crowd
+light's blue ramp turns the STREET FRAME red at once. But a half-degree shift
+in `shortArc` - a file-level helper S1 moves - moves only the shoot and fight
+STDOUT, and a change to `relight` moves nothing at all, because these six runs
+never reach it. So the record is strong on the frame and on every printed
+decision, and it does NOT by itself cover a helper no scene exercises: for
+those, the compiler and the `engine:` checks are the cover, and a step that
+moves one should say so.
+
+### S0 — the original plan
 
 A pure refactor has the strongest check this repo can have: **identical
 bytes**. Before step 1, record headless runs (`SDL_VIDEODRIVER=dummy`,
