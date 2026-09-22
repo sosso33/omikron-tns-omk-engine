@@ -91,10 +91,13 @@ its Vulkan backend crashes on vitaGL.
    skipped; the `present` line says G6 holds. Then the shader-cache test:
    rename `ur0:data/libshacccg.suprx`, launch - the log should say `ABSENT`
    and the game start (the five `.gxp` travel in the VPK since `e0f05da`).
-2. **P4** - thread the per-body loops with `omk::Threads` (three cores: the
-   two body sections, ~80 ms, become ~30). The pool's Vita half has compiled
-   and NEVER RUN; `omk_bench.vpk` in Vita3K or on the console says `threads:
-   EXACT` or not, before any loop is threaded.
+2. **P4 is BUILT for the walkers and off by default** (2026-09-22): the
+   crowd's pose pass is split serial-resolve / parallel-body / merge, the
+   frame is byte-identical with `--thread-bodies`, and the pass halves on the
+   M1. On the console: run `omk_bench.vpk` first - if it says `threads: EXACT`
+   there, add `--thread-bodies` to `ux0:data/omk/args.txt` and read the `ped
+   bodies (wall)` span. The STAGED bodies (the larger section) are still
+   serial and are the next candidate.
 3. **P5** - the crowd's lights in the vertex shader (`applyLights` is now the
    largest engine leaf on the M1; needs the normal back in the GLES vertex).
 4. The scripted motion's grids (17 ms): whichever of the three marks is the
