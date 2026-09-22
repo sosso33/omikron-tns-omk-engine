@@ -603,6 +603,22 @@ profile is possible on a machine nobody is in front of - the software renderer
 under `SDL_VIDEODRIVER=dummy` is what runs; and the section marks print only
 on a PACED run (no `--frames`).
 
+**A staged body beyond the clip distance is not skinned** (same day). The
+staged loop posed every extra every frame - Anekbah's 25, most of them
+hundreds of metres from the camera - where the engine's visible set is the
+clip distance around the camera and it skins only what it draws. The program,
+placement, facing and nodes are still computed; the skinning, the corner
+transform, the lights and the upload are skipped for a body whose last drawn
+position is past `clipInches` plus its root radius - unless its FEET latch
+(`seatFeet`, taken once per clip from the posed corners) is not yet taken for
+the current clip, in which case it is skinned once. At the default 200 m clip
+the street start holds 9 of 25 beyond it; a 700-frame software render is
+BYTE-IDENTICAL with and without the skip (`OMK_SKIN_FAR=1` skins all, for the
+A/B), `engine: street frame` and `city crowd` green. And a walker hold (skip a
+walker whose clip frame and place did not change) was written, measured and
+REMOVED: on a street every walker's body point, heading or foot height moves
+every frame, even at an action point, so it never fired.
+
 ---
 
 ## 1. The issues, and what is missing

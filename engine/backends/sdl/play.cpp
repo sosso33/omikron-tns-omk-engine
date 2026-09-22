@@ -3884,6 +3884,7 @@ int main(int argc, char** argv) {
         omk::NodeTracks idle;         // the bank's default clip, frame 0
         bool  idleBuilt = false;
         float drawAt[3] = {0, 0, 0};   // where he was actually put, for a set piece
+        bool  drawAtKnown = false;     // ...and whether a frame has put him yet
         std::vector<float> poseWas;    // OMK_BODYLOG: last frame's posed corners
         // The yaw the body was last DRAWN with, kept so a held pose is held
         // whole: a scene clip's pose already carries the clip's root rotation,
@@ -13740,6 +13741,7 @@ int main(int argc, char** argv) {
                 ++loneProgs;
             }
             bool firstBody = true;
+            int stagedFar = 0;                 // beyond the clip distance: not skinned
             for (auto& up : staged) {
                 Staged& s = *up;
                 s.drawn = false;
@@ -15848,6 +15850,36 @@ int main(int argc, char** argv) {
                                                  !hasSeveralSkeletons(*s.mo)
                                                  ? s.mo->rest : lodRestFor(s.model, *s.mo, skel);
                 s.shadowRoot = skel;
+                // A BODY BEYOND THE CLIP DISTANCE IS NOT SKINNED (2026-09-22).
+                // The engine's visible set is the clip distance (row 3) around
+                // the camera and it skins only what it draws; this loop posed
+                // every staged body every frame - Anekbah's 26 extras, most of
+                // them hundreds of metres from the player - which was 46 ms of
+                // a console's frame. His program, his placement, his facing and
+                // his nodes (`pose`) are all still computed above; what is
+                // skipped is the skinning, the corner transform, the lights and
+                // the upload, none of which anything reads for a body that is
+                // not drawn - except the FEET latch, `s.seatFeet`, taken once
+                // per clip from the posed corners, so a body whose clip changed
+                // out there is skinned once for it. His last drawn position
+                // (`drawAt`) is the distance measured; a newly staged body has
+                // none and is skinned. The root radius pads the reach, as the
+                // set's runs are padded by their own bounds.
+                {
+                    const float* at = s.drawAtKnown ? s.drawAt : s.at;
+                    const float rr = (s.mo->root >= 0 && static_cast<std::size_t>(s.mo->root) < s.mo->meshes.size())
+                                         ? s.mo->meshes[static_cast<std::size_t>(s.mo->root)].radius : 0.0f;
+                    const float ex = at[0] - view.cam.eye[0], ey = at[1] - view.cam.eye[1],
+                                ez = at[2] - view.cam.eye[2];
+                    const double reach = clipInches + rr;
+                    const bool seatHeld = s.seatKnown && s.seatClip == s.sceneClipWas && s.seatSrc == src;
+                    static const bool skinAll = std::getenv("OMK_SKIN_FAR") != nullptr;   // A/B only
+                    if (!skinAll && seatHeld && std::isfinite(reach) &&
+                        double(ex) * ex + double(ey) * ey + double(ez) * ez > reach * reach) {
+                        ++stagedFar;
+                        continue;
+                    }
+                }
                 omk::applyPose(s.posed, restUsed, s.mo->meshes, pose, &s.mo->face, &fv);
                 // THE ROOT MOTION: `Anim_RootDelta`'s running sum, weighted by
                 // how much of the pose is the scene's, so a line stands where
@@ -16233,6 +16265,7 @@ int main(int argc, char** argv) {
                 s.drawAt[0] = s.at[0] + rootMove[0];
                 s.drawAt[1] = (s.pelvis ? s.at[1] : ground) + rootMove[1];
                 s.drawAt[2] = s.at[2] + rootMove[2];
+                s.drawAtKnown = true;
                 // HIS BODY IN THE SPATIAL INDEX: `Actor_TickShoot` ends a
                 // gunman's tick in `SpatialIndex_Update`, and the player's
                 // query (the crowd push above) shoves him out of it. At a FLOOR
@@ -16358,6 +16391,17 @@ int main(int argc, char** argv) {
                     firstBody = false;
                     for (int k = 0; k < 3; ++k) actorAt[k] = off[k];
                     actorKnown = true;
+                }
+            }
+            {
+                static long farTold = -1000;
+                int stagedDrawn = 0;
+                for (const auto& up : staged) if (up->drawn) ++stagedDrawn;
+                if (n - farTold >= 300 && !staged.empty()) {
+                    farTold = n;
+                    std::printf("frame %ld: staged bodies - %zu staged, %d skinned and drawn, "
+                                "%d beyond the clip distance (not skinned)\n",
+                                n, staged.size(), stagedDrawn, stagedFar);
                 }
             }
             mark("staged bodies");
