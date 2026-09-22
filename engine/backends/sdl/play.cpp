@@ -6029,6 +6029,12 @@ int main(int argc, char** argv) {
     // ...and a few NAMED spans inside them, summed the same way, so a slow
     // phase says which call it is (the Vita's start menu: ~600 ms of
     // "sim+draw" with no world drawn).
+    // ...and MARKS down the frame, so a slow one names its SECTION: each
+    // mark is the end of the section before it, the gaps are printed on a
+    // frame over `OMK_MARKS_MS` (default 150) from the largest down. The named
+    // spans covered 6 of a console's 200 ms city frame (2026-09-22).
+    std::vector<std::pair<const char*, double>> phMarks;
+    const auto mark = [&](const char* name) { phMarks.emplace_back(name, phaseNow()); };
     std::map<std::string, double> phSpan;
     const auto spanned = [&](const char* name, auto&& fn) {
         const double a = phaseNow();
@@ -6042,8 +6048,11 @@ int main(int argc, char** argv) {
     for (;;) {
         phTop = phaseNow();
         phRb0 = phRb1 = -1.0;
+        phMarks.clear();
+        phMarks.emplace_back("top", phTop);
         bool pumpOk = true;
         spanned("pump", [&] { pumpOk = front.pump(host); });
+        mark("pump");
         if (!pumpOk) break;
         // ---- one line when the mouse first moves in shoot mode -----------
         //
@@ -6240,7 +6249,14 @@ int main(int argc, char** argv) {
             const Uint32 nowMs = SDL_GetTicks();
             double dt = (nowMs - lastMs) / 1000.0;
             lastMs = nowMs;
-            if (dt < 0.0 || dt > 0.25) dt = 1.0 / 30.0;
+            // THE ENGINE'S OWN CLAMP (docs/BOOT.md 4): `flt_4C30D8 = 30 / fps`,
+            // capped at 3.0 - three frames, 0.1 s - so below 10 fps the game
+            // SLOWS DOWN. The port used to fall back to 1/30 above 0.25 s,
+            // and a console at 200-300 ms a frame (2026-09-22) then alternated
+            // six frames of motion with one, which a reader saw as the camera
+            // "shaking". Every frame is now a delta the engine could produce.
+            if (dt < 0.0) dt = 1.0 / 30.0;
+            if (dt > 3.0 / 30.0) dt = 3.0 / 30.0;
             dt *= speed;                     // --speed, the engine's own trick
             session.setFrameSeconds(dt);
             frameSec = dt;
@@ -6315,8 +6331,10 @@ int main(int argc, char** argv) {
             session.playerMoveEnded(moveWaitCtx);
             moveWaitCtx = -1; moveWaitGroup = -1;
         }
+        mark("session");
         spanned("session", [&] { session.frame(); });
 
+        mark("game frame");
         // ---- SCRIPTED OBJECT MOTION - the crates, the doors, the lifts ---
         //
         // `Script_MoveObjectOnPath` ends in `o3de_SetNodePos(node, x, y, z)`
@@ -6755,6 +6773,7 @@ int main(int argc, char** argv) {
             }
         }
 
+        mark("scripted motion");
         // ---- ADVENTURE MODE'S SOUND EFFECTS -----------------------------
         //
         // A cutscene's sound rides on a scene object's program; the player's
@@ -6989,6 +7008,7 @@ int main(int argc, char** argv) {
             }
         }
 
+        mark("sounds");
         // ---- the hand-over, and the controller's frame ------------------
         {
             const auto& sc = session.scene();
@@ -10338,6 +10358,7 @@ int main(int argc, char** argv) {
                 std::printf("music: track %d, %.1f s%s\n", music.track(),
                             music.seconds(), music.looping() ? ", looping" : "");
         }
+        mark("controller");
         // ---- AND THE PAUSE SCREEN STOPS THE SOUND ------------------------
         //
         // Read out of screen 31's own open and close callbacks (0x004ADDB0 /
@@ -10619,6 +10640,7 @@ int main(int argc, char** argv) {
                 std::printf("--- conversation over ---\n");
         }
 
+        mark("audio");
         // ---- DIALOGUE MODE, and the bug its absence caused ---------------
         //
         // `Actor_EnterDialogueMode` (0x00468DE0) and `Actor_LeaveDialogueMode`
@@ -11750,6 +11772,7 @@ int main(int argc, char** argv) {
             }
         }
 
+        mark("input, ui, shoot");
         // ---- THE QUIT `Quitter le jeu` ASKED FOR, served between pumps
         //
         // `Script_Pump(1)` (0x00407DC0) opens with
@@ -12115,6 +12138,7 @@ int main(int argc, char** argv) {
             }
         }
 
+        mark("screens");
         // ---- the world, when no screen is over it -----------------------
         //
         // The sets follow the resident slots' STATE: a slot whose decor the
@@ -13197,6 +13221,7 @@ int main(int argc, char** argv) {
             // the original show it: the arm and the gun, low at the right.
             const bool drawArm = playerReady && player && !drawPlayer &&
                                  session.shootMode().active() && shootCameraLive;
+            mark("world begin, set");
             // ---- THE WORLD'S PROPS -----------------------------------
             //
             // Every prop of the resident chunks whose DB state has bit 1 -
@@ -13669,6 +13694,7 @@ int main(int argc, char** argv) {
                 }
             }
 
+            mark("props, guns");
             // ---- EVERY STAGED BODY, POSED BY WHATEVER DRIVES IT --------
             //
             // Three sources in the engine's own precedence - the program that
@@ -16334,6 +16360,7 @@ int main(int argc, char** argv) {
                     actorKnown = true;
                 }
             }
+            mark("staged bodies");
             // ---- THE PEDESTRIANS ---------------------------------------
             pedDrawn = pedLive = pedInAction = pedIdle = 0;
             pedLit = 0;
@@ -17358,6 +17385,7 @@ int main(int argc, char** argv) {
                     session.currentArea(), session.scene().file().c_str());
                 frameNote = buf;
             }
+            mark("pedestrians, traffic");
             // ---- THE LIGHTS, per pixel (`todo/enhancements.md` 7) -------
             //
             // The same `.3DO` records the crowd is lit by, handed to the
@@ -17545,6 +17573,7 @@ int main(int argc, char** argv) {
                     }
                 }
             }
+            mark("lights");
             // ---- THE SHADOWS ------------------------------------------
             //
             // `Actors_TickAll` calls `Actor_DrawShadow(detail, actor)` for
@@ -17856,6 +17885,7 @@ int main(int argc, char** argv) {
                              [](const omk::Draw& a, const omk::Draw& b) {
                                  return (a.bucketKey & 0x3FFFu) < (b.bucketKey & 0x3FFFu);
                              });
+            mark("shadows");
             // ---- AND THE MIRROR, which until now only `--scene` ever got.
             //
             // `drawWithMirror` has been on the renderer boundary since
@@ -18013,6 +18043,7 @@ int main(int argc, char** argv) {
                 }
             } else if (!gpuFrame || verifyGpuPresent) {
             phRb0 = phaseNow();
+            mark("world end, submit");
             const omk::Surface& pic = world.readback();
             phRb1 = phaseNow();
             if (vpItem && pic.w == fb.w) {
@@ -20747,6 +20778,20 @@ int main(int argc, char** argv) {
                             (now - paceLeft) * 1000.0,
                             player ? (" at " + std::to_string(int(player->pos()[0])) + " " +
                                       std::to_string(int(player->pos()[2]))).c_str() : "");
+            // ...and one over OMK_MARKS_MS (150) says which SECTIONS: the
+            // gaps between the marks, largest first, the top five
+            static const double marksMs = std::getenv("OMK_MARKS_MS") ? std::atof(std::getenv("OMK_MARKS_MS")) : 150.0;
+            if (paceLeft > 0.0 && (now - paceLeft) * 1000.0 > marksMs && phMarks.size() > 1) {
+                std::vector<std::pair<double, const char*>> gaps;
+                for (std::size_t k = 1; k < phMarks.size(); ++k)
+                    gaps.emplace_back((phMarks[k].second - phMarks[k - 1].second) * 1000.0, phMarks[k].first);
+                std::sort(gaps.begin(), gaps.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+                std::printf("frame %ld: sections -", n);
+                for (std::size_t k = 0; k < gaps.size() && k < 5; ++k)
+                    std::printf(" %s %.0f ms,", gaps[k].second, gaps[k].first);
+                std::printf(" (%zu marks, %.0f ms top to last)\n", phMarks.size(),
+                            (phMarks.back().second - phMarks.front().second) * 1000.0);
+            }
             // ...and a VERY slow one says where it went: this frame's own
             // simulation-and-submission span, and the GL backend's counts
             if (paceLeft > 0.0 && now - paceLeft > 0.5) {

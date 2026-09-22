@@ -548,6 +548,25 @@ vertex - the three programs) and is committed under
 `engine/backends/vita/shader_cache/`; the VPK carries it. The no-compiler start
 is still to be tried: rename `ur0:data/libshacccg.suprx` and launch.
 
+### 2026-09-22, the console log of 08:15: 8.4 s -> 200 ms, and the SHAKE was the port's clamp
+
+The in-place buffer patches took Anekbah's frame from 8.4 s to **190-300 ms**
+(`sim+draw 166-241` on the `phases` lines), and the GL side is nothing:
+`gles frame: 16 draws 0 ms, 3 uploads (139 KB) 1 ms, ties 1 ms, 2 buffer
+patches`, `swap 0.2`. So what is left is CPU work in the frame, and the named
+spans cover 6 ms of it (`session 2.8, music 2.5`). The reader: *"better, but
+still very laggy and the camera is shaking"*.
+
+* **The shake is the port's delta clamp, and the fix is the engine's rule.**
+  `play.cpp` took a frame over 0.25 s as a hitch and fed the game 1/30 for it;
+  the console's frames straddle 0.25 s, so six frames of motion alternated with
+  one. `Game_Frame` caps `30 / fps` at **3.0** (docs/BOOT.md 4): below 10 fps
+  the game slows down and every step is at most three frames. Ported as such.
+* **SECTION MARKS** down the frame (`mark(...)`, 16 of them): a frame over
+  `OMK_MARKS_MS` (150) prints its five largest sections, so the next console
+  log says which block of `play.cpp` holds the 190 ms. On the M1 a street
+  frame is 2 ms top to last, so nothing to attribute here.
+
 ---
 
 ## 1. The issues, and what is missing
