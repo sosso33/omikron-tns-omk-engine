@@ -837,6 +837,40 @@ And **6220 KB of vertex uploads a frame** is the other half: every posed body
 re-uploaded whole. That is P5's territory (GPU skinning) and P3's (skip a body
 whose pose did not change).
 
+### 2026-09-22, later: the tie FOLD was tried, bought nothing, and found something worse
+
+The plan above - fold the tie's degeneration into the full-buffer upload so the
+losers need no patching afterwards - was written, and it is **byte-identical**
+on a 400-frame Anekbah street at density 4 through the real GLES backend. It
+also saved **nothing**: 219 patches a frame before, 223 after.
+
+A counter split by caller says why, and it is the useful part. Of 223 patches,
+**154 are the depth tie's** and the rest are the dirty-corner upload runs - so
+the tie is the right target. But at UPLOAD time the tie's applied set is
+**empty** (`folded 0`, every time), so there is nothing to fold in: whatever
+the tie marks during a frame is gone by the next frame's upload.
+
+**And the counters say why THAT is**: for a posed body in the viewer the tie
+reports `walks 1 replays 0`, while `engine/tools/body_tie` reports 239 replays
+of 240 for the same models. **So the rigid replay of 2026-09-22 is not firing
+in the viewer at all** - the probe exercises it and the real path does not,
+which is exactly the shape CLAUDE.md 1 warns about (a check that passes beside
+code that does not run). The optimisation is committed, proven in isolation,
+and inert where it matters.
+
+What is NOT yet established is which condition fails. `prepareReplay` wants
+`tracked_`, `g.tieRigidFrom == revision_`, `g.revision != revision_` and the
+per-triangle arrays to be the right size; `applyPose` sets `tieRigidFrom` to
+the revision it found and bumps `revision`, and then **`play.cpp` overwrites
+`revision` from the global `worldGeoRev`** - which may or may not preserve the
+relationship. That is the first thing to test, and it is cheap: print the four
+conditions for one body for one frame.
+
+**What was kept**: only the split counter (`N buffer patches a frame (M the
+depth tie's)`, on the routine `gles` line, so a console log shows it without
+waiting for a half-second frame). The fold itself is reverted - it is correct
+and it is dead weight until the replay runs.
+
 ---
 
 ## 1. The issues, and what is missing

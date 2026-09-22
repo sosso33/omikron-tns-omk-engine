@@ -340,6 +340,12 @@ namespace omk {
 // the texture upload of a CPU frame, and the present draw.
 namespace {
 double g_glesMs[4] = {0, 0, 0, 0};
+// Buffer patches since the last report, and how many of them the DEPTH TIE
+// made. The split is what named the city's cost: 219 patches a frame on
+// Anekbah's street and 150 of them the tie's (`todo/vita-port.md`).
+long g_glesPatchesWindow = 0;
+long g_glesTiePatchWindow = 0;
+bool g_glesInTie = false;
 // ONE FRAME'S OWN COUNTS, reset at `begin` - what a SLOW FRAME line quotes
 // (`glesFrameReport`). A console's 8.4 s city frame (2026-09-21) had nothing
 // in the log to say which GL call it was.
@@ -355,6 +361,21 @@ double glesClockMs() {
 long glesTakeOverlayRows(Renderer* r);
 void glesTakeTimings(double out[4]) {
     for (int i = 0; i < 4; ++i) { out[i] = g_glesMs[i]; g_glesMs[i] = 0.0; }
+}
+
+// Buffer patches since the last call, and the tie's share - on the `gles`
+// line every 60 frames, so a console log need not wait for a half-second
+// frame to show what the depth tie costs.
+long glesTakePatches() {
+    const long n = g_glesPatchesWindow;
+    g_glesPatchesWindow = 0;
+    return n;
+}
+
+long glesTakeTiePatches() {
+    const long n = g_glesTiePatchWindow;
+    g_glesTiePatchWindow = 0;
+    return n;
 }
 
 // the last world frame's own counts, for a SLOW FRAME line
@@ -645,6 +666,8 @@ void GlesRenderer::setTextures(std::span<const Texture> t) {
 // frame's scene has been kicked.
 static void patchArrayBuffer(std::size_t offset, std::size_t size, const void* data) {
     ++g_glesFrame.patches;
+    ++g_glesPatchesWindow;
+    if (g_glesInTie) ++g_glesTiePatchWindow;
 #if defined(__vita__)
     if (void* base = glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY)) {
         std::memcpy(static_cast<unsigned char*>(base) + offset, data, size);
@@ -735,6 +758,7 @@ void GlesRenderer::resolveTies(const Draw& d, Vbo& vb) {
     restore.clear();
     t.resolve(*g, d.start, d.count, d.blend == Blend::Opaque, losers, restore);
     if (losers.empty() && restore.empty()) return;
+    g_glesInTie = true;
     glBindBuffer(GL_ARRAY_BUFFER, vb.id);
     GpuVert tri[3];
     for (const std::size_t k : restore) {
@@ -754,6 +778,7 @@ void GlesRenderer::resolveTies(const Draw& d, Vbo& vb) {
         }
         patchArrayBuffer(c * sizeof(GpuVert), sizeof tri, tri);
     }
+    g_glesInTie = false;
     t.dropped += static_cast<long>(losers.size());
     t.touched = true;
 }

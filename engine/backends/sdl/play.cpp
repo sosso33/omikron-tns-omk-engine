@@ -143,6 +143,8 @@ bool glesPresentSurface(Renderer*, const Surface&, int winW, int winH);
 bool glesPresentWorld(Renderer*, int vy, int vh, int frameW, int frameH, int winW, int winH);
 void glesTakeTimings(double out[4]);
 std::string glesFrameReport();
+long glesTakePatches();
+long glesTakeTiePatches();
 long glesTakeOverlayRows(Renderer*);
 bool glesPresentOverlay(Renderer*, const Surface&, const unsigned char* mask, const unsigned char* maskRows,
                         const float fade[4], int vy, int vh, int winW, int winH);
@@ -20653,8 +20655,10 @@ int main(int argc, char** argv) {
                     double g[4];
                     omk::glesTakeTimings(g);
                     std::printf("frame %ld gles (ms, mean of 60): glReadPixels %.1f, to-565 %.1f, "
-                                "texture upload %.1f, present draw %.1f, swap %.1f\n", n,
-                                g[0] / 60.0, g[1] / 60.0, g[2] / 60.0, g[3] / 60.0, glSwapMs / 60.0);
+                                "texture upload %.1f, present draw %.1f, swap %.1f; "
+                                "%.0f buffer patches a frame (%.0f the depth tie's)\n", n,
+                                g[0] / 60.0, g[1] / 60.0, g[2] / 60.0, g[3] / 60.0, glSwapMs / 60.0,
+                                omk::glesTakePatches() / 60.0, omk::glesTakeTiePatches() / 60.0);
                     std::printf("frame %ld overlay: %ld plane rows re-sent in 60 frames\n", n,
                                 omk::glesTakeOverlayRows(glRen));
                     glSwapMs = 0.0;
