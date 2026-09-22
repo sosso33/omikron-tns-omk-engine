@@ -17913,8 +17913,10 @@ int main(int argc, char** argv) {
                                  n, view.cam.eye[0], view.cam.eye[1], view.cam.eye[2],
                                  view.cam.at[0], view.cam.at[1], view.cam.at[2], view.cam.hfovDeg);
             }
+            mark("shadows, hud models");
             const auto mst = omk::drawWithMirror(world, draws, view,
                                                  noMirror ? omk::MirrorPlane{} : wmp);
+            mark("world begin..end (submit, GL)");
             if (mst.active != mirrorLive || (mst.maskPixels > 0 && !mirrorSeen)) {
                 mirrorLive = mst.active;
                 if (mst.maskPixels > 0) mirrorSeen = true;
@@ -20338,6 +20340,7 @@ int main(int argc, char** argv) {
                          lineScroll, &lineOverflow);
             });
         }
+        mark("screens, hud");
         // ---- THE FPS COUNTER, when asked for --------------------------
         //
         // Measured over a WINDOW rather than per frame, because a per-frame
@@ -20581,6 +20584,7 @@ int main(int argc, char** argv) {
         }
         {
             const double pr0 = phaseNow();
+            mark("fades, flicker");
             // a frame nothing drew over goes straight from the world target
             // to the window; anything else, or a backend that refuses, is the
             // composed `fb` as before
@@ -20693,6 +20697,7 @@ int main(int argc, char** argv) {
             }
             if (!presentedWorld) present(fb);
             const double pr1 = phaseNow();
+            mark("present, swap");
             if (phRb0 < 0.0) phRb0 = phRb1 = pr0;   // a frame with no readback
             phSum[0] += phRb0 - phTop;
             phSum[1] += phRb1 - phRb0;
