@@ -6620,6 +6620,7 @@ int main(int argc, char** argv) {
                 }
             }
         }
+        mark("scripted motion: meshes placed");
         if (soupsMoved) {
             // the walker holds REFERENCES to the merged copies, so they are
             // refilled in place rather than rebuilt (rebuildWorld's merge)
@@ -6727,12 +6728,14 @@ int main(int argc, char** argv) {
             }
             // THE TWO LAYERS: the fixed one only when the moving set changed, the
             // moving one - a few hundred triangles - every moving frame.
+            mark("scripted motion: soups patched");
             if (newlyMoving) std::sort(playerMovingIds.begin(), playerMovingIds.end());
             if (newlyMoving || !playerGrid.fixed.matches(playerSoup)) rebuildFixedGrid();
             rebuildMovingGrid();
             if (newlySteep) std::sort(steepMovingIds.begin(), steepMovingIds.end());
             if (newlySteep || !playerSteepGrid.fixed.matches(playerSteep)) rebuildSteepFixedGrid();
             rebuildSteepMovingGrid();
+            mark("scripted motion: grids rebuilt");
             // `OMK_VERIFY_SPLIT=1`: the moved triangles' centres from above and a
             // fixed lattice over the street, probed through the two-layer grid and
             // through the linear scan, every moving frame
@@ -20828,7 +20831,7 @@ int main(int argc, char** argv) {
                             player ? (" at " + std::to_string(int(player->pos()[0])) + " " +
                                       std::to_string(int(player->pos()[2]))).c_str() : "");
             // ...and one over OMK_MARKS_MS (150) says which SECTIONS: the
-            // gaps between the marks, largest first, the top five
+            // gaps between the marks, largest first, the top eight
             static const double marksMs = std::getenv("OMK_MARKS_MS") ? std::atof(std::getenv("OMK_MARKS_MS")) : 150.0;
             if (paceLeft > 0.0 && (now - paceLeft) * 1000.0 > marksMs && phMarks.size() > 1) {
                 std::vector<std::pair<double, const char*>> gaps;
@@ -20836,7 +20839,7 @@ int main(int argc, char** argv) {
                     gaps.emplace_back((phMarks[k].second - phMarks[k - 1].second) * 1000.0, phMarks[k].first);
                 std::sort(gaps.begin(), gaps.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
                 std::printf("frame %ld: sections -", n);
-                for (std::size_t k = 0; k < gaps.size() && k < 5; ++k)
+                for (std::size_t k = 0; k < gaps.size() && k < 8; ++k)
                     std::printf(" %s %.0f ms,", gaps[k].second, gaps[k].first);
                 std::printf(" (%zu marks, %.0f ms top to last)\n", phMarks.size(),
                             (phMarks.back().second - phMarks.front().second) * 1000.0);
