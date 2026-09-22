@@ -757,6 +757,53 @@ and not on a number:
   ~0.05 ms; on an A9, where `sincos` is a library call rather than an
   instruction, it is worth several times that.
 
+### 2026-09-22, the console log of 20:14: THE SHADER CACHE WORKS, and the frame is fully named
+
+**`libshacccg.suprx` is ABSENT and the game runs.** The log says so in as many
+words, so the precompiled-shader work is CONFIRMED on hardware and a player
+needs no extracted compiler.
+
+**And `ped light` is 0.0 ms.** The crowd's per-vertex light - the biggest
+single item in either body section, and the one change of the day that the M1
+could measure - costs nothing at all on the console now. `readback 0.0,
+compose 0.0` and **58-60 of 60 frames straight from the GPU**, so G6 holds on
+hardware too.
+
+The frame is 174-191 ms and every millisecond of it is now named (the pacer's
+own 174 and the marks' 174.3 agree, so the instrument is not inflating it):
+
+| section | ms |
+|---|---|
+| world begin..end (submit, GL) | 44 |
+| **fades, flicker** | **42** |
+| pedestrians, traffic | 26 |
+| staged bodies | 17 |
+| present, swap | 16.5 |
+| scripted motion (meshes 9, grids 7) | 16 |
+| lights | 5 |
+| audio / controller, intermittently | 14-17 |
+
+and inside the two body sections: `staged skin` 10-11, `ped apply` 5-11,
+`staged resolve` 5.5, `ped compose` 0.6-1.5, `ped place` 0.9-2.2, **`ped light`
+0.0**. So the SKINNING is now the top per-body cost, where the light was.
+
+**The 42 ms is the thing nobody expected**, because on the M1 that span is
+0.1 ms and every loop in it - the colour fade, the black fade's bands, the
+flicker ring - is gated and none of them was running. What is NOT gated is
+`std::getenv`: the frame loop made **25 uncached calls a frame**, six of them
+for `OMK_NOUI`, one per staged BODY for `OMK_BODYLOG`, and three for
+`OMK_CLIPLOG` - one of those inside the per-frame present gate. `getenv` walks
+the environment comparing strings, and this is the third time the Vita's C
+library has cost this port real time (`%zu`, the missing integer divide).
+
+`omk::envSet` (`src/app/playhelpers.h`) looks a name up once and keeps it,
+scanned by the literal's own POINTER first. **22 call sites converted**; the
+three left take the value and already sit inside `static` initialisers. The
+golden record is identical, all four targets build. **Whether it is the 42 ms
+is UNPROVEN** - the M1 cannot see it - so `fps counter` and `the fades` are
+now marks of their own, and the next log either shows the span collapsed or
+says which third of it is left.
+
 ---
 
 ## 1. The issues, and what is missing

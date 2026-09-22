@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 
 namespace omk {
@@ -116,6 +117,20 @@ Geometry relight(const Geometry& src, Light mode) {
         c.r = c.g = c.b = y;
     }
     return g;
+}
+
+
+bool envSet(const char* name) {
+    struct Seen { const char* name; bool set; };
+    static Seen seen[32];
+    static int n = 0;
+    for (int i = 0; i < n; ++i)                       // the literal's own pointer
+        if (seen[i].name == name) return seen[i].set;
+    for (int i = 0; i < n; ++i)                       // ...or the same text
+        if (std::strcmp(seen[i].name, name) == 0) return seen[i].set;
+    const bool set = std::getenv(name) != nullptr;
+    if (n < static_cast<int>(sizeof seen / sizeof seen[0])) seen[n++] = Seen{name, set};
+    return set;
 }
 
 }  // namespace omk

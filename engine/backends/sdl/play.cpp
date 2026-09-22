@@ -6193,7 +6193,7 @@ int main(int argc, char** argv) {
             // the old, wrong reading, kept so the two can be run a variable
             // apart (`verify.py: engine: node rest`).
             static const bool transientMotions =
-                std::getenv("OMK_TRANSIENT_MOTIONS") != nullptr;
+                omk::envSet("OMK_TRANSIENT_MOTIONS");
             if (transientMotions) {
                 for (const auto& mo : sr->motions()) allMotions.push_back(mo);
             } else {
@@ -6267,7 +6267,7 @@ int main(int argc, char** argv) {
                     // not, and that is the whole of the apartment door bug.
                     mo.placeOn(w.meshes[static_cast<std::size_t>(mi)].pos, p.pos);
                     motionAt[mo.name] = {p.pos[0], p.pos[1], p.pos[2]};
-                    if (std::getenv("OMK_TRACE_MOTION")) {
+                    if (omk::envSet("OMK_TRACE_MOTION")) {
                         const float* mp = w.meshes[static_cast<std::size_t>(mi)].pos;
                         std::printf("  [motion] %-12s sample %.0f %.0f %.0f  from %.0f %.0f %.0f"
                                     "  anchor %.0f %.0f %.0f  ->  %.0f %.0f %.0f  (%s)\n",
@@ -7050,7 +7050,7 @@ int main(int argc, char** argv) {
                         // `rebuildWorld`, so the pointers survive a
                         // transition the way the walker's do.
                         static const bool noCamCollide =
-                            std::getenv("OMK_NO_CAM_COLLIDE") != nullptr;
+                            omk::envSet("OMK_NO_CAM_COLLIDE");
                         if (!noCamCollide)
                             player->setCameraSolids(&playerSteep, &playerSoup);
                         // THE GROUND GRID (todo/optimization.md step 9): the
@@ -7059,7 +7059,7 @@ int main(int argc, char** argv) {
                         // `OMK_NO_GROUND_GRID=1` keeps the linear scan;
                         // `OMK_VERIFY_GROUND=1` runs both and counts.
                         static const bool noGroundGrid = std::getenv("OMK_NO_GROUND_GRID") != nullptr;
-                        omk::setGroundVerify(std::getenv("OMK_VERIFY_GROUND") != nullptr);
+                        omk::setGroundVerify(omk::envSet("OMK_VERIFY_GROUND"));
                         player->setGroundGrid(noGroundGrid ? nullptr : &playerGrid);
                         player->setFloorFlags(&playerSoupFlags);
                         // the body and camera sweeps through the steep and
@@ -8502,7 +8502,7 @@ int main(int argc, char** argv) {
                         {
                             const int ws = static_cast<int>(player->state());
                             // an instrument: every tick, for a stroke that loses its travel
-                            if (ws >= 11 && ws <= 14 && std::getenv("OMK_SWIMTRACE"))
+                            if (ws >= 11 && ws <= 14 && omk::envSet("OMK_SWIMTRACE"))
                                 std::printf("  swimtrace %ld: state %d '%s' frame %.2f -> %.2f, local y %+.2f, "
                                             "pitch %.1f, y %.2f\n", n, player->ctlState(),
                                             player->ctlStateName().c_str(),
@@ -12942,7 +12942,7 @@ int main(int argc, char** argv) {
             // is actually about. A frame counts lit pixels and cannot tell a
             // correct shot from a wrong one that happens to see the sky; the
             // eye's distance from the player can (`verify.py: camera travel`).
-            if (std::getenv("OMK_CAMEYE")) {
+            if (omk::envSet("OMK_CAMEYE")) {
                 if (session.dialogOpen()) {
                     const auto& dg = session.dialogue();
                     const omk::DialogCamera* qa = dg.cameraA();
@@ -13583,7 +13583,7 @@ int main(int argc, char** argv) {
                 const omk::SceneRunner* run = &sc;
                 int prog = -1;
                 static const bool activeOnly =
-                    std::getenv("OMK_ACTIVE_POOL_ONLY") != nullptr;   // the old, wrong lookup
+                    omk::envSet("OMK_ACTIVE_POOL_ONLY");   // the old, wrong lookup
                 for (const omk::SceneRunner* cand : {&sc, &session.sceneOut()}) {
                     if (activeOnly && cand != &sc) break;
                     if (!cand->loaded()) continue;
@@ -13661,7 +13661,7 @@ int main(int argc, char** argv) {
                     // and reading only the relative call's Euler rotated his
                     // whole route by the 145 his standing step had left.
                     static const bool stickyEuler =
-                        std::getenv("OMK_STICKY_EULER") != nullptr;   // the old, wrong reading
+                        omk::envSet("OMK_STICKY_EULER");   // the old, wrong reading
                     if (stt->animReached && (!stickyEuler || stt->relative)) {
                         s.progYaw = stt->euler[1];
                         s.progYawKnown = true;
@@ -15730,13 +15730,13 @@ int main(int argc, char** argv) {
                     // the waiter's ABS walk clips travel under the 145 his
                     // preceding REL wait left there.
                     static const bool noRootSpin =
-                        std::getenv("OMK_NO_ROOTSPIN") != nullptr;
+                        omk::envSet("OMK_NO_ROOTSPIN");
                     // ...and the SENSE is its own question: the body's spin and
                     // `Anim_RootDelta`'s multiply are different code paths in the
                     // engine and need not share it. `OMK_ROOTSPIN_NEG` turns the
                     // delta the other way while leaving the body alone.
                     static const float rootSpinSign =
-                        std::getenv("OMK_ROOTSPIN_NEG") ? -1.0f : 1.0f;
+                        omk::envSet("OMK_ROOTSPIN_NEG") ? -1.0f : 1.0f;
                     if (!noRootSpin && s.progYawKnown && std::fabs(s.progYaw) > 0.01f) {
                         float r[3];
                         omk::rotateYaw(rootSpinSign * progYawSign * s.progYaw, rootMove, r);
@@ -16134,7 +16134,7 @@ int main(int argc, char** argv) {
                 // position, a pose falling back to an idle - shows as a step
                 // in one or both; walking and animating show as a small
                 // steady value. A diagnostic: nothing draws differently.
-                if (std::getenv("OMK_BODYLOG")) {
+                if (omk::envSet("OMK_BODYLOG")) {
                     double moved = 0.0;
                     std::size_t nc = s.posed.corners.size();
                     if (s.poseWas.size() == nc * 3 && nc) {
@@ -16860,7 +16860,7 @@ int main(int argc, char** argv) {
                         const long v = e ? std::atol(e) : 0;
                         return v > 1 ? v : 1;
                     }();
-                    if (std::getenv("OMK_PLY") && (n % plyEvery) == 0) {
+                    if (omk::envSet("OMK_PLY") && (n % plyEvery) == 0) {
                         float lo = -1e9f, hi = 1e9f;
                         for (const auto& c : playerPosed.corners) {
                             if (c.y > lo) lo = c.y;
@@ -17296,7 +17296,7 @@ int main(int argc, char** argv) {
             // the frames where the two disagree.
             std::size_t litBodies = 0;
             for (const auto& up : staged) if (up->drawn && up->mo) ++litBodies;
-            if (std::getenv("OMK_CLIPLOG")) {
+            if (omk::envSet("OMK_CLIPLOG")) {
                 std::printf("  [clip] frame %ld  runs %zu drawn %zu culled  bodies %zu"
                             "  eye %.0f %.0f %.0f\n", n, runsDrawn, runsCulled, litBodies,
                             view.cam.eye[0], view.cam.eye[1], view.cam.eye[2]);
@@ -17913,7 +17913,7 @@ int main(int argc, char** argv) {
                 else if (vkRen && &world == vkRen && !omk::vulkanCanPresentWorld(&world)) keep = "supersampling";
 #endif
                 else if (mst.active && !mst.native) keep = "cpu mirror";
-                else if (!flickerDir.empty() || !snapsDir.empty() || std::getenv("OMK_CLIPLOG")) keep = "instrument";
+                else if (!flickerDir.empty() || !snapsDir.empty() || omk::envSet("OMK_CLIPLOG")) keep = "instrument";
                 else if (lastDumped) keep = "dump";
                 // THE SOFT GATES, last: what these three draw goes OVER the
                 // picture without reading it (a full-screen bitmap, the text's
@@ -17941,11 +17941,11 @@ int main(int argc, char** argv) {
                 // the frame on the CPU - a reader: *"The health disappear after
                 // some time (only the stats should disappear)"*.
                 else if (fightRun.active && fightRun.fight && fightRun.fight->koCounter() == 0 &&
-                         !std::getenv("OMK_NOUI")) { keep = "fight hud"; softGate = true; }
+                         !omk::envSet("OMK_NOUI")) { keep = "fight hud"; softGate = true; }
                 // ...and the BREATH gauge, under the test that draws it - the
                 // same GPU-present gap the fight's gauges fell into
                 else if (player && player->breathLeftMs() >= 0.0 &&
-                         !std::getenv("OMK_NOUI")) { keep = "breath gauge"; softGate = true; }
+                         !omk::envSet("OMK_NOUI")) { keep = "breath gauge"; softGate = true; }
                 // G6 step 4: the SHOOT HUD. Its readers are the composer's alpha
                 // fill and 50% quad, the gauge's and the radar's `fillQuadD3d` -
                 // all on the planes; the turning models, the crosshair and the
@@ -19681,7 +19681,7 @@ int main(int argc, char** argv) {
         // - the two gauges down the screen's two edges, and mode 2's STAT CARD
         // for the four seconds after `Fight_Begin`'s `Hud_Refresh`
         // (`ui/hudbar.h`). Hidden through the KO replay, as the engine's gate.
-        if (fightRun.active && fightRun.fight && !std::getenv("OMK_NOUI")) {
+        if (fightRun.active && fightRun.fight && !omk::envSet("OMK_NOUI")) {
             if (!hudBar.loaded()) hudBar.load(fs);
             if (fightRun.hudRefresh) {
                 fightRun.hudRefresh = false;
@@ -19722,7 +19722,7 @@ int main(int argc, char** argv) {
         // - mode 1, the horizontal bar (`ui/hudbar.h`). The engine's
         // `Hud_Refresh` on the first tick seeds the sparks and the stat card's
         // clock, neither of which mode 1 draws, so nothing is done for it here.
-        if (player && player->breathLeftMs() >= 0.0 && !std::getenv("OMK_NOUI")) {
+        if (player && player->breathLeftMs() >= 0.0 && !omk::envSet("OMK_NOUI")) {
             if (!hudBar.loaded()) hudBar.load(fs);
             const int v = static_cast<int>(1000.0 * player->breathLeftMs() / 40000.0);
             const omk::HudBarFrame br = hudBar.draw(fb, v, 1000, 0, 1);
@@ -19752,7 +19752,7 @@ int main(int argc, char** argv) {
         // GAUGE (`ui/hudbar.h`). The two turning models go into their boxes
         // below. NOT drawn yet, labelled: the top-right minimap
         // `RADAR\<level>.WRE`.
-        if (shootMode && hudWalk && !walk && !std::getenv("OMK_NOUI")) {
+        if (shootMode && hudWalk && !walk && !omk::envSet("OMK_NOUI")) {
             hudRows.clear();
             std::int32_t rings = 0;
             omk::readActorProperty(state.raw().subspan(
@@ -19973,7 +19973,7 @@ int main(int argc, char** argv) {
             // instrument, and the one that found the keyed-tile fault: with
             // the device off, the caller was there all along, so the world
             // was never the problem.
-            if (!std::getenv("OMK_NOUI")) {
+            if (!omk::envSet("OMK_NOUI")) {
                 omk::ScreenFrame sf;
                 spanned("screen draw", [&] { sf = comp.draw(fb, openScreen, *walk); });
                 // ---- THE HINT SHOP, REPORTED FROM THE DRAW -----------
@@ -20413,7 +20413,7 @@ int main(int argc, char** argv) {
         // count far below its neighbours', which is what a reader reports as
         // "Kay'l with a black background" and what no still frame can be
         // chosen to catch.
-        if (std::getenv("OMK_CLIPLOG")) {
+        if (omk::envSet("OMK_CLIPLOG")) {
             // Lit pixels, and how many changed since the previous frame. The
             // second is what a POP looks like: a body or a camera moving a
             // long way in one frame repaints a large part of the picture, and
@@ -20514,7 +20514,7 @@ int main(int argc, char** argv) {
             ++framesSeen;
             if (gpuFrame) ++gpuPresented;
             else ++keptBy[gpuKeep];
-            if (std::getenv("OMK_GPU_PRESENT_STATS") && framesSeen % 30 == 0) {
+            if (omk::envSet("OMK_GPU_PRESENT_STATS") && framesSeen % 30 == 0) {
                 std::printf("gpu present: frame %ld, %ld of %ld frames stayed on the GPU; on the CPU:",
                             n, gpuPresented, framesSeen);
                 for (const auto& [why, count] : keptBy) std::printf(" %s %ld,", why.c_str(), count);
