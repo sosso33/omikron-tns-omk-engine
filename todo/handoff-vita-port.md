@@ -24,7 +24,11 @@ frame on the M1 and why 30 fps is far off) - still true, not repeated here.
   17, and ~100 ms AFTER the last mark of that build, now marked too.
 * Since that log, without a console: the body tie replayed instead of
   re-walked (~40 of those ms by the M1's ratio), far bodies not skinned (9 of
-  25), P2 applied, the scripted-motion section split into three marks.
+  25), P2 applied, one `cos`/`sin` a body instead of two a corner, the crowd's
+  light 4x cheaper, the GLES scratch buffers kept, and the frame marked to the
+  section and the call. **The M1's street, outside the software rasterizer:
+  pedestrians 1.0 -> 0.5 ms, staged bodies 0.4 -> 0.3, scripted motion
+  0.2 -> 0.1** - and every step is a BYTE-IDENTICAL render.
   **None of it seen on a console yet.**
 * **In Vita3K it plays** up to area 118; 3D reads back black there. The
   emulator and the Mac's GL window both need the DISPLAY ON - with it off the
@@ -76,6 +80,11 @@ its Vulkan backend crashes on vitaGL.
 
 ## 4. What to do next, in order
 
+0. Nothing below can be sized without **one console log from the city**. The
+   frame now prints its eight largest SECTIONS (over 150 ms) and, every 60
+   frames, the per-body SPANS inside the two body sections - `ped compose`,
+   `ped apply`, `ped place`, `ped light`, `staged skin`, `staged place`,
+   `motion gather` - so the next log apportions the whole frame.
 1. **The next console log, in the city**: the `sections -` lines (now with
    the submission, the fades, the present and the three scripted-motion marks)
    say where the remaining ~200 ms go; `staged bodies -` says how many were
