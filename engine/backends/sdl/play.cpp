@@ -5598,8 +5598,23 @@ int main(int argc, char** argv) {
                     if (h.held.count(0x38)) skipAll = true;      // DIK_LMENU
                     break;
                 }
-                for (auto blk = mov.nextAudio(); !blk.empty(); blk = mov.nextAudio())
+                // THE SOUND IS DECODED HALF A SECOND AHEAD OF THE PICTURE, not
+                // to the end of the film (2026-09-23). This drained
+                // `nextAudio` until it came back empty, and pl_mpeg's audio
+                // decoder reads on through the whole stream - so the FIRST
+                // frame decoded all 107 s of `GAME.mpg`'s sound into the
+                // device queue, and the demuxer buffered every video packet it
+                // stepped over on the way. A desktop has the memory to hide
+                // that; the Vita, on its MPEG-1 fallback (no H.264 copy), asked
+                // for 72 MB in one piece and died of `bad_alloc` in Vita3K.
+                // `heardSeconds` is decoded minus still queued, so the pacing
+                // reads the same clock either way.
+                constexpr double kAudioAhead = 0.5;
+                while (mov.audioSeconds() < (shown + 1) / fps + kAudioAhead) {
+                    const auto blk = mov.nextAudio();
+                    if (blk.empty()) break;
                     front.queueAudio(blk);
+                }
                 ++shown;
                 if (behind) { ++dropped; ++droppedInARow; continue; }
                 droppedInARow = 0;

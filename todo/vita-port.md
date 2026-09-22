@@ -937,6 +937,29 @@ last ~250 ms on a HARD crash, so an empty **`ux0:data/omk/log-sync`** file
 restores the old unbuffered log for hunting one; any failure to set the stream
 or the thread up falls back to it too.
 
+**Vita3K, same night, and it confirmed two things and found a third.**
+
+* **The asynchronous log works.** A run writes a full log, and one that died
+  still carries its last line (`FATAL: out of memory`), which exists only
+  because the exit path drained the buffer; on the next run the log grew live
+  - 751 lines while the game was still running - so the writer thread drains
+  as it should.
+* **The films killed the game on the MPEG-1 FALLBACK.** With no `.mp4` copies
+  in the emulator's storage the films decode in software, and `new: 75497472
+  bytes REFUSED` came on the first frame of `GAME.mpg`. The film loop drained
+  `nextAudio` until it came back empty on every frame, and pl_mpeg's audio
+  decoder reads on through the stream - so the FIRST frame decoded all 107 s of
+  sound into the device queue (a vector doubling past 36 MiB asks for 72), and
+  the demuxer buffered every video packet it stepped over. The console never
+  hit it because its films come from the H.264 copies; a console WITHOUT them
+  would have died exactly like this. Now the sound is decoded half a second
+  ahead of the picture; `heardSeconds` is decoded minus still queued, so the
+  pacing reads the same clock. In Vita3K all three films then play and the game
+  reaches the menu and area 118; `engine: movies` and `engine: boot` green.
+* **`scripts/vita3k-run.sh` came back with an empty log** while launching the
+  emulator directly worked, and the emulator ignores `timeout`'s SIGTERM - it
+  has to be killed with -9. Not looked into further.
+
 ---
 
 ## 1. The issues, and what is missing
