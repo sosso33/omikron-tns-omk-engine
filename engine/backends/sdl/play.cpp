@@ -6380,6 +6380,7 @@ int main(int argc, char** argv) {
         std::map<std::string, std::array<float, 3>> motionAt;
         std::vector<omk::Program::NodeMotion> allMotions;
         std::map<std::string, omk::SceneRunner::NodeScale> allScales;
+        const double motionGather0 = phaseNow();
         for (const omk::SceneRunner* sr : {&session.sceneOut(), &session.scene()}) {
             if (!sr->loaded()) continue;
             for (const auto& mo : sr->motions()) {
@@ -6414,6 +6415,7 @@ int main(int argc, char** argv) {
             }
             for (const auto& ns : sr->nodeScales()) allScales[ns.first] = ns.second;
         }
+        phSpan["motion gather"] += phaseNow() - motionGather0;
         if (!allMotions.empty() || !allScales.empty()) {
             struct Patch {
                 float s[3] = {1.0f, 1.0f, 1.0f};
@@ -6496,6 +6498,7 @@ int main(int argc, char** argv) {
                 }
                 bool moved = false;
                 std::vector<std::uint32_t> dirty;   // the corners this frame's patch rewrote
+                const double motionPatch0 = phaseNow();
                 for (const auto& kv : patches) {
                     const int mi = kv.first;
                     const Patch& pa = kv.second;
