@@ -804,6 +804,39 @@ is UNPROVEN** - the M1 cannot see it - so `fps counter` and `the fades` are
 now marks of their own, and the next log either shows the span collapsed or
 says which third of it is left.
 
+**AND THE CITY IS WORSE THAN THE REST, which the reader said and the log
+shows.** Split the 174 ms frame by what depends on the city:
+
+* **city-dependent, ~108 ms**: the GL submit 44, pedestrians 26, staged bodies
+  17, scripted motion 16, lights 5. Fewer bodies, fewer moving meshes and less
+  geometry indoors, so all five fall away there;
+* **everywhere, ~58 ms**: `fades, flicker` 42 and `present, swap` 16.5.
+
+So `envSet` can only ever have been half the story, and the city half is the
+bigger one. The `gles frame` line names it - **on the worst frames** (it only
+prints over 500 ms, so these are 1.0-1.5 s frames and not the typical 174):
+
+    278 draws 4 ms, 32 uploads (6220 KB) 25 ms, ties 59 ms, 431 buffer patches
+
+**The DEPTH TIE is the largest GL-side item, and the reason is a interaction
+this port created.** `uploadGeometry` rewrites a posed body's whole buffer
+every frame and calls `tie_[g].vboReplaced()`, which clears the applied set -
+so every loser that upload just overwrote has to be written back, one
+`glMapBuffer`/`glUnmapBuffer` pair each. Forty bodies of ten losers is the
+431 patches, every frame. The rigid replay of 2026-09-22 stopped the tie
+WALKING per frame; it did not stop it PATCHING, because the upload keeps
+wiping what it wrote.
+
+**The fix is to fold the degeneration into the upload**: for a rigid body the
+losers are the same as last frame's - that is exactly what the replay
+establishes - so `uploadGeometry` can emit those triangles degenerate as it
+builds the vertex array, and `resolveTies` then finds nothing to patch. Not
+written yet, and it needs its own byte-identical proof.
+
+And **6220 KB of vertex uploads a frame** is the other half: every posed body
+re-uploaded whole. That is P5's territory (GPU skinning) and P3's (skip a body
+whose pose did not change).
+
 ---
 
 ## 1. The issues, and what is missing
