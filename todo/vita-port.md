@@ -623,6 +623,23 @@ every frame, even at an action point, so it never fired.
 and crowd-feet name lookup in `play.cpp` (`pending/vita-meshidx-playcpp.md`,
 now marked integrated); the four checks green and unchanged, the mutation red.
 
+**ONE `cos`/`sin` A BODY, NOT TWO A CORNER** (2026-09-22). `rotateYaw` takes an
+angle in DEGREES and computes its cosine and sine every call, and the three
+per-corner loops that turn a body to its heading called it per corner - twice
+for a walker (the position and the normal). Anekbah's street: 17 walkers x 446
+corners x 2, plus the staged bodies and the vehicles, is ~15000 `sincos` a
+frame, and `__sincosf_stret` + `rotateYaw` were 67 of ~600 engine samples on
+the M1. `yawSinCos` + `rotateYawCS` (`actor/player.h`) take the pair already
+computed and `rotateYaw` is now those two calls, so the arithmetic is the same
+expression on the same values - **bit-exact, and shown so**: Anekbah at frame
+900 and Jaunpur (address 4, density 4, the vehicles drawn) are BYTE-IDENTICAL
+before and after. The M1's street sections: pedestrians 1.0 -> 0.8 ms, staged
+bodies 0.4 -> 0.3.
+
+The marks also print to a TENTH of a millisecond now: at `%.0f` a section
+costing 0.4 ms printed `0 ms`, which is what made the scripted-motion split
+unreadable on the Mac.
+
 ---
 
 ## 1. The issues, and what is missing

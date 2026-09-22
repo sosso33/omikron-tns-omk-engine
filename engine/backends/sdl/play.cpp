@@ -16256,16 +16256,18 @@ int main(int argc, char** argv) {
                     }
                 }
                 const bool turn = std::fabs(bodyYaw) > 0.01f;
+                float bcs, bsn;
+                omk::yawSinCos(bodyYaw, bcs, bsn);      // once, not per corner
                 for (auto& c : s.posed.corners) {
                     if (turn && !aboutPelvis) {
                         const float in[3] = {c.x, c.y, c.z};
                         float r[3];
-                        omk::rotateYaw(bodyYaw, in, r);
+                        omk::rotateYawCS(bcs, bsn, in, r);
                         c.x = r[0]; c.y = r[1]; c.z = r[2];
                     } else if (turn) {
                         const float in[3] = {c.x - pelvis[0], c.y - pelvis[1], c.z - pelvis[2]};
                         float r[3];
-                        omk::rotateYaw(bodyYaw, in, r);
+                        omk::rotateYawCS(bcs, bsn, in, r);
                         c.x = r[0] + pelvis[0]; c.y = r[1] + pelvis[1]; c.z = r[2] + pelvis[2];
                     }
                     c.x += off[0]; c.y += off[1]; c.z += off[2];
@@ -16490,17 +16492,21 @@ int main(int argc, char** argv) {
                         rootXZ[0] = p.mo->meshes[static_cast<std::size_t>(p.mo->root)].pos[0];
                         rootXZ[1] = p.mo->meshes[static_cast<std::size_t>(p.mo->root)].pos[2];
                     }
+                    // one `cos`/`sin` for the whole body instead of two a
+                    // corner - the same bits, since the angle does not change
+                    float wcs, wsn;
+                    omk::yawSinCos(w.facing, wcs, wsn);
                     for (auto& c : p.posed.corners) {
                         const float in[3] = {c.x - rootXZ[0], c.y, c.z - rootXZ[1]};
                         float r[3];
-                        omk::rotateYaw(w.facing, in, r);
+                        omk::rotateYawCS(wcs, wsn, in, r);
                         c.x = r[0] + w.body[0];
                         c.y = r[1] + w.body[1] + w.footY - p.feet;
                         c.z = r[2] + w.body[2];
                         // the normal turns with the walker and does not move
                         const float n[3] = {c.nx, c.ny, c.nz};
                         float rn[3];
-                        omk::rotateYaw(w.facing, n, rn);
+                        omk::rotateYawCS(wcs, wsn, n, rn);
                         c.nx = rn[0]; c.ny = rn[1]; c.nz = rn[2];
                     }
                     // `Slider_PlaceShadow`'s two nodes, on the same transform.
@@ -16518,7 +16524,7 @@ int main(int argc, char** argv) {
                                 const auto& mp = pose[static_cast<std::size_t>(fi[f])].pos;
                                 const float in[3] = {mp[0] - rootXZ[0], mp[1], mp[2] - rootXZ[1]};
                                 float r[3];
-                                omk::rotateYaw(w.facing, in, r);
+                                omk::rotateYawCS(wcs, wsn, in, r);
                                 p.footAt[f][0] = r[0] + w.body[0];
                                 p.footAt[f][1] = r[1] + w.body[1] + w.footY - p.feet;
                                 p.footAt[f][2] = r[2] + w.body[2];
@@ -16708,10 +16714,12 @@ int main(int argc, char** argv) {
                     // 30.75 units ABOVE the body point (y is down), turned to
                     // the heading `sub_453330` built from the direction to its
                     // mover - which for a vehicle is where it is going.
+                    float vcs, vsn;
+                    omk::yawSinCos(m.facing, vcs, vsn);   // once a vehicle, not a corner
                     for (auto& c : sv.posed.corners) {
                         const float in[3] = {c.x - sv.origin[0], c.y - sv.origin[1], c.z - sv.origin[2]};
                         float r[3];
-                        omk::rotateYaw(m.facing, in, r);
+                        omk::rotateYawCS(vcs, vsn, in, r);
                         c.x = r[0] + m.body[0];
                         c.y = r[1] + m.body[1] - omk::kVehNodeLift;
                         c.z = r[2] + m.body[2];
@@ -20857,8 +20865,8 @@ int main(int argc, char** argv) {
                 std::sort(gaps.begin(), gaps.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
                 std::printf("frame %ld: sections -", n);
                 for (std::size_t k = 0; k < gaps.size() && k < 8; ++k)
-                    std::printf(" %s %.0f ms,", gaps[k].second, gaps[k].first);
-                std::printf(" (%zu marks, %.0f ms top to last)\n", phMarks.size(),
+                    std::printf(" %s %.1f ms,", gaps[k].second, gaps[k].first);
+                std::printf(" (%zu marks, %.1f ms top to last)\n", phMarks.size(),
                             (phMarks.back().second - phMarks.front().second) * 1000.0);
             }
             // ...and a VERY slow one says where it went: this frame's own

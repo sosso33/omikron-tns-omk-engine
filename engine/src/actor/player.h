@@ -767,6 +767,18 @@ float headingFromClipRoot(std::span<const std::byte> clip, int frame);
 // applies: forward is (sin yaw, -cos yaw), the convention `ADDRESSES` and
 // `resolveCamera` use.
 void rotateYaw(float yawDeg, const float in[3], float out[3]);
+// ...with the turn's cosine and sine already in hand. `rotateYaw` IS this
+// after one `cos`/`sin` pair, so a caller turning many points by one angle
+// (every corner of a body, twice - the position and the normal) gets the same
+// bits for one pair instead of thousands: the arithmetic below is the same
+// expression on the same values (todo/vita-port.md 2026-09-22).
+void yawSinCos(float yawDeg, float& cs, float& sn);
+inline void rotateYawCS(float cs, float sn, const float in[3], float out[3]) {
+    const float x = in[0], y = in[1], z = in[2];
+    out[0] = x * cs - z * sn;
+    out[1] = y;
+    out[2] = x * sn + z * cs;
+}
 // ...and the same with all three angles: `Matrix3x3_FromEulerAngles` whole,
 // applied as a row vector. Reduces to `rotateYaw` when pitch and roll are 0.
 void rotateEuler(const float eulerDeg[3], const float in[3], float out[3]);

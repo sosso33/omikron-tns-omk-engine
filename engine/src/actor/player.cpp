@@ -45,16 +45,19 @@ float wrap180(float a) {
 
 }  // namespace
 
+void yawSinCos(float yawDeg, float& cs, float& sn) {
+    const float t = yawDeg * 0.0174532925199433f;
+    cs = std::cos(t);
+    sn = std::sin(t);
+}
+
 void rotateYaw(float yawDeg, const float in[3], float out[3]) {
     // Matrix3x3_FromEulerAngles(0, y, 0) is [[cy,0,sy],[0,1,0],[-sy,0,cy]] and
     // Matrix3x3_RotateVector multiplies as a ROW vector: x' = x cy - z sy,
     // z' = x sy + z cy. The same two lines `resolveCamera` carries.
-    const float t = yawDeg * 0.0174532925199433f;
-    const float cs = std::cos(t), sn = std::sin(t);
-    const float x = in[0], y = in[1], z = in[2];
-    out[0] = x * cs - z * sn;
-    out[1] = y;
-    out[2] = x * sn + z * cs;
+    float cs, sn;
+    yawSinCos(yawDeg, cs, sn);
+    rotateYawCS(cs, sn, in, out);
 }
 
 void rotateEuler(const float eulerDeg[3], const float in[3], float out[3]) {
