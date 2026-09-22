@@ -697,6 +697,40 @@ DID NOT BUILD.** It executes `build/vlight_probe` and never made it, so a
 mutation stayed red through its own restore and read as a broken fix. It
 builds the probe now, which is CLAUDE.md 1's rule about exactly this.
 
+### 2026-09-22: P4, THE CROWD POSED OVER SEVERAL CORES - and it is the same frame
+
+The reader's own point, and it was the right one: the pool's VITA half needs a
+device, but the DECOMPOSITION does not - a desktop `omk::Threads` proves it
+here. The walker pass is now three:
+
+* a **serial** half that resolves the shared caches - `charModelFor` loads a
+  model, `pedTracksFor` binds a clip's tracks, `lodRestFor` cuts and keeps a
+  rest geometry - and counts the crowd, recording one `PedJob` a drawn walker;
+* the **body** pass, `composePose` / `applyPose` / the turn / the feet / the
+  light, which writes only its own walker's `PedStaged` and reads everything
+  else, so `parallelFor`'s disjoint chunks hold;
+* a **merge** in index order: the geometry REVISIONS, the counters, and the
+  per-body times. The revisions matter - assigned inside the pass they race,
+  and a backend keys its vertex cache on them.
+
+The per-body spans had to move with it: `spanned` writes a shared map, so each
+job times itself and the merge sums them. `ped bodies (wall)` is the elapsed
+time of the pass and the others are now sums ACROSS runners, which is why they
+rise when it is threaded while the wall time falls.
+
+**Anekbah at density 4, 200 frames: the framebuffer is byte-identical with and
+without `--thread-bodies`**, and the wall time of the pass is **0.4 ms -> 0.2
+on the M1** (8 runners, 17 drawn walkers). `engine: threaded bodies` pins it,
+and is shown to fail by dropping the `thread_local` from `applyLights`'
+scratch - the threaded run then dies rather than drawing differently, so the
+check reports a run that did not finish as itself.
+
+**OFF by default** (`--thread-bodies` / `--no-thread-bodies`), because the
+pool's Vita half has still never run on a device: the console turns it on in
+`args.txt` once `omk_bench` says `threads: EXACT` there. **The STAGED bodies
+are not threaded** - that loop queries the scene runner, logs, and calls back
+into the Session, so it is not a disjoint-chunk shape without more work.
+
 ---
 
 ## 1. The issues, and what is missing

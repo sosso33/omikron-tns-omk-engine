@@ -61,6 +61,7 @@
 #include "o3de/geom3do.h"
 #include "o3de/particles.h"
 #include "o3de/shadow.h"
+#include "platform/threads.h"
 #include "o3de/shimmer.h"
 #include "audio/mixer.h"
 #include "audio/music.h"
@@ -1958,6 +1959,7 @@ int main(int argc, char** argv) {
     int clipArg = 0;
     int skyFlag = -1;      // --sky 0|1, options row 4; -1 = take it from the settings
     int shadowFlag = -1;   // --shadows 0|1, options row 5; -1 = the settings'
+    int threadFlag = 0;    // --thread-bodies: pose the crowd over several cores
     int detailFlag = -1;   // --detail 0..2, options row 7; -1 = the settings'
     int aaFlag = -1;       // --aa N, [Enhancements] antialiasing; -1 = the settings'
     int filterFlag = -1;   // --filter nearest|bilinear|trilinear, [Enhancements] texturefiltering
@@ -2196,6 +2198,8 @@ int main(int argc, char** argv) {
         }
         else if (a == "--density" && i + 1 < argc) { density = std::atoi(argv[++i]); densityFlag = true; }
         else if (a == "--shadows" && i + 1 < argc) shadowFlag = std::atoi(argv[++i]);
+        else if (a == "--thread-bodies") threadFlag = 1;
+        else if (a == "--no-thread-bodies") threadFlag = 0;
         else if (a == "--no-shadows") shadowFlag = 0;
         else if (a == "--detail" && i + 1 < argc) detailFlag = std::atoi(argv[++i]);
         else if (a == "--config" && i + 1 < argc) configFile = argv[++i];
@@ -2491,6 +2495,15 @@ int main(int argc, char** argv) {
     const bool drawSky = skyFlag >= 0 ? skyFlag != 0 : settings.v.sky;
     // Options rows 5 and 7, with a flag beating the save the way --sky does.
     const bool drawShadows = shadowFlag >= 0 ? shadowFlag != 0 : settings.v.shadows;
+    // THREADED BODIES (`todo/vita-port.md` P4). Off by default: the posing is
+    // bit-identical either way (`omk::Threads`' chunks are disjoint and the
+    // merge is in index order), but the pool's VITA half has never run on a
+    // device, so the console turns it on in `args.txt` once `omk_bench` says
+    // `threads: EXACT` there. `--thread-bodies` / `--no-thread-bodies`.
+    const bool threadBodies = threadFlag > 0;
+    if (threadBodies)
+        std::printf("bodies: posed over %d runners (`--thread-bodies`); the frame is "
+                    "bit-identical to one runner\n", omk::Threads::shared().runners());
     // The ENHANCEMENT, and it is subordinate to the option above: with row 5
     // off nothing draws whatever this says. Default 0 = what the engine draws.
     // `--enhance-all` is a BASE: an explicit flag beats it, and so does a
@@ -4034,6 +4047,22 @@ int main(int argc, char** argv) {
     // `kLodDistances[3]` (40 m) and nothing beyond; this draws the full model
     // inside that distance and nothing beyond, so a street at density 3 in
     // Anekbah is 200 walkers of which a camera sees a few dozen.
+    // ONE WALKER'S SHARE OF THE BODY PASS (todo/vita-port.md P4). The serial
+    // half resolves the caches and fills these; the body pass reads them and
+    // writes only that walker's own `PedStaged`; the merge afterwards takes
+    // the counts and times in index order, so a threaded frame is a serial
+    // one's frame exactly.
+    struct PedJob {
+        std::size_t i = 0;
+        const omk::Geometry* rest = nullptr;
+        int lodRoot = 0;
+        int frame = 0;
+        int lit = 0;
+        float footOff = 0.0f;
+        double tCompose = 0, tApply = 0, tPlace = 0, tLight = 0;
+    };
+    std::vector<PedJob> pedJobs;
+
     struct PedStaged {
         CharModel* mo = nullptr;
         // A crowd model carries FOUR skeletons - `PhBassin`, `PiBassin`, ...,
@@ -16449,6 +16478,7 @@ int main(int argc, char** argv) {
                 }
                 const float reach = omk::kLodDistances[3];
                 pedFootOffMax = 0.0f;
+                pedJobs.clear();
                 for (std::size_t i = 0; i < ws.size(); ++i) {
                     const auto& w = ws[i];
                     PedStaged& p = *pedStaged[i];
@@ -16471,129 +16501,172 @@ int main(int argc, char** argv) {
                     int frame = static_cast<int>(std::floor(w.clock)) - 1;
                     if (frame < 0) frame = 0;
                     if (p.tracks && frame >= p.tracks->frames) frame = p.tracks->frames - 1;
-                    // the spans below are per-body sums, printed in the
-                    // `spans` line every 60 frames: a console's "pedestrians
-                    // 35 ms" and "staged bodies 46" named no call inside them
-                    // (todo/vita-port.md 2026-09-22).
-                    std::vector<omk::MeshPose> pose;
-                    spanned("ped compose", [&] {
-                        pose = p.tracks
+                    pedJobs.push_back(PedJob{i, &rest, lodRoot, frame});
+                }
+                // ---- THE BODIES, which may run on several cores -----------
+                //
+                // The pass above is the SERIAL half and it is serial for a
+                // reason: it resolves the shared caches (`charModelFor` loads
+                // a model, `pedTracksFor` binds a clip's tracks,
+                // `lodRestFor` cuts and keeps a rest geometry) and counts the
+                // crowd. Everything below writes only its OWN walker's
+                // `PedStaged` and reads the rest, so the chunks are disjoint
+                // and `omk::Threads`' contract holds: no ordering, no
+                // reduction, bit-identical whatever the split
+                // (`platform/threads.h`; todo/vita-port.md P4).
+                //
+                // What is deliberately NOT in here: the geometry REVISION and
+                // the counters, which are assigned in index order after the
+                // pass so that a threaded frame numbers its buffers exactly as
+                // a serial one does.
+                const auto pedBodies = [&](std::size_t from, std::size_t to) {
+                    for (std::size_t k = from; k < to; ++k) {
+                        PedJob& j = pedJobs[k];
+                        const auto& w = ws[j.i];
+                        PedStaged& p = *pedStaged[j.i];
+                        const omk::Geometry& rest = *j.rest;
+                        const int lodRoot = j.lodRoot;
+                        const int frame = j.frame;
+                        // The per-body times are the JOB's own, summed in index
+                        // order after the pass: `spanned` writes a shared map and
+                        // this body may be running on another thread.
+                        const double tc0 = phaseNow();
+                        std::vector<omk::MeshPose> pose = p.tracks
                             ? omk::composePose(p.mo->meshes, *p.tracks, frame, false)
                             : omk::composePose(p.mo->meshes, omk::NodeTracks{}, 0, false);
-                    });
-                    spanned("ped apply", [&] {
+                        const double tc1 = phaseNow();
                         omk::applyPose(p.posed, rest, p.mo->meshes, pose);
-                    });
-                    // THE HEIGHT is the engine's rule, `sub_437F80(inst, x, body.y
-                    // + footY - radius, z)`: the model origin stands one root
-                    // radius (41.9 for PSH_FN - the pelvis-to-feet height) above
-                    // the body point and the root track's summed y moves it.
-                    // Written here as the REST pose's feet on the body point plus
-                    // that summed y, which is the same constant for a model
-                    // whose radius is its height - and NOT the feet of the clip's
-                    // first frame, which for the seated clip are the folded legs
-                    // at pelvis level and sank every sitter into the street (a
-                    // reader's frame, 2026-09-03). The sit's root drops 20.7 over
-                    // its enter clip; that is what puts him on the ground.
-                    if (!p.feetKnown) {
-                        const auto restPose = omk::composePose(p.mo->meshes, omk::NodeTracks{}, 0, false);
-                        omk::Geometry restPosed;
-                        omk::applyPose(restPosed, rest, p.mo->meshes, restPose);
-                        p.feet = -1e9f;
-                        for (const auto& c : restPosed.corners) if (c.y > p.feet) p.feet = c.y;
-                        p.feetKnown = true;
-                    }
-                    float rootXZ[2] = {0.0f, 0.0f};
-                    if (p.mo->root >= 0 && static_cast<std::size_t>(p.mo->root) < p.mo->meshes.size()) {
-                        rootXZ[0] = p.mo->meshes[static_cast<std::size_t>(p.mo->root)].pos[0];
-                        rootXZ[1] = p.mo->meshes[static_cast<std::size_t>(p.mo->root)].pos[2];
-                    }
-                    // one `cos`/`sin` for the whole body instead of two a
-                    // corner - the same bits, since the angle does not change
-                    float wcs, wsn;
-                    omk::yawSinCos(w.facing, wcs, wsn);
-                    const double pedPlace0 = phaseNow();
-                    for (auto& c : p.posed.corners) {
-                        const float in[3] = {c.x - rootXZ[0], c.y, c.z - rootXZ[1]};
-                        float r[3];
-                        omk::rotateYawCS(wcs, wsn, in, r);
-                        c.x = r[0] + w.body[0];
-                        c.y = r[1] + w.body[1] + w.footY - p.feet;
-                        c.z = r[2] + w.body[2];
-                        // the normal turns with the walker and does not move
-                        const float n[3] = {c.nx, c.ny, c.nz};
-                        float rn[3];
-                        omk::rotateYawCS(wcs, wsn, n, rn);
-                        c.nx = rn[0]; c.ny = rn[1]; c.nz = rn[2];
-                    }
-                    phSpan["ped place"] += phaseNow() - pedPlace0;
-                    // `Slider_PlaceShadow`'s two nodes, on the same transform.
-                    p.footKnown = false;
-                    {
-                        const int fi[2] = {
-                            p.mo->boneIdx.built() ? p.mo->boneIdx.find("Piedg", lodRoot)
-                                                  : omk::findMeshContaining(p.mo->meshes, "Piedg", lodRoot),
-                            p.mo->boneIdx.built() ? p.mo->boneIdx.find("Piedd", lodRoot)
-                                                  : omk::findMeshContaining(p.mo->meshes, "Piedd", lodRoot)};
-                        if (fi[0] >= 0 && fi[1] >= 0 &&
-                            static_cast<std::size_t>(fi[0]) < pose.size() &&
-                            static_cast<std::size_t>(fi[1]) < pose.size()) {
-                            for (int f = 0; f < 2; ++f) {
-                                const auto& mp = pose[static_cast<std::size_t>(fi[f])].pos;
-                                const float in[3] = {mp[0] - rootXZ[0], mp[1], mp[2] - rootXZ[1]};
-                                float r[3];
-                                omk::rotateYawCS(wcs, wsn, in, r);
-                                p.footAt[f][0] = r[0] + w.body[0];
-                                p.footAt[f][1] = r[1] + w.body[1] + w.footY - p.feet;
-                                p.footAt[f][2] = r[2] + w.body[2];
-                            }
-                            p.footKnown = true;
-                            // THE INVARIANT THAT WOULD HAVE CAUGHT THE ORPHANS.
-                            // A walker's feet are within a stride of his own
-                            // body point; a bone taken off the wrong LOD
-                            // skeleton is 240 units away. Measured every frame
-                            // and reported, because "a shadow with no origin"
-                            // is only visible to a person and this is not.
-                            const float mx = (p.footAt[0][0] + p.footAt[1][0]) * 0.5f - w.body[0];
-                            const float mz = (p.footAt[0][2] + p.footAt[1][2]) * 0.5f - w.body[2];
-                            const float off = std::sqrt(mx * mx + mz * mz);
-                            if (off > pedFootOffMax) pedFootOffMax = off;
+                        j.tCompose += tc1 - tc0;
+                        j.tApply += phaseNow() - tc1;
+                        // THE HEIGHT is the engine's rule, `sub_437F80(inst, x, body.y
+                        // + footY - radius, z)`: the model origin stands one root
+                        // radius (41.9 for PSH_FN - the pelvis-to-feet height) above
+                        // the body point and the root track's summed y moves it.
+                        // Written here as the REST pose's feet on the body point plus
+                        // that summed y, which is the same constant for a model
+                        // whose radius is its height - and NOT the feet of the clip's
+                        // first frame, which for the seated clip are the folded legs
+                        // at pelvis level and sank every sitter into the street (a
+                        // reader's frame, 2026-09-03). The sit's root drops 20.7 over
+                        // its enter clip; that is what puts him on the ground.
+                        if (!p.feetKnown) {
+                            const auto restPose = omk::composePose(p.mo->meshes, omk::NodeTracks{}, 0, false);
+                            omk::Geometry restPosed;
+                            omk::applyPose(restPosed, rest, p.mo->meshes, restPose);
+                            p.feet = -1e9f;
+                            for (const auto& c : restPosed.corners) if (c.y > p.feet) p.feet = c.y;
+                            p.feetKnown = true;
                         }
+                        float rootXZ[2] = {0.0f, 0.0f};
+                        if (p.mo->root >= 0 && static_cast<std::size_t>(p.mo->root) < p.mo->meshes.size()) {
+                            rootXZ[0] = p.mo->meshes[static_cast<std::size_t>(p.mo->root)].pos[0];
+                            rootXZ[1] = p.mo->meshes[static_cast<std::size_t>(p.mo->root)].pos[2];
+                        }
+                        // one `cos`/`sin` for the whole body instead of two a
+                        // corner - the same bits, since the angle does not change
+                        float wcs, wsn;
+                        omk::yawSinCos(w.facing, wcs, wsn);
+                        const double pedPlace0 = phaseNow();   // the job's own
+                        for (auto& c : p.posed.corners) {
+                            const float in[3] = {c.x - rootXZ[0], c.y, c.z - rootXZ[1]};
+                            float r[3];
+                            omk::rotateYawCS(wcs, wsn, in, r);
+                            c.x = r[0] + w.body[0];
+                            c.y = r[1] + w.body[1] + w.footY - p.feet;
+                            c.z = r[2] + w.body[2];
+                            // the normal turns with the walker and does not move
+                            const float n[3] = {c.nx, c.ny, c.nz};
+                            float rn[3];
+                            omk::rotateYawCS(wcs, wsn, n, rn);
+                            c.nx = rn[0]; c.ny = rn[1]; c.nz = rn[2];
+                        }
+                        j.tPlace += phaseNow() - pedPlace0;
+                        // `Slider_PlaceShadow`'s two nodes, on the same transform.
+                        p.footKnown = false;
+                        {
+                            const int fi[2] = {
+                                p.mo->boneIdx.built() ? p.mo->boneIdx.find("Piedg", lodRoot)
+                                                          : omk::findMeshContaining(p.mo->meshes, "Piedg", lodRoot),
+                                p.mo->boneIdx.built() ? p.mo->boneIdx.find("Piedd", lodRoot)
+                                                          : omk::findMeshContaining(p.mo->meshes, "Piedd", lodRoot)};
+                            if (fi[0] >= 0 && fi[1] >= 0 &&
+                                static_cast<std::size_t>(fi[0]) < pose.size() &&
+                                static_cast<std::size_t>(fi[1]) < pose.size()) {
+                                for (int f = 0; f < 2; ++f) {
+                                    const auto& mp = pose[static_cast<std::size_t>(fi[f])].pos;
+                                    const float in[3] = {mp[0] - rootXZ[0], mp[1], mp[2] - rootXZ[1]};
+                                    float r[3];
+                                    omk::rotateYawCS(wcs, wsn, in, r);
+                                    p.footAt[f][0] = r[0] + w.body[0];
+                                    p.footAt[f][1] = r[1] + w.body[1] + w.footY - p.feet;
+                                    p.footAt[f][2] = r[2] + w.body[2];
+                                }
+                                p.footKnown = true;
+                                // THE INVARIANT THAT WOULD HAVE CAUGHT THE ORPHANS.
+                                // A walker's feet are within a stride of his own
+                                // body point; a bone taken off the wrong LOD
+                                // skeleton is 240 units away. Measured every frame
+                                // and reported, because "a shadow with no origin"
+                                // is only visible to a person and this is not.
+                                const float mx = (p.footAt[0][0] + p.footAt[1][0]) * 0.5f - w.body[0];
+                                const float mz = (p.footAt[0][2] + p.footAt[1][2]) * 0.5f - w.body[2];
+                                const float off = std::sqrt(mx * mx + mz * mz);
+                                if (off > j.footOff) j.footOff = off;
+                            }
+                        }
+                        // THE DYNAMIC LIGHTS (`o3de/vertexlight.h`). `sub_4380B0`
+                        // registers a walker in the same structure the set's
+                        // lights went into and `sub_48D7F0` applies every one that
+                        // reaches it, per frame, before submitting. Both resident
+                        // slots contribute, because during a transition two sets
+                        // are drawn and the engine's structure holds both.
+                        // ...unless the GPU is going to do it per pixel, in which
+                        // case the corners keep their black base and `Draw::lit`
+                        // carries the decision to the shader.
+                        const double pedLight0 = phaseNow();
+                        if (lightCrowd && lighting == 0) {
+                            // THE BASE IS BLACK, and that is the part that had to
+                            // be read rather than assumed. A lit instance does not
+                            // start from the model's baked vertex colour: the lit
+                            // path `sub_494E80` writes `instance[+416]` into every
+                            // runtime vertex's colour, and every site that sets
+                            // +416 sets it to 0. The crowd models ship pure white
+                            // (all 446 of PSH_FN's vertices are 255,255,255), so
+                            // there is no baked light in them to keep - the .3DO
+                            // lights ARE their lighting, and adding to white is
+                            // what made this port's first attempt change exactly
+                            // zero pixels.
+                            for (auto& c : p.posed.corners) { c.r = 0.0f; c.g = 0.0f; c.b = 0.0f; }
+                            const float at[3] = {w.body[0], w.body[1], w.body[2]};
+                            for (const WorldSlot& ws2 : worldSlots)
+                                if (!ws2.lights.empty())
+                                    j.lit += omk::applyLights(p.posed, 0, p.posed.corners.size(),
+                                                                  at, ws2.lights);
+                        }
+                        j.tLight += phaseNow() - pedLight0;
                     }
-                    // THE DYNAMIC LIGHTS (`o3de/vertexlight.h`). `sub_4380B0`
-                    // registers a walker in the same structure the set's
-                    // lights went into and `sub_48D7F0` applies every one that
-                    // reaches it, per frame, before submitting. Both resident
-                    // slots contribute, because during a transition two sets
-                    // are drawn and the engine's structure holds both.
-                    // ...unless the GPU is going to do it per pixel, in which
-                    // case the corners keep their black base and `Draw::lit`
-                    // carries the decision to the shader.
-                    const double pedLight0 = phaseNow();
-                    if (lightCrowd && lighting == 0) {
-                        // THE BASE IS BLACK, and that is the part that had to
-                        // be read rather than assumed. A lit instance does not
-                        // start from the model's baked vertex colour: the lit
-                        // path `sub_494E80` writes `instance[+416]` into every
-                        // runtime vertex's colour, and every site that sets
-                        // +416 sets it to 0. The crowd models ship pure white
-                        // (all 446 of PSH_FN's vertices are 255,255,255), so
-                        // there is no baked light in them to keep - the .3DO
-                        // lights ARE their lighting, and adding to white is
-                        // what made this port's first attempt change exactly
-                        // zero pixels.
-                        for (auto& c : p.posed.corners) { c.r = 0.0f; c.g = 0.0f; c.b = 0.0f; }
-                        const float at[3] = {w.body[0], w.body[1], w.body[2]};
-                        for (const WorldSlot& ws2 : worldSlots)
-                            if (!ws2.lights.empty())
-                                pedLit += omk::applyLights(p.posed, 0, p.posed.corners.size(),
-                                                           at, ws2.lights);
-                    }
-                    phSpan["ped light"] += phaseNow() - pedLight0;
+                };
+                {
+                    const double pedAll0 = phaseNow();
+                    if (threadBodies && pedJobs.size() > 1)
+                        omk::Threads::shared().parallelFor(0, pedJobs.size(), 1, pedBodies);
+                    else
+                        pedBodies(0, pedJobs.size());
+                    phSpan["ped bodies (wall)"] += phaseNow() - pedAll0;
+                }
+                for (PedJob& j : pedJobs) {
+                    PedStaged& p = *pedStaged[j.i];
                     p.posed.revision = ++worldGeoRev;
                     p.drawn = true;
                     ++pedDrawn;
+                    pedLit += j.lit;
+                    if (j.footOff > pedFootOffMax) pedFootOffMax = j.footOff;
+                    phSpan["ped compose"] += j.tCompose;
+                    phSpan["ped apply"] += j.tApply;
+                    phSpan["ped place"] += j.tPlace;
+                    phSpan["ped light"] += j.tLight;
                 }
+
                 if (pedLive && (pedTold < 0 || n - pedTold >= 300)) {
                     pedTold = n;
                     std::printf("frame %ld: pedestrians - %d live, %d drawn within %.0f of the eye, "

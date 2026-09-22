@@ -14133,6 +14133,68 @@ def c_engine_tie_equivalence():
         "the revisions were answered (replayed, walked, replays abandoned)"
 
 
+def c_engine_threaded_bodies():
+    r"""The crowd posed over several cores is the SAME FRAME, byte for byte
+    (`todo/vita-port.md` P4; `platform/threads.h`).
+
+    A street frame's two body sections were 81 of a console's ~200 ms, and the
+    Vita has three game cores. `omk::Threads`' contract is that a `parallelFor`
+    cuts a range into disjoint chunks with no ordering and no reduction, so the
+    only thing that can make a threaded frame differ is a body reaching outside
+    its own data. The walker pass is split for that: a SERIAL half resolves the
+    shared caches (the model load, the clip's tracks, the cut rest geometry)
+    and counts the crowd, the body pass writes only its own walker's
+    `PedStaged`, and the geometry REVISIONS and the counters are assigned
+    afterwards in index order so the buffers are numbered as they are serially.
+
+    Anekbah's street start at density 4, 200 frames, software: the last frame's
+    framebuffer with `--thread-bodies` against without.
+    Shown to fail by dropping the
+    `thread_local` from `applyLights`' gathered-light scratch, which is exactly
+    the fault this check exists for - a body reaching outside its own data. The
+    threaded run then DIES (`exit -11, no frame`) rather than drawing something
+    different, which is why a run that does not finish is reported as itself.
+    Note what does NOT fail it: numbering the geometry revisions inside the body
+    pass, because the merge afterwards assigns them again in index order - the
+    race is real and its result is overwritten.
+    """
+    import subprocess, tempfile
+    eng = os.path.join(ROOT, "engine")
+    play = os.path.join(eng, "build", "omk-play")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(eng) or not os.path.exists(save):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "omk-play must build"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    out = []
+    for extra in ([], ["--thread-bodies"]):
+        dump = os.path.join(tempfile.gettempdir(), "omk_thr%d.bin" % len(extra))
+        r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                            "--save", save, "--area", "0",
+                            "--stand", "1804,0,-6890,336", "--software", "--density", "4",
+                            "--frames", "200", "--res", "320x240", "--dump", dump] + extra,
+                           capture_output=True, text=True, env=env)
+        if r.returncode != 0 or not os.path.exists(dump):
+            # a body reaching outside its own data usually CRASHES rather than
+            # drawing something different, so that is reported as itself
+            return ("exit %d%s" % (r.returncode, "" if os.path.exists(dump) else ", no frame"),), \
+                ("exit 0, a frame",), \
+                ("the %s run did not finish: " % ("threaded" if extra else "serial")) + r.stdout[-160:]
+        with open(dump, "rb") as f:
+            out.append(f.read())
+        os.remove(dump)
+        # ...and the run must have SAID it threaded, or the comparison is vacuous
+        if extra and "bodies: posed over" not in r.stdout:
+            return ("not threaded",), ("threaded",), "--thread-bodies did not take"
+    same = out[0] == out[1]
+    differ = sum(1 for a, b2 in zip(out[0], out[1]) if a != b2)
+    return (len(out[0]) == len(out[1]), same, differ), (True, True, 0), \
+        "the same frame size, the same bytes, and how many differ - serial " \
+        "against --thread-bodies over Anekbah's crowd at density 4"
+
+
 def c_engine_body_tie():
     r"""A posed body's depth tie is REPLAYED, not re-walked, and it is the same
     answer (`Geometry::tieClass`, todo/vita-port.md 2026-09-22).
@@ -38683,6 +38745,7 @@ SLOW = [
     ("engine: probe grid", c_engine_probe_grid, "todo/optimization.md 2; o3de/collision.h"),
     ("engine: tie equivalence", c_engine_tie_equivalence, "todo/optimization.md 3; o3de/depthtie.h"),
     ("engine: body tie", c_engine_body_tie, "todo/vita-port.md 2026-09-22; o3de/geom3do.h tieClass"),
+    ("engine: threaded bodies", c_engine_threaded_bodies, "todo/vita-port.md P4; platform/threads.h"),
     ("engine: pixel tables", c_engine_pixel_tables, "todo/optimization.md 4; ui/surface.h"),
     ("engine: music storage", c_engine_music_storage, "todo/optimization.md 5; audio/music.h"),
     ("engine: audio queue bound", c_engine_audio_queue_bound, "todo/optimization.md 5; backends/sdl/play.cpp"),
