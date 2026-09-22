@@ -871,6 +871,46 @@ depth tie's)`, on the routine `gles` line, so a console log shows it without
 waiting for a half-second frame). The fold itself is reverted - it is correct
 and it is dead weight until the replay runs.
 
+### 2026-09-22: THE BENCH RAN ON THE CONSOLE - P1 answered, and the device factor is NOT uniform
+
+`omk_bench` on a real Vita (444 MHz), beside the same binary's numbers on this
+M1 **with the same code on both sides** (the M1 figures in this file's earlier
+entry predate the light work and are not comparable):
+
+| stage | M1 | Vita | factor |
+|---|---|---|---|
+| `composePose` | 0.154 | 7.250 | **47x** |
+| `applyPose` | 0.849 | 102.318 | **121x** |
+| `applyLights` | 0.306 | 35.455 | **116x** |
+| total | 1.312 | 146.085 | 111x |
+
+**`threads: EXACT` on the device, and 2.71x on its three runners** (146.1 ->
+53.9 ms). So the pool's Vita half - written from the SDK's documented shape and
+never executed until now - works, and the hash matches its own inline pass.
+`--thread-bodies` is cleared to turn on.
+
+**And the factor splits by what a stage TOUCHES, which is the finding.**
+`composePose` walks 76 meshes and is 47x; `applyPose` and `applyLights` walk
+2400 CORNERS and are ~120x. A body's corners are 2400 x 48 bytes = 115 KB,
+which does not fit the A9's 32 KB L1 and does fit this machine's cache many
+times over. **The body pipeline is memory-bound on the Vita, not
+arithmetic-bound** - which is why the light work that halved the arithmetic
+here took `ped light` to 0.0 there (it also stopped walking the corners five
+times), and it says where the remaining wins are:
+
+* write FEWER BYTES a corner - `applyPose` copies `u`, `v`, `phase` and the
+  colour every frame although only the position and the normal change (and the
+  colour is zeroed by the light pass immediately after);
+* or stop walking corners on the CPU at all - **P5, GPU skinning**, which is
+  now clearly the largest single win available rather than one option of
+  several.
+
+Not the compiler: the Vita build is `-O2 -mfpu=neon -mfloat-abi=hard` and
+`OMK_VITA_ASSERTS` (libstdc++'s bounds checks) is OFF by default, both checked.
+
+**`ux0:data/omk/bench.txt` is opened `"w"`** - every run truncates it, so a
+comparison needs a copy kept by hand.
+
 ---
 
 ## 1. The issues, and what is missing
