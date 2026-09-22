@@ -37,7 +37,32 @@ int applyLights(Geometry& g, std::size_t first, std::size_t count,
     // (`todo/vita-port.md`; shown by a byte-identical street render).
     struct Reach {
         float lx, ly, lz;
-        std::uint8_t r, g, b;
+        const float* ramp;          // 256 x rgb, `lightRamp` tabulated
+    };
+    // THE RAMP, TABULATED PER COLOUR. `(t * c) >> 8 / 255` depends only on the
+    // light's three colour bytes and the 0..255 index, and a set's lights carry
+    // a handful of distinct colours between them, so the table is built once
+    // per colour and kept. 3 KB each.
+    struct Ramp { std::uint32_t colour; std::vector<float> t; };
+    static thread_local std::vector<Ramp> ramps;
+    const auto rampFor = [](std::uint32_t colour) -> const float* {
+        for (const Ramp& r : ramps) if (r.colour == colour) return r.t.data();
+        // a set's lights carry a dozen colours between them; the cap is
+        // against an accumulation across many area loads, not a real case
+        if (ramps.size() >= 64) ramps.clear();
+        Ramp r;
+        r.colour = colour;
+        r.t.resize(256 * 3);
+        const auto cr = static_cast<std::uint8_t>((colour >> 16) & 0xFF);
+        const auto cg = static_cast<std::uint8_t>((colour >> 8) & 0xFF);
+        const auto cb = static_cast<std::uint8_t>(colour & 0xFF);
+        for (int t = 0; t < 256; ++t) {
+            r.t[3 * static_cast<std::size_t>(t)]     = static_cast<float>(lightRamp(cr, t)) / 255.0f;
+            r.t[3 * static_cast<std::size_t>(t) + 1] = static_cast<float>(lightRamp(cg, t)) / 255.0f;
+            r.t[3 * static_cast<std::size_t>(t) + 2] = static_cast<float>(lightRamp(cb, t)) / 255.0f;
+        }
+        ramps.push_back(std::move(r));
+        return ramps.back().t.data();
     };
     static thread_local std::vector<Reach> reach;
     reach.clear();
@@ -59,10 +84,7 @@ int applyLights(Geometry& g, std::size_t first, std::size_t count,
         k *= fall;
         if (!(k > 0.0f)) continue;
 
-        reach.push_back(Reach{l.dir[0] * k, l.dir[1] * k, l.dir[2] * k,
-                              static_cast<std::uint8_t>((l.colour >> 16) & 0xFF),
-                              static_cast<std::uint8_t>((l.colour >> 8) & 0xFF),
-                              static_cast<std::uint8_t>(l.colour & 0xFF)});
+        reach.push_back(Reach{l.dir[0] * k, l.dir[1] * k, l.dir[2] * k, rampFor(l.colour)});
     }
     if (reach.empty()) return 0;
     for (std::size_t i = first; i < first + count; ++i) {
@@ -71,11 +93,15 @@ int applyLights(Geometry& g, std::size_t first, std::size_t count,
         float cr = c.r, cg = c.g, cb = c.b;
         for (const Reach& e : reach) {
             const float t = -(nx * e.lx + ny * e.ly + nz * e.lz);
-            if (!(t > 0.0f)) continue;
-            const int ti = static_cast<int>(t);
-            const float ar = static_cast<float>(lightRamp(e.r, ti)) / 255.0f;
-            const float ag = static_cast<float>(lightRamp(e.g, ti)) / 255.0f;
-            const float ab = static_cast<float>(lightRamp(e.b, ti)) / 255.0f;
+            // NO BRANCH ON THE SIGN, and it is the same answer: `lightRamp`
+            // clamps a `t` at or below zero to zero and so returns zero, and
+            // adding zero to a colour already in [0, 1] leaves it and its clamp
+            // alone. A corner faces away from about half the lights that reach
+            // it, so the test this replaces mispredicted about half the time.
+            int ti = static_cast<int>(t);
+            ti = ti < 0 ? 0 : (ti > 255 ? 255 : ti);      // `lightRamp`'s own clamp
+            const float* rp = e.ramp + 3 * static_cast<std::size_t>(ti);
+            const float ar = rp[0], ag = rp[1], ab = rp[2];
             cr = cr + ar > 1.0f ? 1.0f : cr + ar;
             cg = cg + ag > 1.0f ? 1.0f : cg + ag;
             cb = cb + ab > 1.0f ? 1.0f : cb + ab;

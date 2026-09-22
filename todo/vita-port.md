@@ -664,16 +664,38 @@ the largest single thing in either section, and at the ~40x ratio it is ~16 ms
 of the console's 35. Replacing its three `lightRamp` lookups with constants
 takes it 0.4 -> 0.3, so a quarter of it is the ramp and the rest is the walk.
 
-`applyLights` now **walks the corners ONCE, not once per light**: the reaching
+**The crowd's light is 4x cheaper, and every step is byte-identical.** Split
+finer, `ped skin` is compose 0.1 + apply 0.1, so the light at 0.4 was four
+times either. Three changes took it to **0.1 ms**:
+
+1. the corners walked ONCE (below) - no measurable change on the M1;
+2. **no branch on the sign of `t`** (0.4 -> 0.2, and this was the one that
+   paid): a corner faces away from about half the lights that reach it, so the
+   `t > 0` test mispredicted about half the time. `lightRamp` clamps a
+   non-positive `t` to zero and so returns zero, and adding zero to a colour
+   already in [0, 1] leaves it and its clamp alone - so the test only ever
+   skipped work that would have changed nothing;
+3. **the ramp tabulated per light COLOUR** (0.2 -> 0.1): `(t * c) >> 8 / 255`
+   depends only on the colour and the 0..255 index, and a set's lights carry a
+   handful of colours, so it is 256 x rgb floats built once per colour and kept
+   (capped at 64 tables). The inner loop is now a dot product, a clamp and
+   three loads.
+
+`applyLights` also **walks the corners ONCE, not once per light**: the reaching
 lights are gathered first and each corner takes them in the same order, so
 every corner's colour is the same sequence of additions and clamps - the street
 render is BYTE-IDENTICAL, and `engine vertex light`, `light consumers`, `city
-crowd`, `street frame`, `per-pixel lighting` and `crowd nan` are green. **It
-changes nothing measurable on the M1** (0.4 ms either way): a body's 21 KB of
-corners fits this machine's cache, so reading it five times costs nothing here.
-The reason to keep it is the A9's - five times less traffic through a 32 KB L1
-- and THAT IS UNPROVEN until a console log shows the `ped light` span. If it
-does not move there, this is revertible on its own.
+crowd`, `street frame`, `per-pixel lighting` and `crowd nan` are green, and the mutation
+(the ramp's scale) turns `engine vertex light` red. **That first step changes
+nothing measurable on the M1** (0.4 ms either way): a body's 21 KB of corners
+fits this machine's cache. The reason to keep it is the A9's - five times less
+traffic through a 32 KB L1 - and that part is unproven until a console log
+shows the span; steps 2 and 3 are measured here.
+
+**And a trap that cost twenty minutes: `engine vertex light` RAN A BINARY IT
+DID NOT BUILD.** It executes `build/vlight_probe` and never made it, so a
+mutation stayed red through its own restore and read as a broken fix. It
+builds the probe now, which is CLAUDE.md 1's rule about exactly this.
 
 ---
 

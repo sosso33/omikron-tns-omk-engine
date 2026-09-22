@@ -16849,7 +16849,15 @@ def c_engine_vertex_light():
     instead, which is that guard's only sensible sense since the expression
     exceeds 1 inside the inner radius.
     """
-    probe = os.path.join(ROOT, "engine", "build", "vlight_probe")
+    # A CHECK MUST BUILD THE BINARY IT MEASURES (CLAUDE.md 1). This ran
+    # whatever `build/vlight_probe` happened to be on disk, so on 2026-09-22 a
+    # mutation of `applyLights` stayed red through its own restore - the probe
+    # was never rebuilt - and read as a broken fix rather than a stale binary.
+    eng = os.path.join(ROOT, "engine")
+    probe = os.path.join(eng, "build", "vlight_probe")
+    if os.path.isdir(eng):
+        subprocess.run(["make", "-s", "build/vlight_probe"], cwd=eng,
+                       capture_output=True, text=True)
     if not os.path.exists(probe): return "vlight_probe not built", "the vertex light", ""
     out = subprocess.run([probe], capture_output=True, text=True).stdout
     got = {}

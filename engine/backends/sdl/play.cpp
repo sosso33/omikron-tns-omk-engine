@@ -16473,10 +16473,12 @@ int main(int argc, char** argv) {
                     // 35 ms" and "staged bodies 46" named no call inside them
                     // (todo/vita-port.md 2026-09-22).
                     std::vector<omk::MeshPose> pose;
-                    spanned("ped skin", [&] {
+                    spanned("ped compose", [&] {
                         pose = p.tracks
                             ? omk::composePose(p.mo->meshes, *p.tracks, frame, false)
                             : omk::composePose(p.mo->meshes, omk::NodeTracks{}, 0, false);
+                    });
+                    spanned("ped apply", [&] {
                         omk::applyPose(p.posed, rest, p.mo->meshes, pose);
                     });
                     // THE HEIGHT is the engine's rule, `sub_437F80(inst, x, body.y
