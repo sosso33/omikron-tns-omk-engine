@@ -3332,6 +3332,7 @@ int main(int argc, char** argv) {
     });
     std::vector<std::byte> playerCtlData;
     std::vector<omk::Mesh> playerMeshes;
+    omk::MeshNameIndex playerBoneIdx;      // rebuilt wherever `playerMeshes` is
     std::vector<omk::Texture> playerTex;
     omk::Geometry playerRest, playerPosed;
     std::vector<omk::CollisionSphere> playerSpheres;   // the crowd push tests these
@@ -3818,6 +3819,11 @@ int main(int argc, char** argv) {
         std::vector<omk::Mesh> meshes;
         std::vector<omk::Texture> tex;
         omk::FaceMesh face;
+        // Built once per model name, and the model is loaded once and shared
+        // (`o3de/shadow.h`; todo/pending/vita-meshidx-playcpp.md, applied
+        // 2026-09-22). It stores mesh INDICES, so it must be rebuilt if
+        // `meshes` is ever replaced; here it never is.
+        omk::MeshNameIndex boneIdx;
         // The HIERARCHY ROOT - the pelvis in all 181 character models, the
         // mesh whose parent id resolves to nothing. `composePose` leaves a
         // root at its AUTHORED position, and the models are not authored
@@ -4752,6 +4758,7 @@ int main(int argc, char** argv) {
             if (const auto mt = fs.resolve("MESHES/PERSOS/" + name + ".3DT"))
                 m.tex = omk::textures(md, omk::DataFs::readPath(*mt));
             m.face = omk::faceMeshOf(m.meshes);
+            m.boneIdx.build(m.meshes, omk::MeshNameIndex::shadowNames());
             for (std::size_t i = 0; i < m.meshes.size() && m.root < 0; ++i) {
                 bool hasParent = false;
                 for (const auto& p : m.meshes)
@@ -7198,6 +7205,7 @@ int main(int argc, char** argv) {
                     playerRest.revision = ++worldGeoRev;
                     playerMeshes.clear();
                     if (const auto mh = omk::readHeader(md)) playerMeshes = omk::readMeshes(md, *mh);
+                    playerBoneIdx.build(playerMeshes, omk::MeshNameIndex::shadowNames());
                     // his PUSH spheres: the model's own list, hung from the feet
                     // (`pushSpheresOf` - HO1_FN's four of 10.9), which is what
                     // `sub_45E390` reads for the querying body too; the per-mesh
@@ -16499,8 +16507,10 @@ int main(int argc, char** argv) {
                     p.footKnown = false;
                     {
                         const int fi[2] = {
-                            omk::findMeshContaining(p.mo->meshes, "Piedg", lodRoot),
-                            omk::findMeshContaining(p.mo->meshes, "Piedd", lodRoot)};
+                            p.mo->boneIdx.built() ? p.mo->boneIdx.find("Piedg", lodRoot)
+                                                  : omk::findMeshContaining(p.mo->meshes, "Piedg", lodRoot),
+                            p.mo->boneIdx.built() ? p.mo->boneIdx.find("Piedd", lodRoot)
+                                                  : omk::findMeshContaining(p.mo->meshes, "Piedd", lodRoot)};
                         if (fi[0] >= 0 && fi[1] >= 0 &&
                             static_cast<std::size_t>(fi[0]) < pose.size() &&
                             static_cast<std::size_t>(fi[1]) < pose.size()) {
@@ -17661,7 +17671,15 @@ int main(int argc, char** argv) {
                 // skeleton and cannot meet this.
                 const auto castBones = [&](const std::vector<omk::Mesh>& meshes,
                                            const std::vector<float>& at, int lvl,
-                                           int root, const omk::Geometry* ref) {
+                                           int root, const omk::Geometry* ref,
+                                           const omk::MeshNameIndex* idx) {
+                    // the index when it is built; the scan otherwise, since an
+                    // unbuilt index answers -1 for everything and would draw
+                    // NO shadows silently
+                    const auto boneMesh = [&](const char* bn) {
+                        return idx && idx->built() ? idx->find(bn, root)
+                                                   : omk::findMeshContaining(meshes, bn, root);
+                    };
                     if (at.empty()) return;
                     float rx = 0.0f, rz = 0.0f;
                     if (ref && !ref->corners.empty()) {
@@ -17681,8 +17699,7 @@ int main(int argc, char** argv) {
                         float lo[2] = {1e30f, 1e30f}, hi[2] = {-1e30f, -1e30f};
                         bool any = false;
                         for (int bi : bones) {
-                            const int mi = omk::findMeshContaining(
-                                meshes, omk::kShadowBones[static_cast<std::size_t>(bi)].bone, root);
+                            const int mi = boneMesh(omk::kShadowBones[static_cast<std::size_t>(bi)].bone);
                             if (mi < 0 || static_cast<std::size_t>(mi) * 3 + 2 >= at.size()) continue;
                             const float* q = &at[static_cast<std::size_t>(mi) * 3];
                             lo[0] = std::min(lo[0], q[0]); hi[0] = std::max(hi[0], q[0]);
@@ -17698,7 +17715,7 @@ int main(int argc, char** argv) {
                     const omk::TriangleSoup& soup = fitted ? local : playerSoup;
                     for (int bi : bones) {
                         const auto& sb = omk::kShadowBones[static_cast<std::size_t>(bi)];
-                        const int mi = omk::findMeshContaining(meshes, sb.bone, root);
+                        const int mi = boneMesh(sb.bone);
                         if (mi < 0 || static_cast<std::size_t>(mi) * 3 + 2 >= at.size()) continue;
                         const float* p3 = &at[static_cast<std::size_t>(mi) * 3];
                         if (ref && !ref->corners.empty()) {
@@ -17750,13 +17767,13 @@ int main(int argc, char** argv) {
                 // The player's model has ONE skeleton, so -1 is the whole of it.
                 shadowFootOffMax = pedFootOffMax;
                 if (drawPlayer && playerMeshAtKnown && player && castsIn(player->state()))
-                    castBones(playerMeshes, playerMeshAt, detail, -1, nullptr);
+                    castBones(playerMeshes, playerMeshAt, detail, -1, nullptr, &playerBoneIdx);
                 nPlayer = blobs;
                 shadowSpreadPlayer = shadowSpreadMax;   // his alone, before the rest
                 for (const auto& up : staged)
                     if (up->drawn && up->mo)
                         castBones(up->mo->meshes, up->meshAt, detail - 1, up->shadowRoot,
-                                  &up->posed);
+                                  &up->posed, &up->mo->boneIdx);
                 nActor = blobs - nPlayer;
                 // The crowd's, which is the other mechanism entirely.
                 for (const auto& up : pedStaged) {

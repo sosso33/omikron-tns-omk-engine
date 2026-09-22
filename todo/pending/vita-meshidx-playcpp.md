@@ -1,4 +1,6 @@
-# The `MeshNameIndex` adoption in `play.cpp` — a patch handed over, NOT applied
+# The `MeshNameIndex` adoption in `play.cpp` — APPLIED 2026-09-22
+
+**Integrated 2026-09-22**: the five edits below are in `play.cpp`; `engine: character shadow`, `fitted shadows`, `mapped shadows` and `mesh name index` green and unchanged; shown to fail as prescribed (the fallback forced to the index and both builds dropped: `character shadow` and `fitted shadows` red). The frame figure is still unmeasured, as the last paragraph says.
 
 Written 2026-09-17 by the Vita-port session (`todo/handoff-vita.md` §2 item 1).
 `engine/backends/sdl/play.cpp` was owned by another session at the time, so the

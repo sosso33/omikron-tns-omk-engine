@@ -619,6 +619,10 @@ walker whose clip frame and place did not change) was written, measured and
 REMOVED: on a street every walker's body point, heading or foot height moves
 every frame, even at an action point, so it never fired.
 
+**P2 applied** (same day): `MeshNameIndex` is the consumer of every shadow-bone
+and crowd-feet name lookup in `play.cpp` (`pending/vita-meshidx-playcpp.md`,
+now marked integrated); the four checks green and unchanged, the mutation red.
+
 ---
 
 ## 1. The issues, and what is missing
