@@ -8,17 +8,28 @@ frame on the M1 and why 30 fps is far off) - still true, not repeated here.
 
 ---
 
-## 1. Where it stands
+## 1. Where it stands (rewritten 2026-09-22)
 
-* **The game builds for the Vita and runs on a real console** up to the start
-  menu: the three intro films, the splash, screen 29, the pause menu on START.
-  It **has not yet been seen past the menu on a console** - see §3.
-* **In Vita3K it plays**: films, menu, area 118 (`GRID`), the intro script.
-  3D reads back black in the emulator (`glReadPixels` returns zeros there), so
-  the emulator proves boot, input, I/O and logic, not pixels.
-* Every Vita change is committed (`1622783` .. `0500a32`); host builds
-  (`make`, `make play`) stay green - the Vita code is all `#if defined(__vita__)`
-  or under `engine/backends/vita/`, and `play.cpp` builds everywhere.
+* **The game runs on a real console INTO THE CITY.** 2026-09-21/22, three
+  console logs: the intro films, the menu, the flat, the intro cutscene at
+  17-54 ms a frame with G6 presenting every held frame from the GPU, and
+  Anekbah - which first died of `bad_alloc` (the music's 16 MB, fixed), then
+  took 8.4 s a frame (vitaGL's whole-buffer copy on every tie patch, fixed),
+  then 190-300 ms with the camera "shaking" (the port's delta clamp, fixed
+  with the engine's cap of three frames). **The city is now SLOW, not
+  frozen**: ~200 ms a frame, all CPU, a uniform ~40x the M1.
+* The frame is instrumented to the section: a frame over 150 ms prints its
+  eight largest blocks (`sections -`), a frame over 500 ms its GL counts.
+  What the 08:44 log named: staged bodies 46, pedestrians 35, scripted motion
+  17, and ~100 ms AFTER the last mark of that build, now marked too.
+* Since that log, without a console: the body tie replayed instead of
+  re-walked (~40 of those ms by the M1's ratio), far bodies not skinned (9 of
+  25), P2 applied, the scripted-motion section split into three marks.
+  **None of it seen on a console yet.**
+* **In Vita3K it plays** up to area 118; 3D reads back black there. The
+  emulator and the Mac's GL window both need the DISPLAY ON - with it off the
+  GL swap blocks and Vita3K never starts (found 2026-09-22).
+* Every Vita change is committed; host builds stay green.
 
 ## 2. Recipes
 
@@ -65,26 +76,25 @@ its Vulkan backend crashes on vitaGL.
 
 ## 4. What to do next, in order
 
-1. The next console log: films found? area 118 = `GRID`? then how fast is a
-   frame in the apartment (the first real P1 number on hardware).
-2. ~~**G6**~~ - DONE on the Mac 2026-09-21 (steps 1-4, `vita-port.md`): fades,
-   subtitles, conversations, the three gauges, the shoot HUD and every open
-   screen but three go over the GPU picture with no readback. Not yet seen on a
-   console - the `present` line of the next log says how many frames took it.
-3. Precompiled shaders: the machinery is in (2026-09-21, `vita-port.md`), the
-   cache is NOT made - it needs one run where `libshacccg.suprx` is, then
-   `scripts/vita-shader-cache.sh` and `make vita`.
-4. P2..P6 in `vita-port.md` §2 - the CPU plan; `pending/vita-meshidx-playcpp.md`
-   is P2, ready to apply.
-5. The `play.cpp` split is PLANNED ONLY ([`play-split.md`](play-split.md),
-   `tools/play_split_scan.py`); do it before the Vita work grows `play.cpp`
-   further.
+1. **The next console log, in the city**: the `sections -` lines (now with
+   the submission, the fades, the present and the three scripted-motion marks)
+   say where the remaining ~200 ms go; `staged bodies -` says how many were
+   skipped; the `present` line says G6 holds. Then the shader-cache test:
+   rename `ur0:data/libshacccg.suprx`, launch - the log should say `ABSENT`
+   and the game start (the five `.gxp` travel in the VPK since `e0f05da`).
+2. **P4** - thread the per-body loops with `omk::Threads` (three cores: the
+   two body sections, ~80 ms, become ~30). The pool's Vita half has compiled
+   and NEVER RUN; `omk_bench.vpk` in Vita3K or on the console says `threads:
+   EXACT` or not, before any loop is threaded.
+3. **P5** - the crowd's lights in the vertex shader (`applyLights` is now the
+   largest engine leaf on the M1; needs the normal back in the GLES vertex).
+4. The scripted motion's grids (17 ms): whichever of the three marks is the
+   cost. The moving grid is rebuilt every frame from 2730 triangles.
+5. The `play.cpp` split ([`play-split.md`](play-split.md)); P3's walker hold
+   was tried and does not fire on a street.
 
-The **full `--slow` sweep is due** (`sweep-log.md`: 9 tasks since the last);
+The **full `--slow` sweep is due** (`sweep-log.md`: 11 tasks since the last);
 the Vita work so far was verified with `--only` over `engine: vita bench`,
-`gles backend`, `vita build`, `input poll`, `vita printf`, `engine: boot`,
-`engine: intro` and `licence headers` (470).
-
 ## 5. Traps that cost time - the short list (`vita-port.md` §4 has all of them)
 
 * **The standard library is not the platform.** `std::filesystem`,
