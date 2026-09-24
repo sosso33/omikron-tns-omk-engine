@@ -588,6 +588,40 @@ void applyPose(Geometry& g, const Geometry& rest,
 }
 
 
+void meshAffines(const std::vector<Mesh>& meshes, const std::vector<MeshPose>& pose,
+                 const float* place, std::vector<float>& out) {
+    out.assign(meshes.size() * 12u, 0.0f);
+    for (std::size_t m = 0; m < meshes.size(); ++m) {
+        float R[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+        float t[3] = {0, 0, 0};
+        if (m < pose.size()) {
+            const MeshPose& mp = pose[m];
+            for (int j = 0; j < 3; ++j) {
+                const float axis[3] = {j == 0 ? 1.0f : 0.0f, j == 1 ? 1.0f : 0.0f, j == 2 ? 1.0f : 0.0f};
+                float col[3];
+                qrot(mp.q, axis, col);
+                for (int r = 0; r < 3; ++r) R[r][j] = col[r];
+            }
+            const float* mpos = meshes[m].pos;
+            for (int r = 0; r < 3; ++r)
+                t[r] = mp.pos[r] - (R[r][0] * mpos[0] + R[r][1] * mpos[1] + R[r][2] * mpos[2]);
+        }
+        float* o = out.data() + 12 * m;
+        if (!place) {
+            for (int r = 0; r < 3; ++r) {
+                o[4 * r] = R[r][0]; o[4 * r + 1] = R[r][1]; o[4 * r + 2] = R[r][2]; o[4 * r + 3] = t[r];
+            }
+            continue;
+        }
+        for (int r = 0; r < 3; ++r) {
+            const float* p = place + 4 * r;
+            for (int j = 0; j < 3; ++j)
+                o[4 * r + j] = p[0] * R[0][j] + p[1] * R[1][j] + p[2] * R[2][j];
+            o[4 * r + 3] = p[0] * t[0] + p[1] * t[1] + p[2] * t[2] + p[3];
+        }
+    }
+}
+
 int headMeshOf(const std::vector<Mesh>& meshes) {
     int root = -1;
     for (std::size_t i = 0; i < meshes.size() && root < 0; ++i) {

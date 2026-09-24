@@ -59,7 +59,7 @@ what the shadows, the head look and the fight read.
 | # | what | state |
 |---|---|---|
 | 0 | this file | **done 2026-09-24** |
-| 1 | GLES: the POSING PROGRAM - a vertex shader that applies a per-mesh 3x4 from a uniform array to a rest VBO carrying the mesh index; `Draw` gains the pose (matrix pointer and count) and the rest geometry; `Renderer::posesBodies()`. Proof: a probe renders one posed crowd body through the CPU path and the GPU path on the Mac and compares coverage | |
+| 1 | GLES: the POSING PROGRAM - a vertex shader that applies a per-mesh 3x4 from a uniform array to a rest VBO carrying the mesh index; `Draw` gains the pose (matrix pointer and count) and the rest geometry; `Renderer::posesBodies()`. Proof: a probe renders one posed crowd body through the CPU path and the GPU path on the Mac and compares coverage | **done 2026-09-24** - see below |
 | 2 | the crowd's LIGHT in the shader: `vertexlight.*`'s law (`-(N.L)` over a linear falloff through the `(t*c)>>8` ramp) with the lights a body reaches as uniforms, the normal rotated by the mesh's matrix. Proof: per-vertex colours against `applyLights`, and the frame | |
 | 3 | the WALKERS take the GPU path when the renderer offers it: no `applyPose`, no `applyLights`, no upload - the matrices only. Proof: the street at density 4, CPU path against GPU path, coverage and colour | |
 | 4 | the STAGED bodies (scene actors, the speaker) - with the face's morph as its own small dynamic buffer | |
@@ -67,3 +67,33 @@ what the shadows, the head look and the fight read.
 | 6 | the console: the new programs into the shader cache, and a city log | |
 
 Each step ends in a commit and a report, and waits for the reader's go.
+
+## Step 1, done - the posing program
+
+* **The boundary**: `Draw::meshPose` / `meshPoses` (one 3x4 a mesh of the
+  model) and `Renderer::posesBodies()`, false everywhere but GLES.
+  `omk::meshAffines` (`actor/pose.h`) folds a pose AND the body's placement
+  into those affines, R taken from `qrot` of the three axes so it cannot
+  disagree with `applyPose` about the conjugate.
+* **GLES**: the scene program compiled a second time with `OMK_POSED` -
+  `attribute float aSlot`, `uniform vec4 uPose[96]` (32 slots). A body's rest
+  geometry is uploaded ONCE, STATIC, each corner carrying its mesh's SLOT (the
+  meshes it uses, numbered densely - 19 for a crowd skeleton of a 76-mesh
+  model). A body with more than 32 is posed by the backend on the CPU into a
+  geometry of its own. The pose goes in as a `vec4` array on purpose: vitaGL
+  copies one straight, where a float array overran the heap (2026-09-18).
+* **The tie**: resolved on a private rest copy with `tieClass` = the mesh,
+  a new revision each frame naming the last as rigid, so it replays; what it
+  degenerates is written into the static buffer once.
+* **Proof** (`gles_probe --pose`, `verify.py: engine: gles pose`): Kay'l on
+  line 125338 and a crowd skeleton, turned and moved, CPU-posed against
+  GPU-posed through the same backend: coverage 1.0000, 0-6 pixels of 307200
+  differing, over four consecutive frames with the tie on; the posed tie
+  degenerates 142 and 334 triangles, the CPU path's own counts. Three
+  mutations caught (no rotation 0.19, one slot 0.49, the winner degenerated
+  0.96). Blind on the Mac to the tie's EFFECT - the M1 keeps the first-drawn
+  face without it.
+* **Not yet on the Vita**: the program links at start with the others, so a
+  console WITH `libshacccg.suprx` compiles it into the cache on the first run;
+  one without it logs `no posing program` and poses on the CPU as before.
+  Nothing submits a posed draw until step 3.

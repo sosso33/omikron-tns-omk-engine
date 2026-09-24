@@ -14908,6 +14908,67 @@ def c_engine_vita_bench():
         "against the inline one, and the exit status"
 
 
+def c_engine_gles_pose():
+    r"""A body POSED BY THE GLES VERTEX SHADER is the body the CPU poses
+    (`todo/gpu-skinning.md` step 1).
+
+    `gles_probe --pose` draws a character on one frame of a line, turned 37
+    degrees and moved, through the GLES backend twice: posed on the CPU
+    (`applyPose` and the placement, what the viewer does) and at REST with one
+    affine a mesh (`meshAffines` -> `Draw::meshPose`, `uPose` in the shader).
+    Kay'l (`HO1_FNM`, 20 meshes) and a crowd body (`PSH_FN` cut to its first
+    of four skeletons, 19 of 76 meshes), each with the tie off and then on
+    over four consecutive frames - the posed tie is resolved on a private rest
+    copy and replayed per frame, so a replay that drifted shows on the later
+    ones. The probe lays a COINCIDENT copy of the first batch over itself in
+    the opposite winding (the shop signs' shape), because no shipped character
+    has coincident faces inside one mesh and the tie would decide nothing.
+
+    Measured 2026-09-24: coverage 1.0000 everywhere, 0-6 pixels of 307200
+    differing (a GPU multiply is not the CPU's bit for bit), and the posed tie
+    degenerates 142 triangles on Kay'l and 334 on the crowd body, the CPU
+    path's own counts (a one-batch body's copy keeps its own material).
+
+    SHOWN TO FAIL, on copies of `glesrender.cpp` asserted to differ: the
+    shader dropping the rotation (coverage 0.19), every corner on slot 0
+    (0.49), and the tie degenerating the WINNER of each pair (0.96 from the
+    second frame). **Blind on the Mac to the tie's EFFECT**: the M1 keeps the
+    first-drawn of the two faces without it, so tie on and off draw the same
+    pixels here, and what this shows is that the posed tie degenerates
+    exactly what the CPU path does and nothing visible.
+    """
+    import platform
+    import subprocess
+    if platform.system() != "Darwin":
+        return ("skipped",), ("skipped",), "the probe makes its context with CGL (macOS)"
+    eng = os.path.join(ROOT, "engine")
+    line = omkpaths.data("MORPH/125338.3DM")
+    models = [omkpaths.data("MESHES/PERSOS/HO1_FNM.3DO"), omkpaths.data("MESHES/PERSOS/PSH_FN.3DO")]
+    if not os.path.isdir(eng) or not os.path.exists(line) or not all(os.path.exists(m) for m in models):
+        return ("skipped",), ("skipped",), "engine/ or the characters absent"
+    b = subprocess.run(["make", "-s", "gles-probe"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "gles_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    got = []
+    for m in models:
+        r = subprocess.run([binp, omkpaths.data_root(), "--pose", m, line, "200", "37"],
+                           capture_output=True, text=True, env=dict(os.environ, OMK_TIE_LOG="1"))
+        rows = re.findall(r"^tie (off|on ) frame \d+: .* coverage ([0-9.]+)", r.stdout, re.M)
+        posed = re.findall(r"(\d+) triangles degenerate on POSED", r.stdout)
+        cpu = re.findall(r"(\d+) triangles dropped on geometry", r.stdout)
+        ok = re.findall(r"^pose: (\w+)", r.stdout, re.M)
+        # a parse that reads nothing must fail AS A PARSE
+        if len(rows) != 5 or len(ok) != 1:
+            return (os.path.basename(m), len(rows), len(ok)), (os.path.basename(m), 5, 1), \
+                "gles_probe --pose output parsed - the tool's format changed, or no GL context"
+        got.append((os.path.basename(m), min(float(c) for _, c in rows) >= 0.995,
+                    int(posed[0]) if posed else 0, sorted(set(int(c) for c in cpu)), ok[0]))
+    return tuple(got), (("HO1_FNM.3DO", True, 142, [142], "OK"),
+                        ("PSH_FN.3DO", True, 334, [334], "OK")), \
+        "per body: coverage >= 0.995 on all five draws, the triangles the POSED tie " \
+        "degenerates, the CPU path's own count, and the probe's verdict"
+
 def c_engine_gles_backend():
     r"""The GLES2 backend - the one the PS Vita draws with - against the
     software reference, and its present pass EXACT against the readback
@@ -38849,6 +38910,7 @@ SLOW = [
     ("engine: tie memory", c_engine_tie_memory, "todo/handoff-vita.md 2; o3de/depthtie.h"),
     ("engine: vita bench", c_engine_vita_bench, "todo/vita-port.md 0; backends/vita/bench_main.cpp"),
     ("engine: gles backend", c_engine_gles_backend, "todo/vita-port.md 0; backends/gles/glesrender.cpp"),
+    ("engine: gles pose", c_engine_gles_pose, "todo/gpu-skinning.md 1; backends/gles/glesrender.cpp"),
     ("engine: vita build", c_engine_vita_build, "todo/vita-port.md B1; backends/vita/CMakeLists.txt"),
     ("engine: vita printf", c_engine_vita_printf, "todo/vita-port.md; backends/vita/c99format.h"),
     ("engine: sweep grid", c_engine_sweep_grid, "todo/optimization.md 11; o3de/collision.h"),

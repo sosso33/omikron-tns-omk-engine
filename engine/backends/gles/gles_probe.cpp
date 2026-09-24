@@ -37,6 +37,18 @@
 // Exit status: 0 when the present checks are exact and coverage is at least
 // 0.99, 1 otherwise - so a script can use it before `verify.py` knows of it.
 // Prints only; writes nothing.
+//
+// THE POSE MODE (todo/gpu-skinning.md step 1):
+//
+//     gles_probe <gamedata> --pose <character.3DO> <line.3DM> <frame> <yaw>
+//
+// poses the character on the line's frame, turns it by `yaw` degrees and moves
+// it, and draws it through the GLES backend TWICE: posed on the CPU
+// (`applyPose` and the placement written out, what the viewer does today) and
+// at REST with one affine a mesh (`meshAffines`, `Draw::meshPose`), posed by
+// the vertex shader. Both with the depth tie off, since it is not part of
+// what is compared. Prints the coverage agreement and the differing pixels;
+// fails below 0.995 coverage or when the GPU path draws nothing.
 #if !defined(__APPLE__)
 #  error "gles_probe makes its context with CGL; on another host, bring one up with EGL"
 #endif
@@ -44,12 +56,16 @@
 #include <OpenGL/OpenGL.h>
 #include <OpenGL/gl.h>
 
+#include "actor/pose.h"
+#include "formats/mesh3do.h"
 #include "formats/tex3dt.h"
 #include "o3de/geom3do.h"
 #include "o3de/renderer.h"
 #include "platform/datafs.h"
 #include "ui/surface.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -60,6 +76,7 @@ Renderer* makeGlesRenderer();
 bool glesPresentWorld(Renderer*, int vy, int vh, int frameW, int frameH, int winW, int winH);
 bool glesPresentSurface(Renderer*, const Surface&, int winW, int winH);
 void glesSetWindowTarget(Renderer*, unsigned fbo);
+void glesSetDepthTie(Renderer*, bool);
 }
 
 namespace {
@@ -140,8 +157,194 @@ long presentMismatches(const Window& win, const omk::Surface& rb, int vy) {
 
 }  // namespace
 
+// The pose mode - see the top.
+int poseMode(int argc, char** argv) {
+    if (argc < 7) { std::fprintf(stderr, "usage: gles_probe <gamedata> --pose <char.3DO> <line.3DM> <frame> <yaw>\n"); return 2; }
+    const std::string model = argv[3];
+    const auto md = omk::DataFs::readPath(model);
+    const auto mh = omk::readHeader(md);
+    if (md.empty() || !mh) { std::fprintf(stderr, "cannot read %s\n", model.c_str()); return 1; }
+    const auto meshes = omk::readMeshes(md, *mh);
+    omk::Geometry rest = omk::buildGeometry(md, omk::DrawFilter::Engine);
+    // A CROWD MODEL carries four LOD skeletons; the viewer draws the one the
+    // tracks name (`lodRestFor`). Cut to the FIRST root's subtree, so the body
+    // stays inside the program's slots and the tie is exercised on the GPU path.
+    {
+        std::vector<int> rootOf(meshes.size(), -1);
+        for (std::size_t i = 0; i < meshes.size(); ++i) {
+            int m = static_cast<int>(i);
+            for (int guard = 0; guard < 64; ++guard) {
+                int next = -1;
+                for (std::size_t j = 0; j < meshes.size(); ++j)
+                    if (meshes[j].id == meshes[static_cast<std::size_t>(m)].parent) { next = static_cast<int>(j); break; }
+                if (next < 0) break;
+                m = next;
+            }
+            rootOf[i] = m;
+        }
+        int roots = 0;
+        for (std::size_t i = 0; i < meshes.size(); ++i) roots += rootOf[i] == static_cast<int>(i);
+        if (roots > 1) {
+            const int keep = rootOf[0];
+            omk::Geometry cut;
+            for (const auto& b : rest.batches) {
+                omk::Batch nb = b;
+                nb.start = cut.corners.size(); nb.count = 0;
+                for (std::size_t c = b.start; c + 3 <= b.start + b.count; c += 3) {
+                    const auto mi = rest.cornerMesh[c];
+                    if (mi < 0 || rootOf[static_cast<std::size_t>(mi)] != keep) continue;
+                    for (int k = 0; k < 3; ++k) {
+                        cut.corners.push_back(rest.corners[c + k]);
+                        cut.cornerMesh.push_back(rest.cornerMesh[c + k]);
+                        if (!rest.cornerVertex.empty()) cut.cornerVertex.push_back(rest.cornerVertex[c + k]);
+                        if (!rest.cornerDeclared.empty()) cut.cornerDeclared.push_back(rest.cornerDeclared[c + k]);
+                    }
+                    nb.count += 3;
+                }
+                if (nb.count) cut.batches.push_back(nb);
+            }
+            std::printf("%d skeletons: drawn cut to the first, %zu of %zu triangles\n", roots,
+                        cut.corners.size() / 3, rest.corners.size() / 3);
+            rest = std::move(cut);
+        }
+    }
+    // A COINCIDENT BATCH, for the tie: the first batch's triangles again,
+    // exactly over themselves, drawn with ANOTHER material - so which of the
+    // two shows is the tie's decision (first drawn) and nothing else. The
+    // shipped characters have no coincident faces inside one mesh, so without
+    // this the tie would have nothing to decide on either path.
+    if (!rest.batches.empty()) {
+        omk::Batch dup = rest.batches[0];
+        // another material where the body has one; a one-batch body (a cut
+        // crowd skeleton) keeps its own, and the tie still decides
+        dup.material = rest.batches.size() > 1 ? rest.batches[1].material : rest.batches[0].material;
+        dup.start = rest.corners.size();
+        // in the OPPOSITE WINDING, as the shop signs are (CLAUDE.md 6): the
+        // same corners interpolate their depth in another order, so the two
+        // faces differ in the last bits and a GPU picks per pixel
+        const std::size_t b0 = rest.batches[0].start, n0 = rest.batches[0].count;
+        for (std::size_t c = b0; c + 2 < b0 + n0 + 0 && c + 2 < rest.corners.size(); c += 3) {
+            for (const std::size_t k : {c, c + 2, c + 1}) {
+                rest.corners.push_back(rest.corners[k]);
+                rest.cornerMesh.push_back(rest.cornerMesh[k]);
+                if (!rest.cornerVertex.empty()) rest.cornerVertex.push_back(rest.cornerVertex[k]);
+                if (!rest.cornerDeclared.empty()) rest.cornerDeclared.push_back(rest.cornerDeclared[k]);
+            }
+        }
+        rest.batches.push_back(dup);
+        std::printf("coincident batch: %zu triangles over batch 0, material %d\n",
+                    dup.count / 3, dup.material);
+    }
+    const auto t = omk::DataFs::readPath(model.substr(0, model.size() - 4) + ".3DT");
+    const auto tex = t.empty() ? std::vector<omk::Texture>{} : omk::textures(md, t);
+    const auto morph = omk::DataFs::readPath(argv[4]);
+    const omk::NodeTracks tracks = omk::nodeTracks(morph, omk::rootTrackOf(meshes));
+    const int frame = std::atoi(argv[5]);
+    const float yaw = static_cast<float>(std::atof(argv[6])) * 3.14159265f / 180.0f;
+    const auto pose = omk::composePose(meshes, tracks, frame, false);
+
+    // the placement: a turn about Y and a move, as a 3x4
+    const float c = std::cos(yaw), sn = std::sin(yaw);
+    const float place[12] = {c, 0, sn, 140.0f,  0, 1, 0, -25.0f,  -sn, 0, c, 60.0f};
+    // THE CPU PATH, what the viewer does
+    omk::Geometry posed;
+    omk::applyPose(posed, rest, meshes, pose);
+    for (auto& k : posed.corners) {
+        const float x = k.x, y = k.y, z = k.z;
+        k.x = place[0] * x + place[1] * y + place[2] * z + place[3];
+        k.y = place[4] * x + place[5] * y + place[6] * z + place[7];
+        k.z = place[8] * x + place[9] * y + place[10] * z + place[11];
+    }
+    // THE GPU PATH's affines
+    std::vector<float> aff;
+    omk::meshAffines(meshes, pose, place, aff);
+
+    float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
+    for (const auto& k : posed.corners) {
+        const float v[3] = {k.x, k.y, k.z};
+        for (int i = 0; i < 3; ++i) { lo[i] = std::min(lo[i], v[i]); hi[i] = std::max(hi[i], v[i]); }
+    }
+    omk::RCamera cam;
+    for (int i = 0; i < 3; ++i) cam.at[i] = (lo[i] + hi[i]) * 0.5f;
+    const float span = std::max(hi[1] - lo[1], std::max(hi[0] - lo[0], hi[2] - lo[2]));
+    cam.eye[0] = cam.at[0] + span * 0.6f;
+    cam.eye[1] = cam.at[1] - span * 0.2f;
+    cam.eye[2] = cam.at[2] - span * 1.4f;
+    cam.hfovDeg = 50.0f;
+    const int W = 640, H = 480;
+    omk::View v;
+    v.cam = cam; v.cam.w = W; v.cam.h = H;
+    v.dither = false;
+
+    const auto drawsOf = [&](const omk::Geometry& g, const float* mp, std::size_t n) {
+        std::vector<omk::Draw> out;
+        for (const auto& b : g.batches) {
+            omk::Draw dr;
+            dr.bucketKey = static_cast<std::uint32_t>(b.material) & 0x3Fu;
+            dr.geo = &g; dr.start = b.start; dr.count = b.count;
+            dr.blend = b.blend; dr.cutout = b.cutout;
+            dr.meshPose = mp; dr.meshPoses = n;
+            out.push_back(dr);
+        }
+        return out;
+    };
+    omk::Renderer* gl = omk::makeGlesRenderer();
+    if (!gl->init(W, H)) { std::fprintf(stderr, "gles renderer failed to come up\n"); return 1; }
+    std::printf("posesBodies %d\n", gl->posesBodies() ? 1 : 0);
+    const auto run = [&](const std::vector<omk::Draw>& ds) {
+        gl->setTextures(tex);
+        gl->begin(v);
+        for (const auto& dr : ds) gl->submit(dr);
+        gl->end();
+        return gl->readback();
+    };
+    std::printf("%s frame %d yaw %s  %zu triangles  %zu meshes\n", model.c_str(), frame, argv[6],
+                rest.corners.size() / 3, meshes.size());
+    bool ok = true;
+    omk::Surface gpuUntied(1, 1, 0);
+    // THE TIE OFF, then ON; and on, over FOUR consecutive frames through the
+    // same renderer - the posed tie is resolved once and replayed per frame,
+    // and a replay that drifted would show on the later frames
+    for (int tie = 0; tie <= 1; ++tie) {
+        omk::glesSetDepthTie(gl, tie != 0);
+        for (int step = 0; step < (tie ? 4 : 1); ++step) {
+            const auto poseN = omk::composePose(meshes, tracks, frame + 7 * step, false);
+            omk::applyPose(posed, rest, meshes, poseN);
+            for (auto& k : posed.corners) {
+                const float x = k.x, y = k.y, z = k.z;
+                k.x = place[0] * x + place[1] * y + place[2] * z + place[3];
+                k.y = place[4] * x + place[5] * y + place[6] * z + place[7];
+                k.z = place[8] * x + place[9] * y + place[10] * z + place[11];
+            }
+            omk::meshAffines(meshes, poseN, place, aff);
+            const omk::Surface cpu = run(drawsOf(posed, nullptr, 0));
+            const omk::Surface gpu = run(drawsOf(rest, aff.data(), meshes.size()));
+            const omk::Surface still = run(drawsOf(rest, nullptr, 0));
+            const Coverage cv = compare(cpu, gpu);
+            const Coverage rs = compare(cpu, still);
+            std::printf("tie %s frame %d: cpu posed lit %ld  gpu posed lit %ld  coverage %.4f  "
+                        "differing %ld (%.2f%%)  [unposed rest: %.4f]\n",
+                        tie ? "on " : "off", frame + 7 * step, cv.sw, cv.gl, cv.agree(), cv.differ,
+                        100.0 * double(cv.differ) / double(cpu.px.size()), rs.agree());
+            ok = ok && cv.gl > 0 && cv.agree() >= 0.995 && rs.agree() < cv.agree();
+            if (!tie) gpuUntied = gpu;
+            else if (step == 0) {
+                // what the tie CHANGED on the posed path - on a model with the
+                // coincident batch this must not be nothing, or the tie was
+                // never reached and "tie on" above proves nothing
+                const Coverage tv = compare(gpuUntied, gpu);
+                std::printf("gpu tie on against tie off: %ld pixels differ\n", tv.differ);
+            }
+        }
+    }
+    delete gl;
+    std::printf("pose: %s\n", ok ? "OK" : "FAILED");
+    return ok ? 0 : 1;
+}
+
 int main(int argc, char** argv) {
-    if (argc < 6) {
+    const bool poseArg = argc > 2 && std::string(argv[2]) == "--pose";
+    if (argc < 6 && !poseArg) {
         std::fprintf(stderr, "usage: gles_probe <gamedata> <model.3DO> <eye> <at> <hfov> [WxH]\n");
         return 2;
     }
@@ -163,6 +366,12 @@ int main(int argc, char** argv) {
     std::printf("gl: %s | %s\n", reinterpret_cast<const char*>(glGetString(GL_RENDERER)),
                 reinterpret_cast<const char*>(glGetString(GL_VERSION)));
 
+    if (poseArg) {
+        const int rc = poseMode(argc, argv);
+        CGLSetCurrentContext(nullptr);
+        CGLDestroyContext(ctx);
+        return rc;
+    }
     // ---- the set, as run_vulkan loads it
     const std::string model = argv[2];
     const auto d = omk::DataFs::readPath(model);

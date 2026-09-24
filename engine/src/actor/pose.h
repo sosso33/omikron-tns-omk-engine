@@ -304,4 +304,18 @@ void applyPose(Geometry& g, const Geometry& rest,
                const FaceMesh* face = nullptr,
                const std::vector<float>* faceVerts = nullptr);
 
+// THE SAME POSE AS ONE AFFINE PER MESH, for a renderer that poses the body
+// itself (`Draw::meshPose`, todo/gpu-skinning.md). `applyPose` moves a corner
+// to `pos[m] + rot(q[m]) * (rest - mesh.pos[m])`; that is `R * rest + t` with
+// R the quaternion's matrix and `t = pos[m] - R * mesh.pos[m]`, and a body's
+// PLACEMENT - `place`, a 3x4 in the same row layout, or null for none - is
+// folded on top, so the GPU does one multiply a corner. A mesh the pose does
+// not cover stays at rest, as `applyPose` leaves it: the identity.
+//
+// `out` gets `meshes.size()` affines, 12 floats each: row r is R[r][0..2], t[r].
+// R's columns are `qrot` of the three axes, so the matrix is `qrot`'s own
+// rotation and cannot disagree with it about the conjugate (see the top).
+void meshAffines(const std::vector<Mesh>& meshes, const std::vector<MeshPose>& pose,
+                 const float* place, std::vector<float>& out);
+
 }  // namespace omk

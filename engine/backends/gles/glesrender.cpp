@@ -147,6 +147,14 @@ attribute vec3  aPos;
 attribute vec2  aUV;
 attribute vec3  aCol;
 attribute float aPhase;
+#ifdef OMK_POSED
+// THE BODY POSED HERE (todo/gpu-skinning.md): `aPos` is the REST corner and
+// `aSlot` its mesh's slot; each slot's affine is three rows of `uPose`. A vec4
+// ARRAY on purpose: vitaGL copies one straight (16 bytes an element), where a
+// float array is laid out 8 bytes an element and overran the heap (above).
+attribute float aSlot;
+uniform vec4  uPose[96];
+#endif
 varying vec2  vUV;
 varying vec3  vCol;
 varying float vDepth;
@@ -160,7 +168,15 @@ void main() {
         wave = waveAt(i);
     }
     vCol = aCol + vec3(wave);
+#ifdef OMK_POSED
+    int s = int(aSlot + 0.5) * 3;
+    vec3 wp = vec3(dot(uPose[s].xyz, aPos) + uPose[s].w,
+                   dot(uPose[s + 1].xyz, aPos) + uPose[s + 1].w,
+                   dot(uPose[s + 2].xyz, aPos) + uPose[s + 2].w);
+    gl_Position = uMvp * vec4(wp, 1.0);
+#else
     gl_Position = uMvp * vec4(aPos, 1.0);
+#endif
     // row 3 of uMvp is f . (world - eye): w is the view depth raster.cpp fogs on
     vDepth = gl_Position.w;
 }
@@ -300,11 +316,23 @@ struct GpuVert {
 };
 static_assert(sizeof(GpuVert) == 36, "the GLES vertex is 36 bytes");
 
+// A REST corner of a body the GPU poses: the vertex, and its mesh's SLOT - the
+// meshes a geometry uses, numbered densely, so a 76-mesh crowd model whose
+// drawn skeleton has 19 needs 19 affines and not 76.
+struct GpuPoseVert {
+    GpuVert v;
+    float slot;
+};
+static_assert(sizeof(GpuPoseVert) == 40, "the posed GLES vertex is 40 bytes");
+
 GpuVert gpuVert(const omk::Corner& c) {
     return {c.x, c.y, c.z, c.u, c.v, c.r, c.g, c.b, c.phase};
 }
 
-constexpr GLuint kAttrPos = 0, kAttrUV = 1, kAttrCol = 2, kAttrPhase = 3;
+constexpr GLuint kAttrPos = 0, kAttrUV = 1, kAttrCol = 2, kAttrPhase = 3, kAttrSlot = 4;
+// a posed body's meshes, one affine (three vec4 rows of `uPose`) each: Kay'l
+// has 20, a crowd skeleton 19; a body with more is posed here on the CPU
+constexpr int kPoseSlots = 32;
 
 // ---- THE INTERFACE AS AN OVERLAY (`todo/vita-port.md` G6 step 2) ----------
 //
@@ -479,6 +507,45 @@ private:
 public:
     long takeOverlayRows() { const long r = overlayRows_; overlayRows_ = 0; return r; }
 private:
+    // THE POSING PROGRAM (todo/gpu-skinning.md) - the scene program compiled
+    // with `OMK_POSED`: the same stages, the corner moved by its mesh's affine
+    GLuint posed_ = 0;
+    struct SceneLoc {
+        GLint mvp = -1, texSize = -1, clock = -1, tex = -1, cutout = -1,
+              fogStart = -1, fogEnd = -1, fogColour = -1, pose = -1;
+        GLint wave[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
+    };
+    SceneLoc mainLoc_, posedLoc_;
+    GLuint curProg_ = 0;
+    const float* lastPose_ = nullptr;          // the pose `uPose` holds, per draw
+    const Geometry* lastPoseGeo_ = nullptr;    // (reset at `begin`: same pointer, new values)
+    std::uint64_t cpuPoseRev_ = 0;
+    float mvp_[16] = {};
+    // a rest geometry's buffer: uploaded once per revision, and which mesh
+    // each slot is
+    struct PoseVbo { GLuint id = 0; std::size_t n = 0; std::uint64_t rev = 0; std::vector<int> meshOfSlot;
+                     std::vector<float> slotOfCorner; };
+    // THE DEPTH TIE OF A POSED BODY. With `tieClass` the corner's MESH, the
+    // tie pairs faces by position AND mesh, so its answer is the same in every
+    // pose (`Geometry::tieClass`): it is resolved on a private copy of the REST
+    // geometry, a new revision each frame that names the last as rigid - the
+    // replay the CPU-posed bodies take - and what it degenerates is written
+    // into the STATIC buffer once.
+    struct PoseTie { Geometry g; std::uint64_t restRev = ~0ull; std::uint64_t frame = 0; DepthTie tie; };
+    std::unordered_map<const Geometry*, PoseTie> poseTie_;
+    std::uint64_t frameNo_ = 0, poseTieRev_ = 0;
+    void resolvePosedTies(const Draw& d, PoseVbo& pv);
+    std::unordered_map<const Geometry*, PoseVbo> poseVbo_;
+    std::vector<GpuPoseVert> poseUp_;
+    std::vector<float> poseUni_;
+    // a body with more meshes than `kPoseSlots`, posed here - per geometry
+    std::unordered_map<const Geometry*, Geometry> cpuPosed_;
+    bool uploadPosedGeometry(const Geometry* g, PoseVbo*& out);
+    bool usePosed(const Draw& d) const { return d.meshPose && d.meshPoses && posed_; }
+    void useProgram(GLuint p) { if (curProg_ != p) { glUseProgram(p); curProg_ = p; } }
+public:
+    bool posesBodies() const override { return posed_ != 0; }
+private:
     // uniform locations, looked up once
     GLint uMvp_ = -1, uTexSize_ = -1, uClock_ = -1, uWave_[8] = {-1, -1, -1, -1, -1, -1, -1, -1},
           uTex_ = -1,
@@ -518,6 +585,8 @@ GlesRenderer::~GlesRenderer() {
     if (fbo_) glDeleteFramebuffers(1, &fbo_);
     if (prog_) glDeleteProgram(prog_);
     if (present_) glDeleteProgram(present_);
+    for (auto& [g, pv] : poseVbo_) glDeleteBuffers(1, &pv.id);
+    if (posed_) glDeleteProgram(posed_);
 }
 
 bool GlesRenderer::init(int w, int h) {
@@ -540,6 +609,15 @@ bool GlesRenderer::init(int w, int h) {
     // missing from a shader cache made by one short run (`todo/vita-port.md`,
     // the precompiled shaders). Its uniforms are still looked up on first use.
     overlay_ = link(kPresentVert, kOverlayFrag, {{0, "aPos"}});
+    {
+        // at start with the others, for the shader cache (above); a context
+        // that cannot build it simply poses on the CPU
+        const std::string posedVert = std::string("#define OMK_POSED 1\n") + kSceneVert;
+        posed_ = link(posedVert.c_str(), kSceneFrag,
+                      {{kAttrPos, "aPos"}, {kAttrUV, "aUV"}, {kAttrCol, "aCol"},
+                       {kAttrPhase, "aPhase"}, {kAttrSlot, "aSlot"}});
+        if (!posed_) std::fprintf(stderr, "gles: no posing program - bodies are posed on the CPU\n");
+    }
     uMvp_       = glGetUniformLocation(prog_, "uMvp");
     uTexSize_   = glGetUniformLocation(prog_, "uTexSize");
     uClock_     = glGetUniformLocation(prog_, "uShimmerClock");
@@ -552,6 +630,21 @@ bool GlesRenderer::init(int w, int h) {
     uFogStart_  = glGetUniformLocation(prog_, "uFogStart");
     uFogEnd_    = glGetUniformLocation(prog_, "uFogEnd");
     uFogColour_ = glGetUniformLocation(prog_, "uFogColour");
+    const auto locsOf = [](GLuint p, SceneLoc& L) {
+        L.mvp = glGetUniformLocation(p, "uMvp");
+        L.texSize = glGetUniformLocation(p, "uTexSize");
+        L.clock = glGetUniformLocation(p, "uShimmerClock");
+        for (int k = 0; k < 8; ++k)
+            L.wave[k] = glGetUniformLocation(p, ("uWave" + std::to_string(k)).c_str());
+        L.tex = glGetUniformLocation(p, "uTex");
+        L.cutout = glGetUniformLocation(p, "uCutout");
+        L.fogStart = glGetUniformLocation(p, "uFogStart");
+        L.fogEnd = glGetUniformLocation(p, "uFogEnd");
+        L.fogColour = glGetUniformLocation(p, "uFogColour");
+        L.pose = glGetUniformLocation(p, "uPose");
+    };
+    locsOf(prog_, mainLoc_);
+    if (posed_) locsOf(posed_, posedLoc_);
     pDst_     = glGetUniformLocation(present_, "uDst");
     pPic_     = glGetUniformLocation(present_, "uPic");
     pBayer_   = glGetUniformLocation(present_, "uBayer");
@@ -568,6 +661,12 @@ bool GlesRenderer::init(int w, int h) {
     for (int i = 0; i < 32; ++i) wave[i] = static_cast<float>(kShimmerWave[i]) / 255.0f;
     for (int k = 0; k < 8; ++k) glUniform4fv(uWave_[k], 1, wave + 4 * k);
     glUniform1i(uTex_, 0);
+    if (posed_) {
+        glUseProgram(posed_);
+        for (int k = 0; k < 8; ++k) glUniform4fv(posedLoc_.wave[k], 1, wave + 4 * k);
+        glUniform1i(posedLoc_.tex, 0);
+        glUseProgram(prog_);
+    }
 
     // THE RENDER TARGET. Offscreen, at the ENGINE's size, because three
     // things need the picture before the window does: `readback()`, the
@@ -866,6 +965,7 @@ void GlesRenderer::resolveTies(const Draw& d, Vbo& vb) {
 
 void GlesRenderer::begin(const View& view) {
     g_glesFrame = GlesFrameCounts{};
+    ++frameNo_;
     st_ = RasterStats{};
     view_ = view;
     fog_ = view.fog;
@@ -913,7 +1013,16 @@ void GlesRenderer::begin(const View& view) {
     for (int c = 0; c < 4; ++c)
         for (int r = 0; r < 4; ++r) mvp[c * 4 + r] = rows[r][c];   // column-major
 
+    std::memcpy(mvp_, mvp, sizeof mvp_);
+    lastPose_ = nullptr;
+    lastPoseGeo_ = nullptr;
+    if (posed_) {
+        glUseProgram(posed_);
+        glUniformMatrix4fv(posedLoc_.mvp, 1, GL_FALSE, mvp);
+        glUniform1f(posedLoc_.clock, view.shimmerClock);
+    }
     glUseProgram(prog_);
+    curProg_ = prog_;
     glUniformMatrix4fv(uMvp_, 1, GL_FALSE, mvp);
     glUniform1f(uClock_, view.shimmerClock);
     glEnable(GL_DEPTH_TEST);
@@ -923,17 +1032,146 @@ void GlesRenderer::begin(const View& view) {
     recording_ = true;
 }
 
+bool GlesRenderer::uploadPosedGeometry(const Geometry* g, PoseVbo*& out) {
+    // A REST geometry: its corners change only when the model does, so this
+    // runs once per revision and the buffer is STATIC - the whole point
+    // (todo/gpu-skinning.md). Each corner carries its mesh's SLOT.
+    PoseVbo& pv = poseVbo_[g];
+    out = &pv;
+    if (pv.id && pv.rev == g->revision && pv.n == g->corners.size()) return true;
+    if (g->corners.empty() || g->cornerMesh.size() != g->corners.size()) return false;
+    pv.meshOfSlot.clear();
+    std::unordered_map<std::int32_t, int> slotOf;
+    std::vector<GpuPoseVert>& v = poseUp_;
+    v.resize(g->corners.size());
+    for (std::size_t k = 0; k < v.size(); ++k) {
+        const std::int32_t m = g->cornerMesh[k];
+        auto it = slotOf.find(m);
+        if (it == slotOf.end()) {
+            it = slotOf.emplace(m, static_cast<int>(pv.meshOfSlot.size())).first;
+            pv.meshOfSlot.push_back(m);
+        }
+        v[k].v = gpuVert(g->corners[k]);
+        v[k].slot = static_cast<float>(it->second);
+    }
+    ++g_glesFrame.uploads;
+    g_glesFrame.uploadBytes += static_cast<long>(v.size() * sizeof(GpuPoseVert));
+    if (!pv.id) glGenBuffers(1, &pv.id);
+    glBindBuffer(GL_ARRAY_BUFFER, pv.id);
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(v.size() * sizeof(GpuPoseVert)),
+                 v.data(), GL_STATIC_DRAW);
+    pv.n = v.size();
+    pv.rev = g->revision;
+    pv.slotOfCorner.resize(v.size());
+    for (std::size_t k = 0; k < v.size(); ++k) pv.slotOfCorner[k] = v[k].slot;
+    // a fresh buffer holds nothing degenerate
+    if (const auto it = poseTie_.find(g); it != poseTie_.end()) it->second.tie.vboReplaced();
+    return true;
+}
+
+void GlesRenderer::resolvePosedTies(const Draw& d, PoseVbo& pv) {
+    if (!tieOn_) return;
+    const Geometry* g = d.geo;
+    PoseTie& pt = poseTie_[g];
+    if (pt.restRev != g->revision || pt.g.corners.size() != g->corners.size()) {
+        pt.g = *g;
+        pt.g.tieClass.assign(g->cornerMesh.begin(), g->cornerMesh.end());
+        pt.g.tieRigidFrom = 0;
+        pt.g.revision = ++poseTieRev_;
+        pt.restRev = g->revision;
+        pt.frame = frameNo_;
+        pt.tie = DepthTie{};
+    } else if (pt.frame != frameNo_) {
+        pt.g.tieRigidFrom = pt.g.revision;
+        pt.g.revision = ++poseTieRev_;
+        pt.frame = frameNo_;
+    }
+    losers_.clear();
+    restore_.clear();
+    pt.tie.resolve(pt.g, d.start, d.count, d.blend == Blend::Opaque, losers_, restore_);
+    if (pt.tie.newlyApplied().empty() && restore_.empty()) return;
+    g_glesInTie = true;
+    glBindBuffer(GL_ARRAY_BUFFER, pv.id);
+    GpuPoseVert tri[3];
+    const auto write = [&](std::size_t k, bool degenerate) {
+        const std::size_t c = 3 * k;
+        if (c + 2 >= pv.n || c + 2 >= g->corners.size()) return;
+        for (int j = 0; j < 3; ++j) {
+            tri[j].v = gpuVert(g->corners[c + j]);
+            tri[j].slot = pv.slotOfCorner[c + j];
+            if (degenerate) {
+                tri[j].v.x = g->corners[c].x;
+                tri[j].v.y = g->corners[c].y;
+                tri[j].v.z = g->corners[c].z;
+                tri[j].slot = pv.slotOfCorner[c];
+            }
+        }
+        patchArrayBuffer(c * sizeof(GpuPoseVert), sizeof tri, tri);
+    };
+    for (const std::size_t k : restore_) write(k, false);
+    for (const std::size_t k : pt.tie.newlyApplied()) write(k, true);
+    g_glesInTie = false;
+}
+
 void GlesRenderer::submit(const Draw& d) {
     if (!recording_ || !d.geo || !d.count) return;
+    PoseVbo* pvb = nullptr;
+    bool posed = usePosed(d);
     const double fu0 = glesClockMs();
-    const bool uploaded = uploadGeometry(d.geo);
+    bool uploaded = posed ? uploadPosedGeometry(d.geo, pvb) : uploadGeometry(d.geo);
+    if (posed && uploaded && pvb->meshOfSlot.size() > static_cast<std::size_t>(kPoseSlots)) {
+        // MORE MESHES THAN THE PROGRAM HOLDS: pose it here, on the CPU, into a
+        // geometry of its own, and draw that the ordinary way
+        Geometry& cp = cpuPosed_[d.geo];
+        if (cp.corners.size() != d.geo->corners.size()) cp = *d.geo;
+        for (std::size_t i = 0; i < cp.corners.size(); ++i) {
+            const Corner& rc = d.geo->corners[i];
+            const std::int32_t m = d.geo->cornerMesh[i];
+            Corner& c = cp.corners[i];
+            if (m < 0 || static_cast<std::size_t>(m) >= d.meshPoses) { c.x = rc.x; c.y = rc.y; c.z = rc.z; continue; }
+            const float* a = d.meshPose + 12 * static_cast<std::size_t>(m);
+            c.x = a[0] * rc.x + a[1] * rc.y + a[2] * rc.z + a[3];
+            c.y = a[4] * rc.x + a[5] * rc.y + a[6] * rc.z + a[7];
+            c.z = a[8] * rc.x + a[9] * rc.y + a[10] * rc.z + a[11];
+        }
+        cp.revision = d.geo->revision + (++cpuPoseRev_ << 32);
+        Draw c = d;
+        c.geo = &cp;
+        c.meshPose = nullptr;
+        c.meshPoses = 0;
+        g_glesFrame.uploadMs += glesClockMs() - fu0;
+        submit(c);
+        return;
+    }
     g_glesFrame.uploadMs += glesClockMs() - fu0;
     if (!uploaded) return;
-    Vbo& vb = vbo_[d.geo];
-    const double ft0 = glesClockMs();
-    resolveTies(d, vb);
-    g_glesFrame.tieMs += glesClockMs() - ft0;
+    {
+        const double ft0 = glesClockMs();
+        if (posed) resolvePosedTies(d, *pvb);
+        else resolveTies(d, vbo_[d.geo]);
+        g_glesFrame.tieMs += glesClockMs() - ft0;
+    }
     st_.triangles += static_cast<long>(d.count / 3);
+    const SceneLoc& L = posed ? posedLoc_ : mainLoc_;
+    useProgram(posed ? posed_ : prog_);
+    if (posed && (lastPose_ != d.meshPose || lastPoseGeo_ != d.geo)) {
+        // one affine a slot: the mesh's, or the identity for a corner no mesh
+        // owns (`applyPose` leaves those at rest)
+        const std::size_t slots = pvb->meshOfSlot.size();
+        poseUni_.assign(slots * 12u, 0.0f);
+        for (std::size_t sl = 0; sl < slots; ++sl) {
+            const std::int32_t m = pvb->meshOfSlot[sl];
+            float* o = poseUni_.data() + 12 * sl;
+            if (m >= 0 && static_cast<std::size_t>(m) < d.meshPoses) {
+                std::memcpy(o, d.meshPose + 12 * static_cast<std::size_t>(m), 12 * sizeof(float));
+            } else {
+                o[0] = 1.0f; o[5] = 1.0f; o[10] = 1.0f;
+            }
+        }
+        glUniform4fv(L.pose, static_cast<GLsizei>(slots * 3), poseUni_.data());
+        lastPose_ = d.meshPose;
+        lastPoseGeo_ = d.geo;
+    }
 
     switch (d.blend) {
     case Blend::Opaque:
@@ -956,8 +1194,8 @@ void GlesRenderer::submit(const Draw& d) {
     const std::size_t slot = d.bucketKey & 0x3Fu;
     const Tex& t = (slot < tex_.size() && tex_[slot].id) ? tex_[slot] : white_;
     glBindTexture(GL_TEXTURE_2D, t.id);
-    glUniform2f(uTexSize_, t.w, t.h);
-    glUniform1i(uCutout_, d.cutout ? 1 : 0);
+    glUniform2f(L.texSize, t.w, t.h);
+    glUniform1i(L.cutout, d.cutout ? 1 : 0);
 
     // THE FOG's two exclusions - the rule `renderer.cpp` applies for the
     // software loop and `vkrender.cpp` for Vulkan.
@@ -967,16 +1205,23 @@ void GlesRenderer::submit(const Draw& d) {
         fs = fogStart_ * k;
         fe = fogEnd_ * k;
     }
-    glUniform1f(uFogStart_, fs);
-    glUniform1f(uFogEnd_, fe);
-    glUniform3f(uFogColour_, fogColour_[0], fogColour_[1], fogColour_[2]);
+    glUniform1f(L.fogStart, fs);
+    glUniform1f(L.fogEnd, fe);
+    glUniform3f(L.fogColour, fogColour_[0], fogColour_[1], fogColour_[2]);
 
-    glBindBuffer(GL_ARRAY_BUFFER, vb.id);
-    const GLsizei st = sizeof(GpuVert);
+    glBindBuffer(GL_ARRAY_BUFFER, posed ? pvb->id : vbo_[d.geo].id);
+    const GLsizei st = posed ? sizeof(GpuPoseVert) : sizeof(GpuVert);
     glEnableVertexAttribArray(kAttrPos);
     glEnableVertexAttribArray(kAttrUV);
     glEnableVertexAttribArray(kAttrCol);
     glEnableVertexAttribArray(kAttrPhase);
+    if (posed) {
+        glEnableVertexAttribArray(kAttrSlot);
+        glVertexAttribPointer(kAttrSlot, 1, GL_FLOAT, GL_FALSE, st,
+                              reinterpret_cast<const void*>(offsetof(GpuPoseVert, slot)));
+    } else {
+        glDisableVertexAttribArray(kAttrSlot);
+    }
     glVertexAttribPointer(kAttrPos, 3, GL_FLOAT, GL_FALSE, st, reinterpret_cast<const void*>(0));
     glVertexAttribPointer(kAttrUV, 2, GL_FLOAT, GL_FALSE, st, reinterpret_cast<const void*>(12));
     glVertexAttribPointer(kAttrCol, 3, GL_FLOAT, GL_FALSE, st, reinterpret_cast<const void*>(20));
@@ -1003,6 +1248,13 @@ void GlesRenderer::end() {
                 std::printf("[tie] gles: %ld triangles dropped on geometry %p\n",
                             t.dropped, static_cast<const void*>(g));
                 t.logged = true;
+            }
+    if (tieLog)
+        for (auto& [g, pt] : poseTie_)
+            if (!pt.tie.logged && !pt.tie.appliedTriangles().empty()) {
+                std::printf("[tie] gles: %zu triangles degenerate on POSED geometry %p\n",
+                            pt.tie.appliedTriangles().size(), static_cast<const void*>(g));
+                pt.tie.logged = true;
             }
 }
 
@@ -1060,6 +1312,7 @@ void GlesRenderer::drawPresent(GLuint tex, int picW, int picH, int texW, int tex
     glClearColor(0, 0, 0, 1);   // the bands, and whatever the aspect leaves
     glClear(GL_COLOR_BUFFER_BIT);
     glUseProgram(present_);
+    curProg_ = present_;
     glUniform4fv(pDst_, 1, dst);
     glUniform2f(pPicSize_, static_cast<float>(picW), static_cast<float>(picH));
     glUniform2f(pTexSize_, static_cast<float>(texW), static_cast<float>(texH));
@@ -1226,6 +1479,7 @@ bool GlesRenderer::presentOverlay(const Surface& s, const unsigned char* mask, c
     glEnable(GL_BLEND);
     glBlendFunc(GL_ONE, GL_SRC_ALPHA);
     glUseProgram(overlay_);
+    curProg_ = overlay_;
     glUniform4fv(oDst_, 1, dst);
     glUniform2f(oPicSize_, static_cast<float>(s.w), static_cast<float>(s.h));
     glUniform4fv(oFade_, 1, fade);

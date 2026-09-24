@@ -231,6 +231,17 @@ struct Draw {
     // the artists' shadows (ASSETS 4c), so a map that darkened the set from
     // the set would double-darken every corner it painted once.
     bool            castsShadow = false;
+    // A BODY POSED BY THE RENDERER (`todo/gpu-skinning.md`). Only for a
+    // renderer that answers `posesBodies()`: `geo` is then a character's REST
+    // geometry, whose `cornerMesh` names each corner's mesh, and every corner
+    // is drawn at `M[mesh] * rest` - `meshPose` holds one affine per mesh of
+    // the model, 12 floats each, the rows of a 3x4 (`world = R * rest + t`,
+    // row r = R[r][0..2], t[r]). `meshPoses` is how many. The frontend folds
+    // the bone's rotation and position AND the body's placement into it
+    // (`omk::meshAffines`), so a corner costs the GPU one matrix and the CPU
+    // nothing. Null for every other draw.
+    const float*    meshPose  = nullptr;
+    std::size_t     meshPoses = 0;
 };
 
 class Renderer {
@@ -269,6 +280,11 @@ public:
     virtual RasterStats stats() const = 0;
 
     virtual const char* name() const = 0;
+
+    // Whether a `Draw` may carry a `meshPose` - the body posed on the GPU. The
+    // software reference and Vulkan answer no, and the frontend poses on the
+    // CPU for them, as it always has.
+    virtual bool posesBodies() const { return false; }
 
     // A NATIVE mirror pass, when the backend has one. -> false means "I do not
     // do this", and the boundary falls back to compositing on the CPU.
