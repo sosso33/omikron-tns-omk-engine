@@ -242,6 +242,16 @@ struct Draw {
     // nothing. Null for every other draw.
     const float*    meshPose  = nullptr;
     std::size_t     meshPoses = 0;
+    // ...AND LIT BY IT (step 2): `vertexlight.h`'s law applied per corner to
+    // the posed normal, with the lights `lightReach` found for the body - 8
+    // floats each, `vertexLightCount` of them. `lightsFromBlack`: the corners
+    // start BLACK (the crowd's rule, `sub_494E80`'s `instance[+416]`) rather
+    // than from their baked colour. Only with a `meshPose`; a renderer that
+    // cannot take `vertexLightCount` lights is not handed them (the frontend
+    // asks `maxVertexLights()`).
+    const float*    vertexLights     = nullptr;
+    int             vertexLightCount = 0;
+    bool            lightsFromBlack  = false;
 };
 
 class Renderer {
@@ -285,6 +295,8 @@ public:
     // software reference and Vulkan answer no, and the frontend poses on the
     // CPU for them, as it always has.
     virtual bool posesBodies() const { return false; }
+    // How many lights a posed draw may carry (`Draw::vertexLights`).
+    virtual int maxVertexLights() const { return 0; }
 
     // A NATIVE mirror pass, when the backend has one. -> false means "I do not
     // do this", and the boundary falls back to compositing on the CPU.

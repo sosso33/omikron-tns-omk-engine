@@ -60,7 +60,7 @@ what the shadows, the head look and the fight read.
 |---|---|---|
 | 0 | this file | **done 2026-09-24** |
 | 1 | GLES: the POSING PROGRAM - a vertex shader that applies a per-mesh 3x4 from a uniform array to a rest VBO carrying the mesh index; `Draw` gains the pose (matrix pointer and count) and the rest geometry; `Renderer::posesBodies()`. Proof: a probe renders one posed crowd body through the CPU path and the GPU path on the Mac and compares coverage | **done 2026-09-24** - see below |
-| 2 | the crowd's LIGHT in the shader: `vertexlight.*`'s law (`-(N.L)` over a linear falloff through the `(t*c)>>8` ramp) with the lights a body reaches as uniforms, the normal rotated by the mesh's matrix. Proof: per-vertex colours against `applyLights`, and the frame | |
+| 2 | the crowd's LIGHT in the shader: `vertexlight.*`'s law (`-(N.L)` over a linear falloff through the `(t*c)>>8` ramp) with the lights a body reaches as uniforms, the normal rotated by the mesh's matrix. Proof: per-vertex colours against `applyLights`, and the frame | **done 2026-09-25** - see below |
 | 3 | the WALKERS take the GPU path when the renderer offers it: no `applyPose`, no `applyLights`, no upload - the matrices only. Proof: the street at density 4, CPU path against GPU path, coverage and colour | |
 | 4 | the STAGED bodies (scene actors, the speaker) - with the face's morph as its own small dynamic buffer | |
 | 5 | the PLAYER | |
@@ -97,3 +97,27 @@ Each step ends in a commit and a report, and waits for the reader's go.
   console WITH `libshacccg.suprx` compiles it into the cache on the first run;
   one without it logs `no posing program` and poses on the CPU as before.
   Nothing submits a posed draw until step 3.
+
+## Step 2, done - the light
+
+* **Which lights, and how strong** is ONE function now: `reachOf` in
+  `vertexlight.cpp`, behind both `applyLights` and the new `lightReach`
+  (8 floats a light: the direction times the strength, the colour bytes).
+  So a GPU-lit body is lit by exactly the CPU's lights. The refactor is
+  byte-identical: a street at density 4 with 53 light hits renders the same
+  bytes as `9a8e3de`.
+* **The law in the shader**: the posed normal is the rest normal (now in the
+  posed vertex, 52 bytes) turned by the slot's affine; each light adds
+  `floor(trunc(clamp(-(N.L))) * c / 256) / 255` and clamps, in `applyLights`'s
+  order. Both integers are under 256, so the ramp is exact in float. At most 8
+  lights a body (`maxVertexLights`); the console measured 1.8 on average.
+  `Draw::lightsFromBlack` is the crowd's rule (`instance[+416]` = 0).
+* **Proof** (`gles_probe --pose`, `engine: gles pose`): three lights, one past
+  the ramp's clamp, from black and on the baked colour, two frames each, on
+  Kay'l, a crowd skeleton and `MCG_FN`: the same 3 lights reach both paths
+  and 0-17 pixels of 307200 differ, on the silhouette. SHOWN TO FAIL: the
+  normal not turned (25091 pixels) and the truncation dropped (2793).
+* The baked colours of these models are WHITE, so light "on baked" saturates
+  - the engine's own clamp - and an unlit draw looks the same; the proof that
+  the light reaches the picture is the from-black case (22-44 thousand pixels
+  change without it).

@@ -14936,6 +14936,15 @@ def c_engine_gles_pose():
     first-drawn of the two faces without it, so tie on and off draw the same
     pixels here, and what this shows is that the posed tie degenerates
     exactly what the CPU path does and nothing visible.
+
+    **And the LIGHT** (step 2): three lights around the body, one strong
+    enough to reach the ramp's 255 clamp, applied by `applyLights` on the
+    CPU-posed normals and by the shader from `lightReach`'s list - from BLACK
+    (the crowd's rule) and on the baked colour, two frames each. The same
+    lights reach both (one function decides), and under 0.1% of the frame may
+    differ (0-17 pixels measured, on the silhouette). SHOWN TO FAIL: the normal
+    not turned by the slot's affine (25091 pixels, coverage 0.86) and the
+    truncation of `t` dropped (2793 pixels).
     """
     import platform
     import subprocess
@@ -14958,16 +14967,22 @@ def c_engine_gles_pose():
         posed = re.findall(r"(\d+) triangles degenerate on POSED", r.stdout)
         cpu = re.findall(r"(\d+) triangles dropped on geometry", r.stdout)
         ok = re.findall(r"^pose: (\w+)", r.stdout, re.M)
+        lights = re.findall(r"^light (?:from black|on baked  ) frame \d+: (\d+)/(\d+) lights reach  "
+                            r"coverage [0-9.]+  differing (\d+)", r.stdout, re.M)
         # a parse that reads nothing must fail AS A PARSE
-        if len(rows) != 5 or len(ok) != 1:
+        if len(rows) != 5 or len(ok) != 1 or len(lights) != 4:
             return (os.path.basename(m), len(rows), len(ok)), (os.path.basename(m), 5, 1), \
                 "gles_probe --pose output parsed - the tool's format changed, or no GL context"
         got.append((os.path.basename(m), min(float(c) for _, c in rows) >= 0.995,
-                    int(posed[0]) if posed else 0, sorted(set(int(c) for c in cpu)), ok[0]))
-    return tuple(got), (("HO1_FNM.3DO", True, 142, [142], "OK"),
-                        ("PSH_FN.3DO", True, 334, [334], "OK")), \
+                    int(posed[0]) if posed else 0, sorted(set(int(c) for c in cpu)),
+                    all(a == b and int(a) == 3 and int(d) * 1000 < 307200 for a, b, d in lights),
+                    ok[0]))
+    return tuple(got), (("HO1_FNM.3DO", True, 142, [142], True, "OK"),
+                        ("PSH_FN.3DO", True, 334, [334], True, "OK")), \
         "per body: coverage >= 0.995 on all five draws, the triangles the POSED tie " \
-        "degenerates, the CPU path's own count, and the probe's verdict"
+        "degenerates, the CPU path's own count, the LIGHT (3 of 3 lights reach both " \
+        "paths and under 0.1% of pixels differ, from black and on baked), and the " \
+        "probe's verdict"
 
 def c_engine_gles_backend():
     r"""The GLES2 backend - the one the PS Vita draws with - against the

@@ -62,6 +62,17 @@ inline std::uint8_t lightRamp(std::uint8_t colour, int t) {
 int applyLights(Geometry& g, std::size_t first, std::size_t count,
                 const float bodyPos[3], std::span<const Light3do> lights);
 
+// THE LIGHTS THAT REACH A BODY, for a renderer that lights the corners itself
+// (`Draw::vertexLights`, todo/gpu-skinning.md step 2). The same reach loop as
+// `applyLights` - one function, so the two cannot disagree about which lights
+// reach or how strongly - APPENDED to `out`, 8 floats a light in the order
+// `applyLights` adds them: the direction scaled by the strength (x, y, z, 0),
+// then the colour's three bytes as floats (r, g, b, 0). Call it once per
+// resident slot, as the viewer calls `applyLights`.
+// -> how many lights it appended.
+int lightReach(const float bodyPos[3], std::span<const Light3do> lights,
+               std::vector<float>& out);
+
 // The light that reaches `p` most strongly, on exactly `applyLights`'s own
 // rules - the squared-radius reach test, the degenerate-pair refusal, and the
 // linear falloff from the inner radius to the outer, clamped. -> nullptr when

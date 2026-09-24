@@ -24,6 +24,47 @@ const Light3do* strongestLightAt(const float p[3], std::span<const Light3do> lig
     return best;
 }
 
+namespace {
+// One light's reach on a body: false when it does not reach, else its
+// direction scaled by its strength. `applyLights` and `lightReach` both go
+// through here, so a GPU-lit body is lit by exactly the CPU's lights.
+bool reachOf(const Light3do& l, const float bodyPos[3], float out[3]) {
+    // the reach test is the SQUARED radius, so a light is not `sqrt`ed
+    // until it is known to reach
+    const float dx = bodyPos[0] - l.pos[0];
+    const float dy = bodyPos[1] - l.pos[1];
+    const float dz = bodyPos[2] - l.pos[2];
+    const float d2 = dx * dx + dy * dy + dz * dz;
+    if (!(d2 <= l.radiusA * l.radiusA)) return false;
+    if (!(l.radiusA > l.radiusB)) return false;   // a degenerate pair lights nothing
+
+    float k = l.f32 * 256.0f;
+    const float d = std::sqrt(d2);
+    // the linear falloff from the inner radius to the outer, clamped
+    float fall = 1.0f - (d - l.radiusB) / (l.radiusA - l.radiusB);
+    if (fall > 1.0f) fall = 1.0f;
+    k *= fall;
+    if (!(k > 0.0f)) return false;
+    out[0] = l.dir[0] * k; out[1] = l.dir[1] * k; out[2] = l.dir[2] * k;
+    return true;
+}
+}  // namespace
+
+int lightReach(const float bodyPos[3], std::span<const Light3do> lights,
+               std::vector<float>& out) {
+    int n = 0;
+    for (const Light3do& l : lights) {
+        float v[3];
+        if (!reachOf(l, bodyPos, v)) continue;
+        out.insert(out.end(), {v[0], v[1], v[2], 0.0f,
+                               static_cast<float>((l.colour >> 16) & 0xFF),
+                               static_cast<float>((l.colour >> 8) & 0xFF),
+                               static_cast<float>(l.colour & 0xFF), 0.0f});
+        ++n;
+    }
+    return n;
+}
+
 int applyLights(Geometry& g, std::size_t first, std::size_t count,
                 const float bodyPos[3], std::span<const Light3do> lights) {
     if (count == 0 || first + count > g.corners.size()) return 0;
@@ -67,24 +108,9 @@ int applyLights(Geometry& g, std::size_t first, std::size_t count,
     static thread_local std::vector<Reach> reach;
     reach.clear();
     for (const Light3do& l : lights) {
-        // the reach test is the SQUARED radius, so a light is not `sqrt`ed
-        // until it is known to reach
-        const float dx = bodyPos[0] - l.pos[0];
-        const float dy = bodyPos[1] - l.pos[1];
-        const float dz = bodyPos[2] - l.pos[2];
-        const float d2 = dx * dx + dy * dy + dz * dz;
-        if (!(d2 <= l.radiusA * l.radiusA)) continue;
-        if (!(l.radiusA > l.radiusB)) continue;   // a degenerate pair lights nothing
-
-        float k = l.f32 * 256.0f;
-        const float d = std::sqrt(d2);
-        // the linear falloff from the inner radius to the outer, clamped
-        float fall = 1.0f - (d - l.radiusB) / (l.radiusA - l.radiusB);
-        if (fall > 1.0f) fall = 1.0f;
-        k *= fall;
-        if (!(k > 0.0f)) continue;
-
-        reach.push_back(Reach{l.dir[0] * k, l.dir[1] * k, l.dir[2] * k, rampFor(l.colour)});
+        float v[3];
+        if (!reachOf(l, bodyPos, v)) continue;
+        reach.push_back(Reach{v[0], v[1], v[2], rampFor(l.colour)});
     }
     if (reach.empty()) return 0;
     for (std::size_t i = first; i < first + count; ++i) {

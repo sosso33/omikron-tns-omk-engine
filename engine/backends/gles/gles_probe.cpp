@@ -57,7 +57,9 @@
 #include <OpenGL/gl.h>
 
 #include "actor/pose.h"
+#include "formats/light3do.h"
 #include "formats/mesh3do.h"
+#include "o3de/vertexlight.h"
 #include "formats/tex3dt.h"
 #include "o3de/geom3do.h"
 #include "o3de/renderer.h"
@@ -334,6 +336,88 @@ int poseMode(int argc, char** argv) {
                 // never reached and "tie on" above proves nothing
                 const Coverage tv = compare(gpuUntied, gpu);
                 std::printf("gpu tie on against tie off: %ld pixels differ\n", tv.differ);
+            }
+        }
+    }
+    // THE LIGHT (step 2): three lights around the body - one strong enough
+    // to reach `lightRamp`'s 255 clamp - lit on the CPU by `applyLights` on
+    // the posed normals, and on the GPU from `lightReach`'s list. From BLACK
+    // (the crowd's rule) and on top of the baked colour. The largest channel
+    // difference is quoted in 565 steps, the picture's own resolution.
+    {
+        float at[3];
+        for (int i = 0; i < 3; ++i) at[i] = cam.at[i];
+        std::vector<omk::Light3do> lights(3);
+        const float from[3][3] = {{-300, -200, -250}, {280, -120, 200}, {20, -400, 40}};
+        const float f32[3] = {0.6f, 1.4f, 0.35f};
+        const std::uint32_t col[3] = {0xFF8040u, 0x40A0FFu, 0xFFFFFFu};
+        for (int i = 0; i < 3; ++i) {
+            auto& l = lights[static_cast<std::size_t>(i)];
+            for (int k = 0; k < 3; ++k) { l.pos[k] = at[k] + from[i][k]; l.centre[k] = at[k]; }
+            float dir[3], len = 0;
+            for (int k = 0; k < 3; ++k) { dir[k] = l.centre[k] - l.pos[k]; len += dir[k] * dir[k]; }
+            len = std::sqrt(len);
+            for (int k = 0; k < 3; ++k) l.dir[k] = dir[k] / len;
+            l.radiusA = 900.0f; l.radiusB = 200.0f; l.f32 = f32[i]; l.colour = col[i];
+        }
+        omk::glesSetDepthTie(gl, true);
+        for (int black = 1; black >= 0; --black) {
+            for (int step = 0; step < 2; ++step) {
+                const auto poseN = omk::composePose(meshes, tracks, frame + 11 * step, false);
+                omk::applyPose(posed, rest, meshes, poseN);
+                for (auto& k : posed.corners) {
+                    const float x = k.x, y = k.y, z = k.z;
+                    k.x = place[0] * x + place[1] * y + place[2] * z + place[3];
+                    k.y = place[4] * x + place[5] * y + place[6] * z + place[7];
+                    k.z = place[8] * x + place[9] * y + place[10] * z + place[11];
+                    const float nx = k.nx, ny = k.ny, nz = k.nz;
+                    k.nx = place[0] * nx + place[1] * ny + place[2] * nz;
+                    k.ny = place[4] * nx + place[5] * ny + place[6] * nz;
+                    k.nz = place[8] * nx + place[9] * ny + place[10] * nz;
+                    if (black) { k.r = 0.0f; k.g = 0.0f; k.b = 0.0f; }
+                }
+                const int litCpu = omk::applyLights(posed, 0, posed.corners.size(), at, lights);
+                omk::meshAffines(meshes, poseN, place, aff);
+                std::vector<float> lv;
+                const int litGpu = omk::lightReach(at, lights, lv);
+                auto ds = drawsOf(rest, aff.data(), meshes.size());
+                for (auto& dr : ds) {
+                    dr.vertexLights = lv.data();
+                    dr.vertexLightCount = litGpu;
+                    dr.lightsFromBlack = black != 0;
+                }
+                const omk::Surface cpu = run(drawsOf(posed, nullptr, 0));
+                const omk::Surface gpu = run(ds);
+                // and the same GPU draw with NO lights - which must differ,
+                // or the light never reached the picture
+                auto dark = ds;
+                for (auto& dr : dark) { dr.vertexLights = nullptr; dr.vertexLightCount = 0; }
+                const omk::Surface unlit = run(dark);
+                const Coverage cv = compare(cpu, gpu);
+                const Coverage un = compare(cpu, unlit);
+                int worst = 0;
+                long off = 0;
+                for (std::size_t i = 0; i < cpu.px.size(); ++i) {
+                    const auto a = cpu.px[i], b = gpu.px[i];
+                    const int d = std::max({std::abs((a >> 11) - (b >> 11)),
+                                            std::abs(((a >> 5) & 63) - ((b >> 5) & 63)),
+                                            std::abs((a & 31) - (b & 31))});
+                    worst = std::max(worst, d);
+                    off += d > 1;
+                }
+                std::printf("light %s frame %d: %d/%d lights reach  coverage %.4f  differing %ld  "
+                            "worst %d step(s), %ld pixels past 1  [unlit: %ld differ]\n",
+                            black ? "from black" : "on baked  ", frame + 11 * step, litCpu, litGpu,
+                            cv.agree(), cv.differ, worst, off, un.differ);
+                // under 0.1% of the frame may differ at all (the silhouette's
+                // edge: 0-17 measured); dropping the truncation moves 2793
+                ok = ok && litCpu == litGpu && litGpu > 0 && cv.agree() >= 0.995 &&
+                     cv.differ * 1000 < static_cast<long>(cpu.px.size()) &&
+                     off * 1000 < static_cast<long>(cpu.px.size()) &&
+                     // from black the light IS the colour, so an unlit draw must
+                     // differ; on the baked colour the characters ship WHITE and
+                     // the light saturates, which is the engine's own clamp
+                     (!black || un.differ > 10 * cv.differ);
             }
         }
     }

@@ -154,6 +154,12 @@ attribute float aPhase;
 // float array is laid out 8 bytes an element and overran the heap (above).
 attribute float aSlot;
 uniform vec4  uPose[96];
+// ...and LIT here (step 2): `vertexlight.cpp`'s law on the posed normal. Two
+// vec4 a light: the direction scaled by its strength, then its colour bytes.
+attribute vec3  aNormal;
+uniform vec4  uLight[16];
+uniform float uLightCount;
+uniform float uLightBlack;
 #endif
 varying vec2  vUV;
 varying vec3  vCol;
@@ -170,6 +176,21 @@ void main() {
     vCol = aCol + vec3(wave);
 #ifdef OMK_POSED
     int s = int(aSlot + 0.5) * 3;
+    // THE LIGHT, corner by corner as `applyLights` walks it: t = -(N.L)
+    // truncated toward zero and clamped to 0..255, the ramp `(t * c) >> 8`
+    // (exact in float: both are integers under 256), each light added and
+    // clamped in turn
+    vec3 nrm = vec3(dot(uPose[s].xyz, aNormal), dot(uPose[s + 1].xyz, aNormal),
+                    dot(uPose[s + 2].xyz, aNormal));
+    vec3 lit = uLightBlack > 0.5 ? vec3(0.0) : aCol;
+    for (int i = 0; i < 8; ++i) {
+        if (float(i) >= uLightCount) break;
+        float t = -dot(nrm, uLight[2 * i].xyz);
+        float ti = clamp(t < 0.0 ? ceil(t) : floor(t), 0.0, 255.0);
+        vec3 a = floor(ti * uLight[2 * i + 1].rgb / 256.0) / 255.0;
+        lit = min(lit + a, vec3(1.0));
+    }
+    if (uLightCount > 0.5 || uLightBlack > 0.5) vCol = lit + vec3(wave);
     vec3 wp = vec3(dot(uPose[s].xyz, aPos) + uPose[s].w,
                    dot(uPose[s + 1].xyz, aPos) + uPose[s + 1].w,
                    dot(uPose[s + 2].xyz, aPos) + uPose[s + 2].w);
@@ -322,14 +343,19 @@ static_assert(sizeof(GpuVert) == 36, "the GLES vertex is 36 bytes");
 struct GpuPoseVert {
     GpuVert v;
     float slot;
+    float nx, ny, nz;          // the REST normal, turned by the slot's affine
 };
-static_assert(sizeof(GpuPoseVert) == 40, "the posed GLES vertex is 40 bytes");
+static_assert(sizeof(GpuPoseVert) == 52, "the posed GLES vertex is 52 bytes");
 
 GpuVert gpuVert(const omk::Corner& c) {
     return {c.x, c.y, c.z, c.u, c.v, c.r, c.g, c.b, c.phase};
 }
 
-constexpr GLuint kAttrPos = 0, kAttrUV = 1, kAttrCol = 2, kAttrPhase = 3, kAttrSlot = 4;
+constexpr GLuint kAttrPos = 0, kAttrUV = 1, kAttrCol = 2, kAttrPhase = 3, kAttrSlot = 4,
+                 kAttrNormal = 5;
+// the lights a posed body may carry (`uLight`); a body reached by more is lit
+// on the CPU by the frontend
+constexpr int kVertexLights = 8;
 // a posed body's meshes, one affine (three vec4 rows of `uPose`) each: Kay'l
 // has 20, a crowd skeleton 19; a body with more is posed here on the CPU
 constexpr int kPoseSlots = 32;
@@ -512,7 +538,8 @@ private:
     GLuint posed_ = 0;
     struct SceneLoc {
         GLint mvp = -1, texSize = -1, clock = -1, tex = -1, cutout = -1,
-              fogStart = -1, fogEnd = -1, fogColour = -1, pose = -1;
+              fogStart = -1, fogEnd = -1, fogColour = -1, pose = -1,
+              light = -1, lightCount = -1, lightBlack = -1;
         GLint wave[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
     };
     SceneLoc mainLoc_, posedLoc_;
@@ -545,6 +572,7 @@ private:
     void useProgram(GLuint p) { if (curProg_ != p) { glUseProgram(p); curProg_ = p; } }
 public:
     bool posesBodies() const override { return posed_ != 0; }
+    int maxVertexLights() const override { return posed_ ? kVertexLights : 0; }
 private:
     // uniform locations, looked up once
     GLint uMvp_ = -1, uTexSize_ = -1, uClock_ = -1, uWave_[8] = {-1, -1, -1, -1, -1, -1, -1, -1},
@@ -615,7 +643,7 @@ bool GlesRenderer::init(int w, int h) {
         const std::string posedVert = std::string("#define OMK_POSED 1\n") + kSceneVert;
         posed_ = link(posedVert.c_str(), kSceneFrag,
                       {{kAttrPos, "aPos"}, {kAttrUV, "aUV"}, {kAttrCol, "aCol"},
-                       {kAttrPhase, "aPhase"}, {kAttrSlot, "aSlot"}});
+                       {kAttrPhase, "aPhase"}, {kAttrSlot, "aSlot"}, {kAttrNormal, "aNormal"}});
         if (!posed_) std::fprintf(stderr, "gles: no posing program - bodies are posed on the CPU\n");
     }
     uMvp_       = glGetUniformLocation(prog_, "uMvp");
@@ -642,6 +670,9 @@ bool GlesRenderer::init(int w, int h) {
         L.fogEnd = glGetUniformLocation(p, "uFogEnd");
         L.fogColour = glGetUniformLocation(p, "uFogColour");
         L.pose = glGetUniformLocation(p, "uPose");
+        L.light = glGetUniformLocation(p, "uLight");
+        L.lightCount = glGetUniformLocation(p, "uLightCount");
+        L.lightBlack = glGetUniformLocation(p, "uLightBlack");
     };
     locsOf(prog_, mainLoc_);
     if (posed_) locsOf(posed_, posedLoc_);
@@ -1053,6 +1084,9 @@ bool GlesRenderer::uploadPosedGeometry(const Geometry* g, PoseVbo*& out) {
         }
         v[k].v = gpuVert(g->corners[k]);
         v[k].slot = static_cast<float>(it->second);
+        v[k].nx = g->corners[k].nx;
+        v[k].ny = g->corners[k].ny;
+        v[k].nz = g->corners[k].nz;
     }
     ++g_glesFrame.uploads;
     g_glesFrame.uploadBytes += static_cast<long>(v.size() * sizeof(GpuPoseVert));
@@ -1099,6 +1133,9 @@ void GlesRenderer::resolvePosedTies(const Draw& d, PoseVbo& pv) {
         for (int j = 0; j < 3; ++j) {
             tri[j].v = gpuVert(g->corners[c + j]);
             tri[j].slot = pv.slotOfCorner[c + j];
+            tri[j].nx = g->corners[c + j].nx;
+            tri[j].ny = g->corners[c + j].ny;
+            tri[j].nz = g->corners[c + j].nz;
             if (degenerate) {
                 tri[j].v.x = g->corners[c].x;
                 tri[j].v.y = g->corners[c].y;
@@ -1172,6 +1209,14 @@ void GlesRenderer::submit(const Draw& d) {
         lastPose_ = d.meshPose;
         lastPoseGeo_ = d.geo;
     }
+    if (posed) {
+        // the body's lights; a draw handed more than the program holds is
+        // the frontend's error, and gets the first `kVertexLights`
+        const int n = d.vertexLights ? std::min(d.vertexLightCount, kVertexLights) : 0;
+        if (n > 0) glUniform4fv(L.light, 2 * n, d.vertexLights);
+        glUniform1f(L.lightCount, static_cast<float>(n));
+        glUniform1f(L.lightBlack, d.lightsFromBlack ? 1.0f : 0.0f);
+    }
 
     switch (d.blend) {
     case Blend::Opaque:
@@ -1219,8 +1264,12 @@ void GlesRenderer::submit(const Draw& d) {
         glEnableVertexAttribArray(kAttrSlot);
         glVertexAttribPointer(kAttrSlot, 1, GL_FLOAT, GL_FALSE, st,
                               reinterpret_cast<const void*>(offsetof(GpuPoseVert, slot)));
+        glEnableVertexAttribArray(kAttrNormal);
+        glVertexAttribPointer(kAttrNormal, 3, GL_FLOAT, GL_FALSE, st,
+                              reinterpret_cast<const void*>(offsetof(GpuPoseVert, nx)));
     } else {
         glDisableVertexAttribArray(kAttrSlot);
+        glDisableVertexAttribArray(kAttrNormal);
     }
     glVertexAttribPointer(kAttrPos, 3, GL_FLOAT, GL_FALSE, st, reinterpret_cast<const void*>(0));
     glVertexAttribPointer(kAttrUV, 2, GL_FLOAT, GL_FALSE, st, reinterpret_cast<const void*>(12));
