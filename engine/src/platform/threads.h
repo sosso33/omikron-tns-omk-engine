@@ -41,6 +41,8 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <string>
+#include <vector>
 
 // The default: threads, unless this is an Emscripten build without pthreads.
 #if !defined(OMK_THREADS)
@@ -97,6 +99,39 @@ public:
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
+};
+
+// ONE FILE READ IN THE BACKGROUND (2026-09-23). A caller that knows it will
+// soon need a file starts its read here and carries on; `take` hands the bytes
+// over, waiting for the rest of the read if it is still going. The bytes are
+// `DataFs::readPath`'s, so what is read never differs - only WHEN.
+//
+// It is not the pool above, whose `parallelFor` returns only when its work is
+// done: each fetch is its own short-lived thread (a kernel thread on the Vita,
+// a detached `std::thread` elsewhere), and dropping a fetch that is still
+// reading does not wait for it - the thread finishes into a state it shares
+// and the bytes are freed with the last reference. With `OMK_THREADS 0` the
+// constructor simply reads.
+//
+// For a conversation: a line's `.3DM` runs to 3.5 MB, and a console waits on
+// the memory card for it on the press that starts the line. The lines that
+// can come next are known when a line starts, so they are read while it plays.
+class FileFetch {
+public:
+    explicit FileFetch(std::string path);
+    ~FileFetch();
+    FileFetch(const FileFetch&) = delete;
+    FileFetch& operator=(const FileFetch&) = delete;
+    // Whether the read has finished (never blocks).
+    bool ready() const;
+    // The file's bytes - empty when it could not be read - waiting for the
+    // read if need be. Once: a second call returns nothing.
+    std::vector<std::byte> take();
+    const std::string& path() const { return path_; }
+    struct State;
+private:
+    std::string path_;
+    std::shared_ptr<State> state_;
 };
 
 }  // namespace omk

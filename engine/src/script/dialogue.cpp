@@ -6,6 +6,7 @@
 #include "formats/morph.h"
 #include "platform/datafs.h"
 
+#include <chrono>
 #include <algorithm>
 #include <set>
 
@@ -167,6 +168,7 @@ bool DialogPlayer::open(const Conversation& c, std::span<const std::byte> chunk,
     chunk_.assign(chunk.begin(), chunk.end());
     morphDir_ = morphDir;
     visited_.clear();
+    prefetch_.clear();
     lines_ = voiced_ = 0;
     phase_ = DialogPhase::Finished;
     if (!c.valid || c.nodes.empty()) return false;
@@ -187,6 +189,7 @@ bool DialogPlayer::enter(int node) {
     lineAt_ = 0.0;
     lineLen_ = 0.0;
     pcm_.clear();
+    morph_.clear();
     replies_.clear();
     channels_ = 1;
     voice_ = n.name;
@@ -198,7 +201,20 @@ bool DialogPlayer::enter(int node) {
     lineState_ = lineEndFor(voice_);
 
     if (!voice_.empty()) {
-        const auto d = DataFs::readPath(morphDir_ + "/" + voice_ + ".3DM");
+        const auto t0 = std::chrono::steady_clock::now();
+        const std::string path = morphDir_ + "/" + voice_ + ".3DM";
+        const auto ahead = prefetch_.find(path);
+        loadPrefetched_ = ahead != prefetch_.end();
+        if (loadPrefetched_) {
+            morph_ = ahead->second->take();
+            prefetch_.erase(ahead);          // taken: a later visit reads again
+        } else {
+            morph_ = DataFs::readPath(path);
+        }
+        const auto t1 = std::chrono::steady_clock::now();
+        loadMs_[0] = std::chrono::duration<double, std::milli>(t1 - t0).count();
+        loadMs_[1] = 0.0;
+        const auto& d = morph_;
         if (!d.empty()) {
             const auto L = morphLayout(d);
             const auto raw = morphAudio(d, L);
@@ -206,6 +222,8 @@ bool DialogPlayer::enter(int node) {
                 // OTNS ADPCM at 22050 - the decoder `verify.py: morph audio`
                 // checks sample-identical over all 777 files.
                 pcm_ = adpcmDecode(raw, L.channels > 1, AdpcmTables::builtin());
+                loadMs_[1] = std::chrono::duration<double, std::milli>(
+                                 std::chrono::steady_clock::now() - t1).count();
                 channels_ = L.channels > 1 ? 2 : 1;
                 if (!pcm_.empty()) {
                     lineLen_ = static_cast<double>(pcm_.size()) /
@@ -215,9 +233,28 @@ bool DialogPlayer::enter(int node) {
             }
         }
     }
+    prefetchSuccessors(node);
     phase_ = DialogPhase::Speaking;
     camFrames_ = 0.0;              // the move belongs to the line
     return true;
+}
+
+void DialogPlayer::prefetchSuccessors(int node) {
+    const DialogNode& n = conv_.nodes[static_cast<std::size_t>(node)];
+    std::map<std::string, std::unique_ptr<FileFetch>> keep;
+    for (int k = 0; k < 4; ++k) {
+        const int t = n.param[k];
+        if (t < 0 || t >= static_cast<int>(conv_.nodes.size())) continue;
+        const std::string& name = conv_.nodes[static_cast<std::size_t>(t)].name;
+        if (name.empty()) continue;
+        const std::string path = morphDir_ + "/" + name + ".3DM";
+        if (keep.count(path)) continue;
+        if (const auto it = prefetch_.find(path); it != prefetch_.end())
+            keep[path] = std::move(it->second);
+        else
+            keep[path] = std::make_unique<FileFetch>(path);
+    }
+    prefetch_ = std::move(keep);
 }
 
 // Which PAIR is in force. The menu has its own, but only when the node names

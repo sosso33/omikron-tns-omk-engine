@@ -12379,13 +12379,19 @@ def c_engine_fight_letterbox():
                  "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
                  "--fight-supermarket", "--frames", str(n),
                  "--res", "%dx%d" % (W, H), "--dump", out],
-                capture_output=True, text=True,
+                # the log is not read, and it is cp1252 in places (a fight
+                # prints `'Caméra de combat'`), so it is not decoded either
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
             if not os.path.exists(out):
                 rows[n] = None
                 continue
             px = struct.unpack("<%dH" % (W * H), open(out, "rb").read())
-            rows[n] = tuple(sum(1 for x in range(W) if px[y * W + x])
+            # LEFT OF THE LAST 40 COLUMNS: a subtitle box's scroll arrow
+            # (`play.cpp`'s `w-32..w-25`) sits in the bottom bar's corner and
+            # PULSES on the wall clock, so whether its tip is lit in a given
+            # frame is timing, not the letterbox (2026-09-24: 1 pixel at 530)
+            rows[n] = tuple(sum(1 for x in range(W - 40) if px[y * W + x])
                             for y in (0, 240, H - 1))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -12393,10 +12399,10 @@ def c_engine_fight_letterbox():
         return ("no render",), ("3 frames",), "all three frames must render"
     return (rows[300][0], rows[300][2], rows[500][0], rows[500][1], rows[500][2],
             rows[530][0], rows[530][2]), \
-           (0, 0, 640, 625, 640, 0, 0), \
+           (0, 0, 600, 593, 600, 0, 0), \
            ("the approach cutscene keeps its bars and the FIGHT does not - "
             "the middle row is quoted so a black frame cannot pass by "
-            "having no bars either")
+            "having no bars either. 625 of 640 until " + "the melee AI's dice are the CRT's generator since 2026-09-24 (not the host's std::rand()), and on them the robber's first move is a throw that ends the fight at +30")
 
 def c_engine_fight_separation():
     r"""`omk-play`: the two fighters stand apart IN THE PLANE, on one origin.
@@ -12500,11 +12506,11 @@ def c_engine_fight_separation():
     lost = re.search(r"sub_445AC0 - the player (\w+), ACTOR_STATE (\d+)", r.stdout + r.stderr)
     teardown = (lost.group(1), int(lost.group(2))) if lost else None
     return (opening, len(rows) >= 5, inside, int(round(maxDy)), int(minH), teardown), \
-           (50, True, 0, 1, 45, ("LOST", 1)), \
+           (50, True, 0, 1, 54, ("LOST", 1)), \
            ("the fight opens where the approach left the robber, 1.5 m away; "
             "no sample of a real fight has the two fighters closer than their "
             "separation radius, and their two `y` values now mean the same "
-            "thing - 1 unit apart, not 41")
+            "thing - 1 unit apart, not 41. The closest sample was 45 until " + "the melee AI's dice are the CRT's generator since 2026-09-24 (not the host's std::rand()), and on them the robber's first move is a throw that ends the fight at +30")
 
 def c_engine_fight_collision():
     r"""`omk-play`: the melee OPPONENT collides with the set (`todo/fight-mode.md` 15.8a).
@@ -12623,9 +12629,11 @@ def c_engine_fight_camera_collision():
         return (len(eyesOn), len(eyesOff)), (">= 5", "the same"), \
                "both runs must print the same number of fight camera lines"
     differ = sum(1 for a, b in zip(eyesOn, eyesOff) if a != b)
-    return (hitsOn, hitsOff, differ > 0), (29, 0, True), \
-           ("the fight camera's ray hits the set on 29 frames of the supermarket fight "
-            "and moves the eye, and never without the solve")
+    return (hitsOn, hitsOff, differ > 0), (7, 0, True), \
+           ("the fight camera's ray hits the set on 7 frames of the supermarket fight "
+            "and moves the eye, and never without the solve - 29 until " + "the melee AI's dice are the CRT's generator since 2026-09-24 (not the host's std::rand()), and on them the robber's first move is a throw that ends the fight at +30" +
+            "; with --fight-health 200 it hits on 4 and the eye never moves, so the "
+            "real fight is kept")
 
 def c_engine_fight_hud():
     r"""`omk-play`: the FIGHT HUD - both gauges, and mode 2's STAT CARD for four seconds.
@@ -12666,7 +12674,7 @@ def c_engine_fight_hud():
     r = subprocess.run(
         [play, fr, os.path.join(ROOT, "tables"),
          "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
-         "--fight-supermarket", "--frames", "560"],
+         "--fight-supermarket", "--fight-health", "200", "--frames", "560"],
         capture_output=True, text=True, errors="replace",
         env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
     out = r.stdout + r.stderr
@@ -12720,7 +12728,7 @@ def c_engine_fight_gpu_present():
                OMK_GPU_PRESENT_STATS="1")
     r = subprocess.run([play, fr, os.path.join(ROOT, "tables"),
                         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
-                        "--fight-supermarket", "--world-vulkan", "--frames", "600"],
+                        "--fight-supermarket", "--fight-health", "200", "--world-vulkan", "--frames", "600"],
                        cwd=eng, env=env, capture_output=True, text=True, errors="replace")
     out = r.stdout + r.stderr
     if "through VULKAN" not in out:
@@ -13758,11 +13766,12 @@ def c_engine_fight_library():
     # the POOLED count: a placement whose sprite has no slot never draws
     foeFx = (int(fm.group(2)) // 10 * 10) if fm else -1
     return (loaded, fightSprites, failures, played > 0, len(ids), foeFx), \
-           (True, 16, 0, True, 7, 60), \
+           (True, 16, 0, True, 7, 50), \
            ("`Fight_Begin`'s own `Game_Start(\"fight.scx\")`: its 16 sprites "
             "reach the table, no effect record fails its lookup, and BOTH "
             "fighters' channels are drained - the punches landing, the fall "
-            "and the cry, not just the player's own swing")
+            "and the cry, not just the player's own swing. The opponent's pooled "
+            "count was 60 until " + "the melee AI's dice are the CRT's generator since 2026-09-24 (not the host's std::rand()), and on them the robber's first move is a throw that ends the fight at +30")
 
 def c_engine_fight_pause():
     r"""`omk-play`: ENTER confirms the pause screen DURING a fight.
@@ -14523,8 +14532,8 @@ def c_engine_sprite_table():
                         "--save", save, "--area", "0", "--stand", "1804,0,-6890,336",
                         "--software", "--nofmv", "--frames", "20"],
                        cwd=eng, env=env, capture_output=True, text=True)
-    load = re.search(r"^sprites: (\d+) global \+ (\d+) from (\S+), (\d+) decoded over ids "
-                     r"0\.\.(\d+), (\d+) frames in all", r.stdout, re.M)
+    load = re.search(r"^sprites: (\d+) global \+ (\d+) fight \+ (\d+) from (\S+), (\d+) decoded "
+                     r"over ids 0\.\.(\d+), (\d+) frames in all", r.stdout, re.M)
     pool = re.search(r"^frame 1: texture pool - .* \+ (\d+) sprite = (\d+) slots", r.stdout, re.M)
     alive = re.findall(r"^effects: .*, (\d+) particles alive", r.stdout, re.M)
     # a parse that reads nothing must fail AS A PARSE, not answer
@@ -14533,8 +14542,10 @@ def c_engine_sprite_table():
             "the sprite load line, the frame-1 pool line and the particle line " \
             "- one is missing, so the viewer's log changed"
     return (tuple(load.groups()), tuple(int(x) for x in pool.groups()), int(alive[-1])), \
-        (("20", "3", "anekbah.SCX", "23", "49591", "133"), (3, 39), 952), \
-        "the sprite load (global, local, scene, decoded, highest id, frames); the " \
+        (("20", "16", "3", "anekbah.SCX", "39", "49591", "245"), (3, 39), 952), \
+        "the sprite load (global, FIGHT, local, scene, decoded, highest id, frames) - " \
+        "the fight library (8370900) adds 16 sprites and 112 frames, 23 -> 39 and 133 " \
+        "-> 245, and this check read the line without it until 2026-09-24; the " \
         "frame-1 pool's sprites and slots; the particles alive after 20 frames"
 
 

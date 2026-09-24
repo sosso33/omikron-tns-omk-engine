@@ -85,6 +85,8 @@
 #include "ui/surface.h"
 
 #include <algorithm>
+#include <map>
+#include <tuple>
 #include <chrono>
 #include <initializer_list>
 #include <cstdio>
@@ -431,6 +433,20 @@ public:
 
 private:
     struct Tex { GLuint id = 0; float w = 1, h = 1; };
+    // THE UPLOADED TEXTURES, kept across pool changes and keyed by the pixel
+    // STORAGE (2026-09-23). A pool change - one character arriving or leaving,
+    // which every cutscene hand-over does - used to delete and re-upload EVERY
+    // texture, the city's unchanged ones included, converting each to RGBA on
+    // the CPU first. `PixelBuffer` is shared between copies of a `Texture` and
+    // detaches before any write, so the same storage IS the same bytes; and
+    // `keep` holds that storage alive, so its address cannot be reused for
+    // other pixels while the GL texture exists. A NAME would not do: 182
+    // names ship with different pixels in different files (CLAUDE.md 6).
+    struct Uploaded { GLuint id = 0; int w = 0, h = 0; PixelBuffer keep; bool used = false; };
+    // keyed by the storage AND the size: two slots may share one storage at
+    // different sizes, and a key on the storage alone let the second upload
+    // delete the texture the first slot still drew with
+    std::map<std::tuple<const std::uint8_t*, int, int>, Uploaded> uploaded_;
     struct Vbo { GLuint id = 0; std::size_t n = 0; std::uint64_t rev = 0; };
 
     bool uploadGeometry(const Geometry* g);
@@ -491,7 +507,8 @@ private:
 
 GlesRenderer::~GlesRenderer() {
     for (auto& [g, vb] : vbo_) glDeleteBuffers(1, &vb.id);
-    for (auto& t : tex_) if (t.id) glDeleteTextures(1, &t.id);
+    // the pool's ids are owned by `uploaded_` (two slots may share one)
+    for (auto& [key, u] : uploaded_) if (u.id) glDeleteTextures(1, &u.id);
     if (white_.id) glDeleteTextures(1, &white_.id);
     if (bayer_) glDeleteTextures(1, &bayer_);
     if (surfTex_) glDeleteTextures(1, &surfTex_);
@@ -616,13 +633,27 @@ bool GlesRenderer::init(int w, int h) {
 }
 
 void GlesRenderer::setTextures(std::span<const Texture> t) {
-    for (auto& x : tex_) if (x.id) glDeleteTextures(1, &x.id);
+    const double t0 = glesClockMs();
+    for (auto& [key, u] : uploaded_) u.used = false;
     tex_.assign(t.size(), Tex{});
     std::vector<unsigned char> px;
+    int reused = 0, fresh = 0;
     for (std::size_t i = 0; i < t.size(); ++i) {
         const auto& s = t[i];
         if (s.width <= 0 || s.height <= 0 || s.rgb.empty() ||
             s.rgb.size() < static_cast<std::size_t>(s.width) * s.height * 3) continue;
+        auto& out = tex_[i];
+        out.w = static_cast<float>(s.width);
+        out.h = static_cast<float>(s.height);
+        // already on the GPU from an earlier pool: the same storage, the same bytes
+        const auto key = std::make_tuple(s.rgb.data(), s.width, s.height);
+        const auto hit = uploaded_.find(key);
+        if (hit != uploaded_.end()) {
+            hit->second.used = true;
+            out.id = hit->second.id;
+            ++reused;
+            continue;
+        }
         const int n = s.width * s.height;
         px.resize(static_cast<std::size_t>(n) * 4);
         const unsigned char* rgb = s.rgb.data();
@@ -644,7 +675,6 @@ void GlesRenderer::setTextures(std::span<const Texture> t) {
             std::fprintf(stderr, "gles: texture %s is %dx%d, not a power of two - "
                                  "clamped, where the engine repeats\n",
                          s.name.c_str(), s.width, s.height);
-        auto& out = tex_[i];
         glGenTextures(1, &out.id);
         glBindTexture(GL_TEXTURE_2D, out.id);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -653,9 +683,19 @@ void GlesRenderer::setTextures(std::span<const Texture> t) {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, repeat ? GL_REPEAT : GL_CLAMP_TO_EDGE);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, s.width, s.height, 0, GL_RGBA,
                      GL_UNSIGNED_BYTE, px.data());
-        out.w = static_cast<float>(s.width);
-        out.h = static_cast<float>(s.height);
+        uploaded_[key] = Uploaded{out.id, s.width, s.height, s.rgb, true};
+        ++fresh;
     }
+    // what no slot of this pool uses any more leaves the GPU
+    int dropped = 0;
+    for (auto it = uploaded_.begin(); it != uploaded_.end(); ) {
+        if (it->second.used) { ++it; continue; }
+        glDeleteTextures(1, &it->second.id);
+        it = uploaded_.erase(it);
+        ++dropped;
+    }
+    std::printf("gles: texture pool of %zu - %d kept on the GPU, %d uploaded, %d dropped, %.1f ms\n",
+                t.size(), reused, fresh, dropped, glesClockMs() - t0);
 }
 
 // A SMALL WRITE INTO THE BOUND ARRAY BUFFER. On a host it is glBufferSubData.

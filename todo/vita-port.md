@@ -960,6 +960,119 @@ or the thread up falls back to it too.
   emulator directly worked, and the emulator ignores `timeout`'s SIGTERM - it
   has to be killed with -9. Not looked into further.
 
+### 2026-09-23: the transitions - what re-loads, and a fight that came out two ways
+
+The question the entry above left: are the in-frame loads RE-loads? Measured
+on the M1 with a per-model load line (`model load: NAME in X ms`, and `- a
+RELOAD, load N` from the second time a name is built) over the fight, the
+shoot phase and Telis's scene: **0 model reloads** - the eviction theory is
+dead. What DID repeat was the GPU side: every hand-over changes the TEXTURE
+POOL (3 to 5 times a scene), and the GLES backend's `setTextures` deleted and
+re-uploaded EVERY slot each time, converting each to RGBA on the CPU first -
+the city's unchanged atlases included.
+
+**Fixed**: `GlesRenderer` keeps what it uploaded, keyed by the pixel STORAGE
+and the size. A `PixelBuffer` is shared between copies and detaches before any
+write, so one storage is one set of bytes, and the cache holds a reference so
+the address cannot be reused while the GL texture lives. A texture no slot of
+the new pool uses leaves the GPU. The log's `gles: texture pool of N - K kept
+on the GPU, U uploaded, D dropped` line shows it: a fight's hand-over goes from
+11 uploads to 0, the arrival of the gun from 15 to 2. A/B against the uncached
+build: 0 bytes differ on the fight (400 frames), the shoot phase and the
+street. The name was not usable as the key: 182 names ship with different
+pixels in different files (CLAUDE.md 6).
+
+**And the A/B found a fault that had nothing to do with it.** The fight came
+out two ways headless, about one run in four, in the OLD build too and with
+threads off. The dice showed why: in the odd run the fight's first draw was
+the SECOND value of the C library's sequence. The melee AI rolled on the host's
+`std::rand()` - on macOS another generator than the engine's MSVC one, and one
+the whole process shares - and something outside the port (the audio
+subsystem; with `SDL_AUDIO_DRIVER=dummy` five of five runs agreed) drew once,
+sometimes, before the fight. It now draws from the gunmen's private copy of the
+CRT generator (`seed * 214013 + 2531011`, bits 16..30, seed 1): twelve runs in
+four paused batches, one result. The Vita's newlib `rand()` was a third
+generator, so the console's fights now roll the same dice as the desktop's.
+The remaining run-to-run difference at 650 frames is 36 pixels of the red
+scroll arrow, which pulses on `SDL_GetTicks()` by design.
+
+**Still owed**: the other in-frame loads the console log names (`props, guns`
+1.1 s, `game frame` 1.4 s, `world begin, set` 1.5 s) are FIRST loads, not
+reloads - the next console log, with the model-load lines, says which models
+and how long each takes on the card.
+
+### 2026-09-23, morning: the console log with the texture cache (`omk-play-20260923-055433.log`)
+
+**The texture cache holds on the console**: 30 pool changes, most keeping
+20-45 textures and uploading 0-12 at ~4 ms each.
+
+**Outside the city a frame is ~10 ms of work** (sim+draw, mean of 60) - the
+flat, the Impasse, the GRID. **In Anekbah it is 136-156 ms**, down from
+174-190. Its largest section is no longer the bodies but `world begin..end
+(submit, GL)`, ~80 ms, and on the two city frames that printed their GL
+counts it splits **draws 4 ms (≈270 draws), vertex uploads 19-25 ms (~6 MB a
+frame - the CPU-skinned bodies), the DEPTH TIE 47-60 ms**. The tie is ~1 ms on
+an M1; G4 (does the Vita's 16-bit depth even need it?) was never answered, so
+the game now takes **`--no-tie`** (in `args.txt`) to switch it off and LOOK -
+Anekbah's shop signs are where it shows (CLAUDE.md 6).
+
+**The model loads are not the transition stalls**: twelve loads, 21-148 ms
+each, one reload (`MCG_FN`). The stalls were READS of whole files from the
+card, which runs at roughly 5 MB/s:
+
+| stall | what it was | now |
+|---|---|---|
+| `controller` 700-870 ms, twice entering Anekbah | a MUSIC SWITCH read the whole track (182.5 s, 4 MB) in one call | the file stays open and is read in 32 KB windows as it plays; `music_equiv` 0 mismatches over 56 M samples on three tracks, looped and unlooped |
+| `audio` 718-789 ms + `game frame` 557 ms at a line's start | the line's `.3DM` (3.5 MB for 125338) read TWICE, by the conversation for the voice and by the viewer for the face | the viewer takes the conversation's bytes (`DialogPlayer::morph`); the voice, ~11 MB of device-rate floats, is MOVED into the mixer, not copied. The transcan conversation: frame and every decision line identical to `941d3e4` |
+| `props, guns` ~1 s at a scene change | `aventure.SCX` (3.1 MB) and `fight.SCX` (1.0 MB) re-read and re-decoded at EVERY scene change for their sprites | decoded once (`spriteBase`); a scene change adds only its own. Checked for five scenes by building both tables: ids, frames, UVs, extents and pixels identical |
+
+Still in-frame and FIRST loads: the city set (`world begin, set` 1.4 s,
+139245 corners) and the area/scene chunks (`game frame`).
+
+**The films**: the three strategies all ended the same way, and the log said
+why the dedicated blocks were refused - `free: main 11264 KB, CDRAM 0 KB,
+PHYCONT 0 KB`. SDL's GL context calls `vglInitExtended`, which passes vitaGL a
+CDRAM and a PHYCONT threshold of **0**: vitaGL takes every byte of both. The
+frame buffers we hand the decoder came out of vitaGL's own pool, but
+SceAvPlayer's hardware decoder needs memory of its own, and there was none; in
+Vita3K there is no such limit. `scripts/vita-vitagl-patch.py` now patches
+`vglInitExtended` to leave **16 MB of each** to the system. (Build it with
+`VITASDK=~/vitasdk`: this machine's shell exports a 2021 SDK in `/usr/local`
+that lacks `psp2/razor_capture.h`; the VPK's CMake cache pins `~/vitasdk`
+either way.)
+
+### 2026-09-23, midday: GAME plays - too fast - and a line still waits
+
+The reader (`handoff-vita-port.md` 3b2): **GAME played** - strategy 1, a
+dedicated CDRAM block, once vitaGL left the decoder memory - while EIDOS
+(strategy 0) and QUANTIC (2) were still skipped. Strategy 1 is now the
+default for all three. **Its picture ran fast against its sound**: SceAvPlayer
+times its pictures by the SOUND taken from it, and the loop took up to sixteen
+chunks a pass as fast as they came, so the player's clock ran ahead of the
+sound queued on the device. The loop now takes sound only while less than a
+quarter second waits there.
+
+**A line's start**, measured on the M1 for a 27 s line: read 2 ms, voice
+decode 3, resample 6, face tracks 0. Two things:
+
+* the RESAMPLE (22050 mono to 44100 stereo floats) paid a double multiply
+  and a `push_back` per output sample - 2.4 million for that line. The voices'
+  ratio is exactly two, so a fast path writes each source frame twice; 12
+  cases byte-identical to the general loop, and swapping its channels makes 5
+  differ. 6 ms -> 1 ms on the M1;
+* the READ is the card's, and it cannot be made cheaper - so it is moved:
+  `omk::FileFetch` (`platform/threads.h`) reads a file on its own short-lived
+  thread (a kernel thread on the Vita), and `DialogPlayer` starts one for the
+  `.3DM` of every branch target of the line that is playing. Measured with
+  `play_dialog` on conversations 402, 387 and the intro's 272: every line
+  after the first came from the read-ahead, byte-identical to a direct read.
+  The FIRST line of a conversation is still read when it starts - the script
+  picks it.
+
+Each line now logs `line load: <voice> - read N ms (K KB[, read AHEAD]),
+voice decode, face tracks, resample, into the mixer`, so the next console log
+says what a line costs there.
+
 ---
 
 ## 1. The issues, and what is missing

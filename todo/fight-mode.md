@@ -945,7 +945,9 @@ Over the real supermarket fight the ray hits on **29 frames**, and at the
 sample where it is pulling in the eye stands at x 15134 against 15145 without
 it. `verify.py: engine: fight camera collision` compares the run against
 `--no-fight-camera-collision` (29 / 0 hits, and the eye samples must differ),
-shown to fail by dropping the eye writes. Not judged by eye yet.
+shown to fail by dropping the eye writes. Not judged by eye yet. **7 / 0 since 2026-09-24**: the
+melee AI's dice became the CRT's own generator (§8), and on them the robber's
+first move is a throw that ends this fight at +30, so the fight is shorter.
 
 **15.8c PARTLY FIXED — the throw swing was divided by a constant.**
 
@@ -1315,6 +1317,13 @@ than to invent a remap flag — and a player who rebinds in the real game would
 already have their keys honoured.
 
 ## 8. Open questions
+
+* **The dice (2026-09-23).** The melee AI rolled on the host's `std::rand()`,
+  which is neither the engine's generator (MSVC's) nor private to the port:
+  something in the process drew from it once, sometimes, and a headless fight
+  came out two ways. It now draws from the viewer's private copy of the CRT
+  generator, the stream the gunmen already used (`gunRandSeed`, seed 1), so a
+  fight is one result on every run and every host (`vita-port.md`).
 
 * ~~**`dword_6A05E0`**~~ — **closed the same day, and it was never a fight
   question**: it is the VM's dry-run flag (`Script_RunToOpcode75` sets it,

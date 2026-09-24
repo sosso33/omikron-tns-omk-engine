@@ -27,6 +27,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <cstdio>
 #include <memory>
 #include <vector>
 
@@ -53,7 +54,7 @@ public:
     // going silent when it does not. Appends to `out` interleaved.
     void pull(std::vector<float>& out, std::size_t frames);
 
-    void stop() { adpcm_.clear(); adpcm_.shrink_to_fit(); stream_.reset(); outFrames_ = 0; outPos_ = 0; track_ = -1; }
+    void stop() { file_.reset(); win_.clear(); win_.shrink_to_fit(); stream_.reset(); outFrames_ = 0; outPos_ = 0; track_ = -1; }
 
 private:
     int    rate_;
@@ -69,7 +70,18 @@ private:
     // index (`size_t(i * step)`) names; a loop restarts the decoder. The
     // samples that leave are the ones that left before
     // (`verify.py: engine: music storage`).
-    std::vector<std::byte> adpcm_;        // the file: one stereo frame a byte
+    //
+    // AND READ AS IT PLAYS (2026-09-23): the 4 MB were still read in ONE call
+    // when the script switched tracks, and a console's memory card took 700 to
+    // 870 ms over it - a single frame, twice on the walk into Anekbah. The file
+    // stays open and `pull` reads the WINDOW holding the byte it needs next,
+    // `kWindow` bytes (1.5 s of music) at a time; the bytes are the same.
+    struct FileClose { void operator()(std::FILE* f) const { if (f) std::fclose(f); } };
+    static constexpr std::size_t kWindow = 32 * 1024;
+    std::unique_ptr<std::FILE, FileClose> file_;
+    std::vector<std::byte> win_;          // bytes [winStart_, winStart_ + win_.size())
+    std::size_t winStart_ = 0;
+    std::byte at(std::size_t i);          // byte i of the file, through the window
     AdpcmTables   tables_;
     std::size_t   decoded_ = 0;           // frames decoded so far; `cur_` is frame decoded_ - 1
     std::int16_t  cur_[2] = {0, 0};

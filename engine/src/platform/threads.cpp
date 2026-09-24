@@ -17,8 +17,11 @@
 //     the affinity mask against the SDK it links;
 //   * no threads: the body is called once, on the caller's thread.
 #include "platform/threads.h"
+#include "platform/datafs.h"
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 
 #if OMK_THREADS
 #  if defined(__vita__)
@@ -297,6 +300,70 @@ void Threads::parallelFor(std::size_t begin, std::size_t end, std::size_t grain,
 Threads& Threads::shared() {
     static Threads one;
     return one;
+}
+
+// ---------------------------------------------------------------- FileFetch
+struct FileFetch::State {
+    std::string path;
+    std::vector<std::byte> bytes;
+    std::atomic<bool> done{false};
+    void run() {
+        bytes = DataFs::readPath(path);
+        done.store(true, std::memory_order_release);
+    }
+};
+
+#if OMK_THREADS && defined(__vita__)
+namespace {
+// the reader's own entry: it holds a reference to the state until it is done,
+// and the kernel deletes the thread as it exits - nothing waits for it
+int fetchMain(SceSize, void* argp) {
+    auto* held = *static_cast<std::shared_ptr<FileFetch::State>**>(argp);
+    (*held)->run();
+    delete held;
+    return sceKernelExitDeleteThread(0);
+}
+}  // namespace
+#endif
+
+FileFetch::FileFetch(std::string path)
+    : path_(std::move(path)), state_(std::make_shared<State>()) {
+    state_->path = path_;
+#if OMK_THREADS && defined(__vita__)
+    // one priority step below the game, like the log's writer
+    const SceUID t = sceKernelCreateThread("omk_fetch", fetchMain, 0x10000110,
+                                           64 * 1024, 0, kVitaAffinity, nullptr);
+    auto* held = new std::shared_ptr<State>(state_);
+    if (t < 0 || sceKernelStartThread(t, sizeof held, &held) < 0) {
+        if (t >= 0) sceKernelDeleteThread(t);
+        delete held;
+        state_->run();                       // no thread: read it now
+    }
+#elif OMK_THREADS
+    std::thread([s = state_] { s->run(); }).detach();
+#else
+    state_->run();
+#endif
+}
+
+FileFetch::~FileFetch() = default;
+
+bool FileFetch::ready() const {
+    return state_ && state_->done.load(std::memory_order_acquire);
+}
+
+std::vector<std::byte> FileFetch::take() {
+    if (!state_) return {};
+    while (!state_->done.load(std::memory_order_acquire)) {
+#if OMK_THREADS && defined(__vita__)
+        sceKernelDelayThread(1000);
+#elif OMK_THREADS
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+#endif
+    }
+    std::vector<std::byte> out = std::move(state_->bytes);
+    state_.reset();
+    return out;
 }
 
 }  // namespace omk

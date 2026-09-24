@@ -102,6 +102,46 @@ plays. `ux0:data/omk/film-alloc` holding one digit forces a strategy for all
 three. **If none plays**, the next suspect is the resolution: re-encode at
 480x272 or 960x544 and try again.
 
+**The 2026-09-23 morning log answered it differently**: none played, and the
+log showed `CDRAM 0 KB, PHYCONT 0 KB` free - vitaGL, initialised by SDL, takes
+all of both. Our vitaGL build now leaves 16 MB of each (`vita-port.md`, entry
+of that morning). **Read the three `film:` blocks in the next log** - a READY
+(`0x02`) event and a frame count above 0 is the answer.
+
+## 3b2. The reader, 2026-09-23 midday (the build with the vitaGL memory patch)
+
+*"A bit better on some aspects, but still laggy. Now, the GAME video plays
+(EIDOS and QUANTIC are skipped), but the video is played accelerated while the
+audio is played at normal speed. [...] Each time a new line of dialog is loaded
+(when I pressed the key), it is a bit long to load the dialog (graphics were
+less good, but this loading was faster using a dreamcast emulator on the ps
+vita so there is definitely an issue somewhere)."*
+
+So: strategy 1 (a dedicated CDRAM block) is the one that plays, once vitaGL
+leaves memory for the decoder; the film's PICTURE runs fast against its sound;
+and a line's start is still a visible wait on the console.
+
+**2026-09-24, the reader on `--no-tie`**: *"I tested without and, while
+being a little smoother, it does not make a great difference."* The tie is not
+the city's lag; the ~100 ms left per frame is.
+
+## 3c. The transition hitches (2026-09-23)
+
+Not model RE-loads (0 in the fight, the shoot phase and Telis's scene); the
+repeated cost was the GLES texture pool re-uploading every texture at each
+hand-over, now cached by pixel storage (`vita-port.md`, entry of the same
+day). The console log now carries `model load: NAME in X ms` for each model
+built and `gles: texture pool of N - K kept, U uploaded` for each pool change:
+**read both in the next log** - the first says which FIRST loads make the
+1-1.5 s frames, the second that the pool holds.
+
+**Read 2026-09-23 morning**: the pool holds, and the models were not it -
+three whole-file READS were (a music switch, a line's `.3DM` read twice, the
+two sprite libraries at every scene change). All three fixed; see
+`vita-port.md`. The city's frame is now led by the depth tie (~50 ms):
+**put `--no-tie` in `args.txt` for one run**, walk Anekbah's shop fronts, and
+say whether the signs flicker.
+
 ## 4. What to do next, in order
 
 0. Nothing below can be sized without **one console log from the city**. The

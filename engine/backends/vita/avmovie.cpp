@@ -199,8 +199,12 @@ AvFilm* avOpen(const std::string& path) {
     {
         std::string low = path;
         for (auto& c : low) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        g_filmStrategy = low.find("eidos") != std::string::npos ? 0
-                       : low.find("quantic") != std::string::npos ? 2 : 1;
+        // THE ANSWER (2026-09-23): once vitaGL leaves the decoder memory of
+        // its own (scripts/vita-vitagl-patch.py), strategy 1 PLAYED - GAME -
+        // and 0 and 2 still stopped at once (EIDOS, QUANTIC). So 1 for all;
+        // the file still overrides it.
+        g_filmStrategy = 1;
+        (void)low;
         SceIoStat fs;
         if (sceIoGetstat("ux0:data/omk/film-alloc", &fs) >= 0) {
             char d = 0;

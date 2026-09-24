@@ -30,8 +30,11 @@
 
 #include "script/gamestate.h"
 #include "script/interp.h"
+#include "platform/threads.h"
 
 #include <cstdint>
+#include <map>
+#include <memory>
 #include <span>
 #include <string>
 #include <vector>
@@ -284,6 +287,18 @@ public:
     double elapsed() const { return lineAt_; }
     bool   lineOver() const { return lineAt_ >= lineLen_; }
     const std::vector<std::int16_t>& pcm() const { return pcm_; }
+    // the line's whole `.3DM`, as read for its voice - the face's tracks come
+    // out of the same file, and a frontend need not read it again
+    const std::vector<std::byte>& morph() const { return morph_; }
+    // what the line's start cost here, in ms: the file read and the voice's
+    // decode - a console's wait on a line (2026-09-23) is apportioned by these
+    double loadReadMs() const { return loadMs_[0]; }
+    double loadDecodeMs() const { return loadMs_[1]; }
+    // whether this line's `.3DM` had been read AHEAD, while the line before
+    // it played (`prefetch_`)
+    bool loadPrefetched() const { return loadPrefetched_; }
+    // how many of the next lines are being read ahead now
+    std::size_t aheadCount() const { return prefetch_.size(); }
     int    channels() const { return channels_; }
     bool   lineChanged() const { return lineChanged_; }
     void   clearLineChanged() { lineChanged_ = false; }
@@ -331,6 +346,15 @@ private:
     std::string voice_, line_;
     std::vector<DialogReply>  replies_;
     std::vector<std::int16_t> pcm_;
+    std::vector<std::byte> morph_;
+    double loadMs_[2] = {0.0, 0.0};
+    bool loadPrefetched_ = false;
+    // THE LINES THAT CAN COME NEXT, READ AHEAD (2026-09-23): the `.3DM` of
+    // every branch target of the line playing, keyed by path. Which one is
+    // taken is the player's choice, so all of them are read; the rest are
+    // dropped - without waiting - when the next line starts.
+    std::map<std::string, std::unique_ptr<FileFetch>> prefetch_;
+    void prefetchSuccessors(int node);
 };
 
 }  // namespace omk

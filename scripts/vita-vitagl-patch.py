@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""OMK's one patch to the pinned vitaGL: A CACHED SHADER NEEDS NO COMPILER.
+"""OMK's two patches to the pinned vitaGL.
+
+    vita-vitagl-patch.py source/custom_shaders.c [source/vgl.c]
+
+1. A CACHED SHADER NEEDS NO COMPILER (custom_shaders.c).
 
 vitaGL's HAVE_SHADER_CACHE keeps each compiled shader as `<xxh3 of the
 source>.gxp`, but `glCompileShader` starts Sony's runtime compiler
@@ -8,10 +12,38 @@ source>.gxp`, but `glCompileShader` starts Sony's runtime compiler
 in the cache, and gives up when it is missing - so a full cache still needed
 the compiler. Patched: the start is not fatal, and only a cache MISS with no
 compiler refuses, in `glCompileShader` and in `glLinkProgram`'s postponed
-compile. Every anchor is asserted; run by scripts/vita-vitagl.sh on a fresh
-checkout of the pinned commit.
+compile.
+
+2. MEMORY LEFT FOR THE FILM DECODER (vgl.c). SDL's GL context calls
+`vglInitExtended`, which passes a CDRAM and a PHYCONT threshold of 0 - vitaGL
+takes EVERY byte of both at start-up. The console's log then says `free: main
+11264 KB, CDRAM 0 KB, PHYCONT 0 KB` when the films open, and SceAvPlayer, whose
+hardware decoder needs memory of its own beyond the frame buffers it asks the
+game for, STOPS three times and never gets READY (todo/handoff-vita-port.md
+3b). Patched: `vglInitExtended` leaves 16 MB of each to the system.
+
+Every anchor is asserted; run by scripts/vita-vitagl.sh on a fresh checkout of
+the pinned commit.
 """
 import sys
+
+
+def patch_memory(path):
+    s = open(path).read()
+    if "OMK: memory left for the film decoder" in s:
+        return
+    a = """	return vglInitWithCustomThreshold(pool_size, width, height, ram_threshold, 0, 0, SCE_KERNEL_MAX_MAIN_CDIALOG_MEM_SIZE, msaa);
+"""
+    assert s.count(a) == 1, "vglInitExtended's thresholds moved"
+    s = s.replace(a, """	// OMK: memory left for the film decoder - 16 MB of CDRAM and of PHYCONT
+	return vglInitWithCustomThreshold(pool_size, width, height, ram_threshold, 16 * 1024 * 1024, 16 * 1024 * 1024, SCE_KERNEL_MAX_MAIN_CDIALOG_MEM_SIZE, msaa);
+""")
+    open(path, "w").write(s)
+    print("patched", path)
+
+
+if len(sys.argv) > 2:
+    patch_memory(sys.argv[2])
 
 path = sys.argv[1]
 s = open(path).read()

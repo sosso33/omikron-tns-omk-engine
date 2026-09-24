@@ -93,6 +93,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -146,6 +147,7 @@ std::string glesFrameReport();
 long glesTakePatches();
 long glesTakeTiePatches();
 long glesTakeOverlayRows(Renderer*);
+void glesSetDepthTie(Renderer*, bool);
 bool glesPresentOverlay(Renderer*, const Surface&, const unsigned char* mask, const unsigned char* maskRows,
                         const float fade[4], int vy, int vh, int winW, int winH);
 void glesWindowPicture(Renderer*, int w, int h, std::vector<unsigned char>& out);
@@ -445,6 +447,23 @@ std::vector<float> resampleToDevice(const std::vector<std::int16_t>& pcm,
                                     int channels, int rate, int deviceRate) {
     if (pcm.empty() || channels <= 0 || rate <= 0) return {};
     const std::size_t frames = pcm.size() / static_cast<std::size_t>(channels);
+    // THE VOICES' OWN RATIO, exactly twice (22050 -> 44100): the loop below
+    // then takes source frame `i * 0.5` = `i / 2`, so every frame twice, and
+    // this writes the same floats without its double multiply and push_back
+    // per sample - a 27 s line is 2.4 million of them, which a console's A9
+    // spends a visible part of a line's start on (2026-09-23)
+    if (deviceRate == 2 * rate && (channels == 1 || channels == 2)) {
+        std::vector<float> o(frames * 4);
+        float* w = o.data();
+        const std::int16_t* p = pcm.data();
+        for (std::size_t f = 0; f < frames; ++f, p += channels) {
+            const float l = p[0] / 32768.0f;
+            const float r = channels > 1 ? p[1] / 32768.0f : l;
+            w[0] = l; w[1] = r; w[2] = l; w[3] = r;
+            w += 4;
+        }
+        return o;
+    }
     const double step = static_cast<double>(rate) / deviceRate;
     std::vector<float> o;
     o.reserve(static_cast<std::size_t>(frames / step) * 2);
@@ -854,6 +873,16 @@ public:
         if (shots_.size() >= 8) shots_.erase(shots_.begin());
         const int id = nextShot_++;
         shots_.push_back({std::vector<float>(s.begin(), s.end()), 0, id, loop, gain});
+        return id;
+    }
+
+    int playSound(std::vector<float>&& s, bool loop = false,
+                  float gain = 1.0f) override {
+        if (s.empty()) return -1;
+        AudioLock lk(amx_);
+        if (shots_.size() >= 8) shots_.erase(shots_.begin());
+        const int id = nextShot_++;
+        shots_.push_back({std::move(s), 0, id, loop, gain});
         return id;
     }
 
@@ -1420,6 +1449,8 @@ int main(int argc, char** argv) {
 "  --no-thread-bodies  pose the crowd on ONE core. The default poses it over\n"
 "                   several (`omk::Threads`), bit-identical to one core and\n"
 "                   proven on a console (--thread-bodies asks for the default)\n"
+"  --no-tie         the GLES window draws WITHOUT the depth tie (o3de/depthtie.h),\n"
+"                   for judging on a console whether its 16-bit depth needs it\n"
 "  --detail 0..2    how many bones cast one - options row 7\n"
 "  --world-vulkan   draw the WORLD through an offscreen Vulkan renderer (a\n"
 "                   harness: it needs no window, so the GPU-only enhancements\n"
@@ -1718,6 +1749,7 @@ int main(int argc, char** argv) {
     int skyFlag = -1;      // --sky 0|1, options row 4; -1 = take it from the settings
     int shadowFlag = -1;   // --shadows 0|1, options row 5; -1 = the settings'
     int threadFlag = 1;    // --no-thread-bodies: pose the crowd on one core
+    bool noTieFlag = false;   // --no-tie: the GLES window draws without the depth tie
     int detailFlag = -1;   // --detail 0..2, options row 7; -1 = the settings'
     int aaFlag = -1;       // --aa N, [Enhancements] antialiasing; -1 = the settings'
     int filterFlag = -1;   // --filter nearest|bilinear|trilinear, [Enhancements] texturefiltering
@@ -1958,6 +1990,7 @@ int main(int argc, char** argv) {
         else if (a == "--shadows" && i + 1 < argc) shadowFlag = std::atoi(argv[++i]);
         else if (a == "--thread-bodies") threadFlag = 1;
         else if (a == "--no-thread-bodies") threadFlag = 0;
+        else if (a == "--no-tie") noTieFlag = true;
         else if (a == "--no-shadows") shadowFlag = 0;
         else if (a == "--detail" && i + 1 < argc) detailFlag = std::atoi(argv[++i]);
         else if (a == "--config" && i + 1 < argc) configFile = argv[++i];
@@ -3381,6 +3414,13 @@ int main(int argc, char** argv) {
             if (gr->init(dispW, dispH)) {
                 glRen = gr;
                 std::printf("renderer: GLES2 - %s\n", gr->name());
+                // G4 (todo/vita-port.md): the tie is ~1 ms of CPU on an M1 and
+                // ~50 in a console's city; whether the Vita's 16-bit depth
+                // shows the coincident faces without it is to be LOOKED at
+                if (noTieFlag) {
+                    omk::glesSetDepthTie(gr, false);
+                    std::printf("renderer: the depth tie is OFF (--no-tie)\n");
+                }
             } else {
                 delete gr;
             }
@@ -4224,6 +4264,10 @@ int main(int argc, char** argv) {
     // write, the medikits) and a hit he survives copy +92 into it, and the
     // killing hit returns before it is touched, so the bar keeps its last value.
     int hudHealth = 0;
+    // the CRT's `rand()` (MSVC: `seed * 214013 + 2531011`, bits 16..30) from
+    // its default seed, drawn by the gunmen AND the melee AI - the engine's is
+    // one stream too. Never the host's `std::rand()`, which is another
+    // generator and is shared with whatever system library calls it.
     std::uint32_t gunRandSeed = 1;
     // THE PLAYER'S SHOT (`actor/shootfire.h`, todo/shoot-mode.md 7h): his own
     // shoot record - the engine keeps one for him among the 100, and the
@@ -4540,6 +4584,22 @@ int main(int argc, char** argv) {
         if (name.empty()) return nullptr;
         auto it = charModels.find(name);
         if (it != charModels.end()) return &it->second;
+        // EVERY LOAD SAYS WHAT IT COST, and whether it is a RELOAD - a model
+        // this run already had and the per-frame eviction below let go of. A
+        // transition's stall is a load inside a frame (todo/vita-port.md
+        // 2026-09-23), and a reload is the one that need not happen at all.
+        static std::map<std::string, int> loadsOf;
+        const int nth = ++loadsOf[name];
+        const auto loadT0 = std::chrono::steady_clock::now();
+        struct Said {
+            const std::string& n; int k; std::chrono::steady_clock::time_point t0;
+            ~Said() {
+                const double ms = std::chrono::duration<double, std::milli>(
+                                      std::chrono::steady_clock::now() - t0).count();
+                std::printf("model load: %s in %.1f ms%s\n", n.c_str(), ms,
+                            k > 1 ? (" - a RELOAD, load " + std::to_string(k)).c_str() : "");
+            }
+        } said{name, nth, loadT0};
         CharModel m;
         if (const auto mo = fs.resolve("MESHES/PERSOS/" + name + ".3DO")) {
             const auto md = omk::DataFs::readPath(*mo);
@@ -4880,7 +4940,16 @@ int main(int argc, char** argv) {
 
         fightRun.ms = 0.0;
         fightRun.fight = std::make_unique<omk::Fight>(
-            [] { return std::rand(); },
+            // THE CRT's GENERATOR, NOT THE HOST'S (2026-09-23). This was
+            // `std::rand()`: on macOS a different generator from the engine's
+            // MSVC one, and one the SYSTEM LIBRARIES share - an audio or
+            // input thread drawing once before the fight shifted every roll
+            // by one, and a headless fight came out two ways, about one run
+            // in four. Same stream as the gunmen's (the engine has one).
+            [&gunRandSeed] {
+                gunRandSeed = gunRandSeed * 214013u + 2531011u;
+                return static_cast<int>((gunRandSeed >> 16) & 0x7FFFu);
+            },
             [&fightRun] { return static_cast<long>(fightRun.ms); });
         fightRun.fight->setBodyTick([&](float dt, std::uint32_t word) {
             if (player) player->tick(dt, word);
@@ -5018,7 +5087,7 @@ int main(int argc, char** argv) {
     };
     SpriteTable spriteTab;
     const omk::SpriteLookup spriteLookup = [&spriteTab](int id) { return spriteTab.framesOf(id); };
-    const auto loadSprites = [&](const std::string& scx) {
+    const auto loadSpritesInto = [&](SpriteTable& spriteTab, const std::string& scx) {
         const auto ap = fs.resolve("SCPTDATA/" + scx);
         if (!ap) return 0;
         const auto ad = omk::DataFs::readPath(*ap);
@@ -5040,6 +5109,14 @@ int main(int argc, char** argv) {
         }
         return n;
     };
+    const auto loadSprites = [&](const std::string& scx) { return loadSpritesInto(spriteTab, scx); };
+    // THE TWO LIBRARIES' SPRITES, decoded ONCE (2026-09-23). They never change,
+    // and every scene change read `aventure.SCX` and `fight.SCX` again - 4 MB,
+    // which a console's memory card takes most of a second over, on the frame
+    // of the hand-over. The table a scene change starts from is this one; the
+    // order global, fight, scene - and so every collision - is unchanged.
+    SpriteTable spriteBase;
+    int spriteBaseGlobal = 0, spriteBaseFight = 0;
     // WHICH scene's sprites `spriteTex` currently holds. An effect names its
     // sprite by ID and `Sfx_TickAmbient` resolves that id through the SCENE
     // (`sub_4A5800`), and the ids are scene-local: `Grid.sfx` wants 9..12 and
@@ -5092,7 +5169,7 @@ int main(int argc, char** argv) {
     }
     std::string spriteScx;
     {
-        const int glob = loadSprites("aventure.SCX");
+        const int glob = loadSpritesInto(spriteBase, "aventure.SCX");
         // ...then the FIGHT's, which `Fight_Begin`'s own `Game_Start` installs
         // (see `fightRt` above). Its 16 sprites are the blow effects the
         // `.CTL` combat states spawn - ids 8..14, 32..35, 40, 43, 44, 192,
@@ -5107,7 +5184,10 @@ int main(int argc, char** argv) {
         // the safe one is chosen deliberately. A scene that did register one
         // of those ids would keep its own, which is the behaviour this tree
         // already has everywhere else.
-        const int fightSp = loadSprites("fight.SCX");
+        const int fightSp = loadSpritesInto(spriteBase, "fight.SCX");
+        spriteBaseGlobal = glob;
+        spriteBaseFight = fightSp;
+        spriteTab = spriteBase;
         // ...then the SCENE's own, which is what `Sfx_TickAmbient` resolves
         // against and which wins where the ids collide.
         const int local = session.scene().file().empty()
@@ -5121,15 +5201,15 @@ int main(int argc, char** argv) {
                     spriteTab.idCount == 0 ? 0 : spriteTab.idCount - 1, frames);
         spriteScx = session.scene().file();
     }
-    // Re-run that whenever the resident scene changes. The global library is
-    // reloaded first because the scene's ids WIN where the two collide, which
-    // is the order `Sfx_TickAmbient` resolves in.
+    // Re-run that whenever the resident scene changes: the two libraries first
+    // (`spriteBase`, decoded once), then the scene's, because the scene's ids
+    // WIN where they collide, which is the order `Sfx_TickAmbient` resolves in.
     const auto refreshSprites = [&]() {
         if (session.scene().file() == spriteScx) return;
         spriteScx = session.scene().file();
-        spriteTab.clear();
-        const int glob = loadSprites("aventure.SCX");
-        const int fightSp = loadSprites("fight.SCX");   // as above
+        spriteTab = spriteBase;                          // the two libraries, as above
+        const int glob = spriteBaseGlobal;
+        const int fightSp = spriteBaseFight;
         const int local = spriteScx.empty() ? 0 : loadSprites(spriteScx);
         int okTex = 0;
         for (const auto& kv : spriteTab.tex) if (kv.second.width) ++okTex;
@@ -5507,8 +5587,19 @@ int main(int argc, char** argv) {
                             avEnd = h.pad.buttons != 0 ? "skipped by a pad button" : "skipped by a key";
                             break;
                         }
+                        // THE SOUND IS THE PLAYER'S CLOCK. SceAvPlayer times
+                        // its pictures by the sound taken from it, and this
+                        // took up to sixteen chunks a pass as fast as they
+                        // came - so the clock ran ahead, the picture with it,
+                        // and the sound queued here and played at its own
+                        // speed: "the video is played accelerated while the
+                        // audio is played at normal speed" (the reader,
+                        // 2026-09-23, on the first console run that played a
+                        // film). Taken only while less than a quarter second
+                        // waits in the device, it is taken as fast as it plays.
                         pcm.clear();
-                        if (omk::vita::avAudio(av, pcm, rate) && !pcm.empty())
+                        if (front.queuedSeconds() < 0.25 &&
+                            omk::vita::avAudio(av, pcm, rate) && !pcm.empty())
                             front.queueAudio(pcm);
                         if (omk::vita::avVideo(av, film)) { present(film); ++shownAv; }
                         else SDL_Delay(2);
@@ -10179,6 +10270,9 @@ int main(int argc, char** argv) {
                             music.seconds(), music.looping() ? ", looping" : "");
         }
         mark("controller");
+        // the `audio` section's own parts (2026-09-24: 14 ms a city frame on a
+        // console, and nothing in it looked like 14 ms)
+        const double auA = phaseNow();
         // ---- AND THE PAUSE SCREEN STOPS THE SOUND ------------------------
         //
         // Read out of screen 31's own open and close callbacks (0x004ADDB0 /
@@ -10234,6 +10328,8 @@ int main(int argc, char** argv) {
         // `media.play` is an EVENT, not a level like music: each announcement
         // is one play, and the handler's `Morph_Stop()` means a second one
         // CUTS the first. That is the whole of the engine's policy here.
+        phSpan["audio: music top-up"] += phaseNow() - auA;
+        const double auB = phaseNow();
         for (const int mediaId : voices.poll(session.announced())) {
             const auto vo  = voiceLib.resolve(fs, mediaId);
             const auto pcm = voiceLib.decode(fs, adpcmTables, vo);
@@ -10296,6 +10392,8 @@ int main(int argc, char** argv) {
         // speaker's pose the web viewer carries are not wired in - so what is
         // on screen during a conversation is the world camera the script last
         // set.
+        phSpan["audio: voice-overs"] += phaseNow() - auB;
+        const double auC = phaseNow();
         if (session.dialogOpen()) {
             // THE PRESS BELONGS TO THE CONVERSATION. While a dialogue is up
             // the action bit is the interface's - `Dialog_TickUI` takes it -
@@ -10370,11 +10468,24 @@ int main(int argc, char** argv) {
                 speakerTracks = omk::NodeTracks{};
                 speakerMorph.clear();
                 lineIdleFrame = sceneFrameLast;
+                const auto lineT0 = std::chrono::steady_clock::now();
+                const auto lineMs = [](std::chrono::steady_clock::time_point a) {
+                    return std::chrono::duration<double, std::milli>(
+                               std::chrono::steady_clock::now() - a).count();
+                };
+                double tracksMs = 0.0;
                 if (speakerReady && !speakerVoice.empty())
                     if (const auto ma = fs.resolve("MORPH/" + speakerVoice + ".3DM")) {
-                        speakerMorph = omk::DataFs::readPath(*ma);
+                        // THE BYTES THE CONVERSATION ALREADY READ for the
+                        // voice: a line's .3DM runs to 3.5 MB, and reading it
+                        // a second time here cost a console ~700 ms on the
+                        // frame the line started (2026-09-23)
+                        speakerMorph = dlg.morph().empty() ? omk::DataFs::readPath(*ma)
+                                                           : dlg.morph();
+                        const auto tt0 = std::chrono::steady_clock::now();
                         speakerTracks = omk::nodeTracks(
                             speakerMorph, omk::rootTrackOf(speakerMeshes));
+                        tracksMs = lineMs(tt0);
                         const CharModel* fm = charModels.count(speakerModel)
                             ? &charModels.at(speakerModel) : nullptr;
                         std::printf("  face: mesh %d, %d verts; the line supplies %s\n",
@@ -10389,8 +10500,23 @@ int main(int argc, char** argv) {
                             dlg.lineSeconds(), cp1252ToUtf8(dlg.lineText()).c_str());
                 front.stopSound(voiceOverShot); voiceOverShot = -1;   // one streamer
                 front.stopSound(voiceShot);
-                voiceShot = dlg.pcm().empty() ? -1 : front.playSound(
-                        resampleToDevice(dlg.pcm(), dlg.channels(), 22050, 44100));
+                const auto rs0 = std::chrono::steady_clock::now();
+                std::vector<float> voiceDev = dlg.pcm().empty() ? std::vector<float>{}
+                    : resampleToDevice(dlg.pcm(), dlg.channels(), 22050, 44100);
+                const double resampleMs = lineMs(rs0);
+                const auto ps0 = std::chrono::steady_clock::now();
+                voiceShot = voiceDev.empty() ? -1 : front.playSound(std::move(voiceDev));
+                // WHERE A LINE'S START GOES (2026-09-23: "it is a bit long to
+                // load the dialog" on a console) - the conversation's read and
+                // decode, then this frontend's face tracks, resample, hand-over
+                std::printf("line load: %s - read %.0f ms (%zu KB%s), voice decode %.0f ms, "
+                            "face tracks %.0f ms, resample %.0f ms, into the mixer %.0f ms; "
+                            "%.0f ms here in all; %zu next line(s) reading ahead\n",
+                            dlg.voice().empty() ? "no voice" : dlg.voice().c_str(),
+                            dlg.loadReadMs(), dlg.morph().size() / 1024,
+                            dlg.loadPrefetched() ? ", read AHEAD" : "", dlg.loadDecodeMs(),
+                            tracksMs, resampleMs, lineMs(ps0), lineMs(lineT0),
+                            dlg.aheadCount());
                 replySel = 0; menuShown = false; lineScroll = 0;
             }
             if (dlg.phase() == omk::DialogPhase::Menu && !menuShown) {
@@ -10460,6 +10586,7 @@ int main(int argc, char** argv) {
                 std::printf("--- conversation over ---\n");
         }
 
+        phSpan["audio: conversation"] += phaseNow() - auC;
         mark("audio");
         // ---- DIALOGUE MODE, and the bug its absence caused ---------------
         //

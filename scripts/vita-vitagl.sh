@@ -48,8 +48,10 @@ fi
 # HAVE_SHADER_CACHE=1 a compiled shader is kept as <hash of its source>.gxp,
 # and scripts/vita-vitagl-patch.py lets a cache HIT run with no
 # libshacccg.suprx at all (todo/vita-port.md, "precompiled shaders").
-git -C "$src" checkout -q -- source/custom_shaders.c
-python3 "$here/scripts/vita-vitagl-patch.py" "$src/source/custom_shaders.c"
+# And the second: vitaGL leaves 16 MB of CDRAM and of PHYCONT to the system,
+# which the films' hardware decoder needs (todo/handoff-vita-port.md 3b).
+git -C "$src" checkout -q -- source/custom_shaders.c source/vgl.c
+python3 "$here/scripts/vita-vitagl-patch.py" "$src/source/custom_shaders.c" "$src/source/vgl.c"
 
 make -C "$src" clean >/dev/null 2>&1 || true
 make -C "$src" -j"$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)" \
@@ -58,4 +60,4 @@ make -C "$src" -j"$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4
     # header (seen 2026-09-21: ffp.o and egl.o); the second pass is serial
     make -C "$src" NO_SPLASHSCREEN=1 HAVE_VITA3K_SUPPORT=1 HAVE_SHADER_CACHE=1 >/dev/null
 cp "$src/libvitaGL.a" "$out/libvitaGL.a"
-echo "built $out/libvitaGL.a (vitaGL $COMMIT + the OMK cache patch, NO_SPLASHSCREEN=1 HAVE_VITA3K_SUPPORT=1 HAVE_SHADER_CACHE=1)"
+echo "built $out/libvitaGL.a (vitaGL $COMMIT + the OMK cache and memory patches, NO_SPLASHSCREEN=1 HAVE_VITA3K_SUPPORT=1 HAVE_SHADER_CACHE=1)"
