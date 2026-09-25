@@ -1319,3 +1319,14 @@ pre-NEON build.
 **To measure on the console**: `omk_bench.vpk`'s `place` line gives the A9's
 generic and NEON times and EXACT/DIFFERENT; the game's `scripted motion:
 meshes placed` section is the frame's share.
+
+**And `composePose`, which is not a NEON case** (2026-09-25): it looked each
+mesh's parent up by scanning every mesh, twice per mesh - 76 x 76 x 2
+comparisons a crowd body a frame - and allocated five scratch vectors per
+call. The parent table is now found once per model (the same answer: the
+FIRST mesh with the parent's id), kept per thread and checked against the
+meshes' ids and parents; the scratch is reused. `vita_bench`: compose 0.14 ->
+0.08 ms on the M1 for 45 bodies, the pose hash unchanged (`b1cb7331...`),
+`engine: pose`, `pose equivalence`, `threaded bodies`, `gles pose` green. It
+stays on the CPU with GPU skinning - the shadows, the head look and the fight
+read it - so this is the body cost the console keeps.

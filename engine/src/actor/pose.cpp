@@ -335,16 +335,56 @@ NodeTracks nodeTracks(std::span<const std::byte> d, int rootTrack) {
     return t;
 }
 
+namespace {
+// WHERE EACH MESH'S PARENT IS, found once per model (2026-09-25). `composePose`
+// looked the parent up by scanning every mesh, twice per mesh - 76 x 76 x 2
+// comparisons a crowd body a frame, the bulk of a console's 7 ms of `compose`
+// for a street's bodies. The answer is `byId`'s own - the FIRST mesh whose id
+// is the parent id, or none - kept per thread (the crowd poses on several) and
+// keyed by the vector's address, CHECKED against a copy of every mesh's id and
+// parent so a reused address can never serve another model's table.
+struct ParentTable {
+    const Mesh* data = nullptr;
+    std::vector<std::int32_t> ids, parents;
+    std::vector<int> parentAt;      // position in `meshes`, or -1
+};
+const std::vector<int>& parentsOf(const std::vector<Mesh>& meshes) {
+    static thread_local std::vector<ParentTable> cache;
+    for (auto& t : cache) {
+        if (t.data != meshes.data() || t.ids.size() != meshes.size()) continue;
+        bool same = true;
+        for (std::size_t i = 0; i < meshes.size() && same; ++i)
+            same = t.ids[i] == meshes[i].id && t.parents[i] == meshes[i].parent;
+        if (same) return t.parentAt;
+    }
+    if (cache.size() >= 64) cache.clear();
+    ParentTable t;
+    t.data = meshes.data();
+    t.ids.resize(meshes.size());
+    t.parents.resize(meshes.size());
+    t.parentAt.assign(meshes.size(), -1);
+    for (std::size_t i = 0; i < meshes.size(); ++i) {
+        t.ids[i] = meshes[i].id;
+        t.parents[i] = meshes[i].parent;
+        for (std::size_t j = 0; j < meshes.size(); ++j)
+            if (meshes[j].id == meshes[i].parent) { t.parentAt[i] = static_cast<int>(j); break; }
+    }
+    cache.push_back(std::move(t));
+    return cache.back().parentAt;
+}
+}  // namespace
+
 std::vector<MeshPose> composePose(const std::vector<Mesh>& meshes,
                                   const NodeTracks& t, int frame,
                                   bool upright) {
     std::vector<MeshPose> out(meshes.size());
-    std::vector<char> done(meshes.size(), 0);
     if (meshes.empty()) return out;
-
-    // The track's quaternion for each mesh, CONJUGATED.
-    std::vector<Quatf> qof(meshes.size());
-    std::vector<char> hasQ(meshes.size(), 0);
+    // scratch kept per thread rather than allocated per call
+    static thread_local std::vector<char> done, hasQ;
+    static thread_local std::vector<Quatf> qof;
+    done.assign(meshes.size(), 0);
+    qof.assign(meshes.size(), Quatf{});
+    hasQ.assign(meshes.size(), 0);
     if (t.valid()) {
         const int f = frame < 0 ? 0
                     : (frame >= t.frames ? t.frames - 1 : frame);
@@ -358,13 +398,13 @@ std::vector<MeshPose> composePose(const std::vector<Mesh>& meshes,
         }
     }
 
-    const auto byId = [&](std::int32_t id) -> const Mesh* {
-        for (const auto& m : meshes) if (m.id == id) return &m;
-        return nullptr;
+    const std::vector<int>& parentAt = parentsOf(meshes);
+    const auto parentOf = [&](std::size_t k) -> const Mesh* {
+        const int p = parentAt[k];
+        return p < 0 ? nullptr : &meshes[static_cast<std::size_t>(p)];
     };
 
-    // rot[m] = rot[parent] * q[m]; pos[m] = pos[parent] + rot[parent]*(rest offset)
-    std::vector<int> stack;
+    static thread_local std::vector<int> stack;
     for (std::size_t i = 0; i < meshes.size(); ++i) {
         if (done[i]) continue;
         stack.clear();
@@ -372,7 +412,7 @@ std::vector<MeshPose> composePose(const std::vector<Mesh>& meshes,
         int guard = 0;
         while (!done[cur] && guard++ <= 24) {
             stack.push_back(static_cast<int>(cur));
-            const Mesh* par = byId(meshes[cur].parent);
+            const Mesh* par = parentOf(cur);
             if (!par) break;
             const auto pi = static_cast<std::size_t>(par->index);
             if (pi >= meshes.size() || pi == cur) break;
@@ -383,7 +423,7 @@ std::vector<MeshPose> composePose(const std::vector<Mesh>& meshes,
             if (done[k]) continue;
             const Mesh& m = meshes[k];
             const Quatf q = hasQ[k] ? qof[k] : Quatf{};
-            const Mesh* par = byId(m.parent);
+            const Mesh* par = parentOf(k);
             if (!par || static_cast<std::size_t>(par->index) >= meshes.size() ||
                 !done[static_cast<std::size_t>(par->index)]) {
                 out[k].q = q;
@@ -405,7 +445,8 @@ std::vector<MeshPose> composePose(const std::vector<Mesh>& meshes,
     if (upright) {
         // Cancel the ROOT's own rotation about its own origin.
         const Mesh* root = nullptr;
-        for (const auto& m : meshes) if (!byId(m.parent)) { root = &m; break; }
+        for (std::size_t k = 0; k < meshes.size(); ++k)
+            if (!parentOf(k)) { root = &meshes[k]; break; }
         if (root) {
             const auto ri = static_cast<std::size_t>(root->index);
             if (ri < out.size()) {
