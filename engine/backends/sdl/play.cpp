@@ -60,6 +60,7 @@
 #include "o3de/collision.h"
 #include "o3de/geom3do.h"
 #include "o3de/particles.h"
+#include "o3de/pointplace.h"
 #include "app/playhelpers.h"
 #include "o3de/shadow.h"
 #include "platform/threads.h"
@@ -6450,22 +6451,23 @@ int main(int argc, char** argv) {
                     // so the node's matrix starts as identity and the
                     // sample's applies directly, about the authored origin.
                     const float* at = pa.hasMotion ? pa.pos : mp;
-                    const auto place = [&](const float in[3], float out[3]) {
-                        const float local[3] = {(in[0] - mp[0]) * pa.s[0],
-                                                (in[1] - mp[1]) * pa.s[1],
-                                                (in[2] - mp[2]) * pa.s[2]};
-                        float r[3] = {local[0], local[1], local[2]};
-                        if (pa.rotated) omk::qrot(pa.q, local, r);
-                        out[0] = r[0] + at[0]; out[1] = r[1] + at[1]; out[2] = r[2] + at[2];
-                    };
+                    // `o3de/pointplace.h`: the same (in - origin) * scale,
+                    // `qrot`, + at, point by point - four at a time on NEON
+                    omk::PointPlace pp;
+                    for (int k = 0; k < 3; ++k) {
+                        pp.origin[k] = mp[k];
+                        pp.scale[k] = pa.s[k];
+                        pp.at[k] = at[k];
+                    }
+                    pp.rotated = pa.rotated;
+                    pp.q = pa.q;
+                    static_assert(sizeof(omk::Corner) == 12 * sizeof(float) &&
+                                  offsetof(omk::Corner, x) == 0,
+                                  "a Corner is 12 floats with x, y, z first");
                     const auto& meshCorners = w.cornersOfMesh[static_cast<std::size_t>(mi)];
                     dirty.insert(dirty.end(), meshCorners.begin(), meshCorners.end());
-                    for (const std::uint32_t c : meshCorners) {
-                        const float in[3] = {w.baseCorners[c].x, w.baseCorners[c].y, w.baseCorners[c].z};
-                        float o[3];
-                        place(in, o);
-                        w.geo.corners[c].x = o[0]; w.geo.corners[c].y = o[1]; w.geo.corners[c].z = o[2];
-                    }
+                    omk::placePoints(pp, &w.baseCorners[0].x, 12, &w.geo.corners[0].x, 12,
+                                     meshCorners.data(), meshCorners.size());
                     // the collision soups follow the mesh exactly as the
                     // render corners above (`Sweep_MeshTest` collides
                     // against the mesh's CURRENT matrix)
@@ -6473,14 +6475,15 @@ int main(int argc, char** argv) {
                                                const std::vector<std::uint32_t>& tris,
                                                std::vector<std::uint32_t>& movedOut) {
                         movedOut.insert(movedOut.end(), tris.begin(), tris.end());
+                        // a triangle is three packed points; a run of them
+                        // is what NEON loads four at a time
+                        static thread_local std::vector<std::uint32_t> pts;
+                        pts.clear();
                         for (const std::uint32_t t : tris) {
-                            for (int v = 0; v < 3; ++v) {
-                                const std::size_t o = 9 * t + 3 * static_cast<std::size_t>(v);
-                                float out[3];
-                                place(&base[o], out);
-                                soup[o] = out[0]; soup[o + 1] = out[1]; soup[o + 2] = out[2];
-                            }
+                            pts.push_back(3 * t); pts.push_back(3 * t + 1); pts.push_back(3 * t + 2);
                         }
+                        if (!pts.empty())
+                            omk::placePoints(pp, base.data(), 3, soup.data(), 3, pts.data(), pts.size());
                     };
                     patchSoup(w.soup, w.baseSoup, w.soupTrisOfMesh[static_cast<std::size_t>(mi)], movedSoup[sl]);
                     patchSoup(w.steep, w.baseSteep, w.steepTrisOfMesh[static_cast<std::size_t>(mi)], movedSteep[sl]);

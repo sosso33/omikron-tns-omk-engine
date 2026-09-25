@@ -14883,6 +14883,13 @@ def c_engine_vita_bench():
 
     SHOWN TO FAIL, 2026-09-18: making every threaded body tick one frame later
     (`tickBody(bodies[i], f + 1, ...)` in the threaded pass) -> DIFFERENT.
+
+    **The `place` stage (2026-09-25)**: `o3de/pointplace.h`'s generic loop
+    against its NEON loop over every corner of Anekbah, both layouts, hashed -
+    the bench exits 4 on `neon: DIFFERENT`, so the exit status this check
+    asserts covers it. On the M1: EXACT, 2.4x. SHOWN TO FAIL by regrouping one
+    NEON addition, `(a + b) + c` as `a + (b + c)` - equal in arithmetic, not in
+    rounding - which hashes DIFFERENT.
     """
     import subprocess
     eng = os.path.join(ROOT, "engine")
@@ -36620,6 +36627,8 @@ def c_licence_headers():
     **474 -> 476**: `src/app/playhelpers.{h,cpp}`, the first step of
     `todo/play-split.md` - a MOVE out of `play.cpp`, so the count rises while
     the authored lines do not.
+    **476 -> 478**: `src/o3de/pointplace.{h,cpp}` (2026-09-25), the scripted
+    motion's point placement with its generic and NEON loops.
     """
     import glob as _g
     TAG = "SPDX-License-Identifier: GPL-3.0-or-later"
@@ -36649,7 +36658,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (476, [], 1, []), \
+           (478, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \

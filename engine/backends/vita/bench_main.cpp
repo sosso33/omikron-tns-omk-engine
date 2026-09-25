@@ -52,11 +52,13 @@
 #include "formats/light3do.h"
 #include "formats/mesh3do.h"
 #include "o3de/geom3do.h"
+#include "o3de/pointplace.h"
 #include "o3de/vertexlight.h"
 #include "platform/datafs.h"
 #include "platform/threads.h"
 
 #include <chrono>
+#include <cmath>
 #include <cstdarg>
 #include <cstdint>
 #include <cstdio>
@@ -318,9 +320,83 @@ int main(int argc, char** argv) {
     say("budget   these stages alone are %.1f%% of a 33.3 ms frame\n",
         100.0 * in.total * per / 33.333);
 
+    // ---- PLACE: `o3de/pointplace.h`, the scripted motion's point placement,
+    // GENERIC against NEON on real data - every corner of the light set,
+    // through both layouts the game feeds it (a Corner's 12-float stride, and
+    // packed triangles, which NEON loads four points at a time), turned by a
+    // quaternion that changes every pass. Both outputs are hashed: `neon:
+    // EXACT` is the claim the header makes, measured on this machine.
+    bool placeOk = true;
+    if (const auto p = fs.resolve(kLightSet)) {
+        const auto d = omk::DataFs::readPath(*p);
+        const omk::Geometry set = omk::buildGeometry(d, omk::DrawFilter::Engine);
+        const std::size_t np = set.corners.size();
+        std::vector<std::uint32_t> ids(np);
+        for (std::size_t i = 0; i < np; ++i) ids[i] = static_cast<std::uint32_t>(i);
+        std::vector<float> packed(np * 3);
+        for (std::size_t i = 0; i < np; ++i) {
+            packed[3 * i] = set.corners[i].x;
+            packed[3 * i + 1] = set.corners[i].y;
+            packed[3 * i + 2] = set.corners[i].z;
+        }
+        std::vector<omk::Corner> outC(set.corners);
+        std::vector<float> outP(packed.size());
+        const int passes = 10;
+        const auto pass = [&](int k, omk::PointPlace& pp) {
+            const float a = 0.37f * static_cast<float>(k + 1);
+            const float h = 0.5f * a;
+            pp.q = omk::Quatf{std::cos(h), 0.3f * std::sin(h), 0.9f * std::sin(h),
+                              0.3162277f * std::sin(h)};
+            pp.rotated = true;
+            for (int c = 0; c < 3; ++c) {
+                pp.origin[c] = 100.0f * static_cast<float>(c + 1);
+                pp.scale[c] = 1.0f + 0.01f * static_cast<float>(c);
+                pp.at[c] = -50.0f * static_cast<float>(k - c);
+            }
+        };
+        const auto fnv = [](const void* data, std::size_t bytes, std::uint64_t h) {
+            const auto* b = static_cast<const unsigned char*>(data);
+            for (std::size_t i = 0; i < bytes; ++i) { h ^= b[i]; h *= 1099511628211ull; }
+            return h;
+        };
+        const auto run = [&](bool neon, double& ms) {
+            std::uint64_t h = 1469598103934665603ull;
+            ms = 0.0;
+            for (int k = 0; k < passes; ++k) {
+                omk::PointPlace pp;
+                pass(k, pp);
+                const auto t = Clock::now();   // the placing only, not the hash
+                if (neon) {
+                    omk::placePointsNeon(pp, &set.corners[0].x, 12, &outC[0].x, 12, ids.data(), np);
+                    omk::placePointsNeon(pp, packed.data(), 3, outP.data(), 3, ids.data(), np);
+                } else {
+                    omk::placePointsGeneric(pp, &set.corners[0].x, 12, &outC[0].x, 12, ids.data(), np);
+                    omk::placePointsGeneric(pp, packed.data(), 3, outP.data(), 3, ids.data(), np);
+                }
+                ms += msSince(t);
+                h = fnv(outC.data(), outC.size() * sizeof(omk::Corner), h);
+                h = fnv(outP.data(), outP.size() * sizeof(float), h);
+            }
+            return h;
+        };
+        double msG = 0, msN = 0;
+        const std::uint64_t hG = run(false, msG);
+        const std::uint64_t hN = run(true, msN);
+        const bool neon = omk::pointPlaceHasNeon();
+        placeOk = !neon || hG == hN;
+        // the time is per MILLION points placed, the hashing outside it
+        const double mpts = 2.0 * static_cast<double>(np) * passes / 1e6;
+        say("place    %zu points x2 layouts x%d  generic %.2f ms/Mpt  neon %.2f ms/Mpt  "
+            "speedup %.2fx\n", np, passes, msG / mpts, msN / mpts, msN > 0 ? msG / msN : 0.0);
+        say("hash generic %016llx neon %016llx  neon: %s\n",
+            static_cast<unsigned long long>(hG), static_cast<unsigned long long>(hN),
+            !neon ? "ABSENT (no __ARM_NEON; the generic loop ran twice)"
+                  : hG == hN ? "EXACT" : "DIFFERENT");
+    }
+
     if (g_report) std::fclose(g_report);
 #if defined(__vita__)
     sceKernelExitProcess(0);
 #endif
-    return hInline == hThreads ? 0 : 3;
+    return hInline != hThreads ? 3 : placeOk ? 0 : 4;
 }

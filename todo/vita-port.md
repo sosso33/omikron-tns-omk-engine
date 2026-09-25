@@ -1292,3 +1292,30 @@ cutout blind spot is still open and is written into its check's docstring.
   `ux0:data/omk/movies`, `<data>/FLIS` and `app0:movies`, and when it finds
   none it lists what each folder held (or the kernel's error), so a console
   log tells a wrong folder from a wrong name.
+
+### 2026-09-25: NEON, beside a generic path (the reader's rule)
+
+*"If needed, you can use arm-specific instructions (like NEON) as long as you
+also provide a generic alternative"* - and then *"use it for any arm build for
+platform supporting neon, like arm mac, not only the vita"*. The build before
+any of it is kept for comparing: `engine/build/vita/omk_vita-before-neon-5c16f8b.vpk`,
+`engine/build/omk-play-before-neon`, `engine/build/omk-play-gles-before-neon`.
+
+**The first kernel: the scripted motion's point placement**
+(`o3de/pointplace.{h,cpp}`), 9.6 ms of a console's city frame - Anekbah
+re-places 2730 collision triangles and their meshes' render corners every
+frame, each point `qrot`ed. One function now, a generic loop and a NEON loop
+behind `__ARM_NEON` (the A9 and Apple silicon), `OMK_NO_NEON` choosing the
+generic one at run time for comparing. The NEON loop does the generic one's
+operations in its order with no fused multiply-add, and the file compiles
+with contraction off, so the two agree bit for bit: `vita_bench`'s new
+`place` stage hashes both over all 139245 of Anekbah's corners in both
+layouts - **EXACT, 2.4x on the M1**. The A9 object uses NEON (25 vector ops)
+and only chained `vmla.f32`, which rounds like the two operations; whether
+the A9's NEON denormal flush ever differs is what the device's bench says.
+The street renders the same bytes through NEON, the generic loop and the
+pre-NEON build.
+
+**To measure on the console**: `omk_bench.vpk`'s `place` line gives the A9's
+generic and NEON times and EXACT/DIFFERENT; the game's `scripted motion:
+meshes placed` section is the frame's share.
