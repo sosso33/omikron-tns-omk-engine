@@ -142,6 +142,13 @@ two sprite libraries at every scene change). All three fixed; see
 **put `--no-tie` in `args.txt` for one run**, walk Anekbah's shop fronts, and
 say whether the signs flicker.
 
+**The reader, 2026-09-25**: *"If needed, you can use arm-specific
+instructions (like NEON) as long as you also provide a generic alternative."*
+So NEON is allowed in a hot loop, always beside a portable C++ version chosen
+at compile time, and the two measured against each other - NEON flushes
+denormals and a fused multiply-add rounds once, so equality is shown, not
+assumed.
+
 ## 4. What to do next, in order
 
 0. Nothing below can be sized without **one console log from the city**. The
