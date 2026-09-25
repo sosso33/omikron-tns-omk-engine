@@ -61,7 +61,7 @@ what the shadows, the head look and the fight read.
 | 0 | this file | **done 2026-09-24** |
 | 1 | GLES: the POSING PROGRAM - a vertex shader that applies a per-mesh 3x4 from a uniform array to a rest VBO carrying the mesh index; `Draw` gains the pose (matrix pointer and count) and the rest geometry; `Renderer::posesBodies()`. Proof: a probe renders one posed crowd body through the CPU path and the GPU path on the Mac and compares coverage | **done 2026-09-24** - see below |
 | 2 | the crowd's LIGHT in the shader: `vertexlight.*`'s law (`-(N.L)` over a linear falloff through the `(t*c)>>8` ramp) with the lights a body reaches as uniforms, the normal rotated by the mesh's matrix. Proof: per-vertex colours against `applyLights`, and the frame | **done 2026-09-25** - see below |
-| 3 | the WALKERS take the GPU path when the renderer offers it: no `applyPose`, no `applyLights`, no upload - the matrices only. Proof: the street at density 4, CPU path against GPU path, coverage and colour | |
+| 3 | the WALKERS take the GPU path when the renderer offers it: no `applyPose`, no `applyLights`, no upload - the matrices only. Proof: the street at density 4, CPU path against GPU path, coverage and colour | **done 2026-09-25** - see below |
 | 4 | the STAGED bodies (scene actors, the speaker) - with the face's morph as its own small dynamic buffer | |
 | 5 | the PLAYER | |
 | 6 | the console: the new programs into the shader cache, and a city log | |
@@ -121,3 +121,38 @@ Each step ends in a commit and a report, and waits for the reader's go.
   - the engine's own clamp - and an unlit draw looks the same; the proof that
   the light reaches the picture is the from-black case (22-44 thousand pixels
   change without it).
+
+## Step 3, done - the walkers
+
+* **`play.cpp`'s walker job**: where `world.posesBodies()` and the lights that
+  reach the walker fit (`maxVertexLights`, 8), the job composes the pose (the
+  shadows' foot nodes need it), folds the placement into one affine a mesh -
+  `x' = cs (x - rx) - sn (z - rz) + bx`, `z' = sn (x - rx) + cs (z - rz) + bz`,
+  `y' = y + body.y + footY - feet` - and lists the lights; `applyPose`, the
+  corner placement and `applyLights` do not run. The draw is the model's rest
+  cut to its skeleton, SHARED by every walker of it, so the static buffer is
+  uploaded once per model. The per-pixel lighting enhancement keeps the CPU
+  path. `--cpu-bodies` forces the CPU path, for comparing.
+* **The shared rest and the tie**: many bodies now submit ONE geometry, so the
+  posed tie resolves each (start, count, opaque) call once a frame; the answer
+  is the same for every walker, and the tie would otherwise read the second
+  walker's draw as the same faces drawn again.
+* **The SCENE SHADER's text is back to what the cache holds** (`f11e058`'s,
+  byte for byte), and the posing shader is a separate string, `kPosedVert`.
+  Step 1 had put `#ifdef`s into `kSceneVert`, which changes its hash and
+  orphans the cached `.gxp` - a console without `libshacccg.suprx` would have
+  lost the scene itself. Now such a console runs as before, the posing
+  program simply failing to link until its `.gxp` is in the cache - and the
+  walkers then stay on the CPU.
+* **Proof, on Anekbah's street at density 4** through `omk-play-gles`: 13
+  walkers drawn and 13 posed by the renderer; GPU against `--cpu-bodies` 1, 5
+  and 2 pixels differ at frames 60, 150 and 300, where the walkers cover 266,
+  2020 and 2091 (against `--no-crowd`). Dropping the root offset from the
+  folded placement moves 3880. The software path is byte-identical to
+  `04ea34d`. **No verify.py check drives this**: `omk-play-gles` needs a real
+  GL window, which a check must not open; `engine: gles pose` covers the math
+  through the windowless probe.
+* **On the console**: the posing program needs its `.gxp`. One run WITH
+  `libshacccg.suprx` compiles it into `ux0:data/shader_cache`; that folder,
+  copied back IN BINARY MODE, goes through `scripts/vita-shader-cache.sh
+  <folder>` into the VPK.

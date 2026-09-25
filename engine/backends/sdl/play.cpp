@@ -1449,6 +1449,8 @@ int main(int argc, char** argv) {
 "  --no-thread-bodies  pose the crowd on ONE core. The default poses it over\n"
 "                   several (`omk::Threads`), bit-identical to one core and\n"
 "                   proven on a console (--thread-bodies asks for the default)\n"
+"  --cpu-bodies     pose and light every body on the CPU, even on a renderer that\n"
+"                   poses them itself (GLES; todo/gpu-skinning.md) - for comparing\n"
 "  --no-tie         the GLES window draws WITHOUT the depth tie (o3de/depthtie.h),\n"
 "                   for judging on a console whether its 16-bit depth needs it\n"
 "  --detail 0..2    how many bones cast one - options row 7\n"
@@ -1750,6 +1752,7 @@ int main(int argc, char** argv) {
     int shadowFlag = -1;   // --shadows 0|1, options row 5; -1 = the settings'
     int threadFlag = 1;    // --no-thread-bodies: pose the crowd on one core
     bool noTieFlag = false;   // --no-tie: the GLES window draws without the depth tie
+    bool cpuBodiesFlag = false;   // --cpu-bodies: pose every body on the CPU even where the renderer can
     int detailFlag = -1;   // --detail 0..2, options row 7; -1 = the settings'
     int aaFlag = -1;       // --aa N, [Enhancements] antialiasing; -1 = the settings'
     int filterFlag = -1;   // --filter nearest|bilinear|trilinear, [Enhancements] texturefiltering
@@ -1991,6 +1994,7 @@ int main(int argc, char** argv) {
         else if (a == "--thread-bodies") threadFlag = 1;
         else if (a == "--no-thread-bodies") threadFlag = 0;
         else if (a == "--no-tie") noTieFlag = true;
+        else if (a == "--cpu-bodies") cpuBodiesFlag = true;
         else if (a == "--no-shadows") shadowFlag = 0;
         else if (a == "--detail" && i + 1 < argc) detailFlag = std::atoi(argv[++i]);
         else if (a == "--config" && i + 1 < argc) configFile = argv[++i];
@@ -3884,6 +3888,16 @@ int main(int argc, char** argv) {
         // `sub_41E210(aPiedg, model, &ped[16])`.
         float footAt[2][3] = {};
         bool  footKnown = false;
+        // POSED BY THE RENDERER (todo/gpu-skinning.md step 3): the body is
+        // drawn from `restGeo` - the model's rest, cut to its skeleton and
+        // shared by every walker of it - with one affine a mesh and the
+        // lights that reach it, and `posed` is not touched
+        bool  gpu = false;
+        const omk::Geometry* restGeo = nullptr;
+        std::vector<float> affine;
+        std::vector<float> lights;
+        int   lightCount = 0;
+        bool  lightsBlack = false;
     };
     std::vector<std::unique_ptr<PedStaged>> pedStaged;
     std::map<std::string, std::map<int, omk::Geometry>> pedLodRest;   // model -> root mesh -> its subtree's rest
@@ -16440,6 +16454,18 @@ int main(int argc, char** argv) {
                 // the counters, which are assigned in index order after the
                 // pass so that a threaded frame numbers its buffers exactly as
                 // a serial one does.
+                const bool gpuPoseOn = !cpuBodiesFlag && world.posesBodies();
+                const int gpuMaxLights = world.maxVertexLights();
+                {
+                    static bool told = false;
+                    if (!told) {
+                        told = true;
+                        std::printf("bodies: the walkers are posed and lit %s\n",
+                                    gpuPoseOn ? "by the RENDERER (one affine a mesh; "
+                                                "todo/gpu-skinning.md)"
+                                              : "on the CPU");
+                    }
+                }
                 const auto pedBodies = [&](std::size_t from, std::size_t to) {
                     for (std::size_t k = from; k < to; ++k) {
                         PedJob& j = pedJobs[k];
@@ -16456,7 +16482,32 @@ int main(int argc, char** argv) {
                             ? omk::composePose(p.mo->meshes, *p.tracks, frame, false)
                             : omk::composePose(p.mo->meshes, omk::NodeTracks{}, 0, false);
                         const double tc1 = phaseNow();
-                        omk::applyPose(p.posed, rest, p.mo->meshes, pose);
+                        // THE GPU PATH (todo/gpu-skinning.md step 3): where the
+                        // renderer poses bodies and the lights that reach this
+                        // one fit its program, nothing below touches a corner -
+                        // the body is its rest, one affine a mesh and a list of
+                        // lights. The per-pixel lighting enhancement stays on
+                        // the CPU path, whose corners it needs.
+                        p.gpu = false;
+                        p.lightCount = 0;
+                        p.restGeo = &rest;
+                        if (gpuPoseOn) {
+                            p.lights.clear();
+                            int reachN = 0;
+                            const bool lit = lightCrowd && lighting == 0;
+                            if (lit) {
+                                const float at[3] = {w.body[0], w.body[1], w.body[2]};
+                                for (const WorldSlot& ws2 : worldSlots)
+                                    if (!ws2.lights.empty())
+                                        reachN += omk::lightReach(at, ws2.lights, p.lights);
+                            }
+                            if (lighting == 0 && reachN <= gpuMaxLights) {
+                                p.gpu = true;
+                                p.lightCount = reachN;
+                                p.lightsBlack = lit;
+                            }
+                        }
+                        if (!p.gpu) omk::applyPose(p.posed, rest, p.mo->meshes, pose);
                         j.tCompose += tc1 - tc0;
                         j.tApply += phaseNow() - tc1;
                         // THE HEIGHT is the engine's rule, `sub_437F80(inst, x, body.y
@@ -16488,7 +16539,17 @@ int main(int argc, char** argv) {
                         float wcs, wsn;
                         omk::yawSinCos(w.facing, wcs, wsn);
                         const double pedPlace0 = phaseNow();   // the job's own
-                        for (auto& c : p.posed.corners) {
+                        if (p.gpu) {
+                            // the placement below, as a 3x4 folded into each
+                            // mesh's affine: x' = cs (x - rx) - sn (z - rz) + bx,
+                            // z' = sn (x - rx) + cs (z - rz) + bz, y' = y + lift
+                            const float place[12] = {
+                                wcs, 0.0f, -wsn, w.body[0] - (wcs * rootXZ[0] - wsn * rootXZ[1]),
+                                0.0f, 1.0f, 0.0f, w.body[1] + w.footY - p.feet,
+                                wsn, 0.0f, wcs, w.body[2] - (wsn * rootXZ[0] + wcs * rootXZ[1])};
+                            omk::meshAffines(p.mo->meshes, pose, place, p.affine);
+                        }
+                        if (!p.gpu) for (auto& c : p.posed.corners) {
                             const float in[3] = {c.x - rootXZ[0], c.y, c.z - rootXZ[1]};
                             float r[3];
                             omk::rotateYawCS(wcs, wsn, in, r);
@@ -16545,7 +16606,8 @@ int main(int argc, char** argv) {
                         // case the corners keep their black base and `Draw::lit`
                         // carries the decision to the shader.
                         const double pedLight0 = phaseNow();
-                        if (lightCrowd && lighting == 0) {
+                        if (p.gpu) j.lit += p.lightCount;
+                        if (!p.gpu && lightCrowd && lighting == 0) {
                             // THE BASE IS BLACK, and that is the part that had to
                             // be read rather than assumed. A lit instance does not
                             // start from the model's baked vertex colour: the lit
@@ -16590,9 +16652,12 @@ int main(int argc, char** argv) {
 
                 if (pedLive && (pedTold < 0 || n - pedTold >= 300)) {
                     pedTold = n;
+                    int pedGpu = 0;
+                    for (const auto& up : pedStaged) pedGpu += up->drawn && up->gpu;
                     std::printf("frame %ld: pedestrians - %d live, %d drawn within %.0f of the eye, "
-                                "%d at an action point, %d idling, %d light hits\n",
-                                n, pedLive, pedDrawn, reach, pedInAction, pedIdle, pedLit);
+                                "%d at an action point, %d idling, %d light hits, %d posed by the "
+                                "renderer\n",
+                                n, pedLive, pedDrawn, reach, pedInAction, pedIdle, pedLit, pedGpu);
                 }
                 // ...and the ROAD TRAFFIC on the same circuit's vehicle lanes.
                 const auto& vs = pd.vehicles();
@@ -17581,7 +17646,9 @@ int main(int argc, char** argv) {
                 };
                 if (drawPlayer && !playerPosed.corners.empty()) bound(playerPosed);
                 for (const auto& up : staged) if (up->drawn && up->mo) bound(up->posed);
-                for (const auto& up : pedStaged) if (up->drawn && up->mo) bound(up->posed);
+                // (a body the renderer poses has no world corners here; the
+                // mapped shadows are Vulkan's, and Vulkan does not pose)
+                for (const auto& up : pedStaged) if (up->drawn && up->mo && !up->gpu) bound(up->posed);
                 if (any) {
                     // ...CENTRED ON THE PLAYER, not on the bodies' midpoint.
                     // A street's lamps reach about 700 units and eleven
@@ -17883,6 +17950,21 @@ int main(int argc, char** argv) {
             for (const auto& up : pedStaged) {
                 if (!up->drawn || !up->mo) continue;
                 const int base = static_cast<int>(up->mo->texBase);
+                if (up->gpu && up->restGeo) {
+                    for (const auto& b : up->restGeo->batches) {
+                        draws.push_back({keyOf(b.blend, b.cutout,
+                                               static_cast<std::uint32_t>(b.material + base)),
+                                         up->restGeo, b.start, b.count, b.blend, b.cutout,
+                                         litCrowd, castShadows});
+                        omk::Draw& dr = draws.back();
+                        dr.meshPose = up->affine.data();
+                        dr.meshPoses = up->mo->meshes.size();
+                        dr.vertexLights = up->lightCount ? up->lights.data() : nullptr;
+                        dr.vertexLightCount = up->lightCount;
+                        dr.lightsFromBlack = up->lightsBlack;
+                    }
+                    continue;
+                }
                 for (const auto& b : up->posed.batches)
                     draws.push_back({keyOf(b.blend, b.cutout,
                                            static_cast<std::uint32_t>(b.material + base)),

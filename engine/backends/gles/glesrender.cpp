@@ -147,20 +147,6 @@ attribute vec3  aPos;
 attribute vec2  aUV;
 attribute vec3  aCol;
 attribute float aPhase;
-#ifdef OMK_POSED
-// THE BODY POSED HERE (todo/gpu-skinning.md): `aPos` is the REST corner and
-// `aSlot` its mesh's slot; each slot's affine is three rows of `uPose`. A vec4
-// ARRAY on purpose: vitaGL copies one straight (16 bytes an element), where a
-// float array is laid out 8 bytes an element and overran the heap (above).
-attribute float aSlot;
-uniform vec4  uPose[96];
-// ...and LIT here (step 2): `vertexlight.cpp`'s law on the posed normal. Two
-// vec4 a light: the direction scaled by its strength, then its colour bytes.
-attribute vec3  aNormal;
-uniform vec4  uLight[16];
-uniform float uLightCount;
-uniform float uLightBlack;
-#endif
 varying vec2  vUV;
 varying vec3  vCol;
 varying float vDepth;
@@ -174,7 +160,65 @@ void main() {
         wave = waveAt(i);
     }
     vCol = aCol + vec3(wave);
-#ifdef OMK_POSED
+    gl_Position = uMvp * vec4(aPos, 1.0);
+    // row 3 of uMvp is f . (world - eye): w is the view depth raster.cpp fogs on
+    vDepth = gl_Position.w;
+}
+)";
+
+// THE POSING PROGRAM's vertex stage (todo/gpu-skinning.md) - `kSceneVert` with
+// the corner moved and lit by its mesh. A SEPARATE STRING on purpose, not an
+// `#ifdef` inside the scene's: the Vita's shader cache is keyed by a hash of the
+// source, and editing `kSceneVert` would orphan its cached `.gxp` - a console
+// without `libshacccg.suprx` would lose the SCENE, not just this program.
+// Keep the two in step by hand; `engine: gles pose` draws through both.
+constexpr const char* kPosedVert = R"(
+uniform mat4  uMvp;
+uniform vec2  uTexSize;
+uniform float uShimmerClock;
+// the 32-step wave, `kShimmerWave / 255`, as EIGHT vec4s and not one float
+// array: vitaGL (at the SDK's commit) sizes a uniform float ARRAY's storage
+// short and `glUniform1fv(loc, 32, ...)` writes the rest over newlib's heap -
+// the Vita's start-up crash of 2026-09-18, found by heap checkpoints and by
+// the corrupt free-list pointer being -10/255, this table's own value.
+uniform vec4 uWave0; uniform vec4 uWave1; uniform vec4 uWave2; uniform vec4 uWave3;
+uniform vec4 uWave4; uniform vec4 uWave5; uniform vec4 uWave6; uniform vec4 uWave7;
+float waveAt(float i) {
+    float b = floor(i / 4.0);
+    vec4 v = b < 1.0 ? uWave0 : b < 2.0 ? uWave1 : b < 3.0 ? uWave2 : b < 4.0 ? uWave3 :
+             b < 5.0 ? uWave4 : b < 6.0 ? uWave5 : b < 7.0 ? uWave6 : uWave7;
+    float c = i - b * 4.0;
+    return c < 1.0 ? v.x : c < 2.0 ? v.y : c < 3.0 ? v.z : v.w;
+}
+attribute vec3  aPos;
+attribute vec2  aUV;
+attribute vec3  aCol;
+attribute float aPhase;
+// THE BODY POSED HERE (todo/gpu-skinning.md): `aPos` is the REST corner and
+// `aSlot` its mesh's slot; each slot's affine is three rows of `uPose`. A vec4
+// ARRAY on purpose: vitaGL copies one straight (16 bytes an element), where a
+// float array is laid out 8 bytes an element and overran the heap (above).
+attribute float aSlot;
+uniform vec4  uPose[96];
+// ...and LIT here (step 2): `vertexlight.cpp`'s law on the posed normal. Two
+// vec4 a light: the direction scaled by its strength, then its colour bytes.
+attribute vec3  aNormal;
+uniform vec4  uLight[16];
+uniform float uLightCount;
+uniform float uLightBlack;
+varying vec2  vUV;
+varying vec3  vCol;
+varying float vDepth;
+void main() {
+    vUV = aUV / uTexSize;
+    float wave = 0.0;
+    if (aPhase >= 0.0) {
+        // ((int(clock) >> 2) + int(phase)) & 31, with no integer operators:
+        // both are non-negative, so floor(x / 4) is the shift and mod the mask
+        float i = mod(floor(floor(uShimmerClock) / 4.0) + floor(aPhase), 32.0);
+        wave = waveAt(i);
+    }
+    vCol = aCol + vec3(wave);
     int s = int(aSlot + 0.5) * 3;
     // THE LIGHT, corner by corner as `applyLights` walks it: t = -(N.L)
     // truncated toward zero and clamped to 0..255, the ramp `(t * c) >> 8`
@@ -195,9 +239,6 @@ void main() {
                    dot(uPose[s + 1].xyz, aPos) + uPose[s + 1].w,
                    dot(uPose[s + 2].xyz, aPos) + uPose[s + 2].w);
     gl_Position = uMvp * vec4(wp, 1.0);
-#else
-    gl_Position = uMvp * vec4(aPos, 1.0);
-#endif
     // row 3 of uMvp is f . (world - eye): w is the view depth raster.cpp fogs on
     vDepth = gl_Position.w;
 }
@@ -533,8 +574,8 @@ private:
 public:
     long takeOverlayRows() { const long r = overlayRows_; overlayRows_ = 0; return r; }
 private:
-    // THE POSING PROGRAM (todo/gpu-skinning.md) - the scene program compiled
-    // with `OMK_POSED`: the same stages, the corner moved by its mesh's affine
+    // THE POSING PROGRAM (todo/gpu-skinning.md) - `kPosedVert` with the
+    // scene's fragment stage: the corner moved and lit by its mesh's affine
     GLuint posed_ = 0;
     struct SceneLoc {
         GLint mvp = -1, texSize = -1, clock = -1, tex = -1, cutout = -1,
@@ -558,7 +599,13 @@ private:
     // geometry, a new revision each frame that names the last as rigid - the
     // replay the CPU-posed bodies take - and what it degenerates is written
     // into the STATIC buffer once.
-    struct PoseTie { Geometry g; std::uint64_t restRev = ~0ull; std::uint64_t frame = 0; DepthTie tie; };
+    struct PoseTie { Geometry g; std::uint64_t restRev = ~0ull; std::uint64_t frame = 0; DepthTie tie;
+                     // the draws resolved THIS frame: many bodies share one rest
+                     // geometry (every walker of a model), and the tie's answer is
+                     // the same for all of them - so the first resolves it and the
+                     // rest are the same call again, which the tie would otherwise
+                     // take as the same faces drawn a second time
+                     std::vector<std::tuple<std::size_t, std::size_t, bool>> seen; };
     std::unordered_map<const Geometry*, PoseTie> poseTie_;
     std::uint64_t frameNo_ = 0, poseTieRev_ = 0;
     void resolvePosedTies(const Draw& d, PoseVbo& pv);
@@ -640,8 +687,7 @@ bool GlesRenderer::init(int w, int h) {
     {
         // at start with the others, for the shader cache (above); a context
         // that cannot build it simply poses on the CPU
-        const std::string posedVert = std::string("#define OMK_POSED 1\n") + kSceneVert;
-        posed_ = link(posedVert.c_str(), kSceneFrag,
+        posed_ = link(kPosedVert, kSceneFrag,
                       {{kAttrPos, "aPos"}, {kAttrUV, "aUV"}, {kAttrCol, "aCol"},
                        {kAttrPhase, "aPhase"}, {kAttrSlot, "aSlot"}, {kAttrNormal, "aNormal"}});
         if (!posed_) std::fprintf(stderr, "gles: no posing program - bodies are posed on the CPU\n");
@@ -1115,11 +1161,16 @@ void GlesRenderer::resolvePosedTies(const Draw& d, PoseVbo& pv) {
         pt.restRev = g->revision;
         pt.frame = frameNo_;
         pt.tie = DepthTie{};
+        pt.seen.clear();
     } else if (pt.frame != frameNo_) {
         pt.g.tieRigidFrom = pt.g.revision;
         pt.g.revision = ++poseTieRev_;
         pt.frame = frameNo_;
+        pt.seen.clear();
     }
+    const auto call = std::make_tuple(d.start, d.count, d.blend == Blend::Opaque);
+    for (const auto& c : pt.seen) if (c == call) return;
+    pt.seen.push_back(call);
     losers_.clear();
     restore_.clear();
     pt.tie.resolve(pt.g, d.start, d.count, d.blend == Blend::Opaque, losers_, restore_);
