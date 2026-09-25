@@ -832,15 +832,10 @@ void GlesRenderer::setTextures(std::span<const Texture> t) {
         }
         const int n = s.width * s.height;
         px.resize(static_cast<std::size_t>(n) * 4);
-        const unsigned char* rgb = s.rgb.data();
         // alpha carries the COLOUR KEY, exactly as the Vulkan upload does:
-        // 0 where the texel is black, 255 elsewhere
-        for (int k = 0; k < n; ++k) {
-            px[4 * k + 0] = rgb[3 * k + 0];
-            px[4 * k + 1] = rgb[3 * k + 1];
-            px[4 * k + 2] = rgb[3 * k + 2];
-            px[4 * k + 3] = (rgb[3 * k] | rgb[3 * k + 1] | rgb[3 * k + 2]) ? 255 : 0;
-        }
+        // 0 where the texel is black, 255 elsewhere (`formats/tex3dt.h`, NEON
+        // where the platform has it)
+        rgbToRgbaKeyed(s.rgb.data(), px.data(), static_cast<std::size_t>(n));
         // REPEAT is the engine's addressing (the sampler Vulkan builds), and
         // GLES2 allows it only on power-of-two textures. All 2534 shipped under
         // MESHES are (max 256x256, measured 2026-09-18); a texture that is not

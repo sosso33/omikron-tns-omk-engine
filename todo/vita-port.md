@@ -1330,3 +1330,13 @@ meshes' ids and parents; the scratch is reused. `vita_bench`: compose 0.14 ->
 `engine: pose`, `pose equivalence`, `threaded bodies`, `gles pose` green. It
 stays on the CPU with GPU skinning - the shadows, the head look and the fight
 read it - so this is the body cost the console keeps.
+
+**The texture upload's RGB -> keyed RGBA** (`formats/tex3dt.h`,
+`rgbToRgbaKeyed`): every new texture of a pool change goes through it on the
+frame of a hand-over. A NEON loop, 16 pixels at a time (`vld3q_u8`, the key as
+`vcgtq_u8` of the three channels OR'd, `vst4q_u8`), beside the generic one; the
+GLES upload calls it. `vita_bench`'s `texkey` stage over Anekbah's 20 atlases:
+EXACT - and NO faster on the M1 (0.93x), because Apple clang already
+auto-vectorizes the generic loop at -O2. The A9 build (GCC, ARMv7, -O2) is
+where the explicit loop should count; its object carries the NEON ops, and the
+device's bench says by how much.

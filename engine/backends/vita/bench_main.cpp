@@ -53,6 +53,7 @@
 #include "formats/mesh3do.h"
 #include "o3de/geom3do.h"
 #include "o3de/pointplace.h"
+#include "formats/tex3dt.h"
 #include "o3de/vertexlight.h"
 #include "platform/datafs.h"
 #include "platform/threads.h"
@@ -394,9 +395,57 @@ int main(int argc, char** argv) {
                   : hG == hN ? "EXACT" : "DIFFERENT");
     }
 
+    // ---- TEXKEY: `formats/tex3dt.h`'s RGB -> keyed RGBA, what every texture
+    // of a pool change goes through on the frame of a hand-over - Anekbah's
+    // own atlases, generic against NEON, hashed.
+    bool texOk = true;
+    if (const auto p = fs.resolve(kLightSet)) {
+        const auto d = omk::DataFs::readPath(*p);
+        const std::string tp = p->substr(0, p->size() - 4) + ".3DT";
+        const auto t = omk::DataFs::readPath(tp);
+        const auto tex = t.empty() ? std::vector<omk::Texture>{} : omk::textures(d, t);
+        std::size_t px = 0;
+        for (const auto& x : tex) px += static_cast<std::size_t>(x.width) * x.height;
+        std::vector<std::uint8_t> out(px * 4);
+        const auto fnv = [](const void* data, std::size_t bytes, std::uint64_t h) {
+            const auto* b = static_cast<const unsigned char*>(data);
+            for (std::size_t i = 0; i < bytes; ++i) { h ^= b[i]; h *= 1099511628211ull; }
+            return h;
+        };
+        const int passes = 20;
+        const auto run = [&](bool neon, double& ms) {
+            ms = 0.0;
+            std::uint64_t h = 1469598103934665603ull;
+            for (int k = 0; k < passes; ++k) {
+                const auto t0 = Clock::now();
+                std::size_t at = 0;
+                for (const auto& x : tex) {
+                    const std::size_t n = static_cast<std::size_t>(x.width) * x.height;
+                    if (x.rgb.size() < n * 3) continue;
+                    if (neon) omk::rgbToRgbaKeyedNeon(x.rgb.data(), out.data() + 4 * at, n);
+                    else omk::rgbToRgbaKeyedGeneric(x.rgb.data(), out.data() + 4 * at, n);
+                    at += n;
+                }
+                ms += msSince(t0);
+                if (k == 0) h = fnv(out.data(), out.size(), h);
+            }
+            return h;
+        };
+        double msG = 0, msN = 0;
+        const std::uint64_t hG = run(false, msG), hN = run(true, msN);
+        const bool neon = omk::pointPlaceHasNeon();
+        texOk = !neon || hG == hN;
+        say("texkey   %zu textures, %zu pixels x%d  generic %.3f ms  neon %.3f ms a pool  "
+            "speedup %.2fx\n", tex.size(), px, passes, msG / passes, msN / passes,
+            msN > 0 ? msG / msN : 0.0);
+        say("hash generic %016llx neon %016llx  texkey: %s\n",
+            static_cast<unsigned long long>(hG), static_cast<unsigned long long>(hN),
+            !neon ? "ABSENT (no __ARM_NEON)" : hG == hN ? "EXACT" : "DIFFERENT");
+    }
+
     if (g_report) std::fclose(g_report);
 #if defined(__vita__)
     sceKernelExitProcess(0);
 #endif
-    return hInline != hThreads ? 3 : placeOk ? 0 : 4;
+    return hInline != hThreads ? 3 : !placeOk ? 4 : texOk ? 0 : 5;
 }

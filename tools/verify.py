@@ -14889,7 +14889,8 @@ def c_engine_vita_bench():
     the bench exits 4 on `neon: DIFFERENT`, so the exit status this check
     asserts covers it. On the M1: EXACT, 2.4x. SHOWN TO FAIL by regrouping one
     NEON addition, `(a + b) + c` as `a + (b + c)` - equal in arithmetic, not in
-    rounding - which hashes DIFFERENT.
+    rounding - which hashes DIFFERENT. And the `texkey` stage, the same for
+    `rgbToRgbaKeyed` over Anekbah's atlases (exit 5 on DIFFERENT).
     """
     import subprocess
     eng = os.path.join(ROOT, "engine")

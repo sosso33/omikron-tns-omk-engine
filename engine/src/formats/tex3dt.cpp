@@ -3,6 +3,10 @@
 
 #include "formats/mesh3do.h"
 
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+#include <arm_neon.h>
+#endif
+
 namespace omk {
 
 std::vector<std::uint8_t> decodeImage(std::span<const std::byte> data,
@@ -137,6 +141,45 @@ std::vector<Texture> textures(std::span<const std::byte> d,
         out.push_back(std::move(tx));
     }
     return out;
+}
+
+void rgbToRgbaKeyedGeneric(const std::uint8_t* rgb, std::uint8_t* rgba, std::size_t n) {
+    for (std::size_t k = 0; k < n; ++k) {
+        rgba[4 * k + 0] = rgb[3 * k + 0];
+        rgba[4 * k + 1] = rgb[3 * k + 1];
+        rgba[4 * k + 2] = rgb[3 * k + 2];
+        rgba[4 * k + 3] = (rgb[3 * k] | rgb[3 * k + 1] | rgb[3 * k + 2]) ? 255 : 0;
+    }
+}
+
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+void rgbToRgbaKeyedNeon(const std::uint8_t* rgb, std::uint8_t* rgba, std::size_t n) {
+    std::size_t k = 0;
+    const uint8x16_t zero = vdupq_n_u8(0);
+    for (; k + 16 <= n; k += 16) {
+        const uint8x16x3_t c = vld3q_u8(rgb + 3 * k);
+        uint8x16x4_t o;
+        o.val[0] = c.val[0];
+        o.val[1] = c.val[1];
+        o.val[2] = c.val[2];
+        // any channel nonzero -> 0xFF, black -> 0
+        o.val[3] = vcgtq_u8(vorrq_u8(vorrq_u8(c.val[0], c.val[1]), c.val[2]), zero);
+        vst4q_u8(rgba + 4 * k, o);
+    }
+    if (k < n) rgbToRgbaKeyedGeneric(rgb + 3 * k, rgba + 4 * k, n - k);
+}
+#else
+void rgbToRgbaKeyedNeon(const std::uint8_t* rgb, std::uint8_t* rgba, std::size_t n) {
+    rgbToRgbaKeyedGeneric(rgb, rgba, n);
+}
+#endif
+
+void rgbToRgbaKeyed(const std::uint8_t* rgb, std::uint8_t* rgba, std::size_t n) {
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+    rgbToRgbaKeyedNeon(rgb, rgba, n);
+#else
+    rgbToRgbaKeyedGeneric(rgb, rgba, n);
+#endif
 }
 
 }  // namespace omk
