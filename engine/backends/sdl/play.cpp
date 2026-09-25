@@ -3405,11 +3405,19 @@ int main(int argc, char** argv) {
             SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
 #endif
             SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);
+            // A MEASUREMENT RUN'S WINDOW IS HIDDEN. GL needs a window for its
+            // context, so `SDL_VIDEODRIVER=dummy` cannot keep this viewer off
+            // the screen as it does the software one; a run that never
+            // presents (`OMK_NO_GPU_PRESENT`) has no use for it being seen,
+            // and on 2026-09-25 a batch of such runs put windows - one of them
+            // playing the boot films - in front of the reader (CLAUDE.md 5).
+            const Uint32 glWinFlags = SDL_WINDOW_OPENGL |
+                (omk::envSet("OMK_NO_GPU_PRESENT") ? SDL_WINDOW_HIDDEN : 0u);
 #if defined(OMK_SDL3)
-            glWin = SDL_CreateWindow("OMK Engine (gles)", dispW, dispH, SDL_WINDOW_OPENGL);
+            glWin = SDL_CreateWindow("OMK Engine (gles)", dispW, dispH, glWinFlags);
 #else
             glWin = SDL_CreateWindow("OMK Engine (gles)", SDL_WINDOWPOS_CENTERED,
-                                     SDL_WINDOWPOS_CENTERED, dispW, dispH, SDL_WINDOW_OPENGL);
+                                     SDL_WINDOWPOS_CENTERED, dispW, dispH, glWinFlags);
 #endif
         }
         if (glWin && SDL_GL_CreateContext(glWin)) {
@@ -3836,6 +3844,11 @@ int main(int argc, char** argv) {
         // all), so his node keeps the last pose the fight gave it: on the
         // floor in his knock-out loop, not back in the bank's idle.
         bool inertAfterFight = false;
+        // POSED BY THE RENDERER (todo/gpu-skinning.md step 4), as a walker is:
+        // `restGeo` and one affine a mesh, `posed` untouched
+        bool gpu = false;
+        const omk::Geometry* restGeo = nullptr;
+        std::vector<float> affine;
     };
     // OWNING POINTERS, not a vector of values: the Vulkan backend caches a
     // vertex buffer by (pointer, revision), so a `Staged` may never be moved
@@ -15844,9 +15857,25 @@ int main(int argc, char** argv) {
                     }
                 }
                 phSpan["staged resolve"] += phaseNow() - stagedResolve0;
-                spanned("staged skin", [&] {
-                    omk::applyPose(s.posed, restUsed, s.mo->meshes, pose, &s.mo->face, &fv);
-                });
+                // THE GPU PATH (todo/gpu-skinning.md step 4), a walker's: where
+                // the renderer poses bodies, the body is its rest and one affine
+                // a mesh. NOT for the frame a clip changes - the feet latch
+                // below reads the posed corners once per clip - NOT while a
+                // line MORPHS the face (the speaker: its 130 vertices are
+                // per-corner, not per mesh), and not under the two logs that
+                // print corners, so what they print stays true.
+                {
+                    const bool latchHeld = s.seatKnown && s.seatClip == s.sceneClipWas &&
+                                           s.seatSrc == src;
+                    static const bool cornerLogs = omk::envSet("OMK_BODYLOG") || stagedProbe;
+                    s.gpu = !cpuBodiesFlag && world.posesBodies() && latchHeld && fv.empty() &&
+                            !cornerLogs;
+                    s.restGeo = &restUsed;
+                }
+                if (!s.gpu)
+                    spanned("staged skin", [&] {
+                        omk::applyPose(s.posed, restUsed, s.mo->meshes, pose, &s.mo->face, &fv);
+                    });
                 // THE ROOT MOTION: `Anim_RootDelta`'s running sum, weighted by
                 // how much of the pose is the scene's, so a line stands where
                 // it was staged and a fade lerps the position too.
@@ -15964,7 +15993,7 @@ int main(int argc, char** argv) {
                 // name a spot on the GROUND, so the FEET go there, and the
                 // game's Y points DOWN so the feet are the largest y.
                 float feet = -1e9f;
-                for (const auto& c : s.posed.corners) if (c.y > feet) feet = c.y;
+                if (!s.gpu) for (const auto& c : s.posed.corners) if (c.y > feet) feet = c.y;
                 if (!s.seatKnown || s.seatClip != s.sceneClipWas || s.seatSrc != src) {
                     s.seatKnown = true;
                     s.seatClip = s.sceneClipWas;
@@ -16228,7 +16257,21 @@ int main(int argc, char** argv) {
                 }
                 const bool turn = spins;
                 const double stagedPlace0 = phaseNow();
-                for (auto& c : s.posed.corners) {
+                if (s.gpu) {
+                    // the placement below as a 3x4, folded into each mesh's
+                    // affine: turned about the model's origin, or about the
+                    // pelvis (t = pelvis - R pelvis), then moved by `off`
+                    float place[12] = {1, 0, 0, off[0],  0, 1, 0, off[1],  0, 0, 1, off[2]};
+                    if (turn) {
+                        place[0] = bcs; place[2] = -bsn; place[8] = bsn; place[10] = bcs;
+                        if (aboutPelvis) {
+                            place[3] = pelvis[0] - (bcs * pelvis[0] - bsn * pelvis[2]) + off[0];
+                            place[11] = pelvis[2] - (bsn * pelvis[0] + bcs * pelvis[2]) + off[2];
+                        }
+                    }
+                    omk::meshAffines(s.mo->meshes, pose, place, s.affine);
+                }
+                if (!s.gpu) for (auto& c : s.posed.corners) {
                     if (turn && !aboutPelvis) {
                         const float in[3] = {c.x, c.y, c.z};
                         float r[3];
@@ -16379,13 +16422,14 @@ int main(int argc, char** argv) {
             }
             {
                 static long farTold = -1000;
-                int stagedDrawn = 0;
-                for (const auto& up : staged) if (up->drawn) ++stagedDrawn;
+                int stagedDrawn = 0, stagedGpu = 0;
+                for (const auto& up : staged) if (up->drawn) { ++stagedDrawn; stagedGpu += up->gpu; }
                 if (n - farTold >= 300 && !staged.empty()) {
                     farTold = n;
                     std::printf("frame %ld: staged bodies - %zu staged, %d skinned and drawn, "
-                                "%d beyond the clip distance (not skinned)\n",
-                                n, staged.size(), stagedDrawn, stagedFar);
+                                "%d beyond the clip distance (not skinned), %d posed by the "
+                                "renderer\n",
+                                n, staged.size(), stagedDrawn, stagedFar, stagedGpu);
                 }
             }
             mark("staged bodies");
@@ -17645,7 +17689,7 @@ int main(int argc, char** argv) {
                     any = true;
                 };
                 if (drawPlayer && !playerPosed.corners.empty()) bound(playerPosed);
-                for (const auto& up : staged) if (up->drawn && up->mo) bound(up->posed);
+                for (const auto& up : staged) if (up->drawn && up->mo && !up->gpu) bound(up->posed);
                 // (a body the renderer poses has no world corners here; the
                 // mapped shadows are Vulkan's, and Vulkan does not pose)
                 for (const auto& up : pedStaged) if (up->drawn && up->mo && !up->gpu) bound(up->posed);
@@ -17862,7 +17906,7 @@ int main(int argc, char** argv) {
                 for (const auto& up : staged)
                     if (up->drawn && up->mo)
                         castBones(up->mo->meshes, up->meshAt, detail - 1, up->shadowRoot,
-                                  &up->posed, &up->mo->boneIdx);
+                                  up->gpu ? nullptr : &up->posed, &up->mo->boneIdx);
                 nActor = blobs - nPlayer;
                 // The crowd's, which is the other mechanism entirely.
                 for (const auto& up : pedStaged) {
@@ -17941,6 +17985,17 @@ int main(int argc, char** argv) {
             for (const auto& up : staged) {
                 if (!up->drawn || !up->mo) continue;
                 const int base = static_cast<int>(up->mo->texBase);
+                if (up->gpu && up->restGeo) {
+                    for (const auto& b : up->restGeo->batches) {
+                        draws.push_back({keyOf(b.blend, b.cutout,
+                                               static_cast<std::uint32_t>(b.material + base)),
+                                         up->restGeo, b.start, b.count, b.blend, b.cutout,
+                                         litStaged, castShadows});
+                        draws.back().meshPose = up->affine.data();
+                        draws.back().meshPoses = up->mo->meshes.size();
+                    }
+                    continue;
+                }
                 for (const auto& b : up->posed.batches)
                     draws.push_back({keyOf(b.blend, b.cutout,
                                            static_cast<std::uint32_t>(b.material + base)),

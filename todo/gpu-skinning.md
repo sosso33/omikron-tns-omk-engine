@@ -62,7 +62,7 @@ what the shadows, the head look and the fight read.
 | 1 | GLES: the POSING PROGRAM - a vertex shader that applies a per-mesh 3x4 from a uniform array to a rest VBO carrying the mesh index; `Draw` gains the pose (matrix pointer and count) and the rest geometry; `Renderer::posesBodies()`. Proof: a probe renders one posed crowd body through the CPU path and the GPU path on the Mac and compares coverage | **done 2026-09-24** - see below |
 | 2 | the crowd's LIGHT in the shader: `vertexlight.*`'s law (`-(N.L)` over a linear falloff through the `(t*c)>>8` ramp) with the lights a body reaches as uniforms, the normal rotated by the mesh's matrix. Proof: per-vertex colours against `applyLights`, and the frame | **done 2026-09-25** - see below |
 | 3 | the WALKERS take the GPU path when the renderer offers it: no `applyPose`, no `applyLights`, no upload - the matrices only. Proof: the street at density 4, CPU path against GPU path, coverage and colour | **done 2026-09-25** - see below |
-| 4 | the STAGED bodies (scene actors, the speaker) - with the face's morph as its own small dynamic buffer | |
+| 4 | the STAGED bodies (scene actors, the speaker) - with the face's morph as its own small dynamic buffer | **done 2026-09-25** for every staged body but a SPEAKER whose line morphs the face - see below |
 | 5 | the PLAYER | |
 | 6 | the console: the new programs into the shader cache, and a city log | |
 
@@ -156,3 +156,28 @@ Each step ends in a commit and a report, and waits for the reader's go.
   `libshacccg.suprx` compiles it into `ux0:data/shader_cache`; that folder,
   copied back IN BINARY MODE, goes through `scripts/vita-shader-cache.sh
   <folder>` into the VPK.
+
+## Step 4, done - the staged bodies
+
+* **`play.cpp`'s staged pass**: a staged body takes the renderer's path when
+  it poses bodies, the body's FEET LATCH is held (`seatFeet` is read off the
+  posed corners once per clip - the frame a clip changes is posed on the CPU,
+  as the far-body skip already assumes), its face is NOT being morphed by a
+  line, and neither corner-printing log is on (`OMK_BODYLOG`,
+  `OMK_STAGE_PROBE`). The placement - turned about the model's origin or about
+  the PELVIS (`t = pelvis - R pelvis`), then `off` - folds into the affines.
+  Staged bodies carry no vertex lights (the `.3DO` lights reach only the
+  street's walkers, `sub_4380B0`). The shadows read bone positions, which stay
+  on the CPU; only their logged foot-offset statistic loses these bodies.
+* **The speaker stays on the CPU while his line animates the face** - its 130
+  vertices move one by one. The face as its own small dynamic buffer is the
+  refinement left, for one or two bodies at a time.
+* **Proof** (`omk-play-gles`, GPU against `--cpu-bodies`): Anekbah 16 of 16
+  drawn extras posed by the renderer, 4 pixels differ; the transcan 5 of 6
+  (the speaker on the CPU), 36; the flat 5 of 5 and the shoot phase 10 of 10,
+  0 each. The turn is exercised by the shoot phase's doctor (turned about the
+  pelvis every frame): breaking the pelvis term or the turn's direction moves
+  417 pixels there. **No verify.py check** - the same window reason as step 3.
+* **A test run's window is hidden now** (`OMK_NO_GPU_PRESENT=1`): the step's
+  first batch put windows in front of the reader, one playing the boot films
+  because a zsh `$F` of flags was passed as ONE argument (CLAUDE.md 5).

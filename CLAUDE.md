@@ -1070,6 +1070,10 @@ on 2026-09-06 two comparison renders came out of different places entirely
 because a reader saw a window appear, assumed it was for them, and walked the
 player — which is the reasonable thing to assume. The frames were then
 evidence about their walk rather than about the change under test.
+**`omk-play-gles` cannot use the dummy driver** (GL needs a window for its
+context): set `OMK_NO_GPU_PRESENT=1` for a measurement run and its window is
+created HIDDEN (2026-09-25, after a batch of runs put the boot films in front
+of the reader - one of them because a zsh `$VAR` of flags was not split).
 
 **Catching a fault too short to screenshot**: `--flicker <dir>` watches the
 viewer's own output and, when a frame is far darker than the median of the last
