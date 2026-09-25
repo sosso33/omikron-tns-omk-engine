@@ -43,11 +43,26 @@ namespace {
 // a chunk that itself splits work, or a worker calling back into the pool -
 // would overwrite the outer call's chunk count and hang it. It runs inline
 // instead, which is what `threads.h` promises and what `thread_probe` checks.
+#if defined(__vita__)
+// ON THE VITA `thread_local` IS NOT PER THREAD for the kernel threads made
+// below (2026-09-26: the crowd's `composePose` scratch, shared by main and a
+// worker, died on a garbage index), so a shared counter here would be raced
+// by every worker and could be left non-zero - silently running every later
+// call inline. Instead: a WORKER is recognised by its thread id (`isWorker`)
+// and runs a nested call inline, and the one outside caller keeps this plain
+// count, which no worker ever touches.
+int gCallerDepth = 0;
+struct CallerGuard {
+    CallerGuard() { ++gCallerDepth; }
+    ~CallerGuard() { --gCallerDepth; }
+};
+#else
 thread_local int gDepth = 0;
 struct DepthGuard {
     DepthGuard() { ++gDepth; }
     ~DepthGuard() { --gDepth; }
 };
+#endif
 }  // namespace
 #endif
 
@@ -94,6 +109,10 @@ struct Threads::Impl {
     bool stop = false;
     Worker* slots = nullptr;
     int count = 0;
+    bool isWorker(SceUID self) const {
+        for (int i = 0; i < count; ++i) if (slots[i].thread == self) return true;
+        return false;
+    }
 
     // Which slice of the range chunk `k` of `chunks` covers - the same
     // arithmetic in all three implementations, so the chunk boundaries do not
@@ -122,10 +141,8 @@ int Threads::Impl::workerMain(SceSize, void* argp) {
         std::size_t lo = 0, hi = 0;
         w->pool->slice(w->index, lo, hi);
         if (lo < hi) {
-            // the guard belongs around the BODY, wherever it runs: a chunk that
-            // splits work again must run that inline rather than re-enter the
-            // pool it is already inside
-            DepthGuard depth;
+            // a chunk that splits work again runs it inline: `parallelFor`
+            // recognises this thread as a worker (`isWorker`)
             (*w->pool->body)(lo, hi);
         }
         sceKernelSignalSema(w->pool->done, 1);
@@ -171,8 +188,11 @@ int Threads::hardwareDefault() { return 2; }   // three cores for a game, minus 
 void Threads::parallelFor(std::size_t begin, std::size_t end, std::size_t grain,
                           const std::function<void(std::size_t, std::size_t)>& body) {
     if (begin >= end) return;
-    if (gDepth > 0) { body(begin, end); return; }   // nested: inline, see DepthGuard
-    DepthGuard depth;
+    // nested - a worker's chunk splitting again, or the caller's own chunk -
+    // runs inline (see `gCallerDepth`)
+    if (impl_ && impl_->isWorker(sceKernelGetThreadId())) { body(begin, end); return; }
+    if (gCallerDepth > 0) { body(begin, end); return; }
+    CallerGuard depth;
     const std::size_t n = end - begin;
     const int cap = workers() + 1;
     int chunks = grain ? static_cast<int>(std::min<std::size_t>(static_cast<std::size_t>(cap), (n + grain - 1) / grain)) : cap;

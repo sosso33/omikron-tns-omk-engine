@@ -125,6 +125,16 @@ and a line's start is still a visible wait on the console.
 being a little smoother, it does not make a great difference."* The tie is not
 the city's lag; the ~100 ms left per frame is.
 
+## 3b3. The reader, 2026-09-26: two faults on the GPU-posing builds
+
+*"Characters animations in cutscene are broken (looks like hands, feet and
+head are placed way too far from the body that they should be) in both
+versions"* - both being the pre-NEON build (`5c16f8b`, GPU skinning steps
+1-4) and the NEON build. *"The game crashes when loading the crowd in the
+neon build"* - logs `omk-play-20260926-003535.log` (pre-NEON),
+`omk-play-20260926-003919.log` (NEON) and the core dump
+`psp2core-1790376118-0x00009425ab-eboot.bin.psp2dmp`.
+
 ## 3c. The transition hitches (2026-09-23)
 
 Not model RE-loads (0 in the fight, the shoot phase and Telis's scene); the
@@ -179,6 +189,10 @@ assumed.
 The **full `--slow` sweep is due** (`sweep-log.md`: 11 tasks since the last);
 the Vita work so far was verified with `--only` over `engine: vita bench`,
 ## 5. Traps that cost time - the short list (`vita-port.md` §4 has all of them)
+
+0. **`thread_local` is NOT per thread on the Vita** for the pool's kernel
+   threads - shared, and raced (the crowd crash of 2026-09-26). Never use it in
+   code a worker runs.
 
 * **The standard library is not the platform.** `std::filesystem`,
   `std::mutex`, `freopen(stdout)` all broke on the Vita (heap corruption,

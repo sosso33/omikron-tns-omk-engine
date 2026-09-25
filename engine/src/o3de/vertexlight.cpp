@@ -80,37 +80,34 @@ int applyLights(Geometry& g, std::size_t first, std::size_t count,
         float lx, ly, lz;
         const float* ramp;          // 256 x rgb, `lightRamp` tabulated
     };
-    // THE RAMP, TABULATED PER COLOUR. `(t * c) >> 8 / 255` depends only on the
-    // light's three colour bytes and the 0..255 index, and a set's lights carry
-    // a handful of distinct colours between them, so the table is built once
-    // per colour and kept. 3 KB each.
-    struct Ramp { std::uint32_t colour; std::vector<float> t; };
-    static thread_local std::vector<Ramp> ramps;
-    const auto rampFor = [](std::uint32_t colour) -> const float* {
-        for (const Ramp& r : ramps) if (r.colour == colour) return r.t.data();
-        // a set's lights carry a dozen colours between them; the cap is
-        // against an accumulation across many area loads, not a real case
-        if (ramps.size() >= 64) ramps.clear();
-        Ramp r;
-        r.colour = colour;
-        r.t.resize(256 * 3);
-        const auto cr = static_cast<std::uint8_t>((colour >> 16) & 0xFF);
-        const auto cg = static_cast<std::uint8_t>((colour >> 8) & 0xFF);
-        const auto cb = static_cast<std::uint8_t>(colour & 0xFF);
-        for (int t = 0; t < 256; ++t) {
-            r.t[3 * static_cast<std::size_t>(t)]     = static_cast<float>(lightRamp(cr, t)) / 255.0f;
-            r.t[3 * static_cast<std::size_t>(t) + 1] = static_cast<float>(lightRamp(cg, t)) / 255.0f;
-            r.t[3 * static_cast<std::size_t>(t) + 2] = static_cast<float>(lightRamp(cb, t)) / 255.0f;
-        }
-        ramps.push_back(std::move(r));
-        return ramps.back().t.data();
-    };
-    static thread_local std::vector<Reach> reach;
-    reach.clear();
+    // THE RAMP, TABULATED PER LIGHT. `(t * c) >> 8 / 255` depends only on the
+    // light's three colour bytes and the 0..255 index; the table is built for
+    // each light that REACHES this body, in this call. It was a per-colour
+    // cache kept `thread_local` - and on the Vita a `thread_local` is not per
+    // thread for the pool's kernel threads (see `composePose`), so the
+    // crowd's workers shared and raced it. Same values, the call's own.
+    std::vector<float> ramps;
+    std::vector<Reach> reach;
+    std::vector<std::uint32_t> colours;
     for (const Light3do& l : lights) {
         float v[3];
         if (!reachOf(l, bodyPos, v)) continue;
-        reach.push_back(Reach{v[0], v[1], v[2], rampFor(l.colour)});
+        reach.push_back(Reach{v[0], v[1], v[2], nullptr});
+        colours.push_back(l.colour);
+    }
+    ramps.resize(reach.size() * 256 * 3);
+    for (std::size_t r = 0; r < reach.size(); ++r) {
+        const std::uint32_t colour = colours[r];
+        const auto cr = static_cast<std::uint8_t>((colour >> 16) & 0xFF);
+        const auto cg = static_cast<std::uint8_t>((colour >> 8) & 0xFF);
+        const auto cb = static_cast<std::uint8_t>(colour & 0xFF);
+        float* t3 = ramps.data() + r * 256 * 3;
+        for (int t = 0; t < 256; ++t) {
+            t3[3 * t]     = static_cast<float>(lightRamp(cr, t)) / 255.0f;
+            t3[3 * t + 1] = static_cast<float>(lightRamp(cg, t)) / 255.0f;
+            t3[3 * t + 2] = static_cast<float>(lightRamp(cb, t)) / 255.0f;
+        }
+        reach[r].ramp = t3;
     }
     if (reach.empty()) return 0;
     for (std::size_t i = first; i < first + count; ++i) {

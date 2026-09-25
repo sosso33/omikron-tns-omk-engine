@@ -336,55 +336,37 @@ NodeTracks nodeTracks(std::span<const std::byte> d, int rootTrack) {
 }
 
 namespace {
-// WHERE EACH MESH'S PARENT IS, found once per model (2026-09-25). `composePose`
-// looked the parent up by scanning every mesh, twice per mesh - 76 x 76 x 2
-// comparisons a crowd body a frame, the bulk of a console's 7 ms of `compose`
-// for a street's bodies. The answer is `byId`'s own - the FIRST mesh whose id
-// is the parent id, or none - kept per thread (the crowd poses on several) and
-// keyed by the vector's address, CHECKED against a copy of every mesh's id and
-// parent so a reused address can never serve another model's table.
-struct ParentTable {
-    const Mesh* data = nullptr;
-    std::vector<std::int32_t> ids, parents;
-    std::vector<int> parentAt;      // position in `meshes`, or -1
+// A SCRATCH ARRAY ON THE STACK up to N elements, on the heap past it: the
+// call's own storage without an allocation per call (every shipped character
+// has at most 76 meshes). Not a type of the engine's - a helper of this file.
+template <class T, std::size_t N>
+struct small_buf {
+    T inl[N];
+    std::vector<T> heap;
+    T* p = inl;
+    small_buf(std::size_t n, const T& v) {
+        if (n > N) { heap.assign(n, v); p = heap.data(); }
+        else std::fill(inl, inl + n, v);
+    }
+    T& operator[](std::size_t i) { return p[i]; }
+    const T& operator[](std::size_t i) const { return p[i]; }
 };
-const std::vector<int>& parentsOf(const std::vector<Mesh>& meshes) {
-    static thread_local std::vector<ParentTable> cache;
-    for (auto& t : cache) {
-        if (t.data != meshes.data() || t.ids.size() != meshes.size()) continue;
-        bool same = true;
-        for (std::size_t i = 0; i < meshes.size() && same; ++i)
-            same = t.ids[i] == meshes[i].id && t.parents[i] == meshes[i].parent;
-        if (same) return t.parentAt;
-    }
-    if (cache.size() >= 64) cache.clear();
-    ParentTable t;
-    t.data = meshes.data();
-    t.ids.resize(meshes.size());
-    t.parents.resize(meshes.size());
-    t.parentAt.assign(meshes.size(), -1);
-    for (std::size_t i = 0; i < meshes.size(); ++i) {
-        t.ids[i] = meshes[i].id;
-        t.parents[i] = meshes[i].parent;
-        for (std::size_t j = 0; j < meshes.size(); ++j)
-            if (meshes[j].id == meshes[i].parent) { t.parentAt[i] = static_cast<int>(j); break; }
-    }
-    cache.push_back(std::move(t));
-    return cache.back().parentAt;
-}
 }  // namespace
 
+// NO `thread_local` HERE (2026-09-26). This runs on the crowd's worker
+// threads, and on the Vita a `thread_local` is NOT per thread for the kernel
+// threads `omk::Threads` makes - the scratch was shared, two threads wrote one
+// `stack` at once, and the NEON build died in the first frame of Anekbah's
+// crowd (the core dump: main and `omk_worker0` faulting at one instruction on
+// a garbage index). Everything below is the call's own.
 std::vector<MeshPose> composePose(const std::vector<Mesh>& meshes,
                                   const NodeTracks& t, int frame,
                                   bool upright) {
     std::vector<MeshPose> out(meshes.size());
     if (meshes.empty()) return out;
-    // scratch kept per thread rather than allocated per call
-    static thread_local std::vector<char> done, hasQ;
-    static thread_local std::vector<Quatf> qof;
-    done.assign(meshes.size(), 0);
-    qof.assign(meshes.size(), Quatf{});
-    hasQ.assign(meshes.size(), 0);
+    const std::size_t nm = meshes.size();
+    small_buf<char, 128> done(nm, 0), hasQ(nm, 0);
+    small_buf<Quatf, 128> qof(nm, Quatf{});
     if (t.valid()) {
         const int f = frame < 0 ? 0
                     : (frame >= t.frames ? t.frames - 1 : frame);
@@ -398,28 +380,40 @@ std::vector<MeshPose> composePose(const std::vector<Mesh>& meshes,
         }
     }
 
-    const std::vector<int>& parentAt = parentsOf(meshes);
+    // WHERE EACH MESH'S PARENT IS (2026-09-25): the parent was found by
+    // scanning every mesh, twice per mesh - 76 x 76 x 2 comparisons a crowd
+    // body. The answer is the old `byId`'s - the FIRST mesh (lowest position)
+    // whose id is the parent id, or none - from a sorted (id, position) list.
+    small_buf<std::pair<std::int32_t, int>, 128> byId(nm, {0, 0});
+    for (std::size_t i = 0; i < nm; ++i) byId[i] = {meshes[i].id, static_cast<int>(i)};
+    std::sort(byId.p, byId.p + nm);
+    small_buf<int, 128> parentAt(nm, -1);
+    for (std::size_t i = 0; i < nm; ++i) {
+        const auto it = std::lower_bound(byId.p, byId.p + nm, std::make_pair(meshes[i].parent, -1));
+        if (it != byId.p + nm && it->first == meshes[i].parent) parentAt[i] = it->second;
+    }
     const auto parentOf = [&](std::size_t k) -> const Mesh* {
         const int p = parentAt[k];
         return p < 0 ? nullptr : &meshes[static_cast<std::size_t>(p)];
     };
 
-    static thread_local std::vector<int> stack;
+    // the walk up to a done ancestor: at most 25 deep (`guard`)
+    int stack[32];
     for (std::size_t i = 0; i < meshes.size(); ++i) {
         if (done[i]) continue;
-        stack.clear();
+        int depth = 0;
         std::size_t cur = i;
         int guard = 0;
         while (!done[cur] && guard++ <= 24) {
-            stack.push_back(static_cast<int>(cur));
+            stack[depth++] = static_cast<int>(cur);
             const Mesh* par = parentOf(cur);
             if (!par) break;
             const auto pi = static_cast<std::size_t>(par->index);
             if (pi >= meshes.size() || pi == cur) break;
             cur = pi;
         }
-        for (auto it = stack.rbegin(); it != stack.rend(); ++it) {
-            const auto k = static_cast<std::size_t>(*it);
+        for (int d = depth - 1; d >= 0; --d) {
+            const auto k = static_cast<std::size_t>(stack[d]);
             if (done[k]) continue;
             const Mesh& m = meshes[k];
             const Quatf q = hasQ[k] ? qof[k] : Quatf{};
@@ -549,8 +543,8 @@ void applyPose(Geometry& g, const Geometry& rest,
         faceVerts->size() == 3u * static_cast<std::size_t>(face->count) &&
         rest.cornerVertex.size() == rest.corners.size();
     {
-        static thread_local std::vector<std::int32_t> cls;
-        cls.resize(g.corners.size());
+        // the call's own (no `thread_local`: see `composePose`)
+        std::vector<std::int32_t> cls(g.corners.size());
         for (std::size_t i = 0; i < cls.size(); ++i) {
             const std::int32_t mi = rest.cornerMesh[i];
             cls[i] = (morphFaceOn && mi == face->mesh) ? (0x40000000 | rest.cornerVertex[i]) : mi;

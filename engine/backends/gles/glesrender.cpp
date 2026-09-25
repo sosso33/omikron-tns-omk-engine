@@ -85,6 +85,7 @@
 #include "ui/surface.h"
 
 #include <algorithm>
+#include <cmath>
 #include <map>
 #include <tuple>
 #include <chrono>
@@ -615,6 +616,8 @@ private:
     // a body with more meshes than `kPoseSlots`, posed here - per geometry
     std::unordered_map<const Geometry*, Geometry> cpuPosed_;
     bool uploadPosedGeometry(const Geometry* g, PoseVbo*& out);
+    // THE POSING PROGRAM CHECKED ON THE DEVICE (2026-09-26): see the body.
+    bool poseSelfTest();
     bool usePosed(const Draw& d) const { return d.meshPose && d.meshPoses && posed_; }
     void useProgram(GLuint p) { if (curProg_ != p) { glUseProgram(p); curProg_ = p; } }
 public:
@@ -804,8 +807,137 @@ bool GlesRenderer::init(int w, int h) {
 
     static const bool noTie = std::getenv("OMK_NO_TIE") != nullptr;
     if (noTie) tieOn_ = false;
+    if (posed_ && !poseSelfTest()) {
+        glDeleteProgram(posed_);
+        posed_ = 0;
+    }
     ready_ = true;
     return true;
+}
+
+// THE POSING PROGRAM, CHECKED WHERE IT RUNS (2026-09-26). On the Mac a posed
+// body matches the CPU's to a few pixels (`engine: gles pose`); on the reader's
+// Vita the cutscene characters came out with "hands, feet and head placed way
+// too far from the body" - a GPU and a shader compiler this repo cannot run.
+// So the program proves itself at start-up, on the device: 32 thin bars, one
+// per SLOT, each coloured by its slot and each slot's affine moving its bar to
+// its own cell of an 8 x 4 grid - once as a pure translation, once turned 90
+// degrees. The read-back says, cell by cell, WHICH slot arrived there and
+// whether its bar was turned, and a program that gets any wrong is dropped:
+// the bodies are then posed on the CPU, as before any of this, and the log
+// says what the GPU did - the evidence the fix needs.
+bool GlesRenderer::poseSelfTest() {
+    constexpr int kCols = 8, kRows = 4, kN = kCols * kRows;
+    static_assert(kN == kPoseSlots, "one bar a slot");
+    const float q = 0.05f;               // the bar's half-length, NDC
+    std::vector<GpuPoseVert> v;
+    v.reserve(kN * 6);
+    for (int k = 0; k < kN; ++k) {
+        const float r = static_cast<float>(k + 1) / 40.0f;
+        const float xs[6] = {-q, q, q, -q, q, -q};
+        const float ys[6] = {-q * 0.25f, -q * 0.25f, q * 0.25f, -q * 0.25f, q * 0.25f, q * 0.25f};
+        for (int c = 0; c < 6; ++c) {
+            GpuPoseVert p{};
+            p.v = GpuVert{xs[c], ys[c], 0.0f, 0.0f, 0.0f, r, 1.0f, 0.0f, -1.0f};
+            p.slot = static_cast<float>(k);
+            p.nx = 0.0f; p.ny = 0.0f; p.nz = 1.0f;
+            v.push_back(p);
+        }
+    }
+    GLuint vb = 0;
+    glGenBuffers(1, &vb);
+    glBindBuffer(GL_ARRAY_BUFFER, vb);
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(v.size() * sizeof(GpuPoseVert)),
+                 v.data(), GL_STATIC_DRAW);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
+    glViewport(0, 0, w_, h_);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
+    glUseProgram(posed_);
+    curProg_ = posed_;
+    const float ident[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    glUniformMatrix4fv(posedLoc_.mvp, 1, GL_FALSE, ident);
+    glUniform1f(posedLoc_.clock, 0.0f);
+    glUniform2f(posedLoc_.texSize, 1.0f, 1.0f);
+    glUniform1i(posedLoc_.cutout, 0);
+    glUniform1f(posedLoc_.fogStart, 0.0f);
+    glUniform1f(posedLoc_.fogEnd, 0.0f);
+    glUniform3f(posedLoc_.fogColour, 0.0f, 0.0f, 0.0f);
+    glUniform1f(posedLoc_.lightCount, 0.0f);
+    glUniform1f(posedLoc_.lightBlack, 0.0f);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, white_.id);
+    const GLsizei st = sizeof(GpuPoseVert);
+    for (const GLuint a : {kAttrPos, kAttrUV, kAttrCol, kAttrPhase, kAttrSlot, kAttrNormal})
+        glEnableVertexAttribArray(a);
+    glVertexAttribPointer(kAttrPos, 3, GL_FLOAT, GL_FALSE, st, reinterpret_cast<const void*>(0));
+    glVertexAttribPointer(kAttrUV, 2, GL_FLOAT, GL_FALSE, st, reinterpret_cast<const void*>(12));
+    glVertexAttribPointer(kAttrCol, 3, GL_FLOAT, GL_FALSE, st, reinterpret_cast<const void*>(20));
+    glVertexAttribPointer(kAttrPhase, 1, GL_FLOAT, GL_FALSE, st, reinterpret_cast<const void*>(32));
+    glVertexAttribPointer(kAttrSlot, 1, GL_FLOAT, GL_FALSE, st,
+                          reinterpret_cast<const void*>(offsetof(GpuPoseVert, slot)));
+    glVertexAttribPointer(kAttrNormal, 3, GL_FLOAT, GL_FALSE, st,
+                          reinterpret_cast<const void*>(offsetof(GpuPoseVert, nx)));
+    std::vector<unsigned char> px(static_cast<std::size_t>(w_) * h_ * 4);
+    const auto at = [&](float nx, float ny) -> const unsigned char* {
+        int x = static_cast<int>((nx + 1.0f) * 0.5f * static_cast<float>(w_));
+        int y = static_cast<int>((ny + 1.0f) * 0.5f * static_cast<float>(h_));
+        x = std::clamp(x, 0, w_ - 1);
+        y = std::clamp(y, 0, h_ - 1);
+        return px.data() + (static_cast<std::size_t>(y) * w_ + x) * 4;
+    };
+    int placed[2] = {0, 0};
+    std::string report;
+    for (int pass = 0; pass < 2; ++pass) {
+        std::vector<float> aff(static_cast<std::size_t>(kN) * 12, 0.0f);
+        for (int k = 0; k < kN; ++k) {
+            const float cx = -1.0f + 2.0f * (static_cast<float>(k % kCols) + 0.5f) / kCols;
+            const float cy = -1.0f + 2.0f * (static_cast<float>(k / kCols) + 0.5f) / kRows;
+            float* o = aff.data() + 12 * k;
+            if (pass == 0) { o[0] = 1; o[5] = 1; }             // as it is
+            else { o[1] = -1; o[4] = 1; }                      // turned 90 degrees
+            o[10] = 1;
+            o[3] = cx; o[7] = cy;
+        }
+        glUniform4fv(posedLoc_.pose, kN * 3, aff.data());
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glDrawArrays(GL_TRIANGLES, 0, kN * 6);
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glReadPixels(0, 0, w_, h_, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
+        for (int k = 0; k < kN; ++k) {
+            const float cx = -1.0f + 2.0f * (static_cast<float>(k % kCols) + 0.5f) / kCols;
+            const float cy = -1.0f + 2.0f * (static_cast<float>(k / kCols) + 0.5f) / kRows;
+            const unsigned char* c = at(cx, cy);
+            // the bar's far end along its own length, and across it: a
+            // horizontal bar lights the first and not the second
+            const unsigned char* along = pass == 0 ? at(cx + 0.7f * q, cy) : at(cx, cy + 0.7f * q);
+            const unsigned char* across = pass == 0 ? at(cx, cy + 0.7f * q) : at(cx + 0.7f * q, cy);
+            const int got = c[1] > 128 ? static_cast<int>(std::lround(c[0] * 40.0 / 255.0)) - 1 : -1;
+            const bool turned = along[1] > 128 && across[1] <= 128;
+            if (got == k && turned) { ++placed[pass]; continue; }
+            if (report.size() < 300) {
+                char b[96];
+                std::snprintf(b, sizeof b, " %s slot %d: %s%s;", pass ? "turned" : "moved", k,
+                              got < 0 ? "nothing in its cell" : ("slot " + std::to_string(got) +
+                                                                 " in its cell").c_str(),
+                              turned ? "" : ", bar the wrong way");
+                report += b;
+            }
+        }
+    }
+    for (const GLuint a : {kAttrSlot, kAttrNormal}) glDisableVertexAttribArray(a);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glDeleteBuffers(1, &vb);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    curProg_ = 0;
+    const bool ok = placed[0] == kN && placed[1] == kN;
+    std::printf("gles: pose self-test - %d of %d slots moved, %d of %d turned%s%s\n",
+                placed[0], kN, placed[1], kN,
+                ok ? " - the renderer poses bodies" :
+                     " - FAILED, bodies are posed on the CPU:", ok ? "" : report.c_str());
+    return ok;
 }
 
 void GlesRenderer::setTextures(std::span<const Texture> t) {

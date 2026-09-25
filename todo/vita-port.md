@@ -1248,6 +1248,18 @@ cutout blind spot is still open and is written into its check's docstring.
 
 ## 4. Traps met while writing this
 
+* **`thread_local` IS NOT PER THREAD on the Vita** for the kernel threads
+  `omk::Threads` makes with `sceKernelCreateThread` (2026-09-26). The NEON
+  build crashed in the first frame of Anekbah's crowd: the core dump
+  (`vita-parse-core`) showed the main thread and `omk_worker0` faulting at the
+  SAME instruction of `composePose`, reading a garbage index out of a
+  `thread_local` scratch both were writing. The older `thread_local`s in
+  `applyPose` and `applyLights` had been racing the same way, silently.
+  Every one in code the pool runs is now the call's own storage, and the
+  pool's nesting guard recognises a worker by its thread id instead. The
+  desktop's `std::thread` keeps real `thread_local`s, which is why nothing
+  on the Mac could show it. **Never use `thread_local` in code a worker runs.**
+
 * **Compare in 565.** See §0 — a present check in 888 measures the driver.
 * **A mutation must be shown to apply** (CLAUDE.md §1). The five here were
   made on scratch copies with an asserted single anchor and a `cmp` against
@@ -1340,3 +1352,26 @@ EXACT - and NO faster on the M1 (0.93x), because Apple clang already
 auto-vectorizes the generic loop at -O2. The A9 build (GCC, ARMv7, -O2) is
 where the explicit loop should count; its object carries the NEON ops, and the
 device's bench says by how much.
+
+### 2026-09-26: the crowd crash, and the limbs - the reader's two reports
+
+**The crash (NEON build, entering Anekbah)**: see the trap above - a
+`thread_local` shared by the pool's threads. Fixed everywhere the pool runs:
+`composePose` (its parent table now per call from a sorted id list, in stack
+buffers), `applyPose`'s tie class, `applyLights`' ramps (built per call for
+the lights that reach) and reach list, the collision sweep's ids, and the
+pool's own nesting counter. Output unchanged: `vita_bench`'s pose hash
+`b1cb73311b1ac5aa`, and a lit street byte-identical to the pre-NEON build.
+
+**The limbs ("hands, feet and head placed way too far from the body" in
+cutscenes, both GPU-posing builds)**: not reproducible on the Mac, where a
+GPU-posed body matches the CPU's to a few pixels. The shape - the body right,
+the extremities flung away - is what a misread mesh SLOT would give (slot 0,
+the first mesh, reads right in any format), but the Vita's shader compiler
+cannot run here. So `GlesRenderer::poseSelfTest` proves the posing program ON
+THE DEVICE at start-up: 32 bars, one per slot, each moved to its own grid cell
+and then turned 90 degrees; the read-back names which slot reached each cell
+and whether its bar turned, and a failing program is DROPPED - the bodies are
+then posed on the CPU, as before GPU skinning. Shown to fail on the Mac for
+every corner on slot 0 (0 of 32) and for the rotation ignored (32 moved, 0
+turned). The next console log's `gles: pose self-test` line is the evidence.

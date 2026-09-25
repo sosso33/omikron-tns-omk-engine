@@ -776,8 +776,9 @@ std::optional<SweepHit> sweepSphere(const TriangleSoup& tris, const SplitSoupGri
     // A face the gather leaves out has a horizontal box that misses the swept
     // box, which is a face the linear broad phase rejects too; the ones it
     // keeps are visited in ascending order, so a tie keeps the same face.
-    thread_local std::vector<std::uint32_t> ids;
-    ids.clear();
+    // the call's own: on the Vita `thread_local` is not per thread for the
+    // pool's kernel threads (actor/pose.cpp, `composePose`)
+    std::vector<std::uint32_t> ids;
     gatherSplitIds(g, lo[0], hi[0], lo[2], hi[2], ids);
     std::optional<SweepHit> best;
     for (const std::uint32_t tri : ids) {

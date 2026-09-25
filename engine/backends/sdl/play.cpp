@@ -6477,7 +6477,9 @@ int main(int argc, char** argv) {
                         movedOut.insert(movedOut.end(), tris.begin(), tris.end());
                         // a triangle is three packed points; a run of them
                         // is what NEON loads four at a time
-                        static thread_local std::vector<std::uint32_t> pts;
+                        // main thread only, so a plain static (on the Vita
+                        // `thread_local` is not per thread anyway)
+                        static std::vector<std::uint32_t> pts;
                         pts.clear();
                         for (const std::uint32_t t : tris) {
                             pts.push_back(3 * t); pts.push_back(3 * t + 1); pts.push_back(3 * t + 2);
