@@ -196,6 +196,18 @@ lintel caught it), so it can change anywhere with a low ceiling or a low
 door frame - worth a look under stairs, through low doors and in the
 sewers/tunnels, where he should now pass anything a 1.80 m man passes.
 
+## 16. KAY'L'S CHEST, and anything a scene SWINGS open (2026-10-02)
+
+```
+build/omk-play ~/Documents/omk/fr ../tables --save ../traces/games-resto.bin --slot 0 \
+    --area 237 --address 683
+```
+Press action at the chest: the lid should open on its back hinge as one
+piece. The fix changes the sense of EVERY rotation a scene program gives a
+set mesh (`Script_MoveObjectOnPath`'s path keys), so a door, shutter or lid
+that SWINGS anywhere else is worth a look - it should swing the way the
+original does. Sliding doors are unaffected.
+
 ## What is NOT fixed, so do not report it as new
 
 * **The lift arrival is still black** and the camera is inside the lift-car
