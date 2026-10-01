@@ -17,6 +17,7 @@ and the `verify.py` check that pins each result.
 | [`iam-script-engine-plan.md`](iam-script-engine-plan.md) | **the plan**: the same issues grouped into work packages, with the rules every agent in a batch follows |
 | [`actor-runtime.md`](actor-runtime.md) | the `.CTL` channel and the actor runtime (`engine/src/actor/*`) - all closed |
 | [`road-traffic.md`](road-traffic.md) | the ROAD TRAFFIC (`engine/src/actor/vehicles.cpp`): the `.OPT` circuit's vehicle half, its reading and its steps |
+| [`mac-port.md`](mac-port.md) | **the what-if MAC port**: Omikron as a 1999 Mac release would have been - the box spec, how a porting house would have done it (RAVE, DrawSprocket, Sound Manager, byte order swapped at load), and how OMK reproduces it. Written 2026-10-01, none of it started |
 | [`omk-play.md`](omk-play.md) | **the viewer** (`engine/backends/sdl/play.cpp`): what it fails to draw, filed the same way |
 | `pending/T*.md` | **a batch's deliverables**, one file per task, waiting to be integrated |
 
