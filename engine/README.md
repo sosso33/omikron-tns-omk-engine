@@ -2283,7 +2283,12 @@ The 18 coincident shop-sign pairs ASSETS 4b lists are each the SAME four
 vertices in OPPOSITE winding (`Abooks02`: (0,1,2,3) and (1,0,3,2)) — a
 two-sided sign, one advert a side. The engine submits both (`CULLMODE =
 NONE`) and its strict `ZFUNC = GREATER` keeps the first drawn, because on a
-quantised z-buffer the two depths are EQUAL. `raster.cpp` compared each
+quantised z-buffer the two depths are EQUAL. **(Corrected 2026-10-01: it does
+not submit both. `Render_SubmitMesh` culls back faces in software, above the
+`CULLMODE = NONE` device, so from any viewpoint only the advert facing the
+camera is drawn and there is no tie in the original; the flicker was the port
+drawing the back face at all. The band below stays as a guard for coincident
+faces of ONE winding. See "The back-face cull" below.)** `raster.cpp` compared each
 triangle's own float `1/izp`; the two windings split on different diagonals,
 their depths differ by up to 2e-7 relative (`tools/tie_probe.cpp` draws them
 alone and measures it), and the later face won wherever the noise fell its
@@ -2316,6 +2321,40 @@ fight in for a before/after, `OMK_TIE_LOG=1` lists every loser with its mesh.
 A residual twinkle on the glyphs is point sampling under a creeping camera,
 which is the engine's own filtering (`render states`) and what
 `--filter trilinear` exists to soften.
+
+### The back-face cull — the engine culls in SOFTWARE (2026-10-01)
+
+A reader: the dialogue cameras look slightly off, and some are blocked by the
+scenery — the Telis lunch's crane, cameras starting inside Kay'l's head. The
+cameras were placed exactly; what blocked them was the BACK of the scenery.
+`SetRenderState(22, 1)` puts the device at `D3DCULL_NONE`, and this repo read
+that as "the engine never culls". But `Render_SubmitMesh` (0x004951C0) has
+already dropped every face whose screen winding is backwards, unless its mesh
+carries `0x20000000` (93 of 16188 meshes, nearly all water); the near-clip
+path `sub_496740` and the second submit `sub_496FC0` test the same way, and the
+mirror pass's X flip comes after the test. A dialogue camera authored behind a
+wall, above a ceiling or inside a head is MEANT to see through it.
+
+* `geom3do.h`: `kTwoSided`, and `Geometry::cornerCull` parallel to the corners,
+  filled by `buildGeometry`; empty means two-sided, so the port's own geometry
+  (particles, shadow quads) is untouched.
+* `raster.cpp` drops a single-sided face seen from behind; `OMK_NO_CULL=1`
+  draws both sides for comparison. Vulkan discards on `gl_FrontFacing` from a
+  push constant per run (no pipeline doubled); GLES toggles `GL_CULL_FACE` per
+  run through its state cache. Each GPU sign was MEASURED against the
+  software render: the wrong one turns Aapkayl inside out (Vulkan mean colour
+  difference 137.8 against 3.3; GLES coverage 0.157 against 0.995).
+* The DEPTH TIE no longer pairs a single-sided face with its reversed twin
+  (`depthtie.cpp` `faceClass`): the cull already keeps one of the two, and
+  letting the culled one claim the other left a sign with nothing drawn.
+
+**Tier**: the rule is 6, read from three functions; one shot is indicative of
+4 — dialog 402's camera 4575, whose eye is INSIDE the vivarium glass, matches
+a reader's capture of the original with one layer of glass where the port had
+drawn two (patches in `verify.py: engine: back-face cull`'s docstring, not
+asserted, per PORTING B5). The check is a tier-3 control of the two readings:
+the lift's arrival 56.9% dark against 90.3%, the crane frame 221340 pixels
+apart. Shown to fail with the test disabled.
 
 ### The MIRROR reflects in the GAME, not only in the scene viewer
 
@@ -3786,7 +3825,7 @@ branch, all three in I2D, behind two rasterizers that are both ported.
 | the I2D back end | 4 | **met for the deterministic region**: 66560/66560 pixels, in RGB565 |
 | the I2D primitives | **4** for the quad's geometry, 6 for the rest | the quad reproduces the engine's own selection outline 1518/1518; line and triangle have no captured frame that draws one |
 | the software rasterizers (2D) | **4**, and both already met | there are **two**, not six: `sub_48C4C0` (Bresenham) and `sub_48C060` (box fill), reproduced 1518/1518 and 138/138 |
-| the 3D rasterizer | **4, for ONE camera**, geometry and ordering only | the engine has none — D3D drew every triangle — so this is a **reference implementation**, not a port. Its projection agrees with `camshot.py` on 106/106 sampled corners (worst 0.0018 px) and the mirrored reading moves 349998/352000 pixels (tier 3, `engine: raster`). **Tier 4 2026-09-01** (`engine: silhouette`): measured against the engine's own framebuffer through dialog 402's camera 4555 — directed edge alignment **0.73/0.83** on a chance floor of **0.27/0.30**, and the holes a set-only render leaves falling where the capture is black, **92%/99%** against 33% frame-wide. Mid-sweep captures of the same set reach 0.14–0.38; the mirrored reading sits below its own floor; and **removing the depth test** — geometry untouched, ordering destroyed — drops it to 0.66/0.75, so B5's *and ordering* is tested. **Not covered**: any second camera, the characters and props the render omits (the directed metric cannot see them missing), any pixel's value, and the drawable mask (0 pixels differ here). The one-camera limit is not theoretical: the missing **near-plane clip** - triangles with a vertex behind the cut dropped rather than cut - changes 0 pixels through 4555 and 12710 one step into the room, and was found by a player flying the scene viewer, not by any check (`engine: near clip`) |
+| the 3D rasterizer | **4, for ONE camera**, geometry and ordering only | **the back-face cull (2026-10-01) is the ENGINE's, tier 6 + one shot indicative of 4 - see "The back-face cull";** the engine has none — D3D drew every triangle — so this is a **reference implementation**, not a port. Its projection agrees with `camshot.py` on 106/106 sampled corners (worst 0.0018 px) and the mirrored reading moves 349998/352000 pixels (tier 3, `engine: raster`). **Tier 4 2026-09-01** (`engine: silhouette`): measured against the engine's own framebuffer through dialog 402's camera 4555 — directed edge alignment **0.73/0.83** on a chance floor of **0.27/0.30**, and the holes a set-only render leaves falling where the capture is black, **92%/99%** against 33% frame-wide. Mid-sweep captures of the same set reach 0.14–0.38; the mirrored reading sits below its own floor; and **removing the depth test** — geometry untouched, ordering destroyed — drops it to 0.66/0.75, so B5's *and ordering* is tested. **Not covered**: any second camera, the characters and props the render omits (the directed metric cannot see them missing), any pixel's value, and the drawable mask (0 pixels differ here). The one-camera limit is not theoretical: the missing **near-plane clip** - triangles with a vertex behind the cut dropped rather than cut - changes 0 pixels through 4555 and 12710 one step into the room, and was found by a player flying the scene viewer, not by any check (`engine: near clip`) |
 | the two render BANKS | 2 | six two-entry arrays swapped by `sub_42FA00`; opcode 150 installs bank 1 at 14 shipped sites. What each bank **draws** is unread and has no oracle |
 | audio mixing | **2** for the loader, 6 for the bookkeeping, **none** for the law | the criterion was wrong: **the engine does not mix**, DirectSound does. The decisions are ported and the loader runs over all 61 shipped `.wav`; the attenuation and pan law has no reachable oracle |
 | the cutscene VOICES - `media.play` (op 92) | **PORTED** `src/audio/voiceover.{h,cpp}`, `tools/voice_probe.cpp` | **tier 4** for the resolution (the golden traces' own media ids: 102 announcements, 56 distinct, 56/56 resolving, and `impasse-walk` opening 142/141/404/410 in order - `media.play`'s `"OBJECTS"` literal at 0x004C0844 has one `push offset` in the image, so the traces separate it from the nine other OBJECTS announcers); **tier 3** for the decode (four FNV hashes over the PCM, re-derived by `tools/adp.py`); **tier 2** for the 10 + 520 + 31 = 561 partition and the filter's 1-in-1584 collision rate; **tier 6** for the `{C}` subtitle and the kind-16 `IMAGES\<stem>.BMP` document arm, which are resolved and reported and NOT drawn; **no tier** for loudness or placement, which are DirectSound's. `verify.py: engine voice over` |

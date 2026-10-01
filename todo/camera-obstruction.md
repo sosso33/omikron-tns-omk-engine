@@ -1,5 +1,20 @@
 # The camera obstruction pass — and why it is NOT the lift's dark arrival
 
+> **RESOLVED 2026-10-01 - by the candidate this file refuted.** Both cases
+> here - the restaurant crane (dialog 387, 4194 -> 4195) and the lift's black
+> arrival (2986) - are the engine's **back-face cull**, which is in SOFTWARE:
+> `Render_SubmitMesh` (0x004951C0) drops every face whose screen winding is
+> backwards unless its mesh carries `0x20000000` (93 of 16188 meshes, nearly
+> all water). The device's `SetRenderState(22, 1)` = CULLMODE NONE, which §1
+> took as the refutation, is one level BELOW that test. A lens above a ceiling
+> or inside a closed volume sees out because every face in its way faces away
+> from it. Ported in `626b74a` (`geom3do.h` `kTwoSided`, `raster.cpp`); the
+> lift's arrival goes 90.3% -> 56.9% dark and the crane looks down at the
+> table; `verify.py: engine: back-face cull`. `docs/ASSETS.md` §4b has the
+> rule. What follows is the record of how it was missed: the §5 transcription
+> of `sub_417070` and §6's scope result both stand, and they were right that
+> the obstruction pass is not involved.
+
 Measured 2026-09-18. `sub_417070` has been read (`todo/missing-ui.md` §7) and
 ported three times, each attempt reverted the same evening. This file adds the
 thing those attempts did not have: **a second, independent test case**, and an
@@ -21,7 +36,8 @@ objective metric that needs no play report.
 `CSPont04` and left the mechanism open between three candidates. One is now
 refuted and one is confirmed.
 
-**Refuted — inside-face culling.** `sub_4638C0` writes `SetRenderState(22, 1)`,
+**~~Refuted~~ — inside-face culling. WITHDRAWN 2026-10-01: this IS the
+mechanism; see the note at the top.** `sub_4638C0` writes `SetRenderState(22, 1)`,
 **CULLMODE = NONE** (`docs/ASSETS.md` §4c). The engine draws both sides of every
 face, so a lens inside a closed volume does NOT see out of it. Whatever the
 engine does here, it is not culling.
@@ -337,6 +353,8 @@ Not this function. §6b of `todo/missing-ui.md` listed three candidates and
 called `sub_417070` one of them; this closes that one NEGATIVELY, which leaves
 the third — the engine not drawing the car that is not in use. The first
 (inside-face culling) was already refuted by `SetRenderState(22, 1)`.
+**(2026-10-01: wrongly - the cull is in software, above the device, and it
+is the answer. See the top of this file.)**
 
 `CSPont04` is one of a stack of eight `CSPont` meshes, one per level of the
 shaft, and the camera at every level sits inside the one at that level. That

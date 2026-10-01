@@ -159,6 +159,27 @@ Worth looking at: the clip distance and the sky change the street at once;
 the crowd changes at the next area; the RESOLUTION changes the window there
 and then. F11 toggles fullscreen anywhere, and `--fullscreen` starts in it.
 
+## 14. THE BACK-FACE CULL — dialogue cameras that were blocked (2026-10-01)
+
+```
+build/omk-play ~/Documents/omk/fr ../tables --save ../traces/games-resto.bin --slot 0
+build/omk-play ~/Documents/omk/fr ../tables --save ../traces/games-resto.bin --slot 2
+```
+Slot 0 is before the apartment conversation with Telis (dialog 402), slot 2
+before the restaurant lunch (dialog 387). The engine never draws the BACK of
+a face (except water), and the port drew it. What should now match the
+original: the restaurant's high crane shot looks down at the table instead of
+at the back of the ceiling; the apartment's wide reply shot across the room
+is no longer the back of a wall; the shot from inside the vivarium shows ONE
+layer of yellow glass, not a wash; the lift's arrival in the security centre
+is no longer black. **Not yet seen by anyone: the line cameras that started
+INSIDE Kay'l's head** - the cull explains them (from inside a head every face
+points away), but no run here put the lens in his head. Also worth a look
+anywhere: a two-sided sign now shows each side's own advert, and water should
+still be visible from above and below. All three renderers (software, Vulkan,
+GLES) cull. `OMK_NO_CULL=1` draws both sides on the software renderer, to
+compare.
+
 ## What is NOT fixed, so do not report it as new
 
 * **The lift arrival is still black** and the camera is inside the lift-car

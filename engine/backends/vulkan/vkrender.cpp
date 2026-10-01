@@ -354,9 +354,12 @@ private:
     std::map<const omk::Geometry*, std::uint64_t> vboRev_;
     // THE DEPTH TIE, resolved at SUBMIT (raster.cpp `kDepthTie` has the
     // reading). Two faces on the same four vertices in opposite winding - the
-    // two SIDES of a shop sign, 18 pairs in Anekbah - are both submitted
-    // (CULLMODE = NONE) and the engine's strict test on a quantised z-buffer
-    // keeps the FIRST drawn on every pixel. The software rasterizer rejects a
+    // two SIDES of a shop sign, 18 pairs in Anekbah - were read as both
+    // submitted (CULLMODE = NONE), and the engine's strict test on a quantised
+    // z-buffer keeps the FIRST drawn on every pixel. (2026-10-01: the engine's
+    // software back-face cull keeps only one side of such a pair, and the
+    // tie's key now carries the face's side - `depthtie.cpp` faceClass - so
+    // what is left here is coincident faces of ONE winding.) The software rasterizer rejects a
     // depth within 2^-16 of the buffer's; a GPU compare cannot read the
     // buffer, a quantised `gl_FragDepth` still straddles its grid on ~1% of
     // pixels, and a per-draw depth bias through the non-linear projection is
@@ -1191,8 +1194,10 @@ bool VulkanRenderer::makePipelines() {
         VkPipelineRasterizationStateCreateInfo srs{
             VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
         srs.polygonMode = VK_POLYGON_MODE_FILL;
-        // NO culling: a character model is not a closed solid, and the engine
-        // draws it D3DCULL_NONE anyway (ASSETS 4).
+        // NO culling: a character model is not a closed solid, and a shadow
+        // MAP (an enhancement the engine never had) wants every face that can
+        // block the light, whichever way it winds. The engine's own draw does
+        // cull back faces, in software (ASSETS 4b, `geom3do.h` kTwoSided).
         srs.cullMode = VK_CULL_MODE_NONE;
         srs.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         srs.lineWidth = 1.0f;

@@ -1069,9 +1069,32 @@ frame driving the face, through the same data path the browser app uses:
 * **The depth buffer is REVERSED.** `SetRenderState(23, 5)` at device init is
   ZFUNC = **D3DCMP_GREATER** (the D3DCMPFUNC values are NEVER 1, LESS 2,
   EQUAL 3, LESSEQUAL 4, **GREATER 5**), so a larger depth value is *nearer*.
-  A second pass sets `23, 3` = EQUAL. The engine also never culls —
+  A second pass sets `23, 3` = EQUAL. ~~The engine also never culls —
   `SetRenderState(22, 1)` is D3DCULL_NONE — so both faces of a two-sided panel
-  are always submitted.
+  are always submitted.~~ **CORRECTED 2026-10-01: the engine CULLS, in
+  software, one level above the device.** `SetRenderState(22, 1)` is
+  D3DCULL_NONE, but by then `Render_SubmitMesh` (0x004951C0) has tested every
+  face's screen winding —
+
+      (x0-x2)*(y0-y1) - (y0-y2)*(x0-x1) >= 0   -> drawn
+      otherwise, mesh flag 0x20000000          -> two corners swapped, drawn
+      otherwise                                -> DROPPED
+
+  — and its near-clip path `sub_496740` tests each clipped piece the same
+  way, as does the second submit `sub_496FC0`. A quad is tested on corners
+  0,1,2 and kept or dropped whole. The mirror pass's screen-X flip
+  (`dword_53ADE0`) is applied later, in `Render_FlushBuckets`, so the test
+  always sees the unflipped winding. **93 of 16188** shipped meshes carry
+  `0x20000000`, nearly all water (`Eau*`, `*wate*`); every other face is
+  single-sided. Reading the device state alone as "no cull" stood for a month
+  and made the port draw the BACK of the scenery: a dialogue camera authored
+  behind a wall, above a ceiling or inside a head saw the wall, the ceiling
+  or the head, where the original sees through. Dialog 387's crane 4194 (eye
+  above `RE14plafon`), dialog 402's 4577 (behind a wall) and 4575 (eye inside
+  the vivarium `Ap01vitre`, one layer of glass in the original against two in
+  the port — a reader's capture decided it), and the lift's black arrival
+  (2986, inside `CSPont04`). `geom3do.h` `kTwoSided`, `Geometry::cornerCull`;
+  `verify.py: engine: back-face cull`.
 
   For a viewer this changes nothing by itself: GREATER and WebGL's default
   LESS are both *strict*, so of two exactly-coincident faces both keep the
@@ -1105,7 +1128,13 @@ frame driving the face, through the same data path the browser app uses:
   (1,0,3,2) — 18 of 18 reversed, which is why the UVs differ completely: one
   advert a side, and with `CULLMODE = NONE` the engine submits both from
   either side and the strict `GREATER` on a quantised z-buffer shows the
-  first drawn. **The panel FLICKER was the port's float compare breaking
+  first drawn. **(2026-10-01: it does not. The two sides wind opposite ways,
+  so the engine's software back-face cull above keeps exactly ONE of them
+  from any viewpoint - the advert facing the camera - and the tie below
+  never arises in the original. The flicker was the port drawing the back
+  face at all; the tie band and the tie bake remain in the port and are now
+  redundant for these 18 pairs, which is a separate decision.)**
+  **The panel FLICKER was the port's float compare breaking
   that tie**: the two windings split the quad on different diagonals, their
   interpolated depths differ by up to 2e-7 relative, and the later face won
   wherever the noise fell — single-pixel dots of the other advert, re-rolled
@@ -1507,7 +1536,7 @@ device set-up, `sub_4638C0` (0x004638C0), guarded by `dword_53ADF0` — the
 
     SetRenderState(31, 0)   SUBPIXEL off        SetRenderState(7, 0)   ZENABLE off (here)
     SetRenderState(23, 5)   ZFUNC, the reversed depth (above)
-    SetRenderState(22, 1)   CULLMODE = NONE
+    SetRenderState(22, 1)   CULLMODE = NONE   -- the DEVICE's; the engine culls in software first (4b)
     SetRenderState(2,  0)   ANTIALIAS = FALSE   -- explicitly OFF; EDGEANTIALIAS (40) is never set
     SetRenderState(4,  1)   TEXTUREPERSPECTIVE  -- perspective-correct texturing
     SetRenderState(16, 1)   LASTPIXEL

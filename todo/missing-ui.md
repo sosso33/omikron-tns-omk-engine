@@ -553,6 +553,10 @@ One phenomenon at every level of the shaft; the arrival is just where it is
 total. That is the reader's *"it is not the only place where this issue
 occurs"*.
 
+**SETTLED 2026-10-01: the first candidate, the back-face cull** - in
+software, in `Render_SubmitMesh`, above the `D3DCULL_NONE` device state
+(`docs/ASSETS.md` §4b, `todo/camera-obstruction.md`'s top note).
+
 **What the engine does about it is NOT settled** and is the next thing to read.
 Three candidates, none tested: it culls the box's faces from inside (but
 `ASSETS` 4b records `D3DCULL_NONE` on at least one path); it hides the car that
@@ -716,6 +720,13 @@ and -2 -> -4 WITHOUT the call, in fast-forward and at real-time pacing - the
 door opens 87 units in all four.
 
 ## 7. The dialogue camera in the ceiling — READ, and three attempts REVERTED
+
+> **RESOLVED 2026-10-01, and not by `sub_417070`.** The crane's eye starts
+> ABOVE the ceiling `RE14plafon`; the original does not draw the ceiling's
+> back faces (its software back-face cull, `docs/ASSETS.md` §4b), so it sees
+> the table through it. The obstruction pass never runs on a dialogue camera
+> (`todo/camera-obstruction.md` §6), which is why all three attempts below
+> moved shots that were right. The account below is kept as the record.
 
 A reader, at the Telis lunch (2026-09-17/18): *"a similar issue occurs in the
 telis dialog in the restaurant"*, then the two facts that decide it - *"the

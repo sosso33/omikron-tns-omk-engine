@@ -18092,6 +18092,10 @@ def c_engine_backface_cull():
     object - the lift's arrival went 56.9 -> 90.3 dark and the crane's two
     readings went from 221340 differing pixels to 0. Restored by editing the
     line back and rebuilding the same way.
+    And the GPU halves: `push_.cull` forced to 0 in vkrender.cpp and the GLES
+    `mode` forced to 0, their objects and binaries deleted - both went False
+    (Vulkan drawing two-sided against a culled reference, GLES the same), and
+    back to True once restored and rebuilt clean.
     """
     import subprocess, tempfile, struct, glob
     sys.path.insert(0, os.path.join(ROOT, "tools"))
