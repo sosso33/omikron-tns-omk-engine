@@ -2073,7 +2073,8 @@ engine's own frame (`traces/frames/dlg402-44`) has no Kay'l; the port drew
 his head in the corner. Not a hide rule — the `0x800` arm in the camera tick
 is the **swim** camera's (a water-surface probe, ACTOR_STATE 11/13/14), and
 the near plane is 2.0 (`sub_440BB0`, `25_sys.c:182`) against the port's 1.0,
-one unit — but a position: `actor.goto_address 678` and `dialog.start 402`
+one unit (the port's is 2.0 too since 2026-10-01, `raster.h` `kNearCut`) — but
+a position: `actor.goto_address 678` and `dialog.start 402`
 run on the same pump frame, and the frontend consumed a teleport only inside
 `if (adventure)`, which the open conversation had just made false. The Session
 stood at 678 (`3541/1079/−914`); the controller — the body the shot is framed

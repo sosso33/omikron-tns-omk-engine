@@ -79,7 +79,7 @@ struct DialogCamera {
     std::int16_t id = -1;
     float eye[3] = {0, 0, 0};
     float at[3]  = {0, 0, 0};
-    float roll = 0.0f;          // angle[0], 4096ths of a turn -> degrees
+    float roll = 0.0f;          // angle[0], 4096ths of a turn -> WHOLE degrees, wrapped
     float fov  = 74.0f;         // angle[1], the HORIZONTAL fov
     std::uint16_t subject[2] = {0xFFFF, 0xFFFF};
     bool absolute() const { return subject[0] == 0xFFFF; }
@@ -339,9 +339,24 @@ public:
     bool menuPair() const;
     const DialogCamera* cameraA() const;
     const DialogCamera* cameraB() const;
+    // THE BLEND WEIGHT, not the clock: the move EASES IN AND OUT. The second
+    // camera command carries `request[7] = 1` (`Dialog_ApplyLineCameras`,
+    // `mov dword_93081C, ebx` with ebx 1), and `sub_414A90` makes that the
+    // transition's curve type; type 1 in `sub_418100` / `sub_418310` is the
+    // quadratic ease in-out over the duration d = 160:
+    //
+    //     u = elapsed / d
+    //     t = 2 u^2              while elapsed <= d/2
+    //     t = -1 + 4u - 2 u^2    after, reaching 1 at d
+    //
+    // and `sub_418410` blends eye, target, roll and fov by t. This was linear
+    // in u until 2026-10-01: both start and end where the engine's do, but
+    // in between the port's camera led the engine's - a quarter of the way
+    // through it had covered 25% of the move where the engine covers 12.5%.
     float cameraProgress() const {
-        return camFrames_ >= kCameraMoveFrames ? 1.0f
-             : static_cast<float>(camFrames_) / kCameraMoveFrames;
+        if (camFrames_ >= kCameraMoveFrames) return 1.0f;
+        const double u = camFrames_ / kCameraMoveFrames;
+        return static_cast<float>(u <= 0.5 ? 2.0 * u * u : -1.0 + 4.0 * u - 2.0 * u * u);
     }
 
 private:

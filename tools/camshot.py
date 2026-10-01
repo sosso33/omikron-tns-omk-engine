@@ -89,7 +89,7 @@ def projector(eye, at, hfov_deg, mirror=False, roll_deg=0.0):
     def project(p):
         d = [p[i] - eye[i] for i in range(3)]
         z = sum(d[i] * f[i] for i in range(3))
-        if z <= 1: return None
+        if z <= 2: return None   # the engine's near plane, 2.0 (sub_4812E0) - raster.h kNearCut
         x = sum(d[i] * s[i] for i in range(3))
         y = sum(d[i] * u[i] for i in range(3))
         return (W * 0.5 * (1 + (x / z) / tanh),

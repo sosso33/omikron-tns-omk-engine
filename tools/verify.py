@@ -4750,6 +4750,15 @@ def c_one_program_per_actor():
 def c_dialogue_camera_blend():
     r"""A DIALOGUE CAMERA MOVE CARRIES ITS FOV AND ITS ROLL.
 
+    **2026-10-01: whole degrees and the ease.** `Dialog_Load` truncates both
+    angles to integer degrees (`_ftol`) before anything reads them, so the
+    largest fov move is 15 (84 -> 99), the 4583/4584 rolls are 2 and -1, and
+    4554 -> 4555 runs 79 -> 83. And the blend weight is the engine's curve
+    type 1, the quadratic ease in-out, so `u` in the `[dlgcam]` line is that
+    weight; between 0.25 and 0.75 of it the fov lies inside 79.5..82.5.
+    SHOWN TO FAIL: `cameraProgress` put back to linear (objects and binary
+    deleted) reads (0.25, 0.5, 0.75) off the drawn fov.
+
     `sub_418410` (04_sys.c 4047) lerps FOUR things across a move, not two:
 
         out[52..60] = C[20..28]*u + prev[20..28]*(1-u)     // eye
@@ -4834,43 +4843,60 @@ def c_dialogue_camera_blend():
     # ...AND THE PORT'S OWN BLEND, which the records alone cannot see: a
     # check that only reads the data passed unchanged with the snap put back.
     # 4554 -> 4555 is the first line's pair, reached with no input at all, and
-    # runs 79.98 -> 83.58; mid-travel the fov must be strictly BETWEEN them,
+    # runs 79 -> 83 (whole degrees, 2026-10-01); mid-travel the fov must be
+    # strictly BETWEEN them,
     # not at either end.
     saves = os.path.join(ROOT, "omk-saves", "GAMES")
+    # Without a local saves file, the COMMITTED `traces/games-resto.bin`: its
+    # slot 0 is the apartment just before dialog 402 (2026-10-01), and the
+    # same stand reaches 4554 -> 4555 with no input.
+    saveArgs = ["--save", saves, "--saves", saves] if os.path.exists(saves) else \
+               ["--save", os.path.join(ROOT, "traces", "games-resto.bin")]
     mid = None
-    if os.path.exists(saves):
+    if os.path.exists(saveArgs[1]):
         env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_CAMEYE="1")
         rr = subprocess.run([os.path.join(eng, "build", "omk-play"), fr,
-                             os.path.join(ROOT, "tables"), "--save", saves,
-                             "--saves", saves, "--slot", "0", "--stand", "3572,1071,-991,181",
-                             "--frames", "500", "--res", "640x480"],
+                             os.path.join(ROOT, "tables")] + saveArgs +
+                            ["--slot", "0", "--stand", "3572,1071,-991,181",
+                             "--frames", "600", "--res", "640x480"],
                             capture_output=True, env=env, encoding="latin-1")
         import re as _re
+        drawn = {}
         for line in rr.stdout.splitlines():
-            m = _re.search(r"\[dlgcam\].*pair 4554 -> 4555\s+u (\S+).*fov (\S+)", line)
-            if m and 0.25 < float(m.group(1)) < 0.75:
-                mid = float(m.group(2))
+            m = _re.search(r"\[dlgcam\] frame (\d+)\s+pair 4554 -> 4555\s+u (\S+).*fov (\S+)", line)
+            if not m: continue
+            drawn.setdefault(int(m.group(1)), float(m.group(3)))
+            if 0.25 < float(m.group(2)) < 0.75:
+                mid = float(m.group(3))
+        # THE CURVE, read off the fov the frontend DREW (79 -> 83, so the
+        # weight it applied is (fov - 79) / 4) a quarter, a half and three
+        # quarters of the way through the 160 frames: the engine's ease gives
+        # 0.125 / 0.5 / 0.875, the linear blend the port had gave 0.25 / 0.5 / 0.75.
+        f0 = min(drawn) if drawn else None
+        curve = tuple(round((drawn[f0 + k] - 79.0) / 4.0, 3) if f0 is not None and f0 + k in drawn
+                      else None for k in (40, 80, 120))
     # NO SAVE, NO VERDICT. `omk-saves/GAMES` is a local file and a checkout
     # without it used to make this check FAIL on its last element rather than
     # say why - a red that is about the machine, not the port (met 2026-09-18).
     if mid is None:
         return ("skipped",), ("skipped",), \
                "needs omk-saves/GAMES - the mid-move fov is measured from a running conversation"
-    between = 80.5 < mid < 83.0
+    between = 79.5 < mid < 82.5
     return (len(seen), fovMoves, round(biggest, 1), rolled, big10,
-            round(cam[4583][0], 2), round(cam[4584][0], 2), between), \
-           (19, 6, 14.6, 11, 2, 2.02, -0.61, True), \
+            round(cam[4583][0], 2), round(cam[4584][0], 2), between, curve), \
+           (19, 6, 15.0, 11, 2, 2.0, -1.0, True, (0.125, 0.5, 0.875)), \
            "dialog 402's distinct camera pairs through the port's own " \
            "loader; how many change FOV across the move and the largest, " \
-           "14.6 degrees (4572 -> 4574, 84.99 -> 99.58), which the viewer " \
+           "15 degrees (4572 -> 4574, 84 -> 99 in whole degrees), which the viewer " \
            "used to apply in ONE frame at the halfway point; how many carry " \
            "a ROLL and how many more than 10 degrees, all of which it drew " \
-           "upright; and the 4583/4584 rolls, stored as 359 and 2 in 4096ths " \
-           "and wrapped on load to -0.61 and 2.02 degrees, so the engine's " \
+           "upright; and the 4583/4584 rolls, truncated to whole degrees and " \
+           "wrapped on load to -1 and 2, so the engine's " \
            "plain lerp takes the short arc. And the port's own output: " \
            "halfway through the 4554 -> 4555 travel the drawn fov is " \
-           "strictly between 79.98 and 83.58, where the snap put it at one " \
-           "end or the other"
+           "strictly between 79 and 83, where the snap put it at one " \
+           "end or the other; then the weight the drawn fov shows 40, 80 " \
+           "and 120 frames in - the engine's ease in-out, 0.125 / 0.5 / 0.875"
 
 
 def c_ui_shop_titles():
@@ -27598,7 +27624,8 @@ def c_menu_cloud():
 def c_anekbah_rendered():
     r"""ANEKBAH, RENDERED - the repo's oldest prediction, finally a picture.
 
-    **2026-10-01: 12242 -> 7309 triangles drawn** - the back-face cull
+    **2026-10-01: AToit's moved pixels 121588 -> 121587** - one pixel the
+    engine's 2.0 near plane clips and 1.0 drew. **And 12242 -> 7309 triangles drawn** - the back-face cull
     (`engine: back-face cull`). Every other figure is unchanged, the lit
     pixels and the sign's own pixels included: the 4933 faces culled here
     were all hidden behind front faces anyway.
@@ -27697,7 +27724,7 @@ def c_anekbah_rendered():
     return (v, same, differs), \
            ((20, 7, 7309, 282669, 8023,
              7, 6920, 33, 545, 0,
-             18, 121588, 1763, 545, 0), True, True), \
+             18, 121587, 1763, 545, 0), True, True), \
            "Anekbah's textures and which material BATITR12 is; the triangles " \
            "drawn, the lit pixels, and the pixels the SIGN owns in the final " \
            "frame (masked by repainting its atlas, not by a depth tie); then " \
@@ -30048,6 +30075,10 @@ def c_engine_intro_beat():
 def c_engine_dialogue_play():
     r"""PLAYING a conversation - and the property is that it does NOTHING alone.
 
+    **2026-10-01: the first line's roll -14 -> -15.** `Dialog_Load` stores
+    the angle as WHOLE degrees, truncated before the wrap: 345.06 -> 345 ->
+    -15, where wrapping the raw value first gave -14.94 (printed -14).
+
     `dialog.start` stops the world (`g_DialogState` 3, and `Dialog_TickUI` owns
     the frame), and what restarts it is a PERSON. The port's `DialogPlayer`
     plays a node's voice and then waits: `next()` is the player pressing NEXT,
@@ -30166,7 +30197,7 @@ def c_engine_dialogue_play():
                (1, 0, 0,
                 3, 2, 9926, 1,
                 (1, 1), 0,
-                True, 3, (-14, 0, 0), 1), \
+                True, 3, (-15, 0, 0), 1), \
                "with NO presses: lines played, menus opened, and whether it " \
                "finished (must be 1/0/0 - it waits); then with five presses: " \
                "lines, menus, centiseconds of voice, finished; the two menus' " \

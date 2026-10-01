@@ -130,10 +130,15 @@ Projected project(const RCamera& c, const float p[3]);
 void cameraBasis(const RCamera& c, float s[3], float u[3], float f[3],
                  float& tanHalfH, float& tanHalfV);
 
-// The near cut, shared for the same reason: `camshot.py` cuts at z <= 1 and a
-// GPU projection matrix has to put its near plane in the same place or the two
-// renderers disagree about what is in shot.
-inline constexpr float kNearCut = 1.0f;
+// The near cut, shared for the same reason: `camshot.py` cuts at the same z and
+// a GPU projection matrix has to put its near plane in the same place or the
+// two renderers disagree about what is in shot. It is the ENGINE's 2.0, read
+// 2026-10-01: the 3D view node `sub_4812E0` (25_sys.c 182) sets it with
+// `sub_440BB0(scene, 2.0)` - scene +324, the near plane the clip tests read -
+// on every view, the main one included. It was 1.0 until then, one unit
+// nearer than the engine, so geometry the engine clips away a lens's width
+// from the eye was still drawn.
+inline constexpr float kNearCut = 2.0f;
 
 struct RasterStats {
     long triangles = 0;      // corners/3 offered

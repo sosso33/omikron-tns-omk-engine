@@ -4089,6 +4089,25 @@ The driver fills those two from the node: command 53 passes
 second over **160 frames — 5.3 seconds at 30 fps**, which is why the movement
 finishes well before a long line does.
 
+**The travel EASES IN AND OUT, and the angles are WHOLE DEGREES** (read
+2026-10-01, ported the same day). The second command also sets
+`dword_93081C = 1` — `request[7]`, which `sub_414A90` makes the transition's
+curve type — and type 1 in `sub_418100` / `sub_418310` is a quadratic ease
+in-out: with `u = elapsed / 160`, the blend weight is `2u²` up to halfway and
+`-1 + 4u - 2u²` after, and `sub_418410` lerps eye, target, roll and fov by it.
+(Types 0 and 2 are linear, 3 and 4 two others no dialogue uses.) The elapsed
+count advances by the frame delta before the sample, and the move ends on the
+first tick past 160. And `Dialog_Load` (0x00401800) converts the record's two
+angles IN PLACE with `_ftol(raw × 0.087890625)` — truncated toward zero, stored
+back into the int16 — so a fov of 74.97 is 74; `Camera_LoadParams` then wraps
+only the roll, once, into (−180, 180] (a raw 4086 is 359, then −1). 95 of the
+1923 cameras roll differently, by half a degree or more, from the
+wrap-then-scale reading the port had. Neither changes where a camera STARTS or
+ENDS by more than a degree; the ease changes where it is in between - a
+quarter of the way through, 12.5% of the move against linear's 25%.
+`verify.py: dialogue camera blend` reads the curve off the fov the frontend
+drew: 0.125 / 0.5 / 0.875 at 40 / 80 / 120 frames.
+
 **1237 of the 2348 camera slots are genuine pairs** (601 spoken lines, 636
 replies), and the two ids are almost always consecutive — 39→40, 344→345,
 393→394 — so they were authored together as a "from" and a "to". The rest name

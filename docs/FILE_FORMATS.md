@@ -204,7 +204,7 @@ with different durations:
 | id from | duration |
 |---|---|
 | `lineCamera` / `replyCamera` | `-1.0` — cut, immediately |
-| `lineCamera2` / `replyCamera2` | `160.0` — travel there over 160 frames |
+| `lineCamera2` / `replyCamera2` | `160.0` — travel there over 160 frames, EASED in and out (curve type 1; ASSETS) |
 
 So a line cuts to the first framing and then moves to the second over **160
 frames, 5.3 seconds at 30 fps** — which is why the camera settles well before a

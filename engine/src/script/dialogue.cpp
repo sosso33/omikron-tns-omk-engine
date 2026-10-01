@@ -60,9 +60,25 @@ Conversation parseConversation(int id, std::span<const std::byte> b) {
                     u32(b, o + 12u + 4u * static_cast<std::size_t>(k))));
             }
             dc.id   = i16(b, o + 24);
-            dc.roll = angle4096(i16(b, o + 28));
-            dc.fov  = angle4096(i16(b, o + 30));
-            if (dc.fov <= 1.0f) dc.fov = 74.0f;   // the viewer's own fallback
+            // INTEGER DEGREES, in the engine's order. `Dialog_Load` (0x00401800)
+            // converts each angle in place - `fild; fmul 0.087890625; _ftol`,
+            // TRUNCATED toward zero - and stores it back into the int16, so
+            // the fraction is gone (a fov of 74.97 is 74). `Camera_LoadParams`
+            // then wraps only the ROLL, once, into (-180, 180]. The order
+            // matters for a roll: a raw 4086 is 359, then -1, where wrapping
+            // the raw first gives -0.88 and truncating that gives 0. 95 of the
+            // 1923 shipped cameras roll differently by half a degree or more.
+            const auto deg = [](std::int16_t raw) {
+                return static_cast<int>(static_cast<double>(raw) * 0.087890625);
+            };
+            int roll = deg(i16(b, o + 28));
+            if (roll > 180) roll -= 360;
+            if (roll <= -180) roll += 360;
+            dc.roll = static_cast<float>(roll);
+            dc.fov  = static_cast<float>(deg(i16(b, o + 30)));
+            // A guard, not the engine's: no shipped camera reaches it (0 of
+            // 1923), and a zero fov would divide by tan(0).
+            if (dc.fov <= 1.0f) dc.fov = 74.0f;
             dc.subject[0] = static_cast<std::uint16_t>(i16(b, o + 32));
             dc.subject[1] = static_cast<std::uint16_t>(i16(b, o + 34));
             c.cams.push_back(dc);
