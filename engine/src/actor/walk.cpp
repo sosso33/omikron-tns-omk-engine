@@ -255,12 +255,17 @@ StepResult Walker::step(double dx, double dz, double dt) {
 
 std::optional<SweepHit> Walker::bodyHit(const double p[3], const double d[3]) const {
     std::optional<SweepHit> best;
+    // `p` is the FEET. The body's BOTTOM starts a step up (see `slide`), and
+    // nothing else moves: a sphere whose bottom would dip into the step
+    // window is raised just out of it, the rest stay where the model hangs
+    // them, so the top of the head is where it is.
+    const double lowest = -kStepUp - radius_;               // y grows DOWN
     if (centres_.empty()) {
-        const double c[3] = {p[0], p[1] - radius_, p[2]};      // one sphere on the feet
+        const double c[3] = {p[0], p[1] + lowest, p[2]};       // one sphere, a step up
         return sweepThrough(*blockers_, blockerGrid_, c, d, radius_);
     }
     for (const auto& off : centres_) {
-        const double c[3] = {p[0] + off[0], p[1] + off[1], p[2] + off[2]};
+        const double c[3] = {p[0] + off[0], p[1] + std::min(off[1], lowest), p[2] + off[2]};
         const auto h = sweepThrough(*blockers_, blockerGrid_, c, d, radius_);
         if (h && (!best || h->t < best->t)) best = h;
     }
@@ -295,14 +300,19 @@ void Walker::slide(double& dx, double& dz, double push[2]) {
     // blocks - the spheres above the raise still meet it - and
     // `verify.py: engine: narrow phase` still stops him 13.0 in front of one.
     //
-    // RECONSTRUCTION, and labelled as one: what the engine does here is not
-    // read. `Sweep_ActorMove` (0x004AD360) and the 930-line
-    // `Sweep_PolygonKernel` were deliberately not transcribed, so the sweep's
-    // own start height is unknown; what IS known is that the game climbs its
-    // own stairs, that its step limit is 30 cm, and that a sweep anchored at
-    // the feet cannot do both. Reading `Actor_Move`'s order - whether the
-    // step-up runs before the sweep - would settle it.
-    double p[3] = {pos_[0], pos_[1] - kStepUp, pos_[2]};
+    // READ 2026-10-01 - and it is the BOTTOM that rises, not the body.
+    // `Actor_Move` (0x00469580) folds the model's sphere list into ONE
+    // capsule before `Sweep_ActorMove`: radius the largest sphere's (times
+    // `collidescale`, 1.0), top the smallest y - r, bottom the largest y + r,
+    // and with its flag bit 1 the bottom MINUS `dword_910340`, the 30 cm step
+    // - the top is left alone. This used to raise the whole stack by the
+    // step, which put Kay'l's head 82.7 units above his feet instead of the
+    // 70.8 the list gives (1.80 m), and the lintel of his own flat's lift, 82
+    // up, stopped him in the doorway until he jumped (a reader, 2026-10-01).
+    // So the sweep is anchored at the feet and only the spheres that reach
+    // into the step window are lifted out of it (`bodyHit`): the bottom is a
+    // step up, as before, and the head is where the model puts it.
+    double p[3] = {pos_[0], pos_[1], pos_[2]};
     double total[2] = {0.0, 0.0};
     for (int pass = 0; pass < 3; ++pass) {
         const double len = std::sqrt(dx * dx + dz * dz);

@@ -18077,6 +18077,57 @@ def c_engine_camera_collision():
          "collision pass and with it")
 
 
+def c_engine_lift_lintel():
+    r"""`engine/`: Kay'l walks OUT of his flat's lift - the swept body's TOP is
+    where the model puts it, and only its BOTTOM rises by the step.
+
+    A reader, 2026-10-01: leaving the lift into Kay'l's apartment he was
+    blocked in the doorway and had to jump. The doors were not it - both
+    `Ap01Door L` / `r` slide 22.7 units apart and their collision follows
+    them. What stopped him was the LINTEL: a face of the cabin 82 units above
+    the floor (y 999 over a floor at 1081), caught by the top sphere of his
+    swept body. `Actor_Move` (0x00469580) folds the model's sphere list into
+    one capsule - top at the smallest y - r, bottom at the largest y + r and,
+    with flag bit 1, the bottom MINUS the 30 cm step `dword_910340`; the top
+    is not raised. HO1_FN's list spans 70.83 units, 1.80 m. The walker raised
+    the WHOLE stack by the step instead (a labelled reconstruction, written
+    before `Actor_Move` was read), so the head reached 82.7 and grazed the
+    lintel by 0.7.
+
+    The script that brings him up (AREA 229 record 4) ends with
+    `area.goto 237` and `actor.goto_address 677`; this stands there with the
+    committed `traces/games-resto.bin` slot 0 (the flat), waits for the doors,
+    holds forward for 240 frames and reads the viewer's `walked` figure.
+    413.4 now; 36.7 with the old stack (he stops at x 2969 in the doorway).
+    `engine: stairs` (119 of 119 risers) and `engine: narrow phase` (13.0 in
+    front of a wall) are unchanged: the bottom still starts a step up.
+
+    SHOWN TO FAIL: the old `p[1] = pos_[1] - kStepUp` with the spheres
+    unclamped, walk.o and omk-play deleted - walked 36.7.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    save = os.path.join(ROOT, "traces", "games-resto.bin")
+    if not (os.path.isdir(eng) and os.path.exists(save)):
+        return ("no data",), ("data",), "needs traces/games-resto.bin"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"), "--software",
+                        "--res", "640x480", "--nofmv", "--no-crowd", "--save", save, "--slot", "0",
+                        "--area", "237", "--address", "677", "--hold", "k*120,k200*240",
+                        "--frames", "360"],
+                       capture_output=True, encoding="latin-1",
+                       env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+    m = re.search(r"walked ([\d.]+) over", r.stdout)
+    if not m:
+        return ("no walked line",), ("walked",), "omk-play's end-of-run player line"
+    walked = float(m.group(1))
+    return walked > 300.0, True, "walked %.1f out of the lift at address 677 in 240 frames of " \
+        "forward - over 300 means through the doorway (36.7 is the lintel stopping him)" % walked
+
+
 def c_engine_backface_cull():
     r"""`engine/`: a single-sided face seen from BEHIND is not drawn - the
     engine's own back-face cull, in software, one level above the device.
@@ -39882,6 +39933,7 @@ SLOW = [
     ("engine: camera collision", c_engine_camera_collision, "todo/reader-followups"),
     ("engine: camera obstruction", c_engine_camera_obstruction, "todo/camera-obstruction 5-6"),
     ("engine: back-face cull", c_engine_backface_cull, "ASSETS 4b; o3de/geom3do.h kTwoSided"),
+    ("engine: lift lintel", c_engine_lift_lintel, "actor/walk.cpp slide; todo/play-test.md"),
     ("engine: tunnel door walk", c_engine_tunnel_door_walk, "todo/collision-scenes-transitions"),
     ("engine: arrival wait", c_engine_arrival_wait, "todo/omk-play"),
     ("engine: linked rings", c_engine_linked_rings, "todo/omk-play"),
