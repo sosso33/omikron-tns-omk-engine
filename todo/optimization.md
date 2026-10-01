@@ -2474,6 +2474,15 @@ down when presented.
    on the console as well. Lead (NOT built): read how `I2D` blits scaled
    primitives in the original (the DirectDraw back end, `docs/UI.md`) and
    compose the 640x480 layer once, scaling it on the GPU.
+   **MOSTLY AN INSTRUMENT - fixed 2026-10-02 (`4f06ad4`).** A debug-build
+   `sample` (M3, 4K start menu) put ~76% of the interface's CPU on
+   `screendraw.cpp:1766-1770`: a painted-pixel count and an FNV hash of the
+   WHOLE framebuffer, every frame, for two numbers only `run_screen` reads.
+   They are now opt-in (`setReportHash`). Same worktree with the change
+   stashed as "before", load ~5: **30.5 -> 95 fps** on Vulkan, `screens, hud`
+   28.0 -> 5.2 ms; GLES 60 fps. What remains: the cloud background computed
+   per display pixel (~12% before) and the 4K upload (~9%) - the original's
+   way out is still the lead above.
 
 **The opposite end - 320x240, to strip the per-pixel costs (same day, M3,
 load 4-8, `bb21d5f`).** GLES, the same street, `--frames 1500`, with `sample`
