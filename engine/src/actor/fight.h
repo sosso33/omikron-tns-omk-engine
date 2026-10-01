@@ -361,8 +361,8 @@ private:
     // `Fight_TickCamera` (0x00446500) and the helpers each arm calls.
     void tickCamera(float dt);
     void camOrbit(bool ease, float angleOff, float height, float atLift);  // sub_446000
-    void camThrow(float height);                                           // sub_446240
-    void camSteady(float degPerFrame, float eyeUp, float atUp);            // sub_445D30
+    void camThrow(float height, float dt);                                 // sub_446240
+    void camSteady(float degPerFrame, float eyeUp, float atUp, float dt);  // sub_445D30
     bool camTransition(float dt);                                          // sub_445E30
     void camPlace(float radius, float headingDeg, float height,            // sub_445C20
                   float atLift, bool moveTarget);

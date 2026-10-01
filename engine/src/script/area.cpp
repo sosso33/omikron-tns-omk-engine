@@ -2359,7 +2359,7 @@ void Session::frame() {
         sliders_.tick(static_cast<float>(frameSeconds_ * 30.0));   // `Sliders_Tick`, no dialogue gate either
         postRunOvers();
         refreshCrowdIndex();
-        if (bumpCooldown_ > 0) --bumpCooldown_;
+        if (bumpCooldown_ > 0.0f) tickBumpCooldown();
         trackPlayer();
         // ...and the ZONE SCAN, which is not the pump's: `Actors_TickAll`
         // dispatches the player's state 16/17 to `Actor_TickDialogue`, which
@@ -2429,7 +2429,7 @@ void Session::frame() {
     sliders_.tick(static_cast<float>(frameSeconds_ * 30.0));
     postRunOvers();
     refreshCrowdIndex();
-    if (bumpCooldown_ > 0) --bumpCooldown_;
+    if (bumpCooldown_ > 0.0f) tickBumpCooldown();
 
     // ...and where that leaves the player. Camera 0 - the one SCENE 55's
     // cutscene asks for - is relative to him, so without this the camera sits
@@ -2521,6 +2521,14 @@ void Session::startBlackFade(bool fromBlack) {
         blackFade_.duration = 60.0f;
         blackFade_.clock = 0.0f;
     }
+}
+
+// `Sliders_Tick`'s tail (18_d3d.c 5100): `dword_538318 -= flt_4C30D8`, and
+// below zero it is 0 - by the DELTA, where the port ran it down one a
+// presented frame and bumps came twice as often at 60 (todo/sixty-fps.md 4)
+void Session::tickBumpCooldown() {
+    bumpCooldown_ -= static_cast<float>(frameDelta());
+    if (bumpCooldown_ < 0.0f) bumpCooldown_ = 0.0f;
 }
 
 void Session::tickFades(float dt) {
@@ -3945,7 +3953,7 @@ bool Session::crowdPush(const std::vector<CollisionSphere>& mine, float myReach,
             if (w < 0) continue;
             const auto& walker = sliders_.movers()[static_cast<std::size_t>(w)];
             postMessage(walker.sex == 1 ? 15 : 16, playerActor());
-            bumpCooldown_ = 100;                     // `dword_538318 = 100.0f`
+            bumpCooldown_ = 100.0f;                  // `dword_538318 = 100.0f`
             break;
         }
     }

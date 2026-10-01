@@ -836,6 +836,7 @@ public:
     void startBlackFade(bool fromBlack);
     // One frame of both, in FRAMES (the engine's `flt_4C30D8`).
     void tickFades(float dt = 1.0f);
+    void tickBumpCooldown();
     // `dword_4E6C7C`: the boot AREA's startup context (`Game_NewGame` stores
     // the active slot's block +0 after `State_Apply`), cleared by `end` when
     // ANY context ends action 1 and by event 5 when that context answers a
@@ -1476,7 +1477,7 @@ private:
     ShootMode shoot_;
     std::vector<ShootStatWrite> shootStatWrites_;   // `sub_423A40`, for the frontend
     bool shootTableRead_ = false;    // GLOBAL +42, read on the first `shoot.begin`
-    int   bumpCooldown_ = 0;                 // dword_538318, in frames
+    float bumpCooldown_ = 0.0f;              // dword_538318, frames at 30 Hz, run down by the delta
     long  runOvers_ = 0;                     // message-17 posts, an instrument
     bool  trafficWanted_ = false;            // `loadTraffic` was called - the street is on
     void  refreshCrowdIndex();

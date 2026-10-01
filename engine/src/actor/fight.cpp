@@ -153,7 +153,7 @@ void Fight::camOrbit(bool ease, float angleOff, float height, float atLift) {
 // `sub_446240`: the THROW. One random swing of up to 90 degrees, spread over
 // what is left of the thrown fighter's clip, so the camera sweeps around the
 // pair while the throw plays.
-void Fight::camThrow(float height) {
+void Fight::camThrow(float height, float dt) {
     if (!cam_.placed) {
         // THE SWING IS SPREAD OVER THE THROWN FIGHTER'S CLIP, and this used to
         // be a hard-coded 30 frames labelled as a stand-in for `sub_45ACF0`,
@@ -184,7 +184,9 @@ void Fight::camThrow(float height) {
     }
     float mid[3]; camMidpoint(mid);
     const float radius = cam_.radius + 39.370079f;
-    cam_.heading += cam_.swing;
+    // `flt_530C84 * flt_4C30D8 + flt_530C20`: the swing BY THE DELTA, so the
+    // half-turn ends with the clip at any frame rate (todo/sixty-fps.md 4)
+    cam_.heading += cam_.swing * dt;
     const float rad = cam_.heading * kDegToRad;
     cam_.eye[0] = mid[0] - std::cos(rad) * radius;
     cam_.eye[2] = mid[2] - std::sin(rad) * radius;
@@ -194,13 +196,14 @@ void Fight::camThrow(float height) {
     cam_.eye[1] = height + cam_.at[1];
 }
 
-// `sub_445D30`: a steady orbit, the heading advancing by `degPerFrame`.
-void Fight::camSteady(float degPerFrame, float eyeUp, float atUp) {
+// `sub_445D30`: a steady orbit, the heading advancing by `degPerFrame` -
+// times the delta, `fld arg_0 / fmul flt_4C30D8 / fadd flt_530C20`.
+void Fight::camSteady(float degPerFrame, float eyeUp, float atUp, float dt) {
     if (!a_.body || !b_.body) return;
     measureSeparation();
     const float radius = (separation_ + 157.48032f) * 0.65161264f;
     float mid[3]; camMidpoint(mid);
-    cam_.heading += degPerFrame;
+    cam_.heading += degPerFrame * dt;
     const float rad = cam_.heading * kDegToRad;
     cam_.eye[0] = mid[0] - std::cos(rad) * radius;
     cam_.eye[2] = mid[2] - std::sin(rad) * radius;
@@ -322,8 +325,8 @@ void Fight::tickCamera(float dt) {
 
     switch (state) {
     case 1: camOrbit(true, 0.0f, -9.8425198f, bits(-1050904334)); break;
-    case 2: camThrow(cam_.height); break;
-    case 3: cam_.height = 19.68504f; camSteady(3.5f, 19.68504f, 0.0f); break;
+    case 2: camThrow(cam_.height, dt); break;
+    case 3: cam_.height = 19.68504f; camSteady(3.5f, 19.68504f, 0.0f, dt); break;
     case 4: if (!camTransition(dt)) { cam_.state = 1; cam_.placed = false; } break;
     case 7: {
         // The KO. The framing changes ONCE PER REPLAY PASS, not per tick:
