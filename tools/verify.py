@@ -6727,7 +6727,8 @@ def c_enhance_all():
     named = {"aa": "AntiAliasing", "filter": "TextureFilter", "aniso": "Anisotropy",
              "shadowquality": "ShadowQuality", "lighting": "Lighting",
              "supersampling": "Supersample", "uiscaling": "UiScaling",
-             "clipdistance": "UnlimitedDraw", "radar": "Radar"}
+             "clipdistance": "UnlimitedDraw", "radar": "Radar",
+             "framerate": "FrameRate"}
     reported = {k for k in allMax if k != "all"}
     covered = reported == set(named)
     want = {k: int(tops[v]) for k, v in named.items() if v in tops}
@@ -19490,6 +19491,49 @@ def c_engine_fades():
            "own opening fade decoded from the shipped bytes: opcode 119, " \
            "colour 0x00FFFFFF (WHITE, not the red the report went looking " \
            "for) over 25 frames"
+
+
+def c_engine_frame_rate():
+    r"""A fade lasts the same TIME at 60 fps as at 30 (`todo/sixty-fps.md`).
+
+    The engine's delta is `30 / fps` (`docs/BOOT.md` 4): presenting faster
+    steps every clock by less and leaves every duration alone. The port's
+    Session called `tickFades()` with its default 1.0 - one step per PRESENTED
+    frame - so at 60 both screen fades ran in half the time, while the
+    engine's ticker (0x00451E60) does `fadd flt_4C30D8` on each arm.
+
+    `framerate_probe` runs `Session::frame()` itself - the viewer's path, not
+    `tickFades` called by hand - at 1/30 s and 1/60 s and counts the frames
+    to each fade's end: the black fade's fixed 60 and a 25-frame colour
+    "from". The counts double and the milliseconds hold.
+
+    Shown to fail: `tickFades()` back to its default gives 61 frames at 60
+    as at 30 - 1016 ms where the fade takes 2033.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not (os.path.isdir(eng) and os.path.isdir(omkpaths.data())):
+        return ("skipped",), ("skipped",), "engine/ or the game data absent"
+    b = subprocess.run(["make", "-s", "build/framerate_probe"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "framerate_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    o = subprocess.run([binp, omkpaths.data("IAM"),
+                        os.path.join(ROOT, "tables", "vm_opcodes.json"),
+                        omkpaths.data("IAM", "START")],
+                       capture_output=True, text=True).stdout
+    rows = {(m[0], int(m[1])): (int(m[2]), int(m[3])) for m in
+            re.findall(r"^fade (\w+) (\d+): (-?\d+) frames, (-?\d+) ms$", o, re.M)}
+    if len(rows) != 4:
+        return (len(rows),), (4,), "framerate_probe printed %d of its 4 rows" % len(rows)
+    got = tuple(rows[(k, f)][0] for k in ("black", "colour") for f in (30, 60))
+    # the time at 60 within one frame at 30 of the time at 30
+    held = all(abs(rows[(k, 60)][1] - rows[(k, 30)][1]) <= 34 for k in ("black", "colour"))
+    return (got, held), ((61, 121, 26, 51), True), (
+        "frames to each fade's end through Session::frame() at 30 and 60 fps - the "
+        "black fade's 60 frames (61, 121) and a 25-frame colour fade (26, 51) - and "
+        "that the time each takes holds to within one frame at 30")
 
 
 def c_engine_set_emitters():
@@ -37060,6 +37104,8 @@ def c_licence_headers():
     **479 -> 480**: `engine/tools/tie_census.cpp` (2026-09-29), the depth tie's
     coincidence census (step 27). `book/`'s two scripts carry the line too but
     sit outside these roots, so they do not count here.
+    **480 -> 481**: `engine/tools/framerate_probe.cpp` (2026-10-01), a
+    fade's frames and time at 30 and 60 fps (`todo/sixty-fps.md`).
     """
     import glob as _g
     TAG = "SPDX-License-Identifier: GPL-3.0-or-later"
@@ -37089,7 +37135,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (480, [], 1, []), \
+           (481, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -39381,6 +39427,7 @@ SLOW = [
     ("engine: actor sounds", c_engine_actor_sounds, "engine/README"),
     ("engine: camera roll", c_engine_camera_roll, "engine/README"),
     ("engine: fades",      c_engine_fades,      "engine/README"),
+    ("engine: frame rate", c_engine_frame_rate, "todo/sixty-fps 3; BOOT 4"),
     ("engine: set emitters", c_engine_set_emitters, "engine/README"),
     ("engine: save+clock", c_engine_save,       "engine/README"),
     ("engine: save write", c_engine_save_write, "engine/README"),

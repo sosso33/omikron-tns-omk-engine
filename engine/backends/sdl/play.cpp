@@ -1670,6 +1670,9 @@ int main(int argc, char** argv) {
 "  --radar game|always  shoot mode's minimap: the game's own switch (default -\n"
 "                   a script turns it on, mostly only for an item nothing gives)\n"
 "                   or in every shoot phase with a radar file; [Enhancements] radar=M\n"
+"  --framerate N    ENHANCEMENT: present up to N frames a second (30..240,\n"
+"                   default 30). The original had no cap - its delta is 30/fps\n"
+"                   - so the simulation is unchanged; [Enhancements] framerate=N\n"
 "  --software       force the software rasteriser\n"
 "  --letterbox      the 1.818:1 camera-mode bars, for laying a shot beside\n"
 "                   a capture; --full is the old spelling of the opposite\n"
@@ -1859,6 +1862,7 @@ int main(int argc, char** argv) {
     int lightingFlag = -1; // --lighting pervertex|perpixel, [Enhancements] lighting
     int ssaaFlag = -1;     // --ssaa N, [Enhancements] supersampling
     int radarFlag = -1;    // --radar game|always, [Enhancements] radar
+    int frameRateFlag = -1; // --framerate N, [Enhancements] framerate
     // `--dither 0|1`. NOT an enhancement: `sub_4638C0` sets D3DRENDERSTATE 26
     // (DITHERENABLE) to 1 on both device arms, so on is what the engine does.
     // The flag exists to lay a dithered frame beside an undithered one.
@@ -2112,6 +2116,13 @@ int main(int argc, char** argv) {
             anisoFlag = std::max(1, std::min(16, std::atoi(argv[++i])));
         else if (a == "--enhance-all") enhanceAll = true;
         else if (a == "--ssaa" && i + 1 < argc) ssaaFlag = std::atoi(argv[++i]);
+        else if (a == "--framerate" && i + 1 < argc) {
+            frameRateFlag = omk::frameRateValue(argv[++i]);
+            if (frameRateFlag < 0) {
+                std::fprintf(stderr, "--framerate %s: not 30..240 (or game)\n", argv[i]);
+                return 2;
+            }
+        }
         else if (a == "--radar" && i + 1 < argc) {
             radarFlag = omk::radarMode(argv[++i]);
             if (radarFlag < 0) {
@@ -2427,6 +2438,13 @@ int main(int argc, char** argv) {
     // a script's op 146 has turned it on; `always` draws it in every shoot
     // phase whose area has a radar file.
     const bool radarAlways = enh(radarFlag, settings.radarAlways ? 1 : 0, omk::kMaxRadar) > 0;
+    // Row 11: the PACER's rate. Not the simulation's - that steps on the
+    // measured delta whatever this is - and never a `--frames` run's, which
+    // steps a fixed 1/30 and never reaches the pacer.
+    const int frameRate = enh(frameRateFlag, settings.frameRate, omk::kMaxFrameRate);
+    if (frameRate != 30)
+        std::printf("framerate: %d - an ENHANCEMENT: the port presents at 30 by default; "
+                    "the original had no cap and stepped on 30/fps, as this does\n", frameRate);
     if (radarAlways)
         std::printf("radar: always - an ENHANCEMENT: the game shows shoot mode's minimap "
                     "only when a script turns it on, and in seven of its nine arenas only "
@@ -22221,7 +22239,7 @@ int main(int argc, char** argv) {
         // measured delta above - and `--frames` runs never reach here.
         if (!frames) {
             static const double perfHz = static_cast<double>(SDL_GetPerformanceFrequency());
-            constexpr double kPeriod = 1.0 / 30.0;
+            const double kPeriod = 1.0 / static_cast<double>(frameRate);   // row 11
             const auto nowSec = [] {
                 return static_cast<double>(SDL_GetPerformanceCounter()) / perfHz;
             };

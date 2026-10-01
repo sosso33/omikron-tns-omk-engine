@@ -91,7 +91,7 @@ reader found.
 
 1. **The frame-locked sites of §2's first table**, each onto the delta. At 30
    nothing moves (the delta is 1.0), so the existing checks stay as they are.
-2. **Row 11, `framerate = N` / `--fps N`**: the pacer's period, 30 by default;
+2. **Row 11, `framerate = N` / `--framerate N`**: the pacer's period, 30 by default;
    `all = max` asks 60. The simulation is untouched - it already steps on the
    measured delta - and a `--frames` run never reaches the pacer, so headless
    checks are unaffected. A check that the DURATION of a fade, a shimmer cycle
@@ -111,4 +111,5 @@ reader found.
 | step | state |
 |---|---|
 | 1 | **done**: fades, both shimmers, the shoot death countdown, the media subtitle, the boarding camera, the gunman's death clip (pose, message 3, fall) - the last on a new `gameClock`, the sum of the deltas. At 30 every one reduces to the old arithmetic (the delta snaps to 1.0): `engine: shimmer`, `fades`, `shoot death`, `slider door` green, and `shoot hit` (red on purpose) byte-identical to the unmodified commit run in a worktree. Behaviour that MOVES even at 30: the shimmer and the death clip now stand still under the pause, as the engine's zero delta stops them. `nudge()`/`moveBy()`'s `dt = 1.0` left for step 4 - an extra gravity tick while airborne at ANY rate, not a frame-rate fault |
-| 2-5 | not started |
+| 2 | **done**: `framerate = N` (30..240, or `game`) under `[Enhancements]`, `--framerate N`, `all = max` asks 60 (`kMaxFrameRate`); the pacer's period is `1 / N`, nothing else reads it. NOT `--fps`, which already exists and SHOWS the rate. `engine: frame rate` - `framerate_probe` runs `Session::frame()` at 1/30 and 1/60: the black fade 61 -> 121 frames and a 25-frame colour fade 26 -> 51, the time held to a frame; shown red (61, 61, 26, 26) with `tickFades()` back on its default. `enhance all` (shown red with the `take` removed), `config template`, `play usage` green |
+| 3-5 | not started |

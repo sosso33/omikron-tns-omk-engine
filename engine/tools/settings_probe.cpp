@@ -47,6 +47,7 @@ int main(int argc, char** argv) {
     std::printf("enh clipdistance %d %s\n", s.unlimitedDrawDistance ? 1 : 0,
                 omk::sourceName(s.unlimitedDrawSource));
     std::printf("enh radar %d %s\n", s.radarAlways ? 1 : 0, omk::sourceName(s.radarSource));
+    std::printf("enh framerate %d %s\n", s.frameRate, omk::sourceName(s.frameRateSource));
     std::printf("enh all %d\n", s.enhanceAll ? 1 : 0);
     std::printf("screen %dx%d %s\n", v.screenX, v.screenY, omk::sourceName(s.screen));
     std::printf("density %d %s\n", v.streetActivity, omk::sourceName(s.streetActivity));

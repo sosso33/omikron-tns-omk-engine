@@ -199,3 +199,10 @@
 ;   always   draw it in every shoot phase whose area has a radar file.
 ; `todo/enhancements.md` 10.
 ;radar = game
+
+; The FRAME RATE the viewer presents at: 30..240, default 30. The original
+; had no cap at all - it ran at the monitor's refresh with a frame delta of
+; 30/fps - so this changes how often a frame is drawn, never how fast the
+; game runs. Bodies still pose at 30 (the engine truncates to a key).
+; `todo/enhancements.md` 11, `todo/sixty-fps.md`.
+;framerate = 30

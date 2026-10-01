@@ -42,6 +42,7 @@
 #include "platform/options.h"
 #include "script/savefile.h"
 
+#include <cstdlib>
 #include <optional>
 #include <string>
 
@@ -121,6 +122,16 @@ struct Settings {
     // it is not what the game shows.
     bool   radarAlways = false;
     Source radarSource = Source::Default;
+
+    // `framerate = N`: the viewer's presentation cap in frames per second,
+    // 30 by default. The ORIGINAL has no cap at all - `Game_RunLoop` runs a
+    // frame whenever the pump is idle, and the fullscreen `Flip` waits only
+    // for the vertical blank - so on a fast machine it ran at the monitor's
+    // rate with a delta of `30 / fps`. The port's 30 is its own; this lifts
+    // it. The simulation is untouched: it already steps on the measured
+    // delta (todo/sixty-fps.md; `todo/enhancements.md` 11).
+    int    frameRate = 30;
+    Source frameRateSource = Source::Default;
 
     // `clipdistance = 0` under `[Enhancements]`: UNLIMITED DRAW DISTANCE.
     //
@@ -247,6 +258,18 @@ inline int radarMode(std::string w) {
 }
 inline const char* radarName(int m) { return m <= 0 ? "game" : "always"; }
 
+// `framerate`: 30..240 frames per second, or `game` for the port's 30.
+// -1 for anything else.
+inline int frameRateValue(std::string w) {
+    for (auto& c : w) c = static_cast<char>(c >= 'A' && c <= 'Z' ? c + 32 : c);
+    while (!w.empty() && (w.back() == ' ' || w.back() == '\t')) w.pop_back();
+    while (!w.empty() && (w.front() == ' ' || w.front() == '\t')) w.erase(w.begin());
+    if (w == "game" || w == "original") return 30;
+    if (w.empty() || w.find_first_not_of("0123456789") != std::string::npos) return -1;
+    const int v = std::atoi(w.c_str());
+    return v >= 30 && v <= 240 ? v : -1;
+}
+
 // THE TOP OF EACH ENHANCEMENT, in one place, so `all = max` and
 // `--enhance-all` cannot drift apart from each other or from the parsers.
 // The two the DEVICE caps are asked for at their largest defined value; the
@@ -263,6 +286,9 @@ inline constexpr int kMaxSupersample   = 4;
 inline constexpr int kMaxUiScaling     = 1;   // linear
 inline constexpr int kMaxUnlimitedDraw = 1;   // the cap lifted
 inline constexpr int kMaxRadar         = 1;   // always
+// 60, not 240: "as high as it goes" for a cap is the display's refresh, which
+// a GPU backend's FIFO swapchain already enforces, and 60 is what was asked.
+inline constexpr int kMaxFrameRate     = 60;
 // The top of row 3's five values, and the furthest the ENGINE ever puts the
 // clip distance. Kept as a named number because `all = max` has to say what
 // "unlimited" replaces, and because a check quotes it.
@@ -289,6 +315,7 @@ inline void applyMaxEnhancements(Settings& s) {
     take(s.uiScaling,     kMaxUiScaling,     s.uiScalingSource);
     takeFlag(s.unlimitedDrawDistance, kMaxUnlimitedDraw, s.unlimitedDrawSource);
     takeFlag(s.radarAlways, kMaxRadar, s.radarSource);
+    take(s.frameRate,     kMaxFrameRate,     s.frameRateSource);
 }
 
 // Resolve the three sources in order.  Either may be absent.
