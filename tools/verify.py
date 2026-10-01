@@ -18103,7 +18103,8 @@ def c_engine_lift_lintel():
     front of a wall) are unchanged: the bottom still starts a step up.
 
     SHOWN TO FAIL: the old `p[1] = pos_[1] - kStepUp` with the spheres
-    unclamped, walk.o and omk-play deleted - walked 36.7.
+    unclamped, walk.o and omk-play deleted - walked 36.1, red; restored by
+    editing the lines back and rebuilding the same way, 413.4 again.
     """
     import subprocess
     eng = os.path.join(ROOT, "engine")

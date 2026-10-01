@@ -180,6 +180,19 @@ still be visible from above and below. All three renderers (software, Vulkan,
 GLES) cull. `OMK_NO_CULL=1` draws both sides on the software renderer, to
 compare.
 
+## 15. OUT OF KAY'L'S LIFT INTO HIS FLAT (2026-10-01)
+
+```
+build/omk-play ~/Documents/omk/fr ../tables --save ../traces/games-resto.bin --slot 0 \
+    --area 237 --address 677
+```
+Address 677 is where the lift from Hall 27 puts him. Walk forward once the
+doors have opened: he should go through the doorway without jumping. The
+fix is in the swept body (its head was 12 units too high, so the lift's
+lintel caught it), so it can change anywhere with a low ceiling or a low
+door frame - worth a look under stairs, through low doors and in the
+sewers/tunnels, where he should now pass anything a 1.80 m man passes.
+
 ## What is NOT fixed, so do not report it as new
 
 * **The lift arrival is still black** and the camera is inside the lift-car
