@@ -15801,7 +15801,14 @@ def c_engine_dirty_corners():
         out = os.path.join(eng, "build", "dirty-corners-%s.bin" % tag)
         if os.path.exists(out):
             os.remove(out)
-        env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_TIE_STATS="1", **extra_env)
+        # `OMK_NO_TIE_BAKE=1`: the per-frame tie this check measures the
+        # replay OF. Since 2026-09-30 (optimization step 29) the Vulkan backend
+        # decides a set's losers once per load and runs no per-frame tie over
+        # it at all - the stats line then read 0 / 0 / 0 and this went red on
+        # a path that no longer runs by default. The dirty list still feeds the
+        # upload, which the pixel comparison below covers either way.
+        env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_TIE_STATS="1",
+                   OMK_NO_TIE_BAKE="1", **extra_env)
         r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
                             "--save", save, "--area", "0", "--stand", "1804,0,-6890,336",
                             "--nofmv", "--world-vulkan", "--frames", "90", "--dump", out],

@@ -12534,7 +12534,17 @@ int main(int argc, char** argv) {
         // set of ITS area is loaded. `Area_LoadScx` binds as the `.SCX` lands,
         // against that area's set - which is the pairing this keeps, whichever
         // of the two a transition brings in first.
-        if (session.scene().loaded() && !session.scene().setEmittersBound())
+        //
+        // Tried twice a frame: here, for a `.SCX` the Session's tick has just
+        // made resident over a set already in, and again below once the
+        // frame's sets are in - so a load that brings the set and its `.SCX`
+        // in the SAME frame (the boot, a save) binds on that frame, as
+        // `Area_LoadScx` does, and not one frame late. Bound from here alone,
+        // a save's street started its neon and steam a frame behind: 918
+        // particles at frame 20 for 952, and no sprite in frame 1's pool
+        // (`engine: sprite table`, red from 2026-09-30 to 2026-10-01).
+        const auto bindSetEmittersNow = [&]() {
+            if (!session.scene().loaded() || session.scene().setEmittersBound()) return;
             for (const WorldSlot& ws : worldSlots) {
                 if (ws.stem.empty() || ws.area != session.sceneArea()) continue;
                 const int bound = session.sceneMutable().bindSetEmitters(ws.emitters);
@@ -12543,6 +12553,8 @@ int main(int argc, char** argv) {
                                 n, ws.stem.c_str(), bound, session.scene().file().c_str());
                 break;
             }
+        };
+        bindSetEmittersNow();
 
         // The absolute world cameras the script has set, as rays. Collected
         // BEFORE the character is staged, because `character.show` and the two
@@ -12909,6 +12921,7 @@ int main(int argc, char** argv) {
             const WorldSlot& act = worldSlots[static_cast<std::size_t>(session.activeSlot() & 1)];
             const WorldSlot& oth = worldSlots[static_cast<std::size_t>(1 - (session.activeSlot() & 1))];
             worldSet = !act.stem.empty() ? act.stem : oth.stem;
+            if (changed) bindSetEmittersNow();
         }
 
         std::fill(fb.px.begin(), fb.px.end(), std::uint16_t(0));
