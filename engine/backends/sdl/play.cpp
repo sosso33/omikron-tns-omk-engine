@@ -16624,7 +16624,16 @@ int main(int argc, char** argv) {
                                 ez = at[2] - view.cam.eye[2];
                     const double reach = clipInches + rr;
                     const bool seatHeld = s.seatKnown && s.seatClip == s.sceneClipWas && s.seatSrc == src;
-                    static const bool skinAll = std::getenv("OMK_SKIN_FAR") != nullptr;   // A/B only
+                    // (and under the two logs about every staged body - the
+                    // staging probe's head twists, hand-over gaps and floor,
+                    // and `OMK_BODYLOG`'s per-frame body line - which are about
+                    // every body and not only the ones in view: culled, the
+                    // restaurant's diners went silent after frame 0 and the
+                    // Impasse's Kay'l lost frames from his body line, and
+                    // `engine: scene facing` and `beat handover` read short,
+                    // 2026-09-30..10-01)
+                    static const bool skinAll = std::getenv("OMK_SKIN_FAR") != nullptr ||
+                                                stagedProbe || omk::envSet("OMK_BODYLOG");
                     if (!skinAll && seatHeld && std::isfinite(reach) &&
                         double(ex) * ex + double(ey) * ey + double(ez) * ez > reach * reach) {
                         ++stagedFar;
