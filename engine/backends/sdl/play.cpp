@@ -173,7 +173,6 @@ void* vulkanCreateInstance(Renderer*);
 bool  vulkanAttachSurface(Renderer*, unsigned long long);
 bool  vulkanPresent(Renderer*);
 bool  vulkanPresentSurface(Renderer*, const Surface&);
-bool  vulkanCanPresentWorld(Renderer*);
 bool  vulkanPresentWorld(Renderer*, int vy, int vh);
 bool  vulkanWorldPicture(Renderer*, int vy, int vh, std::vector<unsigned char>&);
 bool  vulkanResize(Renderer*, int w, int h);
@@ -19889,9 +19888,6 @@ int main(int argc, char** argv) {
                 // (the slot's thumbnail is taken from `fb` itself) and a panel
                 // with the monitors' INTERFERENCE (row shifts and an OR mask).
                 else if (vpItem || (walk && screenReadsPicture)) keep = "screen";
-#if defined(OMK_VULKAN)
-                else if (vkRen && &world == vkRen && !omk::vulkanCanPresentWorld(&world)) keep = "supersampling";
-#endif
                 else if (mst.active && !mst.native) keep = "cpu mirror";
                 else if (!flickerDir.empty() || !snapsDir.empty() || omk::envSet("OMK_CLIPLOG")) keep = "instrument";
                 else if (lastDumped) keep = "dump";

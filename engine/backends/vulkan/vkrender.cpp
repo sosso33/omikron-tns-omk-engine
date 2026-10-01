@@ -89,7 +89,7 @@ const uint32_t kFsqFrag[] =
 const uint32_t kPresentFrag[] =
 #include "present.frag.inc"
 ;
-struct PresentPush { int32_t vy, vh, w, dither; };
+struct PresentPush { int32_t vy, vh, w, dither, ss; };
 // The DEPTH-ONLY pass of the mapped shadow (`todo/enhancements.md` 6).
 const uint32_t kShadowVert[] =
 #include "shadow.vert.inc"
@@ -470,7 +470,6 @@ public:
     // the pass's output back (the verification), and load `colour_` with a
     // picture of the caller's (the exhaustive probe). All take the letterbox
     // as the picture's first row `vy` and height `vh` in a `w_ x h_` window.
-    bool canPresentWorld() const { return ss_ == 1; }
     bool presentWorld(int vy, int vh);
     bool worldPicture(int vy, int vh, std::vector<unsigned char>& rgba);
     bool probeUpload(const unsigned char* rgba);
@@ -1706,7 +1705,7 @@ bool VulkanRenderer::runPresentPass(int vy, int vh) {
     vkCmdBeginRenderPass(cb, &rp, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, presPipe_);
     vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, presPlo_, 0, 1, &presDs_, 0, nullptr);
-    const PresentPush pp{vy, vh, w_, dither_ ? 1 : 0};
+    const PresentPush pp{vy, vh, w_, dither_ ? 1 : 0, ss_};
     vkCmdPushConstants(cb, presPlo_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof pp, &pp);
     vkCmdDraw(cb, 3, 1, 0, 0);
     vkCmdEndRenderPass(cb);
@@ -1716,13 +1715,13 @@ bool VulkanRenderer::runPresentPass(int vy, int vh) {
 }
 
 bool VulkanRenderer::presentWorld(int vy, int vh) {
-    if (swap_ == VK_NULL_HANDLE || ss_ != 1) return false;
+    if (swap_ == VK_NULL_HANDLE) return false;
     if (!runPresentPass(vy, vh)) return false;
     return presentImage(presImg_, w_, h_);
 }
 
 bool VulkanRenderer::worldPicture(int vy, int vh, std::vector<unsigned char>& rgba) {
-    if (ss_ != 1 || !runPresentPass(vy, vh)) return false;
+    if (!runPresentPass(vy, vh)) return false;
     VkCommandBuffer cb = oneShotBegin();
     VkBufferImageCopy cp{};
     cp.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
@@ -2488,6 +2487,9 @@ const omk::Surface& VulkanRenderer::readback() {
     // ...and the SUPERSAMPLE RESOLVE happens on the 8-bit side, BEFORE that
     // one quantisation: averaging four 565 values would quantise four times
     // and then average the error, which throws away most of the point.
+    // `present.frag` does the same resolve on the GPU for a frame nothing is
+    // drawn over, so this loop runs only on the CPU path (and for
+    // `OMK_VERIFY_GPU_PRESENT`, which compares the two).
     if (ss_ <= 1 && dither_) {
         // Row by row through the channel tables - the same bits as
         // `quantise888Dither` a pixel, without a division and a modulo for
@@ -2642,10 +2644,6 @@ bool vulkanPresentSurface(Renderer* r, const Surface& s) {
     return v && v->presentSurface(s);
 }
 // The present pass (todo/optimization.md step 4b).
-bool vulkanCanPresentWorld(Renderer* r) {
-    auto* v = dynamic_cast<VulkanRenderer*>(r);
-    return v && v->canPresentWorld();
-}
 bool vulkanPresentWorld(Renderer* r, int vy, int vh) {
     auto* v = dynamic_cast<VulkanRenderer*>(r);
     return v && v->presentWorld(vy, vh);

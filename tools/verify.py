@@ -15733,6 +15733,15 @@ def c_engine_gpu_present():
     differing; the black fade's gate removed, 229 of 240 shoot-phase frames on
     the GPU and its count gone, with 0 differing - caught by the count. Green's
     rounding `+ 128` is EQUIVALENT (63 v mod 255 is never 127) and stays green.
+
+    AND SUPERSAMPLED (2026-10-01, todo/optimization.md "The 4K benchmark"): the
+    same street with `--ssaa 4`. `present.frag` now does `readback`'s resolve -
+    the rounded integer mean of each 4x4 block, then one dither - so a
+    supersampled frame no longer drops to the CPU path, where at 4K it read
+    530 MB back a frame. All 90 frames on the GPU, 60 compared, 0 differing.
+    SHOWN TO FAIL: red's mean truncated (`r / n`), 60 of 60 frames and 952966
+    pixels differing with `--ssaa 4` - and 0 without it, which is what proves
+    the run supersampled at all (the log does not say so).
     """
     import subprocess
     eng = os.path.join(ROOT, "engine")
@@ -15765,6 +15774,15 @@ def c_engine_gpu_present():
     stats = re.findall(r"^gpu present: frame 89, (\d+) of (\d+) frames stayed on the GPU", g.stdout, re.M)
     if len(ver) != 1 or len(stats) != 1:
         return (len(ver), len(stats)), (1, 1), "the viewer's gpu present lines - its log changed"
+    ss = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                         "--save", save, "--area", "0", "--stand", "1804,0,-6890,336",
+                         "--nofmv", "--world-vulkan", "--ssaa", "4", "--frames", "90"],
+                        cwd=eng, env=env, capture_output=True, text=True)
+    ssVer = re.findall(r"^gpu present verify: frame 59, (\d+) frames compared, (\d+) differ \((\d+) pixels\)",
+                       ss.stdout, re.M)
+    ssStats = re.findall(r"^gpu present: frame 89, (\d+) of (\d+) frames stayed on the GPU", ss.stdout, re.M)
+    if len(ssVer) != 1 or len(ssStats) != 1:
+        return (len(ssVer), len(ssStats)), (1, 1), "the supersampled run's gpu present lines - its log changed"
     s = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
                         "--save", save, "--area", "230", "--scene-chunk", "56",
                         "--nofmv", "--world-vulkan", "--frames", "240"],
@@ -15785,13 +15803,16 @@ def c_engine_gpu_present():
     # still compares equal to the CPU composite (the last element, 0), which
     # is the claim; the counts say the gates were taken.
     return (len(runs), probeBad, tuple(int(x) for x in ver[0]), tuple(int(x) for x in stats[0]),
-            (int(shootStats[0][0]), int(shootStats[0][1])), keptBy, shootDiffers), \
-        (17, 0, (60, 0, 0), (90, 90), (180, 240), (("black fade", 50), ("colour fade", 10)), 0), \
+            (int(shootStats[0][0]), int(shootStats[0][1])), keptBy, shootDiffers,
+            tuple(int(x) for x in ssVer[0]), tuple(int(x) for x in ssStats[0])), \
+        (17, 0, (60, 0, 0), (90, 90), (180, 240), (("black fade", 50), ("colour fade", 10)), 0,
+         (60, 0, 0), (90, 90)), \
         "present_probe runs and their mismatched pixels (every colour x 16 dither cells, " \
         "and the dither off); then the street: frames compared by frame 60 and how many " \
         "differ from the CPU composite (and in how many pixels), and frames that stayed " \
         "on the GPU of 90; then the shoot phase: frames on the GPU of 240, the gates that " \
-        "held the rest with their counts, and how many GPU frames differed"
+        "held the rest with their counts, and how many GPU frames differed; then the " \
+        "street supersampled 4x4: frames compared, differing, pixels, and frames on the GPU"
 
 
 def c_engine_ground_grid():

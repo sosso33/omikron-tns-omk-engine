@@ -17,6 +17,12 @@
 //   * with the dither off, `rgb565`'s truncation;
 //   * then `(r5 << 3) | (r5 >> 2)`, `(g6 << 2) | (g6 >> 4)`, `(b5 << 3) | (b5 >> 3)`,
 //     alpha 255, written as k / 255 into a UNORM8 target - which stores k.
+//   * SUPERSAMPLED (`ss` > 1, todo/optimization.md "The 4K benchmark"): the
+//     attachment is `ss` times the picture each way, and the pixel is first
+//     the ROUNDED integer mean of its `ss x ss` block, `(sum + n/2) / n` on the
+//     8-bit values - `readback`'s resolve - and only then dithered ONCE, at the
+//     PICTURE's (x, y). That loop used to run on the CPU after reading the whole
+//     oversized attachment back: 530 MB a frame at 4K with 4x4.
 //
 // `engine/tools/present_probe.cpp` checks it against the tables over every
 // colour at every matrix cell, and `OMK_VERIFY_GPU_PRESENT` against the real
@@ -27,6 +33,7 @@ layout(push_constant) uniform Present {
     int vh;       // its height; rows outside are the black bands
     int w;        // unused by the arithmetic, kept for the probe's sanity
     int dither;   // the View's DITHERENABLE
+    int ss;       // the supersample factor, 1 off
 } pc;
 layout(location = 0) out vec4 o;
 
@@ -42,10 +49,18 @@ void main() {
         o = vec4(0.0, 0.0, 0.0, 1.0);
         return;
     }
-    vec4 s = texelFetch(world, ivec2(p.x, wy), 0);
-    int r = int(round(s.r * 255.0));
-    int g = int(round(s.g * 255.0));
-    int b = int(round(s.b * 255.0));
+    int r = 0, g = 0, b = 0;
+    for (int sy = 0; sy < pc.ss; ++sy)
+        for (int sx = 0; sx < pc.ss; ++sx) {
+            vec4 s = texelFetch(world, ivec2(p.x * pc.ss + sx, wy * pc.ss + sy), 0);
+            r += int(round(s.r * 255.0));
+            g += int(round(s.g * 255.0));
+            b += int(round(s.b * 255.0));
+        }
+    int n = pc.ss * pc.ss;
+    r = (r + n / 2) / n;
+    g = (g + n / 2) / n;
+    b = (b + n / 2) / n;
     int r5, g6, b5;
     if (pc.dither != 0) {
         int t = kBayer4[(wy & 3) * 4 + (p.x & 3)] - 8;
