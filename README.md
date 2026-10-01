@@ -1,5 +1,7 @@
 # OMK — an open-source engine for *Omikron: The Nomad Soul*
 
+See: https://github.com/razodactyl/mod-omikron-tools -- have decoded most of the engine so this should give you a massive leap ahead.
+
 A from-scratch, dependency-free C++20 reimplementation of the engine behind
 Quantic Dream and Eidos's 1999 game — together with the format notes it is
 built on: what each of the game's data formats is, and how each one was
