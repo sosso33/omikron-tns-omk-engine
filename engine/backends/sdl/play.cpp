@@ -16645,8 +16645,18 @@ int main(int argc, char** argv) {
                         continue;
                     }
                     // ...and outside the view, on the same terms (the feet
-                    // latch taken, his last drawn position, the root radius)
-                    if (!skinAll && seatHeld && outsideView(at, rr, true)) {
+                    // latch taken, his last drawn position, the root radius) -
+                    // but NOT while a shoot phase or a melee is on. There the
+                    // game reads a body's bones off the staging (a gunman's
+                    // aim and muzzle, the hit sweeps against his meshes), and
+                    // a gunman behind the camera still fires: culled, robber
+                    // 238 never hit the gallery's player and 237 took 238's
+                    // place in the hub (`engine: shoot restart`, `shoot brain`
+                    // and three more, red from 30d3d2e). The engine's own cull
+                    // (`sub_48D3B0`) is the DRAW's; its actors tick whatever
+                    // the camera sees.
+                    const bool bodiesInPlay = session.shootMode().active() || fightRun.active;
+                    if (!skinAll && !bodiesInPlay && seatHeld && outsideView(at, rr, true)) {
                         ++stagedOff;
                         continue;
                     }
