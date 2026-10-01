@@ -18088,6 +18088,56 @@ def c_engine_camera_collision():
          "collision pass and with it")
 
 
+def c_engine_dialogue_stands_still():
+    r"""`engine/`: in a conversation the player's body does NOT move - a clip's
+    root motion is not applied in ACTOR_STATE 16 / 17.
+
+    A reader, 2026-10-01, on Vulkan: dialog 402's first line framed the BACK
+    OF KAY'L'S HEAD. Not a camera fault: camera 4554 is authored nine units
+    from his head at address 678, and he had slid 2.8 units into it. Walking
+    into Telis's zone, a scene program takes his body mid-stride and hands it
+    back; `actor.goto_address 678` places him; `Actor_EnterDialogueMode`'s
+    `SetPersoBankGroup` plays `H_WK-SD`, the walk-to-stand, out of the stride
+    - and the port applied its root delta. The engine does not:
+    `Actors_TickAll` sends 16 and 17 to `Actor_TickDialogue` (0x00466950),
+    which is `Cef_TickChannel` and `Actor_ScanZones` and nothing else - no
+    `Actor_ApplyMotion`.
+
+    Walks into the zone from `traces/games-resto.bin` slot 0 (the flat) and
+    reads the end-of-run player line: he must end at 678, (3541.0, -914.0),
+    having walked 0.0 since the conversation began. 2.8 with root motion
+    applied. Standing IN the zone (the route `dialogue camera blend` uses)
+    never showed it: the channel was not mid-stride.
+
+    SHOWN TO FAIL: the state 16/17 arm in `PlayerController` removed,
+    player.o and omk-play deleted - walked 2.8, ends at 3538.7 -912.3.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    save = os.path.join(ROOT, "traces", "games-resto.bin")
+    if not (os.path.isdir(eng) and os.path.exists(save)):
+        return ("no data",), ("data",), "needs traces/games-resto.bin"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"), "--software",
+                        "--res", "640x480", "--nofmv", "--no-crowd", "--save", save, "--slot", "0",
+                        "--stand", "3572,1071,-1030,181", "--hold", "k*30,k200*200",
+                        "--frames", "470"],
+                       capture_output=True, encoding="latin-1",
+                       env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+    started = "dialogue mode ENTER" in r.stdout
+    m = re.search(r"player: ends at ([-\d.]+) [-\d.]+ ([-\d.]+)", r.stdout)
+    w = re.search(r"walked ([\d.]+) over", r.stdout)
+    if not (m and w):
+        return ("no player line",), ("player line",), "omk-play's end-of-run player line"
+    return (started, float(m.group(1)), float(m.group(2)), float(w.group(1))), \
+           (True, 3541.0, -914.0, 0.0), \
+           "the conversation began; where he ends (x, z) - address 678 is 3541 -914 - and " \
+           "how far he walked during it (2.8 with a clip's root motion applied)"
+
+
 def c_engine_lift_lintel():
     r"""`engine/`: Kay'l walks OUT of his flat's lift - the swept body's TOP is
     where the model puts it, and only its BOTTOM rises by the step.
@@ -39946,6 +39996,7 @@ SLOW = [
     ("engine: camera obstruction", c_engine_camera_obstruction, "todo/camera-obstruction 5-6"),
     ("engine: back-face cull", c_engine_backface_cull, "ASSETS 4b; o3de/geom3do.h kTwoSided"),
     ("engine: lift lintel", c_engine_lift_lintel, "actor/walk.cpp slide; todo/play-test.md"),
+    ("engine: dialogue stands still", c_engine_dialogue_stands_still, "actor/player.cpp; todo/play-test.md"),
     ("engine: tunnel door walk", c_engine_tunnel_door_walk, "todo/collision-scenes-transitions"),
     ("engine: arrival wait", c_engine_arrival_wait, "todo/omk-play"),
     ("engine: linked rings", c_engine_linked_rings, "todo/omk-play"),

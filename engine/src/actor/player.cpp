@@ -1028,6 +1028,17 @@ void PlayerController::tick(float dt, std::uint32_t word) {
     const int waterState = static_cast<int>(rt_.state());
     if (waterState >= 11 && waterState <= 14) {
         waterTick(dx, static_cast<double>(world[1] + last_.shift[1]), dz, dt);
+    } else if (waterState == 16 || waterState == 17) {
+        // IN A CONVERSATION THE BODY DOES NOT MOVE. `Actors_TickAll` sends
+        // ACTOR_STATEs 16 and 17 to `Actor_TickDialogue` (0x00466950), which
+        // is `Cef_TickChannel` and `Actor_ScanZones` and nothing else: no
+        // `Actor_ApplyMotion`, so a clip's root motion never reaches the
+        // actor. Walking into Telis's zone in Kay'l's flat leaves the channel
+        // mid-stride, `SetPersoBankGroup` then plays `H_WK-SD` out of it, and
+        // applying its root delta slid him 2.8 units after
+        // `actor.goto_address 678` - into the first line camera, which is
+        // authored nine units from his head (a reader, 2026-10-01).
+        last_.stepped = false;
     } else if (channelOnly_) {
         // `Actor_TickChannelOnly` (0x00466B00) is `Cef_TickChannel` and
         // nothing else: the root delta reaches the body through
