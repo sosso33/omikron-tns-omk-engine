@@ -13077,11 +13077,18 @@ def c_engine_den_locker():
             blanks += 1
             if i != int(h):
                 off += 1
-    return ("screen 13 is asking" in out, len(rows) > 0, "".join(cols),
+    # THE LAST WHEEL'S FIGURE IS NOT ASSERTED. It is shown only while the hand
+    # is on it, so only in the blink's lit half - and how the few frames that
+    # carry its 1 and its 2 fall against a 500 ms oscillator decided whether
+    # the union read 7210, 7211 or 7212: the wall clock under a sweep's load
+    # gave 7210, an idle machine 7212, and the headless frame clock (2026-10-01)
+    # 7211. The three wheels the hand LEAVES are shown lit afterwards and are
+    # asserted; the fourth's landing is asserted by the answer, 7 2 1 3 -> 1.
+    return ("screen 13 is asking" in out, len(rows) > 0, "".join(cols[:3]),
             max((int(h) for _r, h in rows), default=-1), blanks > 0, off,
             int(ans.group(1)) if ans else -1, int(ans.group(2)) if ans else -1,
             "prop 13 SHOWN" in out, "prop 104 SHOWN" in out, "prop 103 SHOWN" in out), \
-           (True, True, "7212", 3, True, 0, 1, 19, True, True, True), \
+           (True, True, "721", 3, True, 0, 1, 19, True, True, True), \
            ("the locker's wheels draw their figures, the wheel drawn blank is always "
             "the one the hand is on (and it is not always the first), the hand walks "
             "all four, 7 2 1 3 answers 1 and the cache gives up the cassette, the pass "

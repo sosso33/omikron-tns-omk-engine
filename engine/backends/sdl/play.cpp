@@ -6323,6 +6323,11 @@ int main(int argc, char** argv) {
         SDL_Delay(10);
     }
     Uint32 lastMs = SDL_GetTicks();
+    // the interface's clock: the wall's, or a headless run's frames at 30 a second
+    const auto uiClockMs = [&]() -> long {
+        if (frames > 0) return n * 1000 / 30;
+        return static_cast<long>(SDL_GetTicks());
+    };
     Uint32 fpsSince = lastMs, fpsLastMs = lastMs, fpsWorst = 0;
     int    fpsFrames = 0;
     // Where `Script_Display3DSprite` puts a sprite: the active camera's
@@ -21201,7 +21206,7 @@ int main(int argc, char** argv) {
             // (`sub_478EC0`), the sneak previews' turntable.
             bool ringDrawn = false, weaponDrawn = false;
             {
-                const float spin = omk::UiModels::spinDegrees(static_cast<long>(SDL_GetTicks()));
+                const float spin = omk::UiModels::spinDegrees(uiClockMs());
                 const auto box = [&](int x, int y, int bw, int bh, int out[4]) {
                     out[0] = comp.scaleX(x); out[1] = comp.scaleY(y);
                     out[2] = comp.scaleX(x + bw) - out[0]; out[3] = comp.scaleY(y + bh) - out[1];
@@ -21343,14 +21348,21 @@ int main(int argc, char** argv) {
             // The oscillators run on a MILLISECOND clock, not on the frame
             // index - their periods are 500, 1000 and 5000 and
             // `Ui_TickScreens` advances them by the frame delta.
-            comp.setClockMs(static_cast<long>(SDL_GetTicks()));
+            //
+            // ...and in a HEADLESS run (`--frames`, no pacing) on the frame
+            // clock, 1000/30 ms a frame - the paced run's own - so a run is the
+            // same run however busy the machine is. On the wall clock, `engine:
+            // den locker` went red under a sweep's load: its frames came slower,
+            // the hand's wheel spent the few frames that showed its 2 in the
+            // blink's blank half, and the display's union read 7210 for 7212.
+            comp.setClockMs(uiClockMs());
             // THE HIGHLIGHT. `Ui_DrawItemCursor` eases sixteen elements
             // between frames, so it needs a delta and somewhere to live; it
             // is attached rather than owned by the composer so that
             // `run_screen`'s hashes stay a pure function of the screen.
             {
                 static long uiLastMs = 0;
-                const long nowMs = static_cast<long>(SDL_GetTicks());
+                const long nowMs = uiClockMs();
                 comp.setDeltaMs(uiLastMs ? nowMs - uiLastMs : 33);
                 uiLastMs = nowMs;
             }
