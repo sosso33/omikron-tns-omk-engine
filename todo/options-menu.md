@@ -35,7 +35,42 @@ the row hook.
 | 3 | DRAWN: the row hook and the layout in the composer (`ScreenComposer::drawOptions`) | **DONE** 2026-10-01 |
 | 4 | WIRED: the start menu's Options and the SNEAK's Options tab host it; the Video rows reach the running viewer; `Oui` writes the settings header | **DONE** 2026-10-01 |
 | 5 | a check, shown to fail | **DONE** - `engine: options menu`, red under both mutations with its own figures: bit 2 not set (the header keeps 50 m) and page 0 never prompting (4 pages, no file) |
-| 6 | PLAY - the reader's pass | waiting; `todo/play-test.md` 13 |
+| 6 | PLAY - the reader's pass | **played 2026-10-01**, four reports, all fixed the same day: below |
+
+## The first play pass (2026-10-01), and what changed
+
+1. *"if the --res param is not used, the game should use the resolution from
+   the file and save the resolution in the save; the tests have to be adapted
+   to the game, not the other way"*. The viewer now reads its saves file's
+   settings header at EVERY boot, as `SaveDir_Load` does in the game's
+   (`03_win32.c`) - the writable `omk-saves/GAMES`, else the shipped
+   `IAM/GAMES` - and takes row 2's size from it: `--res` > the header > the
+   ini's `screen_x/screen_y` > 800x600. The CHECKS say what they need instead:
+   `verify.py` wraps `subprocess.run`, and a viewer run that names no size gets
+   `--res 800x600` (the size they were written at) and a private empty
+   `--saves`, so nothing a reader saved reaches a check. A plain boot now gets
+   the shipped header's street activity 3 and detail 1 rather than the struct
+   defaults 0 / 0 - which is the game's behaviour; the 33 plain-boot checks
+   and the 12 `--slot` ones were run and none moved.
+2. *"Retour ... makes every line disappear and I have to use space to return
+   to the main panel"*. Read: the root's `Retour`/BACK only focus 29, and
+   `UI_TickScreens` visits screen 29's slot BEFORE 35's, so 29 cannot take the
+   same key - two steps, by the code alone. The reader's account of the game
+   outranks a reading that found no mechanism, so the second BACK is sent: the
+   menu returns to its four buttons. Labelled a RECONSTRUCTION in `play.cpp`.
+3. *"the sounds params don't work"*. They were applied to the block and read by
+   nothing. Now read where `05_sys.c` reads them (~1037..1062): music summed
+   into the Session's `Music_SetVolume` level every frame (`dword_90E19C`,
+   live), dialogue on the line and voice-over audio (`sub_42BBB0`, the speech
+   buffer `Morph_Start` plays), effects on every world sound (`sub_46C1C0`,
+   `dword_53B31C`: shots, `.CTL` effects, scene sounds). One law, `a` dB of
+   attenuation. NOTE the game's floor: the slider at 0 is `(100 - 0) * 0.4` =
+   40 dB, very quiet but NOT silent. A sound already playing keeps its gain.
+4. *"Is it possible to enable fullscreen using the macOS button (green one) or
+   with the window dropdown?"*. Yes: the windows are now RESIZABLE with SDL's
+   fullscreen-Spaces hint, which is what macOS needs to offer both; F11 follows
+   the window's state. Dragging an edge rescales the picture and changes no
+   resolution.
 
 ## What each Video row does in the viewer
 

@@ -1100,6 +1100,11 @@ on 2026-09-06 two comparison renders came out of different places entirely
 because a reader saw a window appear, assumed it was for them, and walked the
 player — which is the reasonable thing to assume. The frames were then
 evidence about their walk rather than about the change under test.
+**`verify.py` WRAPS every viewer run** (`_viewer_args`, 2026-10-01): one that
+names no `--res` gets `--res 800x600`, one that names no `--saves` a private
+empty file. The viewer reads its saves file's settings header at every boot,
+as the game does, so a check that depends on a size or a setting must say so
+- and a check that means to use a reader's saves file passes `--saves`.
 **`omk-play-gles` cannot use the dummy driver** (GL needs a window for its
 context): set `OMK_NO_GPU_PRESENT=1` for a measurement run and its window is
 created HIDDEN (2026-09-25, after a batch of runs put the boot films in front

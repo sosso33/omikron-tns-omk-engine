@@ -57,9 +57,8 @@
 ;screen_x = 640
 ;screen_y = 480
 ;
-; The viewer takes these at start when `--res` does not say otherwise (the
-; save header's copy is NOT taken: both shipped saves say 640x480). The menu's
-; row 2 changes the size live.
+; The save header's copy (what the options menu last saved) beats these, and
+; `--res` beats both. The menu's row 2 changes the size live.
 
 ; FULLSCREEN - the game's own key: 0 is fullscreen, nonzero a window. The
 ; original treats a missing key as 0; this viewer keeps a window unless told

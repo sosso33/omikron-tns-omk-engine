@@ -33,6 +33,47 @@ os.chdir(ROOT)
 
 import omkpaths
 
+# ---- THE VIEWER, AS THE CHECKS RUN IT ---------------------------------------
+#
+# `omk-play` behaves as the game: it reads the settings header of its saves
+# file at every boot and takes its display size from it (`todo/options-menu.md`).
+# A check must therefore SAY what it depends on rather than inherit whatever a
+# reader last saved. Every viewer run that names no size gets `--res 800x600` -
+# the size the checks were written at - and every run that names no saves file
+# gets a private, empty one, so the settings come from the shipped `IAM/GAMES`
+# (or the run's own `--save`) and never from `engine/omk-saves`.
+import tempfile as _tempfile
+_VIEWER_SAVES = os.path.join(_tempfile.mkdtemp(prefix="omk-verify-"), "GAMES")
+
+
+def _viewer_args(args):
+    if not isinstance(args, (list, tuple)) or not args:
+        return args
+    if os.path.basename(str(args[0])) not in ("omk-play", "omk-play-gles"):
+        return args
+    args = list(args)
+    if "--res" not in args:
+        args += ["--res", "800x600"]
+    if "--saves" not in args:
+        args += ["--saves", _VIEWER_SAVES]
+    return args
+
+
+# Only `run` is wrapped. `Popen` must NOT be: the real `run` builds its
+# process through the module's `Popen`, so wrapping both would wrap the
+# "unwrapped" `_subprocess_run` too. The one `Popen` of the viewer calls
+# `_viewer_args` itself. Kept on the MODULE in case this file runs twice.
+if not hasattr(subprocess, "_omk_unwrapped"):
+    subprocess._omk_unwrapped = subprocess.run
+_subprocess_run = subprocess._omk_unwrapped
+
+
+def _viewer_run(args, *a, **k):
+    return _subprocess_run(_viewer_args(args), *a, **k)
+
+
+subprocess.run = _viewer_run
+
 # BEFORE the readers are imported, not in main(). Several of them resolve a
 # path at MODULE level - `omkdata.DIALOG`, `omkdata.MORPH`, `fnt.FONTS_DIR` -
 # so a `--data` parsed any later would be read after the value it is meant to
@@ -4086,7 +4127,7 @@ def c_camera_travel_subjects():
             # the game's own strings are latin-1; decoding them as UTF-8
             # throws and the check dies on a message it never reads
             subprocess.run([play, fr, os.path.join(ROOT, "tables"),
-                            "--save", saves, "--slot", "0",
+                            "--save", saves, "--saves", saves, "--slot", "0",
                             "--stand", "3060,1071,-753,271",
                             "--hold", "0*20,k200*120", "--frames", str(n),
                             "--res", "640x480", "--dump", dump],
@@ -4214,7 +4255,7 @@ def c_program_placement_holds():
         return ("build failed",), ("built",), "engine/ must build"
     env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_TRACE_ACTOR="53")
     r = subprocess.run([play, fr, os.path.join(ROOT, "tables"),
-                        "--save", saves, "--slot", "0",
+                        "--save", saves, "--saves", saves, "--slot", "0",
                         "--var", "652=1,657=1", "--give", "0:42,0:3,1:3",
                         "--stand", "3054,1071,-753,154",
                         "--frames", "220", "--res", "640x480"],
@@ -4312,7 +4353,7 @@ def c_engine_player_program():
         return ("build failed",), ("built",), "engine/ must build"
     env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_TRACE_ACTOR="49")
     r = subprocess.run([play, fr, os.path.join(ROOT, "tables"),
-                        "--save", saves, "--slot", "0",
+                        "--save", saves, "--saves", saves, "--slot", "0",
                         "--var", "652=1,657=1", "--give", "0:42,0:3,1:3",
                         "--stand", "3054,1071,-753,154",
                         "--frames", "220", "--res", "640x480"],
@@ -4526,11 +4567,11 @@ def c_line_facing():
                 out.add(int(round(float(m.group(2)))))
         return sorted(out)
 
-    goodbye = yaws(53, ["--save", saves, "--slot", "0", "--var", "652=1,657=1",
+    goodbye = yaws(53, ["--save", saves, "--saves", saves, "--slot", "0", "--var", "652=1,657=1",
                         "--give", "0:42,0:3,1:3", "--stand", "3054,1071,-753,154",
                         "--hold", "0*90,k28*3,0*300", "--frames", "260",
                         "--res", "640x480"], 66, 259)
-    greeting = yaws(0, ["--save", saves, "--slot", "0",
+    greeting = yaws(0, ["--save", saves, "--saves", saves, "--slot", "0",
                         "--stand", "3572,1071,-991,181", "--frames", "470",
                         "--res", "640x480"], 410, 469)
     # 408 was the frame `TE_STD` snaps in and 409 the first settled one, until
@@ -4609,7 +4650,7 @@ def c_dialogue_camera_subject():
         return ("build failed",), ("built",), "engine/ must build"
     env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_CAMEYE="1")
     r = subprocess.run([play, fr, os.path.join(ROOT, "tables"),
-                        "--save", saves, "--slot", "0",
+                        "--save", saves, "--saves", saves, "--slot", "0",
                         "--stand", "3429,1079,-674,132",
                         "--hold", "0*30,k28*4,0*300", "--frames", "80",
                         "--res", "640x480"],
@@ -4801,7 +4842,7 @@ def c_dialogue_camera_blend():
         env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_CAMEYE="1")
         rr = subprocess.run([os.path.join(eng, "build", "omk-play"), fr,
                              os.path.join(ROOT, "tables"), "--save", saves,
-                             "--slot", "0", "--stand", "3572,1071,-991,181",
+                             "--saves", saves, "--slot", "0", "--stand", "3572,1071,-991,181",
                              "--frames", "500", "--res", "640x480"],
                             capture_output=True, env=env, encoding="latin-1")
         import re as _re
@@ -14533,9 +14574,9 @@ def c_engine_audio_queue_bound():
     if not os.path.exists(save):
         return ("skipped",), ("skipped",), "traces/save-appart.bin absent"
     env = dict(os.environ, SDL_VIDEODRIVER="dummy")
-    proc = subprocess.Popen([binp, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+    proc = subprocess.Popen(_viewer_args([binp, omkpaths.data_root(), os.path.join(ROOT, "tables"),
                              "--save", save, "--area", "0", "--stand", "1804,0,-6890,336",
-                             "--software", "--nofmv", "--frames", "60"],
+                             "--software", "--nofmv", "--frames", "60"]),
                             cwd=eng, env=env, stdout=subprocess.PIPE,
                             stderr=subprocess.DEVNULL, text=True)
     out = proc.stdout.read()
@@ -24266,16 +24307,23 @@ def c_engine_options_menu():
     `todo/options-menu.md`. The start menu's `Options` descends into panel
     0x004CF420, whose enter hook 0x0047BB40 FOCUSES screen 35 (resident since
     screen 29's open loaded it); the root's rows go to the Video page; RIGHT on
-    `Distance de clipping` steps 50 -> 100 m; BACK passes through page 0, which
-    - because a setting changed - is the prompt "Sauvegarder les options" with
-    `Non` selected; UP and ENTER take `Oui`, `sub_4092A0`'s settings-only save;
-    the root's BACK hands the keys back to screen 29.
+    `Résolution` takes the next display mode (the dummy video driver lists one,
+    1024x768, after the running 800x600) and RIGHT on `Distance de clipping`
+    steps 50 -> 100 m; BACK passes through page 0, which - because a setting
+    changed - is the prompt "Sauvegarder les options" with `Non` selected; UP
+    and ENTER take `Oui`, `sub_4092A0`'s settings-only save; the root's BACK
+    hands the keys back to screen 29 and the menu back to its buttons.
+
+    The values the Video page opens on are the SHIPPED `IAM/GAMES` header's
+    (street 3, detail 1), because the viewer reads its saves file's header at
+    every boot as `SaveDir_Load` does, and this run's saves file is empty.
 
     Read from the OUTPUT on both ends: each page's line is the text the
-    composer laid out through the row hook 0x00493380 (label|value, how many
-    drawn and lit), and the clip distance is read back out of the 3496-byte
-    header the run WROTE, at +20. A change that is only marked dirty and never
-    applied - the open callback's bit 2 not set - leaves the file at 50.
+    composer laid out through the row hook 0x00493380, and the header the run
+    WROTE is read back - clip at +20, the size at +12/+14. Then a SECOND start,
+    with no `--res` (bypassing the wrapper that adds one), must come up at the
+    saved size. A change only marked dirty and never applied - the open
+    callback's bit 2 not set - leaves the file at 50 m and 800x600.
     """
     import subprocess, struct, tempfile, shutil
     eng = os.path.join(ROOT, "engine")
@@ -24289,38 +24337,46 @@ def c_engine_options_menu():
     try:
         saves = os.path.join(tmp, "GAMES")
         env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+        base = [play, omkpaths.data_root(), os.path.join(ROOT, "tables"), "--software",
+                "--nofmv", "--saves", saves]
         r = subprocess.run(
-            [play, omkpaths.data_root(), os.path.join(ROOT, "tables"), "--software",
-             "--nofmv", "--res", "800x600", "--saves", saves, "--frames", "260",
-             "--keydelay", "20", "--keys",
-             "0,0xD0,0xD0,0x1C,0x1C,0xD0,0xCD,0x39,0xC8,0x1C,0x39"],
+            base + ["--res", "800x600", "--frames", "280", "--keydelay", "20", "--keys",
+                    "0,0xD0,0xD0,0x1C,0x1C,0xCD,0xD0,0xCD,0x39,0xC8,0x1C,0x39"],
             capture_output=True, env=env)
         out = (r.stdout + r.stderr).decode("latin-1")
-        pages = [ln.split("options: ", 1)[1] for ln in out.splitlines()
-                 if "options: page " in ln]
-        focus = sum("screen 35 focused" in ln for ln in out.splitlines())
-        back = sum("focus back to screen 29" in ln for ln in out.splitlines())
-        clip = None
+        lines = out.splitlines()
+        pages = [ln.split("options: ", 1)[1] for ln in lines if "options: page " in ln]
+        focus = sum("screen 35 focused" in ln for ln in lines)
+        back = sum("focus back to screen 29" in ln for ln in lines)
+        buttons = sum("the start menu back on its buttons" in ln for ln in lines)
+        head = None
         if os.path.exists(saves):
             d = open(saves, "rb").read(64)
             if d[:8] == b"OMK_SAVE":
-                clip = struct.unpack_from("<i", d, 20)[0]
+                head = (struct.unpack_from("<i", d, 20)[0],) + struct.unpack_from("<hh", d, 12)
+        # the second start: NO --res, so the wrapper must not add one
+        r2 = _subprocess_run(base + ["--frames", "2"], capture_output=True, env=env)
+        disp = [ln for ln in (r2.stdout + r2.stderr).decode("latin-1").splitlines()
+                if ln.startswith("display ")]
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    return (len(pages), focus, pages[:2] + pages[3:5], back, clip), \
-           (5, 1,
+    return (len(pages), focus, pages[:2] + pages[-2:], back, buttons, head,
+            [d.split(" (")[0] for d in disp]), \
+           (6, 1,
             ["page 1: [Vid\xe9o|] [Audio|] [Options|] [Contr\xf4les|] [Retour|] - 5 drawn, 1 lit, 0 sliders",
              "page 2: [Vid\xe9o|] [R\xe9solution|800 x 600 x 16 bpp] [Distance de clipping|Proche] "
-             "[Affichage du ciel|Oui] [Affichage des ombres|Oui] [Niveau d'activit\xe9 dans les rues|Tr\xe8s faible] "
-             "[Niveau de d\xe9tail|Faible] [Acc\xe9l\xe9ration 3D|Rendu logiciel] [Retour|] - 9 drawn, 2 lit, 0 sliders",
+             "[Affichage du ciel|Oui] [Affichage des ombres|Oui] [Niveau d'activit\xe9 dans les rues|Important] "
+             "[Niveau de d\xe9tail|Interm\xe9diaire] [Acc\xe9l\xe9ration 3D|Rendu logiciel] [Retour|] - 9 drawn, 2 lit, 0 sliders",
              "page 0: [Oui|] [Non|] [Sauvegarder les options|] - 3 drawn, 2 lit, 0 sliders",
              "page 1: [Vid\xe9o|] [Audio|] [Options|] [Contr\xf4les|] [Retour|] - 5 drawn, 1 lit, 0 sliders"],
-            1, 100), \
+            1, 1, (100, 1024, 768), ["display 1024x768"]), \
            "page lines drawn (a run that reaches none fails AS a run); the focus " \
            "taken once by the Options panel's enter hook; the root and the Video " \
-           "page as the row hook laid them out, the save prompt the changed " \
-           "setting raised, the root again after `Oui`; the keys handed back to " \
-           "29 once; and the clip distance in the header the run wrote (100 m)"
+           "page as the row hook laid them out (on the shipped header's values), " \
+           "the save prompt, the root again after `Oui`; the keys handed back to " \
+           "29 once and the menu back on its buttons once; the clip and size in " \
+           "the header the run wrote; and the size a second start without --res " \
+           "comes up at"
 
 
 def c_engine_sneak_examine_message():

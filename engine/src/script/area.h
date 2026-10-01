@@ -1188,6 +1188,9 @@ public:
     // conversation and is ducked further by the scripts (36 of 52 sites set
     // 0, i.e. restore); the port played it at 0 dB always.
     double musicAttenuationDb() const;         // 0..100, this frame
+    // Options row 11, `dword_90E19C` - an ATTENUATION (0 full, 40 at the
+    // slider's bottom) that `05_sys.c` adds into `Music_SetVolume` every frame
+    void   setMusicOption(int attenuation) { musicOption_ = attenuation; }
     float  musicGain() const;                  // 10^(-dB/20)
 
     // ------------------------------------------------------- THE WORLD

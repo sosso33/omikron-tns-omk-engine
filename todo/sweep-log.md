@@ -39,7 +39,7 @@ adds **one**. Counting commits ran this number to 13 when about nine tasks had
 been finished, which would have called for a half-hour sweep long before the
 rule intends one.
 
-**tasks since the last full sweep: 1** (reset by the `--slow` run of 2026-10-01 below.)
+**tasks since the last full sweep: 2** (2026-10-01: the OPTIONS MENU and fullscreen, `todo/options-menu.md`, verified with `--only` over the options, settings, screen, plain-boot and `--slot` families; it added a `subprocess.run` wrapper to `verify.py` that every viewer check now passes through, so the next sweep is the first to run them all under it) (reset by the `--slow` run of 2026-10-01 below.)
 
 (2026-10-01: THE WHAT-IF MAC PORT plan, `todo/classic-mac-port-1999.md` - docs only, no check run or needed.)
 

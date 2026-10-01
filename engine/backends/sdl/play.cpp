@@ -698,12 +698,23 @@ public:
         }
     }
     bool fullscreen() const { return fullscreen_; }
-    // The flag a window this frontend did not create should carry.
+    // The flags every window of the viewer carries. RESIZABLE because that is
+    // what macOS wants before it offers the green button's "Enter Full Screen"
+    // and the Window menu's entry for it - with the Spaces hint below, those
+    // go through SDL into the same desktop fullscreen F11 asks for. Every
+    // backend already fits the frame into whatever the window is (the software
+    // path's logical size, GLES's `destRect`, Vulkan's swapchain remake), so a
+    // dragged edge rescales the picture and changes no resolution.
     std::uint32_t windowFlags() const {
+        static const bool spaces = [] {
+            SDL_SetHint("SDL_VIDEO_MAC_FULLSCREEN_SPACES", "1");
+            return true;
+        }();
+        (void)spaces;
 #if defined(OMK_SDL3)
-        return fullscreen_ ? SDL_WINDOW_FULLSCREEN : 0u;
+        return SDL_WINDOW_RESIZABLE | (fullscreen_ ? SDL_WINDOW_FULLSCREEN : 0u);
 #else
-        return fullscreen_ ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0u;
+        return SDL_WINDOW_RESIZABLE | (fullscreen_ ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0u);
 #endif
     }
     // A GPU backend's window, which this frontend did not create but whose
@@ -821,6 +832,19 @@ public:
         out.mouseDY = static_cast<float>(my);
 #endif
         readPad(out);
+        // the green button and the Window menu change the window behind F11's
+        // back - take the state from the window, so the next F11 undoes it
+        if (SDL_Window* wnd = active()) {
+#if defined(OMK_SDL3)
+            const bool fs = (SDL_GetWindowFlags(wnd) & SDL_WINDOW_FULLSCREEN) != 0;
+#else
+            const bool fs = (SDL_GetWindowFlags(wnd) & SDL_WINDOW_FULLSCREEN) != 0;
+#endif
+            if (fs != fullscreen_) {
+                fullscreen_ = fs;
+                std::printf("fullscreen: %s (by the window)\n", fs ? "on" : "off");
+            }
+        }
         return !out.quit;
     }
 
@@ -1769,7 +1793,8 @@ int main(int argc, char** argv) {
 "                   device\'s columns, UP/DOWN within one, ENTER opens a tab\n"
 "\n"
 "DISPLAY\n"
-"  --res WxH        default 800x600; the interface is authored at 640x480\n"
+"  --res WxH        default: options row 2 as last saved, else 800x600; the\n"
+"                   interface is authored at 640x480\n"
 "                   and scaled, so a bigger display spreads the same layout\n"
 "  --fullscreen     the desktop's mode, the frame scaled in at its aspect;\n"
 "                   F11 toggles (--window, or [Preferences] window = 0|1)\n"
@@ -2486,6 +2511,16 @@ int main(int argc, char** argv) {
     std::optional<omk::SettingsBlock> saveSettings;
     if (!saveBytes.empty())
         saveSettings = omk::readSettingsBlock(saveBytes);
+    // ...AND WITH NEITHER, THE SAVES FILE'S HEADER ALL THE SAME. The game's
+    // boot calls `SaveDir_Load` unconditionally (`03_win32.c`, after
+    // `sub_41F4C0`'s defaults): the header of its saves file IS its settings,
+    // whether or not a game is loaded. So a plain start takes what the options
+    // menu last saved - the writable file, else the shipped `IAM/GAMES` - and
+    // loads no slot (that is still `--slot`'s, through `saveBytes` above).
+    if (!saveSettings && saveFile.empty() && slotArg < 0) {
+        const auto head = omk::readSaveFile(savesPath, fr + "/IAM/GAMES");
+        if (!head.empty()) saveSettings = omk::readSettingsBlock(head);
+    }
     const omk::OptionsFile ini =
         configFile.empty() ? omk::OptionsFile{} : omk::loadOptionsFile(configFile);
     if (!configFile.empty() && !ini.loaded)
@@ -2493,15 +2528,30 @@ int main(int argc, char** argv) {
     // not const: the options menu writes `settings.v` as the game's apply
     // hooks write `byte_90E180`, and what reads it later reads the new value
     omk::Settings settings = omk::resolveSettings(ini, saveSettings);
-    // THE DISPLAY SIZE: `--res`, else the ini's `screen_x` / `screen_y` (the
-    // game's own keys, row 2's), else 800x600. NOT the save header's, though
-    // the menu writes row 2 there as the game does: both shipped saves carry
-    // 640x480, so taking it would quietly move every run made against a
-    // fixture off the size its checks were written for.
-    if (!resFlag && ini.find("Preferences", "screen_x") && ini.find("Preferences", "screen_y")) {
-        dispW = std::max(320, ini.integer("Preferences", "screen_x", dispW));
-        dispH = std::max(240, ini.integer("Preferences", "screen_y", dispH));
+    // THE DISPLAY SIZE: `--res`, else row 2 as the settings resolved it - the
+    // save header (`+12`/`+14`, what the menu last saved) over the ini's
+    // `screen_x` / `screen_y` - else 800x600. A run that must be a given size
+    // says so with `--res`; the checks do (`verify.py`'s viewer wrapper).
+    if (!resFlag && settings.screen != omk::Settings::Source::Default &&
+        settings.v.screenX >= 320 && settings.v.screenY >= 240 &&
+        settings.v.screenX <= 8192 && settings.v.screenY <= 8192) {
+        dispW = settings.v.screenX;
+        dispH = settings.v.screenY;
     }
+    // THE THREE VOLUME ROWS (10..12) - ATTENUATIONS, and one law for all
+    // three: `-10000 * a / 100` hundredths of a dB, so `a` dB. Read where the
+    // engine reads them (`05_sys.c` ~1037..1062, every frame): the music's is
+    // summed into `Music_SetVolume` (the Session's `musicOption_`), the
+    // dialogue's goes to the speech buffer `Morph_Start` plays a line through
+    // (`sub_42BBB0`), the effects' is ADDED to every world voice's own volume
+    // (`sub_46C1C0`, `dword_53B31C`). The interface's blips take none of them.
+    // A sound already playing keeps the gain it started with - the engine
+    // re-sets its sixteen voices at once, which this frontend cannot.
+    const auto attGain = [](int a) {
+        return static_cast<float>(std::pow(10.0, -std::clamp(a, 0, 100) / 20.0));
+    };
+    const auto fxGain = [&] { return attGain(settings.v.volumeEffects); };
+    const auto dialogueGain = [&] { return attGain(settings.v.volumeDialogue); };
     // ...and the block carries the mode that RUNS, as `g_ScreenSize` does:
     // row 2 reads it back and a settings save writes it
     settings.v.screenX = dispW;
@@ -2909,6 +2959,7 @@ int main(int argc, char** argv) {
     // STREET LIFE: the pedestrians of an area naming a circuit spawn at its
     // load, at the density the options menu will one day hand in.
     session.setStreetActivity(density);
+    session.setMusicOption(settings.v.volumeMusic);   // options row 11
     session.setDataRoot(fr);   // IAM\OBJECT for the kind ladder, crowd or not
     if (!noCrowd) session.loadTraffic(fr);
     // A movie chain is the intro's; a street start skips it.
@@ -5028,7 +5079,7 @@ int main(int argc, char** argv) {
         std::printf("frame %ld: SHOT SOUND %s - effect %d sound %d '%s', %.0f from him, "
                     "gain %.2f\n", frame, what, effectId, e->sound,
                     shootRt->wavName(w).c_str(), double(d), double(gain));
-        if (!sm.pcm->empty()) front.playSound(sm.pcm, false, gain);
+        if (!sm.pcm->empty()) front.playSound(sm.pcm, false, gain * fxGain());
     };
     struct GunFacts {
         bool ok = false;
@@ -6617,7 +6668,7 @@ int main(int argc, char** argv) {
                                             shootMover.hurtSound);
                             else {
                                 const SfxSample& sm = sfxPcm(shootRt->wavData(w));
-                                if (!sm.pcm->empty()) front.playSound(sm.pcm, false, 1.0f);
+                                if (!sm.pcm->empty()) front.playSound(sm.pcm, false, fxGain());
                             }
                         }
                         const bool shoved = player &&
@@ -7719,7 +7770,7 @@ int main(int argc, char** argv) {
                 }
                 const SfxSample& sm = sfxPcm(rt->wavData(i));
                 if (!sm.pcm->empty()) { sfxLog("ctl-effect", sm.pcm->size(), es.id, i, 1.0f, &sm.peak);
-                                        front.playSound(sm.pcm); }
+                                        front.playSound(sm.pcm, false, fxGain()); }
             }
         }
 
@@ -7828,7 +7879,7 @@ int main(int argc, char** argv) {
                     std::printf("audio:   ...at %.0f units from the nearest motion of object %d\n",
                                 static_cast<double>(sceneSoundDist), fs.object);
                 if (gain <= 0.01f) continue;      // too far to hear at all
-                const int h = front.playSound(sm.pcm, fs.cue.loop, gain);
+                const int h = front.playSound(sm.pcm, fs.cue.loop, gain * fxGain());
                 // only a LOOPING cue needs remembering - a one-shot ends by
                 // itself and the handle would go stale
                 if (h >= 0 && fs.cue.loop) {
@@ -11278,7 +11329,8 @@ int main(int argc, char** argv) {
                         static_cast<double>(pcm.size()) / omk::kAdpcmRate);
             front.stopSound(voiceOverShot);
             voiceOverShot = pcm.empty() ? -1
-                : front.playSound(resampleToDevice(pcm, 1, omk::kAdpcmRate, kDeviceRate));
+                : front.playSound(resampleToDevice(pcm, 1, omk::kAdpcmRate, kDeviceRate),
+                                  false, dialogueGain());
             // ...and the TEXT. Step 13 of the handler is `Subtitle_Show` of
             // the buffer step 6 built: the record's +280 description, with a
             // `{C}` (centre) prefix when the player's ACTOR_STATE is 3 or
@@ -11447,7 +11499,8 @@ int main(int argc, char** argv) {
                     voiceDev = resampleToDevice(dlg.pcm(), dlg.channels(), 22050, kDeviceRate);
                 const double resampleMs = lineMs(rs0);
                 const auto ps0 = std::chrono::steady_clock::now();
-                voiceShot = voiceDev.empty() ? -1 : front.playSound(std::move(voiceDev));
+                voiceShot = voiceDev.empty() ? -1
+                          : front.playSound(std::move(voiceDev), false, dialogueGain());
                 // WHERE A LINE'S START GOES (2026-09-23: "it is a bit long to
                 // load the dialog" on a console) - the conversation's read and
                 // decode, then this frontend's face tracks, resample, hand-over
@@ -12275,6 +12328,21 @@ int main(int argc, char** argv) {
                 else if (optMenu.moved())        blip(optSndMove);
                 if (!optMenu.focused())
                     std::printf("frame %ld: options: focus back to screen %d\n", n, openScreen);
+                // ...AND, UNDER THE START MENU, ON TO ITS FOUR BUTTONS. A
+                // RECONSTRUCTION, labelled as one: read alone, the root's
+                // `Retour` and BACK only focus 29 (`Opt_RowInput` case 6,
+                // 0x00492AD0), and `UI_TickScreens` visits slot 0 - screen 29 -
+                // before slot 1, so 29 cannot take the same key that frame.
+                // That leaves the menu on the bare `Options` heading until a
+                // second BACK, which the reader played and called broken
+                // (2026-10-01). Their account of the game outranks a reading
+                // that has found no mechanism; the second BACK is sent here.
+                if (!optMenu.focused() && openScreen == 29 &&
+                    walk->panel() && walk->panel()->addr == 0x004CF420u) {
+                    walk->press(omk::kUiBack);
+                    std::printf("frame %ld: options: the start menu back on its buttons "
+                                "(a second BACK - the reader's account, a reconstruction)\n", n);
+                }
                 // `UI_CloseScreen(9)`: the device's own close, as TAB does it
                 if (optMenu.takeHostClose()) walk->press(omk::kUiClose);
             } else if (uiBits) {
@@ -12367,6 +12435,14 @@ int main(int argc, char** argv) {
                         if (detailFlag < 0) shadowDetail = v.levelOfDetail;
                         std::printf("options: level of detail %d%s\n", v.levelOfDetail,
                                     detailFlag >= 0 ? " - held at --detail" : "");
+                        break;
+                    case 10: case 11: case 12:
+                        // read where they are played: the music every frame,
+                        // the other two by the next sound to start
+                        session.setMusicOption(v.volumeMusic);
+                        std::printf("options: volumes - attenuation dialogue %d, music %d, "
+                                    "effects %d dB\n", v.volumeDialogue, v.volumeMusic,
+                                    v.volumeEffects);
                         break;
                     case 8:
                         std::printf("options: Accélération 3D -> %d - NOT switched live: the "

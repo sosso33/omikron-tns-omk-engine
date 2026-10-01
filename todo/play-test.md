@@ -150,6 +150,11 @@ From the start menu: `Options`, then `Vidéo`. Arrows move and change a value
 `omk-saves/GAMES`. Back on the root, SPACE returns to the menu (one more SPACE
 to its four buttons - the game's own two steps). In the street, TAB opens the
 sneak; its `Options` tab shows the same pages and RIGHT gives them the keys.
+After the first pass (2026-10-01): a saved resolution is the next start's
+size; `Retour` goes straight back to the menu's buttons; the three volumes act
+(music at once, dialogue and effects from the next sound - 0 is 40 dB down,
+the game's floor, not silence); the green button and Window > Enter Full
+Screen work.
 Worth looking at: the clip distance and the sky change the street at once;
 the crowd changes at the next area; the RESOLUTION changes the window there
 and then. F11 toggles fullscreen anywhere, and `--fullscreen` starts in it.
