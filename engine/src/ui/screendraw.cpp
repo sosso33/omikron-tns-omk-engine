@@ -1763,13 +1763,15 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
             if (isEcho) out.echoBar = s;
         }
     }
-    for (auto px : fb.px) if (px) ++out.painted;
-    std::uint32_t h = 2166136261u;
-    for (auto px : fb.px) {
-        h = (h ^ (px & 0xFF)) * 16777619u;
-        h = (h ^ (px >> 8)) * 16777619u;
+    if (reportHash_) {
+        for (auto px : fb.px) if (px) ++out.painted;
+        std::uint32_t h = 2166136261u;
+        for (auto px : fb.px) {
+            h = (h ^ (px & 0xFF)) * 16777619u;
+            h = (h ^ (px >> 8)) * 16777619u;
+        }
+        out.hash = h;
     }
-    out.hash = h;
     // ...and now layer 8, over everything the walk drew at 4 and 6.
     for (const auto& c : cursorLate)
         fillQuad(fb, c.x0, c.y0, c.x1, c.y1, c.r, c.g, c.b, c.alpha);

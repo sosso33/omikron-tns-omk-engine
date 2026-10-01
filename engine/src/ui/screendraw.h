@@ -164,6 +164,12 @@ struct ScreenFrame {
     // this says WHERE, and it is the only field that moves when a glyph
     // shifts by a pixel - without it the check reported "4 centred" whether
     // or not the ladder had actually moved anything.
+    //
+    // Both are computed only after `setReportHash(true)`, and are 0 otherwise.
+    // They walk the WHOLE framebuffer, and in play that was most of the
+    // interface's CPU: ~76% of `draw` with the start menu at 4K
+    // (todo/optimization.md "The 4K benchmark"), for numbers only
+    // `run_screen` reads.
     std::uint32_t hash = 0;
     long painted = 0;         // non-zero pixels in the whole frame
     // How many panels deep the walk was. 1 is the screen's own; more means it
@@ -356,6 +362,9 @@ public:
     // HANDED over reports the intention; this reports the output, and an
     // item that drew nothing simply has no entry.
     void setReportText(const std::set<std::uint32_t>* s) { reportText_ = s; }
+    // ScreenFrame's `hash` and `painted`: an instrument, off unless asked for
+    // (see there).
+    void setReportHash(bool on) { reportHash_ = on; }
     // THE HIGH-SCORE ROWS. Twenty (name, milliseconds) pairs - four pages of
     // five - out of the SAVE HEADER's +724, and which page the panel hook has
     // stepped to. Null means the screen draws its title and nothing else,
@@ -463,6 +472,7 @@ private:
     const std::map<std::uint32_t, std::pair<int, int>>* litMoved_ = nullptr;
     const std::map<std::uint32_t, int>* section_ = nullptr;
     const std::set<std::uint32_t>* reportText_ = nullptr;
+    bool reportHash_ = false;
     const std::array<std::pair<std::string, int>, 20>* scores_ = nullptr;
     int scorePage_ = 0;
     const CityMapView* cityMap_ = nullptr;

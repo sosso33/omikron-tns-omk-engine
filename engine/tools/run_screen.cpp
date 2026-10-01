@@ -61,6 +61,7 @@ int main(int argc, char** argv) {
     int dw = 640, dh = 480;
     if (argc > 6) std::sscanf(argv[6], "%dx%d", &dw, &dh);
     comp.setDisplay(dw, dh);
+    comp.setReportHash(true);   // the frame's hash and painted count, off in play
     // ...and the INTERFACE SCALING enhancement (`todo/enhancements.md` 3),
     // 0 nearest as the original stretches. It can only matter where the
     // display is not 640x480, which is the pair the check composes.
