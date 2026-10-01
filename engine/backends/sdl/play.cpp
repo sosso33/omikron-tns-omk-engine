@@ -22301,14 +22301,18 @@ int main(int argc, char** argv) {
             });
         }
         mark("screens, hud");
-        // ---- THE FPS COUNTER, when asked for --------------------------
+        // ---- THE FPS COUNTER -------------------------------------------
         //
         // Measured over a WINDOW rather than per frame, because a per-frame
         // reciprocal is mostly noise: this loop sleeps to pace itself, so a
         // single frame's time says more about the sleep than about the work.
         // It reports the rate and the worst frame in the window, which is what
         // says whether a hitch is happening at all.
-        if (showFps) {
+        // ...and ALWAYS in the window's title, once a second: the same window
+        // measure, appended to the title the window was opened with (read
+        // back once, so each backend keeps its own label). `--fps` adds the
+        // terminal line with the worst frame.
+        {
             ++fpsFrames;
             const Uint32 nowMs = SDL_GetTicks();
             const Uint32 dtMs = nowMs - fpsLastMs;
@@ -22316,11 +22320,26 @@ int main(int argc, char** argv) {
             fpsLastMs = nowMs;
             if (nowMs - fpsSince >= 1000) {
                 const double secs = (nowMs - fpsSince) / 1000.0;
-                std::printf("fps %.1f  (%d frames, worst %u ms)  %s%s\n",
-                            fpsFrames / secs, fpsFrames, fpsWorst,
-                            vkRen ? "vulkan" : "software",
-                            drawWorld ? ", 3D" : ", 2D only");
-                std::fflush(stdout);
+                const double rate = fpsFrames / secs;
+                if (SDL_Window* tw = front.active()) {
+                    static std::string baseTitle;
+                    static SDL_Window* titled = nullptr;
+                    if (titled != tw) {
+                        const char* t = SDL_GetWindowTitle(tw);
+                        baseTitle = t ? t : "OMK Engine";
+                        titled = tw;
+                    }
+                    char buf[48];
+                    std::snprintf(buf, sizeof buf, " - %.0f fps", rate);
+                    SDL_SetWindowTitle(tw, (baseTitle + buf).c_str());
+                }
+                if (showFps) {
+                    std::printf("fps %.1f  (%d frames, worst %u ms)  %s%s\n",
+                                rate, fpsFrames, fpsWorst,
+                                vkRen ? "vulkan" : glRen ? "gles" : "software",
+                                drawWorld ? ", 3D" : ", 2D only");
+                    std::fflush(stdout);
+                }
                 fpsSince = nowMs; fpsFrames = 0; fpsWorst = 0;
             }
         }
