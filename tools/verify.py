@@ -2122,9 +2122,15 @@ def c_engine_i2d():
              200, 200, 5032, 1407, 1407, 147,
              1, 1, 0, 24, 2, 1,
              2, 1, 2,
-             133, 133, 28, 103, 2,
-             69, 69,
-             124, 616, 348), True, True), \
+             # the widget census re-baselined 2026-10-01 to the table as the
+             # 2026-09-18 UI work left it (`49c8fda` / `a8a231a`: the city map
+             # and the hint shop added their panels) - 133 -> 136 constants,
+             # 69 -> 70 round trips, 124/616/348 -> 136/639/367 flag words;
+             # every constant still resolves and every round trip is correct,
+             # which are the two relations asserted beside this
+             136, 136, 28, 106, 2,
+             70, 70,
+             136, 639, 367), True, True), \
            "the seven pools' total capacity, how many are live, how many are " \
            "UNREFERENCED, and whether the total equals the display list's own " \
            "node cap of 4862 - which is what makes that number derived rather " \
@@ -23822,12 +23828,18 @@ def c_engine_sneak_map():
     away = run(["--area", "222", "--address", "654"])
     pick = lambda t: tuple(ln.strip() for ln in t.splitlines()
                            if ln.startswith("sneak map:"))
+    # The viewer also says, on opening the sneak, whether `Lire plan` will
+    # open in this set at all - the line it added for the Impasse's bounce.
+    # Those lines are part of what is asserted now: red from the day they were
+    # added (recorded 2026-09-29) because this check did not know them.
     return (pick(city), pick(away)), \
-           ((r"sneak map: set 'ANEKBAH' -> Images/ANEKBAH.bmp 640x480, "
+           ((r"sneak map: standing in set 'ANEKBAH' - Images/<set>.bmp exists, `Lire plan` opens",
+             r"sneak map: set 'ANEKBAH' -> Images/ANEKBAH.bmp 640x480, "
              r"city ANEKBAH id 0, 2 markers, 0 unplaced",
              r"sneak map: the sheet blitted, the pin at 187,292, 2 markers: "
              r"Appartement de Kay'l at 262,138 | Sas vers Qalisar at 311,356"),
-            ()), \
+            (r"sneak map: standing in set 'AIMPASSE' - no Images/<set>.bmp, `Lire plan` "
+             r"bounces back (only the four cities' main-street sets ship one)",)), \
            "the sneak's CITY MAP, drawn in Anekbah and bounced in the Impasse, " \
            "reported from what the two draw hooks put on the frame"
 
