@@ -24379,6 +24379,38 @@ def c_engine_options_menu():
            "comes up at"
 
 
+def c_engine_start_quit():
+    r"""engine: the start menu's QUIT ends the program (`todo/start-menu.md`).
+
+    Panel 0x004CF488's `Oui` calls 0x0047BC10 - `[screen+8] = 3` and
+    `PostQuitMessage(0)`, read by its bytes - so the process ends; the pause
+    screen's `Oui` restarts the game instead. Two runs of 400 frames: Quitter
+    then ENTER on `Oui` (the default) must stop the viewer at once, and UP to
+    `Non` then ENTER must not. Read from the output: the frames the run
+    actually presented.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "omk-play did not build (no SDL?)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    got = []
+    for keys in ("0,0xD0,0xD0,0xD0,0x1C,0x1C", "0,0xD0,0xD0,0xD0,0x1C,0xC8,0x1C"):
+        r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                            "--software", "--nofmv", "--frames", "400",
+                            "--keydelay", "20", "--keys", keys],
+                           capture_output=True, env=env)
+        out = (r.stdout + r.stderr).decode("latin-1")
+        m = re.search(r"(\d+) frames presented", out)
+        got.append((int(m.group(1)) if m else None, "PostQuitMessage" in out))
+    return got, [(101, True), (400, False)], \
+           "frames presented and whether the quit was taken: Oui, then Non"
+
+
 def c_engine_sneak_examine_message():
     r"""engine: the SNEAK's Examiner posts world message 4 (`sub_49BFF0`).
 
@@ -39626,6 +39658,7 @@ SLOW = [
     ("engine: sneak character", c_engine_sneak_character, "UI; todo/sneak.md 5"),
     ("engine: sneak quit", c_engine_sneak_quit, "UI; todo/sneak.md 5"),
     ("engine: options menu", c_engine_options_menu, "UI 4; todo/options-menu.md"),
+    ("engine: start menu quit", c_engine_start_quit, "UI; todo/start-menu.md"),
     ("engine: sneak memos", c_engine_sneak_memos, "UI; todo/sneak.md 2c"),
     ("engine: sneak echo bar", c_engine_sneak_echo_bar,
      "UI; todo/sneak.md"),

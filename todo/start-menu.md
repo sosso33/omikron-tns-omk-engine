@@ -62,10 +62,19 @@ Nothing fills `0x004CF420`: the panel is the heading, its `+4` enter hook
 `0x0047BB40` is `UI_FocusScreen(35)` plus two slides, and screen 35 was loaded
 by screen 29's own open callback (`UI_LoadScreen(35, -1, -1)`, closed with it).
 So the start menu HOSTS the options screen, as the sneak does - ported and
-drawn. QUIT is still as below; one lead from the same listing: two functions
-after `0x0047BBF0` there is an unlabelled `mov [eax+8], 3; PostQuitMessage(0)`,
-which looks like the start menu's `Oui` - the PROCESS quits, unlike the pause
-screen's, which restarts the game. Unconfirmed: nothing has been traced to it.
+drawn.
+
+## 3c. QUIT, done 2026-10-01
+
+Panel `0x004CF488`'s `Oui` (`0x004CEE78`, `IAM\Menu` 6) calls `0x0047BC10` -
+by its bytes `mov eax, [esp+4]; push 0; mov dword [eax+8], 3; call
+PostQuitMessage` - so the screen closes and the PROCESS ends, unlike the pause
+screen's `Oui`, which restarts the game. `Non` descends to the menu root, as
+before. **§3's "`Confirmer`'s callback `0x0047BC10` is a TEXT function" was
+WRONG**: the text callback of these rows is `0x00476860`, and `0x0047BC10` is
+this quit; the one byte-pattern match and the item's `+40` both say so.
+Ported as `kCbStartQuitYes`; the viewer ends its loop on it.
+`verify.py: engine: start menu quit`, red when the constant is off by one.
 
 ## 4. The next step, in order
 

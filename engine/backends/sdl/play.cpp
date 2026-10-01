@@ -3136,6 +3136,7 @@ int main(int argc, char** argv) {
     omk::LoadPanel loadPanelState;   // rebuilt each time a screen opens
     int  pendingLoadSlot = -1;       // `dword_4C09B4`
     bool quitRequested = false;      // `dword_4E6C9C`, the pause screen's Oui
+    bool exitProgram = false;        // the start menu's Oui - WM_QUIT
     // `dword_670BF0`: a sneak CALL is up. Set by the videophone's open arm,
     // cleared by the first close attempt.
     bool videophoneCall = false;
@@ -6740,7 +6741,7 @@ int main(int argc, char** argv) {
         bool pumpOk = true;
         spanned("pump", [&] { pumpOk = front.pump(host); });
         mark("pump");
-        if (!pumpOk) break;
+        if (!pumpOk || exitProgram) break;
         // ---- OPTIONS ROW 2: A NEW DISPLAY SIZE, between frames -----------
         //
         // `Opt_ApplyResolution` (0x0048FA50) stops the menu cloud, has
@@ -12512,6 +12513,11 @@ int main(int argc, char** argv) {
             // serves at the top of the next `Script_Pump(1)`, not work the
             // callback does.
             if (walk->takeQuitRequest()) quitRequested = true;
+            if (walk->takeExitRequest()) {
+                exitProgram = true;
+                std::printf("frame %ld: start menu: Quitter -> Oui - PostQuitMessage, "
+                            "the program ends\n", n);
+            }
             // ...and the SAVE, which the callback performs itself rather than
             // deferring: `Game_WriteSave(slot)` right after the charge, and
             // then the screen closes. So this is served here and not at the

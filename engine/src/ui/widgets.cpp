@@ -2109,6 +2109,12 @@ bool UiWalk::confirm() {
             log_.push_back("pause: non -> back to the pause page");
             return installPanel(kPanelPause);
         }
+        if (it->callback == kCbStartQuitYes) {
+            exitRequest_ = true;
+            log_.push_back("start menu: oui -> PostQuitMessage");
+            panel_ = nullptr;                  // `mov [eax+8], 3`
+            return true;
+        }
         if (it->callback == kCbPauseQuitYes) {
             // `sub_409090()` - `mov dword_4E6C9C, 1` - and then the close.
             // The caller serves the request between pumps.

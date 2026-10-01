@@ -100,6 +100,14 @@ struct LoadPanel;
 // meets first, because the button is right there and says Annuler.
 inline constexpr std::uint32_t kPanelStartConfirm = 0x004CF280u;
 inline constexpr std::uint32_t kCbStartCancel     = 0x0047A370u;
+// THE START MENU'S QUIT. Panel 0x004CF488's `Oui` (0x004CEE78, `IAM\Menu` 6)
+// calls 0x0047BC10, read by its bytes - it has no `proc` label:
+//
+//     mov eax, [esp+4] ; push 0 ; mov dword [eax+8], 3 ; call PostQuitMessage
+//
+// the screen closes and the PROCESS ends (WinMain's message loop sees
+// WM_QUIT). Not the pause screen's `Oui`, which restarts the game.
+inline constexpr std::uint32_t kCbStartQuitYes    = 0x0047BC10u;
 
 // THE SHOPS - screens 20..28 and 32 share ONE panel and its three lists, and
 // differ only in the screen table's `+8` (todo/shops.md). `Ui_OpenShop`
@@ -851,6 +859,9 @@ public:
     // menu. The caller reads and clears this the way it does the load.
     bool quitRequested() const { return quitRequest_; }
     bool takeQuitRequest() { const bool q = quitRequest_; quitRequest_ = false; return q; }
+    // `PostQuitMessage(0)` - the start menu's `Oui` (`kCbStartQuitYes`): the
+    // caller ends the program.
+    bool takeExitRequest() { const bool q = exitRequest_; exitRequest_ = false; return q; }
     // `Actor_GetProperty` case 5, the player record's +174 - what a save
     // costs and what the hints on this screen are bought with.
     void setRings(int n) { rings_ = n; }
@@ -1363,6 +1374,7 @@ private:
     int         pendingClear_ = -1;
     // `dword_4E6C9C`, set by the pause screen's quit confirm.
     bool        quitRequest_ = false;
+    bool        exitRequest_ = false;
     // The SCREEN this walk was opened with. Child panels carry `screen ==
     // -1`, so a callback that branches on the screen - and several of the
     // save/load family do - cannot ask the panel it is standing on.
