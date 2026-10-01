@@ -132,6 +132,7 @@ Geometry buildGeometry(std::span<const std::byte> d, DrawFilter filter) {
     using Key = std::tuple<int, std::int32_t, bool>;
     std::map<Key, std::vector<Corner>> groups;
     std::map<Key, std::vector<std::uint8_t>> mirrorOf;
+    std::map<Key, std::vector<std::uint8_t>> cullOf;
     std::map<Key, std::vector<std::int32_t>> meshOf;
     std::map<Key, std::vector<std::int32_t>> vertOf;
     std::map<Key, std::vector<std::int32_t>> declOf;
@@ -143,6 +144,7 @@ Geometry buildGeometry(std::span<const std::byte> d, DrawFilter filter) {
         const Blend bl  = blendOf(f);
         const bool  shimmer = (f & kFlicker) != 0;
         const std::uint8_t isMirror = (f & kMirror) != 0 ? 1u : 0u;
+        const std::uint8_t oneSided = (f & kTwoSided) == 0 ? 1u : 0u;
 
         const auto corner = [&](const Resolved& r, std::uint8_t tu, std::uint8_t tv) {
             const Vertex& v = vs[r.gi];
@@ -190,6 +192,8 @@ Geometry buildGeometry(std::span<const std::byte> d, DrawFilter filter) {
             auto& gd = declOf[Key{static_cast<int>(bl), tr.material, cut}];
             gd.insert(gd.end(), 3, m.index);
             gm.insert(gm.end(), 3, isMirror);
+            auto& gc = cullOf[Key{static_cast<int>(bl), tr.material, cut}];
+            gc.insert(gc.end(), 3, oneSided);
         }
 
         for (std::size_t q = base.quad[mi];
@@ -214,6 +218,11 @@ Geometry buildGeometry(std::span<const std::byte> d, DrawFilter filter) {
             g.insert(g.end(), {c4[0], c4[1], c4[2], c4[0], c4[2], c4[3]});
             auto& gm = mirrorOf[Key{static_cast<int>(bl), qd.material, cut}];
             gm.insert(gm.end(), 6, isMirror);
+            // The engine tests a quad's winding on corners 0,1,2 and draws or
+            // drops both halves together; a planar quad's two halves wind the
+            // same way, so a per-triangle test agrees with it.
+            auto& gc = cullOf[Key{static_cast<int>(bl), qd.material, cut}];
+            gc.insert(gc.end(), 6, oneSided);
             auto& gx = meshOf[Key{static_cast<int>(bl), qd.material, cut}];
             gx.insert(gx.end(), {qo[0], qo[1], qo[2], qo[0], qo[2], qo[3]});
             auto& gv = vertOf[Key{static_cast<int>(bl), qd.material, cut}];
@@ -234,6 +243,8 @@ Geometry buildGeometry(std::span<const std::byte> d, DrawFilter filter) {
         out.corners.insert(out.corners.end(), corners.begin(), corners.end());
         const auto& mf = mirrorOf[key];
         out.cornerMirror.insert(out.cornerMirror.end(), mf.begin(), mf.end());
+        const auto& cf = cullOf[key];
+        out.cornerCull.insert(out.cornerCull.end(), cf.begin(), cf.end());
         const auto& mx = meshOf[key];
         out.cornerMesh.insert(out.cornerMesh.end(), mx.begin(), mx.end());
         const auto& vx = vertOf[key];

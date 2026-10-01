@@ -119,7 +119,7 @@ bool UiModels::loadWeapon(const DataFs& fs, const std::string& stem) {
     }
     if (tir >= 0 && g.cornerMesh.size() == g.corners.size()) {
         Geometry f = g;
-        f.corners.clear(); f.batches.clear(); f.cornerMirror.clear();
+        f.corners.clear(); f.batches.clear(); f.cornerMirror.clear(); f.cornerCull.clear();
         f.cornerMesh.clear(); f.cornerVertex.clear(); f.cornerDeclared.clear();
         for (const Batch& b : g.batches) {
             Batch nb = b;
@@ -132,6 +132,7 @@ bool UiModels::loadWeapon(const DataFs& fs, const std::string& stem) {
                 for (std::size_t j = c; j < c + 3; ++j) {
                     f.corners.push_back(g.corners[j]);
                     if (j < g.cornerMirror.size())   f.cornerMirror.push_back(g.cornerMirror[j]);
+                    if (j < g.cornerCull.size())     f.cornerCull.push_back(g.cornerCull[j]);
                     f.cornerMesh.push_back(g.cornerMesh[j]);
                     if (j < g.cornerVertex.size())   f.cornerVertex.push_back(g.cornerVertex[j]);
                     if (j < g.cornerDeclared.size()) f.cornerDeclared.push_back(g.cornerDeclared[j]);

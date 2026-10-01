@@ -573,6 +573,7 @@ void applyPose(Geometry& g, const Geometry& rest,
     if (inPlace) {
         g.batches = rest.batches;
         g.cornerMirror = rest.cornerMirror;
+        g.cornerCull = rest.cornerCull;
         g.cornerMesh = rest.cornerMesh;
         g.cornerVertex = rest.cornerVertex;
         g.cornerDeclared = rest.cornerDeclared;

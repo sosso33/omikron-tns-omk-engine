@@ -14903,7 +14903,7 @@ def c_engine_pose_equivalence():
         return (len(size), len(rows)), (1, 3), "pose_equiv output parsed - the tool's format changed"
     return (int(size[0]), tuple((st, int(c), int(cut), int(fc), int(calls), int(mm))
                                 for st, c, cut, fc, calls, mm in rows)), \
-        (232, (("HO1_FN", 1626, 624, 0, 241, 0), ("PSH_FN", 2370, 1074, 0, 241, 0),
+        (256, (("HO1_FN", 1626, 624, 0, 241, 0), ("PSH_FN", 2370, 1074, 0, 241, 0),
                ("JEN_FNM", 2388, 561, 132, 241, 0))), \
         "sizeof(Geometry) - the fields applyPose's in-place path must copy; then per model: " \
         "corners, the cut rest's corners, face vertices, calls compared and calls whose " \
@@ -17991,6 +17991,125 @@ def c_engine_camera_collision():
         ("views of AREA 46 - four stands x four facings - and how many put a "
          "solid face between the camera's target and its eye, without the "
          "collision pass and with it")
+
+
+def c_engine_backface_cull():
+    r"""`engine/`: a single-sided face seen from BEHIND is not drawn - the
+    engine's own back-face cull, in software, one level above the device.
+
+    `Raster_DrawTriangles` sets the device to `D3DCULL_NONE`
+    (`SetRenderState(22, 1)`), and this repo read that as "the engine never
+    culls" from 2026-08-29 to 2026-10-01. But `Render_SubmitMesh` (0x004951C0)
+    has already tested every face's screen winding,
+
+        (x0-x2) * (y0-y1) - (y0-y2) * (x0-x1) >= 0   -> draw
+        otherwise, mesh flag 0x20000000              -> swap two corners, draw
+        otherwise                                    -> dropped
+
+    and its near-clip path (`sub_496740`) and the second submit (`sub_496FC0`)
+    test the same way. Only 93 of the 16188 shipped meshes carry the flag,
+    nearly all of them WATER. Everything else is single-sided, so a camera
+    behind a wall, above a ceiling or inside a head SEES THROUGH it - which is
+    what the dialogue cameras are authored to do. A reader reported the port's
+    cameras as "slightly off and sometimes blocked"; they were placed exactly,
+    and the blocked view was the back of the scenery:
+
+      * dialog 387's crane 4194 -> 4195 starts with its eye at y -226, above
+        the restaurant's ceiling `RE14plafon` (y about -145): the port drew the
+        back of the ceiling and its lamps, the original looks down at the table;
+      * dialog 402's reply camera 4577 -> 4578 stands behind a wall;
+      * 402's 4575 -> 4576 has its eye INSIDE the vivarium `Ap01vitre` (x
+        3599..3637, y 1002..1048, z -786..-661), whose glass is modelled once
+        facing out and once facing in: the original draws ONE layer of yellow
+        glass, the port drew both, an additive wash over the room. A reader's
+        capture of the original matches the culled render on every patch
+        sampled behind the glass (ceiling 181,156,101 against 174,142,82; the
+        wall 154,123,74 against 162,122,67) and not the two-layer one
+        (242,192,100; 224,167,86);
+      * the security centre lift's arrival, camera 2986, whose lens sits in
+        the closed volume `CSPont04` - `todo/camera-obstruction.md` refuted
+        inside-face culling for it on the strength of the device state alone.
+
+    What this measures, per run, against `OMK_NO_CULL=1` (the old two-sided
+    reading, re-rendered beside it as the control):
+
+      * the corpus: how many meshes carry 0x20000000, of how many;
+      * the lift's arrival frame, how much of it is black (R+G+B <= 24);
+      * the restaurant crane's frame 471, whether the two readings disagree
+        on more than 100000 pixels - they disagree on 221340 of 307200, the
+        ceiling the old reading drew in front of the lens.
+
+    TIER: the rule is tier 6, read from three functions and explained, and the
+    vivarium patches against a VIDEO of the original are indicative of tier 4
+    for one shot and no more - per PORTING B5, no pixel value is asserted
+    against a capture, so the patches stay in this docstring. The check
+    itself is a tier-3 control: two readings of the same frame.
+
+    SHOWN TO FAIL: see the falsification note appended below once run.
+    """
+    import subprocess, tempfile, struct, glob
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import mesh3do
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    tb = os.path.join(ROOT, "tables")
+    save_lift = os.path.join(ROOT, "traces", "save-appart.bin")
+    save_resto = os.path.join(ROOT, "traces", "games-resto.bin")
+    if not (os.path.isdir(eng) and os.path.isdir(fr) and os.path.exists(save_lift)
+            and os.path.exists(save_resto)):
+        return ("no data",), ("data",), "needs the shipped tree and the two saves in traces/"
+    total = two = 0
+    for path in glob.glob(os.path.join(fr, "MESHES", "**", "*"), recursive=True):
+        if not path.lower().endswith(".3do"): continue
+        try:
+            _, ms = mesh3do.meshes(path)
+        except Exception:
+            continue
+        total += len(ms)
+        two += sum(1 for m in ms if m["flags"] & 0x20000000)
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    tmp = tempfile.mkdtemp()
+
+    def render(args, frames, nocull):
+        out = os.path.join(tmp, "f%d.bin" % len(os.listdir(tmp)))
+        env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+        if nocull: env["OMK_NO_CULL"] = "1"
+        subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
+                        "--no-crowd", "--frames", str(frames), "--dump", out] + args,
+                       capture_output=True, encoding="latin-1", env=env)
+        if not os.path.exists(out): return None
+        d = open(out, "rb").read()
+        return struct.unpack("<%dH" % (len(d) // 2), d)
+
+    def luma(p):
+        return (p >> 11 & 31) * 255 // 31 + (p >> 5 & 63) * 255 // 63 + (p & 31) * 255 // 31
+
+    lift = ["--save", save_lift, "--area", "157", "--address", "446", "--nodelay",
+            "--hold", "k*40,k28*2,k*60,k208*2,k*30,k28*2,k*200"]
+    crane_hold = "0*30,k28*2" + ",0*118,k28*2" * 4
+    crane = ["--save", save_resto, "--slot", "2", "--stand", "2547,22,-6930,314",
+             "--hold", crane_hold]
+    try:
+        l1, l0 = render(lift, 260, False), render(lift, 260, True)
+        c1, c0 = render(crane, 471, False), render(crane, 471, True)
+    finally:
+        import shutil
+        shutil.rmtree(tmp, ignore_errors=True)
+    if not (l1 and l0 and c1 and c0):
+        return ("a render produced no frame",), ("four frames",), "omk-play --dump"
+
+    def dark(px):
+        return round(100.0 * sum(1 for p in px if luma(p) <= 24) / len(px), 1)
+
+    differ = sum(1 for a, b in zip(c1, c0) if a != b)
+    got = ((two, total), dark(l1), dark(l0), differ > 100000)
+    want = ((93, 16188), 56.9, 90.3, True)
+    return got, want, "meshes two-sided of all; the lift's arrival dark percent culled, " \
+        "then two-sided (the old reading); the crane frame differs by over 100000 pixels " \
+        "between the two (it differed by %d)" % differ
 
 
 def c_engine_camera_obstruction():
@@ -25639,6 +25758,12 @@ And the one that matters most now: **narrowing `plm_probe` back to the
 def c_engine_raster():
     r"""`engine/`'s software 3D rasterizer - and it is NOT a port.
 
+    **2026-10-01: 709 -> 485 drawn, 419445 -> 377821 pixels, 93114 -> 53551
+    depth rejects** - the BACK-FACE CULL (`engine: back-face cull`): 224 of
+    the faces through 4555 are single-sided and seen from behind, and the
+    engine's `Render_SubmitMesh` never drew them. Behind and offscreen
+    are unchanged, and so is every projection figure.
+
     Every other output slice transcribes something the engine does. This one
     cannot: **the engine has no software 3D rasterizer.** Exactly three drawing
     functions test the software driver mode and all three are I2D's; the 3D
@@ -25734,7 +25859,7 @@ def c_engine_raster():
 
     return (v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[10],
             len(verts), npro, ahead, agree, round(worst, 3)), \
-           (10257, 25, 21, 3419, 709, 2452, 278, 419445, 93114, 349998,
+           (10257, 25, 21, 3419, 485, 2452, 278, 377821, 53551, 349998,
             10257, 106, 32, 106, 0.002), \
            "the set's corners, batches and textures; then the raster - " \
            "triangles offered, drawn, rejected BEHIND the near cut and " \
@@ -26111,6 +26236,9 @@ def c_engine_near_clip():
 def c_engine_renderer_boundary():
     r"""`PORTING` A2's renderer boundary, and the two backends across it.
 
+    **2026-10-01: 709 -> 485 drawn on both sides of the boundary** - the
+    back-face cull (`engine: back-face cull`); the boundary still moves 0.
+
     A2 is the load-bearing design decision in Part A: **a backend receives
     decisions and turns them into API calls; it never makes one.** What
     `engine/` has ported is not triangles - it is the drawable mask, the 14-bit
@@ -26215,7 +26343,7 @@ def c_engine_renderer_boundary():
 
     want = ("no vulkan",) if gpu == ("no vulkan",) else (640, 352, 0.995)
     return (boundary, gpu), \
-           ((3419, 709, 3419, 709, 0), want), \
+           ((3419, 485, 3419, 485, 0), want), \
            "the boundary first: the triangles offered and drawn by the DIRECT " \
            "`drawGeometry` call every other check measures, then the same two " \
            "through `SoftwareRenderer` one submit per batch, and then the " \
@@ -27333,6 +27461,11 @@ def c_menu_cloud():
 def c_anekbah_rendered():
     r"""ANEKBAH, RENDERED - the repo's oldest prediction, finally a picture.
 
+    **2026-10-01: 12242 -> 7309 triangles drawn** - the back-face cull
+    (`engine: back-face cull`). Every other figure is unchanged, the lit
+    pixels and the sign's own pixels included: the 4933 faces culled here
+    were all hidden behind front faces anyway.
+
     `docs/ASSETS.md` 4b: the wrong shop sign is the **texture name cache**.
     `Tex3DT_BindMaterials` matches on the 19-character file name alone across a
     global pool of 58 slots, and `Area_LoadSet` keeps TWO decor sets resident -
@@ -27425,7 +27558,7 @@ def c_anekbah_rendered():
     differs = md5("Anekbah", "BATITR12") != md5("AImpasse", "BATITR12")
 
     return (v, same, differs), \
-           ((20, 7, 12242, 282669, 8023,
+           ((20, 7, 7309, 282669, 8023,
              7, 6920, 33, 545, 0,
              18, 121588, 1763, 545, 0), True, True), \
            "Anekbah's textures and which material BATITR12 is; the triangles " \
@@ -39550,6 +39683,7 @@ SLOW = [
     ("engine: shoot pose", c_engine_shoot_pose, "todo/reader-followups"),
     ("engine: camera collision", c_engine_camera_collision, "todo/reader-followups"),
     ("engine: camera obstruction", c_engine_camera_obstruction, "todo/camera-obstruction 5-6"),
+    ("engine: back-face cull", c_engine_backface_cull, "ASSETS 4b; o3de/geom3do.h kTwoSided"),
     ("engine: tunnel door walk", c_engine_tunnel_door_walk, "todo/collision-scenes-transitions"),
     ("engine: arrival wait", c_engine_arrival_wait, "todo/omk-play"),
     ("engine: linked rings", c_engine_linked_rings, "todo/omk-play"),

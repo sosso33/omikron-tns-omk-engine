@@ -111,7 +111,8 @@ bool sameGeometry(const omk::Geometry& a, const omk::Geometry& b) {
         if (x.material != y.material || x.cutout != y.cutout || x.blend != y.blend ||
             x.start != y.start || x.count != y.count) return false;
     }
-    return a.cornerMirror == b.cornerMirror && a.cornerMesh == b.cornerMesh &&
+    return a.cornerMirror == b.cornerMirror && a.cornerCull == b.cornerCull &&
+           a.cornerMesh == b.cornerMesh &&
            a.cornerVertex == b.cornerVertex && a.cornerDeclared == b.cornerDeclared &&
            a.revision == b.revision && a.dirtyFrom == b.dirtyFrom && a.dirtyTo == b.dirtyTo &&
            a.dirtyCorners == b.dirtyCorners;

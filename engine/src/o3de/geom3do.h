@@ -74,6 +74,16 @@ inline constexpr std::uint32_t kFlicker      = 0x8000000u;
 // The MIRROR bit. 6 meshes of 12203 carry it (ASSETS 4c); the engine stores
 // the one it finds in a single global and reflects the camera through it.
 inline constexpr std::uint32_t kMirror       = 0x100000u;
+// TWO-SIDED. Every other mesh is single-sided: `Render_SubmitMesh`
+// (0x004951C0) drops a face whose screen winding is backwards - `(x0-x2) *
+// (y0-y1) - (y0-y2) * (x0-x1) < 0` - unless its mesh carries this bit, in
+// which case it swaps two corners and draws it. The near-clip path
+// (`sub_496740`) and the second submit (`sub_496FC0`) test the same way. The
+// device's own CULLMODE is NONE (`SetRenderState(22, 1)`), which is what this
+// repo read as "the engine never culls" until 2026-10-01: the cull is in
+// software, one level above the device. 93 of 16188 shipped meshes carry the
+// bit, nearly all of them WATER - a surface seen from both sides.
+inline constexpr std::uint32_t kTwoSided     = 0x20000000u;
 
 enum class Blend { Opaque, Add, Mul };
 
@@ -106,6 +116,15 @@ struct Geometry {
     // because `Corner` is the GPU vertex and this is not a vertex attribute -
     // it selects which corners the mirror pass must draw separately.
     std::vector<std::uint8_t> cornerMirror;
+    // 1 where the corner's face is SINGLE-SIDED - its mesh lacks `kTwoSided` -
+    // so a renderer must drop the face when it is seen from behind, parallel
+    // to `corners`. EMPTY means draw both sides: geometry this port builds for
+    // itself (particles, shadow quads) never went through `Render_SubmitMesh`
+    // and its winding was never authored, so it is not culled. Kept beside the
+    // corners for `cornerMirror`'s reason. Without it a camera behind a wall,
+    // above a ceiling or inside a head sees the wall, the ceiling or the head
+    // (dialog 402's camera 4577, dialog 387's 4194, the lift's 2986).
+    std::vector<std::uint8_t> cornerCull;
     // Which MESH's transform applies to each corner, in `.3DO` file order,
     // parallel to `corners`. Not always the mesh that declared the face: a
     // negative vertex index is SKINNED to an ancestor, and such a corner is

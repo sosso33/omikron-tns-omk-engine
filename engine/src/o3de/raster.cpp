@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <limits>
 
 namespace omk {
@@ -209,6 +210,13 @@ RasterStats drawGeometry(Surface& fb, std::vector<float>& depth,
         for (std::size_t i = batch.start; i + 2 < batch.start + batch.count; i += 3) {
             ++st.triangles;
             const Corner* src[3] = {&g.corners[i], &g.corners[i + 1], &g.corners[i + 2]};
+            // Single-sided unless the geometry says otherwise; see `cornerCull`.
+            // `OMK_NO_CULL=1` draws both sides - the reading this file held
+            // until 2026-10-01 - for laying the two beside each other, the way
+            // `--no-dither` does; `engine: back-face cull` renders both.
+            static const bool noCull = std::getenv("OMK_NO_CULL") != nullptr;
+            const bool oneSided = !noCull && g.cornerCull.size() == g.corners.size() &&
+                                  g.cornerCull[i] != 0;
 
             // NEAR-PLANE CLIP, and it is the difference between a renderer and
             // a demo. This used to reject the whole triangle when ANY vertex
@@ -284,10 +292,22 @@ RasterStats drawGeometry(Surface& fb, std::vector<float>& depth,
             const float area = (p[1].x - p[0].x) * (p[2].y - p[0].y) -
                                (p[2].x - p[0].x) * (p[1].y - p[0].y);
             if (area == 0.0f) { ++st.offscreen; continue; }
+            // THE BACK-FACE CULL, and it is the ENGINE's, in software.
+            // `Raster_DrawTriangles` sets the device to D3DCULL_NONE, which
+            // this file read for a month as "the engine never culls" - but
+            // `Render_SubmitMesh` (0x004951C0) has already dropped every face
+            // whose screen winding is backwards, unless its mesh carries
+            // `kTwoSided`; the near-clip path tests each clipped piece the
+            // same way (`sub_496740`), which is what testing the fan here
+            // does. In this rasterizer's convention a front face has
+            // `area < 0` - the engine's own expression is `-area` - and the
+            // mirror pass's screen-X flip negates it: the engine flips X only
+            // when it writes the vertices (`Render_FlushBuckets`), AFTER the
+            // test, while `flipX` here flips the basis, before it.
+            if (oneSided && (cam.flipX ? -area : area) > 0.0f) {
+                ++st.culled; continue;
+            }
             const float inv = 1.0f / area;
-            // No back-face cull: `Raster_DrawTriangles` sets D3DCULL_NONE
-            // (ASSETS 4b - it is what makes the AApub prism's coincident faces
-            // a tie-break question at all), so both windings draw.
             ++st.drawn;
 
             // Perspective-correct interpolation needs the reciprocal depths.

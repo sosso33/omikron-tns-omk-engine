@@ -49,6 +49,10 @@ void SoftwareRenderer::submit(const Draw& d) {
     Geometry one;
     one.corners.assign(d.geo->corners.begin() + static_cast<std::ptrdiff_t>(d.start),
                        d.geo->corners.begin() + static_cast<std::ptrdiff_t>(d.start + d.count));
+    // ...and which of them are single-sided, so the range keeps the cull.
+    if (d.geo->cornerCull.size() == d.geo->corners.size())
+        one.cornerCull.assign(d.geo->cornerCull.begin() + static_cast<std::ptrdiff_t>(d.start),
+                              d.geo->cornerCull.begin() + static_cast<std::ptrdiff_t>(d.start + d.count));
     Batch b;
     // The texture is the bucket key's LOW SIX BITS - ASSETS 4b, and the whole
     // reason a backend is handed a key. Resolving it any other way here would
@@ -84,6 +88,7 @@ void SoftwareRenderer::submit(const Draw& d) {
     st_.offscreen += s.offscreen;
     st_.pixels += s.pixels;
     st_.depthRejects += s.depthRejects;
+    st_.culled += s.culled;
     st_.hash = s.hash;   // the last one wins; the frame's hash is the final image
 }
 

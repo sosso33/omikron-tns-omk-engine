@@ -142,6 +142,7 @@ struct RasterStats {
     long offscreen = 0;      // rejected: bounding box outside the frame
     long pixels = 0;         // texels written
     long depthRejects = 0;   // failed the z test
+    long culled = 0;         // a single-sided face seen from behind (kTwoSided)
     std::uint32_t hash = 0;  // FNV of the framebuffer
 };
 
