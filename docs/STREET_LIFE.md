@@ -389,8 +389,11 @@ then `Actor_SetHeadLook` (0x00468B50) clamps pitch to ±40 and yaw to ±70 and
 eases each an eighth of the way per frame into the head node's matrix at
 +324. Ported as `aimHead` (`actor/pose.h`) over the composed pose, applied
 in the viewer to every staged actor the Session lists as looking at the
-player, with the player's head taken 60 units above his feet (the engine
-reads his head node; labelled). `verify.py: engine: head look` measures the
+player, aimed at the player's HEAD NODE as the engine does (`th = *(tgt +
+16)`, his cached `Tete`; until 2026-10-02 a point 60 units above his feet
+stood in for it). The pitch and yaw senses were settled the same day from
+`Matrix3x3_FromEulerAngles` and the caller's formulas: positive pitch tilts
+up, positive yaw turns -Z toward +X, as ported. `verify.py: engine: head look` measures the
 Demon's forward after the aim: 45 turns 45, 120 and behind turn 70, up 60
 lifts 40, one frame of ease is 45/8. Six shipped startup scripts ask for it
 (AREA 148 once, AREA 155 five times); the intro's beats do too.

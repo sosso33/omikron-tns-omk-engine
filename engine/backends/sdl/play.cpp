@@ -17088,9 +17088,16 @@ int main(int argc, char** argv) {
                     const int head = s.mo->headOf();
                     if (head >= 0) {
                         const float* pp = (adventure && player) ? player->pos() : session.playerPos();
-                        // the target's head: his feet less a standing head height
-                        // (`th[11..13]` is the target's head node in the engine)
-                        const float world[3] = {pp[0], pp[1] - 60.0f, pp[2]};
+                        // THE TARGET'S HEAD NODE, as the engine reads it: `th =
+                        // *(tgt + 16)`, the player's cached `Tete`, its world
+                        // position at node +44..+52 (`Actors_TickAll`, read
+                        // 2026-10-02). `playerHeadAt` is that node as the
+                        // player was last drawn - one frame old here, since
+                        // the player is posed later in the frame. Until he has
+                        // been drawn once, his feet less a standing head height.
+                        const float world[3] = {playerHeadKnown ? playerHeadAt[0] : pp[0],
+                                                playerHeadKnown ? playerHeadAt[1] : pp[1] - 60.0f,
+                                                playerHeadKnown ? playerHeadAt[2] : pp[2]};
                         float pelvis[3] = {0, 0, 0};
                         if (static_cast<std::size_t>(s.mo->root) < pose.size())
                             for (int k = 0; k < 3; ++k) pelvis[k] = pose[static_cast<std::size_t>(s.mo->root)].pos[k];

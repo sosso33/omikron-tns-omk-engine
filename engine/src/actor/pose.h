@@ -259,9 +259,12 @@ Quatf qslerpK(const Quatf& a, const Quatf& b, unsigned k);
 // target's head, a pitch and a yaw in degrees, then `Actor_SetHeadLook`
 // (0x00468B50): pitch clamped to +-40, yaw to +-70, each eased an EIGHTH of
 // the way per frame (`(target - current) * 0.125 * dt`), and the euler baked
-// into the head node's matrix at +324. The engine's pitch sign was not
-// settled (the decompiled snap conditions are undefined); positive here
-// means the head tilts UP (Y points down).
+// into the head node's matrix at +324. Positive pitch tilts the head UP
+// (Y points down), and positive yaw turns -Z toward +X - both SETTLED
+// 2026-10-02: `Matrix3x3_FromEulerAngles(pitch, yaw, roll)` is R_x(pitch) /
+// R_y(yaw) for one angle alone, applied as its transpose, which sends the
+// forward (0,0,-1) to y = -sin(pitch) and x = sin(yaw); and the caller's
+// pitch and yaw formulas are this function's, term for term.
 struct HeadLook {
     float pitch = 0.0f, yaw = 0.0f;   // the eased angles, +432 / +436
 };
