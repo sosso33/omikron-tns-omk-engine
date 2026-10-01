@@ -24629,6 +24629,44 @@ def c_engine_start_quit():
            "frames presented and whether the quit was taken: Oui, then Non"
 
 
+def c_engine_close_flush():
+    r"""engine: a key held through the last screen's close does not reach the game.
+
+    `Ui_CloseScreenDefault` flushes the input when no screen is left
+    (`sub_43E4F0`, "so the release of the button that closed it cannot leak
+    into the game"); the port ignores every key held through that close until
+    it is released - a reconstruction of the effect, see `play.cpp`. A reader:
+    TAB that closed the sneak reopened it, SPACE made Kay'l jump.
+
+    Two runs in Anekbah's street with `--sneak`: TAB held four frames closes
+    it and must NOT reopen it; then a positive control - released, and pressed
+    AGAIN - must reopen it, so the gate is not simply swallowing TAB. Counted
+    from the viewer's own `screen 9 opened` lines.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "omk-play did not build (no SDL?)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    got = []
+    for hold in ("k0*60,k15*4,k0*100", "k0*60,k15*4,k0*40,k15*4,k0*80"):
+        r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                            "--software", "--nofmv",
+                            "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+                            "--area", "0", "--stand", "1804,0,-6890,336", "--sneak",
+                            "--frames", "220", "--hold", hold],
+                           capture_output=True, env=env)
+        out = (r.stdout + r.stderr).decode("latin-1")
+        got.append(len(re.findall(r"screen 9 opened by the player", out)))
+    return got, [1, 2], \
+           "times the sneak opened: TAB held through its close (no reopen), " \
+           "then TAB released and pressed again (it reopens)"
+
+
 def c_engine_sneak_examine_message():
     r"""engine: the SNEAK's Examiner posts world message 4 (`sub_49BFF0`).
 
@@ -39901,6 +39939,7 @@ SLOW = [
     ("engine: sneak quit", c_engine_sneak_quit, "UI; todo/sneak.md 5"),
     ("engine: options menu", c_engine_options_menu, "UI 4; todo/options-menu.md"),
     ("engine: start menu quit", c_engine_start_quit, "UI; todo/start-menu.md"),
+    ("engine: close flush", c_engine_close_flush, "UI 3h; todo/sneak.md"),
     ("engine: sneak memos", c_engine_sneak_memos, "UI; todo/sneak.md 2c"),
     ("engine: sneak echo bar", c_engine_sneak_echo_bar,
      "UI; todo/sneak.md"),

@@ -6898,6 +6898,50 @@ int main(int argc, char** argv) {
                         "(`Game_RunLoop`'s own GetAsyncKeyState(27), guarded "
                         "by the pause flag)\n", n, kScreenPause);
         }
+        // ---- THE LAST SCREEN'S CLOSE FLUSHES THE INPUT ------------------
+        //
+        // `Ui_CloseScreenDefault`, when no screen is left, zeroes the repeat
+        // mask and the input word (`dword_4E9720`, `dword_4E971C`) and calls
+        // `sub_43E4F0`: the input words `dword_52F440..` to 0, and each
+        // DirectInput device's `GetDeviceData(INFINITE, NULL)` - its buffer
+        // discarded - "so the release of the button that closed it cannot leak
+        // into the game". Without it, TAB that closed the sneak reopened it
+        // (`MDSNEAK0` 20 frames later) and SPACE that closed it made him jump.
+        //
+        // A RECONSTRUCTION of the effect, labelled: `Input_Poll` reads the
+        // keyboard as a STATE array (`GetDeviceState`, vtable +36), which a
+        // buffer flush does not touch, so the reading alone does not show what
+        // keeps a key still held from counting. What the reader sees in the
+        // game - nothing leaks - is ported as its plainest form: every key,
+        // button and pad button held through the close is ignored until it is
+        // released. ESC is left out, as the engine does: it is polled with
+        // `GetAsyncKeyState`, outside DirectInput, and holding it through the
+        // pause's close reopens the pause (docs/UI.md 3h).
+        {
+            static bool hadScreen = false;
+            static std::set<int> flushed[3];
+            if (hadScreen && !walk) {
+                flushed[0].insert(st.keyboard.begin(), st.keyboard.end());
+                flushed[0].erase(0x01);
+                flushed[1].insert(st.mouse.begin(), st.mouse.end());
+                flushed[2].insert(st.joystick.begin(), st.joystick.end());
+                if (!flushed[0].empty() || !flushed[1].empty() || !flushed[2].empty())
+                    std::printf("frame %ld: the last screen closed - %zu key(s) held "
+                                "through it ignored until released (the input flush)\n",
+                                n, flushed[0].size() + flushed[1].size() + flushed[2].size());
+            }
+            hadScreen = static_cast<bool>(walk);
+            std::vector<int>* devs[3] = {&st.keyboard, &st.mouse, &st.joystick};
+            for (int d = 0; d < 3; ++d) {
+                auto& v = *devs[d];
+                for (auto it = flushed[d].begin(); it != flushed[d].end();)
+                    it = std::find(v.begin(), v.end(), *it) == v.end() ? flushed[d].erase(it)
+                                                                        : std::next(it);
+                v.erase(std::remove_if(v.begin(), v.end(),
+                                       [&](int k) { return flushed[d].count(k) != 0; }),
+                        v.end());
+            }
+        }
         // The world's repeat mask is 0 - closing the last screen sets it
         // back, so the `.CTL` channel sees HELD keys and a walk is a walk
         // rather than a step per press. A screen over the world restores
