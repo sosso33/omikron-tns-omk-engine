@@ -13210,7 +13210,16 @@ int main(int argc, char** argv) {
                 // the side: a reader watched Telis "look the wrong way, then
                 // go back to the right one for the idle" - the record's
                 // facing and the program's Euler alternating.
-                if (sh.fromTable && !s->progRan) {
+                // ...NOR ONCE THE FIGHT OWNS HIM. A melee opponent no program
+                // ever moved - the flat's training partner, CHARACTERS 331 -
+                // was put back here every frame after the fight had moved
+                // him: drawn standing at his record (7957, -852) while his
+                // walker, his blows and the AI fought the player 200 units
+                // away (a reader, 2026-10-02: "hit by nothing visible next to
+                // me, the partner moving in the background"). `Fight_Begin`
+                // keeps one actor record; its position is the fight's.
+                const bool fightOwns = fightRun.active && fightRun.body == s;
+                if (sh.fromTable && !s->progRan && !fightOwns) {
                     for (int k = 0; k < 3; ++k) s->at[k] = sh.pos[k];
                     // ...and NOT the facing once a SHOOT BRAIN owns him: his
                     // heading is then the record's `+420`, which the brain and

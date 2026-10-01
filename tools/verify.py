@@ -18088,6 +18088,79 @@ def c_engine_camera_collision():
          "collision pass and with it")
 
 
+def c_engine_training_partner():
+    r"""`engine/`: a melee opponent is DRAWN where the fight has him - the
+    flat's training partner fights where he is seen.
+
+    A reader, 2026-10-02: at the training machine in Kay'l's flat he "hit and
+    was hit by nothing visible next to him" while the partner moved in the
+    background. AREA 237 record 23 (the console, address 680, screen 11 'FIGHT
+    SIM') ends in `fight.begin 331`; CHARACTERS 331 is a VIR_FN no scene
+    program ever moves. The viewer re-copies the chunk's placement record into
+    such a body every frame (`sh.fromTable && !progRan`), so after the fight
+    moved him he was put back at (7957, -852) and drawn there, while his
+    walker, his blows and the AI fought the player a few units from Kay'l.
+    `Fight_Begin` keeps one actor record; the fight owns its position now, as
+    a shoot brain already owned a gunman's facing.
+
+    Starts the easy level from the committed `traces/games-resto.bin` slot 0
+    (action at the console, then '1' and ENTER on the keypad) and compares,
+    once a second of the fight, where the opponent is DRAWN (`OMK_BODYLOG`'s
+    `[body]` line, from the staged draw) with where the fight has him (the
+    `bodies:` line): the largest horizontal gap. Under 10 (the two can be a
+    frame apart, and he moves a few units a frame); about 260 with
+    the record put back (the drawn body never left -852).
+
+    SHOWN TO FAIL: `!fightOwns` taken out of the placement guard, play.o and
+    omk-play deleted.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    save = os.path.join(ROOT, "traces", "games-resto.bin")
+    if not (os.path.isdir(eng) and os.path.exists(save)):
+        return ("no data",), ("data",), "needs traces/games-resto.bin"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"), "--software",
+                        "--res", "640x480", "--nofmv", "--no-crowd", "--save", save, "--slot", "0",
+                        "--area", "237", "--address", "680",
+                        "--hold", "k*40,k28*2,k*90,k2*2,k*10,k28*2,k*600", "--frames", "700"],
+                       capture_output=True, encoding="latin-1",
+                       env=dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_BODYLOG="1"))
+    began = re.search(r"frame (\d+): FIGHT BEGINS against CHARACTERS 331", r.stdout)
+    if not began:
+        return ("no fight",), ("FIGHT BEGINS against CHARACTERS 331",), \
+            "the console's keypad answer must start the training"
+    drawn = {int(f): (float(x), float(z)) for f, x, z in
+             re.findall(r"\[body\] frame (\d+) actor 331  at ([-\d.]+) [-\d.]+ ([-\d.]+)", r.stdout)}
+    # `bodies:` lines follow the fight's per-second report; pair each with the
+    # drawn position of the frame the report names
+    reports = re.findall(r"fight: frame (\d+).*?\n(?:.*\n){0,3}?\s+bodies: player [-\d. ]+ facing [-\d.]+, "
+                         r"opponent ([-\d.]+) [-\d.]+ ([-\d.]+)", r.stdout)
+    if not reports:
+        # the report's own frame is not printed on the bodies line; fall back
+        # to the drawn frames nearest each second of the fight
+        start = int(began.group(1))
+        fights = re.findall(r"bodies: player [-\d. ]+ facing [-\d.]+, opponent ([-\d.]+) [-\d.]+ ([-\d.]+)",
+                            r.stdout)
+        reports = [(str(start + 30 * k), x, z) for k, (x, z) in enumerate(fights)]
+    gaps = []
+    for f, x, z in reports:
+        f = int(f)
+        near = [g for g in (f, f - 1, f + 1) if g in drawn]
+        if not near: continue
+        dx, dz = drawn[near[0]][0] - float(x), drawn[near[0]][1] - float(z)
+        gaps.append((dx * dx + dz * dz) ** 0.5)
+    if len(gaps) < 3:
+        return ("%d paired seconds" % len(gaps),), ("3 or more",), "the fight must run a few seconds"
+    worst = max(gaps)
+    return worst < 10.0, True, "the largest gap, over %d seconds of the fight, between where the " \
+        "training partner is drawn and where the fight has him: %.1f (under 10 passes - a frame of his own motion; ~260 when " \
+        "the placement record put him back)" % (len(gaps), worst)
+
+
 def c_engine_chest_lid():
     r"""`engine/`: a set mesh moved along a path turns by the CONJUGATE of the
     path's quaternion - Kay'l's chest opens on its hinge.
@@ -40053,6 +40126,7 @@ SLOW = [
     ("engine: lift lintel", c_engine_lift_lintel, "actor/walk.cpp slide; todo/play-test.md"),
     ("engine: dialogue stands still", c_engine_dialogue_stands_still, "actor/player.cpp; todo/play-test.md"),
     ("engine: chest lid", c_engine_chest_lid, "backends/sdl/play.cpp motion; docs/ASSETS.md"),
+    ("engine: training partner", c_engine_training_partner, "todo/fight-mode.md; backends/sdl/play.cpp"),
     ("engine: tunnel door walk", c_engine_tunnel_door_walk, "todo/collision-scenes-transitions"),
     ("engine: arrival wait", c_engine_arrival_wait, "todo/omk-play"),
     ("engine: linked rings", c_engine_linked_rings, "todo/omk-play"),
