@@ -218,6 +218,8 @@ Press action at the console, then 1 and ENTER on the keypad: the virtual
 partner should fight you where you see him - blows land on the body in front
 of you, not on air. Any melee opponent no scene program moved before the
 fight (most of them) took the same fault.
+Knocked down, he should lie ON the floor, and after you win he should stay
+where he fell (`2edc423`).
 
 ## What is NOT fixed, so do not report it as new
 
