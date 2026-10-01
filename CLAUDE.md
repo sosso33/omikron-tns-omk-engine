@@ -86,6 +86,7 @@ that only for a file you are about to actually open.
 | todo/actor-runtime.md | ~1k | the .CTL channel's closed issues and notes |
 | todo/street-life.md | ~2k | the street-life work: six steps, each ending in a commit and a report |
 | todo/options-config.md | ~6k | the graphical options: the config file, the save header, the clip distance, the sky, the fog. Four steps, three done |
+| todo/options-menu.md | ~3k | the OPTIONS MENU live (screen 35, hosted by the start menu and the sneak) and FULLSCREEN: what was read (the open callback's live-apply bit, page 0's save prompt, the row draw hook), what each Video row does in the viewer, what is not done |
 | todo/engine-spec-1999.md | ~2k | the official 1999 engine spec sheet, audited line by line against what this repo can show. EXTERNAL evidence; two open leads (the .3DO light table, the claimed BSP) |
 | todo/mesh-lights.md | ~2k | the .3DO light table: 304-byte records, the count at desc+240 (NOT +232, which the loader overwrites). Four steps, one done |
 | todo/player-vertical.md | ~9k | the player's VERTICAL: why the walk floated (a port bug, not the clips), the jump's impulse read out of `MDJUMP0A`/`01`, and the landing bands. All three steps done; §4-6 carry the measurements and the three things left declared |

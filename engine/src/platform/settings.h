@@ -68,6 +68,15 @@ struct Settings {
     Source volumes = Source::Default;
     Source bindings = Source::Default;
 
+    // `[Preferences] window`, the game's own key: 0x0040F0ED reads it into
+    // `byte_91030B` and a nonzero value is a WINDOW, zero FULLSCREEN. The
+    // original treats an ABSENT key as 0 - fullscreen - and so does a `WINDOW`
+    // word on its command line the other way. This viewer keeps a window when
+    // nothing says otherwise, because it is also an instrument run headless
+    // by the checks; `window = 0` or `--fullscreen` asks for the game's.
+    bool   fullscreen = false;
+    Source fullscreenSource = Source::Default;
+
     // ---- [Enhancements] - OFF unless the file or a flag says so ----------
     // `antialiasing = N`: MSAA samples per pixel, 0 off, else 2/4/8. Only the
     // Vulkan backend honours it; the software reference stands where D3D

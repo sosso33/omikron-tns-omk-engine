@@ -24260,6 +24260,69 @@ def c_engine_sneak_quit():
            "and the quit request"
 
 
+def c_engine_options_menu():
+    r"""engine: the OPTIONS MENU, live - screen 35 under the start menu.
+
+    `todo/options-menu.md`. The start menu's `Options` descends into panel
+    0x004CF420, whose enter hook 0x0047BB40 FOCUSES screen 35 (resident since
+    screen 29's open loaded it); the root's rows go to the Video page; RIGHT on
+    `Distance de clipping` steps 50 -> 100 m; BACK passes through page 0, which
+    - because a setting changed - is the prompt "Sauvegarder les options" with
+    `Non` selected; UP and ENTER take `Oui`, `sub_4092A0`'s settings-only save;
+    the root's BACK hands the keys back to screen 29.
+
+    Read from the OUTPUT on both ends: each page's line is the text the
+    composer laid out through the row hook 0x00493380 (label|value, how many
+    drawn and lit), and the clip distance is read back out of the 3496-byte
+    header the run WROTE, at +20. A change that is only marked dirty and never
+    applied - the open callback's bit 2 not set - leaves the file at 50.
+    """
+    import subprocess, struct, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "omk-play did not build (no SDL?)"
+    tmp = tempfile.mkdtemp()
+    try:
+        saves = os.path.join(tmp, "GAMES")
+        env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+        r = subprocess.run(
+            [play, omkpaths.data_root(), os.path.join(ROOT, "tables"), "--software",
+             "--nofmv", "--res", "800x600", "--saves", saves, "--frames", "260",
+             "--keydelay", "20", "--keys",
+             "0,0xD0,0xD0,0x1C,0x1C,0xD0,0xCD,0x39,0xC8,0x1C,0x39"],
+            capture_output=True, env=env)
+        out = (r.stdout + r.stderr).decode("latin-1")
+        pages = [ln.split("options: ", 1)[1] for ln in out.splitlines()
+                 if "options: page " in ln]
+        focus = sum("screen 35 focused" in ln for ln in out.splitlines())
+        back = sum("focus back to screen 29" in ln for ln in out.splitlines())
+        clip = None
+        if os.path.exists(saves):
+            d = open(saves, "rb").read(64)
+            if d[:8] == b"OMK_SAVE":
+                clip = struct.unpack_from("<i", d, 20)[0]
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return (len(pages), focus, pages[:2] + pages[3:5], back, clip), \
+           (5, 1,
+            ["page 1: [Vid\xe9o|] [Audio|] [Options|] [Contr\xf4les|] [Retour|] - 5 drawn, 1 lit, 0 sliders",
+             "page 2: [Vid\xe9o|] [R\xe9solution|800 x 600 x 16 bpp] [Distance de clipping|Proche] "
+             "[Affichage du ciel|Oui] [Affichage des ombres|Oui] [Niveau d'activit\xe9 dans les rues|Tr\xe8s faible] "
+             "[Niveau de d\xe9tail|Faible] [Acc\xe9l\xe9ration 3D|Rendu logiciel] [Retour|] - 9 drawn, 2 lit, 0 sliders",
+             "page 0: [Oui|] [Non|] [Sauvegarder les options|] - 3 drawn, 2 lit, 0 sliders",
+             "page 1: [Vid\xe9o|] [Audio|] [Options|] [Contr\xf4les|] [Retour|] - 5 drawn, 1 lit, 0 sliders"],
+            1, 100), \
+           "page lines drawn (a run that reaches none fails AS a run); the focus " \
+           "taken once by the Options panel's enter hook; the root and the Video " \
+           "page as the row hook laid them out, the save prompt the changed " \
+           "setting raised, the root again after `Oui`; the keys handed back to " \
+           "29 once; and the clip distance in the header the run wrote (100 m)"
+
+
 def c_engine_sneak_examine_message():
     r"""engine: the SNEAK's Examiner posts world message 4 (`sub_49BFF0`).
 
@@ -39506,6 +39569,7 @@ SLOW = [
     ("engine: sneak characteristics", c_engine_sneak_characteristics, "UI; todo/sneak.md 5"),
     ("engine: sneak character", c_engine_sneak_character, "UI; todo/sneak.md 5"),
     ("engine: sneak quit", c_engine_sneak_quit, "UI; todo/sneak.md 5"),
+    ("engine: options menu", c_engine_options_menu, "UI 4; todo/options-menu.md"),
     ("engine: sneak memos", c_engine_sneak_memos, "UI; todo/sneak.md 2c"),
     ("engine: sneak echo bar", c_engine_sneak_echo_bar,
      "UI; todo/sneak.md"),

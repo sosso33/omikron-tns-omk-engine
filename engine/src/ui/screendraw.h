@@ -183,6 +183,17 @@ struct ScreenFrame {
 // hides the world still shows it inside this item (`docs/UI.md` 3i).
 constexpr std::uint32_t kDrawViewport = 0x004782B0;
 
+class OptionsMenu;
+
+// What `drawOptions` laid out - taken from the text it handed the layout, so
+// a check reads the OUTPUT (CLAUDE.md 1), not what the menu was asked for.
+struct OptionsDrawn {
+    int widgets = 0;              // rows / prompt items drawn
+    int sliders = 0;              // slider bars filled
+    int lit = 0;                  // widgets drawn at full colour
+    std::vector<std::string> lines;   // "label|value" per widget, in order
+};
+
 class ScreenComposer {
 public:
     // The menu's animated background, drawn UNDER the screen's own sheet -
@@ -414,6 +425,11 @@ public:
     // the walk says, and it is drawn white against 0x7F7F7F for the rest,
     // which is what the captures show (`engine: text draw`).
     ScreenFrame draw(Surface& fb, int screenId, const UiWalk& walk) const;
+
+    // SCREEN 35, OVER WHATEVER HOSTS IT - the options rows through their own
+    // draw hook (0x00493380), or page 0's save prompt as plain text items.
+    // Its panel paints no background, so the host screen shows through.
+    OptionsDrawn drawOptions(Surface& fb, const OptionsMenu& m) const;
 
 private:
     // `Ui_DrawPanelBack` (0x00476040). With the panel's 0x40004000 flag the

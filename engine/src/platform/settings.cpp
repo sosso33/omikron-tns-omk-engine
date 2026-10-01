@@ -50,6 +50,10 @@ Settings resolveSettings(const OptionsFile& ini,
         takeBool(kPrefs, "displayshadows", s.v.shadows,           s.shadows);
         takeInt (kPrefs, "screen_x",       s.v.screenX,           s.screen);
         takeInt (kPrefs, "screen_y",       s.v.screenY,           s.screen);
+        if (ini.find(kPrefs, "window")) {
+            s.fullscreen = ini.integer(kPrefs, "window", 1) == 0;
+            s.fullscreenSource = Settings::Source::Ini;
+        }
         takeInt (kPrefs, "MouseSensX",     s.v.mouseSensitivityX, s.mouseSensitivity);
         takeInt (kPrefs, "MouseSensY",     s.v.mouseSensitivityY, s.mouseSensitivity);
         // The three volumes are ATTENUATIONS in the ini (0 full, 100 silent),

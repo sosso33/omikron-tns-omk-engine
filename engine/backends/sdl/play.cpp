@@ -88,6 +88,7 @@
 #include "ui/overlay.h"
 #include "ui/hudbar.h"
 #include "ui/iamtext.h"
+#include "ui/options.h"
 #include "ui/radar.h"
 #include "ui/screendraw.h"
 #include "ui/text.h"
@@ -175,6 +176,7 @@ bool  vulkanPresentSurface(Renderer*, const Surface&);
 bool  vulkanCanPresentWorld(Renderer*);
 bool  vulkanPresentWorld(Renderer*, int vy, int vh);
 bool  vulkanWorldPicture(Renderer*, int vy, int vh, std::vector<unsigned char>&);
+bool  vulkanResize(Renderer*, int w, int h);
 }
 #endif
 
@@ -624,23 +626,122 @@ private:
 #endif
 };
 
+// OPTIONS ROW 2's LIST - `sub_43AE70`, the DirectDraw mode callback: 16-bit
+// modes only, none under 640x480, at most 32 (`sub_43B100(32, ...)`), each
+// labelled `"%d x %d x %d bpp"`, and the one the display is in made current.
+// The port takes the host's display modes instead of DirectDraw's - and its
+// framebuffer IS 16 bits (RGB565, PORTING A3), so the label is true. A size
+// the host does not list as a mode (any window) is added, so the row can say
+// what is running.
+static int optionDisplayModes(int curW, int curH, std::vector<std::string>& names) {
+    std::vector<std::pair<int, int>> modes;
+#if defined(OMK_SDL3)
+    int n = 0;
+    if (SDL_DisplayMode** ms = SDL_GetFullscreenDisplayModes(SDL_GetPrimaryDisplay(), &n)) {
+        for (int i = 0; i < n; ++i) modes.push_back({ms[i]->w, ms[i]->h});
+        SDL_free(ms);
+    }
+#else
+    const int n = SDL_GetNumDisplayModes(0);
+    for (int i = 0; i < n; ++i) {
+        SDL_DisplayMode m{};
+        if (SDL_GetDisplayMode(0, i, &m) == 0) modes.push_back({m.w, m.h});
+    }
+#endif
+    modes.push_back({curW, curH});
+    std::sort(modes.begin(), modes.end());
+    modes.erase(std::unique(modes.begin(), modes.end()), modes.end());
+    modes.erase(std::remove_if(modes.begin(), modes.end(), [](const auto& m) {
+                    return m.first < 640 || m.second < 480; }), modes.end());
+    if (modes.size() > 32) {
+        // keep the running size inside the 32
+        const auto cur = std::find(modes.begin(), modes.end(), std::make_pair(curW, curH));
+        const std::ptrdiff_t at = cur - modes.begin();
+        const std::ptrdiff_t lo = std::clamp<std::ptrdiff_t>(at - 16, 0,
+                                      static_cast<std::ptrdiff_t>(modes.size()) - 32);
+        modes = std::vector<std::pair<int, int>>(modes.begin() + lo, modes.begin() + lo + 32);
+    }
+    names.clear();
+    int current = 0;
+    for (std::size_t i = 0; i < modes.size(); ++i) {
+        char t[48];
+        std::snprintf(t, sizeof t, "%d x %d x %d bpp", modes[i].first, modes[i].second, 16);
+        names.push_back(t);
+        if (modes[i] == std::make_pair(curW, curH)) current = static_cast<int>(i);
+    }
+    return current;
+}
+
 class SdlFrontend : public omk::Frontend {
 public:
+    // ---- FULLSCREEN (`todo/options-menu.md` 1) ---------------------------
+    //
+    // The original is FULLSCREEN unless told otherwise: `[Preferences]
+    // window` is read into `byte_91030B` (0x0040F0ED), absent means 0, and
+    // the `WINDOW` word on the command line sets it to 1 (`03_win32.c`). It
+    // took the display mode itself (`DirectDraw` exclusive). This takes the
+    // DESKTOP's mode instead and scales the framebuffer into it at its own
+    // aspect - the framebuffer is still the resolution row 2 chose, so what
+    // is drawn is the same picture either way, only larger.
+    //
+    // Asked for BEFORE a window exists, it is a creation flag; after, it is
+    // a toggle (F11).
+    void setFullscreen(bool on) {
+        fullscreen_ = on;
+        if (SDL_Window* wnd = active()) {
+#if defined(OMK_SDL3)
+            SDL_SetWindowFullscreen(wnd, on);
+#else
+            SDL_SetWindowFullscreen(wnd, on ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0u);
+#endif
+            std::printf("fullscreen: %s\n", on ? "on (F11 leaves it)" : "off");
+        }
+    }
+    bool fullscreen() const { return fullscreen_; }
+    // The flag a window this frontend did not create should carry.
+    std::uint32_t windowFlags() const {
+#if defined(OMK_SDL3)
+        return fullscreen_ ? SDL_WINDOW_FULLSCREEN : 0u;
+#else
+        return fullscreen_ ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0u;
+#endif
+    }
+    // A GPU backend's window, which this frontend did not create but whose
+    // fullscreen toggle and resize it still serves. A Vulkan one remakes its
+    // swapchain when it sees the window's extent change.
+    void attachWindow(SDL_Window* w) { gpuWin_ = w; }
+    SDL_Window* active() const { return win_ ? win_ : gpuWin_; }
+
+    // THE FRAMEBUFFER'S SIZE CHANGED - options row 2. A window is resized to
+    // it (fullscreen keeps the desktop and scales), and the software path's
+    // streaming texture is remade at the new size.
+    bool resize(int w, int h) {
+        w_ = w; h_ = h;
+        if (SDL_Window* wnd = active(); wnd && !fullscreen_) SDL_SetWindowSize(wnd, w, h);
+        if (!ren_) return true;
+        if (tex_) SDL_DestroyTexture(tex_);
+        tex_ = SDL_CreateTexture(ren_, SDL_PIXELFORMAT_RGB565,
+                                 SDL_TEXTUREACCESS_STREAMING, w, h);
+        logical();
+        return tex_ != nullptr;
+    }
+
     bool open(int w, int h, const std::string& title) override {
         w_ = w; h_ = h;
 #if defined(OMK_SDL3)
         if (!SDL_Init(SDL_INIT_VIDEO)) return false;
-        win_ = SDL_CreateWindow(title.c_str(), w, h, 0);
+        win_ = SDL_CreateWindow(title.c_str(), w, h, windowFlags());
         if (!win_) return false;
         ren_ = SDL_CreateRenderer(win_, nullptr);
 #else
         if (SDL_Init(SDL_INIT_VIDEO) != 0) return false;
         win_ = SDL_CreateWindow(title.c_str(), SDL_WINDOWPOS_CENTERED,
-                                SDL_WINDOWPOS_CENTERED, w, h, 0);
+                                SDL_WINDOWPOS_CENTERED, w, h, windowFlags());
         if (!win_) return false;
         ren_ = SDL_CreateRenderer(win_, -1, 0);
 #endif
         if (!ren_) return false;
+        logical();
         // RGB565 all the way to the window: A3 fixes the reference framebuffer
         // at 16 bits, and uploading 565 directly is what keeps what is shown
         // identical to what a capture is diffed against. Asking SDL for 888
@@ -659,6 +760,10 @@ public:
             if (e.type == SDL_EVENT_QUIT) out.quit = true;
             else if (e.type == SDL_EVENT_TEXT_INPUT) out.text += e.text.text;
             else if (e.type == SDL_EVENT_KEY_DOWN) {
+                // F11 is the viewer's own fullscreen toggle - no DIK code
+                // the game binds, so it reaches no input word
+                if (e.key.scancode == SDL_SCANCODE_F11 && !e.key.repeat)
+                    setFullscreen(!fullscreen_);
                 const auto c = charmap().find(static_cast<int>(e.key.scancode));
                 if (c != charmap().end()) out.text += c->second;
             }
@@ -666,6 +771,8 @@ public:
             if (e.type == SDL_QUIT) out.quit = true;
             else if (e.type == SDL_TEXTINPUT) out.text += e.text.text;
             else if (e.type == SDL_KEYDOWN) {
+                if (e.key.keysym.scancode == SDL_SCANCODE_F11 && !e.key.repeat)
+                    setFullscreen(!fullscreen_);
                 const auto c = charmap().find(
                     static_cast<int>(e.key.keysym.scancode));
                 if (c != charmap().end()) out.text += c->second;
@@ -798,8 +905,10 @@ public:
     }
 
     void present(const omk::Surface& fb) override {
-        // One upload of the finished framebuffer. No filtering, no scaling:
-        // the window is the framebuffer's own size.
+        // One upload of the finished framebuffer. No filtering; in a window
+        // the window is the framebuffer's own size and nothing scales, and
+        // fullscreen scales it to the desktop at its own aspect (`logical`).
+        if (fb.w != w_ || fb.h != h_) resize(fb.w, fb.h);
         SDL_UpdateTexture(tex_, nullptr, fb.px.data(),
                           static_cast<int>(fb.w * sizeof(std::uint16_t)));
         SDL_RenderClear(ren_);
@@ -1000,7 +1109,19 @@ public:
     }
 
 private:
+    // The framebuffer is the LOGICAL size and SDL fits it into whatever the
+    // window is, letterboxed - which is a no-op in a window of the same size.
+    void logical() {
+        if (!ren_) return;
+#if defined(OMK_SDL3)
+        SDL_SetRenderLogicalPresentation(ren_, w_, h_, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+#else
+        SDL_RenderSetLogicalSize(ren_, w_, h_);
+#endif
+    }
     SDL_Window*   win_ = nullptr;
+    SDL_Window*   gpuWin_ = nullptr;   // a GPU backend's window (attachWindow)
+    bool          fullscreen_ = false;
     SDL_Renderer* ren_ = nullptr;
     SDL_Texture*  tex_ = nullptr;
 #if defined(OMK_SDL3)
@@ -1650,6 +1771,8 @@ int main(int argc, char** argv) {
 "DISPLAY\n"
 "  --res WxH        default 800x600; the interface is authored at 640x480\n"
 "                   and scaled, so a bigger display spreads the same layout\n"
+"  --fullscreen     the desktop's mode, the frame scaled in at its aspect;\n"
+"                   F11 toggles (--window, or [Preferences] window = 0|1)\n"
 "  --vulkan         force the Vulkan backend (V toggles it live)\n"
 "  --aa N           ENHANCEMENT, off by default: N-sample MSAA (2/4/8) on the\n"
 "                   Vulkan backend only - the original has none; also\n"
@@ -1735,6 +1858,8 @@ int main(int argc, char** argv) {
     // display spreads the same layout without enlarging the glyphs. 800x600 is
     // the mode a reader's own screenshot of the original is in.
     int dispW = 800, dispH = 600;
+    bool resFlag = false;      // --res given: it beats the ini's screen_x/screen_y
+    int fullscreenFlag = -1;   // --fullscreen 1 / --window 0; -1 = the settings'
     std::vector<int> scripted;
     bool bankReject = false;          // --bank-reject, a DEBUG switch
     int keyEvery = 2;
@@ -2033,8 +2158,12 @@ int main(int argc, char** argv) {
         else if (a == "--snaps" && i + 1 < argc) snapsDir = argv[++i];
         else if (a == "--snap-every" && i + 1 < argc) snapEvery = std::max(1, std::atoi(argv[++i]));
         else if (a == "--flicker" && i + 1 < argc) flickerDir = argv[++i];
-        else if (a == "--res" && i + 1 < argc)
+        else if (a == "--res" && i + 1 < argc) {
             std::sscanf(argv[++i], "%dx%d", &dispW, &dispH);
+            resFlag = true;
+        }
+        else if (a == "--fullscreen") fullscreenFlag = 1;
+        else if (a == "--window") fullscreenFlag = 0;
         else if (a == "--eye" && i + 1 < argc)
             haveEye = std::sscanf(argv[++i], "%f,%f,%f", &eyeA[0], &eyeA[1], &eyeA[2]) == 3;
         else if (a == "--at" && i + 1 < argc)
@@ -2249,6 +2378,13 @@ int main(int argc, char** argv) {
     const auto fonts = omk::FontTable::loadJson(tb + "/ui.json");
     const omk::TextLayout lay(fonts, fr + "/FONTS");
     omk::ScreenComposer comp(fs, w, lay);
+    // SCREEN 35, the options (`todo/options-menu.md`): the page tree out of
+    // the widget lift, the 74 rows out of `ui.json`, and the screen's own
+    // strings - the labels by `+24`, the save prompt's and Accel 3D's.
+    const omk::OptionTree optTree =
+        omk::OptionTree::loadJson(tb + "/ui_widgets.json", tb + "/ui.json");
+    omk::OptionsMenu optMenu(optTree);
+    optMenu.setText(omk::iamStrings(fs, "IAM/Options"));
     // The world rendered at a panel's 3D VIEWPORT item's size, for the
     // composer to place (`ScreenComposer::attachView3D`).
     omk::Surface view3dPic;
@@ -2354,7 +2490,22 @@ int main(int argc, char** argv) {
         configFile.empty() ? omk::OptionsFile{} : omk::loadOptionsFile(configFile);
     if (!configFile.empty() && !ini.loaded)
         std::fprintf(stderr, "%s: no such config file - using defaults\n", configFile.c_str());
-    const omk::Settings settings = omk::resolveSettings(ini, saveSettings);
+    // not const: the options menu writes `settings.v` as the game's apply
+    // hooks write `byte_90E180`, and what reads it later reads the new value
+    omk::Settings settings = omk::resolveSettings(ini, saveSettings);
+    // THE DISPLAY SIZE: `--res`, else the ini's `screen_x` / `screen_y` (the
+    // game's own keys, row 2's), else 800x600. NOT the save header's, though
+    // the menu writes row 2 there as the game does: both shipped saves carry
+    // 640x480, so taking it would quietly move every run made against a
+    // fixture off the size its checks were written for.
+    if (!resFlag && ini.find("Preferences", "screen_x") && ini.find("Preferences", "screen_y")) {
+        dispW = std::max(320, ini.integer("Preferences", "screen_x", dispW));
+        dispH = std::max(240, ini.integer("Preferences", "screen_y", dispH));
+    }
+    // ...and the block carries the mode that RUNS, as `g_ScreenSize` does:
+    // row 2 reads it back and a settings save writes it
+    settings.v.screenX = dispW;
+    settings.v.screenY = dispH;
     // THE SHOOTING RANGE'S HIGH SCORES, out of the save header's +724 - the
     // screen's own draw hook bases its rows there, so they travel with the
     // OPTIONS and not with a game. Empty in both shipped saves, which is a
@@ -2373,7 +2524,7 @@ int main(int argc, char** argv) {
     // no distance there is nothing to fade over and the fog goes off.
     const bool unlimitedClip = (clipFlag && clipArg <= 0)
                             || (!clipFlag && (enhanceAll || settings.unlimitedDrawDistance));
-    const double clipInches =
+    double clipInches =
         unlimitedClip ? std::numeric_limits<double>::infinity()
                       : clipFlag ? static_cast<double>(clipArg) * omk::kInchesPerMetre
                                  : settings.clipInches();
@@ -2400,9 +2551,9 @@ int main(int argc, char** argv) {
     int  flickAfter = 0;                                 // frames still to write
     long flickEvent = -1, flickQuietUntil = -1;
     constexpr int kFlickPre = 3, kFlickPost = 3, kFlickWindow = 31;
-    const bool drawSky = skyFlag >= 0 ? skyFlag != 0 : settings.v.sky;
+    bool drawSky = skyFlag >= 0 ? skyFlag != 0 : settings.v.sky;
     // Options rows 5 and 7, with a flag beating the save the way --sky does.
-    const bool drawShadows = shadowFlag >= 0 ? shadowFlag != 0 : settings.v.shadows;
+    bool drawShadows = shadowFlag >= 0 ? shadowFlag != 0 : settings.v.shadows;
     // THREADED BODIES (`todo/vita-port.md` P4). ON by default since 2026-09-23:
     // the posing is bit-identical either way (`omk::Threads`' chunks are
     // disjoint and the merge is in index order), so this is not an enhancement
@@ -2427,7 +2578,7 @@ int main(int argc, char** argv) {
     // the renderer exists (below `world`)
     int shadowQuality = enh(shadowQFlag, settings.shadowQuality,
                             omk::kMaxShadowQuality);
-    const int  shadowDetail = detailFlag >= 0 ? detailFlag : settings.v.levelOfDetail;
+    int        shadowDetail = detailFlag >= 0 ? detailFlag : settings.v.levelOfDetail;
     // Row 7. Per pixel ALSO widens who receives: the engine lights the
     // procedural crowd and nothing else, and this lets every character.
     int        lighting = enh(lightingFlag, settings.lighting, omk::kMaxLighting);
@@ -3448,6 +3599,10 @@ int main(int argc, char** argv) {
     // `men002`, `men003`, `men001`. Both halves were already lifted and
     // nothing was playing them.
     std::vector<float> sndMove, sndConfirm, sndBack;
+    std::vector<float> optSndMove, optSndConfirm, optSndBack;   // screen 35's own
+    const omk::UiWalk* optWalkSeen = nullptr;   // the walk of 29 the options were opened for
+    bool optEntered = false;                    // focused for this visit to panel 0x004CF420
+    std::pair<int, int> pendingDisplay{0, 0};   // options row 2, served between frames
     const auto loadSlot = [&](int screen, int slot) {
         const std::string& nm = w.soundName(screen, slot);
         if (nm.empty()) return std::vector<float>{};
@@ -3457,6 +3612,8 @@ int main(int argc, char** argv) {
     };
 
     SdlFrontend front;
+    // fullscreen is a creation flag for whichever window comes up below
+    front.setFullscreen(fullscreenFlag >= 0 ? fullscreenFlag != 0 : settings.fullscreen);
     comp.setDisplay(dispW, dispH);
     std::printf("display %dx%d (the interface is authored at 640x480 and "
                 "scaled by I2D_ScaleX/Y)\n", dispW, dispH);
@@ -3493,7 +3650,7 @@ int main(int argc, char** argv) {
         if (SDL_Init(SDL_INIT_VIDEO) == 0) {
             vkWin = SDL_CreateWindow("OMK Engine (vulkan)",
                                      SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                     dispW, dispH, SDL_WINDOW_VULKAN);
+                                     dispW, dispH, SDL_WINDOW_VULKAN | front.windowFlags());
         }
         if (vkWin) {
             unsigned nx = 0;
@@ -3555,7 +3712,7 @@ int main(int argc, char** argv) {
             // and on 2026-09-25 a batch of such runs put windows - one of them
             // playing the boot films - in front of the reader (CLAUDE.md 5).
             const Uint32 glWinFlags = SDL_WINDOW_OPENGL |
-                (omk::envSet("OMK_NO_GPU_PRESENT") ? SDL_WINDOW_HIDDEN : 0u);
+                (omk::envSet("OMK_NO_GPU_PRESENT") ? SDL_WINDOW_HIDDEN : front.windowFlags());
 #if defined(OMK_SDL3)
             glWin = SDL_CreateWindow("OMK Engine (gles)", dispW, dispH, glWinFlags);
 #else
@@ -3592,6 +3749,12 @@ int main(int argc, char** argv) {
         return 1;
     }
     if (!vkRen && !glRen) std::printf("renderer: the software reference\n");
+    // F11 and the resolution row act on whichever window is up
+    if (vkRen) front.attachWindow(vkWin);
+    else if (glRen) front.attachWindow(glWin);
+    if (front.fullscreen())
+        std::printf("fullscreen: on - the %dx%d frame scaled to the desktop at its aspect "
+                    "(F11 toggles)\n", dispW, dispH);
 #if defined(OMK_VULKAN)
     // ...and the harness: a Vulkan renderer with no surface, for the WORLD
     // alone. `run_vulkan` and `shadow_probe` already prove the backend comes
@@ -6527,6 +6690,36 @@ int main(int argc, char** argv) {
         spanned("pump", [&] { pumpOk = front.pump(host); });
         mark("pump");
         if (!pumpOk) break;
+        // ---- OPTIONS ROW 2: A NEW DISPLAY SIZE, between frames -----------
+        //
+        // `Opt_ApplyResolution` (0x0048FA50) stops the menu cloud, has
+        // `sub_43AC70` tear down and rebuild the device at the new mode, and
+        // starts the cloud again. Here the framebuffer, the interface's scale
+        // and the 3D target are remade at the new size, and the window follows
+        // it (fullscreen keeps the desktop and scales). The Vulkan swapchain is
+        // sized once, at start, so that backend takes it at the next start.
+        if (pendingDisplay.first > 0) {
+            const auto [nw, nh] = pendingDisplay;
+            pendingDisplay = {0, 0};
+            bool ok = true;
+#if defined(OMK_VULKAN)
+            if (vkRen) ok = omk::vulkanResize(vkRen, nw, nh);
+            if (ok && worldVk) ok = omk::vulkanResize(worldVk, nw, nh);
+#endif
+            if (!ok) {
+                std::printf("options: resolution %dx%d - the Vulkan target could not be "
+                            "remade; --res %dx%d next time\n", nw, nh, nw, nh);
+            } else {
+                dispW = nw; dispH = nh;
+                fb = omk::Surface(dispW, dispH, 0);
+                comp.setDisplay(dispW, dispH);
+                if (glRen) glRen->init(dispW, dispH);
+                else if (!vkRen && !worldVk && worldReady) worldSw.init(dispW, dispH);
+                front.resize(dispW, dispH);
+                std::printf("options: resolution %dx%d - framebuffer, interface scale "
+                            "and 3D target remade\n", dispW, dispH);
+            }
+        }
         // ---- one line when the mouse first moves in shoot mode -----------
         //
         // Placed HERE, before any gate, so it can tell the three links apart:
@@ -12028,7 +12221,63 @@ int main(int argc, char** argv) {
             // a sneak CALL swallows nothing: every press goes past the device
             // to the conversation running over it.
             if (!walk->takesInput()) uiBits = 0;
-            if (uiBits) {
+            // ---- SCREEN 35 UNDER THE START MENU (`todo/options-menu.md`) ----
+            //
+            // Screen 29's open callback `UI_LoadScreen(35, -1, -1)`s it, so the
+            // options are RESIDENT for as long as the menu is up: opened here
+            // once per walk of 29, with param 1, its rows read back from the
+            // live settings. `Options` descends into panel 0x004CF420, whose
+            // enter hook 0x0047BB40 FOCUSES 35 - input goes to it from then
+            // until its root's BACK or `Retour` focuses 29 again, leaving the
+            // menu on that panel (one more BACK returns to the four buttons).
+            // ...and UNDER THE SNEAK (param 0, `todo/sneak.md` 5c): its open
+            // loads 35 hidden; the Options tab's builder 0x0049D8F0 SHOWS it,
+            // the tab's hook 0x0049D960 focuses it on LEFT / RIGHT.
+            const bool optHost = (openScreen == 29 || openScreen == omk::kScreenSneak) && w.valid();
+            if (optHost && optWalkSeen != walk.get()) {
+                optWalkSeen = walk.get();
+                optMenu.open(openScreen == 29 ? 1 : 0, settings.v);
+                std::vector<std::string> modes;
+                const int cur = optionDisplayModes(dispW, dispH, modes);
+                optMenu.setDevices(2, modes, cur);
+                // row 8's drivers: the GPU backend running, then string 68,
+                // "Rendu logiciel", which `0x00493380` draws for the last one
+                std::vector<std::string> drivers;
+#if defined(OMK_VULKAN)
+                if (vkRen) drivers.push_back(std::string("Vulkan - ") + omk::vulkanDeviceName(vkRen));
+                else
+#endif
+                if (glRen) drivers.push_back(std::string("OpenGL - ") + glRen->name());
+                drivers.push_back(optMenu.str(68));
+                optMenu.setDevices(8, drivers, (vkRen || glRen) ? 0 : static_cast<int>(drivers.size()) - 1);
+                optEntered = false;
+                if (optSndMove.empty() && optSndConfirm.empty()) {
+                    optSndMove    = loadSlot(35, omk::UiWidgets::kSoundMove);
+                    optSndConfirm = loadSlot(35, omk::UiWidgets::kSoundConfirm);
+                    optSndBack    = loadSlot(35, omk::UiWidgets::kSoundBack);
+                }
+            }
+            const bool optOnSneakTab = optHost && openScreen == omk::kScreenSneak &&
+                walk->panel() && walk->panel()->addr == omk::kPanelSneakOptions;
+            if (uiBits && optOnSneakTab && !optMenu.focused() && (uiBits & (omk::kUiLeft | omk::kUiRight))) {
+                optMenu.focus();
+                blip(sndMove);
+                std::printf("frame %ld: options: screen 35 focused from the sneak's "
+                            "Options tab (hook 0x0049D960), page %d\n", n, optMenu.page());
+                uiBits = 0;
+            }
+            const bool optActive = optHost && optMenu.focused();
+            if (uiBits && optActive) {
+                // `Ui_ScreenInput` on the FOCUSED screen, and its sound
+                if (!ate) optMenu.press(uiBits);
+                if (bits & omk::kUiConfirm)      blip(optSndConfirm);
+                else if (bits & omk::kUiBack)    blip(optSndBack);
+                else if (optMenu.moved())        blip(optSndMove);
+                if (!optMenu.focused())
+                    std::printf("frame %ld: options: focus back to screen %d\n", n, openScreen);
+                // `UI_CloseScreen(9)`: the device's own close, as TAB does it
+                if (optMenu.takeHostClose()) walk->press(omk::kUiClose);
+            } else if (uiBits) {
                 const int wasSel = walk->selection(), wasList = walk->currentList();
                 // THE SOUND IS NOT GATED ON IT, and that is read rather than
                 // assumed: `Ui_ScreenInput` (0x0042A0F0) calls
@@ -12050,6 +12299,113 @@ int main(int argc, char** argv) {
                 else if (bits & omk::kUiBack)    blip(sndBack);
                 else if (walk->selection() != wasSel ||
                          walk->currentList() != wasList) blip(sndMove);
+            }
+            if (optHost) {
+                const bool onPanel = openScreen == 29 && walk->panel() &&
+                                     walk->panel()->addr == 0x004CF420u;
+                // the sneak's tab LEFT: the leave hook 0x0049D940 hides 35
+                if (openScreen == omk::kScreenSneak && !optOnSneakTab && optMenu.focused())
+                    optMenu.unfocus();
+                if (onPanel && !optEntered) {
+                    optEntered = true;
+                    optMenu.focus();
+                    std::printf("frame %ld: options: screen 35 focused (panel 0x004CF420's "
+                                "enter hook 0x0047BB40), page %d\n", n, optMenu.page());
+                }
+                if (!onPanel) optEntered = false;
+                // ---- WHAT THE APPLY HOOKS WROTE, reaching the viewer ----
+                //
+                // The engine's hooks write `byte_90E180` and every consumer
+                // reads it when it next runs; here the block is `settings.v`
+                // and the viewer's own copies are refreshed from it - unless a
+                // flag on the command line holds one, which outranks the menu
+                // the way it outranks the save.
+                for (const int item : optMenu.takeApplied()) {
+                    settings.v = optMenu.settings();
+                    // a slot save writes the header too (`Game_WriteSave`'s
+                    // first copy), so it must carry what the menu changed
+                    if (saveSettings) saveSettings = settings.v;
+                    const omk::SettingsBlock& v = settings.v;
+                    switch (item) {
+                    case 2:
+                        if (v.screenX != dispW || v.screenY != dispH) {
+                            pendingDisplay = {v.screenX, v.screenY};
+                        }
+                        break;
+                    case 3:
+                        if (clipFlag || unlimitedClip)
+                            std::printf("options: clip distance %d m - held at the "
+                                        "command line's / the enhancement's\n", v.clipDistance);
+                        else {
+                            clipInches = static_cast<double>(v.clipDistance) * omk::kInchesPerMetre;
+                            clipReport = true;
+                            std::printf("options: clip distance %d m = %.0f in "
+                                        "(sub_41D570 re-applies it to the scene)\n",
+                                        v.clipDistance, clipInches);
+                        }
+                        break;
+                    case 4:
+                        if (skyFlag < 0) drawSky = v.sky;
+                        std::printf("options: sky %s%s\n", v.sky ? "on" : "off",
+                                    skyFlag >= 0 ? " - held at --sky" : "");
+                        break;
+                    case 5:
+                        if (shadowFlag < 0) drawShadows = v.shadows;
+                        std::printf("options: shadows %s%s\n", v.shadows ? "on" : "off",
+                                    shadowFlag >= 0 ? " - held at --shadows" : "");
+                        break;
+                    case 6:
+                        if (!densityFlag) {
+                            density = v.streetActivity;
+                            session.setStreetActivity(density);
+                        }
+                        std::printf("options: street activity %d%s - `Slider_Init` reads it "
+                                    "when the next area loads, as the game's does\n",
+                                    v.streetActivity, densityFlag ? " - held at --density" : "");
+                        break;
+                    case 7:
+                        if (detailFlag < 0) shadowDetail = v.levelOfDetail;
+                        std::printf("options: level of detail %d%s\n", v.levelOfDetail,
+                                    detailFlag >= 0 ? " - held at --detail" : "");
+                        break;
+                    case 8:
+                        std::printf("options: Accélération 3D -> %d - NOT switched live: the "
+                                    "viewer picks its renderer at start (--software, "
+                                    "--vulkan)\n", optMenu.current(8));
+                        break;
+                    default:
+                        std::printf("options: row %d applied\n", item);
+                        break;
+                    }
+                }
+                // `Oui` on "Sauvegarder les options": `sub_4092A0`, the
+                // settings-only save - the 3496 bytes over the file's head,
+                // or a new file of 256 empty slots behind them
+                if (optMenu.takeSaveRequest()) {
+                    omk::SettingsBlock out = settings.v;
+                    if (settings.bindings != omk::Settings::Source::Save) {
+                        // the header carries the three binding tables verbatim,
+                        // and a block that never came from a save has none
+                        for (int g = 0; g < 4; ++g)
+                            for (int k = 0; k < 14; ++k) {
+                                const std::size_t i = static_cast<std::size_t>(g * 14 + k);
+                                out.keyboard[i] = static_cast<std::uint32_t>(
+                                    std::max(0, in.schemes().code(g, k, omk::Device::Keyboard)));
+                                out.mouse[i] = static_cast<std::uint32_t>(
+                                    std::max(0, in.schemes().code(g, k, omk::Device::Mouse)));
+                                out.joystick[i] = static_cast<std::uint32_t>(
+                                    std::max(0, in.schemes().code(g, k, omk::Device::Joystick)));
+                            }
+                    }
+                    auto file = omk::readSaveFile(savesPath, fr + "/IAM/GAMES");
+                    if (file.size() < omk::kSaveFileSize) file = omk::blankSaveFile(out);
+                    else omk::putSettings(file, out);
+                    if (omk::writeSaveFile(savesPath, file))
+                        std::printf("options: saved - the settings header written to %s\n",
+                                    savesPath.c_str());
+                    else
+                        std::fprintf(stderr, "options: could not write %s\n", savesPath.c_str());
+                }
             }
             // CLOSING THE SNEAK is not closing a script's screen, and the
             // difference is the whole reason `screenFromScript` exists.
@@ -21484,6 +21840,23 @@ int main(int argc, char** argv) {
             if (!omk::envSet("OMK_NOUI")) {
                 omk::ScreenFrame sf;
                 spanned("screen draw", [&] { sf = comp.draw(fb, openScreen, *walk); });
+                // screen 35 over the menu while it has the focus - its panel
+                // paints no background, so the menu's sheet shows through
+                const bool optShown = (openScreen == 29 && optMenu.focused()) ||
+                    (openScreen == omk::kScreenSneak && optMenu.isOpen() && walk->panel() &&
+                     walk->panel()->addr == omk::kPanelSneakOptions);
+                if (optShown) {
+                    const omk::OptionsDrawn od = comp.drawOptions(fb, optMenu);
+                    static std::string optTold;
+                    std::string line = "options: page " + std::to_string(optMenu.page()) + ":";
+                    for (const auto& l : od.lines) line += " [" + l + "]";
+                    if (line != optTold) {
+                        optTold = line;
+                        std::printf("frame %ld: %s - %d drawn, %d lit, %d slider%s\n", n,
+                                    line.c_str(), od.widgets, od.lit, od.sliders,
+                                    od.sliders == 1 ? "" : "s");
+                    }
+                }
                 // ---- THE HINT SHOP, REPORTED FROM THE DRAW -----------
                 //
                 // Every field on this line comes out of `ScreenFrame`, and

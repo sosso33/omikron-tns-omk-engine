@@ -4406,6 +4406,50 @@ That is also why `Opt_BindRow` was called `I2D_SetState` until now. The
 hub; all 176 are in this one module, and what it actually does is bind a row
 of the options menu.
 
+### The screen itself — hosted, applied live, and drawn by one hook (2026-10-01)
+
+Read for the port's live menu (`todo/options-menu.md`, `ui/options.h`
+`OptionsMenu`), all by address because none of it has a `proc` label:
+
+* **It is hosted, never opened.** Screen 29's open callback ends
+  `UI_LoadScreen(35, -1, -1)` and its close `UI_CloseScreen(35)`; the start
+  menu's `Options` button descends into panel `0x004CF420`, whose `+4` enter
+  hook `0x0047BB40` is `UI_FocusScreen(35)` and two slides. The sneak loads it
+  too and its Options tab shows it (`todo/sneak.md` 5c). So `todo/start-menu.md`
+  §4's question — what fills `0x004CF420` — is answered: nothing; the panel is
+  the heading, and the rows are another screen's.
+* **35's open callback (`0x00490D50`) decides the host by asking which screen
+  is up** — 9 gives param 0, 29 param 1 — and lays out for it: rows list x 70
+  and prompt x 120 under the menu, 100 / 160 under the sneak; the rows coloured
+  (255, 100, 70), the prompt white under the menu; no cursor highlight under
+  the menu. **Its last two loops clear bit 1 and set bit 2 of all 74 rows'
+  `+132`**, and bit 2 is what makes `Opt_RowInput` call the row's apply hook
+  at once rather than mark it dirty: every change in the running menu is LIVE.
+* **Page 1's hook `0x00492AD0`**: under the menu BACK focuses 29 and slides
+  the page out; under the sneak LEFT/RIGHT focus 9 and BACK/CLOSE close it.
+  `Opt_PageRoot` binds row 4 to `Retour` only under the menu.
+* **Page 0 is a PROMPT** (`0x004DD3D0`, list `0x004DD3B0`): builder
+  `0x00492A70` bounces to the root unless the dirty latch `dword_9103C8` is
+  set, and then shows `Sauvegarder les options` / `Oui` / `Non` (strings 71,
+  61, 60) with `Non` selected. `Oui` (`0x00492AB0`) is `sub_4092A0`, the
+  settings-only save; leaving the page (`0x00492AA0`) clears the latch. Every
+  sub-page's `Retour` and BACK pass through it, which is the "prompt that is
+  not modelled" `OptionsWalk` stops at.
+* **The rows are drawn by draw hook `0x00493380`**: the label right-aligned in
+  `[x, x + w/2 - 20]`, the value left-aligned in `[x + w/2 + 20, x + w]`, a
+  slider a mode-1 quad `2 v` wide over the row's middle half; header, back and
+  defaults rows one centred block. `Opt_BindRow`'s `+36` is the FONT letter —
+  83 `S` for header and back rows, 74 `J` for the rest. `Opt_LayOutPage`
+  spreads the bound rows over 280 px (140 for three or fewer) from y 80 or 120.
+* **The Video page's hooks** (`0x0048FA50..0x0048FDE0`): resolution re-sets the
+  display mode from a list of 16-bpp modes of at least 640x480 labelled
+  `"%d x %d x %d bpp"` (`sub_43AE70`); clip writes `dword_90E194` capped at 200
+  and re-applies it to the scene; sky, shadows, street activity and detail are
+  one byte each, read where they are used (the street's at the next
+  `Slider_Init`); Accel 3D re-picks the driver, its last entry string 68
+  `Rendu logiciel`. The volumes are attenuations, `(100 - v) * 0.4` out and
+  `100 - 2.5 a` back.
+
 
 ---
 

@@ -5,6 +5,7 @@
 #include "script/savefile.h"
 
 #include "ui/iamtext.h"
+#include "ui/options.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -1773,6 +1774,92 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
     for (const auto& c : cursorLate)
         fillQuad(fb, c.x0, c.y0, c.x1, c.y1, c.r, c.g, c.b, c.alpha);
 
+    return out;
+}
+
+// ---- SCREEN 35: the options rows ------------------------------------------
+//
+// The sixteen row widgets all carry draw hook 0x00493380, which draws the
+// whole row from the option record `+60` names - transcribed from the raw
+// listing (it has no `proc` label):
+//
+//   label   Text_DrawBlock(ScaleX(x), ScaleY(y),
+//                          ScaleX(w/2 - 20) + ScaleX(x), ScaleY(h) + ScaleY(y))
+//           in `Ui_ItemTextStyle`'s style - right-aligned for a value row, as
+//           `Opt_BindRow` set bank C 0x80000008
+//   value   the same style with `& 0xE1 | 2` - LEFT - in
+//           [ScaleX(w/2 + x + 20), ScaleX(w) + ScaleX(x)]: a choice's caption
+//           (`+52`), a device row's list entry
+//   slider  a quad `I2D_SubmitQuad(pts, 12, layer)` from x + w/2 + 20, `2 v`
+//           wide, over the row's middle half (y + h/4 .. y + 3h/4), vertex 0
+//           `I2D_PackColour(100, 255, 245, 0)`. Flags 12 are blend mode 1, the
+//           50% blend, and the software back end fills the bounding box in
+//           vertex 0's colour - the gradient to (255, 245 - 245 v/100, 0) the
+//           other three vertices carry is the D3D path's
+//   2/5/6   a header, defaults or back row: one block over the whole row
+//
+// The colour is `Ui_ItemTextStyle`'s: the row's own (the list's, which the
+// open callback set) unless bank C 0x80000001 forces white, HALVED unless
+// lit - and lit is bank B 0x40000008, or the selected row (the screen's one
+// list is always its panel's current one).
+//
+// NOT DRAWN, labelled: the keybinding rows' value column (`"%s; %s"` of two
+// key names out of the table at 0x004D10CC, not lifted), and Accel 3D's
+// special case, string 68 for the last driver, which the caller supplies as
+// the list entry itself.
+OptionsDrawn ScreenComposer::drawOptions(Surface& fb, const OptionsMenu& m) const {
+    OptionsDrawn out;
+    std::uint8_t lc[3];
+    m.listColour(lc);
+    const int lx = m.listX();
+    const bool blink = ((clockMs_ / 500) & 1) != 0;
+    for (const auto& w : m.widgets()) {
+        // `Ui_DrawList` focuses the selected row of the panel's CURRENT list,
+        // whichever screen has the keys - so under the sneak the row stays lit
+        // while the tabs are being driven
+        const bool lit = w.alwaysLit || w.selected;
+        std::uint8_t c[3] = {255, 255, 255};
+        if (!w.white) { c[0] = lc[0]; c[1] = lc[1]; c[2] = lc[2]; }
+        if (!lit) { c[0] >>= 1; c[1] >>= 1; c[2] >>= 1; }
+        const auto block = [&](int l, int t, int r, int b, const std::string& s, int style) {
+            if (s.empty()) return;
+            TextBlock tb;
+            tb.left = l; tb.top = t; tb.right = r; tb.bottom = b;
+            tb.font = w.font;
+            tb.rgb[0] = c[0]; tb.rgb[1] = c[1]; tb.rgb[2] = c[2];
+            tb.style = style;
+            tb.blinkOn = blink;
+            tb.screenW = fb.w; tb.screenH = fb.h;
+            lay_->layOutBlock(&fb, s, tb);
+        };
+        const int x = lx + w.x, y = w.y;
+        std::string value;
+        if (w.type < 0 || w.type == 2 || w.type == 5 || w.type == 6) {
+            block(scaleX(x), scaleY(y), scaleX(w.w) + scaleX(x), scaleY(w.h) + scaleY(y),
+                  w.label, w.align);
+        } else {
+            block(scaleX(x), scaleY(y), scaleX(w.w / 2 - 20) + scaleX(x),
+                  scaleY(w.h) + scaleY(y), w.label, w.align);
+            if (w.type == 1) {
+                const int x0 = scaleX(w.w / 2 + x + 20);
+                const int x1 = scaleX(w.w / 2 + 2 * std::max(0, w.slider) + x + 20);
+                const int y0 = scaleY(y + w.h / 4);
+                const int y1 = scaleY(y + 3 * w.h / 4);
+                const int qx[4] = {x0, x0, x1, x1};
+                const int qy[4] = {y0, y1, y0, y1};
+                fillQuad(fb, qx, qy, rgb565(255, 245, 0), quadMode(12));
+                ++out.sliders;
+                value = std::to_string(w.slider);
+            } else {
+                block(scaleX(w.w / 2 + x + 20), scaleY(y), scaleX(w.w) + scaleX(x),
+                      scaleY(w.h) + scaleY(y), w.value, 2);
+                value = w.value;
+            }
+        }
+        ++out.widgets;
+        if (lit) ++out.lit;
+        out.lines.push_back(w.label + "|" + value);
+    }
     return out;
 }
 

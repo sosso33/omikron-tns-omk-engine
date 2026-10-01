@@ -137,6 +137,23 @@ omk-play.log` and `.err` whatever happens - nothing of this has run on a
 console yet. `omk_bench.vpk` and `omk_smoke.vpk` (same folder) are the two
 measurements (`todo/vita-port.md` §0).
 
+## 13. THE OPTIONS MENU, and FULLSCREEN (`todo/options-menu.md`, 2026-10-01)
+
+```
+build/omk-play ~/Documents/omk/fr ../tables --nofmv
+build/omk-play ~/Documents/omk/fr ../tables --save ../traces/save-appart.bin \
+    --area 0 --stand 1804,0,-6890,336
+```
+From the start menu: `Options`, then `Vidéo`. Arrows move and change a value
+(ENTER steps it forward too), SPACE goes back. Change something and go back:
+"Sauvegarder les options" asks, `Oui` writes the settings into
+`omk-saves/GAMES`. Back on the root, SPACE returns to the menu (one more SPACE
+to its four buttons - the game's own two steps). In the street, TAB opens the
+sneak; its `Options` tab shows the same pages and RIGHT gives them the keys.
+Worth looking at: the clip distance and the sky change the street at once;
+the crowd changes at the next area; the RESOLUTION changes the window there
+and then. F11 toggles fullscreen anywhere, and `--fullscreen` starts in it.
+
 ## What is NOT fixed, so do not report it as new
 
 * **The lift arrival is still black** and the camera is inside the lift-car

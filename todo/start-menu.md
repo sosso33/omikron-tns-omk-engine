@@ -56,6 +56,17 @@ So **neither half is in the widget records**:
   `UI_LoadScreen(35, ...)` from its Options tab. Whether the start menu hosts
   35 the same way, or fills `0x004CF420` itself, is the question.
 
+## 3b. OPTIONS, answered 2026-10-01 (`todo/options-menu.md`)
+
+Nothing fills `0x004CF420`: the panel is the heading, its `+4` enter hook
+`0x0047BB40` is `UI_FocusScreen(35)` plus two slides, and screen 35 was loaded
+by screen 29's own open callback (`UI_LoadScreen(35, -1, -1)`, closed with it).
+So the start menu HOSTS the options screen, as the sneak does - ported and
+drawn. QUIT is still as below; one lead from the same listing: two functions
+after `0x0047BBF0` there is an unlabelled `mov [eax+8], 3; PostQuitMessage(0)`,
+which looks like the start menu's `Oui` - the PROCESS quits, unlike the pause
+screen's, which restarts the game. Unconfirmed: nothing has been traced to it.
+
 ## 4. The next step, in order
 
 1. **Find what fills `0x004CF420`** and what the quit item does. Neither is an

@@ -436,6 +436,18 @@ public:
     void* createInstanceOnly();
     bool attachSurface(unsigned long long surf);
     bool makeSwapchain(int w, int h);
+    // THE FRAME'S SIZE CHANGED (options row 2, `todo/options-menu.md`): the
+    // frame-sized half of `makeTarget` is rebuilt - colour, depth, the pass
+    // and framebuffer, the readback - with the present pass and the upload
+    // buffer, which re-make themselves lazily. The pipelines stay: their
+    // viewport is dynamic and the new pass is the same description, so it is
+    // render-pass COMPATIBLE. The shadow map is a fixed size and is kept.
+    bool resize(int w, int h);
+    // ...and the WINDOW's: fullscreen, or any resize, changes the surface's
+    // extent and the swapchain is remade at it.
+    bool remakeSwapchain();
+    void killSwapchain();
+    bool resizing_ = false;
     bool presentDirect();
     bool presentSurface(const omk::Surface& s);
     void setViewport(const omk::View& view);
@@ -746,6 +758,8 @@ bool VulkanRenderer::makeTarget() {
                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                     readBuf_, readMem_)) return false;
     fb_ = omk::Surface(w_, h_, 0);
+    // a RESIZE stops here: what follows is sized once and kept
+    if (resizing_) return true;
 
     // ---- THE SHADOW MAP's own target (`todo/enhancements.md` 6) ----------
     //
@@ -1308,6 +1322,66 @@ bool VulkanRenderer::makeSwapchain(int w, int h) {
     return true;
 }
 
+void VulkanRenderer::killSwapchain() {
+    if (!dev_) return;
+    if (pcb_) { vkFreeCommandBuffers(dev_, pool_, 1, &pcb_); pcb_ = VK_NULL_HANDLE; }
+    if (pfence_) { vkDestroyFence(dev_, pfence_, nullptr); pfence_ = VK_NULL_HANDLE; }
+    if (acquired_) { vkDestroySemaphore(dev_, acquired_, nullptr); acquired_ = VK_NULL_HANDLE; }
+    if (drawn_) { vkDestroySemaphore(dev_, drawn_, nullptr); drawn_ = VK_NULL_HANDLE; }
+    if (swap_) { vkDestroySwapchainKHR(dev_, swap_, nullptr); swap_ = VK_NULL_HANDLE; }
+    swapImgs_.clear();
+}
+
+bool VulkanRenderer::remakeSwapchain() {
+    if (!dev_ || surface_ == VK_NULL_HANDLE) return false;
+    vkDeviceWaitIdle(dev_);
+    killSwapchain();
+    return makeSwapchain(w_, h_);
+}
+
+bool VulkanRenderer::resize(int w, int h) {
+    if (!dev_ || w <= 0 || h <= 0) return false;
+    vkDeviceWaitIdle(dev_);
+    const auto img = [&](VkImageView& v, VkImage& i, VkDeviceMemory& m) {
+        if (v) vkDestroyImageView(dev_, v, nullptr);
+        if (i) vkDestroyImage(dev_, i, nullptr);
+        if (m) vkFreeMemory(dev_, m, nullptr);
+        v = VK_NULL_HANDLE; i = VK_NULL_HANDLE; m = VK_NULL_HANDLE;
+    };
+    const auto buf = [&](VkBuffer& b, VkDeviceMemory& m) {
+        if (b) vkDestroyBuffer(dev_, b, nullptr);
+        if (m) vkFreeMemory(dev_, m, nullptr);
+        b = VK_NULL_HANDLE; m = VK_NULL_HANDLE;
+    };
+    if (fbuf_) { vkDestroyFramebuffer(dev_, fbuf_, nullptr); fbuf_ = VK_NULL_HANDLE; }
+    if (pass_) { vkDestroyRenderPass(dev_, pass_, nullptr); pass_ = VK_NULL_HANDLE; }
+    img(colourView_, colour_, colourMem_);
+    img(msColourView_, msColour_, msColourMem_);
+    img(depthView_, depth_, depthMem_);
+    buf(readBuf_, readMem_);
+    buf(upBuf_, upMem_);
+    // the present pass reads `colourView_`, so all of it goes; its guard is
+    // `presPipe_`, and it is rebuilt at the new size on its next use
+    if (presPipe_) { vkDestroyPipeline(dev_, presPipe_, nullptr); presPipe_ = VK_NULL_HANDLE; }
+    if (presPlo_) { vkDestroyPipelineLayout(dev_, presPlo_, nullptr); presPlo_ = VK_NULL_HANDLE; }
+    if (presSampler_) { vkDestroySampler(dev_, presSampler_, nullptr); presSampler_ = VK_NULL_HANDLE; }
+    if (presPool_) { vkDestroyDescriptorPool(dev_, presPool_, nullptr); presPool_ = VK_NULL_HANDLE; }
+    if (presDsl_) { vkDestroyDescriptorSetLayout(dev_, presDsl_, nullptr); presDsl_ = VK_NULL_HANDLE; }
+    if (presFbuf_) { vkDestroyFramebuffer(dev_, presFbuf_, nullptr); presFbuf_ = VK_NULL_HANDLE; }
+    if (presPass_) { vkDestroyRenderPass(dev_, presPass_, nullptr); presPass_ = VK_NULL_HANDLE; }
+    img(presView_, presImg_, presMem_);
+    buf(presRead_, presReadMem_);
+    w_ = w; h_ = h;
+    rw_ = w_ * ss_; rh_ = h_ * ss_;
+    srcW_ = rw_; srcH_ = rh_;
+    resizing_ = true;
+    const bool ok = makeTarget();
+    resizing_ = false;
+    if (!ok) return false;
+    std::printf("vulkan: frame target remade at %dx%d\n", w_, h_);
+    return surface_ == VK_NULL_HANDLE || remakeSwapchain();
+}
+
 bool VulkanRenderer::presentDirect() {
     return presentImage(colour_, srcW_ ? srcW_ : rw_, srcH_ ? srcH_ : rh_);
 }
@@ -1316,11 +1390,24 @@ bool VulkanRenderer::presentDirect() {
 // TRANSFER_SRC layout, blitted into the window's middle rows.
 bool VulkanRenderer::presentImage(VkImage src, int sw, int sh) {
     if (swap_ == VK_NULL_HANDLE) return false;
+    // THE WINDOW MAY HAVE CHANGED SIZE - fullscreen, a resize - and a
+    // swapchain at the old extent would present stretched or not at all.
+    {
+        VkSurfaceCapabilitiesKHR caps{};
+        if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(phys_, surface_, &caps) == VK_SUCCESS &&
+            caps.currentExtent.width != 0xFFFFFFFFu) {
+            if (caps.currentExtent.width == 0 || caps.currentExtent.height == 0) return false;
+            if (caps.currentExtent.width != swapExt_.width ||
+                caps.currentExtent.height != swapExt_.height) {
+                if (!remakeSwapchain()) return false;
+            }
+        }
+    }
     uint32_t idx = 0;
     VkResult r = vkAcquireNextImageKHR(dev_, swap_, UINT64_MAX, acquired_,
                                        VK_NULL_HANDLE, &idx);
-    if (r == VK_ERROR_OUT_OF_DATE_KHR || r == VK_SUBOPTIMAL_KHR) return false;
-    if (r != VK_SUCCESS) return false;
+    if (r == VK_ERROR_OUT_OF_DATE_KHR) { remakeSwapchain(); return false; }
+    if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR) return false;
 
     VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -1351,14 +1438,23 @@ bool VulkanRenderer::presentImage(VkImage src, int sw, int sh) {
     vkCmdClearColorImage(pcb_, swapImgs_[idx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                          &black, 1, &all);
 
-    const int y0 = (static_cast<int>(swapExt_.height) - h_) / 2;
+    // The `w_ x h_` frame fitted into the window AT ITS OWN ASPECT, centred:
+    // in a window of the frame's own width that is the old rule exactly (the
+    // full width, `h_` rows in the middle), and fullscreen or a wider window
+    // gets bars rather than a stretched picture.
+    const int sW = static_cast<int>(swapExt_.width), sH = static_cast<int>(swapExt_.height);
+    int dW = sW, dH = sW * h_ / w_;
+    if (dH > sH) { dH = sH; dW = sH * w_ / h_; }
+    if (sW == w_ && h_ <= sH) { dW = w_; dH = h_; }
+    const int x0 = (sW - dW) / 2;
+    const int y0 = (sH - dH) / 2;
     VkImageBlit blit{};
     blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
     blit.srcOffsets[0] = {0, 0, 0};
     blit.srcOffsets[1] = {sw, sh, 1};
     blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-    blit.dstOffsets[0] = {0, y0, 0};
-    blit.dstOffsets[1] = {static_cast<int>(swapExt_.width), y0 + h_, 1};
+    blit.dstOffsets[0] = {x0, y0, 0};
+    blit.dstOffsets[1] = {x0 + dW, y0 + dH, 1};
     vkCmdBlitImage(pcb_, src, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                    swapImgs_[idx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                    // LINEAR only when there is something to average: at ss 1
@@ -2520,6 +2616,11 @@ bool vulkanCanPresentWorld(Renderer* r) {
 bool vulkanPresentWorld(Renderer* r, int vy, int vh) {
     auto* v = dynamic_cast<VulkanRenderer*>(r);
     return v && v->presentWorld(vy, vh);
+}
+// options row 2 on the Vulkan backend (`todo/options-menu.md`)
+bool vulkanResize(Renderer* r, int w, int h) {
+    auto* v = dynamic_cast<VulkanRenderer*>(r);
+    return v && v->resize(w, h);
 }
 bool vulkanWorldPicture(Renderer* r, int vy, int vh, std::vector<unsigned char>& rgba) {
     auto* v = dynamic_cast<VulkanRenderer*>(r);
