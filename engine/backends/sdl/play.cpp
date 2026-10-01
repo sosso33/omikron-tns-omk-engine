@@ -4124,6 +4124,7 @@ int main(int argc, char** argv) {
         // carrying `drawAt` over on his FIRST frame reads it before anything
         // wrote it and teleports him to the world origin.
         bool  progRan = false;         // a program placed him at some point
+        bool  fightPlaced = false;     // a melee moved him: the fight's place STANDS after it
         float progYaw = 0.0f;          // the call's Euler y (`Actor_SetEuler(node, p4, p5, p6)` every tick)
         bool  progYawKnown = false;
         float progBase[3] = {0, 0, 0};
@@ -9368,6 +9369,17 @@ int main(int argc, char** argv) {
                             fightRun.body->at[2] = fightRun.foe.z;
                             fightRun.body->facing = fightRun.foe.yaw;
                             fightRun.body->placed = true;
+                            // ...and ANCHORED AT THE PELVIS, which is what the
+                            // fight's y is (his walker less his lift). A body
+                            // the placement record put down is anchored at the
+                            // FLOOR, by a fixed feet offset, so the pelvis
+                            // track above never reached it: the flat's
+                            // training partner, knocked down, lay flat a
+                            // metre in the air (a reader, 2026-10-02). The
+                            // supermarket's robber had a program's pelvis
+                            // anchor already.
+                            fightRun.body->pelvis = true;
+                            fightRun.body->fightPlaced = true;
                         }
                         playerTicked = true;
                         // Every second of the fight, so a headless run can be
@@ -13218,7 +13230,10 @@ int main(int argc, char** argv) {
                 // away (a reader, 2026-10-02: "hit by nothing visible next to
                 // me, the partner moving in the background"). `Fight_Begin`
                 // keeps one actor record; its position is the fight's.
-                const bool fightOwns = fightRun.active && fightRun.body == s;
+                // ...and not AFTER it either: `sub_445AC0` leaves the loser's
+                // actor record where he fell, so the record must not take
+                // him back to the chunk's spot once the fight has ended.
+                const bool fightOwns = (fightRun.active && fightRun.body == s) || s->fightPlaced;
                 if (sh.fromTable && !s->progRan && !fightOwns) {
                     for (int k = 0; k < 3; ++k) s->at[k] = sh.pos[k];
                     // ...and NOT the facing once a SHOOT BRAIN owns him: his

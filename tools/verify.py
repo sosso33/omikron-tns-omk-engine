@@ -18117,6 +18117,14 @@ def c_engine_training_partner():
 
     SHOWN TO FAIL: `!fightOwns` taken out of the placement guard, play.o and
     omk-play deleted - a gap of 290.6.
+
+    And the KNOCK-DOWN: the partner was floor-anchored like every body a
+    placement record puts down, so the fight's pelvis height and its pelvis
+    track never reached his draw - knocked down, he lay flat a metre in the
+    air (a reader's frame, the same day). The fight body is pelvis-anchored
+    now, and `fightPlaced` keeps the record from taking him back after the
+    fight (`sub_445AC0` leaves the loser where he fell): pelvis 1074 and head
+    1073 over a floor at 1081, and at (7750, -1053) when the run ends.
     """
     import subprocess
     eng = os.path.join(ROOT, "engine")
@@ -18160,9 +18168,32 @@ def c_engine_training_partner():
     if len(gaps) < 3:
         return ("%d paired seconds" % len(gaps),), ("3 or more",), "the fight must run a few seconds"
     worst = max(gaps)
-    return worst < 10.0, True, "the largest gap, over %d seconds of the fight, between where the " \
-        "training partner is drawn and where the fight has him: %.1f (under 10 passes - a frame of his own motion; ~260 when " \
-        "the placement record put him back)" % (len(gaps), worst)
+    # ...and a fight the player WINS (`--fight-health 200`, the kick cycle,
+    # `engine: fight loser pose`'s recipe): the knocked-down partner's drawn
+    # pelvis and head on the arena's floor (y 1081), and still where he fell
+    # when the run ends - not back at the record's (7957, -852).
+    hold = "k*40,k28*2,k*90,k2*2,k*10,k28*2,k*370" + ",k17*3,k31*3" * 300
+    r2 = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"), "--software",
+                         "--res", "640x480", "--nofmv", "--no-crowd", "--save", save, "--slot", "0",
+                         "--area", "237", "--address", "680", "--fight-health", "200",
+                         "--hold", hold, "--frames", "2400"],
+                        capture_output=True, encoding="latin-1",
+                        env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+    won = re.search(r"sub_445AC0 - the player (\w+)", r2.stdout)
+    lies = re.search(r"OPPONENT actor 331 is drawn with his pelvis at y (-?\d+) and his head at y (-?\d+)",
+                     r2.stdout)
+    end = re.findall(r"^  actor 331 VIR_FN \(bank \w+\) at ([-\d.]+) [-\d.]+ ([-\d.]+)", r2.stdout, re.M)
+    if not (won and lies and end):
+        return ("won %s / lies %s / end %s" % (bool(won), bool(lies), bool(end)),), \
+            ("a won fight's teardown",), "the kick cycle must win the easy level"
+    onFloor = abs(int(lies.group(1)) - 1081) <= 15 and abs(int(lies.group(2)) - 1081) <= 15
+    stayed = abs(float(end[-1][1]) - (-852.0)) > 50.0
+    return (worst < 10.0, won.group(1), onFloor, stayed), (True, "WON", True, True), \
+        "the largest gap, over %d seconds of the fight, between where the training partner is " \
+        "drawn and where the fight has him (%.1f; under 10 passes - a frame of his own motion; " \
+        "~290 when the placement record put him back); a won fight; his drawn pelvis and head " \
+        "within 15 of the floor at the teardown (%s, %s); and his place at the end of the run " \
+        "not the record's (z %s)" % (len(gaps), worst, lies.group(1), lies.group(2), end[-1][1])
 
 
 def c_engine_chest_lid():
