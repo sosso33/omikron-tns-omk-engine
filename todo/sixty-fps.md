@@ -110,5 +110,5 @@ reader found.
 
 | step | state |
 |---|---|
-| 1 | in progress, branch `sixty-fps` |
+| 1 | **done**: fades, both shimmers, the shoot death countdown, the media subtitle, the boarding camera, the gunman's death clip (pose, message 3, fall) - the last on a new `gameClock`, the sum of the deltas. At 30 every one reduces to the old arithmetic (the delta snaps to 1.0): `engine: shimmer`, `fades`, `shoot death`, `slider door` green, and `shoot hit` (red on purpose) byte-identical to the unmodified commit run in a worktree. Behaviour that MOVES even at 30: the shimmer and the death clip now stand still under the pause, as the engine's zero delta stops them. `nudge()`/`moveBy()`'s `dt = 1.0` left for step 4 - an extra gravity tick while airborne at ANY rate, not a frame-rate fault |
 | 2-5 | not started |

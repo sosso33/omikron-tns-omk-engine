@@ -1133,6 +1133,7 @@ int sceneViewer(const std::string& fr, const std::string& setName,
     // most useful thing this window can do: the reference and the live one,
     // same camera, same frame, a keypress apart.
     float sceneShimmer = 0.0f;   // `dword_907310` for the set viewer's own path
+    Uint32 sceneShimmerMs = 0;   // the wall clock it advances on, interactively
     omk::SoftwareRenderer sw;
     sw.init(PW, PH);
     omk::Renderer* live = nullptr;
@@ -1318,8 +1319,20 @@ int sceneViewer(const std::string& fr, const std::string& setName,
         // THE SHIMMER's clock, advanced here as well - the set viewer is
         // exactly where a skyline gets looked at, and it draws through its own
         // path rather than the frame loop's.
-        sceneShimmer += 2.0f;
-        if (sceneShimmer >= omk::kShimmerWrap) sceneShimmer -= omk::kShimmerWrap;
+        // `2 * frameDelta`, and this loop has no Session to ask: a
+        // frame-bounded run keeps exactly 1.0 a frame (`engine: shimmer`
+        // counts the frames that move), a live one measures its own delta,
+        // clamped at the engine's 3.0 - the loop sleeps 16 ms, so it was
+        // shimmering twice as fast as the game (todo/sixty-fps.md 2).
+        {
+            float d = 1.0f;
+            const Uint32 nowMs = SDL_GetTicks();
+            if (!frameBudget && sceneShimmerMs)
+                d = std::min(3.0f, static_cast<float>(nowMs - sceneShimmerMs) * 30.0f / 1000.0f);
+            sceneShimmerMs = nowMs;
+            sceneShimmer += 2.0f * d;
+        }
+        while (sceneShimmer >= omk::kShimmerWrap) sceneShimmer -= omk::kShimmerWrap;
         view.shimmerClock = sceneShimmer;
         view.dither = sceneDither;
         // `drawWithMirror` submits in `buildGeometry`'s order - the engine's
@@ -1790,7 +1803,7 @@ int main(int argc, char** argv) {
     bool  boarding = false;
     float doorOff[3] = {0, 0, 0};   // the placement, in the SLIDER's frame
     int   doorOffState = 0;         // 0 not read yet, 1 read, -1 unavailable
-    int   boardCam = 0;             // frames left of `Camera_Request(9, ..)`
+    double boardCam = 0;            // frames (at 30 Hz) left of `Camera_Request(9, ..)`
     // ...and the EXIT, which is the same shape mirrored: `sub_468FA0` places
     // him from group 61's clip against a DIFFERENT reference (slf_113.3da,
     // `dword_9103D8`) and plays `H_SLDOUT`.
@@ -3318,7 +3331,8 @@ int main(int argc, char** argv) {
     // shows: its voice is a JINGOFF3 substitute, and the TEXT is what the
     // player reads.
     std::string mediaText;
-    long  mediaTextFrames = 0;
+    // In FRAMES AT 30 HZ, run down by the delta (todo/sixty-fps.md 2)
+    double mediaTextFrames = 0;
     // THE MEDIA BITMAP - `media.play` on a kind-16 DOCUMENT.
     //
     // `if (rec[+2] == 16)` takes the other arm entirely: build
@@ -3365,6 +3379,11 @@ int main(int argc, char** argv) {
     bool  playerDrivenSeen = false;
     int   playerDrivenArea = -1;
     double frameSec = 1.0 / 30.0;
+    // GAME TIME in frames at 30 Hz: the sum of the deltas, so it stands still
+    // under the pause and runs at the same speed at any presentation rate.
+    // `n` counts PRESENTED frames and is the clock of the harness and the
+    // log, never of anything the game times (todo/sixty-fps.md 2).
+    double gameClock = 0.0;
     // the `--hold` stream, parsed into (keys, frames) runs
     struct HoldRun { std::vector<int> keys; int frames = 0; };
     std::vector<HoldRun> holds;
@@ -3870,7 +3889,7 @@ int main(int argc, char** argv) {
         // and the frame it began - the clip plays once and holds its last
         // frame. -1 while alive.
         int   deathType = -1;
-        long  deathStart = 0;
+        double deathStart = 0;             // on `gameClock`, not the presented `n`
         // ...and the death CLIP itself, whose root motion lays the body down
         const omk::PedClip* deathClip = nullptr;
         bool  deathFallTold = false;       // his fall has been logged
@@ -6701,6 +6720,7 @@ int main(int argc, char** argv) {
         // and leaves the crowd walking behind the menu.
         const bool uiPause = walk && openScreen == kScreenPause;
         if (uiPause) { frameSec = 0.0; session.setFrameSeconds(0.0); }
+        gameClock += session.frameDelta();   // 1.0 exactly at 30 and under --frames
 
         // ---- one frame of the GAME -------------------------------------
         //
@@ -8271,7 +8291,7 @@ int main(int argc, char** argv) {
                         session.shootModeMutable().actorAction(ev.victim, ho.action);
                     if (ho.killed) {
                         vs->deathType = ho.deathType;
-                        vs->deathStart = n;
+                        vs->deathStart = gameClock;
                         vs->walkMove[1] = 0.0f;   // `sub_421A20` sets the height
                         std::printf("  KILLED - death clip type %d%s\n", ho.deathType,
                                     ho.enemyCountDrop ? ", the enemy count drops" : "");
@@ -8482,7 +8502,7 @@ int main(int argc, char** argv) {
                 // `sub_47CC70`, and the held weapon re-attached and re-inited.
                 if (shootMode && player && player->state() == omk::ActorState::Shoot15) {
                     if (playerDeathCountdown > 0.0f) {
-                        playerDeathCountdown -= 1.0f;        // `flt_4C30D8`
+                        playerDeathCountdown -= static_cast<float>(frameSec * 30.0);   // `flt_4C30D8`
                     } else {
                         player->setActorState(omk::ActorState::Shoot, "Shoot_TickPlayer");
                         const bool ran1 = session.postMessage(1, session.playerActor());
@@ -11054,10 +11074,10 @@ int main(int argc, char** argv) {
                 if (!text.empty() && (st == 3 || st == 15)) text = "{C}" + text;
                 mediaText = text;
                 const long ms = std::max<long>(2000L, 80L * static_cast<long>(text.size()));
-                mediaTextFrames = text.empty() ? 0 : (ms * 30 + 999) / 1000;
+                mediaTextFrames = text.empty() ? 0 : static_cast<double>((ms * 30 + 999) / 1000);
                 if (!text.empty())
                     std::printf("media.play %d subtitle for %ld frames: %s\n", mediaId,
-                                mediaTextFrames, text.c_str());
+                                static_cast<long>(mediaTextFrames), text.c_str());
             }
         }
 
@@ -13583,7 +13603,7 @@ int main(int argc, char** argv) {
                         }
                         view.cam.eye[1] -= kBoardEye[1];
                     }
-                    --boardCam;
+                    boardCam -= frameSec * 30.0;   // by the delta (todo/sixty-fps.md 2)
                 } else {
                     place(kComeEye, view.cam.eye);
                     place(kComeAt,  view.cam.at);
@@ -16256,7 +16276,8 @@ int main(int argc, char** argv) {
                                                   static_cast<int>(shootTracks->frames) - 1);
                         if (s.deathType >= 0 && shootTracks && shootTracks->frames > 0)
                             shootFrame = static_cast<int>(std::min<long>(
-                                n - s.deathStart, static_cast<long>(shootTracks->frames) - 1));
+                                static_cast<long>(gameClock - s.deathStart),
+                                static_cast<long>(shootTracks->frames) - 1));
                         // HIS DEATH IS REPORTED - message 3. `Shoot_TickNpc`
                         // calls the brain on a dead gunman too, and the generic
                         // brain's first arm (`sub_424DE0`, flag 8 up) plays the
@@ -16276,7 +16297,8 @@ int main(int argc, char** argv) {
                         // that puts him in ACTOR_STATE 0 - and posts nothing.
                         if (s.deathType >= 0 && !s.deathPosted && shootTracks &&
                             shootTracks->frames > 0 &&
-                            n - s.deathStart >= static_cast<long>(shootTracks->frames) - 1) {
+                            static_cast<long>(gameClock - s.deathStart) >=
+                                static_cast<long>(shootTracks->frames) - 1) {
                             s.deathPosted = true;
                             const bool ran = session.postMessage(3, s.actor);
                             const auto& mr = session.messagesRun();
@@ -16756,7 +16778,7 @@ int main(int argc, char** argv) {
                 for (int k = 0; k < 3; ++k) rootMove[k] += s.walkMove[k];
                 if (s.deathType >= 0 && s.deathClip && !s.deathClip->root.empty() &&
                     s.deathClip->frames > 1) {
-                    const long el = std::max<long>(n - s.deathStart, 0);
+                    const long el = std::max<long>(static_cast<long>(gameClock - s.deathStart), 0);
                     const long upto = std::min<long>(el, static_cast<long>(s.deathClip->frames) - 1);
                     const auto bi = shootBrains.find(s.actor);
                     while (s.deathEl < upto) {
@@ -18696,8 +18718,10 @@ int main(int argc, char** argv) {
             // delta is 1.0 at 30 Hz (`docs/BOOT.md` 4). 233 set meshes ride
             // it - the far skyline of every city - and it is the GAME's, not
             // an enhancement, so both backends draw it.
-            shimmerClock += 2.0f;
-            if (shimmerClock >= omk::kShimmerWrap) shimmerClock -= omk::kShimmerWrap;
+            // ...by the DELTA, not the presented frame: `frameSec * 30` is 1.0
+            // at 30 and in every `--frames` run, 0.5 at 60 (todo/sixty-fps.md 2)
+            shimmerClock += 2.0f * static_cast<float>(frameSec * 30.0);
+            while (shimmerClock >= omk::kShimmerWrap) shimmerClock -= omk::kShimmerWrap;
             view.shimmerClock = shimmerClock;
             view.dither = dither;
             const bool litPerPixel = lighting > 0;
@@ -21689,7 +21713,7 @@ int main(int argc, char** argv) {
             if (!drawPositioned(fb, lay, ptMedia, dispW, dispH))
                 drawSubtitle(fb, lay, mediaText, {}, -1, dispW, dispH, 16,
                              SubBox::None, 'V', 0, nullptr, /*mediaLine*/ true);
-            --mediaTextFrames;
+            mediaTextFrames -= frameSec * 30.0;
         }
         // The subtitle goes over whatever the frame already holds - which
         // during a conversation is the dialogue camera's view of the set.

@@ -2324,7 +2324,11 @@ float Session::musicGain() const {
 
 void Session::frame() {
     ++frameNo_;
-    tickFades();          // both screen fades, on the frame clock
+    // Both screen fades, by the frame DELTA: the ticker (0x00451E60) does
+    // `fadd flt_4C30D8` on each arm, colour and black alike. A bare
+    // `tickFades()` took its default 1.0 and ran both twice as fast at 60
+    // (todo/sixty-fps.md 2); at 30 the delta snaps to exactly 1.0.
+    tickFades(static_cast<float>(frameDelta()));
     tickMusicLevel();
     // `sub_41F320`, the async reader's per-frame slice, sits at the END of the
     // frame function after the render - after the pump. Serving it here, at
