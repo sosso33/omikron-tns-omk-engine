@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // THE DEPTH TIE, settled at SUBMIT - the decision, out of the Vulkan backend.
 //
-// Two faces on the same positions - the two SIDES of a shop sign, 18 pairs in
-// Anekbah - are both submitted (CULLMODE = NONE), and the engine's strict test
-// on a quantised z-buffer keeps the FIRST drawn on every pixel. A GPU compare
+// Two faces on the same positions are both submitted, and the engine's strict
+// test on a quantised z-buffer keeps the FIRST drawn on every pixel. (The two
+// SIDES of a shop sign, 18 pairs in Anekbah, were the case this was written
+// for; since 2026-10-01 they are not a tie at all - the engine's back-face
+// cull keeps one of the two from any viewpoint - and the key carries the
+// face's SIDE so they no longer claim each other: `depthtie.cpp` faceClass.) A GPU compare
 // cannot read the buffer, so the Vulkan backend settles the tie where it is
 // decidable exactly: a face whose position set an earlier DEPTH-WRITING face of
 // the same geometry already claimed, in draw order, can never win a pixel from
@@ -20,7 +23,8 @@
 //     `buildGeometry` emits as (0,1,2)(0,2,3) is keyed as one quad, the same;
 //   * a key already claimed makes a LOSER, otherwise a depth-writing draw
 //     claims it - the same two decisions in the same order;
-//   * a KEY is the multiset of the face's corner positions, bit for bit - what
+//   * a KEY is the multiset of the face's corner positions, bit for bit, with
+//     the face's side folded in for a single-sided face (2026-10-01) - what
 //     the old sorted-array key meant.
 //
 // Step 3 moved the claimed keys from ordered sets to hashed ones; step 7b

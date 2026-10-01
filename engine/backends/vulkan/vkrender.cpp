@@ -23,8 +23,12 @@
 //     the loader decoded: `0x1000|0x2000` additive, `0x1000|0x4000` multiply.
 //   * the CUTOUT. Flag `0x800`, a COLOUR KEY on black (`SetRenderState(27,1)`),
 //     passed to the shader as a flag and discarded there. Not alpha.
-//   * D3DCULL_NONE. `Raster_DrawTriangles` sets it, so both windings draw and
-//     the rasterizer state says `VK_CULL_MODE_NONE`.
+//   * the BACK-FACE CULL. `Raster_DrawTriangles` sets D3DCULL_NONE, so the
+//     rasterizer state says `VK_CULL_MODE_NONE` - but the engine has already
+//     dropped every single-sided face seen from behind, in software, in
+//     `Render_SubmitMesh` (`geom3do.h` `kTwoSided`). Here that is a push
+//     constant per run of `cornerCull` and a discard on `gl_FrontFacing`, so
+//     no pipeline is doubled.
 //   * the CONVENTIONS. The view-projection is built from `cameraBasis`, the
 //     software rasterizer's own - world up is (0,-1,0) because the game's Y
 //     points DOWN, `hfovDeg` is HORIZONTAL with the vertical following from
@@ -163,8 +167,15 @@ struct Push {
     int32_t caster;    // 76  this batch CASTS, so it must not RECEIVE
     float fogColour[3];// 80
     int32_t lit;       // 92  this batch is LIT per pixel (row 7)
+    int32_t cull;      // 96  the BACK-FACE CULL: 0 both sides, +1 discard
+                       //     where !gl_FrontFacing, -1 where gl_FrontFacing
 };
-static_assert(sizeof(Push) == 96, "the push block is 96 bytes");
+static_assert(sizeof(Push) == 100, "the push block is 100 bytes");
+// Which `gl_FrontFacing` is the software rasterizer's FRONT (a negative area in
+// `raster.cpp`): this pipeline's `frontFace` and Vulkan's Y-down viewport.
+// Measured, not derived - the wrong sign culls every front face and the room
+// turns inside out, which `engine: back-face cull` and the renderer checks see.
+constexpr int32_t kCullSign = 1;
 
 class VulkanRenderer : public omk::Renderer {
 public:
@@ -391,6 +402,7 @@ private:
     bool             recording_ = false;
     bool             dirty_ = false;    // a new frame is waiting in readBuf_
     VkPipeline       forcePipeline_ = VK_NULL_HANDLE;  // the mirror pass's override
+    bool             flipX_ = false;   // the current view's screen-X flip (mirror pass)
     bool             reflStencil_ = false;             // draw through pipeRefl_
 
     // ---- DIRECT PRESENTATION (optional; nothing here runs offscreen).
@@ -939,7 +951,8 @@ bool VulkanRenderer::makePipelines() {
 
     VkPipelineRasterizationStateCreateInfo rs{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
     rs.polygonMode = VK_POLYGON_MODE_FILL;
-    // D3DCULL_NONE - `Raster_DrawTriangles` sets it, so both windings draw.
+    // D3DCULL_NONE - `Raster_DrawTriangles` sets it. The engine's own cull is
+    // in software, before the device: `push_.cull` and scene.frag's discard.
     rs.cullMode = VK_CULL_MODE_NONE;
     rs.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rs.lineWidth = 1.0f;
@@ -2095,6 +2108,7 @@ void VulkanRenderer::pushView(const omk::View& view) {
     // The view-projection, built from the SOFTWARE rasterizer's own basis so
     // the two cannot disagree about a convention.
     omk::RCamera cam = view.cam;
+    flipX_ = cam.flipX;
     // The letterbox is a VIEWPORT: the picture goes into the top-left
     // `vw x vh` of an attachment that stays window-sized, because the
     // swapchain present needs that size. The vertical fov follows from `vh`.
@@ -2331,14 +2345,28 @@ void VulkanRenderer::submit(const omk::Draw& d) {
         push_.fogEnd   = fogEnd_ * k;
         for (int i = 0; i < 3; ++i) push_.fogColour[i] = fogColour_[i];
     }
-    vkCmdPushConstants(cb_, plo_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                       0, sizeof(Push), &push_);
-
     const auto it = vbo_.find(d.geo);
     VkDeviceSize off = 0;
     vkCmdBindVertexBuffers(cb_, 0, 1, &it->second.first, &off);
-    vkCmdDraw(cb_, static_cast<uint32_t>(d.count), 1,
-              static_cast<uint32_t>(d.start), 0);
+    // THE BACK-FACE CULL, one push per run of `cornerCull` (`geom3do.h`): a
+    // batch groups by material, so single- and two-sided faces can share one.
+    // `kCullSign` is this pipeline's sense of "front" for the software
+    // rasterizer's winding; the mirror pass's screen-X flip reverses it, as it
+    // reverses the area `raster.cpp` tests.
+    const omk::Geometry* g = d.geo;
+    const bool haveCull = g->cornerCull.size() == g->corners.size();
+    std::size_t i = d.start;
+    const std::size_t e = d.start + d.count;
+    while (i < e) {
+        const std::uint8_t c = haveCull ? g->cornerCull[i] : 0u;
+        std::size_t j = i;
+        while (j < e && (haveCull ? g->cornerCull[j] : 0u) == c) ++j;
+        push_.cull = c ? (flipX_ ? -kCullSign : kCullSign) : 0;
+        vkCmdPushConstants(cb_, plo_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(Push), &push_);
+        vkCmdDraw(cb_, static_cast<uint32_t>(j - i), 1, static_cast<uint32_t>(i), 0);
+        i = j;
+    }
     st_.drawn += static_cast<long>(d.count / 3);
 }
 

@@ -14128,6 +14128,14 @@ def c_engine_probe_grid():
 
 def c_engine_tie_equivalence():
     r"""`DepthTie` - the Vulkan backend's submit-time depth tie, moved out and
+
+    **2026-10-01, the BACK-FACE CULL**: the tie key carries the face's SIDE
+    for a single-sided face (`depthtie.cpp` faceClass), because the engine's
+    software cull keeps one of a reversed pair from any viewpoint and the
+    pair is not a tie in the original. Anekbah's losers 248 -> 87, Lahoreh's 532 -> 24, PSH_FN's 3 -> 0 - most
+    of the old ties were reversed twins - and every mismatch column still 0:
+    the reference in `tie_equiv.cpp` takes the side as an extra key element,
+    the class as a y-bit fold, one rule in two formulations.
     made cheaper - decides exactly what the in-backend pass decided, draw for
     draw (todo/optimization.md step 3).
 
@@ -14200,11 +14208,11 @@ def c_engine_tie_equivalence():
         return (len(rows),), (3,), "tie_equiv rows parsed - the tool's output " \
             "format no longer matches this check"
     got = tuple((row[0],) + tuple(int(x) for x in row[1:]) for row in rows)
-    return got, (("Anekbah", 46415, 248, 792, 4646, 0, 1145, 14613, 0, 101, 0, 64, 31, 29, 0, 18621, 27260),
-                 ("Lahoreh", 37457, 532, 896, 10073, 0, 1273, 31776, 0, 101, 0, 59, 36, 24, 0, 40355, 59114),
-                 ("PSH_FN", 790, 3, 158, 479, 0, 249, 2337, 0, 101, 0, 80, 15, 41, 0, 2354, 3784)), \
+    return got, (("Anekbah", 46415, 87, 792, 1929, 0, 1145, 6839, 0, 101, 0, 64, 31, 29, 0, 8312, 12291),
+                 ("Lahoreh", 37457, 24, 896, 647, 0, 1273, 3105, 0, 101, 0, 59, 36, 24, 0, 3412, 5179),
+                 ("PSH_FN", 790, 0, 158, 416, 0, 249, 2164, 0, 101, 0, 80, 15, 41, 0, 2145, 3457)), \
         "per model: triangles, losers of one pass in batch order (Anekbah's is " \
-        "sign tie's 248), draws replayed, losers over all of them, and draws " \
+        "sign tie's 87), draws replayed, losers over all of them, and draws " \
         "whose losers differ from the pre-2026-09-13 pass in content or order; " \
         "then step 8's fixed-sequence frames (draws, losers, mismatching draws), " \
         "the simulated vertex buffer (frames, drawn triangles wrong), and how " \
@@ -14331,6 +14339,15 @@ def c_engine_threaded_bodies():
 
 def c_engine_body_tie():
     r"""A posed body's depth tie is REPLAYED, not re-walked, and it is the same
+
+    **2026-10-01, the BACK-FACE CULL**: the tie key carries the face's SIDE
+    for a single-sided face (`depthtie.cpp` faceClass), because the engine's
+    software cull keeps one of a reversed pair from any viewpoint and the
+    pair is not a tie in the original. PSH_FN and FSH_FN's 720 losers -> 0, and the backend's 3 / 720 -> 0:
+    every tie on these bodies was a reversed twin. On these four models the
+    body tie now has NOTHING to decide; the check still holds the replay's
+    revisions and the reference (`body_tie.cpp`, the side as a key element)
+    to the port, but its loser columns can no longer go wrong here.
     answer (`Geometry::tieClass`, todo/vita-port.md 2026-09-22).
 
     Every posed body got a new revision every frame, so the tie re-keyed every
@@ -14375,8 +14392,8 @@ def c_engine_body_tie():
     if len(rows) != 4:
         return (len(rows),), (4,), "body_tie rows parsed - the tool's output format changed"
     got = tuple((row[0],) + tuple(int(x) for x in row[2:]) for row in rows)
-    return got, (("PSH_FN", 790, 960, 720, 720, 0, 0, 0, 0, 0, 1, 239, 0, 0, 3, 720),
-                 ("FSH_FN", 856, 240, 720, 720, 0, 0, 0, 0, 0, 1, 239, 0, 0, 3, 720),
+    return got, (("PSH_FN", 790, 960, 0, 0, 0, 0, 0, 0, 0, 1, 239, 0, 0, 0, 0),
+                 ("FSH_FN", 856, 240, 0, 0, 0, 0, 0, 0, 0, 1, 239, 0, 0, 0, 0),
                  ("HO1_FN", 542, 480, 0, 0, 0, 0, 0, 0, 0, 1, 239, 0, 0, 0, 0),
                  ("HO1_FNM", 803, 720, 0, 0, 0, 0, 0, 0, 0, 5, 235, 0, 0, 0, 0)), \
         "per model: triangles, draws, losers (reference, class-keyed), mismatches " \
@@ -15226,6 +15243,11 @@ def c_engine_gles_state_cache():
     r"""The GLES backend's draw-state cache draws the SAME picture with fewer
     calls (todo/optimization.md step 17).
 
+    **2026-10-01: 175 -> 200 off, 33 -> 34 on, 142 -> 166 skipped** - the
+    back-face cull is one more piece of state a draw sets (`GL_CULL_FACE` and
+    its face, per run of `cornerCull`): +25 over the 25 draws with the cache
+    off, +1 with it on, since every run here asks for the same cull.
+
     `GlesRenderer::submit` set every piece of state a draw needs on every draw
     - blend, depth mask, texture, seven uniforms, four to six attributes - and
     on vitaGL each is real work. `DrawState` remembers what the last draw left
@@ -15268,13 +15290,23 @@ def c_engine_gles_state_cache():
         return ("unparsed",), ("parsed",), "gles_probe's state-cache line is " \
             "missing - the tool's format changed, or no GL context"
     draws, off, on, skipped, lit, d1, d2 = (int(x) for x in m.groups())
-    return (draws, off, on, skipped, lit > 0, d1, d2), (25, 175, 33, 142, True, 0, 0), \
+    return (draws, off, on, skipped, lit > 0, d1, d2), (25, 200, 34, 166, True, 0, 0), \
         "draws; state-call groups made with the cache off, on, and skipped; a " \
         "lit picture; pixels differing cache-on and on a second frame"
 
 
 def c_engine_gles_tie_bake():
     r"""THE DEPTH TIE THE ENGINE'S WAY: decided ONCE, drawn one step back
+
+    **2026-10-01, the BACK-FACE CULL**: the tie key carries the face's SIDE
+    for a single-sided face (`depthtie.cpp` faceClass), because the engine's
+    software cull keeps one of a reversed pair from any viewpoint and the
+    pair is not a tie in the original. 248 -> 87 baked losers, and the LAST boolean is now False on purpose:
+    with the cull, turning the tie OFF changes no sampled frame of the walk
+    past the signs - the signs are settled by the cull before the tie is
+    asked. The bake-equals-per-frame half (True) still holds, but on this walk
+    it is no longer a test that could see the tie; that control is gone and
+    this says so rather than passing vacuously.
     (todo/optimization.md step 29).
 
     The engine gets first-drawn-wins for free: both sides of a shop sign are
@@ -15364,7 +15396,7 @@ def c_engine_gles_tie_bake():
     binp = os.path.join(eng, "build", "omk-play")
     vk = walk(binp, ["--world-vulkan"], {"SDL_VIDEODRIVER": "dummy"}) \
         if b.returncode == 0 and os.path.exists(binp) else ("skipped",)
-    want = lambda got: ("skipped",) if got == ("skipped",) else (248, True, True)
+    want = lambda got: ("skipped",) if got == ("skipped",) else (87, True, False)
     return (gl, vk), (want(gl), want(vk)), \
         "GLES then VULKAN: the losers baked over Anekbah; every sampled frame of a " \
         "walk past the signs byte-identical to the per-frame tie's; and some " \
@@ -15556,6 +15588,11 @@ def c_engine_vita_build():
 
 def c_engine_tie_memory():
     r"""The depth tie's memory is almost all ONE group - the claimed keys - and
+
+    **2026-10-01, the BACK-FACE CULL**: the tie key carries the face's SIDE
+    for a single-sided face (`depthtie.cpp` faceClass), because the engine's
+    software cull keeps one of a reversed pair from any viewpoint and the
+    pair is not a tie in the original. Anekbah's dropped faces 248 -> 87, PSH_FN's 3 -> 0.
     the pass that measures it drops what the render drops (handoff-vita §2).
 
     `todo/handoff-vita.md` §1 ranks "the depth tie's tables ~9.7 MB" among a
@@ -15625,7 +15662,7 @@ def c_engine_tie_memory():
     share = lambda row: float(row[4]) / float(row[5])
     return (int(setrow[1]), int(setrow[3]), int(pshrow[3]), int(ho1row[3]),
             round(share(setrow), 2) >= 0.95, round(share(pshrow), 2) >= 0.95), \
-        (46415, 248, 3, 0, True, True), \
+        (46415, 87, 0, 0, True, True), \
         "Anekbah's triangles, then the faces the tie drops for the set, PSH_FN " \
         "and HO1_FN - each established elsewhere - and whether the claimed keys " \
         "are 95% or more of the bytes for the set and for a body"
@@ -18038,6 +18075,11 @@ def c_engine_backface_cull():
       * the restaurant crane's frame 471, whether the two readings disagree
         on more than 100000 pixels - they disagree on 221340 of 307200, the
         ceiling the old reading drew in front of the lens.
+      * the GPU backends at the crane's first camera over the restaurant SET:
+        VULKAN's mean colour difference from the software render (3.3 with
+        both culling, 110.7 with one side two-sided) and GLES's dithered
+        differing pixels (19.8% against 99.8%) - each only where its backend
+        builds, so a machine without the SDK passes on the software half.
 
     TIER: the rule is tier 6, read from three functions and explained, and the
     vivarium patches against a VIDEO of the original are indicative of tier 4
@@ -18045,7 +18087,11 @@ def c_engine_backface_cull():
     against a capture, so the patches stay in this docstring. The check
     itself is a tier-3 control: two readings of the same frame.
 
-    SHOWN TO FAIL: see the falsification note appended below once run.
+    SHOWN TO FAIL (2026-10-01): `false &&` in front of raster.cpp's cull test,
+    raster.o and omk-play deleted so the rebuild could not relink a stale
+    object - the lift's arrival went 56.9 -> 90.3 dark and the crane's two
+    readings went from 221340 differing pixels to 0. Restored by editing the
+    line back and rebuilding the same way.
     """
     import subprocess, tempfile, struct, glob
     sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -18105,11 +18151,60 @@ def c_engine_backface_cull():
         return round(100.0 * sum(1 for p in px if luma(p) <= 24) / len(px), 1)
 
     differ = sum(1 for a, b in zip(c1, c0) if a != b)
-    got = ((two, total), dark(l1), dark(l0), differ > 100000)
-    want = ((93, 16188), 56.9, 90.3, True)
+
+    # THE GPU HALVES, each only where that backend builds (PORTING A1: a
+    # machine without the SDK passes on the software half). The restaurant SET
+    # through the crane's first camera, eye above the ceiling: the shot where
+    # the two readings differ most, so a GPU that lost the cull - or the
+    # software side - cannot agree with the other by accident.
+    resto = os.path.join(fr, "MESHES", "DECORS", "AResto14.3DO")
+    CAM = ["2519,-226,-6908", "2522,-110,-6931", "75"]
+    gpu = []
+    tmp2 = tempfile.mkdtemp()
+    try:
+        vk = subprocess.run(["make", "-s", "vulkan"], cwd=eng, capture_output=True, text=True)
+        vkbin = os.path.join(eng, "build", "run_vulkan")
+        vkres = "no vulkan"
+        if vk.returncode == 0 and os.path.exists(vkbin) and os.path.exists(resto):
+            o2 = os.path.join(tmp2, "v.bin")
+            r = subprocess.run([vkbin, fr, resto] + CAM + [o2, "640x352"],
+                               capture_output=True, text=True)
+            if r.returncode == 0 and os.path.exists(o2):
+                raw = open(o2, "rb").read()
+                W, H, _, _ = struct.unpack_from("<4i", raw, 0)
+                n = W * H
+                a = struct.unpack_from("<%dH" % n, raw, 16)
+                b = struct.unpack_from("<%dH" % n, raw, 16 + 2 * n)
+                tot = 0
+                for x, y in zip(a, b):
+                    tot += abs((x >> 11 & 31) * 255 // 31 - (y >> 11 & 31) * 255 // 31) + \
+                           abs((x >> 5 & 63) * 255 // 63 - (y >> 5 & 63) * 255 // 63) + \
+                           abs((x & 31) * 255 // 31 - (y & 31) * 255 // 31)
+                vkres = tot / n < 10.0
+        gpu.append(vkres)
+        gl = subprocess.run(["make", "-s", "build/gles_probe"], cwd=eng, capture_output=True, text=True)
+        glbin = os.path.join(eng, "build", "gles_probe")
+        glres = "no gles"
+        if gl.returncode == 0 and os.path.exists(glbin) and os.path.exists(resto):
+            r = subprocess.run([glbin, fr, resto] + CAM + ["640x352"],
+                               capture_output=True, encoding="latin-1")
+            m = re.search(r"^dithered .*differing \d+ \(([\d.]+)%", r.stdout, re.M)
+            if m:
+                glres = float(m.group(1)) < 50.0
+        gpu.append(glres)
+    finally:
+        import shutil
+        shutil.rmtree(tmp2, ignore_errors=True)
+    wantGpu = [g if g in ("no vulkan", "no gles") else True for g in gpu]
+
+    got = ((two, total), dark(l1), dark(l0), differ > 100000, tuple(gpu))
+    want = ((93, 16188), 56.9, 90.3, True, tuple(wantGpu))
     return got, want, "meshes two-sided of all; the lift's arrival dark percent culled, " \
         "then two-sided (the old reading); the crane frame differs by over 100000 pixels " \
-        "between the two (it differed by %d)" % differ
+        "between the two (it differed by %d); then the GPUs against the software render " \
+        "at the crane's camera - VULKAN's mean colour difference under 10 (3.3 culled, " \
+        "110.7 with one side two-sided) and GLES's dithered differing pixels under 50 percent " \
+        "(19.8 culled, 99.8 two-sided)" % differ
 
 
 def c_engine_camera_obstruction():
@@ -37805,6 +37900,15 @@ def c_engine_player_move():
 def c_engine_sign_tie():
     r"""THE ANEKBAH PANEL FLICKER: a depth TIE the float compare broke, and the signs are TWO-SIDED.
 
+    **2026-10-01, the BACK-FACE CULL**: the tie key carries the face's SIDE
+    for a single-sided face (`depthtie.cpp` faceClass), because the engine's
+    software cull keeps one of a reversed pair from any viewpoint and the
+    pair is not a tie in the original. the Vulkan pass now degenerates 87 of 46415, not 248, and the LAST
+    boolean is False on purpose: the pharmacy sign's pixels no longer change
+    with the tie, because the cull, not the tie, now picks the advert - the
+    engine's own mechanism. The probe halves (the two faces drawn ALONE, the
+    tie band) are unchanged: they draw both windings deliberately.
+
     `todo/standing-unknowns.md` 4, open since the first play report of
     2026-08-28 and out of candidates since 2026-09-05. A reader stood in
     front of a shop sign on 2026-09-08 and left the viewer's position in its
@@ -37922,7 +38026,7 @@ def c_engine_sign_tie():
             shutil.rmtree(tmp, ignore_errors=True)
     return (pairs, reversed_, alone, faces, rule, vk), \
            (18, 18, (1244, 0, 0), (1244, 0), True,
-            ("skipped",) if vk == ("skipped",) else ((248, 46415), True)), \
+            ("skipped",) if vk == ("skipped",) else ((87, 46415), False)), \
            "ANEKBAH's coincident different-material quad pairs and how many are " \
            "the same four vertices in REVERSED order (two-sided signs); the " \
            "probe's two faces drawn alone covering the same 1244 pixels and " \

@@ -11,6 +11,7 @@ layout(push_constant) uniform Push {
     int   caster;      // a caster does not receive; see scene.frag
     vec3  fogColour;   // 16-BYTE ALIGNED at offset 80 - see scene.frag
     int   lit;         // 92, and it must come AFTER the vec3
+    int   cull;        // 96, the back-face cull - see scene.frag
 } pc;
 
 layout(location = 0) in vec3 inPos;    // world position

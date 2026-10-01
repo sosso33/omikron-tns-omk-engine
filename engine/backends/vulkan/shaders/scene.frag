@@ -40,6 +40,10 @@ layout(push_constant) uniform Push {
     // whole enhancement drew nothing. The scalars before it fill 64..80
     // exactly; a new one goes here.
     int   lit;          // 92
+    // The BACK-FACE CULL (`geom3do.h` kTwoSided): 0 draws both sides, +1
+    // discards where !gl_FrontFacing, -1 where gl_FrontFacing - the engine's
+    // software test in `Render_SubmitMesh`, which the device never sees.
+    int   cull;         // 96
 } pc;
 
 layout(set = 0, binding = 0) uniform sampler2D tex;
@@ -128,6 +132,7 @@ float litness() {
 }
 
 void main() {
+    if ((pc.cull > 0 && !gl_FrontFacing) || (pc.cull < 0 && gl_FrontFacing)) discard;
     // Alpha is the KEY, written at upload: 0 on a black texel, 1 elsewhere.
     // Under the nearest sampler (the original's) this is exactly the old
     // `rgb == 0` test on the same texel. Under the bilinear ENHANCEMENT the

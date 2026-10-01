@@ -454,6 +454,12 @@ void main() {
 
 namespace omk {
 
+// Which GL face is the software rasterizer's BACK (a positive area in
+// `raster.cpp`) under this backend's projection, glFrontFace left at GL_CCW.
+// MEASURED, as Vulkan's `kCullSign` is: the wrong value culls every front
+// face and the room turns inside out.
+constexpr bool kGlesCullBack = true;
+
 // THE GL CALLS' OWN TIME, for the frame-phase line (`play.cpp`, 2026-09-18:
 // a Vita menu frame cost ~760 ms and nothing said where). Milliseconds summed
 // since the last `glesTakeTimings`: glReadPixels, the 888 -> 565 conversion,
@@ -762,6 +768,7 @@ private:
         int blend = -1;                    // a `Blend`, -1 unknown
         GLuint tex = 0; bool texValid = false;
         GLuint attrBuf = 0; int attrLayout = -1;   // 0 plain, 1 posed; -1 unknown
+        int cull = -1;                     // 0 off, 1 GL_BACK, 2 GL_FRONT; -1 unknown
         UniCache uni[2];                   // [0] prog_, [1] posed_
     } ds_;
     bool stateCache_ = true;
@@ -827,6 +834,7 @@ private:
     GLuint windowFbo_ = 0;
 
     View view_;
+    bool flipX_ = false;   // the CURRENT view's screen-X flip - the mirror pass sets it
     bool fog_ = false, dither_ = true, stretch_ = false;
     float fogStart_ = 0, fogEnd_ = 0, fogColour_[3] = {0, 0, 0};
     bool recording_ = false, dirty_ = false;
@@ -1557,6 +1565,7 @@ void GlesRenderer::setView(const View& view) {
     // the Vulkan backend places it. GL's window origin is bottom-left, so the
     // top-left rectangle starts at row `h - vh`.
     RCamera cam = view.cam;
+    flipX_ = cam.flipX;
     const int vw = view.letterboxed() ? view.vw : w_;
     const int vh = view.letterboxed() ? view.vh : h_;
     cam.w = vw; cam.h = vh;
@@ -1946,8 +1955,29 @@ void GlesRenderer::submit(const Draw& d) {
     }
     ++g_glesDrawsWindow;
     const double fd0 = glesClockMs();
-    glDrawArrays(GL_TRIANGLES, static_cast<GLint>(d.start + (fromRing ? sv->base : 0)),
-                 static_cast<GLsizei>(d.count));
+    // THE BACK-FACE CULL, one draw per run of `cornerCull` (`geom3do.h`): a
+    // batch groups by material, so single- and two-sided faces can share one.
+    // The engine culls in software (`Render_SubmitMesh`); here it is GL's own
+    // cull with the face chosen from `kGlesCullBack` - which GL face is the
+    // software rasterizer's BACK under this projection - and the mirror pass's
+    // screen-X flip swapping it, as it swaps the area `raster.cpp` tests.
+    const GLint base = static_cast<GLint>(fromRing ? sv->base : 0);
+    const bool haveCull = d.geo->cornerCull.size() == d.geo->corners.size();
+    std::size_t i = d.start;
+    const std::size_t e = d.start + d.count;
+    while (i < e) {
+        const std::uint8_t c = haveCull ? d.geo->cornerCull[i] : 0u;
+        std::size_t j = i;
+        while (j < e && (haveCull ? d.geo->cornerCull[j] : 0u) == c) ++j;
+        const int mode = !c ? 0 : (kGlesCullBack != flipX_) ? 1 : 2;
+        if (set(ds_.cull != mode)) {
+            if (mode == 0) glDisable(GL_CULL_FACE);
+            else { glEnable(GL_CULL_FACE); glCullFace(mode == 1 ? GL_BACK : GL_FRONT); }
+            ds_.cull = mode;
+        }
+        glDrawArrays(GL_TRIANGLES, base + static_cast<GLint>(i), static_cast<GLsizei>(j - i));
+        i = j;
+    }
     g_glesFrame.drawMs += glesClockMs() - fd0;
     ++g_glesFrame.draws;
     st_.drawn += static_cast<long>(d.count / 3);
@@ -1956,6 +1986,10 @@ void GlesRenderer::submit(const Draw& d) {
 void GlesRenderer::end() {
     if (!recording_) return;
     recording_ = false;
+    // The cull is the SCENE's: nothing drawn after it (the mirror composite,
+    // the interface, the present) has an authored winding.
+    glDisable(GL_CULL_FACE);
+    ds_.cull = 0;
     glDisable(GL_BLEND);
     glDepthMask(GL_TRUE);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);

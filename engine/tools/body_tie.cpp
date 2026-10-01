@@ -41,8 +41,11 @@ namespace {
 
 struct Reference {
     std::uint64_t revision = 0;
-    std::set<std::array<std::uint32_t, 12>> quads;
-    std::set<std::array<std::uint32_t, 9>>  tris;
+    // The key's LAST element is the face's SIDE (2026-10-01), as in
+    // `tie_equiv.cpp`'s reference: a single-sided face and its reversed twin
+    // never meet, because the engine's back-face cull keeps only one of them.
+    std::set<std::array<std::uint32_t, 13>> quads;
+    std::set<std::array<std::uint32_t, 10>> tris;
     std::vector<std::uint8_t> done;
 
     void resolve(const omk::Geometry* g, std::size_t dstart, std::size_t dcount, bool writes,
@@ -63,6 +66,15 @@ struct Reference {
         const auto pos = [&](std::size_t c) {
             const auto& p = g->corners[c]; return P{bits(p.x), bits(p.y), bits(p.z)};
         };
+        const auto side = [&](std::size_t c0) -> std::uint32_t {
+            if (g->cornerCull.size() != g->corners.size() || !g->cornerCull[c0]) return 0;
+            const auto& a = g->corners[c0]; const auto& b = g->corners[c0 + 1];
+            const auto& d = g->corners[c0 + 2];
+            const float ux = b.x - a.x, uy = b.y - a.y, uz = b.z - a.z;
+            const float vx = d.x - a.x, vy = d.y - a.y, vz = d.z - a.z;
+            const float nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+            return nx * 0.5773f + ny * 0.6213f + nz * 0.5303f > 0.0f ? 1u : 2u;
+        };
         const std::size_t t0 = dstart / 3, t1 = std::min(ntri, (dstart + dcount) / 3);
         for (std::size_t tri = t0; tri < t1; ++tri) {
             if (t.done[tri]) continue;
@@ -72,8 +84,9 @@ struct Reference {
             if (quad) {
                 std::array<P, 4> ps{pos(c), pos(c + 1), pos(c + 2), pos(c + 5)};
                 std::sort(ps.begin(), ps.end());
-                std::array<std::uint32_t, 12> key;
+                std::array<std::uint32_t, 13> key;
                 for (int k = 0; k < 4; ++k) for (int j = 0; j < 3; ++j) key[3 * k + j] = ps[k][j];
+                key[12] = side(c);
                 t.done[tri] = t.done[tri + 1] = 1;
                 if (t.quads.count(key)) { losers.push_back(tri); losers.push_back(tri + 1); }
                 else if (writes) t.quads.insert(key);
@@ -81,8 +94,9 @@ struct Reference {
             } else {
                 std::array<P, 3> ps{pos(c), pos(c + 1), pos(c + 2)};
                 std::sort(ps.begin(), ps.end());
-                std::array<std::uint32_t, 9> key;
+                std::array<std::uint32_t, 10> key;
                 for (int k = 0; k < 3; ++k) for (int j = 0; j < 3; ++j) key[3 * k + j] = ps[k][j];
+                key[9] = side(c);
                 t.done[tri] = 1;
                 if (t.tris.count(key)) losers.push_back(tri);
                 else if (writes) t.tris.insert(key);

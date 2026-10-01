@@ -23,12 +23,32 @@ inline std::uint32_t bits(float f) {
 // is injective mod 2^32, so two corners at one position compare equal exactly
 // when their classes do too. (`samePos`, the quad PAIRING, stays positional:
 // a quad's two triangles are consecutive faces of one mesh.)
-inline P posOf(const Geometry& g, std::size_t c) {
+// THE FACE'S SIDE, folded into the y bits the same way (2026-10-01). Two
+// SINGLE-SIDED faces on one position set with OPPOSITE windings - the two
+// sides of a shop sign - never compete: the engine's back-face cull
+// (`Render_SubmitMesh`, `geom3do.h` kTwoSided) keeps exactly one of them from
+// any viewpoint, so neither may claim the other, or the face that is drawn
+// can lose to the one that is culled and the sign draws nothing. `faceClass`
+// is 0 for a two-sided face - both its windings are drawn, and the tie stands
+// - and otherwise 1 or 2 by the side its normal points to against a fixed
+// generic direction, which a reversed twin's normal always points away from.
+inline std::uint32_t faceClass(const Geometry& g, std::size_t c0) {
+    if (g.cornerCull.size() != g.corners.size() || !g.cornerCull[c0]) return 0;
+    const auto& a = g.corners[c0];
+    const auto& b = g.corners[c0 + 1];
+    const auto& c = g.corners[c0 + 2];
+    const float ux = b.x - a.x, uy = b.y - a.y, uz = b.z - a.z;
+    const float vx = c.x - a.x, vy = c.y - a.y, vz = c.z - a.z;
+    const float nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    return nx * 0.5773f + ny * 0.6213f + nz * 0.5303f > 0.0f ? 1u : 2u;
+}
+
+inline P posOf(const Geometry& g, std::size_t c, std::uint32_t side) {
     const auto& p = g.corners[c];
     std::uint32_t z = bits(p.z);
     if (c < g.tieClass.size())
         z ^= static_cast<std::uint32_t>(g.tieClass[c]) * 0x9E3779B1u;
-    return P{bits(p.x), bits(p.y), z};
+    return P{bits(p.x), bits(p.y) ^ side * 0x85EBCA77u, z};
 }
 
 inline bool samePos(const Geometry& g, std::size_t a, std::size_t b) {
@@ -93,9 +113,10 @@ inline bool sameKeyP(const P* x, const P* ps, int n) {
 // triangle, and c+5 as the fourth corner of a quad.
 inline int unitKeyOf(const Geometry& g, std::uint32_t tri, bool quad, P* ps) {
     const std::size_t c = 3 * static_cast<std::size_t>(tri);
-    ps[0] = posOf(g, c); ps[1] = posOf(g, c + 1); ps[2] = posOf(g, c + 2);
+    const std::uint32_t side = faceClass(g, c);
+    ps[0] = posOf(g, c, side); ps[1] = posOf(g, c + 1, side); ps[2] = posOf(g, c + 2, side);
     if (!quad) return 3;
-    ps[3] = posOf(g, c + 5);
+    ps[3] = posOf(g, c + 5, side);
     return 4;
 }
 
@@ -291,12 +312,15 @@ void DepthTie::walkFlat(const Geometry& g, std::size_t start, std::size_t count,
         const std::size_t c = 3 * tri;
         const bool quad = tri + 1 < t1 && !done_[tri + 1] && pairsAsQuad(g, tri);
         if (quad) {
-            const P ps[4] = {posOf(g, c), posOf(g, c + 1), posOf(g, c + 2), posOf(g, c + 5)};
+            const std::uint32_t side = faceClass(g, c);
+            const P ps[4] = {posOf(g, c, side), posOf(g, c + 1, side), posOf(g, c + 2, side),
+                             posOf(g, c + 5, side)};
             done_[tri] = done_[tri + 1] = 1;
             if (claimedOrClaim(quads_, ps)) { losers.push_back(tri); losers.push_back(tri + 1); }
             ++tri;
         } else {
-            const P ps[3] = {posOf(g, c), posOf(g, c + 1), posOf(g, c + 2)};
+            const std::uint32_t side = faceClass(g, c);
+            const P ps[3] = {posOf(g, c, side), posOf(g, c + 1, side), posOf(g, c + 2, side)};
             done_[tri] = 1;
             if (claimedOrClaim(tris_, ps)) losers.push_back(tri);
         }
