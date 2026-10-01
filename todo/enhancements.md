@@ -23,6 +23,8 @@ measures the enhancement's own property on the GPU, shown to fail.
 | 8 | **the SETS receive the lights too.** Held back deliberately - it overrides authored art; see below | `lighting = sets` | not recommended |
 | 9 | **supersampling**: render N times larger each way and average down. Reaches the CUTOUT edges MSAA never looks at, and the texture aliasing it cannot touch either | `supersampling = N` / `--ssaa N` | **done 2026-09-09**; `engine: supersampling` |
 | 10 | **the shoot radar in every arena**: shoot mode's minimap wherever the area ships a radar file. The game shows it only when a script's op 146 turns it on - bare in the Archives, and in the seven other arenas only for object 980, which nothing in the game gives (`ui/radar.h`, `todo/shoot-mode.md` 8.3) | `radar = always` / `--radar always` | **done 2026-09-10**; `engine: shoot radar` |
+| 11 | **60 fps**: the viewer's 30 Hz pacer lifted. The ORIGINAL has no cap at all - a vsynced `Flip`, a delta of `30 / fps` - so this is what the 1999 game did on a fast machine; it is listed here because the port's default stays 30. The frame-locked sites it exposes are fixed first, at every rate (`todo/sixty-fps.md`) | `framerate = N` / `--fps N` | planned 2026-10-01 |
+| 12 | **bodies smoothed between keys**: a pose slerped from key `k` to `k+1` by the frame's fraction. The engine TRUNCATES (`Anim_ApplyNodeFrame`'s `_ftol`), so at 60 its bodies glide on fractional root motion while the pose steps at 30 - this is the part the original never had | `animation = smooth` / `--smooth-anim` | planned 2026-10-01 |
 
 ## Row 4 - what lifting the clip is actually worth
 
