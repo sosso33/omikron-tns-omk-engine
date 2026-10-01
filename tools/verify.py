@@ -15671,9 +15671,17 @@ def c_engine_gpu_present():
         return (len(shootStats),), (1,), "the shoot phase's gpu present line - its log changed"
     keptBy = tuple((why.strip(), int(cnt)) for why, cnt in
                    re.findall(r" ([a-z ]+?) (\d+),", shootStats[0][2]))
+    # THE SHOOT PHASE'S COUNTS re-baselined 2026-10-01, bisected to `649df20`
+    # (2026-09-21, the Vita's G6 present): a fade became a gate only while it
+    # would CHANGE a pixel - the black fade's held band at 255 and a colour
+    # fade at weight 0 leave the picture as it is - so 177 more of the first
+    # 240 frames go to the GPU: 180 there, the black fade holding 50 and the
+    # colour fade 10, where `running()` held 226 and 11. Every one of the 180
+    # still compares equal to the CPU composite (the last element, 0), which
+    # is the claim; the counts say the gates were taken.
     return (len(runs), probeBad, tuple(int(x) for x in ver[0]), tuple(int(x) for x in stats[0]),
             (int(shootStats[0][0]), int(shootStats[0][1])), keptBy, shootDiffers), \
-        (17, 0, (60, 0, 0), (90, 90), (3, 240), (("black fade", 226), ("colour fade", 11)), 0), \
+        (17, 0, (60, 0, 0), (90, 90), (180, 240), (("black fade", 50), ("colour fade", 10)), 0), \
         "present_probe runs and their mismatched pixels (every colour x 16 dither cells, " \
         "and the dither off); then the street: frames compared by frame 60 and how many " \
         "differ from the CPU composite (and in how many pixels), and frames that stayed " \
