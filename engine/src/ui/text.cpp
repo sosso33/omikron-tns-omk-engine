@@ -326,7 +326,20 @@ void TextLayout::drawGlyphScaled(Surface& dst, int pen, int top, const Glyph& gl
                 const float ax = fx - x0, ay = fy - y0;
                 const float v = (at(x0, y0) * (1 - ax) + at(x0 + 1, y0) * ax) * (1 - ay) +
                                 (at(x0, y0 + 1) * (1 - ax) + at(x0 + 1, y0 + 1) * ax) * ay;
-                c = static_cast<int>(v + 0.5f);
+                // THE EDGE SHARPENED (a reader, 2026-10-02: "a little blurry").
+                // A bilinear sample spreads each glyph edge over one TEXEL,
+                // which at 4.5x is four or five screen pixels of ramp. The
+                // interpolated coverage still says WHERE the contour is - it
+                // crosses half at the edge - so it is pushed through a curve
+                // `scale` times steeper about 0.5 and smoothstepped: the
+                // contour keeps its interpolated shape and the transition
+                // narrows to about one screen pixel. What distance-field
+                // fonts do with a field; here the coverage stands in for one.
+                const float k = static_cast<float>(num_) / static_cast<float>(den_);
+                float t = (v / 31.0f - 0.5f) * k + 0.5f;
+                t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+                t = t * t * (3.0f - 2.0f * t);
+                c = static_cast<int>(t * 31.0f + 0.5f);
             }
             if (!c) continue;
             c &= 31;
