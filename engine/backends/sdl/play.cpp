@@ -7283,7 +7283,17 @@ int main(int argc, char** argv) {
                                     mo.hasFrom ? "param 5 set: a displacement"
                                                : "param 5 zero: the sample OUTRIGHT");
                     }
-                    p.q = omk::Quatf{mo.quat[0], mo.quat[1], mo.quat[2], mo.quat[3]};
+                    // THE CONJUGATE, the engine's sense (2026-10-02). `Path_Sample`
+                    // hands `sub_437160` `Matrix3x3_FromQuaternion(q)` - the
+                    // standard R(q), row-major - and every vertex the node
+                    // carries is turned by its TRANSPOSE: `sub_4947F0` computes
+                    // `m[0]x + m[3]y + m[6]z`, as `Matrix3x3_RotateVector` does.
+                    // So a path's key turns the mesh by conj(q). Taking q as it
+                    // stands turned Kay'l's chest's two lid pieces the wrong
+                    // way about their centres, so they crossed in a V instead
+                    // of opening on the hinge (a reader, 2026-10-01). The same
+                    // rule a scene clip's root obeys (CLAUDE.md 6).
+                    p.q = omk::Quatf{mo.quat[0], -mo.quat[1], -mo.quat[2], -mo.quat[3]};
                     p.rotated = mo.rotated;
                 }
                 std::sort(patches.begin(), patches.end(),

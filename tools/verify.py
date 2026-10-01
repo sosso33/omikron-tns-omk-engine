@@ -18088,6 +18088,61 @@ def c_engine_camera_collision():
          "collision pass and with it")
 
 
+def c_engine_chest_lid():
+    r"""`engine/`: a set mesh moved along a path turns by the CONJUGATE of the
+    path's quaternion - Kay'l's chest opens on its hinge.
+
+    A reader, 2026-10-01: opening the chest in Kay'l's flat, "the panel should
+    not be rotated this way" - the two lid pieces, `Ap01Coff02` and
+    `Ap01Coff03`, crossed in a V. AREA 237 record 16 plays SCX object 0x7f,
+    whose `Script_MoveObjectOnPath` samples a `.3DP` path: `Path_Sample` gives
+    `sub_437160` `Matrix3x3_FromQuaternion(q)`, the standard R(q) stored row
+    by row, and `sub_4947F0` turns every vertex the node carries by its
+    TRANSPOSE (`m[0]x + m[3]y + m[6]z`, as `Matrix3x3_RotateVector` does). So
+    the mesh turns by conj(q); the port applied q. The pieces turn about x by
+    38.7 and 96.6 degrees about their centres, so the sense is the whole
+    difference between a lid on its hinge and two panels folded together.
+
+    Opens the chest from address 683 ('Coffre') with the committed
+    `traces/games-resto.bin` slot 0 and reads where each piece is DRAWN
+    (`OMK_MESH_AT`, the corners handed to the renderer): Coff02's centroid z
+    and Coff03's y. With the conjugate -680.8 and 1037.5; with q as it stands
+    -682.3 and 1041.3. The door checks (`shop door`, `tunnel doors`, `lift
+    doors`, `cupboard take`, `slider door`, `node rest`, `scene steps`) are
+    unchanged - they measure travel, not a turn's sense.
+
+    TIER: the sense is read from the three functions above (6); the picture is
+    the reader's report against the render, not a capture of the original.
+
+    SHOWN TO FAIL: the conjugate taken out in play.cpp, play.o and omk-play
+    deleted - (-682.3, 1041.3).
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    save = os.path.join(ROOT, "traces", "games-resto.bin")
+    if not (os.path.isdir(eng) and os.path.exists(save)):
+        return ("no data",), ("data",), "needs traces/games-resto.bin"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    got = []
+    for mesh, axis in (("Ap01Coff02", 2), ("Ap01Coff03", 1)):
+        r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"), "--software",
+                            "--res", "640x480", "--nofmv", "--no-crowd", "--save", save,
+                            "--slot", "0", "--area", "237", "--address", "683",
+                            "--hold", "k*40,k28*2,k*200", "--frames", "260"],
+                           capture_output=True, encoding="latin-1",
+                           env=dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_MESH_AT=mesh))
+        rows = re.findall(r"mesh at: .*?drawn ([-\d.]+) ([-\d.]+) ([-\d.]+)", r.stdout)
+        if not rows:
+            return ("no mesh-at line for %s" % mesh,), ("mesh at",), "OMK_MESH_AT's line"
+        got.append(round(float(rows[-1][axis]), 1))
+    return tuple(got), (-680.8, 1037.5), \
+        "where the open chest's lid pieces are drawn: Ap01Coff02's centroid z and " \
+        "Ap01Coff03's y (q unconjugated: -682.3, 1041.3)"
+
+
 def c_engine_dialogue_stands_still():
     r"""`engine/`: in a conversation the player's body does NOT move - a clip's
     root motion is not applied in ACTOR_STATE 16 / 17.
@@ -39997,6 +40052,7 @@ SLOW = [
     ("engine: back-face cull", c_engine_backface_cull, "ASSETS 4b; o3de/geom3do.h kTwoSided"),
     ("engine: lift lintel", c_engine_lift_lintel, "actor/walk.cpp slide; todo/play-test.md"),
     ("engine: dialogue stands still", c_engine_dialogue_stands_still, "actor/player.cpp; todo/play-test.md"),
+    ("engine: chest lid", c_engine_chest_lid, "backends/sdl/play.cpp motion; docs/ASSETS.md"),
     ("engine: tunnel door walk", c_engine_tunnel_door_walk, "todo/collision-scenes-transitions"),
     ("engine: arrival wait", c_engine_arrival_wait, "todo/omk-play"),
     ("engine: linked rings", c_engine_linked_rings, "todo/omk-play"),
