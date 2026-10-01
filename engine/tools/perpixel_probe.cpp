@@ -133,20 +133,33 @@ int main() {
     const int cx = W / 2, cy = H / 2;
     const int wantCentre = static_cast<int>(expect(0.0f, 0.0f) * 63.0f + 0.5f);
 
+    // OVER THE QUAD ONLY: the pixels of the middle scanline the per-vertex
+    // quad covers, four in from its edges. This measured x 24..232 until
+    // 2026-10-01 - wider than the quad, which spans about 43..213 at this
+    // framing - and passed only while the per-vertex draw came out BLACK: a
+    // destroyed geometry's buffer was reused for the next one at the same
+    // address, so the second quad drew the first's black corners and its
+    // spread read 0. Releasing a destroyed geometry (optimization step 26,
+    // `1ff5119`) drew it lit, the background came into the window, and the
+    // check went red on a measurement that had never measured the quad.
+    int x0 = -1, x1 = -1;
+    for (int x = 0; x < W; ++x)
+        if (green(vert, x, cy) > 0) { if (x0 < 0) x0 = x; x1 = x; }
+    x0 += 4; x1 -= 4;
     const auto spread = [&](const omk::Surface& s) {
         int lo = 64, hi = -1;
-        for (int x = 24; x < W - 24; ++x) {
+        for (int x = x0; x <= x1; ++x) {
             const int g = green(s, x, cy);
             lo = std::min(lo, g); hi = std::max(hi, g);
         }
-        return hi - lo;
+        return x0 < x1 ? hi - lo : -1;
     };
     std::printf("device %s\n", omk::vulkanDeviceName(r));
     std::printf("perpixel at the centre %d, the law says %d, delta %d\n",
                 green(pix, cx, cy), wantCentre,
                 std::abs(green(pix, cx, cy) - wantCentre));
-    std::printf("spread across the middle scanline: perpixel %d, pervertex %d\n",
-                spread(pix), spread(vert));
+    std::printf("spread across the middle scanline: perpixel %d, pervertex %d (x %d..%d)\n",
+                spread(pix), spread(vert), x0, x1);
     delete r;
     return 0;
 }

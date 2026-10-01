@@ -6532,7 +6532,10 @@ def c_engine_perpixel_lighting():
         return ("no reading",), ("a reading",), r.stdout.strip()[:120]
     delta = int(m.group(2))
     perPixel, perVertex = int(sp.group(1)), int(sp.group(2))
-    got = (defaultOff, delta, perPixel > 20, perVertex < 5)
+    # Over the QUAD (the probe's window since 2026-10-01): per pixel the light
+    # falls 51 -> 40 across it, per vertex it is flat. The old > 20 was set on
+    # a window that took in the black background beside the quad.
+    got = (defaultOff, delta, perPixel >= 8, perVertex < 2)
     want = (True, 0, True, True)
     return got, want, ("the default is per vertex in the source; the shader matches the "
                        "law at the centre to %d; and along a scanline per pixel varies by "
@@ -26471,7 +26474,13 @@ def c_engine_unlimited_clip():
                "omk-play must build (it needs SDL, so this SKIPS without it)"
 
     tmp = tempfile.mkdtemp()
-    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    # THE DISTANCE TEST ALONE. Since optimization step 28 j (2026-09-30) the
+    # walk also drops meshes outside the view's SIDE planes, as `sub_48D3B0`
+    # does, and those join the culled count - 768 of them at 200 m here - so
+    # the counts below would measure two culls at once. `OMK_NO_SIDECULL=1`
+    # leaves the distance alone to be counted; the pixels are the same either
+    # way (step 28 j: byte-identical with and without).
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_NO_SIDECULL="1")
     try:
         def run(flags, tag):
             out = os.path.join(tmp, tag + ".bin")

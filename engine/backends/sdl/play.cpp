@@ -17548,7 +17548,12 @@ int main(int argc, char** argv) {
                     phSpan["ped light"] += j.tLight;
                 }
 
-                if (pedLive && (pedTold < 0 || n - pedTold >= 300)) {
+                // ...and on a headless run's LAST frame, which is the one its
+                // `--dump` shows: since the side planes (optimization step 28 j)
+                // a frame-0 count can be all `outside the view` while the frame
+                // a check compares has walkers on it
+                if (pedLive && (pedTold < 0 || n - pedTold >= 300 ||
+                                (frames > 0 && n + 1 == static_cast<long>(frames)))) {
                     pedTold = n;
                     int pedGpu = 0;
                     for (const auto& up : pedStaged) pedGpu += up->drawn && up->gpu;
