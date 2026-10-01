@@ -6757,13 +6757,21 @@ def c_enhance_all():
     key BEATS `all`, so `all = max` with `anisotropy = 4` gives 4. Without
     that, "all" would be an override and a config would stop meaning what it
     says.
+
+    AND ONE IS LEFT OUT ON PURPOSE (2026-10-01, the reader): SUPERSAMPLING.
+    At 4K on an M3 every other enhancement together held 120 fps and
+    supersampling alone took it to 21.5, so it is asked for by name only. The
+    check names it in `SEPARATE`, asserts `all = max` leaves it at 1 (off),
+    and that `supersampling = 4` beside `all = max` still gives 4 - so leaving
+    it out is a decision the check states, not an enhancement it forgot.
     """
     eng = os.path.join(ROOT, "engine")
     if not os.path.isdir(eng):
         return ("skipped",), ("skipped",), "engine/ absent"
     cpp = open(os.path.join(eng, "src", "platform", "settings.cpp"), encoding="utf-8").read()
     hdr = open(os.path.join(eng, "src", "platform", "settings.h"), encoding="utf-8").read()
-    keys = set(re.findall(r'k(?:Enhancements),\s*"([^"]+)"', cpp)) - {"all"}
+    SEPARATE = {"supersampling"}   # asked for by name only (the docstring)
+    keys = set(re.findall(r'k(?:Enhancements),\s*"([^"]+)"', cpp)) - {"all"} - SEPARATE
     body = hdr[hdr.index("inline void applyMaxEnhancements"):]
     body = body[:body.index("\n}")]
     # `take(` and the bool arm `takeFlag(` - one enhancement is a switch
@@ -6783,6 +6791,7 @@ def c_enhance_all():
         return dict((m[0], int(m[1])) for m in re.findall(r"^enh (\S+) (\d+)", out, re.M))
     allMax = run("[Enhancements]\nall = max\n")
     override = run("[Enhancements]\nall = max\nanisotropy = 4\n")
+    named_ss = run("[Enhancements]\nall = max\nsupersampling = 4\n")
     # the tops, read out of `settings.h` rather than repeated here, so raising
     # one moves the assertion with it
     tops = dict(re.findall(r"kMax(\w+)\s*=\s*(\d+)", hdr))
@@ -6793,19 +6802,21 @@ def c_enhance_all():
     # sixth, so the count halves passed while its VALUE was never asserted.
     named = {"aa": "AntiAliasing", "filter": "TextureFilter", "aniso": "Anisotropy",
              "shadowquality": "ShadowQuality", "lighting": "Lighting",
-             "supersampling": "Supersample", "uiscaling": "UiScaling",
+             "uiscaling": "UiScaling",
              "clipdistance": "UnlimitedDraw", "radar": "Radar",
              "framerate": "FrameRate", "animation": "Animation"}
-    reported = {k for k in allMax if k != "all"}
+    reported = {k for k in allMax if k != "all"} - SEPARATE
     covered = reported == set(named)
     want = {k: int(tops[v]) for k, v in named.items() if v in tops}
     atMax = bool(want) and all(allMax.get(k) == v for k, v in want.items())
-    got = (len(keys), takes, covered, atMax, allMax.get("all"), override.get("aniso"))
-    return got, (len(keys), len(keys), True, True, 1, 4), \
-           ("the %d `[Enhancements]` keys besides `all`, the fields "
+    got = (len(keys), takes, covered, atMax, allMax.get("all"), override.get("aniso"),
+           allMax.get("supersampling"), named_ss.get("supersampling"))
+    return got, (len(keys), len(keys), True, True, 1, 4, 1, 4), \
+           ("the %d `[Enhancements]` keys besides `all` and supersampling, the fields "
             "`applyMaxEnhancements` sets, that every enhancement the probe reports is "
-            "one this check names, that one `all = max` puts every one at its top, and "
-            "that a specific key still beats it (anisotropy 4)" % len(keys))
+            "one this check names, that one `all = max` puts every one at its top, "
+            "that a specific key still beats it (anisotropy 4), and that `all = max` "
+            "leaves supersampling OFF (1) while `supersampling = 4` beside it gives 4" % len(keys))
 
 
 

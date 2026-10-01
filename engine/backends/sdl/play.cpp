@@ -1705,9 +1705,11 @@ int main(int argc, char** argv) {
 "                   is for comparing two frames, not for play\n"
 "  --ssaa N         ENHANCEMENT: render N times larger each way and average it\n"
 "                   down - 1 off, 2 or 4. Reaches the CUTOUT edges (grilles,\n"
-"                   railings, signs) that MSAA never looks at; Vulkan only\n"
-"  --enhance-all    every ENHANCEMENT as high as it goes - none of them is what\n"
-"                   the original drew; a specific flag still wins\n"
+"                   railings, signs) that MSAA never looks at; Vulkan only.\n"
+"                   NOT part of --enhance-all: it costs the most by far\n"
+"  --enhance-all    every ENHANCEMENT as high as it goes, BUT supersampling -\n"
+"                   none of them is what the original drew; a specific flag\n"
+"                   still wins\n"
 "  --lighting pervertex|perpixel  ENHANCEMENT: the engine's own light law per\n"
 "                   fragment, and every character receives it rather than the\n"
 "                   crowd alone; Vulkan only (default pervertex)\n"
@@ -2638,7 +2640,9 @@ int main(int argc, char** argv) {
     const int aaSamples = enh(aaFlag, settings.antiAliasing, omk::kMaxAntiAliasing);
     const int texFilter = enh(filterFlag, settings.textureFilter, omk::kMaxTextureFilter);
     const int texAniso  = enh(anisoFlag, settings.anisotropy, omk::kMaxAnisotropy);
-    const int ssaa      = enh(ssaaFlag, settings.supersample, omk::kMaxSupersample);
+    // Supersampling is NOT under `--enhance-all` (settings.h, kMaxSupersample):
+    // only `--ssaa` or `supersampling =` turn it on.
+    const int ssaa      = ssaaFlag >= 0 ? ssaaFlag : settings.supersample;
     // The RADAR (`ui/radar.h`): the game draws shoot mode's minimap only when
     // a script's op 146 has turned it on; `always` draws it in every shoot
     // phase whose area has a radar file.
@@ -2672,13 +2676,14 @@ int main(int argc, char** argv) {
                     "640x480, where nothing stretches\n");
     if (enhanceAll || settings.enhanceAll)
         std::printf("enhancements: all on - %dx MSAA, %s filtering, anisotropy %d, "
-                    "%s shadows, %s lighting, %dx supersampling, %s interface, %s draw distance. As high as each goes "
+                    "%s shadows, %s lighting, %s interface, %s draw distance. As high as each goes "
                     "unless a specific "
                     "setting said otherwise; none of it is what the original drew, and "
-                    "the device reduces what it cannot meet.\n",
+                    "the device reduces what it cannot meet. Supersampling is separate "
+                    "(--ssaa N / supersampling = N): %dx\n",
                     aaSamples, omk::textureFilterName(texFilter), texAniso,
-                    omk::shadowQualityName(shadowQuality), omk::lightingName(lighting), ssaa,
-                    omk::uiScalingName(uiScaling), unlimitedClip ? "unlimited" : "capped");
+                    omk::shadowQualityName(shadowQuality), omk::lightingName(lighting),
+                    omk::uiScalingName(uiScaling), unlimitedClip ? "unlimited" : "capped", ssaa);
     // The clip half of the line reads differently when it is unlimited:
     // "0 m = inf in" is arithmetic rather than a report.
     char clipText[128];

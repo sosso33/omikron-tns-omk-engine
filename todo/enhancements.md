@@ -11,7 +11,7 @@ measures the enhancement's own property on the GPU, shown to fail.
 
 | # | enhancement | key / flag | status |
 |---|---|---|---|
-| — | **all of them at once**, each as high as it goes. A BASE: any specific key or flag beats it, whatever the order, and it touches nothing outside `[Enhancements]` | `all = max` / `--enhance-all` | **done 2026-09-09**; `enhance all` |
+| — | **all of them at once** but supersampling (row 9, asked for by name only since 2026-10-01), each as high as it goes. A BASE: any specific key or flag beats it, whatever the order, and it touches nothing outside `[Enhancements]` | `all = max` / `--enhance-all` | **done 2026-09-09**; `enhance all` |
 | 0 | anti-aliasing (MSAA 2/4/8) | `antialiasing = N` / `--aa N` | **done 2026-09-08**, `ed349ca`; `engine: anti-aliasing` |
 | 1 | bilinear texture filtering. The colour key (flag 0x800, black) travels in the texture's ALPHA so a filtered sample is premultiplied: discard below 0.5, divide by alpha above - no dark fringe, and the nearest path is bit-identical to before | `texturefiltering = bilinear` / `--filter bilinear` | **done 2026-09-08**; `engine: texture filter`; judged by eye on Aapden's floor stain |
 | 2 | mipmaps (trilinear) and anisotropic filtering, generated at upload; the alpha key averages correctly into the chain | `texturefiltering = trilinear`, `anisotropy = N` / `--filter trilinear --anisotropy N` | **done 2026-09-08**; `engine: mipmaps`; the stain judged by eye at 16x |
@@ -405,6 +405,16 @@ everything is on. So the check compares the two directly - every key
 by `applyMaxEnhancements` - and is shown to fail by adding a key that is not.
 It also asserts the precedence in the direction that matters: `all = max` with
 `anisotropy = 4` gives 4, so a config still means what it says.
+
+**Supersampling is NOT in it (2026-10-01, the reader).** At 4K on an M3,
+everything else together held 120 fps (the vsync cap) and supersampling alone
+took it to 8.6, then to 21.5 once its resolve moved to the GPU
+(`todo/optimization.md` "The 4K benchmark"): 4x4 on top of 8x MSAA is ~128
+samples a pixel for edges that 4K pixels and MSAA already smooth. So it is
+turned on by name only - `supersampling = N` or `--ssaa N`, which beside
+`all = max` still gives N. `verify.py: enhance all` names it as the one left
+out and asserts both halves; putting it back in `applyMaxEnhancements` turns
+the check red.
 
 ## Row 9 - supersampling, DONE 2026-09-09
 

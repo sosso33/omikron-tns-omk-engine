@@ -306,9 +306,11 @@ inline constexpr int kMaxTextureFilter = 2;   // trilinear
 inline constexpr int kMaxAnisotropy    = 16;
 inline constexpr int kMaxShadowQuality = 2;   // mapped
 inline constexpr int kMaxLighting      = 1;   // per pixel
-// 4 means SIXTEEN times the fill. It is the top the parser accepts and what
-// `all = max` asks for, and the report line says so, because a reader who
-// turns everything up should be told what they turned up.
+// 4 means SIXTEEN times the fill. It is the top the parser accepts - and it is
+// NOT part of `all = max` (2026-10-01, the reader): at 4K it cost 120 -> 21.5
+// fps on an M3 for an edge that 4K pixels and MSAA already smooth, while every
+// other enhancement together held 120. So it is asked for by name only,
+// `supersampling = N` or `--ssaa N`.
 inline constexpr int kMaxSupersample   = 4;
 inline constexpr int kMaxUiScaling     = 1;   // linear
 inline constexpr int kMaxUnlimitedDraw = 1;   // the cap lifted
@@ -339,7 +341,7 @@ inline void applyMaxEnhancements(Settings& s) {
     take(s.anisotropy,    kMaxAnisotropy,    s.anisotropySource);
     take(s.shadowQuality, kMaxShadowQuality, s.shadowQualitySource);
     take(s.lighting,      kMaxLighting,      s.lightingSource);
-    take(s.supersample,   kMaxSupersample,   s.supersampleSource);
+    // NOT `s.supersample`: the one enhancement asked for by name only (above).
     take(s.uiScaling,     kMaxUiScaling,     s.uiScalingSource);
     takeFlag(s.unlimitedDrawDistance, kMaxUnlimitedDraw, s.unlimitedDrawSource);
     takeFlag(s.radarAlways, kMaxRadar, s.radarSource);
