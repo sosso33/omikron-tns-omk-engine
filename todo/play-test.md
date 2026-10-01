@@ -208,6 +208,17 @@ set mesh (`Script_MoveObjectOnPath`'s path keys), so a door, shutter or lid
 that SWINGS anywhere else is worth a look - it should swing the way the
 original does. Sliding doors are unaffected.
 
+## 17. THE TRAINING MACHINE in Kay'l's flat (2026-10-02)
+
+```
+build/omk-play ~/Documents/omk/fr ../tables --save ../traces/games-resto.bin --slot 0 \
+    --area 237 --address 680
+```
+Press action at the console, then 1 and ENTER on the keypad: the virtual
+partner should fight you where you see him - blows land on the body in front
+of you, not on air. Any melee opponent no scene program moved before the
+fight (most of them) took the same fault.
+
 ## What is NOT fixed, so do not report it as new
 
 * **The lift arrival is still black** and the camera is inside the lift-car

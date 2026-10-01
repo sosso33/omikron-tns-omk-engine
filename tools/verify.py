@@ -12435,6 +12435,10 @@ def c_engine_fight_letterbox():
     player's, and with the pair properly separated the row is set end to end.
     The figure is a black-frame guard, not a framing assertion, so a move of
     five pixels changes nothing it is there to catch.
+    **2026-10-02: 593 -> 594**, one pixel, after a day that changed what every
+    frame draws (the back-face cull, the 2.0 near plane, the path rotations'
+    sense). Not bisected, by the reader's rule on drift; the training-partner
+    fix of that day was ruled out (it reads 594 with that fix taken out too).
 
     SHOWN TO FAIL: drop `if (holdEditCam && fightRun.active)` from the
     clear-list and frame 500 reads 0 lit on both edge rows.
@@ -12491,7 +12495,7 @@ def c_engine_fight_letterbox():
         return ("no render",), ("3 frames",), "all three frames must render"
     return (rows[300][0], rows[300][2], rows[500][0], rows[500][1], rows[500][2],
             rows[530][0], rows[530][2]), \
-           (0, 0, 600, 593, 600, 0, 0), \
+           (0, 0, 600, 594, 600, 0, 0), \
            ("the approach cutscene keeps its bars and the FIGHT does not - "
             "the middle row is quoted so a black frame cannot pass by "
             "having no bars either. 625 of 640 until " + "the melee AI's dice are the CRT's generator since 2026-09-24 (not the host's std::rand()), and on them the robber's first move is a throw that ends the fight at +30")
@@ -18112,7 +18116,7 @@ def c_engine_training_partner():
     the record put back (the drawn body never left -852).
 
     SHOWN TO FAIL: `!fightOwns` taken out of the placement guard, play.o and
-    omk-play deleted.
+    omk-play deleted - a gap of 290.6.
     """
     import subprocess
     eng = os.path.join(ROOT, "engine")
