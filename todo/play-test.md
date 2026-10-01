@@ -174,7 +174,10 @@ is no longer the back of a wall; the shot from inside the vivarium shows ONE
 layer of yellow glass, not a wash; the lift's arrival in the security centre
 is no longer black. **Not yet seen by anyone: the line cameras that started
 INSIDE Kay'l's head** - the cull explains them (from inside a head every face
-points away), but no run here put the lens in his head. Also worth a look
+points away), but no run here put the lens in his head. **Update 2026-10-02**: the head in the FIRST line's shot
+(the back of his head, seen on Vulkan) was him SLIDING 2.8 units into the camera after walking into
+Telis's zone - a clip's root motion the engine never applies in a conversation; fixed (`6c623fc`).
+Walk INTO the zone (do not load straight into it) to see the case. Also worth a look
 anywhere: a two-sided sign now shows each side's own advert, and water should
 still be visible from above and below. All three renderers (software, Vulkan,
 GLES) cull. `OMK_NO_CULL=1` draws both sides on the software renderer, to
