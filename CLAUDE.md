@@ -1173,7 +1173,8 @@ the game's stays that way** (the reader's rule, 2026-09-08): the original
 sets ANTIALIAS off and samples POINT (ASSETS 4), and a replica judged
 against it must draw what it drew unless told otherwise.
 `todo/enhancements.md` is the list.
-`--shadow-quality classic|fitted|mapped`, `--lighting perpixel` and
+`--shadow-quality classic|fitted|mapped`, `--lighting perpixel`,
+`--text-scaling fit` (the original never enlarges glyphs) and
 `--ssaa N` are the rest of them, and `--enhance-all` (or `all = max`) turns
 every one to its top in one word - except supersampling, which costs the most
 by far and is asked for by name only (`--ssaa N`, 2026-10-01).

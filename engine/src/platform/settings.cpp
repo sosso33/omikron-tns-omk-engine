@@ -115,6 +115,12 @@ Settings resolveSettings(const OptionsFile& ini,
             else std::fprintf(stderr, "settings: uiscaling = %s is not a mode "
                                       "(nearest|linear) - ignored\n", w->c_str());
         }
+        if (const std::string* w = ini.find(kEnhancements, "textscaling")) {
+            const int m = textScalingMode(*w);
+            if (m >= 0) { s.textScaling = m; s.textScalingSource = Settings::Source::Ini; }
+            else std::fprintf(stderr, "settings: textscaling = %s is not a mode "
+                                      "(game|fit) - ignored\n", w->c_str());
+        }
         takeInt(kEnhancements, "anisotropy", s.anisotropy, s.anisotropySource);
         takeInt(kEnhancements, "supersampling", s.supersample, s.supersampleSource);
         if (const std::string* w = ini.find(kEnhancements, "lighting")) {

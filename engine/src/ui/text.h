@@ -235,10 +235,31 @@ public:
                 const std::vector<StyledChar>& run,
                 int clipTop = -(1 << 30), int clipBottom = 1 << 30) const;
 
+    // THE TEXT-SCALING ENHANCEMENT (`todo/enhancements.md`, `textscaling`).
+    // The original does NOT enlarge text: `I2D_ScaleX/Y` scale the layout's
+    // coordinates to the display and the glyphs stay at their native size,
+    // so at 4K a line is a sixth of what it is at 640x480. This multiplies
+    // every metric the layout hands out - advance, kerning, line height - and
+    // every glyph it draws by `num / den`, so the wrap, the alignment and
+    // every caller that positions text by `measure` / `height` move together.
+    // `filter` 1 interpolates the COVERAGE before the ramp (the `uiscaling`
+    // enhancement's linear), 0 repeats texels. 1/1 is the original and the
+    // default, and it takes exactly the old arithmetic.
+    void setGlyphScale(int num, int den, int filter) {
+        num_ = num > 0 ? num : 1; den_ = den > 0 ? den : 1; filter_ = filter;
+    }
+    bool scaled() const { return num_ != den_; }
+
 private:
+    // a native metric at the glyph scale, rounded to nearest
+    int glyphPx(int v) const { return num_ == den_ ? v : (v * num_ + den_ / 2) / den_; }
+    void drawGlyphScaled(Surface& dst, int pen, int top, const Glyph& gl,
+                         std::span<const std::byte> cov, const std::uint16_t ramp[32],
+                         int clipTop, int clipBottom) const;
     const FontTable* table_;
     std::string dir_;
     mutable std::map<char, Font> loaded_;
+    int num_ = 1, den_ = 1, filter_ = 0;
 };
 
 }  // namespace omk

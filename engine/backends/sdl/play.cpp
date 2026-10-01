@@ -1812,6 +1812,10 @@ int main(int argc, char** argv) {
 "  --clip 0         ENHANCEMENT: UNLIMITED draw distance - the option's own\n"
 "                   values stop at 200 m. The fog goes with it, its range\n"
 "                   being the clip distance; [Enhancements] clipdistance=0\n"
+"  --text-scaling M ENHANCEMENT, off by default: M = game (the original draws\n"
+"                   glyphs at their native size, so text shrinks as the\n"
+"                   display grows) or fit (glyphs scaled with the layout);\n"
+"                   [Enhancements] textscaling=M\n"
 "  --ui-scaling M   ENHANCEMENT, off by default: how the 640x480 interface is\n"
 "                   stretched to the display, M = nearest (the original's\n"
 "                   Blt) or linear; BOTH backends, since the interface is\n"
@@ -2013,6 +2017,7 @@ int main(int argc, char** argv) {
     int anisoFlag = -1;    // --anisotropy N, [Enhancements] anisotropy
     int shadowQFlag = -1;  // --shadow-quality classic|fitted|mapped, [Enhancements] shadowquality
     int uiScaleFlag = -1;  // --ui-scaling nearest|linear, [Enhancements] uiscaling
+    int textScaleFlag = -1;  // --text-scaling game|fit, [Enhancements] textscaling
     int lightingFlag = -1; // --lighting pervertex|perpixel, [Enhancements] lighting
     int ssaaFlag = -1;     // --ssaa N, [Enhancements] supersampling
     int radarFlag = -1;    // --radar game|always, [Enhancements] radar
@@ -2303,6 +2308,14 @@ int main(int argc, char** argv) {
                 return 2;
             }
         }
+        else if (a == "--text-scaling" && i + 1 < argc) {
+            textScaleFlag = omk::textScalingMode(argv[++i]);
+            if (textScaleFlag < 0) {
+                std::fprintf(stderr, "--text-scaling %s: not a mode (game|fit)\n",
+                             argv[i]);
+                return 2;
+            }
+        }
         else if (a == "--ui-scaling" && i + 1 < argc) {
             uiScaleFlag = omk::uiScalingMode(argv[++i]);
             if (uiScaleFlag < 0) {
@@ -2402,7 +2415,7 @@ int main(int argc, char** argv) {
                     "them itself and the start menu is skipped\n");
     w.loadScreens(tb + "/ui.json");
     const auto fonts = omk::FontTable::loadJson(tb + "/ui.json");
-    const omk::TextLayout lay(fonts, fr + "/FONTS");
+    omk::TextLayout lay(fonts, fr + "/FONTS");   // not const: the text-scaling enhancement
     omk::ScreenComposer comp(fs, w, lay);
     // SCREEN 35, the options (`todo/options-menu.md`): the page tree out of
     // the widget lift, the 74 rows out of `ui.json`, and the screen's own
@@ -2670,6 +2683,20 @@ int main(int argc, char** argv) {
     // a filtered stretch reaches the software renderer too.
     const int uiScaling = enh(uiScaleFlag, settings.uiScaling, omk::kMaxUiScaling);
     comp.setScaling(uiScaling);
+    // TEXT SCALING (settings.h `textScaling`): the glyphs at the smaller of the
+    // layout's two scales, so a line keeps its proportion to its box whatever
+    // the display. Re-applied wherever the display size changes.
+    const int textScaling = enh(textScaleFlag, settings.textScaling, omk::kMaxTextScaling);
+    const auto applyTextScale = [&](int w, int h) {
+        if (textScaling <= 0) { lay.setGlyphScale(1, 1, 0); return; }
+        if (w * 480 <= h * 640) lay.setGlyphScale(w, 640, uiScaling);
+        else                    lay.setGlyphScale(h, 480, uiScaling);
+    };
+    if (textScaling > 0)
+        std::printf("text scaling: fit - an ENHANCEMENT: the original draws glyphs at their "
+                    "native size whatever the display (`I2D_ScaleX/Y` move them, never "
+                    "enlarge them); here they scale with the layout%s\n",
+                    uiScaling > 0 ? ", filtered" : "");
     if (uiScaling > 0)
         std::printf("ui scaling: linear - an ENHANCEMENT the original never had "
                     "(DirectDraw's Blt takes one texel); it changes nothing at "
@@ -2699,7 +2726,8 @@ int main(int argc, char** argv) {
     std::printf("settings: %s;"
                 " crowd %d (%s); sky %d (%s), shadows %d (%s), detail %d (%s);"
                 " aa %d (%s, enhancement), filter %s (%s, enhancement),"
-                " anisotropy %d (%s, enhancement), interface %s (%s, enhancement)\n",
+                " anisotropy %d (%s, enhancement), interface %s (%s, enhancement),"
+                " text %s (%s, enhancement)\n",
                 clipText,
                 density, densityFlag ? "flag" : omk::sourceName(settings.streetActivity),
                 drawSky ? 1 : 0, skyFlag >= 0 ? "flag" : omk::sourceName(settings.sky),
@@ -2710,7 +2738,9 @@ int main(int argc, char** argv) {
                 filterFlag >= 0 ? "flag" : omk::sourceName(settings.textureFilterSource),
                 texAniso, anisoFlag >= 0 ? "flag" : omk::sourceName(settings.anisotropySource),
                 omk::uiScalingName(uiScaling),
-                uiScaleFlag >= 0 ? "flag" : omk::sourceName(settings.uiScalingSource));
+                uiScaleFlag >= 0 ? "flag" : omk::sourceName(settings.uiScalingSource),
+                omk::textScalingName(textScaling),
+                textScaleFlag >= 0 ? "flag" : omk::sourceName(settings.textScalingSource));
     if (!ini.unknown.empty()) {
         std::printf("settings: %zu key(s) under [Preferences] the engine never reads:",
                     ini.unknown.size());
@@ -3671,6 +3701,7 @@ int main(int argc, char** argv) {
     // fullscreen is a creation flag for whichever window comes up below
     front.setFullscreen(fullscreenFlag >= 0 ? fullscreenFlag != 0 : settings.fullscreen);
     comp.setDisplay(dispW, dispH);
+    applyTextScale(dispW, dispH);
     std::printf("display %dx%d (the interface is authored at 640x480 and "
                 "scaled by I2D_ScaleX/Y)\n", dispW, dispH);
 
@@ -6770,6 +6801,7 @@ int main(int argc, char** argv) {
                 dispW = nw; dispH = nh;
                 fb = omk::Surface(dispW, dispH, 0);
                 comp.setDisplay(dispW, dispH);
+                applyTextScale(dispW, dispH);
                 if (glRen) glRen->init(dispW, dispH);
                 else if (!vkRen && !worldVk && worldReady) worldSw.init(dispW, dispH);
                 front.resize(dispW, dispH);

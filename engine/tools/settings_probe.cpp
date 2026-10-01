@@ -44,6 +44,8 @@ int main(int argc, char** argv) {
                 omk::sourceName(s.supersampleSource));
     std::printf("enh uiscaling %d %s\n", s.uiScaling,
                 omk::sourceName(s.uiScalingSource));
+    std::printf("enh textscaling %d %s\n", s.textScaling,
+                omk::sourceName(s.textScalingSource));
     std::printf("enh clipdistance %d %s\n", s.unlimitedDrawDistance ? 1 : 0,
                 omk::sourceName(s.unlimitedDrawSource));
     std::printf("enh radar %d %s\n", s.radarAlways ? 1 : 0, omk::sourceName(s.radarSource));

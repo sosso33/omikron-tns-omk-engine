@@ -122,6 +122,15 @@ struct Settings {
     int    uiScaling = 0;
     Source uiScalingSource = Source::Default;
 
+    // `textscaling = game|fit`: the original scales the interface's
+    // COORDINATES to the display (`I2D_ScaleX/Y`) but draws every glyph at its
+    // native size, so text shrinks as the resolution grows - a sixth of its
+    // 640x480 size at 4K. `fit` scales the glyphs too, by the smaller of
+    // width/640 and height/480, so the text keeps its proportion to the
+    // layout (`TextLayout::setGlyphScale`). Filtered when `uiscaling` is.
+    int    textScaling = 0;
+    Source textScalingSource = Source::Default;
+
     // `radar = game|always`: shoot mode's MINIMAP (`ui/radar.h`). The game
     // shows it only when a script's op 146 turns it on - bare in the Archives
     // (AREA 63 and 67), and in the seven other arenas only when the player
@@ -264,6 +273,18 @@ inline int uiScalingMode(std::string w) {
 }
 inline const char* uiScalingName(int m) { return m <= 0 ? "nearest" : "linear"; }
 
+// The text-scaling word: 0 game (glyphs at their native size), 1 fit; -1 for
+// a word that is neither.
+inline int textScalingMode(std::string w) {
+    for (auto& c : w) c = static_cast<char>(c >= 'A' && c <= 'Z' ? c + 32 : c);
+    while (!w.empty() && (w.back() == ' ' || w.back() == '\t')) w.pop_back();
+    while (!w.empty() && (w.front() == ' ' || w.front() == '\t')) w.erase(w.begin());
+    if (w == "0" || w == "game" || w == "original" || w == "off" || w == "native") return 0;
+    if (w == "1" || w == "fit" || w == "on" || w == "scaled") return 1;
+    return -1;
+}
+inline const char* textScalingName(int m) { return m <= 0 ? "game" : "fit"; }
+
 // The radar word: 0 the game's own switch, 1 always; -1 for neither.
 inline int radarMode(std::string w) {
     for (auto& c : w) c = static_cast<char>(c >= 'A' && c <= 'Z' ? c + 32 : c);
@@ -313,6 +334,7 @@ inline constexpr int kMaxLighting      = 1;   // per pixel
 // `supersampling = N` or `--ssaa N`.
 inline constexpr int kMaxSupersample   = 4;
 inline constexpr int kMaxUiScaling     = 1;   // linear
+inline constexpr int kMaxTextScaling   = 1;   // fit
 inline constexpr int kMaxUnlimitedDraw = 1;   // the cap lifted
 inline constexpr int kMaxRadar         = 1;   // always
 // 60, not 240: "as high as it goes" for a cap is the display's refresh, which
@@ -343,6 +365,7 @@ inline void applyMaxEnhancements(Settings& s) {
     take(s.lighting,      kMaxLighting,      s.lightingSource);
     // NOT `s.supersample`: the one enhancement asked for by name only (above).
     take(s.uiScaling,     kMaxUiScaling,     s.uiScalingSource);
+    take(s.textScaling,   kMaxTextScaling,   s.textScalingSource);
     takeFlag(s.unlimitedDrawDistance, kMaxUnlimitedDraw, s.unlimitedDrawSource);
     takeFlag(s.radarAlways, kMaxRadar, s.radarSource);
     take(s.frameRate,     kMaxFrameRate,     s.frameRateSource);

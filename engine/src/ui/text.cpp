@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 
 namespace omk {
 namespace {
@@ -188,7 +189,7 @@ int TextLayout::measure(const std::vector<StyledChar>& run) const {
         // glyph for this code - then the face's kerning, on every advance
         int adv = rec->defaultAdvance;
         if (f && f->glyphs[code].present) adv = f->glyphs[code].width;
-        w += adv + rec->kern;
+        w += glyphPx(adv + rec->kern);
     }
     return w;
 }
@@ -201,7 +202,7 @@ int TextLayout::height(const std::vector<StyledChar>& run) const {
     int h = 0;
     for (const auto& sc : run)
         if (const auto* rec = table_->byLetter(sc.face))
-            h = std::max<int>(h, rec->height);
+            h = std::max<int>(h, glyphPx(rec->height));
     return h;
 }
 
@@ -246,7 +247,13 @@ int TextLayout::drawRun(Surface& dst, int x, int y,
             haveRamp = true;
         }
 
-        if (f && f->glyphs[code].present) {
+        if (f && f->glyphs[code].present && scaled()) {
+            const auto cov = f->coverage(code);
+            const Glyph& gl = f->glyphs[code];
+            if (!cov.empty())
+                drawGlyphScaled(dst, pen, y + glyphPx(rec->height + gl.bottom - gl.height), gl, cov,
+                                ramp, clipTop, clipBottom);
+        } else if (f && f->glyphs[code].present) {
             const Glyph& gl = f->glyphs[code];
             const auto cov = f->coverage(code);
             if (!cov.empty()) {
@@ -273,9 +280,48 @@ int TextLayout::drawRun(Surface& dst, int x, int y,
                 }
             }
         }
-        pen += adv + rec->kern;
+        pen += glyphPx(adv + rec->kern);
     }
     return pen - x;
+}
+
+// One glyph at the glyph scale: `glyphPx(width) x glyphPx(height)` destination pixels,
+// each read back from the native coverage - the nearest texel, or (filter 1)
+// the bilinear blend of four, zero outside the glyph, so a filtered edge
+// fades out through the ramp rather than stopping on a texel's edge. The
+// COVERAGE is interpolated, not the colour, so the ramp's truncating
+// `i / 31` steps (the engine's) still decide every written colour.
+void TextLayout::drawGlyphScaled(Surface& dst, int pen, int top, const Glyph& gl,
+                                 std::span<const std::byte> cov, const std::uint16_t ramp[32],
+                                 int clipTop, int clipBottom) const {
+    const int W = glyphPx(gl.width), H = glyphPx(gl.height);
+    const auto at = [&](int gx, int gy) -> int {
+        if (gx < 0 || gy < 0 || gx >= gl.width || gy >= gl.height) return 0;
+        return static_cast<int>(static_cast<std::uint8_t>(
+                   cov[static_cast<std::size_t>(gy) * gl.width + gx])) & 31;
+    };
+    for (int dy = 0; dy < H; ++dy) {
+        const int py = top + dy;
+        if (py < 0 || py >= dst.h || py < clipTop || py >= clipBottom) continue;
+        for (int dx = 0; dx < W; ++dx) {
+            const int px = pen + dx;
+            if (px < 0 || px >= dst.w) continue;
+            int c;
+            if (filter_ < 1) {
+                c = at(dx * den_ / num_, dy * den_ / num_);
+            } else {
+                // the destination pixel's centre in texels, less half a texel
+                const float fx = (dx + 0.5f) * den_ / num_ - 0.5f;
+                const float fy = (dy + 0.5f) * den_ / num_ - 0.5f;
+                const int x0 = static_cast<int>(std::floor(fx)), y0 = static_cast<int>(std::floor(fy));
+                const float ax = fx - x0, ay = fy - y0;
+                const float v = (at(x0, y0) * (1 - ax) + at(x0 + 1, y0) * ax) * (1 - ay) +
+                                (at(x0, y0 + 1) * (1 - ax) + at(x0 + 1, y0 + 1) * ax) * ay;
+                c = static_cast<int>(v + 0.5f);
+            }
+            if (c) dst.set(px, py, ramp[c & 31]);
+        }
+    }
 }
 
 
@@ -326,7 +372,7 @@ int TextLayout::layOutBlock(Surface* dst, const std::string& text,
 
     const auto lineHeight = [&](char f) -> int {
         const auto* rec = table_->byLetter(f);
-        return rec ? rec->height : 0;
+        return rec ? glyphPx(rec->height) : 0;
     };
     const auto advance = [&](unsigned char ch, char f) -> int {
         const auto* rec = table_->byLetter(f);
@@ -334,7 +380,7 @@ int TextLayout::layOutBlock(Surface* dst, const std::string& text,
         const Font* fn = face(f);
         int adv = rec->defaultAdvance;
         if (fn && fn->glyphs[ch].present) adv = fn->glyphs[ch].width;
-        return adv + rec->kern;
+        return glyphPx(adv + rec->kern);
     };
 
     int   left = b.left, top = b.top;               // 907A14 / 907A18, movable

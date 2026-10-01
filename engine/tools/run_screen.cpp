@@ -31,7 +31,7 @@ int main(int argc, char** argv) {
     if (!w.valid()) { std::fprintf(stderr, "cannot load %s\n", argv[2]); return 1; }
     w.loadScreens(argv[3]);
     const auto table = omk::FontTable::loadJson(argv[3]);
-    const omk::TextLayout lay(table, std::string(argv[1]) + "/FONTS");
+    omk::TextLayout lay(table, std::string(argv[1]) + "/FONTS");
     omk::ScreenComposer comp(fs, w, lay);
     // The menu's animated background, on the REFERENCE side too. Without it
     // the composer draws a colour-keyed sheet over nothing and screen 29 comes
@@ -66,6 +66,13 @@ int main(int argc, char** argv) {
     // 0 nearest as the original stretches. It can only matter where the
     // display is not 640x480, which is the pair the check composes.
     if (argc > 7) comp.setScaling(std::atoi(argv[7]));
+    // ...and TEXT SCALING (`todo/enhancements.md`): 1 = fit, the glyphs at the
+    // smaller of the layout's two scales - the same rule as omk-play's.
+    if (argc > 8 && std::atoi(argv[8]) > 0) {
+        const int filt = argc > 7 ? std::atoi(argv[7]) : 0;
+        if (dw * 480 <= dh * 640) lay.setGlyphScale(dw, 640, filt);
+        else                      lay.setGlyphScale(dh, 480, filt);
+    }
 
     std::vector<std::int32_t> out;
     // Screen 29 is the start menu; 4 is the LIFT, whose seven slots are the

@@ -165,6 +165,13 @@
 ; for both backends. At 640x480 it changes nothing, because nothing stretches.
 ;uiscaling = nearest
 
+; TEXT SCALING: the original scales the interface's layout to the display but
+; draws the GLYPHS at their native size, so text shrinks as the resolution
+; grows - at 4K it is a sixth of its 640x480 size. `fit` scales the glyphs by
+; the smaller of width/640 and height/480 (filtered when uiscaling = linear).
+; Both backends. `game` (the default) is what the original draws.
+;textscaling = game
+
 ; UNLIMITED DRAW DISTANCE: `clipdistance = 0` here means "no cap". This is the
 ; option's own name under a different section, because it IS that option
 ; pushed past the range the menu offers - the five values it allows stop at

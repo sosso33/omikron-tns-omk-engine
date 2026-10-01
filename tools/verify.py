@@ -6802,7 +6802,7 @@ def c_enhance_all():
     # sixth, so the count halves passed while its VALUE was never asserted.
     named = {"aa": "AntiAliasing", "filter": "TextureFilter", "aniso": "Anisotropy",
              "shadowquality": "ShadowQuality", "lighting": "Lighting",
-             "uiscaling": "UiScaling",
+             "uiscaling": "UiScaling", "textscaling": "TextScaling",
              "clipdistance": "UnlimitedDraw", "radar": "Radar",
              "framerate": "FrameRate", "animation": "Animation"}
     reported = {k for k in allMax if k != "all"} - SEPARATE
@@ -27143,6 +27143,81 @@ def c_engine_mipmaps():
            "< bilinear, and coverage agreement with software stays >= 0.98"
 
 
+def c_engine_text_scaling():
+    r"""TEXT SCALING - the enhancement, and the original it leaves alone.
+
+    The original scales the interface's COORDINATES to the display
+    (`I2D_ScaleX/Y`, `v * width / 640` and `v * height / 480`) and draws every
+    glyph at its native size, so text shrinks as the resolution grows: at 4K a
+    line is a sixth of its 640x480 size. `textscaling = fit` /
+    `--text-scaling fit` scales the glyphs too, by the smaller of the two
+    layout scales, inside `TextLayout` - so the wrap, the alignment and every
+    caller that positions text by `measure` / `height` move with it.
+
+    Measured on the start menu (screen 29) through `run_screen`, cloud off, by
+    the INKED WIDTH of its lower two rows ("Options", "Quitter") read out of the
+    framebuffer itself - NOT the composer's text advance, which `layOutBlock`
+    sums from `measure` and so reports what the layout INTENDED: the first
+    version of this check read it, and a mutation that stepped the pen native
+    while drawing the glyphs large (overlapping) left it green (CLAUDE.md 1).
+    * OFF IS THE ORIGINAL: at 1280x960 the ink is the 640x480 width - the
+      glyphs did not grow - and the frame with the argument 0 hashes the same
+      as with it absent;
+    * SCALE 1 IS THE ORIGINAL: `fit` at 640x480 hashes the same as off;
+    * AT EXACTLY 2x, NEAREST, the ink is EXACTLY twice the 640x480 width:
+      every pen position and every glyph column doubles, so any metric left
+      unscaled shows as a width that is not.
+
+    SHOWN TO FAIL, 2026-10-02: the pen's advance in `drawRun` left unscaled,
+    the 2x ink width no longer twice the native.
+    """
+    import subprocess, struct as _s
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    mk = subprocess.run(["make", "-s", "build/run_screen"], cwd=eng,
+                        capture_output=True, text=True)
+    tool = os.path.join(eng, "build", "run_screen")
+    if mk.returncode != 0 or not os.path.exists(tool):
+        return ("skipped",), ("skipped",), "run_screen did not build"
+    tb = os.path.join(ROOT, "tables")
+    def menu(res, *args):
+        out = os.path.join(ROOT, ".verify-textscale.bin")
+        r = subprocess.run([tool, omkpaths.data_root(), os.path.join(tb, "ui_widgets.json"),
+                            os.path.join(tb, "ui.json"), out, "0", res] + list(args),
+                           capture_output=True, text=True, env=dict(os.environ, OMK_NOCLOUD="1"))
+        if r.returncode != 0 or not os.path.exists(out):
+            return None
+        d = open(out, "rb").read()
+        os.remove(out)
+        m = re.search(r"^screen 29: .*hash ([0-9A-F]{8})$", r.stdout, re.M)
+        w, h = (int(x) for x in res.split("x"))
+        n = _s.unpack("<i", d[:4])[0]
+        off = 4 + 4 * n
+        if not m or len(d) < off + 2 * w * h:
+            return None
+        px = _s.unpack("<%dH" % (w * h), d[off:off + 2 * w * h])
+        # the inked columns of the lower half: no title art there, no cloud
+        cols = [x for x in range(w) if any(px[y * w + x] for y in range(h // 2, h))]
+        return (cols[-1] - cols[0] + 1 if cols else 0), m.group(1)
+    runs = {"640": menu("640x480"), "640fit": menu("640x480", "0", "1"),
+            "2x": menu("1280x960"), "2xoff": menu("1280x960", "0", "0"),
+            "2xfit": menu("1280x960", "0", "1")}
+    if any(v is None for v in runs.values()):
+        return (sorted(k for k, v in runs.items() if v is None),), ([],), \
+               "run_screen's frame or its screen 29 line - its output changed"
+    native = runs["640"][0]
+    got = (native, runs["640fit"][1] == runs["640"][1], runs["2x"][0],
+           runs["2xoff"][1] == runs["2x"][1], runs["2xfit"][0] == 2 * native)
+    # 119 px: "Options"/"Quitter" at 640x480, measured 2026-10-02 - pinned so a
+    # frame with no ink at all cannot pass by comparing 0 with 2 x 0
+    return got, (119, True, 119, True, True), \
+        "the inked width of the start menu's lower rows at 640x480; fit there " \
+        "identical to off; the inked width at 1280x960 off (the original: native, " \
+        "unchanged); the argument 0 identical to absent; and with fit at 1280x960 " \
+        "the inked width exactly twice the native"
+
+
 def c_engine_ui_scaling():
     r"""INTERFACE SCALING - the `[Enhancements]` linear mode, OFF by default,
     and the colour key surviving a filtered stretch without an alpha channel.
@@ -40289,6 +40364,7 @@ SLOW = [
     ("engine: texture filter", c_engine_texture_filter, "ASSETS 4"),
     ("engine: mipmaps", c_engine_mipmaps, "ASSETS 4"),
     ("engine: ui scaling", c_engine_ui_scaling, "UI"),
+    ("engine: text scaling", c_engine_text_scaling, "todo/enhancements.md; UI"),
     ("engine: unlimited clip", c_engine_unlimited_clip, "ASSETS 4; todo/options-config"),
     ("mirror pass",        c_mirror_pass,       "ASSETS 4c"),
     ("anekbah rendered",   c_anekbah_rendered,  "ASSETS 4b"),
