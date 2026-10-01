@@ -41,7 +41,7 @@ rule intends one.
 
 **tasks since the last full sweep: 1** (reset by the `--slow` run of 2026-10-01 below.)
 
-(2026-10-01: THE WHAT-IF MAC PORT plan, `todo/mac-port.md` - docs only, no check run or needed.)
+(2026-10-01: THE WHAT-IF MAC PORT plan, `todo/classic-mac-port-1999.md` - docs only, no check run or needed.)
 
 (2026-09-18: `Indices`, THE HINT SHOP on screen 30 - `todo/pending/ui-remainder-survey.md` 2a, one commit. One new check, `engine: hint shop`, shown to fail. It also touched shared code every screen walks - `ScreenComposer` gained a run-time SECTION index and `ScreenFrame::itemText`, and `tables/ui_widgets.json` was regenerated with a new CODE_NAMED panel - so `ui geometry` and `engine: UI`, which were ALREADY red for census drift, move again by +1 panel / +5 lists / +7 items. **`ui geometry` WAS GREEN and this task broke it, so it IS re-baselined** -
 718/718/717/58 -> 725/725/724/59, every one of the four accounted for by that
