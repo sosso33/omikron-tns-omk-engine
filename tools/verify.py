@@ -14782,10 +14782,16 @@ def c_engine_sweep_grid():
     line = re.findall(r"^ground verify: frame 120, .*sweep (\d+) sweeps (\d+) mismatched", g.stdout, re.M)
     if len(line) != 1:
         return (len(line),), (1,), "the ground verify line at frame 120 - the viewer's log changed"
+    # HITS re-baselined 2026-10-01: `9356142` (2026-09-18, the body sweep
+    # meeting EDGES and corners - the security centre's handrails) made more of
+    # the random segments hit: Anekbah 1301 -> 1424 walkable and 772 -> 1286
+    # steep, measured either side of that commit. The grid and the scan still
+    # agree on every one of them (mismatches 0), which is what this check is
+    # for; the hits only say the sweeps were exercised.
     return (tool, tuple(int(x) for x in line[0])), \
-        ((("Anekbah", "walkable", 3014, 1301, 0), ("Anekbah", "steep", 3058, 772, 0),
-          ("AImpasse", "walkable", 1605, 180, 0), ("AImpasse", "steep", 1888, 279, 0),
-          ("Sprison", "walkable", 3288, 1180, 0), ("Sprison", "steep", 4242, 1481, 0)),
+        ((("Anekbah", "walkable", 3014, 1424, 0), ("Anekbah", "steep", 3058, 1286, 0),
+          ("AImpasse", "walkable", 1605, 220, 0), ("AImpasse", "steep", 1888, 485, 0),
+          ("Sprison", "walkable", 3288, 1598, 0), ("Sprison", "steep", 4242, 2618, 0)),
          (692, 0)), \
         "probe_grid's sweep rows (set, soup, sweeps, hits, sweeps whose grid answer differs " \
         "from the scan in any bit), then the walk: body and camera sweeps by frame 120 and " \
@@ -15905,12 +15911,17 @@ def c_engine_split_grid():
         if len(lines) != 2:
             return (len(lines),), (2,), "split verify lines - the viewer's log changed " \
                 "or the street no longer moves"
-        game = tuple((int(f), int(p), int(m)) for f, p, m in lines)
+        # The PROBE COUNT is a floor, not a value: each moving frame probes the
+        # centres of the triangles RE-PLACED that frame, and a mesh whose
+        # placement did not change is not re-placed - so the count follows the
+        # scene's motion timing (5670 -> 5652 by 2026-09-29, with nothing about
+        # the grid changed). The frames and the MISMATCHES are exact.
+        game = tuple((int(f), int(p) >= 160 * int(f), int(m)) for f, p, m in lines)
     return (tool, game), \
         ((("Anekbah", "walkable", 946, 0), ("Anekbah", "steep", 1945, 0),
           ("AImpasse", "walkable", 7, 0), ("AImpasse", "steep", 25, 0),
           ("Sprison", "walkable", 111, 0), ("Sprison", "steep", 173, 0)),
-         ((30, 5670, 0), (60, 11340, 0))), \
+         ((30, True, 0), (60, True, 0))), \
         "probe_grid's split rows (set, soup, triangles in the moving layer, " \
         "probes and boxes differing from the linear scan), then the in-game " \
         "verify: moving frames, probes, mismatched"
