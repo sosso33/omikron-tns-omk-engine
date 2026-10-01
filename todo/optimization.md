@@ -2403,6 +2403,102 @@ answers in the last bits and nothing could then be proven equal.
   grid` are the standing reds with the same values as before, 0 mismatches in
   their in-game halves (11322 probes; 692 sweeps).
 
+### The 4K benchmark - 2026-10-01, ON AN M3
+
+**The reader's yardstick (2026-10-01):** on the M3, run optimization tests at
+`--res 3840x2160` and reach **30 fps or more**. A game that ran on 1999
+machines has no reason to lag on an M3 at any size. At 4K the per-pixel stages
+cost ~27x what they cost at 640x480, so the overheads that also slow the Vita
+at 960x544 stand out clearly. The reader saw lag at 4K on Vulkan **with
+`--enhance-all`**. The Vita's GLES build lags at its own resolution as well,
+so the costs are not confined to one backend.
+
+**Method.** A detached worktree at `626b74a`, built there so that no other
+session's `build/` or uncommitted edits were involved (`make play
+play-gles`). Each run used `--frames N --fps` and therefore never reached the
+30 Hz pacer: the numbers are THROUGHPUT, and on this display Vulkan FIFO
+vsync caps them at 120 (ProMotion). **The machine was HEAVILY LOADED** - load
+average 22-50 from parallel sessions - so the milliseconds are an upper bound.
+The ratios are what to quote. Street: `--save ../traces/save-appart.bin --area 0
+--stand 1804,0,-6890,336 --nofmv`. Menu: a plain boot with `--nofmv`, which
+leaves screen 29 asking.
+
+Where the 3D is drawn at 4K: `vr->init(dispW, dispH)` makes the Vulkan
+target 3840x2160. The swapchain stays the window's size (1512x867 points on
+the built-in 3024x1964 panel), so the frame is drawn at 4K and only scaled
+down when presented.
+
+| run (M3, loaded) | fps | per frame (ms, mean of 60) |
+|---|---|---|
+| Vulkan, street, 640x480 | 120 (vsync) | sim+draw 2.6, present 5.7 |
+| Vulkan, street, 4K | **120 (vsync)** | sim+draw 5.0, present 3.5 |
+| GLES, street, 4K | **120 (vsync)** | sim+draw 1.5, present (swap) 6.8 |
+| Vulkan, street, 4K, `--enhance-all` | **8.6** | sim+draw 41.4, **readback 74.6**, present 5.6; world submit 39.0 |
+| Vulkan, street, 640x480, `--enhance-all` | 90-97 | sim+draw 5.8, readback 2.7 |
+| Vulkan, street, 4K, `--enhance-all --ssaa 1` | **120 (vsync)** | sim+draw 5.7, present 2.6 |
+| Vulkan, start menu (screen 29), 4K | **26** | `screens, hud` 28.5-30.1 |
+| GLES, start menu (screen 29), 4K | **24** | `screens, hud` 29.4, texture upload 5.7, swap 6.0 |
+
+**What it says - two costs, neither of which is the game's 3D:**
+
+1. **SUPERSAMPLING (an enhancement) takes the frame off the GPU present path.**
+   Everything else `--enhance-all` turns on (8x MSAA, trilinear, anisotropy
+   16, mapped shadows, per-pixel lighting, unlimited distance) holds 120 at
+   4K. `--ssaa` alone drops it to 8.6. `vulkanCanPresentWorld` refuses a
+   supersampled frame (the log says `on the CPU: supersampling 60`). The
+   whole oversized image is then read back and averaged ss x ss on the CPU,
+   in a scalar loop in `VulkanRenderer`'s readback (`vkrender.cpp`, "the
+   SUPERSAMPLE RESOLVE happens on the 8-bit side"), before being quantised
+   and uploaded again. Lead (NOT built): resolve and dither on the GPU, the
+   way `present.frag` already dithers the plain frame, so a supersampled
+   frame can be presented directly. The original has no counterpart - it
+   never supersampled.
+   **DONE 2026-10-01 (`03c57c3`)**: `present.frag` does the resolve - the
+   rounded mean of each ss x ss block, then the one dither - and the
+   "supersampling" gate is gone. `OMK_VERIFY_GPU_PRESENT` finds it
+   byte-identical to the CPU resolve at `--ssaa` 2 and 4 (0 pixels differ in
+   60 frames). Truncating red's mean turns 60 of 60 frames red, 952966
+   pixels. M3, 4K, `--enhance-all`, the same binary with
+   `OMK_NO_GPU_PRESENT=1` as "before", load ~3: **9.0 -> 21.5 fps**, readback
+   67.7 -> 0 ms. Still under 30: what remains is the GPU's own draw, 34 ms
+   for 4x4 supersampling times 8x MSAA (~128 samples a pixel), plus 11 ms of
+   present. Fewer samples when the two are stacked is the reader's call,
+   because it changes what `--enhance-all` means.
+2. **The interface is composed on the CPU at display resolution, on BOTH
+   backends.** With screen 29 open, `sample` puts ~74% of the main thread's
+   on-CPU samples in `ScreenComposer::draw`, then `MenuCloud::drawScaled`,
+   `vulkanPresentSurface` and `blt`. At 4K every full-screen primitive (the
+   tile map, the dim quad) writes 8.3 M pixels. This is step 4's "composing
+   on the GPU is still open", and it is the same cost the Vita pays at
+   960x544 on a CPU some 20x slower - so it plausibly explains the GLES lag
+   on the console as well. Lead (NOT built): read how `I2D` blits scaled
+   primitives in the original (the DirectDraw back end, `docs/UI.md`) and
+   compose the 640x480 layer once, scaling it on the GPU.
+
+**The opposite end - 320x240, to strip the per-pixel costs (same day, M3,
+load 4-8, `bb21d5f`).** GLES, the same street, `--frames 1500`, with `sample`
+running for 10 s in the middle. `sim+draw` is **1.3-1.6 ms a frame**. The
+largest sections are audio 0.3, world submit 0.3 and pedestrians 0.2. The
+`present, swap` 7 ms is the wait for vsync. Across all threads the process
+was on the CPU for only 950 of ~80500 samples (~0.8 ms per 120 Hz frame);
+567 of those were in omk code. Ranked by self time:
+
+* **bodies ~23%**: `composePoseAt` 69, a `std::sort` of `pair<int,int>`
+  inside it ~31, `meshAffines` 29. The sort runs on every pose, which makes
+  it a candidate;
+* **audio ~17%**: `AdpcmStereoStream::frame` 47 and `MusicPlayer::at`/`pull`
+  48 - decoding on the fly;
+* **particles ~7%**: `particleGeometry` 39;
+* `GlesRenderer::submit` 24; the rest is spread thin (`main`'s inlined
+  code 71, deduplicated symbols 98).
+
+The M3 has ~22x headroom on this frame, and the ranking may not carry to the
+console: an in-order Cortex-A9 punishes the float-heavy posing and the
+branchy decoder differently. Step 28's console sections are what decide.
+
+Side note: the GLES build's `--fps` line labels itself `software` (the
+counter tests only `vkRen`). It is an instrument label, not a finding.
+
 ## What is NOT in scope
 
 * The software renderer's speed. It is the reference and a comparison tool;
