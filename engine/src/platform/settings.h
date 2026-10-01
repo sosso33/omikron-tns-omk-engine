@@ -133,6 +133,14 @@ struct Settings {
     int    frameRate = 30;
     Source frameRateSource = Source::Default;
 
+    // `animation = game|smooth`: bodies posed from the truncated key, as
+    // `Anim_ApplyNodeFrame`'s `_ftol` does, or slerped between two keys by
+    // the clock's fraction. Only visible above 30 fps, where the engine's
+    // poses step at 30 while its root motion is fractional
+    // (`todo/enhancements.md` 12, `actor/pose.h`).
+    bool   smoothAnimation = false;
+    Source smoothAnimationSource = Source::Default;
+
     // `clipdistance = 0` under `[Enhancements]`: UNLIMITED DRAW DISTANCE.
     //
     // Row 3 is a CAP in metres and its five values stop at 200 (`clipInches`
@@ -258,6 +266,16 @@ inline int radarMode(std::string w) {
 }
 inline const char* radarName(int m) { return m <= 0 ? "game" : "always"; }
 
+// `animation`: 0 game (the truncated key), 1 smooth; -1 for anything else.
+inline int animationMode(std::string w) {
+    for (auto& c : w) c = static_cast<char>(c >= 'A' && c <= 'Z' ? c + 32 : c);
+    while (!w.empty() && (w.back() == ' ' || w.back() == '\t')) w.pop_back();
+    while (!w.empty() && (w.front() == ' ' || w.front() == '\t')) w.erase(w.begin());
+    if (w == "0" || w == "game" || w == "original" || w == "off") return 0;
+    if (w == "1" || w == "smooth" || w == "on") return 1;
+    return -1;
+}
+
 // `framerate`: 30..240 frames per second, or `game` for the port's 30.
 // -1 for anything else.
 inline int frameRateValue(std::string w) {
@@ -289,6 +307,7 @@ inline constexpr int kMaxRadar         = 1;   // always
 // 60, not 240: "as high as it goes" for a cap is the display's refresh, which
 // a GPU backend's FIFO swapchain already enforces, and 60 is what was asked.
 inline constexpr int kMaxFrameRate     = 60;
+inline constexpr int kMaxAnimation     = 1;   // smooth
 // The top of row 3's five values, and the furthest the ENGINE ever puts the
 // clip distance. Kept as a named number because `all = max` has to say what
 // "unlimited" replaces, and because a check quotes it.
@@ -316,6 +335,7 @@ inline void applyMaxEnhancements(Settings& s) {
     takeFlag(s.unlimitedDrawDistance, kMaxUnlimitedDraw, s.unlimitedDrawSource);
     takeFlag(s.radarAlways, kMaxRadar, s.radarSource);
     take(s.frameRate,     kMaxFrameRate,     s.frameRateSource);
+    takeFlag(s.smoothAnimation, kMaxAnimation, s.smoothAnimationSource);
 }
 
 // Resolve the three sources in order.  Either may be absent.

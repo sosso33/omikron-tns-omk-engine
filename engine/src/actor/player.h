@@ -462,6 +462,12 @@ public:
     // Cef_FindGroupById(bank, id))` - or -1.
     int groupDefaultClip(int groupId) const;
     int poseFrame() const;             // 0-based frame into the tracks
+    // ...and the same frame with the channel clock's FRACTION, for the
+    // between-keys smoothing (`todo/enhancements.md` 12): `poseFrame()` plus
+    // the fraction wherever the next key is inside the clip's window, and
+    // exactly `poseFrame()` where it was clamped or the next key is past the
+    // window's end - a variant cell's seam must not be blended toward.
+    float poseFrameF() const;
 
     // ---- THE VARIANT GRID (omk-play 69) --------------------------------
     //

@@ -163,6 +163,28 @@ void composePose(const std::vector<Mesh>& meshes, const NodeTracks& t, int frame
                  bool upright, std::vector<MeshPose>& out,
                  const std::uint8_t* only = nullptr);
 
+// ------------------------------------------- SMOOTHING BETWEEN KEYS
+//
+// `todo/enhancements.md` 12, OFF by default. The engine never blends two keys
+// of one clip: `Anim_ApplyNodeFrame` (0x00471690) stores the float frame at
+// node +160, `call _ftol` - MSVC's TRUNCATING conversion - and builds the
+// node's matrix from that one quaternion. So at 60 fps its bodies glide on
+// fractional root motion (`Anim_RootDelta` takes both float frames) while
+// the pose steps at 30. These overloads take the FLOAT frame: off, they are
+// the integer ones on `floor(frame)`, bit for bit; on, every bone is slerped
+// from key `floor(frame)` toward the next by the fraction, holding at the
+// clip's last key rather than wrapping into its first (a clip that does not
+// loop must not blend back to its start). The clip-CHANGE cross-fade is the
+// engine's own and is untouched (`blendTracks`, below).
+void setPoseSmoothing(bool on);
+bool poseSmoothing();
+std::vector<MeshPose> composePose(const std::vector<Mesh>& meshes,
+                                  const NodeTracks& t, float frame,
+                                  bool upright);
+void composePose(const std::vector<Mesh>& meshes, const NodeTracks& t, float frame,
+                 bool upright, std::vector<MeshPose>& out,
+                 const std::uint8_t* only = nullptr);
+
 // ------------------------------------------------- BLENDING TWO POSES
 //
 // THE FADE AT A LINE'S TWO ENDS, read out of the morph player 2026-09-02

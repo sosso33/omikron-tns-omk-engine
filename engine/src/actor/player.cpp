@@ -1552,6 +1552,20 @@ int PlayerController::poseFrame() const {
     return f;
 }
 
+float PlayerController::poseFrameF() const {
+    const int f = poseFrame();
+    const double c = rt_.channel().frame();
+    const double fl = std::floor(c);
+    // clamped below or above: no fraction
+    if (static_cast<int>(fl) - 1 != f) return static_cast<float>(f);
+    // the window, as `poseFrame` sizes it
+    int n = clipFrames();
+    const int v = variantCount();
+    if (v > 1 && n > 0) { n = (n + 1) / v; if (n > 1) --n; }
+    if (n > 0 && f + 1 >= n) return static_cast<float>(f);
+    return static_cast<float>(f) + static_cast<float>(c - fl);
+}
+
 // ------------------------------------------------- THE VARIANT GRID (69)
 
 void PlayerController::setTakeGeometry(float angleDeg, float second) {

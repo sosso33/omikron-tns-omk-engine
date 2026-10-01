@@ -6728,7 +6728,7 @@ def c_enhance_all():
              "shadowquality": "ShadowQuality", "lighting": "Lighting",
              "supersampling": "Supersample", "uiscaling": "UiScaling",
              "clipdistance": "UnlimitedDraw", "radar": "Radar",
-             "framerate": "FrameRate"}
+             "framerate": "FrameRate", "animation": "Animation"}
     reported = {k for k in allMax if k != "all"}
     covered = reported == set(named)
     want = {k: int(tops[v]) for k, v in named.items() if v in tops}
@@ -19509,6 +19509,14 @@ def c_engine_frame_rate():
 
     Shown to fail: `tickFades()` back to its default gives 61 frames at 60
     as at 30 - 1016 ms where the fade takes 2033.
+
+    And the POSE BETWEEN KEYS, enhancement 12, on a synthetic one-bone clip
+    (rest, then 90 degrees twice): with smoothing off a float frame is the
+    TRUNCATED key at every fraction - `Anim_ApplyNodeFrame`'s `_ftol`, so the
+    default is bit-for-bit the engine's - and on it is slerped, 44.6 degrees
+    at 0.5 and 22.1 at 0.25 (the engine's own 1/256 weight steps, `qslerp`),
+    holding at the last key past it and never blending an integer caller.
+    Shown to fail: the fraction forced to 0 leaves 0.5 at 0.0.
     """
     import subprocess
     eng = os.path.join(ROOT, "engine")
@@ -19530,10 +19538,17 @@ def c_engine_frame_rate():
     got = tuple(rows[(k, f)][0] for k in ("black", "colour") for f in (30, 60))
     # the time at 60 within one frame at 30 of the time at 30
     held = all(abs(rows[(k, 60)][1] - rows[(k, 30)][1]) <= 34 for k in ("black", "colour"))
-    return (got, held), ((61, 121, 26, 51), True), (
+    pose = dict(re.findall(r"^pose (\w+ \S+): (-?[\d.]+)$", o, re.M))
+    poses = tuple(pose.get(m + " " + f) for m in ("game", "smooth")
+                  for f in ("0.50", "0.25", "1.50", "2.70", "int0"))
+    return (got, held, poses), \
+           ((61, 121, 26, 51), True,
+            ("0.0", "0.0", "90.0", "90.0", "0.0", "44.6", "22.1", "90.0", "90.0", "0.0")), (
         "frames to each fade's end through Session::frame() at 30 and 60 fps - the "
         "black fade's 60 frames (61, 121) and a 25-frame colour fade (26, 51) - and "
-        "that the time each takes holds to within one frame at 30")
+        "that the time each takes holds to within one frame at 30; then a bone's "
+        "angle at frames 0.5, 0.25, 1.5, 2.7 and an integer 0, smoothing off (the "
+        "truncated key every time) and on (slerped, held at the last key)")
 
 
 def c_engine_set_emitters():

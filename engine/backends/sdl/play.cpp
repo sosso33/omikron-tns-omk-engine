@@ -1673,6 +1673,9 @@ int main(int argc, char** argv) {
 "  --framerate N    ENHANCEMENT: present up to N frames a second (30..240,\n"
 "                   default 30). The original had no cap - its delta is 30/fps\n"
 "                   - so the simulation is unchanged; [Enhancements] framerate=N\n"
+"  --smooth-anim    ENHANCEMENT: bodies slerped between two keys by the clock's\n"
+"                   fraction; the original truncates to one. Seen above 30 fps;\n"
+"                   [Enhancements] animation=smooth\n"
 "  --software       force the software rasteriser\n"
 "  --letterbox      the 1.818:1 camera-mode bars, for laying a shot beside\n"
 "                   a capture; --full is the old spelling of the opposite\n"
@@ -1863,6 +1866,7 @@ int main(int argc, char** argv) {
     int ssaaFlag = -1;     // --ssaa N, [Enhancements] supersampling
     int radarFlag = -1;    // --radar game|always, [Enhancements] radar
     int frameRateFlag = -1; // --framerate N, [Enhancements] framerate
+    int smoothAnimFlag = -1; // --smooth-anim, [Enhancements] animation = smooth
     // `--dither 0|1`. NOT an enhancement: `sub_4638C0` sets D3DRENDERSTATE 26
     // (DITHERENABLE) to 1 on both device arms, so on is what the engine does.
     // The flag exists to lay a dithered frame beside an undithered one.
@@ -2116,6 +2120,7 @@ int main(int argc, char** argv) {
             anisoFlag = std::max(1, std::min(16, std::atoi(argv[++i])));
         else if (a == "--enhance-all") enhanceAll = true;
         else if (a == "--ssaa" && i + 1 < argc) ssaaFlag = std::atoi(argv[++i]);
+        else if (a == "--smooth-anim") smoothAnimFlag = 1;
         else if (a == "--framerate" && i + 1 < argc) {
             frameRateFlag = omk::frameRateValue(argv[++i]);
             if (frameRateFlag < 0) {
@@ -2442,6 +2447,13 @@ int main(int argc, char** argv) {
     // measured delta whatever this is - and never a `--frames` run's, which
     // steps a fixed 1/30 and never reaches the pacer.
     const int frameRate = enh(frameRateFlag, settings.frameRate, omk::kMaxFrameRate);
+    // Row 12, set once for every `composePose` that takes a float frame
+    const bool smoothAnim = enh(smoothAnimFlag, settings.smoothAnimation ? 1 : 0,
+                                omk::kMaxAnimation) > 0;
+    omk::setPoseSmoothing(smoothAnim);
+    if (smoothAnim)
+        std::printf("animation: smooth - an ENHANCEMENT: bodies are slerped between "
+                    "two keys; the original truncates to one (`Anim_ApplyNodeFrame`'s _ftol)\n");
     if (frameRate != 30)
         std::printf("framerate: %d - an ENHANCEMENT: the port presents at 30 by default; "
                     "the original had no cap and stepped on 30/fps, as this does\n", frameRate);
@@ -4033,7 +4045,7 @@ int main(int argc, char** argv) {
         int level = 0;
         int foot[2] = {-1, -1};
         int lodRoot = 0;
-        int frame = 0;
+        float frame = 0.0f;   // its fraction is enhancement 12's; floored otherwise
         int lit = 0;
         float footOff = 0.0f;
         double tCompose = 0, tApply = 0, tPlace = 0, tLight = 0;
@@ -4667,14 +4679,17 @@ int main(int argc, char** argv) {
     // +176. Outside shoot mode it is the pose as it was. The arm, the gun and
     // the muzzle all read it, so what fires is what is drawn.
     const auto playerPoseNow = [&](omk::PlayerController* pl, bool aimLayer,
-                                   const omk::NodeTracks& pt, int frame)
+                                   const omk::NodeTracks& pt, float frame)
         -> std::vector<omk::MeshPose> {
         if (!pl || !aimLayer || !pt.valid())
             return omk::composePose(playerMeshes, pt, frame, false);
         const omk::NodeTracks* aim = pl->clipTracks(pl->groupDefaultClip(202));
         const omk::NodeTracks* stance = pl->clipTracks(pl->groupDefaultClip(200));
         if (!aim || aim->frames < 15) return omk::composePose(playerMeshes, pt, frame, false);
-        const int f = frame < 0 ? 0 : (frame >= pt.frames ? pt.frames - 1 : frame);
+        // the aim layer bends ONE key - the truncated one (enhancement 12
+        // smooths the plain pose above, not this)
+        const int fi = static_cast<int>(std::floor(frame));
+        const int f = fi < 0 ? 0 : (fi >= pt.frames ? pt.frames - 1 : fi);
         omk::NodeTracks one;
         one.count = pt.count;
         one.frames = 1;
@@ -4720,7 +4735,7 @@ int main(int argc, char** argv) {
     // blends to (`dword_6A472C`), and bends them by his aim angles and his
     // `+176`. Only while the gate ran him this tick (`gunAims`).
     const auto gunmanPoseNow = [&](int actor, int deathType, const CharModel* mo,
-                                   const omk::NodeTracks& pt, int frame)
+                                   const omk::NodeTracks& pt, float frame)
         -> std::vector<omk::MeshPose> {
         const auto aimIt = gunAims.find(actor);
         const auto recIt = shootBrains.find(actor);
@@ -4734,7 +4749,10 @@ int main(int argc, char** argv) {
         const omk::NodeTracks* aim = c18 ? pedTracksFor(grp, *c18, mo->meshes) : nullptr;
         const omk::NodeTracks* stance = c17 ? pedTracksFor(grp, *c17, mo->meshes) : nullptr;
         if (!aim || aim->frames < 15) return omk::composePose(mo->meshes, pt, frame, false);
-        const int f = frame < 0 ? 0 : (frame >= pt.frames ? pt.frames - 1 : frame);
+        // the aim layer bends ONE key - the truncated one (enhancement 12
+        // smooths the plain pose above, not this)
+        const int fi = static_cast<int>(std::floor(frame));
+        const int f = fi < 0 ? 0 : (fi >= pt.frames ? pt.frames - 1 : fi);
         omk::NodeTracks one;
         one.count = pt.count;
         one.frames = 1;
@@ -10092,7 +10110,7 @@ int main(int argc, char** argv) {
                         const char* from = "his position (no pose)";
                         if (const omk::NodeTracks* pt = player->poseTracks()) {
                             const std::vector<omk::MeshPose> pose =
-                                playerPoseNow(&*player, true, *pt, player->poseFrame());
+                                playerPoseNow(&*player, true, *pt, player->poseFrameF());
                             int hand = -1;      // the LAST strstr hit, as o3de_Traverse leaves it
                             for (std::size_t i = 0; i < playerMeshes.size(); ++i)
                                 if (std::strstr(playerMeshes[i].name, "Maing"))
@@ -14005,7 +14023,7 @@ int main(int argc, char** argv) {
                     if (held) {
                         const omk::NodeTracks* pt = player->poseTracks();
                         const std::vector<omk::MeshPose> pose = pt
-                            ? omk::composePose(playerMeshes, *pt, player->poseFrame(), false)
+                            ? omk::composePose(playerMeshes, *pt, player->poseFrameF(), false)
                             : omk::composePose(playerMeshes, omk::NodeTracks{}, 0, false);
                         int hand = -1;      // the LAST strstr hit, as o3de_Traverse leaves it
                         for (std::size_t i = 0; i < playerMeshes.size(); ++i)
@@ -14183,7 +14201,7 @@ int main(int argc, char** argv) {
                     pm->rest.cornerMesh.size() == pm->rest.corners.size()) {
                     const std::vector<omk::MeshPose> pose =
                         playerPoseNow(&*player, player->state() == omk::ActorState::Shoot,
-                                      *pt, player->poseFrame());
+                                      *pt, player->poseFrameF());
                     int hand = -1;      // the LAST strstr hit, as o3de_Traverse leaves it
                     for (std::size_t i = 0; i < playerMeshes.size(); ++i)
                         if (std::strstr(playerMeshes[i].name, "Maing")) hand = static_cast<int>(i);
@@ -16503,7 +16521,9 @@ int main(int argc, char** argv) {
                     // character's real orientation, lying on the floor and
                     // getting up (`Anim_ApplyNodeFrame` applies every node's
                     // quaternion, the root's included).
-                    omk::composePose(s.mo->meshes, s.sceneTracks, rootFrame, false, pose);
+                    // the program's FLOAT clock, so enhancement 12 can blend
+                    // between keys; off, it floors to `rootFrame` exactly
+                    omk::composePose(s.mo->meshes, s.sceneTracks, sceneFrame, false, pose);
                     rootW = 1.0f;
                     src = "a scene program's clip";
                 } else if (shootTracks && shootTracks->valid()) {
@@ -17402,9 +17422,13 @@ int main(int argc, char** argv) {
                             job.foot[0] = p.lodFoot[level][0]; job.foot[1] = p.lodFoot[level][1];
                         }
                     }
-                    int frame = static_cast<int>(std::floor(w.clock)) - 1;
-                    if (frame < 0) frame = 0;
-                    if (p.tracks && frame >= p.tracks->frames) frame = p.tracks->frames - 1;
+                    // `floor(clock) - 1` as before, with the clock's FRACTION
+                    // kept for enhancement 12: `composePose` floors it when
+                    // smoothing is off, so the pose is the same key
+                    float frame = static_cast<float>(w.clock) - 1.0f;
+                    if (frame < 0.0f) frame = 0.0f;
+                    if (p.tracks && frame >= static_cast<float>(p.tracks->frames - 1))
+                        frame = static_cast<float>(p.tracks->frames - 1);
                     job.frame = frame;
                     pedJobs.push_back(job);
                 }
@@ -17443,7 +17467,7 @@ int main(int argc, char** argv) {
                         const auto& w = ws[j.i];
                         PedStaged& p = *pedStaged[j.i];
                         const omk::Geometry& rest = *j.rest;
-                        const int frame = j.frame;
+                        const float frame = j.frame;
                         // The per-body times are the JOB's own, summed in index
                         // order after the pass: `spanned` writes a shared map and
                         // this body may be running on another thread.
@@ -17859,7 +17883,7 @@ int main(int argc, char** argv) {
                 std::vector<omk::MeshPose> pose = pt
                     ? playerPoseNow(&*player, session.shootMode().active() &&
                                                   player->state() == omk::ActorState::Shoot,
-                                    *pt, player->poseFrame())
+                                    *pt, player->poseFrameF())
                     : omk::composePose(playerMeshes, omk::NodeTracks{}, 0, false);
                 // OUTSIDE THE VIEW, as any actor: `sub_48D3B0` skips a node
                 // outside the four side planes before its matrices or its
@@ -18318,7 +18342,7 @@ int main(int argc, char** argv) {
                 if (!ctlSprites.empty() && player && drawPlayer) {
                     const omk::NodeTracks* pt = player->poseTracks();
                     const std::vector<omk::MeshPose> pose = pt
-                        ? omk::composePose(playerMeshes, *pt, player->poseFrame(), false)
+                        ? omk::composePose(playerMeshes, *pt, player->poseFrameF(), false)
                         : omk::composePose(playerMeshes, omk::NodeTracks{}, 0, false);
                     const float* pp = player->pos();
                     const float spriteEuler[3] = {player->euler()[0], player->facing(),

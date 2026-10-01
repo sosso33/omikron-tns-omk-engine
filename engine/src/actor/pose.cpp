@@ -359,8 +359,43 @@ struct small_buf {
 // `stack` at once, and the NEON build died in the first frame of Anekbah's
 // crowd (the core dump: main and `omk_worker0` faulting at one instruction on
 // a garbage index). Everything below is the call's own.
+namespace {
+bool gPoseSmoothing = false;   // `todo/enhancements.md` 12
+
+void composePoseAt(const std::vector<Mesh>& meshes, const NodeTracks& t, int frame,
+                   float frac, bool upright, std::vector<MeshPose>& out,
+                   const std::uint8_t* only);
+}  // namespace
+
+void setPoseSmoothing(bool on) { gPoseSmoothing = on; }
+bool poseSmoothing() { return gPoseSmoothing; }
+
 void composePose(const std::vector<Mesh>& meshes, const NodeTracks& t, int frame,
                  bool upright, std::vector<MeshPose>& out, const std::uint8_t* only) {
+    composePoseAt(meshes, t, frame, 0.0f, upright, out, only);
+}
+
+void composePose(const std::vector<Mesh>& meshes, const NodeTracks& t, float frame,
+                 bool upright, std::vector<MeshPose>& out, const std::uint8_t* only) {
+    // `floor`, which IS the engine's truncation for the frames a clock
+    // produces (they are never negative); the fraction only when asked
+    const float fl = std::floor(frame);
+    composePoseAt(meshes, t, static_cast<int>(fl), gPoseSmoothing ? frame - fl : 0.0f,
+                  upright, out, only);
+}
+
+std::vector<MeshPose> composePose(const std::vector<Mesh>& meshes,
+                                  const NodeTracks& t, float frame,
+                                  bool upright) {
+    std::vector<MeshPose> out;
+    composePose(meshes, t, frame, upright, out);
+    return out;
+}
+
+namespace {
+void composePoseAt(const std::vector<Mesh>& meshes, const NodeTracks& t, int frame,
+                   float frac, bool upright, std::vector<MeshPose>& out,
+                   const std::uint8_t* only) {
     // `assign`, not a fresh vector: a caller that keeps `out` across frames
     // (a walker's own, `play.cpp`) allocates once, and every entry starts from
     // the same default `MeshPose` the by-value version constructed
@@ -373,11 +408,17 @@ void composePose(const std::vector<Mesh>& meshes, const NodeTracks& t, int frame
         const int f = frame < 0 ? 0
                     : (frame >= t.frames ? t.frames - 1 : frame);
         const auto& row = t.quats[static_cast<std::size_t>(f)];
+        // the NEXT key, only when smoothing asked for a fraction and there is
+        // one: the last key holds (enhancement 12)
+        const std::vector<Quatf>* next =
+            (frac > 0.0f && f == frame && f + 1 < t.frames)
+                ? &t.quats[static_cast<std::size_t>(f + 1)] : nullptr;
         for (std::size_t i = 0; i < t.ids.size() && i < row.size(); ++i) {
             const std::int32_t mi = t.ids[i];
             if (mi < 0 || mi >= static_cast<std::int32_t>(meshes.size())) continue;
+            const Quatf r = (next && i < next->size()) ? qslerp(row[i], (*next)[i], frac) : row[i];
             qof[static_cast<std::size_t>(mi)] =
-                {row[i].w, -row[i].x, -row[i].y, -row[i].z};
+                {r.w, -r.x, -r.y, -r.z};
             hasQ[static_cast<std::size_t>(mi)] = 1;
         }
     }
@@ -462,6 +503,7 @@ void composePose(const std::vector<Mesh>& meshes, const NodeTracks& t, int frame
         }
     }
 }
+}  // namespace
 
 std::vector<MeshPose> composePose(const std::vector<Mesh>& meshes,
                                   const NodeTracks& t, int frame,

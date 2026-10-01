@@ -206,3 +206,9 @@
 ; game runs. Bodies still pose at 30 (the engine truncates to a key).
 ; `todo/enhancements.md` 11, `todo/sixty-fps.md`.
 ;framerate = 30
+
+; ANIMATION between keys: game | smooth. The original poses a body from ONE
+; key, the frame truncated (`_ftol`), so above 30 fps a body moves smoothly
+; while its limbs step at 30; smooth slerps every bone between two keys.
+; `todo/enhancements.md` 12.
+;animation = game
