@@ -252,7 +252,7 @@ int TextLayout::drawRun(Surface& dst, int x, int y,
             const Glyph& gl = f->glyphs[code];
             if (!cov.empty())
                 drawGlyphScaled(dst, pen, y + glyphPx(rec->height + gl.bottom - gl.height), gl, cov,
-                                ramp, clipTop, clipBottom);
+                                cur, clipTop, clipBottom);
         } else if (f && f->glyphs[code].present) {
             const Glyph& gl = f->glyphs[code];
             const auto cov = f->coverage(code);
@@ -288,11 +288,20 @@ int TextLayout::drawRun(Surface& dst, int x, int y,
 // One glyph at the glyph scale: `glyphPx(width) x glyphPx(height)` destination pixels,
 // each read back from the native coverage - the nearest texel, or (filter 1)
 // the bilinear blend of four, zero outside the glyph, so a filtered edge
-// fades out through the ramp rather than stopping on a texel's edge. The
-// COVERAGE is interpolated, not the colour, so the ramp's truncating
-// `i / 31` steps (the engine's) still decide every written colour.
+// fades out rather than stopping on a texel's edge.
+//
+// AND THE EDGE IS BLENDED, NOT DARKENED (2026-10-02, a reader: "the black
+// border of the letters is a bit visible now"). The engine's ramp makes a
+// partly covered pixel `colour * c / 31` - a DARKER pixel, because it draws on
+// a scratch surface cleared to black and keys out only coverage 0. Native,
+// that is a one-pixel rim nobody sees; scaled 4.5x it is a dark outline four
+// or five pixels thick, and filtering widens it. So here coverage is an ALPHA
+// over what is already drawn: `(colour * c + behind * (31 - c)) / 31`. Over
+// black that IS the ramp's value to the bit (`buildRamp` truncates the same
+// `colour * c / 31`), so the native path and a black background are
+// untouched; over anything else the rim takes the background's colour.
 void TextLayout::drawGlyphScaled(Surface& dst, int pen, int top, const Glyph& gl,
-                                 std::span<const std::byte> cov, const std::uint16_t ramp[32],
+                                 std::span<const std::byte> cov, const std::uint8_t rgb[3],
                                  int clipTop, int clipBottom) const {
     const int W = glyphPx(gl.width), H = glyphPx(gl.height);
     const auto at = [&](int gx, int gy) -> int {
@@ -319,7 +328,14 @@ void TextLayout::drawGlyphScaled(Surface& dst, int pen, int top, const Glyph& gl
                                 (at(x0, y0 + 1) * (1 - ax) + at(x0 + 1, y0 + 1) * ax) * ay;
                 c = static_cast<int>(v + 0.5f);
             }
-            if (c) dst.set(px, py, ramp[c & 31]);
+            if (!c) continue;
+            c &= 31;
+            const std::uint16_t b = dst.px[static_cast<std::size_t>(py) * dst.w + px];
+            const int br = ((b >> 11) << 3) | (b >> 13), bg = (((b >> 5) & 63) << 2) | ((b >> 9) & 3),
+                      bb = ((b & 31) << 3) | ((b & 31) >> 2);
+            dst.set(px, py, rgb565((rgb[0] * c + br * (31 - c)) / 31,
+                                   (rgb[1] * c + bg * (31 - c)) / 31,
+                                   (rgb[2] * c + bb * (31 - c)) / 31));
         }
     }
 }

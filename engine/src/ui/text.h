@@ -254,7 +254,7 @@ private:
     // a native metric at the glyph scale, rounded to nearest
     int glyphPx(int v) const { return num_ == den_ ? v : (v * num_ + den_ / 2) / den_; }
     void drawGlyphScaled(Surface& dst, int pen, int top, const Glyph& gl,
-                         std::span<const std::byte> cov, const std::uint16_t ramp[32],
+                         std::span<const std::byte> cov, const std::uint8_t rgb[3],
                          int clipTop, int clipBottom) const;
     const FontTable* table_;
     std::string dir_;
