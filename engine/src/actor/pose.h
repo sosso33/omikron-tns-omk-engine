@@ -226,11 +226,12 @@ void composePose(const std::vector<Mesh>& meshes, const NodeTracks& t, float fra
 // snapshot there, which this does not carry.
 //
 // **AND THE LINE'S ROOT IS KEPT, not cancelled** (2026-09-02, from a
-// screenshot pair). `sub_42D120` means to replace the root track's key with
-// identity, but `g_MorphRootTrack` (dword_4EB12C) is written exactly once in
-// the whole image - to -2, in `Morph_ResetTracks` - so in the shipped build
-// no track is replaced and every recorded rotation reaches the skeleton, the
-// pelvis's included. The `.3DM` records the root RELATIVE to the actor's own
+// screenshot pair). `sub_42D120` points the root track at the keys
+// `[identity, root x yaw]` and plays key 1, so every recorded rotation
+// reaches the skeleton, the pelvis's turned by the scene clip's heading
+// (`turnRootBy` in the viewer). Corrected 2026-10-02: this said
+// `g_MorphRootTrack` (dword_4EB12C) is only ever -2 and the write misses;
+// the demuxer `sub_42D960` writes it per line through its context pointer. The `.3DM` records the root RELATIVE to the actor's own
 // frame (node +92, the authored facing), which is why the game keeps a seated
 // speaker's orientation while she talks AND bows Kay'l's whole body toward
 // the camera on 125339 (pelvis->head 47 degrees at frame 420, 3 with the

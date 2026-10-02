@@ -487,11 +487,9 @@ demonstrably *not* applied as raw displacement. A per-frame **root direction**
 
 Two loose ends, recorded rather than resolved:
 
-* `g_MorphRootTrack`, the machinery that would instead bind the translation to
-  a bone-track entry, is initialised to **-2 and never written again** — the
-  apply loop's `track == g_MorphRootTrack` test cannot fire, and the two
-  accesses that index by it land 32 and 80 bytes *before* their arrays, on
-  neighbouring globals. Vestigial, and mildly buggy, in the shipped build.
+* `g_MorphRootTrack` - this said it is initialised to −2 and never written
+  again. **Wrong** (2026-10-02): `g_MorphRootTrack` (`dword_4EB12C`) is NOT only ever −2 (corrected 2026-10-02): `Morph_ResetTracks` resets it to −2 and the demuxer `sub_42D960` writes it per line through its context pointer (base `0x4EA7D0`, `+2396`; the same block's `+2376` is the track count `0x4EB118` and `+2416` the 40-byte track table at `0x4EB140`) - the index of the track whose preamble id equals the morph node's object id, the pelvis. A grep for the global's name finds only the −2 because the real write goes through the pointer.
+  So the accesses that index by it land on the root's own entries.
 * Node slots 0 and 1 are uploaded like every other track, carrying preamble
   ids 0 and 1; the skeleton binds tracks by node id and the drawn meshes
   account for tracks 2 and up (`meshCount − 3 = nodeCount − 2`), so the two
@@ -2641,13 +2639,18 @@ smooths it. The general clip-to-clip transition is the same machinery with a
 `.CTL` entry's own through `Actor_BlendToClip`.
 
 **And the line's ROOT ROTATION IS APPLIED, not cancelled** — the same day,
-from a screenshot pair. `sub_42D120` computes the root's quaternion times a
-heading yaw and means to replace the root track's key with identity, but the
-index it uses, `g_MorphRootTrack` (`dword_4EB12C`), is written **once in the
-whole image** — to −2, in `Morph_ResetTracks` — and the product is never read
-(`var_58`, dead before `retn`). So in the shipped build no track is replaced:
-all 19 recorded rotations reach the skeleton, the pelvis's included, relative
-to the actor's own frame (node `+92`, the authored facing). That is why the
+from a screenshot pair. `sub_42D120` computes the root's quaternion times the
+heading yaw `Morph_Play` latched (`sub_442940(&root, &yaw, var_58)`) and then
+points the ROOT TRACK's keys at a two-key array on its own stack: `var_68`, an
+identity quaternion, then `var_58`, the product. Key 0 is the rest sentinel and
+the morph applies frame 1, so the pelvis gets `root ⊗ yaw` - the line's own
+root rotation, turned by the scene clip's heading. All 19 recorded rotations
+reach the skeleton. **Corrected 2026-10-02:** this paragraph said the root
+index was only ever −2, the replacement missed and `var_58` was dead; the
+index is written by the demuxer (see below) and `var_58` is key 1. The
+conclusion - the root is applied, not cancelled - stands, and it is also what
+keeps a seated speaker's HEADING through a line (Telis at lunch: 118°, where
+the `.3DM` root itself carries 2-4°). That is why the
 game bows Kay'l's whole body toward the camera on `125339` — pelvis→head
 pitch **47°** at frame 420 with the root kept, 3° with it cancelled (47° against 14° over the whole line)
 (`engine/tools/dump_lineblend`) — and, because the pelvis is the anchor, why
@@ -2658,11 +2661,13 @@ no scene object drives.
 
 **And the line's ROOT TRANSLATION is a DELTA, never a placement** (2026-09-07,
 from a reader watching Telis in the restaurant *fly* between her line and her
-idle). The same apply loop that cannot cancel the rotation also never writes
-the frame's translation into the node: `f32(node + 28) = frameTranslation` sits
-behind the same `track == g_MorphRootTrack` test, so with the index at −2 it
-matches nothing. What the translation is actually used for is a few lines
-later —
+idle). The apply loop never writes the frame's translation into the node:
+the write behind the `track == g_MorphRootTrack` test is the root TRACK's
+`+28`, its position-key pointer, and nothing that applies a frame
+(`Anim_ApplyNodeFrame`, `sub_471820`) reads a track's position keys.
+(Corrected 2026-10-02: this said the test could not fire, the index being −2;
+it fires, and writes somewhere nothing reads.) What the translation is
+actually used for is a few lines later —
 
 ```c
 Matrix3x3_FromEulerAngles(0.0, yaw * PI/180, 0.0, v36);

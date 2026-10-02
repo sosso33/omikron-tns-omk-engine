@@ -2377,9 +2377,10 @@ against a fixed camera it lays the figure on its side. `omkdata.pose()` cancels
 it by default (`upright=True`) — **and that is a viewer convenience, not the
 engine** (settled 2026-09-02, [FILE_FORMATS](FILE_FORMATS.md) 5, "How a line
 BLENDS"). The engine applies every recorded rotation, the root's included,
-RELATIVE to the actor's own frame: `sub_42D120` means to replace the root
-track's key with identity, but `g_MorphRootTrack` is only ever −2 in the
-shipped image, so the write misses. It is what bows Kay'l's whole body toward
+RELATIVE to the actor's own frame: `sub_42D120` gives the root track the keys
+`[identity, root ⊗ yaw]` and plays key 1, so the root is applied, turned by the
+scene clip's heading (corrected 2026-10-02 - this said the index was only ever
+−2 and the write missed; [FILE_FORMATS](FILE_FORMATS.md) 5 has the read). It is what bows Kay'l's whole body toward
 the camera on `125339` — pelvis→head 47° at frame 420 with the root kept, 3° cancelled —
 and `engine/` keeps a line's root whenever a scene object stages the speaker
 (the cancellation stays as its fallback for a speaker no object drives). The

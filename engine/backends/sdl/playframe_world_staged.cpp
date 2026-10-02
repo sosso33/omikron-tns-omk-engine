@@ -2024,9 +2024,9 @@ void PlayState::worldStaged() {
             }
             // THE FADE at both ends of the line - `sub_42D120`'s,
             // pose.h has the read - and the root is NOT cancelled when
-            // a scene clip stages him, because the engine's
-            // cancellation never fires (`g_MorphRootTrack` is only
-            // ever -2). See the note this replaces.
+            // a scene clip stages him: the engine plays the root as
+            // `root x yaw` (key 1 of the pair `sub_42D120` builds), which
+            // is `turnRootBy` above.
             float w = 1.0f;
             int idleFrame = static_cast<int>(sceneFrame);
             if (s.sceneTracks.valid()) {
@@ -2054,9 +2054,10 @@ void PlayState::worldStaged() {
             // THE PLACEMENT IS THE SCENE CLIP'S, WHOLE, WHILE A LINE
             // PLAYS. A line changes the POSE, never where the body
             // stands: the morph player (08_wave.c) never writes the
-            // line's root translation into the node - `g_MorphRootTrack`
-            // is -2, so the `f32(node + 28) = frameTranslation` write
-            // matches no track - and instead rotates that translation
+            // line's root translation into the node - the write behind
+            // `track == g_MorphRootTrack` is the root TRACK's position-key
+            // pointer, which nothing applying a frame reads - and instead
+            // rotates that translation
             // by the Y euler and adds it to `g_MorphOrigin`, latched
             // once at the start of the line (`dword_4EA8FC`). So a
             // line's root is a DELTA from where the body already

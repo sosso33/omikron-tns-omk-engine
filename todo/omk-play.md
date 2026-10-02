@@ -62,13 +62,23 @@ and up. Rejected on the way, each by render: no look during a line (the swing),
 the half-look over the animated head (the swing), the look over the reset head
 with the old target (head level/down).
 
-**A loose end on the way: how the engine keeps 118 through a line.** The
-`.3DM` root carries ~3 degrees, the heading composition `sub_42D120` performs
-is dead (`var_58` written, never read; `g_MorphRootTrack` = -2, its only write
-`0x0042BCA0`), an unmatched node is reset to identity (`Anim_BindNodeTrack`),
-and the facing matrix is the Euler (0). By that reading she would snap ~115
-degrees at every line; the originals say she does not. The port keeps the
-latch, which matches every capture; the mechanism is unfound.
+**How the engine keeps 118 through a line - CLOSED 2026-10-02, and a
+standing claim with it.** `g_MorphRootTrack` is not only ever -2: the demuxer
+`sub_42D960` writes it per line through its context pointer (base `0x4EA7D0`,
+`+2396`), so `sub_42D120` gives the root track the keys `[identity, root x
+yaw]` - `var_58`, which this entry called dead, is key 1. The port's
+`turnRootBy` is that composition. Corrected in CLAUDE.md 4, FILE_FORMATS 5,
+ASSETS, `pose.h` and the viewer's comments; no behaviour changes.
+
+**The arms (reader, 2026-10-02): early in the line her LEFT arm is out at
+shoulder or head height in the original and at table height in the port; the
+rest matches.** Ruled out by renders the reader judged: the lean flipped (both
+arms up), the lean composed in the other order (bent back), the lean removed
+(left arm better, right arm worse), the shoulder and belly tracks held still
+("worse"). Read and found the same as the port: the fade (`sub_471820`, a k/256
+slerp from the clip at `rec[47]`, length `min(30, frames / 4)`). Open; the next
+evidence wanted is the original's frames with their video times, to pair line
+frames.
 
 ### 98. A `media.play` line was laid out as a DIALOGUE line: clipped, with a scroll arrow nothing could move — A
 
