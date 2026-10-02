@@ -6713,7 +6713,9 @@ def c_play_usage():
     orphaned continuation line left behind when the `--shadow-quality` text
     was rewritten, still describing an older wording.
     """
-    play = os.path.join(ROOT, "engine", "backends", "sdl", "play.cpp")
+    # the parser and the usage text left `play.cpp`'s `main` for
+    # `PlayOptions::parse` (`todo/play-split.md` S2, 2026-10-02)
+    play = os.path.join(ROOT, "engine", "src", "app", "playoptions.cpp")
     if not os.path.isfile(play):
         return ("skipped",), ("skipped",), "engine/ absent"
     text = open(play, encoding="utf-8").read()
@@ -37948,6 +37950,8 @@ def c_licence_headers():
     fade's frames and time at 30 and 60 fps (`todo/sixty-fps.md`).
     **481 -> 483**: `backends/sdl/sdlfront.{h,cpp}` (2026-10-02), the SDL
     frontend moved out of `play.cpp` by `todo/play-split.md` S1c.
+    **483 -> 485**: `src/app/playoptions.{h,cpp}` (2026-10-02), the command
+    line moved out of `main` by S2.
     """
     import glob as _g
     TAG = "SPDX-License-Identifier: GPL-3.0-or-later"
@@ -37977,7 +37981,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (483, [], 1, []), \
+           (485, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \

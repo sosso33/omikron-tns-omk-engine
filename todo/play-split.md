@@ -6,8 +6,8 @@ could be divided."* **Nothing here has been applied.** `play.cpp` is held by
 another session; this file is the design, and every step below is written so
 it can land one at a time between that session's commits.
 
-**Status 2026-10-02**: S0, S1, S1b and **S1c** are done, the record was
-ENLARGED (S0b, below), and **S2 (the flags) is next**. The file kept growing while the split waited -
+**Status 2026-10-02**: S0, S1, S1b, S1c and **S2** are done, the record was
+ENLARGED (S0b, below), and **S3 (`Game`, one sub-struct at a time) is next**. The file kept growing while the split waited -
 `play_split_scan.py` on 2026-10-02, against the 2026-09-18 figures that §1
 still quotes:
 
@@ -339,7 +339,7 @@ check in the suite.
 | ~~S1b~~ **DONE 2026-09-22** | `ViewCam`, `Light` and `relight` joined them - also pure. `play.cpp` -> **20913** |
 | ~~S1c~~ **DONE 2026-10-02** | the SDL half still in `play.cpp`: `AudioLock`, `SdlFrontend`, `keymap`/`charmap`. These need the three Makefile lines and the Vita `CMakeLists.txt` to name a new `backends/sdl/*.cpp`, which is why they are their own step |
 | **S1 (original)** | file-level helpers → `sdlfront.{h,cpp}` and `src/app/*` (lines 1-1416) | 0 — they are outside `main` | none: no state |
-| **S2** | `PlayOptions` + `parseArgs` (1420-2198). Tactic: bind each old local as a REFERENCE to the struct field (`auto& startVulkan = opt.startVulkan;`) so not one line of the loop changes in this step | the 84 flags | low |
+| ~~S2~~ **DONE 2026-10-02** | `PlayOptions` + `parseArgs` (1420-2198). Tactic: bind each old local as a REFERENCE to the struct field (`auto& startVulkan = opt.startVulkan;`) so not one line of the loop changes in this step | the 84 flags | low |
 | **S3** | `Game` introduced, sub-struct by sub-struct, same reference-alias trick: the loop keeps compiling unchanged while ownership moves. One sub-struct a commit | all 468, 40 or so at a time | medium: lifetimes (the caches return pointers into maps - must not move) |
 | **S4** | the LEAF phases become `Game` methods in their own files: HUDs, screens' rows (each 0-31 names), fades, fps, quit/load, sounds, save writing | ≤40 each | low |
 | **S5** | `Presenter` and the three implementations; `main.cpp` per backend | the render state | medium: this is also Vita F1 |
@@ -387,6 +387,34 @@ And the prose it made false: `play.cpp`'s header and `engine: screen`'s
 docstring said `play.cpp` was "the only file in the tree that includes an SDL
 header"; it is now `backends/sdl/`, which is what A8 rule 2 actually asks
 (one dependency per backend).
+
+### S2, done 2026-10-02 — the command line
+
+`main`'s 98 flag declarations (with their defaults and comments), the usage
+text, the `--help` scan, the tables lookup and the argument loop ->
+`src/app/playoptions.{h,cpp}`, as `struct omk::PlayOptions` and its
+`int parse(argc, argv)` (-1 to go on, else `main`'s exit code). `play.cpp`
+22420 -> **21784**; `main` now opens with the parse and **99 reference
+aliases** (`auto& density = opt.density;`, and `fr`/`tb`), so not one line
+after them changed. `kTypeMarker` / `kCharMarker` went with `--keys`.
+
+* **`parse` is a MEMBER**, so the moved loop's text is verbatim with the
+  fields in scope - no `o.` prefixes, no aliases inside it. The only line that
+  changed is `const std::string fr = argv[1];` -> `fr = argv[1];`;
+* **flags vs state**: 21 names declared among the flags are RUNTIME state
+  (the boarding, the door clips, the live `ride`, the save's own placement,
+  `scxPlayed`) and stay locals of `main`. Told apart by whether the parse
+  loop names them with string literals stripped - `ride` matched `"--ride"`
+  until they were;
+* **checked**: the line multiset differs by exactly that `fr` line and the
+  new scaffolding; the 28-scene record identical (`--gpu` included);
+  `--help` (0, 252 lines), no arguments (2) and a bad `--filter` (2);
+  `licence headers` 483 -> 485; `play usage` now reads `playoptions.cpp`,
+  SHOWN TO FAIL by renaming `--fps` in the help text; all four builds.
+* `src/app/` is globbed by both builds and the Vita's, so no build file
+  changed. The Vita still enters through `-Dmain=omk_play_main` and a built
+  `argv`; filling a `PlayOptions` directly is now possible, and belongs with
+  S5's per-backend `main`.
 
 ### What NOT to do
 
