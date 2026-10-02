@@ -401,6 +401,31 @@ Two backends, in this order:
   `Désinstaller The Nomad Soul..lnk` (34), the Windows uninstaller shortcut,
   which a Mac disc would not carry - and the only non-ASCII name.
 
+#### 3d-i. One Carbon binary, run on both - 2026-10-02
+
+Settled by a test program built with Retro68 (`-carbon`, Apple's Universal
+Interfaces) - ONE binary, run unchanged on **Mac OS 9.2.1** (QEMU `mac99`
+with the Screamer fork, CarbonLib) and on **Mac OS X 10.4.11** (ppcosxkvm,
+through `LaunchCFMApp`). Both wrote the same results:
+
+* C++20 holds - `std::span`, ranges, `<bit>`/`std::endian`, `std::map`,
+  `std::unique_ptr` - and so do **exceptions** (a `std::runtime_error`
+  caught) and **RTTI** (`dynamic_cast`); big-endian, `sizeof(size_t)` 4;
+* **`std::thread` does not exist** (no thread model in Retro68's
+  libstdc++) and **`std::filesystem` compiles but does not link** (it needs
+  POSIX `symlink` and kin). On OS 9 the voice read-ahead becomes ticked work
+  (3d's "No threads") and the three `std::filesystem` uses go through
+  `DataFs`; Tiger's own cross-compiler (3a-i) has both;
+* Retro68's `printf` prints `%zu` as the letters `zu` - OMK's `%zu`
+  formats need `%lu` and a cast on that target.
+
+How it was run: OS 9 has no shell, so the program went into the OS 9 disk's
+`System Folder/Startup Items` (mounted on the Mac as HFS+), ran at boot,
+wrote its file beside itself and called `FlushVol` - OS 9 caches writes and
+the emulator is stopped, not shut down - and the file was read back off the
+disk image. On Tiger: `ditto -c -k --sequesterRsrc` keeps the resource fork
+in transit, and `LaunchCFMApp` runs it from a shell.
+
 ### 3e. Testing without a 1999 Mac
 
 * **Correctness on a big-endian CPU, first and cheapest**: build the engine
@@ -466,9 +491,11 @@ dropped.
 4. **The GL 1.1 fixed-function backend** behind `renderer.h`, pre-transformed
    vertices, built and compared against the software reference on the dev
    Mac (PORTING B2: shown to fail).
-5. **Retro68 + Carbon bring-up**: a C++20 hello-world that settles 3d's
-   unconfirmed list on OS 9 in QEMU and on Tiger, then the engine with ticked
-   loading, Sound Manager audio, 555 video, and the movies through QuickTime.
+5. **Retro68 + Carbon bring-up**: the hello-world is DONE (3d-i, 2026-10-02):
+   one Carbon binary runs on OS 9.2.1 and Tiger, C++20 + exceptions + RTTI
+   hold, no `std::thread`, no `std::filesystem`. Left: the engine itself, with
+   ticked loading, Sound Manager audio, 555 video, the movies through
+   QuickTime.
 6. **Correctness in QEMU** - OS 9.2.2 (`mac99`, Screamer), then Tiger on
    ppcosxkvm with the GPU.
 7. **RAVE** (optional, the *Unreal Tournament* route).
@@ -479,14 +506,11 @@ dropped.
 Closed 2026-10-01: the HFS name limit (3d - not a problem), the movie codec
 (3f - MPEG-1, within a G3), how bodies pose (3b-i - rigid but for the seams
 and the face; the original's CPU transform is the model). Closed 2026-10-02:
-`opt.cpp`'s range checks PASS a byte-swapped circuit (3a-i).
+`opt.cpp`'s range checks PASS a byte-swapped circuit (3a-i); what Retro68
+holds, and that ONE Carbon binary runs on OS 9 and OS X both (3d-i).
 
 Still open:
 
-* What Retro68 actually holds: C++20's library, exceptions/RTTI on PPC, and
-  whether one Carbon build runs on OS 9 and OS X both - or OS 9 needs a
-  classic Toolbox build and OS X a separate Mach-O one (3d). A hello-world
-  decides it.
 * Period facts not confirmed: *Unreal* (1999) on RAVE + Glide, a Glide
   *Quake*, OpenGL for Mac OS 1.0/1.1's release dates, whether *Unreal
   Tournament* had OpenGL at launch, and whether a Mac Omikron was ever
