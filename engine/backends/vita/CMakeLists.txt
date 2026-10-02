@@ -183,6 +183,10 @@ if(OMK_VITA_GAME)
     ${ENGINE}/backends/sdl/playframe_control.cpp
     ${ENGINE}/backends/sdl/playframe_modes.cpp
     ${ENGINE}/backends/sdl/playframe_world.cpp
+    ${ENGINE}/backends/sdl/playframe_world_scene.cpp
+    ${ENGINE}/backends/sdl/playframe_world_staged.cpp
+    ${ENGINE}/backends/sdl/playframe_world_crowd.cpp
+    ${ENGINE}/backends/sdl/playframe_world_draw.cpp
     ${ENGINE}/backends/sdl/playframe_screens.cpp
     ${ENGINE}/backends/sdl/playframe_present.cpp
     ${ENGINE}/backends/gles/glesrender.cpp)

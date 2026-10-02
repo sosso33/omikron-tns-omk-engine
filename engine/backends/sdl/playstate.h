@@ -573,6 +573,37 @@ struct PlayState {
 
     int step();
 
+    // ---- `phaseWorld`'s PARTS (todo/play-split.md) and the state they share: each
+    // was a local of the phase, and is assigned where it was declared, every turn
+    const omk::WorldCamera * wc{};
+    omk::View dlgView{};
+    bool haveDlgCam{};
+    const omk::SceneRunner::ActiveEditing * edit{};
+    omk::CamSample editCam{};
+    bool haveEdit{};
+    const omk::UiItem * vpItem{};
+    bool screenReadsPicture{};
+    omk::View view{};
+    bool drawPlayer{};
+    bool drawArm{};
+    bool sideCullSet{};
+    bool sideCullBodies{};
+    omk::Frustum sideFr{};
+    double player0{};
+    bool playerOffView{};
+    bool playerGpu{};
+    std::vector<omk::Draw> draws{};
+    bool outsideView(const float c[3], float r, bool bodies);
+    void worldCamera();   // the letterbox, the camera, the instrument override
+    void worldTexturePool();   // the texture pool
+    void worldProps();   // the world's props
+    void worldGuns();   // the gun in his hand, each gunman's gun
+    void worldBolts();   // the bolts
+    void worldStaged();   // every staged body, posed by whatever drives it
+    void worldCrowd();   // the pedestrians, the vehicles, the player
+    void worldDrawLists();   // the particles, the visible set, the lights and the shadows into the frame's draw lists
+    void worldMirror();   // the mirror and the present pass
+
     // ---- WHAT `main` DEFINED AS LAMBDAS, methods now (`playstate.cpp`)
     float attGain(int a);
     float fxGain();

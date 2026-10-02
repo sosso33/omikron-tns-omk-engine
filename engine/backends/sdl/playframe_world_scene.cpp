@@ -1,0 +1,1115 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// THE WORLD'S SCENE: the camera, the texture pool, the props, the guns, the bolts.
+// Parts of `PlayState::phaseWorld`, moved byte for byte by `todo/play-split.md`
+// (2026-10-02); the phase calls them in this order.
+#include "playframe.h"
+
+// The letterbox, the camera, the instrument override
+void PlayState::worldCamera() {
+    auto& session = *session_;
+    view = dlgView;
+    // THE LETTERBOX. Camera mode - conversations and cutscenes - is
+    // 1.818:1, which the dialogue captures measure and which a reader
+    // confirmed does NOT belong to free roaming. Everything the
+    // replica draws in 3D so far is camera mode: a scripted world
+    // camera or a dialogue camera, never a player-controlled one. The
+    // strip's height follows from the display's WIDTH, so no
+    // resolution is baked in, and the bands are simply what the
+    // framebuffer was cleared to.
+    view.vw = dispW;
+    view.vh = static_cast<int>(dispW / 1.8181818 + 0.5);
+    // ...and adventure mode is NOT camera mode: a reader confirmed
+    // the strip belongs to conversations and cutscenes, so the
+    // walk is drawn full-frame.
+    // (`|| uiPause`: a pause does not change the camera mode, so it
+    // does not put bars on a walk either.)
+    //
+    // **AND IT IS THE PLAYER'S CONTROL THAT DECIDES, NOT THE SHAPE OF
+    // THE CAMERA** (next-tasks 2, "black stripes entering/leaving a
+    // building"). This also required `followCam` - the area's own
+    // camera 0, relative to actor 0 - and a great many areas roam
+    // under a FIXED camera instead: leaving Kay'l's flat runs
+    // `player.anim.hold` / `fade.to_black` / `camera.set 4418` and
+    // hands over to Hall 27, whose script leaves absolute camera 4353
+    // installed. Measured on that walk: by frame 400 `adventure` is 1
+    // and `animHeld` is 0 - the player has control - while `followCam`
+    // is still 0, so the bars went on at frame 3 and never came off
+    // again in 900 frames. That is the report.
+    //
+    // The captures say the same thing from the other side. Every
+    // letterboxed one is a frame the player does NOT control -
+    // `dlg402-32..41` at 64/64 rows, and `intro-75`, a CUTSCENE shot
+    // with a scripted world camera, at 64/65 - so the strip is not
+    // "a conversation" either, it is camera mode. Nothing establishes
+    // it for a frame he does control, whatever camera is up.
+    //
+    // ...AND "HE HAS CONTROL" IS THE HOLD, not `adventure` alone.
+    // A reader, on the end of the Telis lunch: *the stripes were not
+    // displayed on the zoom on the talisman*. SCENE 53's beat holds
+    // the player at pc 1090 and does not release him until 1220, so
+    // the whole of it - the conversation, `object.show 27` and the
+    // 4215/4216 zoom that follows - is camera mode; but a game
+    // resumed from the LOAD PANEL sets `forceAdventure`, whose
+    // `wantAdventure` asks only that he is placed with no dialogue
+    // and no screen up. Between the conversation closing and the
+    // release, that is true, and the bars came off over the zoom.
+    //
+    // `player.anim.hold` is the engine's own marker for it, and the
+    // two traced `Screen_Fade` sites pair with exactly that:
+    // `Screen_Fade(1)` with `Actor_HoldAnimation(player, 1)` on the
+    // way into a slider travel and a fight, `Screen_Fade(0)` with
+    // `Actor_HoldAnimation(player, 0)` on the way out.
+    //
+    // ...AND THE STRIP OUTLASTS THE RELEASE BY THE FADE. SCENE 53's
+    // beat brackets itself
+    //
+    //     1089  fade.to_black       ; Screen_Fade(1) -> state 3
+    //     1090  player.anim.hold
+    //      ...  387, the sneak call, 388, the talisman zoom
+    //     1220  player.anim.release
+    //     1221  fade.from_black     ; Screen_Fade(0) -> state 4
+    //
+    // - the release comes BEFORE the fade, so a strip that ends with
+    // the hold ends one frame early and vanishes instead of fading.
+    // A reader: *there was fade to show the black stripes then they
+    // suddenly disappeared*.
+    //
+    // **The test is `bandsDark`, not `running`**, and that is a
+    // second report: *the stripes of the loading screen are not
+    // removed when I can actually play*. Mode 3 HOLDS once its clock
+    // is spent - armed for ever, drawing no bands at all - so a strip
+    // keyed on the fade being armed never lifts after a load.
+    // `bandsDark` asks whether it is darkening the bands THIS frame,
+    // which is the engine's own two quads, `(h << 6) / 480` tall -
+    // the 64 the captures measure.
+    if ((adventure || uiPause) && !holdEditCam &&
+        !session.playerAnimHeld() && !session.blackFade().bandsDark())
+        view.vh = dispH;
+    {
+        // `OMK_LBLOG=1`: the letterbox decision and EVERY term of it,
+        // printed when any of them changes. The bars are the report a
+        // reader files as "black stripes", and the useful question is
+        // never whether they are there but WHICH term is holding them
+        // on - a stale `holdEditCam` and a running fade look identical
+        // on screen (`todo/fight-mode.md` 15.4).
+        static const bool lbLog = [] {
+            const char* e = std::getenv("OMK_LBLOG"); return e && *e == '1';
+        }();
+        static std::string told;
+        if (lbLog) {
+            char buf[200];
+            std::snprintf(buf, sizeof buf,
+                "vh %d/%d adventure %d uiPause %d holdEditCam %d "
+                "animHeld %d bandsDark %d parked %d editing %d",
+                view.vh, dispH, adventure ? 1 : 0, uiPause ? 1 : 0,
+                holdEditCam ? 1 : 0, session.playerAnimHeld() ? 1 : 0,
+                session.blackFade().bandsDark() ? 1 : 0,
+                session.parkedOnProgram() ? 1 : 0,
+                session.scene().activeEditing() ? 1 : 0);
+            if (told != buf) { told = buf;
+                std::printf("frame %ld: letterbox %s\n", n, buf); }
+        }
+    }
+    if (view.vh > dispH) view.vh = dispH;
+    view.vx = 0;
+    view.vy = (dispH - view.vh) / 2;
+    if (vpItem) {
+        // The viewport item's rectangle, scaled the way `I2D_ScaleX/Y`
+        // scale it (`v * screen / 640`), and it replaces the
+        // letterbox: `sub_45FA20` sets the D3D viewport to exactly
+        // this rect and the vertical fov follows its aspect.
+        view.vx = vpItem->x * dispW / 640;
+        view.vy = vpItem->y * dispH / 480;
+        view.vw = vpItem->w * dispW / 640;
+        view.vh = vpItem->h * dispH / 480;
+    }
+    // THE FOG (todo/options-config.md step 4). Linear, over the range
+    // the clip distance sizes - `sub_440BE0` writes `+328 = D * 0.25`
+    // as the start and `+340 = D` as the end, so it ENDS at the clip
+    // distance and not at the 0.95 bucket split. The colour is the
+    // scene's `+336`, which `Scene_Load3DO`'s caller sets to ZERO and
+    // nothing else in the decompilation writes: the shipped fog
+    // DARKENS toward the horizon rather than hazing it, which is what
+    // a domed city at night wants - and it is what hides the hard edge
+    // at the clip distance. `--fog 0` turns it off, `--fog-colour
+    // r,g,b` overrides it (the one mode that colours it uses
+    // 40,80,64 with a 15 m clip - `docs/ASSETS.md`, "The fog").
+    // With an unlimited clip there is no range to fade over, so the
+    // fog is OFF rather than infinite - an infinite start would reach
+    // the shader as a comparison against inf, a value no check could
+    // read back and no driver need agree about.
+    view.fog      = drawFog && !unlimitedClip;
+    view.fogStart = unlimitedClip ? 0.0f : static_cast<float>(clipInches * 0.25);
+    view.fogEnd   = unlimitedClip ? 0.0f : static_cast<float>(clipInches);
+    for (int k = 0; k < 3; ++k) view.fogColour[k] = fogRGB[k];
+    // CAMERA MODE 14 OUTRANKS THE EDITING, including its HOLD.
+    //
+    // `fight.begin` ends with `Camera_Request(0Eh, …)`, and a mode
+    // request REPLACES the installed mode - so a fight supersedes the
+    // mode-13 editing the scripted approach was using. This arm sat
+    // after the editing arms until 2026-09-16 and a reader watched the
+    // consequence: AREA 245's approach ends with "editing over - the
+    // camera HOLDS its last frame", that hold then won every frame of
+    // the fight, and the view never moved again. The fight camera was
+    // being computed correctly and thrown away.
+    if (!haveDlgCam && fightRun.active && fightRun.fight) {
+        const omk::FightCamera& fc = fightRun.fight->camera();
+        for (int k = 0; k < 3; ++k) {
+            view.cam.eye[k] = fc.eye[k];
+            view.cam.at[k]  = fc.at[k];
+        }
+        view.cam.hfovDeg = 75.0f;       // row 14's own fov is 0
+        view.cam.rollDeg = 0.0f;
+        view.cam.w = dispW; view.cam.h = dispH;
+        if (!fightCamTold) {
+            fightCamTold = true;
+            std::printf("frame %ld: the FIGHT CAMERA (mode 14) has the view - "
+                        "state %d, options row 18 'Caméra de combat' = %d (%s)\n",
+                        n, fc.state, settings.v.combatCamera,
+                        settings.v.combatCamera ? "Vue de côté" : "Vue de dos");
+        }
+    } else if (!haveDlgCam && haveEdit) {
+        // MODE 13: the editing's camera, at the object's own clock -
+        // so the shot and the animation cannot drift apart, they are
+        // one clock. The travel is the request's +24, `max(field, 0)`
+        // frames, blended linearly from the camera last on screen the
+        // way `sub_414A90` sets up the move; with no previous camera
+        // (nothing drawn yet) it is a cut, which is what the engine
+        // does with travel 0. ROLL is sampled and NOT applied -
+        // `RCamera` carries none - and the fov is the editing's own
+        // (Aapkayl's `sdb` opens at 37 and the Impasse's `intro` at
+        // 90, so it is not a constant to leave alone).
+        float u = 1.0f;
+        if (editFromKnown && edit->travel > 0.0f)
+            u = std::min(1.0f, session.scene().editingClock() / edit->travel);
+        for (int k = 0; k < 3; ++k) {
+            view.cam.eye[k] = editFromKnown
+                ? editFromEye[k] + (editCam.eye[k] - editFromEye[k]) * u
+                : editCam.eye[k];
+            view.cam.at[k]  = editFromKnown
+                ? editFromAt[k] + (editCam.at[k] - editFromAt[k]) * u
+                : editCam.at[k];
+        }
+        const float efov = editCam.fov > 1.0f ? editCam.fov : 75.0f;
+        view.cam.hfovDeg = editFromKnown ? editFromFov + (efov - editFromFov) * u : efov;
+        // THE ROLL, blended on the SHORT ARC. An angle that wraps is
+        // the class of error CLAUDE.md 1 keeps: +359 and 0 are the
+        // same rotation standing still and a whole turn apart once
+        // interpolated, and the title sequence span its camera
+        // through them.
+        view.cam.rollDeg = editFromKnown
+            ? editFromRoll + shortArc(editCam.roll - editFromRoll) * u
+            : editCam.roll;
+        // A rolled shot is worth one line, once: the roll was DROPPED
+        // by the renderer until 2026-09-03 and a still frame cannot
+        // show it, so seeing the number is how a reader knows it is
+        // being applied at all.
+        if (std::fabs(view.cam.rollDeg) > 0.5f && !rollTold) {
+            rollTold = true;
+            std::printf("  camera ROLL %.1f degrees is being applied "
+                        "(224 of the 1073 editing cameras carry one)\n",
+                        static_cast<double>(view.cam.rollDeg));
+        }
+        view.cam.w = dispW; view.cam.h = dispH;
+    } else if (!haveDlgCam && holdEditCam) {
+        // MODE 13 WITH NO ACTIVE CAMERA: the block is not written, so
+        // the last frame stands. Right after the editing branch,
+        // because the engine's hold outranks everything the frontend
+        // would otherwise pick - the follow camera included, since the
+        // mode is still 13 and nothing has requested another.
+        for (int k = 0; k < 3; ++k) {
+            view.cam.eye[k] = lastEye[k];
+            view.cam.at[k]  = lastAt[k];
+        }
+        view.cam.hfovDeg = lastFov;
+        view.cam.rollDeg = lastRoll;
+        view.cam.w = dispW; view.cam.h = dispH;
+    } else if (!haveDlgCam && !ride &&
+               session.sliders().calledVehicle() >= 0 &&
+               (session.sliders().callMachine().state == 2 ||
+                session.sliders().callMachine().state == 6 ||
+                (boarding && boardCam > 0) ||
+                (boarded && session.sliders().callMachine().state == 4))) {
+        // ---- THE CAMERA THAT WATCHES IT COME ------------------
+        //
+        // `sub_456530` case 2 asks for **camera mode 8 on the
+        // SLIDER** the moment a call is armed, and the only guard on
+        // it is `if (sub_413360(C) != 8)` - which stops it RE-asking
+        // when it is already there, not from asking at all. So the
+        // camera cuts to the vehicle and follows it in every time,
+        // which is what a reader described as seeing the slider on
+        // its road; this port kept the follow camera on the player
+        // and showed none of it.
+        //
+        // Same preset and same resolution as the ride's, because it
+        // is the same mode - only the subject differs, and in both
+        // cases the subject is the VEHICLE.
+        float at[3];
+        session.sliders().calledAt(at);
+        const float t = session.sliders().calledYaw() * 0.0174532925199433f;
+        const float cs = std::cos(t), sn = std::sin(t);
+        const auto place = [&](const float off[3], float out[3]) {
+            const float rx = off[0] * cs - off[2] * sn;
+            const float rz = off[0] * sn + off[2] * cs;
+            out[0] = at[0] - rx;
+            out[1] = at[1] - off[1];
+            out[2] = at[2] - rz;
+        };
+        static constexpr float kComeEye[3] = {0.0f, 118.1102f, -275.5905f};
+        static constexpr float kComeAt[3]  = {0.0f, 78.7402f, 0.0f};
+        // ...and preset 9 for the BOARDING, which is what
+        // `MDACTION`'s arm asks for over 60 frames
+        // (`dword_930818 = 42700000h`). Its eye is 157.4803 - 4.00 m,
+        // the same distance as the gate's reach - along the slider's
+        // -X, which is the door side and the side the man had to be
+        // standing on, and 59.0551 (1.50 m) up. Placed from the
+        // matrix ROWS and not from `calledYaw`, because the door
+        // geometry is what showed the pool's yaw and the actor's
+        // euler to be mirror conventions.
+        static constexpr float kBoardEye[3] = {157.4803f, 59.0551f, 0.0f};
+        if (boarding && boardCam > 0) {
+            float bat[3], bx[3], bz[3];
+            if (session.sliders().calledFrame(bat, bx, bz)) {
+                for (int k = 0; k < 3; ++k) {
+                    view.cam.eye[k] = bat[k] - kBoardEye[0] * bx[k]
+                                             - kBoardEye[2] * bz[k];
+                    view.cam.at[k]  = bat[k];
+                }
+                view.cam.eye[1] -= kBoardEye[1];
+            }
+            boardCam -= frameSec * 30.0;   // by the delta (todo/sixty-fps.md 2)
+        } else {
+            place(kComeEye, view.cam.eye);
+            place(kComeAt,  view.cam.at);
+        }
+        view.cam.hfovDeg = 75.0f;      // the preset's own fov
+        view.cam.rollDeg = 0.0f;
+        view.cam.w = dispW; view.cam.h = dispH;
+    } else if (!haveDlgCam && ride) {
+        // CAMERA MODE 8, the ride camera, and its subject is the
+        // SLIDER and not the player: `camera_presets.json`'s row 8 is
+        // eye (0, 118.1102, -275.5905), target (0, 78.7402, 0) with
+        // `eyeSubject` and `targetSubject` both **5**, `f42` 0 (so
+        // the target does not lag) and `f44`/`f46` 8. Those offsets
+        // are exact metres - 3.00 up, 7.00 back and 2.00 up - which
+        // is what says they were authored rather than tuned.
+        //
+        // Resolved the way every subject-relative camera is:
+        // `out = subject - rotateYaw(offset)`, with `out[1] =
+        // subject[1] - offset[1]` (`o3de/worldcam.cpp`).
+        const float t = static_cast<float>(ride->yaw) * 0.0174532925199433f;
+        const float cs = std::cos(t), sn = std::sin(t);
+        const float sub[3] = {static_cast<float>(ride->x),
+                              static_cast<float>(ride->y),
+                              static_cast<float>(ride->z)};
+        const auto place = [&](const float off[3], float out[3]) {
+            const float rx = off[0] * cs - off[2] * sn;
+            const float rz = off[0] * sn + off[2] * cs;
+            out[0] = sub[0] - rx;
+            out[1] = sub[1] - off[1];
+            out[2] = sub[2] - rz;
+        };
+        static constexpr float kRideEye[3] = {0.0f, 118.1102f, -275.5905f};
+        static constexpr float kRideAt[3]  = {0.0f, 78.7402f, 0.0f};
+        place(kRideEye, view.cam.eye);
+        place(kRideAt,  view.cam.at);
+        view.cam.hfovDeg = 75.0f;      // the preset's own fov
+        view.cam.rollDeg = 0.0f;
+        view.cam.w = dispW; view.cam.h = dispH;
+    } else if (!haveDlgCam && takeCam && player) {
+        // THE TAKE CAMERA (omk-play 69): mode 1's preset resolved
+        // against him every frame, travelled linearly over 30 frames
+        // from the camera that was on screen at the request - the
+        // same blend the editings use, `sub_414A90`'s setup being one
+        // mechanism for both - then held; and mode 16 travels the
+        // same 30 frames back to the follow camera and hands over.
+        // Full-frame, not letterboxed: nothing read ties the strip
+        // to this mode, and the walk it interrupts is full-frame.
+        const int wcs = static_cast<int>(player->state());
+        const bool swimCam = !waterCamPreset && wcs >= 11 && wcs <= 14;
+        omk::FollowCamera tc =
+            swimCam ? player->resolveOffsetsYaw(takeCamEye, takeCamAt, takeCamFov)
+                    : player->resolveOffsets(takeCamEye, takeCamAt, takeCamFov);
+        // THE SWIM CAMERA STAYS INSIDE THE SET: a ray from what it looks
+        // at to where it would stand, through the shown set's `shotSoup`
+        // - the fight camera's own test (`sub_416570` -> `sub_444810`,
+        // CollisionOnly skipped, 0x41 untested) - and the eye is brought
+        // in to nine tenths of the way to the wall. A reader, 2026-09-17:
+        // *"the camera does not respect collision and often goes outside
+        // the environment"*. RECONSTRUCTION, labelled: the engine's swim
+        // variant (`sub_413CD0`) sets camera flags 4 | 0x4800 and NOT the
+        // land camera's flag 8, whose pass is the wall rule `sub_417070`;
+        // what 0x4000 and 0x800 run is unread, so which rule keeps the
+        // original's lens inside is not established - only that a canal
+        // three metres wide cannot hold a camera three metres behind him.
+        if (swimCam) {
+            const omk::TriangleSoup* shot = nullptr;
+            for (const auto& ws : worldSlots)
+                if (!ws.stem.empty() && ws.stem == worldSet) shot = &ws.shotSoup;
+            if (shot && !shot->empty()) {
+                const double p0[3] = {tc.at[0], tc.at[1], tc.at[2]};
+                const double d[3] = {double(tc.eye[0]) - tc.at[0], double(tc.eye[1]) - tc.at[1],
+                                     double(tc.eye[2]) - tc.at[2]};
+                const auto h = omk::sweepSphere(*shot, p0, d, 0.0);
+                if (h && h->t < 1.0) {
+                    const double t = h->t * 0.9;
+                    for (int k = 0; k < 3; ++k)
+                        tc.eye[k] = static_cast<float>(p0[k] + t * d[k]);
+                    static long swimCamTold = -1000;
+                    if (n - swimCamTold >= 60) {
+                        swimCamTold = n;
+                        std::printf("frame %ld: the swim camera - a wall at %.0f%% of the way to "
+                                    "the eye; brought in to %.0f %.0f %.0f\n", n, h->t * 100.0,
+                                    double(tc.eye[0]), double(tc.eye[1]), double(tc.eye[2]));
+                    }
+                }
+            }
+        }
+        const omk::FollowCamera& fc = player->followCamera();
+        const omk::FollowCamera& to = takeCamPhase == 3 ? fc : tc;
+        float u = 1.0f;
+        if (takeCamPhase == 1 || takeCamPhase == 3) {
+            takeCamClock += static_cast<float>(frameSec * 30.0);
+            u = haveLastDrawn ? std::min(1.0f, takeCamClock / takeCamTravel) : 1.0f;
+        }
+        for (int k = 0; k < 3; ++k) {
+            view.cam.eye[k] = takeCamFromEye[k] + (to.eye[k] - takeCamFromEye[k]) * u;
+            view.cam.at[k]  = takeCamFromAt[k]  + (to.at[k]  - takeCamFromAt[k])  * u;
+        }
+        view.cam.hfovDeg = takeCamFromFov + (to.fov - takeCamFromFov) * u;
+        view.cam.rollDeg = 0.0f;
+        view.cam.w = dispW; view.cam.h = dispH;
+        if (u >= 1.0f) {
+            if (takeCamPhase == 1) takeCamPhase = 2;
+            else if (takeCamPhase == 3) { takeCam = false; takeCamPhase = 0; }
+        }
+    } else if (!haveDlgCam && (adventure || uiPause) && followCam &&
+               player) {
+        // The controller's follow camera: the world camera's offsets
+        // resolved against HIS position and facing every frame, with
+        // the engine's lag (player.h quotes sub_415D10/sub_415E60).
+        //
+        // `|| uiPause` because OPENING A SCREEN DOES NOT MOVE THE
+        // CAMERA. Nothing in the pause screen's open callback touches
+        // the camera mode, and `Game_Frame` renders with whatever is
+        // installed, so the view behind the menu is the view that was
+        // on screen. `adventure` alone is a per-frame mode that any
+        // screen takes false, so pausing used to swap the follow
+        // camera for the area's own camera 0 - the shot jumped the
+        // moment the menu came up.
+        // THE CAMERA THROUGH A WALL, measured: the one invariant
+        // `sub_417070` exists to keep is that nothing solid lies
+        // between the camera's target and its eye. Cast the segment
+        // and say so.
+        // THE OBSTRUCTION PASS, per frame and at full precision -
+        // `sub_417070`'s `+208`, `+328` and the height it is pushing
+        // the eye to. `todo/camera-obstruction.md` 5 is the
+        // transcription this reports on; the staged probe below is a
+        // different question (does a solid face lie in the segment)
+        // and stays every tenth frame so its own check is unmoved.
+        if (obstructProbe) {
+            const omk::FollowCamera& c = player->followCamera();
+            const float* p = player->pos();
+            // `+312 + +156` = -0.7 x the pelvis height, plus the
+            // subject's own y - the height a fully pinched eye rides.
+            const float lift = p[1] - 1.7f * player->cameraLift();
+            std::printf("obstruct %ld block %d kept %.4f eye %.4f %.4f %.4f "
+                        "at %.4f %.4f %.4f lift %.4f\n",
+                        n, player->cameraBlockState(),
+                        double(player->cameraKeptDistance()),
+                        double(c.eye[0]), double(c.eye[1]), double(c.eye[2]),
+                        double(c.at[0]), double(c.at[1]), double(c.at[2]),
+                        double(lift));
+        }
+        if (stagedProbe && (n % 10) == 0) {
+            const omk::FollowCamera& c = player->followCamera();
+            const double at[3] = {c.at[0], c.at[1], c.at[2]};
+            const double d[3]  = {c.eye[0] - c.at[0], c.eye[1] - c.at[1],
+                                  c.eye[2] - c.at[2]};
+            bool through = false;
+            for (const omk::TriangleSoup* sp : {&playerSteep, &playerSoup})
+                if (!sp->empty())
+                    if (const auto h = omk::sweepSphere(*sp, at, d, 1.0))
+                        if (h->t < 0.98) through = true;
+            std::printf("    cam %ld eye %.0f %.0f %.0f  at %.0f %.0f %.0f  "
+                        "dist %.0f  %s  (soups %zu steep / %zu walk tris)\n", n,
+                        c.eye[0], c.eye[1], c.eye[2],
+                        c.at[0], c.at[1], c.at[2],
+                        std::sqrt(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]),
+                        through ? "THROUGH a solid face" : "clear",
+                        playerSteep.size() / 9, playerSoup.size() / 9);
+        }
+        // ---- MODE 4 HAS NO LAG, and the follow camera is all lag -
+        //
+        // `camera_presets.json` row 4's three smoothing divisors are
+        // ZERO. `followCamera()` is `cam_`, the SMOOTHED one - the
+        // mode-0 preset's 3/8/8 - so aiming through it drags the view
+        // behind the mouse, which is what a reader described as
+        // turning "but not correctly". `resolveOffsets` is the same
+        // resolve with NO lag, and the header says exactly what it is
+        // for: "what `Camera_Request(mode)` gives a preset whose
+        // three smoothing divisors are 0". The TAKE camera (mode 1)
+        // already uses it (`todo/omk-play.md` 69, 97i).
+        omk::FollowCamera fc = player->followCamera();
+        if (shootMode && shootCameraLive) {
+            const float rad = shootPitch * 3.14159265f / 180.0f;
+            // Y POINTS DOWN, so raising the eye is a NEGATIVE offset -
+            // the same sign `cameraLift` uses. 0 is the preset's own
+            // value and the faithful one; `--shoot-eye` departs from
+            // it deliberately.
+            // The lift: `--shoot-eye N` if given, otherwise
+            // `sub_414520` case 4's `0.7 * the model's extent`.
+            //
+            // MIND THE SIGN, because it is the opposite of what "Y
+            // grows down" suggests: `resolveOffsets` computes
+            // `eye = subject - R(yaw) * offset`, so it SUBTRACTS, and
+            // a POSITIVE y offset therefore raises the eye - the same
+            // way `camLift_` is subtracted from `pos` to lift the
+            // subject off the feet in the first place.
+            //
+            // Written as `-lift` this put the eye 29.8 BELOW the
+            // pelvis, which is 6.6 above the feet: ankle height, and
+            // exactly what a reader photographed when the view still
+            // looked low after the height itself was read correctly.
+            const float lift = shootEyeSet ? shootEyeLift : player->headLift();
+            const float eye[3] = {0.0f, lift, 0.0f};
+            const float at[3]  = {0.0f, lift + 787.4016f * std::sin(rad),
+                                  787.4016f * std::cos(rad)};
+            fc = player->resolveOffsets(eye, at, 75.0f);
+        }
+        for (int k = 0; k < 3; ++k) {
+            view.cam.eye[k] = fc.eye[k];
+            view.cam.at[k]  = fc.at[k];
+        }
+        view.cam.hfovDeg = fc.fov;
+        view.cam.rollDeg = 0.0f;      // the follow camera carries none
+        view.cam.w = dispW; view.cam.h = dispH;
+    } else if (!haveDlgCam) {
+        // A relative point is `subjectPos - R(yaw) * offset`, which is
+        // what `sub_415D10`/`sub_415E60` do; an absolute one is passed
+        // through. `resolveCamera` handles both per point, because the
+        // engine decides per point and 959 of the 1443 relative
+        // cameras are relative in ONE of their two.
+        //
+        // ...AGAINST THE SAME SUBJECT POINT THE FOLLOW CAMERA USES.
+        // `session.playerPos()` is his FEET - the ground point the
+        // walker keeps - and a relative camera's offset is measured
+        // from the pelvis, which is why `resolveSteady` subtracts
+        // `camLift_` (Y points down, so subtracting RAISES). The
+        // follow path did that from issue 49 and this one did not, so
+        // every scripted shot naming a subject sat a whole lift too
+        // low - about 42 units for HO1_FNM, and visibly so on AREA
+        // 222's tutorial shots 4290/4291/4292
+        // (`todo/omk-play.md` 57).
+        const float lift = player ? player->cameraLift() : 0.0f;
+        // ...and the Session solves a TRAVEL's two ends at the same
+        // point, so it has to know the lift too
+        session.setCameraSubjectLift(lift);
+        const float* pp0 = session.playerPos();
+        const float subj[3] = {pp0[0], pp0[1] - lift, pp0[2]};
+        const omk::ResolvedCamera rc = omk::resolveCamera(
+            *wc, subj, session.playerYaw());
+        for (int k = 0; k < 3; ++k) {
+            view.cam.eye[k] = rc.eye[k];
+            view.cam.at[k]  = rc.at[k];
+        }
+        view.cam.hfovDeg = wc->fov > 1.0f ? wc->fov : 75.0f;
+        view.cam.rollDeg = wc->roll;   // already wrapped to (-180,180]
+        view.cam.w = dispW; view.cam.h = dispH;
+    }
+    // AN INSTRUMENT OVERRIDE, and nothing the engine does: `--eye`
+    // and `--at` (and `--fov`) replace whatever camera the frame
+    // chose, so a shot can be framed on a body the game's own camera
+    // is not looking at. `--scene` has taken the same three since it
+    // was written; this makes them work with the Session running.
+    if (haveEye && haveAt) {
+        for (int k = 0; k < 3; ++k) {
+            view.cam.eye[k] = eyeA[k];
+            view.cam.at[k]  = atA[k];
+        }
+        if (fovA > 1.0f) view.cam.hfovDeg = fovA;
+        view.cam.w = dispW; view.cam.h = dispH;
+    }
+    // What is on screen this frame, for the next editing to travel
+    // from.
+    for (int k = 0; k < 3; ++k) { lastEye[k] = view.cam.eye[k]; lastAt[k] = view.cam.at[k]; }
+    // ...and the RESOLVED eye, which is the quantity a camera fault
+    // is actually about. A frame counts lit pixels and cannot tell a
+    // correct shot from a wrong one that happens to see the sky; the
+    // eye's distance from the player can (`verify.py: camera travel`).
+    if (omk::envSet("OMK_CAMEYE")) {
+        if (session.dialogOpen()) {
+            const auto& dg = session.dialogue();
+            const omk::DialogCamera* qa = dg.cameraA();
+            const omk::DialogCamera* qb = dg.cameraB();
+            std::printf("  [dlgcam] frame %ld  pair %d -> %d  u %.3f  phase %d  node %d"
+                        "  inForce %d  fov %.2f  roll %.2f\n", n,
+                        qa ? qa->id : -1, qb ? qb->id : -1,
+                        static_cast<double>(dg.cameraProgress()),
+                        static_cast<int>(dg.phase()), dg.node(), haveDlgCam ? 1 : 0,
+                        static_cast<double>(dlgView.cam.hfovDeg),
+                        static_cast<double>(dlgView.cam.rollDeg));
+        }
+        std::printf("  [cameye] frame %ld  eye %.0f %.0f %.0f  at %.0f %.0f %.0f"
+                    "  player %.0f %.0f %.0f\n", n,
+                    view.cam.eye[0], view.cam.eye[1], view.cam.eye[2],
+                    view.cam.at[0], view.cam.at[1], view.cam.at[2],
+                    session.playerPos()[0], session.playerPos()[1],
+                    session.playerPos()[2]);
+    }
+    lastFov = view.cam.hfovDeg;
+    lastRoll = view.cam.rollDeg;
+    haveLastDrawn = true;
+}
+
+// The texture pool
+void PlayState::worldTexturePool() {
+    auto& session = *session_;
+    // ---- THE TEXTURE POOL ------------------------------------
+    //
+    // The set's textures, then one section per staged MODEL, then the
+    // player's, then the sprites'; a batch's slot is its material plus
+    // its owner's base, which is the engine's own indexing (the bucket
+    // key's low six bits, ASSETS 4b) and not a second mechanism.
+    // Rebuilt on a COMPOSITION change rather than a size change: two
+    // models with the same texture count swapping is exactly what a
+    // size test cannot see.
+    // ...AND IN A CONVERSATION. `Actor_EnterDialogueMode` puts the
+    // player's channel on group 400, the dialogue stance, and he goes
+    // on being drawn like any actor - the reverse shots of 402 frame
+    // him across the room. This viewer drew him only in adventure
+    // mode, so every cut to Kay'l during a conversation showed an
+    // empty floor. A reader: *Kay'l is not visible when the camera
+    // changes*. The controller ticks through the conversation, so
+    // its pose is the stance.
+    // ...and the THIRD time this mode test has been too narrow: a
+    // PAUSE also takes `adventure` false, and the pause screen draws
+    // over the live scene, so without `uiPause` the menu came up on
+    // a street with the player deleted from it. Same shape as the
+    // conversation above.
+    // SHOOT MODE IS FIRST PERSON, so the player's own body is not
+    // drawn - the reader's word, 2026-09-09, and the engine agrees:
+    // `Shoot_Enter` (0x004222D0) calls `sub_436CE0` on the player's
+    // node, which is `o3de_Traverse` setting flag bit 2 on every node
+    // that does not carry 0x200000, and bit 2 is inside the
+    // not-drawable mask 0x800043. `sub_436D20` is its exact inverse
+    // (`& 0xFD`) and is what shows him again on the way out.
+    //
+    // Without this the camera - preset row 4, eye offset (0,0,0),
+    // which is the PELVIS in all 181 character models - sits inside
+    // his own mesh, and from some facings the whole view is the
+    // inside of his back. That is what the first play-test render of
+    // shoot mode showed, and it did not move when the player moved,
+    // which is the tell for something drawn in camera space.
+    //
+    // NOT MODELLED, and labelled rather than dropped: the 0x200000
+    // exemption, which leaves some nodes of the tree visible. The
+    // port draws the player as one body with no per-node flags, so
+    // it can only take him out whole. Whatever the exemption is for
+    // in first person - the weapon in his hands is the obvious
+    // candidate - is not reproduced here.
+    drawPlayer = playerReady && player &&
+                            !(session.shootMode().active() && shootCameraLive) &&
+                            (adventure || uiPause ||
+                             (session.dialogOpen() && !playerProgram));
+    // ...AND THE EXEMPTION, ported 2026-09-10 (`todo/shoot-mode.md`
+    // 8.0). `Shoot_Enter` hides the player's tree with `sub_436CE0`,
+    // which sets the hidden bit on every node WITHOUT 0x200000 - and in
+    // HO1_FN exactly three carry it: `UAvantg`, `UBrasg`, `UMaing`, the
+    // LEFT forearm, upper arm and hand, the arm the gun hangs on. So in
+    // first person the engine draws that arm and nothing else of him;
+    // `Shoot_Leave` (`sub_436D20`) clears the bit. A reader's frames of
+    // the original show it: the arm and the gun, low at the right.
+    drawArm = playerReady && player && !drawPlayer &&
+                         session.shootMode().active() && shootCameraLive;
+    mark("world begin, set");
+}
+
+// The world's props
+void PlayState::worldProps() {
+    auto& session = *session_;
+    // ---- THE WORLD'S PROPS -----------------------------------
+    //
+    // Every prop of the resident chunks whose DB state has bit 1 -
+    // `object.show` sets it, `object.hide` clears it - drawn at the
+    // placement `Area_Load` converted: position in inches, rotation
+    // in degrees off a 4096-per-turn integer. `Object_SetPlacement`
+    // gives the node `o3de_SetNodePos(pos)` and
+    // `Matrix3x3_FromEulerAngles(rot)`, so a corner is `M * local +
+    // pos` with M applied as a ROW vector, the convention
+    // `rotateYaw` and `resolveCamera` already use.
+    propGeo.corners.clear();
+    propGeo.batches.clear();
+    propGeo.cornerMesh.clear();
+    propBatchOwner.clear();
+    {
+        const auto shown = session.props();
+        for (const auto& pr : shown) {
+            // THE OBJECT IN HIS HAND (omk-play 69). `sub_41C490`, the
+            // MDGETOBJ hand-over, unlinks the prop's node from the
+            // world and re-links it under the actor's node at +44
+            // with its local transform zeroed - and +44 is
+            // `o3de_FindMeshByName(model, "Maing")` (04_sys.c 5506,
+            // a strstr: the model's `UMaing`), the LEFT hand. So from
+            // the grab until `sub_41C540` puts it back or the bank
+            // hides it, the object is drawn riding the left hand's
+            // composed pose, through the same model-to-world the
+            // player's own corners take. A reader described the
+            // original: "the camera movement shows the object in the
+            // hand of the player, when they have to confirm the grab
+            // or not" - which is what the mode-1 camera frames.
+            // `shown` is object-state bit 2, which the hold leaves
+            // set (the bank clears bit 0 later), so a held prop is
+            // still "shown" - the engine simply draws its node where
+            // the hierarchy now puts it, the hand, and so does this.
+            const bool held = player && heldInHand >= 0 && pr.id == heldInHand;
+            if (!pr.shown && !held) continue;
+            const auto& objs = voiceLib.objects();
+            if (pr.id < 0 || static_cast<std::size_t>(pr.id) >= objs.size()) continue;
+            const PropModel* pm = propModelFor(objs[static_cast<std::size_t>(pr.id)].stem);
+            if (!pm || !pm->ready) continue;
+            if (held) {
+                const omk::NodeTracks* pt = player->poseTracks();
+                const std::vector<omk::MeshPose> pose = pt
+                    ? omk::composePose(playerMeshes, *pt, player->poseFrameF(), false)
+                    : omk::composePose(playerMeshes, omk::NodeTracks{}, 0, false);
+                int hand = -1;      // the LAST strstr hit, as o3de_Traverse leaves it
+                for (std::size_t i = 0; i < playerMeshes.size(); ++i)
+                    if (std::strstr(playerMeshes[i].name, "Maing")) hand = static_cast<int>(i);
+                if (hand < 0 || static_cast<std::size_t>(hand) >= pose.size()) continue;
+                const omk::MeshPose& hp = pose[static_cast<std::size_t>(hand)];
+                const float* pp = player->pos();
+                const float yaw = player->facing();
+                // WHERE IN THE HAND - a RECONSTRUCTION, labelled. The
+                // node's origin is the wrist joint, and a 6 cm object
+                // (ANNEAU's extent is 2.6 units) placed there sits
+                // inside the hand mesh: measured, the drawn rings
+                // centred within 0.2 of the node and nobody could see
+                // them. What offset the engine gives a re-linked prop
+                // is not read (`sub_41C490` leaves the node's +36
+                // alone and `Anim_ApplyNodeFrame` skips a node whose
+                // header +12 is -1). Until it is, the object is
+                // carried at the hand mesh's own centre, which is the
+                // palm.
+                // THE ENGINE'S RULE, read 2026-09-05. The transform pass
+                // (`sub_4942A0`, 26_ole.c) composes a child as
+                // `world = parent.world + parent.worldMatrix * local`,
+                // `local` being the mesh record's +128..+136 - which
+                // `sub_41C490` leaves as the prop's file carries it
+                // (ANNEAU: -2.24, -0.17, -2.01, three units from the
+                // wrist toward the knuckles) - and the child's rotation
+                // is `matrix(+56) x facing(+156)` under the parent's.
+                // A prop's placement ROTATION lives in +156, not +56:
+                // `Object_SetPlacement` builds its Euler matrix into the
+                // slot record and points +156 at it, while +56 stays
+                // identity - and the grab's `sub_437140(node, 0)` clears
+                // +156. So a held object turns with the HAND ALONE. The
+                // release (`sub_41C540(actor, 0)`) resets +56, re-links
+                // the node under the scene root and restores the saved
+                // placement, position and angles both, which is what
+                // drawing a released prop from its record already does.
+                const float handOff[3] = {pm->localOff[0], pm->localOff[1], pm->localOff[2]};
+                const std::size_t base = propGeo.corners.size();
+                for (const auto& c : pm->rest.corners) {
+                    omk::Corner w = c;
+                    const float local[3] = {c.x - pm->origin[0] + handOff[0],
+                                            c.y - pm->origin[1] + handOff[1],
+                                            c.z - pm->origin[2] + handOff[2]};
+                    float r[3];
+                    omk::qrot(hp.q, local, r);              // the hand's rotation, alone
+                    const float in[3] = {hp.pos[0] + r[0] - playerRootXZ[0], hp.pos[1] + r[1],
+                                         hp.pos[2] + r[2] - playerRootXZ[1]};
+                    float o[3];
+                    omk::rotateYaw(yaw, in, o);             // the player's model-to-world
+                    w.x = o[0] + pp[0];
+                    w.y = o[1] + pp[1] - playerFeet + lastRootDrop;
+                    w.z = o[2] + pp[2];
+                    propGeo.corners.push_back(w);
+                }
+                for (const auto& b : pm->rest.batches) {
+                    omk::Batch nb = b;
+                    nb.start += static_cast<int>(base);
+                    propGeo.batches.push_back(nb);
+                    propBatchOwner.push_back(pm);
+                }
+                static long heldToldFrame = -1000;
+                if (n - heldToldFrame >= 30) {
+                    heldToldFrame = n;
+                    double cx = 0, cy = 0, cz = 0; const std::size_t cnt = propGeo.corners.size() - base;
+                    float lo[3] = {1e9f, 1e9f, 1e9f}, hi[3] = {-1e9f, -1e9f, -1e9f};
+                    for (std::size_t c = base; c < propGeo.corners.size(); ++c) {
+                        const auto& w = propGeo.corners[c];
+                        cx += w.x; cy += w.y; cz += w.z;
+                        lo[0] = std::min(lo[0], w.x); hi[0] = std::max(hi[0], w.x);
+                        lo[1] = std::min(lo[1], w.y); hi[1] = std::max(hi[1], w.y);
+                        lo[2] = std::min(lo[2], w.z); hi[2] = std::max(hi[2], w.z);
+                    }
+                    if (cnt) { cx /= cnt; cy /= cnt; cz /= cnt; }
+                    float hin[3] = {hp.pos[0] - playerRootXZ[0], hp.pos[1], hp.pos[2] - playerRootXZ[1]}, ho[3];
+                    omk::rotateYaw(yaw, hin, ho);
+                    // the FIST as drawn: the hand mesh's corners in playerPosed, world
+                    float flo[3] = {1e9f, 1e9f, 1e9f}, fhi[3] = {-1e9f, -1e9f, -1e9f}; std::size_t fc = 0;
+                    for (std::size_t c = 0; playerPosedFrame == n - 1 && c < playerPosed.corners.size(); ++c) {
+                        if (c >= playerPosed.cornerMesh.size() || playerPosed.cornerMesh[c] != hand) continue;
+                        const auto& w = playerPosed.corners[c]; ++fc;
+                        flo[0] = std::min(flo[0], w.x); fhi[0] = std::max(fhi[0], w.x);
+                        flo[1] = std::min(flo[1], w.y); fhi[1] = std::max(fhi[1], w.y);
+                        flo[2] = std::min(flo[2], w.z); fhi[2] = std::max(fhi[2], w.z);
+                    }
+                    std::printf("held %d: hand node %.1f %.1f %.1f q(%.2f %.2f %.2f %.2f); object centre "
+                                "%.1f %.1f %.1f box [%.1f..%.1f %.1f..%.1f %.1f..%.1f] %zu corners %zu batches "
+                                "(mat %d texBase %zu); fist box [%.1f..%.1f %.1f..%.1f %.1f..%.1f] %zu corners "
+                                "(as drawn LAST frame; 0 when the renderer posed him); player %.1f %.1f %.1f yaw %.0f; camera eye %.0f %.0f %.0f\n",
+                                pr.id, ho[0] + pp[0], ho[1] + pp[1] - playerFeet + lastRootDrop, ho[2] + pp[2],
+                                hp.q.w, hp.q.x, hp.q.y, hp.q.z,
+                                cx, cy, cz, lo[0], hi[0], lo[1], hi[1], lo[2], hi[2], cnt,
+                                pm->rest.batches.size(),
+                                pm->rest.batches.empty() ? -1 : pm->rest.batches[0].material, pm->texBase,
+                                flo[0], fhi[0], flo[1], fhi[1], flo[2], fhi[2], fc,
+                                pp[0], pp[1], pp[2], yaw, lastEye[0], lastEye[1], lastEye[2]);
+                }
+                continue;
+            }
+            const double rx = pr.rotDeg[0] * 0.0174532925199433;
+            const double ry = pr.rotDeg[1] * 0.0174532925199433;
+            const double rz = pr.rotDeg[2] * 0.0174532925199433;
+            const double cx = std::cos(rx), sx = std::sin(rx);
+            const double cy = std::cos(ry), sy = std::sin(ry);
+            const double cz = std::cos(rz), sz = std::sin(rz);
+            // `Matrix3x3_FromEulerAngles` (0x00441EB0, CLEAN in readable/),
+            // TRANSCRIBED term for term - `Object_SetPlacement` builds a
+            // prop's facing matrix with it, the transform pass composes
+            // it under the scene root, and the vertex pass applies it
+            // row-vector (`v . M`, as `Matrix3x3_RotateVector`). The
+            // block this replaces claimed to be that function and was
+            // its INVERSE: numerically it equals the engine's with all
+            // three angles negated, so every prop on the floor was
+            // turned the wrong way - unnoticed on symmetric props until
+            // the rings came back from a correctly turned hand
+            // (2026-09-05).
+            const double m00 = cz * cy,                 m01 = -(sz * cy),               m02 = sy;
+            const double m10 = sy * sx * cz + sz * cx,  m11 = cz * cx - sx * sz * sy,   m12 = -(sx * cy);
+            const double m20 = sz * sx - sy * cz * cx,  m21 = cx * sz * sy + sx * cz,   m22 = cy * cx;
+            const std::size_t base = propGeo.corners.size();
+            for (const auto& c : pm->rest.corners) {
+                omk::Corner w = c;
+                // relative to the model's own root, then placed
+                const double lx = c.x - pm->origin[0];
+                const double ly = c.y - pm->origin[1];
+                const double lz = c.z - pm->origin[2];
+                w.x = static_cast<float>(lx * m00 + ly * m10 + lz * m20 + pr.pos[0]);
+                w.y = static_cast<float>(lx * m01 + ly * m11 + lz * m21 + pr.pos[1]);
+                w.z = static_cast<float>(lx * m02 + ly * m12 + lz * m22 + pr.pos[2]);
+                propGeo.corners.push_back(w);
+            }
+            for (const auto& b : pm->rest.batches) {
+                omk::Batch nb = b;
+                nb.start += static_cast<int>(base);
+                propGeo.batches.push_back(nb);
+                propBatchOwner.push_back(pm);
+            }
+            if (propsTold.insert(pr.id).second)
+                std::printf("prop %d SHOWN at %.1f %.1f %.1f rot %.1f %.1f %.1f\n",
+                            pr.id, static_cast<double>(pr.pos[0]),
+                            static_cast<double>(pr.pos[1]), static_cast<double>(pr.pos[2]),
+                            static_cast<double>(pr.rotDeg[0]),
+                            static_cast<double>(pr.rotDeg[1]),
+                            static_cast<double>(pr.rotDeg[2]));
+        }
+    }
+    // THE PROPS' GEOMETRY CHANGES, AND THE GPU MUST HEAR OF IT. The Vulkan
+    // backend keys a vertex buffer on the Geometry's pointer and
+    // `revision` and returns the cached buffer while they match - and
+    // `propGeo`'s revision was never bumped, so the props uploaded on the
+    // first frame were drawn for ever: the rings stayed on the floor and
+    // never appeared in the hand however right the CPU-side placement
+    // was (the log showed it exactly on the hand node for three days of
+    // reports). Every other per-frame geometry here bumps its revision;
+    // this one does now, whenever a prop is held or the set of shown
+    // props changes size.
+    // ...and on EVERY rebuild, not "while held or when the count changes":
+    // that rule missed the first frame after a release, so the GPU kept
+    // the last held frame's buffer - the rings standing where the hand
+    // let them go - while the CPU had them back on the floor (a reader's
+    // before/after screenshots, 2026-09-05). A few hundred corners a
+    // frame is nothing.
+}
+
+// The gun in his hand, each gunman's gun
+void PlayState::worldGuns() {
+    auto& session = *session_;
+    // ---- THE GUN IN HIS HAND (`todo/shoot-mode.md` 8.0) -----------
+    //
+    // `Shoot_Enter`'s event 48 hands the weapon object to `sub_41C490`,
+    // which links its node under actor +44 - `Maing` - with the local
+    // transform cleared, exactly as a take does; `Object_Load` has
+    // already unlinked `tir` (the bolt) and set 0x200000 on the node,
+    // so the first-person hide spares it. Drawn here the way the held
+    // prop is ("THE OBJECT IN HIS HAND"), without `tir`'s corners.
+    if (session.shootMode().active() && player && !shotGunStem.empty()) {
+        const GunFacts& gf = gunFactsFor(shotGunStem);
+        PropModel* pm = propModelFor(shotGunStem);
+        const omk::NodeTracks* pt = player->poseTracks();
+        if (pm && pm->ready && pt &&
+            pm->rest.cornerMesh.size() == pm->rest.corners.size()) {
+            const std::vector<omk::MeshPose> pose =
+                playerPoseNow(&*player, player->state() == omk::ActorState::Shoot,
+                              *pt, player->poseFrameF());
+            int hand = -1;      // the LAST strstr hit, as o3de_Traverse leaves it
+            for (std::size_t i = 0; i < playerMeshes.size(); ++i)
+                if (std::strstr(playerMeshes[i].name, "Maing")) hand = static_cast<int>(i);
+            if (hand >= 0 && static_cast<std::size_t>(hand) < pose.size()) {
+                const omk::MeshPose& hp = pose[static_cast<std::size_t>(hand)];
+                const float* pp = player->pos();
+                const float yaw = player->facing();
+                for (const auto& b : pm->rest.batches) {
+                    const std::size_t base = propGeo.corners.size();
+                    for (std::size_t c = b.start; c < b.start + b.count; ++c) {
+                        if (gf.ok && pm->rest.cornerMesh[c] == gf.tirMesh) continue;
+                        omk::Corner w = pm->rest.corners[c];
+                        const float local[3] = {w.x - pm->origin[0] + pm->localOff[0],
+                                                w.y - pm->origin[1] + pm->localOff[1],
+                                                w.z - pm->origin[2] + pm->localOff[2]};
+                        float r[3];
+                        omk::qrot(hp.q, local, r);
+                        const float in[3] = {hp.pos[0] + r[0] - playerRootXZ[0],
+                                             hp.pos[1] + r[1],
+                                             hp.pos[2] + r[2] - playerRootXZ[1]};
+                        float o[3];
+                        omk::rotateYaw(yaw, in, o);
+                        w.x = o[0] + pp[0];
+                        w.y = o[1] + pp[1] - playerFeet + lastRootDrop;
+                        w.z = o[2] + pp[2];
+                        propGeo.corners.push_back(w);
+                    }
+                    const std::size_t cnt = propGeo.corners.size() - base;
+                    if (!cnt) continue;
+                    omk::Batch nb = b;
+                    nb.start = base;
+                    nb.count = cnt;
+                    propGeo.batches.push_back(nb);
+                    propBatchOwner.push_back(pm);
+                }
+            }
+        }
+    }
+    // ---- EACH GUNMAN'S GUN (a reader, 2026-09-11: *"they don't have
+    // any weapons in their hands"*). The same `sub_41C490` link as the
+    // player's: the object in HIS hand (actor +164, his held slot), its
+    // node under his `Maing` (actor +44), `tir` left out. Placed from
+    // his hand as it was DRAWN last frame (`meshAt` / `meshRot`, which
+    // the staged pass below fills) - so it lags his arm by one frame.
+    if (session.shootMode().active()) {
+        const auto& objs = voiceLib.objects();
+        for (const auto& up : staged) {
+            if (!up || up->actor < 0 || !up->mo || !up->drawn) continue;
+            if (session.shootAction(up->actor) < 0) continue;
+            const int hs = session.heldSlotOf(up->actor);
+            const int obj = hs >= 0 ? session.objectSlotId(hs) : -1;
+            if (obj < 0 || static_cast<std::size_t>(obj) >= objs.size()) continue;
+            const std::string stem = objs[static_cast<std::size_t>(obj)].stem;
+            if (stem.empty()) continue;
+            const std::size_t nm = up->mo->meshes.size();
+            if (up->meshAt.size() != nm * 3 || up->meshRot.size() != nm * 9) continue;
+            int hand = -1;      // the LAST strstr hit
+            for (std::size_t i = 0; i < nm; ++i)
+                if (std::strstr(up->mo->meshes[i].name, "Maing")) hand = static_cast<int>(i);
+            if (hand < 0) continue;
+            const GunFacts& gf = gunFactsFor(stem);
+            PropModel* pm = propModelFor(stem);
+            if (!pm || !pm->ready || pm->rest.cornerMesh.size() != pm->rest.corners.size())
+                continue;
+            const std::size_t h = static_cast<std::size_t>(hand);
+            const float* hp = &up->meshAt[h * 3];
+            const float* hm = &up->meshRot[h * 9];   // column-major: local axes in the world
+            for (const auto& b : pm->rest.batches) {
+                const std::size_t base = propGeo.corners.size();
+                for (std::size_t c = b.start; c < b.start + b.count; ++c) {
+                    if (gf.ok && pm->rest.cornerMesh[c] == gf.tirMesh) continue;
+                    omk::Corner w = pm->rest.corners[c];
+                    const float l[3] = {w.x - pm->origin[0] + pm->localOff[0],
+                                        w.y - pm->origin[1] + pm->localOff[1],
+                                        w.z - pm->origin[2] + pm->localOff[2]};
+                    w.x = hp[0] + hm[0] * l[0] + hm[3] * l[1] + hm[6] * l[2];
+                    w.y = hp[1] + hm[1] * l[0] + hm[4] * l[1] + hm[7] * l[2];
+                    w.z = hp[2] + hm[2] * l[0] + hm[5] * l[1] + hm[8] * l[2];
+                    propGeo.corners.push_back(w);
+                }
+                const std::size_t cnt = propGeo.corners.size() - base;
+                if (!cnt) continue;
+                omk::Batch nb = b;
+                nb.start = base;
+                nb.count = cnt;
+                propGeo.batches.push_back(nb);
+                propBatchOwner.push_back(pm);
+            }
+            if (gunDrawnTold.insert(up->actor).second)
+                std::printf("frame %ld: actor %d %s - HIS GUN drawn: object %d '%s' on his "
+                            "Maing (mesh %d), tir left out\n", n, up->actor,
+                            up->model.c_str(), obj, stem.c_str(), hand);
+        }
+    }
+}
+
+// The bolts
+void PlayState::worldBolts() {
+    auto& session = *session_;
+    omk::Renderer& world = *world_;
+    // ---- THE BOLTS (`actor/projectile.h`) ------------------------
+    //
+    // Each live entry is a clone of the held gun's `tir` node, drawn
+    // in the node's own matrix at its position and with its three
+    // scales - so the Waver's streak grows along its length for its
+    // first eight frames (shot sprite +20/+28). `tir` is flagged
+    // 0x3000, the ADDITIVE bucket, and the batch carries that from the
+    // model; its textures come through the gun's own pool section.
+    if (projectiles.live() && !shotGunStem.empty()) {
+        const GunFacts& gf = gunFactsFor(shotGunStem);
+        PropModel* pm = gf.ok ? propModelFor(shotGunStem) : nullptr;
+        if (pm && pm->ready && pm->rest.cornerMesh.size() == pm->rest.corners.size()) {
+            for (const auto& e : projectiles.entries()) {
+                if (!e.node) continue;
+                for (const auto& b : pm->rest.batches) {
+                    const std::size_t base = propGeo.corners.size();
+                    for (std::size_t c = b.start; c < b.start + b.count; ++c) {
+                        if (pm->rest.cornerMesh[c] != gf.tirMesh) continue;
+                        omk::Corner w = pm->rest.corners[c];
+                        const float local[3] = {(w.x - gf.tirPos[0]) * e.scale[0],
+                                                (w.y - gf.tirPos[1]) * e.scale[1],
+                                                (w.z - gf.tirPos[2]) * e.scale[2]};
+                        float r[3];
+                        omk::shootRotateRow(local, e.rot, r);
+                        w.x = e.pos[0] + r[0];
+                        w.y = e.pos[1] + r[1];
+                        w.z = e.pos[2] + r[2];
+                        propGeo.corners.push_back(w);
+                    }
+                    const std::size_t cnt = propGeo.corners.size() - base;
+                    if (!cnt) continue;
+                    omk::Batch nb = b;
+                    nb.start = base;
+                    nb.count = cnt;
+                    propGeo.batches.push_back(nb);
+                    propBatchOwner.push_back(pm);
+                }
+            }
+        }
+    }
+    propGeo.revision = ++worldGeoRev;
+    refreshSprites();
+    const bool wantSprites = (session.scene().effects().count() || !ctlSprites.empty() ||
+                              !foeSprites.empty()) &&
+                             !spriteTab.empty();
+    // Which sprite ids the resident scene can name. Computed BEFORE the
+    // rebuild test and compared, because a scene that starts asking for
+    // an id it was not asking for before needs a slot for it - a
+    // composition counter cannot see that.
+    spriteWanted.clear();
+    for (const auto& e : session.scene().sfx().effects)
+        spriteWanted.insert(static_cast<int>(e.sprite));
+    for (const auto& pa : session.scene().effects().particles())
+        spriteWanted.insert(pa.sprite);
+    for (const auto& c : ctlSprites) spriteWanted.insert(c.sprite);
+    // ...AND THE MELEE OPPONENT'S. His records were spawned and placed
+    // on his bones from 15.10 on - 482 placements in one run - and
+    // never drew: a batch whose sprite has no POOL SLOT is skipped
+    // ("a sprite with no texture: not drawn"), and only the player's
+    // ids were pooled. A reader: *"no visual effect when I touched the
+    // ennemy"* (`todo/fight-mode.md` 15.16).
+    for (const auto& c : foeSprites) spriteWanted.insert(c.sprite);
+    if (poolBuiltFor != poolComposition || poolHasSprites != wantSprites ||
+        poolHasPlayer != (drawPlayer || drawArm) || spritePooled != spriteWanted) {
+        pool = worldTex;
+        for (auto& cm : charModels) {
+            cm.second.texBase = pool.size();
+            pool.insert(pool.end(), cm.second.tex.begin(), cm.second.tex.end());
+        }
+        // ...then each PROP model's, so a prop batch's slot is its
+        // material plus its own base, the same rule every other
+        // section follows.
+        for (auto& pm : propModels) {
+            pm.second.texBase = pool.size();
+            pool.insert(pool.end(), pm.second.tex.begin(), pm.second.tex.end());
+        }
+        // the sky's one texture, on the same rule as every other
+        // section: a batch's slot is its material plus its own base
+        sky.texBase = pool.size();
+        pool.insert(pool.end(), sky.tex.begin(), sky.tex.end());
+        // THE SHADOW's one texture, on the same rule. It is resident
+        // for the whole run rather than per set, because the engine
+        // loads the model once at game start and never frees it.
+        shadowTexBase = pool.size();
+        pool.insert(pool.end(), shadowModel.tex.begin(), shadowModel.tex.end());
+        playerTexBase = pool.size();
+        if (drawPlayer || drawArm) pool.insert(pool.end(), playerTex.begin(), playerTex.end());
+        spriteTexBase = pool.size();
+        // THE SPRITES GO IN DENSELY, and that is the whole point.
+        // `spriteTex` is indexed BY SPRITE ID, because an effect names
+        // its sprite by id (`sub_4A5800`) - so 24 decoded sprites
+        // spread over ids 0..137 make a 138-entry array of which 114
+        // are EMPTY. Inserting it whole put the pool at 154 slots
+        // against the **64** a bucket key's low six bits can address,
+        // and every slot above 63 wrapped onto another texture: a
+        // particle drawing at the right size, in the right blend, with
+        // the wrong picture. That is the shape a reader reported as
+        // "visible but does not render correctly", and only some of
+        // them wrong, because which wrap depends on the id mod 64.
+        //
+        // So only the sprites that HAVE a texture go in, and
+        // `spriteSlot` maps an id to its place. The id-keyed arrays
+        // stay as they are - `particleGeometry` needs them for the
+        // frame walk and the quad extent.
+        //
+        // ...and only the ones this SCENE can ask for. Every decoded
+        // sprite used to go in - 24 of them, the global library's 20
+        // plus the scene's - and with ANEKBAH's 20 set textures, a
+        // second resident set, the staged characters and the player
+        // ahead of them the pool ran past **64**, which is all a
+        // bucket key's low six bits can address (`slot & 0x3F`). Past
+        // that a sprite aliases onto another slot and draws someone
+        // else's picture, which is a street light and a fire both
+        // coming out as smoke: `EFFECTS2_GLOW` and `EFFECTS2_SMOKE1`
+        // are different sprites sharing one atlas, so an aliased slot
+        // lands on the neighbour and looks exactly like it.
+        //
+        // A scene asks for very few: Anekbah's twenty effects name
+        // THREE sprites (49589 smoke, 49590 glow, 49591 explo). So
+        // take the ids its own `.sfx` names, plus any a live particle
+        // is already carrying, and pool those alone.
+        spriteSlot.clear();
+        if (wantSprites)
+            for (int id : spriteWanted) {
+                if (id < 0 || static_cast<std::size_t>(id) >= spriteTab.idCount) continue;
+                const omk::Texture* st = spriteTab.texOf(id);
+                if (!st || st->rgb.empty()) continue;   // an id nothing decoded
+                spriteSlot[id] = static_cast<int>(pool.size() - spriteTexBase);
+                pool.push_back(*st);
+            }
+        if (pool.size() > 64)
+            std::printf("WARNING: texture pool is %zu, past the 64 a bucket key "
+                        "can address - slots will alias\n", pool.size());
+        poolSize = pool.size();
+        poolBuiltFor = poolComposition;
+        poolHasSprites = wantSprites;
+        poolHasPlayer = drawPlayer || drawArm;   // the first-person arm needs them too
+        spritePooled = spriteWanted;
+        world.setTextures(pool);
+        // The sprite section comes and goes with the effects, several
+        // times a second; only a change of CAST is worth a line.
+        if (poolBuiltFor != poolTold) {
+            poolTold = poolBuiltFor;
+            std::printf("frame %ld: texture pool - %zu set + %zu character (%zu "
+                        "models) + %zu player + %zu sprite = %zu slots\n", n,
+                        worldTex.size(), playerTexBase - worldTex.size(),
+                        charModels.size(), spriteTexBase - playerTexBase,
+                        pool.size() - spriteTexBase, pool.size());
+        }
+        if (pool.size() > 64 && !poolOverflowTold) {
+            poolOverflowTold = true;
+            std::printf("  ...which is over the 64 a bucket key's low six bits can "
+                        "address (ASSETS 4b): every slot above 63 WRAPS\n");
+        }
+    }
+
+    mark("props, guns");
+}
