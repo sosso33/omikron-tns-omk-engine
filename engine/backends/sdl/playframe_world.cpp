@@ -21,7 +21,11 @@ static void turnRootBy(omk::NodeTracks& t, float yawDeg) {
                 omk::qmul(frame[static_cast<std::size_t>(t.rootTrack)], ry);
 }
 
-int PlayFrame::phaseWorld() {
+int PlayState::phaseWorld() {
+    const auto& fs = *fs_;
+    auto& comp = *comp_;
+    auto& session = *session_;
+    omk::Renderer& world = *world_;
     bool done = false;
     do {
         // THE SET'S OWN EMITTERS, into the pool that owns them: whenever the

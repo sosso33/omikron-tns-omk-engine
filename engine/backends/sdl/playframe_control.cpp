@@ -4,7 +4,11 @@
 // (2026-10-02); see `playframe.h` for what the names below refer to.
 #include "playframe.h"
 
-int PlayFrame::phaseControl() {
+int PlayState::phaseControl() {
+    const auto& fs = *fs_;
+    auto& in = *in_;
+    auto& inv = *inv_;
+    auto& session = *session_;
     bool done = false;
     do {
         // ---- the hand-over, and the controller's frame ------------------

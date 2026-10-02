@@ -167,6 +167,7 @@ if(OMK_VITA_GAME)
     ${CMAKE_CURRENT_SOURCE_DIR}/avmovie.cpp
     ${ENGINE}/backends/sdl/play.cpp
     ${ENGINE}/backends/sdl/sdlfront.cpp
+    ${ENGINE}/backends/sdl/playstate.cpp
     ${ENGINE}/backends/sdl/playframe.cpp
     ${ENGINE}/backends/sdl/playframe_input.cpp
     ${ENGINE}/backends/sdl/playframe_control.cpp

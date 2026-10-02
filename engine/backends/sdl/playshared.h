@@ -255,3 +255,8 @@ static constexpr const char* kAttachName[18] = {
 constexpr float kSkyScale = 12.5f;
 
 constexpr float kSkyLift  = 2250.0f;
+// the take camera's preset (camera mode 1), named by `run` and `takeCamRequest`
+constexpr float kTakeCamEye[3] = {24.4094f, 29.5276f, -4.7244f};
+constexpr float kTakeCamAt[3]  = {0.0f, 4.7244f, 19.685f};
+constexpr float kTakeCamFov    = 75.0f;
+constexpr float kTakeCamTravel = 30.0f;

@@ -4,7 +4,7 @@
 // (2026-10-02); see `playframe.h` for what the names below refer to.
 #include "playframe.h"
 
-int PlayFrame::phasePresent() {
+int PlayState::phasePresent() {
     bool done = false;
     do {
         {

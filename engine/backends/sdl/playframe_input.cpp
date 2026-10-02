@@ -4,7 +4,11 @@
 // (2026-10-02); see `playframe.h` for what the names below refer to.
 #include "playframe.h"
 
-int PlayFrame::phaseInput() {
+int PlayState::phaseInput() {
+    auto& comp = *comp_;
+    auto& in = *in_;
+    auto& session = *session_;
+    omk::Renderer& world = *world_;
     bool done = false;
     do {
         phTop = phaseNow();

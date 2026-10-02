@@ -262,7 +262,14 @@ void drawSubtitle(omk::Surface& fb, const omk::TextLayout& lay,
 
 }  // namespace
 
-int PlayFrame::phaseScreens() {
+int PlayState::phaseScreens() {
+    const auto& fs = *fs_;
+    auto& lay = *lay_;
+    auto& comp = *comp_;
+    auto& optMenu = *optMenu_;
+    auto& inv = *inv_;
+    auto& session = *session_;
+    omk::Renderer& world = *world_;
     bool done = false;
     do {
         // ---- THE SNEAK'S INVENTORY ROWS ------------------------------

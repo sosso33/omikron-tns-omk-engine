@@ -37971,6 +37971,9 @@ def c_licence_headers():
     screens,present}.cpp` (2026-10-02), the frame's six phases.
     **497 -> 498**: `backends/sdl/playstate.h` (2026-10-02), `main`'s locals
     as one object's members.
+    **498 -> 498**: `backends/sdl/playstate.cpp` in, `src/app/functionref.h`
+    out (2026-10-02, S3e): the lambdas became methods, so nothing refers to a
+    lambda through a `FunctionRef` any more.
     """
     import glob as _g
     TAG = "SPDX-License-Identifier: GPL-3.0-or-later"

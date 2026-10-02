@@ -540,5 +540,109 @@ struct PlayState {
     long phGpu{};   // frames presented from the GPU
     std::map<std::string, long> phKept{};   // ...and why the others were not
 
+    // `world`'s object, chosen in `run` (the GPU renderer when there is one)
+    omk::Renderer* world_ = nullptr;
+    // THE SHOOTING RANGE'S HIGH SCORES - a `static` in `main` until S3e
+    std::array<std::pair<std::string, int>, 20> highScores;
+
+    // ---- THE FRAME'S OWN STATE that one phase sets and a later one reads
+    // (todo/play-split.md): each was a local of the loop body, and is now
+    // assigned where it used to be declared, every turn.
+    omk::DeviceState st;                    // the devices, as the bindings read them
+    std::uint32_t bits = 0, heldBits = 0, edgeBits = 0;   // the input word, held, edged
+    bool uiPause = false;                   // the pause screen is the open one
+    bool gpuFrame = false;                  // the present pass: the world went to the GPU
+    bool overlayFrame = false, softGate = false;   // G6 step 2, the GLES window
+    float ovFade[4] = {0, 0, 0, 0};         // the colour fade, for its shader
+    int gpuVy = 0, gpuVh = 0;               // where the GPU world is placed
+    const char* gpuKeep = nullptr;          // the first gate that kept the frame on the CPU path
+    bool drawWorld = false;                 // the world is drawn this turn
+    // a function-local `static const` in the body, read once: the same here,
+    // read when the frame is built
+    const bool verifyGpuPresent = std::getenv("OMK_VERIFY_GPU_PRESENT") != nullptr;
+
+    // ---- THE PHASES, in the body's order (`playframe_<name>.cpp`). Each
+    // returns what `step()` does: -1 to go on, -2 for the body's `break`, or
+    // `main`'s exit code.
+    int phaseInput();   // input, the pause screen, the game tick, scripted object motion, the sound effects
+    int phaseControl();   // the hand-over and the controller's frame
+    int phaseModes();   // the pause's sound, the voices, dialogue mode, shoot mode, the quit and the pending load
+    int phaseWorld();   // whoever is on screen, and the world when no screen is over it
+    int phaseScreens();   // the screens' rows and the HUDs
+    int phasePresent();   // the fps counter, the fades, the flicker catcher and the present
+
+    int step();
+
+    // ---- WHAT `main` DEFINED AS LAMBDAS, methods now (`playstate.cpp`)
+    float attGain(int a);
+    float fxGain();
+    float dialogueGain();
+    int enh(int flag, int fromSettings, int top);
+    void applyTextScale(int w, int h);
+    void sfxLog(const char* what, std::size_t samples, int a, int b,
+                            float gain = 1.0f, const float* peakOf = nullptr);
+    void takeCamRequest(int phase);
+    void playerCamRequest(const float eye[3], const float at[3], float fov, float frames);
+    void fallCamRequest(int mode, bool flag, const char* who, int actorState);
+    void rebuildFixedGrid();
+    void rebuildMovingGrid();
+    void rebuildSteepFixedGrid();
+    void rebuildSteepMovingGrid();
+    std::vector<float> loadSlot(int screen, int slot);
+    void present(const omk::Surface& pic);
+    void blip(const std::vector<float>& v);
+    int skeletonRootWalk(const CharModel& mo, const omk::NodeTracks& t);
+    int skeletonRootOf(const CharModel& mo, const omk::NodeTracks& t);
+    bool hasSeveralSkeletons(const CharModel& mo);
+    int lodChainOf(const CharModel& mo);
+    const omk::NodeTracks * lodTracksFor(const omk::NodeTracks* base, int level, int count);
+    const omk::Geometry & lodRestFor(const std::string& model, const CharModel& mo, int rootMesh);
+    int heaviestRootOf(const CharModel& mo);
+    const omk::PedClip * shootClipFor(int group, int action);
+    const omk::PedClip * shootClipOfType(int group, int type);
+    const omk::PedClip * shootClipExact(int group, int type);
+    const omk::PedClip * shootClipBySlot(int group, int slot);
+    const omk::NodeTracks * pedTracksFor(int sex, const omk::PedClip& c, const std::vector<omk::Mesh>& meshes);
+    void shootNoise(long frame, int from, const float at[3], const char* what);
+    std::vector<omk::MeshPose> playerPoseNow(omk::PlayerController* pl, bool aimLayer,
+                                   const omk::NodeTracks& pt, float frame);
+    std::vector<omk::MeshPose> gunmanPoseNow(int actor, int deathType, const CharModel* mo,
+                                   const omk::NodeTracks& pt, float frame);
+    const SfxSample & sfxPcm(std::span<const std::byte> wav);
+    void shotSound(long frame, int effectId, const float at[3],
+                               const float* listener, const char* what);
+    const GunFacts & gunFactsFor(const std::string& stem);
+    CharModel * charModelFor(const std::string& name);
+    PropModel * propModelFor(const std::string& stem);
+    CharBank * charBankFor(const std::string& name);
+    std::span<const std::byte> playerRecordSpan();
+    bool beginMelee(int opponentId, int level);
+    omk::NodeTracks idleTracksFor(const CharBank& b,
+                                   const std::vector<omk::Mesh>& meshes);
+    int loadSpritesInto(SpriteTable& spriteTab, const std::string& scx);
+    int loadSprites(const std::string& scx);
+    void refreshSprites();
+    void prepareSet(SetLoad& L);
+    bool askSet(int slot, const std::string& stem, int area, long frame);
+    bool integrateSet(SetLoad& L, long frame);
+    void rebuildWorld();
+    long uiClockMs();
+    void applyPlayerDamage(long n, int owner, const char* what, int dmgIn,
+                                       int shield, const omk::HitOut& ho);
+    double phaseNow();
+    void mark(const char* name);
+
+// ...and every SECTION between two marks, summed over the 60-frame window
+// and printed with the spans: the per-frame breakdown prints only past
+// `OMK_MARKS_MS` and only when paced, so a console frame of 65 ms - over
+// budget and under 150 - left ~50 ms of it attributed to nothing
+// (2026-09-30, the Bowie sequence).
+    template <class F>
+    void spanned(const char* name, F&& fn) {
+        const double a = phaseNow();
+        fn();
+        phSpan[name] += phaseNow() - a;
+    }
+
     int run(int argc, char** argv);
 };

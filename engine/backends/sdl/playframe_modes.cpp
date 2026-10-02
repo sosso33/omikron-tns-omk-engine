@@ -4,7 +4,12 @@
 // (2026-10-02); see `playframe.h` for what the names below refer to.
 #include "playframe.h"
 
-int PlayFrame::phaseModes() {
+int PlayState::phaseModes() {
+    const auto& fs = *fs_;
+    auto& optMenu = *optMenu_;
+    auto& in = *in_;
+    auto& inv = *inv_;
+    auto& session = *session_;
     bool done = false;
     do {
 

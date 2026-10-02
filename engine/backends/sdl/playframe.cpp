@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// `PlayFrame::step` - one turn of the viewer's loop, which is its six phases
+// `PlayState::step` - one turn of the viewer's loop, which is its six phases
 // in order (`playframe_<phase>.cpp`, `todo/play-split.md`). Each phase is a
 // stretch of what was `main`'s `for (;;)` body, moved byte for byte inside
 // `do { ... } while (false)`, so a `break` in it still ends the loop.
 #include "playframe.h"
 
-int PlayFrame::step() {
+int PlayState::step() {
     int r = -1;
     if ((r = phaseInput()) != -1) return r;
     if ((r = phaseControl()) != -1) return r;
