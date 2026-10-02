@@ -6,6 +6,26 @@ could be divided."* **Nothing here has been applied.** `play.cpp` is held by
 another session; this file is the design, and every step below is written so
 it can land one at a time between that session's commits.
 
+**Status 2026-10-02**: S0, S1 and S1b are done, the record was ENLARGED
+(S0b, below) and S1c is next. The file kept growing while the split waited -
+`play_split_scan.py` on 2026-10-02, against the 2026-09-18 figures that §1
+still quotes:
+
+| | 2026-09-18 | 2026-10-02 |
+|---|---|---|
+| `play.cpp` | 20233 lines | **23069** |
+| `main`'s top-level names | 468 | **535** |
+| `[&]` lambdas | 95 | **109** |
+| `main` starts / the loop starts | 1417 / 5648 | 1599 / **6772** (setup ~5170 lines) |
+| the controller's frame | 3349 lines, 138 names | 3365, 142 |
+| shoot mode | 1075, 79 | **1292, 102** |
+| "the world" | 5843, 222 | **6646, 249** |
+| `#if` on a backend (`OMK_VULKAN` / GLES) | 11 | **24** |
+
+Nearly all of the 2800 new lines are INSIDE `main`, so every week the split
+waits makes S3 to S9 larger. The SDL calls themselves stay few: 63 in the
+setup, 25 in the loop. The order below is unchanged; only the sizes moved.
+
 The measurements come from `tools/play_split_scan.py` (new, stdlib only,
 prints only), which lists the file's own section banners with each section's
 size and how many of `main`'s top-level names it references — the size of
@@ -189,6 +209,66 @@ decision, and it does NOT by itself cover a helper no scene exercises: for
 those, the compiler and the `engine:` checks are the cover, and a step that
 moves one should say so.
 
+### S0b — the record ENLARGED, 2026-10-02: 28 scenes, frame + stdout + saves
+
+148 commits landed between S0 and S1c, and the six scenes reached few of
+them. Every new scene takes its command line from the `engine:` check that
+already proves that feature, so each one is known to reach what it names:
+
+| scene | what it reaches | taken from |
+|---|---|---|
+| `boot` | the cold start, screen 29, its Options, the Video page, a settings-only save (the SAVES FILE it writes is part of the record) | `engine: options menu` |
+| `traffic` | the motos and hover taxis on Anekbah's vehicle lanes | `engine: traffic frame` |
+| `sixty` | the street presented at `--framerate 60` | `todo/sixty-fps.md` |
+| `enhance` | `--enhance-all` on the software path | `enhance all` |
+| `chest` | scripted object motion - the lid on its hinge - and the take | `engine: chest lid` |
+| `lintel` | the walker's slide under the lift's lintel | `engine: lift lintel` |
+| `dialogue` | walking into a conversation: dialogue mode, its camera, the subtitle box | `engine: dialogue stands still` |
+| `resto` | the restaurant and the crane (`games-resto.bin` slot 2) | `engine: back-face cull` |
+| `lift`, `liftbox` | screen 4 and the lift ride; `liftbox` ENDS with the screen open, so its description box is in the frame | `engine: lift` |
+| `den`, `gandhar`, `terminal`, `shop`, `multiplan`, `sneak` | one screen each, at 640x480 | their `engine:` checks |
+| `ride` | the slider, flown | `engine: slider ride` |
+| `vk-street`, `vk-fight` | the world through `--world-vulkan` | `--gpu` only |
+| `gl-street`, `gl-flat`, `gl-fight` | `omk-play-gles`, window hidden, under `caffeinate` | `--gpu` only |
+
+`scripts/play-golden.sh <dir> [--check] [--gpu] [--only a,b]`. Software set
+**~2 min 45 s**, with `--gpu` **~3 min** (M3). Three holes closed on the way,
+each a property of the RIG that would have made a refactor look broken or
+look safe for the wrong reason:
+
+* **the saves file**: without `--saves` the viewer reads `omk-saves/GAMES`
+  relative to the CWD at every boot, settings header included - so the old
+  record depended on where it was run from and on the reader's own options.
+  Every run now gets its own empty file, and its temporary path is replaced
+  by `<saves>/` in the log;
+* **a run that stops short fails AS A RUN**: the frame count is read back
+  from `N frames presented` (CLAUDE.md 1: a killed GLES run still writes its
+  dump, of frame one);
+* **the subtitle box's SCROLL ARROWS pulse on the wall clock** - `sub_4400D0`
+  takes its alpha from the millisecond tick and the port uses `SDL_GetTicks`,
+  faithfully - so `dialogue` differed by 36 pixels between runs of one binary
+  (five different frames in six runs; NOT the body threads, NOT the line
+  read-ahead: both turned off, the frame still moved). The scene carries a
+  MASK, columns 288..295 of the lower third, and the comparison is exact
+  everywhere else. Same family as the shoot HUD's `OMK_NOUI=1`.
+
+**Repeatable**: two records of one binary, 28 of 28 identical (the dialogue's
+36 masked pixels the only difference). **Shown to fail**, with the source
+restored after each (`git diff` empty, `touch` and rebuild):
+
+* the subtitle box one column narrower (`drawSubtitleBox`'s `x0` 18 -> 19):
+  `dialogue` red with **11 pixels outside its mask** - so the mask hides the
+  arrows and nothing more - and `resto` red;
+* the lift's description text losing its first character: `lift` red on its
+  stdout, `liftbox` on frame AND stdout;
+* and **all six original scenes stayed GREEN under both** - which is the
+  measurement of what the enlargement adds.
+
+Still not covered, and a step that moves one should say so: the pause screen,
+the save panel's writer path, Xachen, the hint shop, the shoot HUD
+(excluded by design: it turns on the wall clock), the flicker catcher and `--dump`
+itself as instruments, and the Vita build (which only `make vita` checks).
+
 ### S0 — the original plan
 
 A pure refactor has the strongest check this repo can have: **identical
@@ -257,7 +337,7 @@ check in the suite.
 |---|---|---|---|
 | ~~S1~~ **DONE 2026-09-22** | the four PURE helpers (`shortArc`, `wavToDevice`, `SubBox` + `drawSubtitleBox`, `cp1252ToUtf8`) -> `src/app/playhelpers.{h,cpp}`; 184 lines out of `play.cpp`. `src/*/*.cpp` is globbed by BOTH builds, so no build file changed. See below |
 | ~~S1b~~ **DONE 2026-09-22** | `ViewCam`, `Light` and `relight` joined them - also pure. `play.cpp` -> **20913** |
-| S1c | the SDL half still in `play.cpp`: `AudioLock`, `SdlFrontend`, `keymap`/`charmap`. These need the three Makefile lines and the Vita `CMakeLists.txt` to name a new `backends/sdl/*.cpp`, which is why they are their own step |
+| **S1c — NEXT** | the SDL half still in `play.cpp`: `AudioLock`, `SdlFrontend`, `keymap`/`charmap`. These need the three Makefile lines and the Vita `CMakeLists.txt` to name a new `backends/sdl/*.cpp`, which is why they are their own step |
 | **S1 (original)** | file-level helpers → `sdlfront.{h,cpp}` and `src/app/*` (lines 1-1416) | 0 — they are outside `main` | none: no state |
 | **S2** | `PlayOptions` + `parseArgs` (1420-2198). Tactic: bind each old local as a REFERENCE to the struct field (`auto& startVulkan = opt.startVulkan;`) so not one line of the loop changes in this step | the 84 flags | low |
 | **S3** | `Game` introduced, sub-struct by sub-struct, same reference-alias trick: the loop keeps compiling unchanged while ownership moves. One sub-struct a commit | all 468, 40 or so at a time | medium: lifetimes (the caches return pointers into maps - must not move) |
