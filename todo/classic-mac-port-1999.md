@@ -515,6 +515,15 @@ What Tiger taught, each found by a probe rather than guessed:
 * the GPU's own transform let near-plane-crossing triangles through as huge
   garbage, and its fog darkened the near scene - both gone with the CPU
   transform and per-vertex fog, which is the original's design anyway.
+* **still open on Tiger**: walking against a wall, the wall beside the eye
+  flashes FLAT (one colour, as if one texel were stretched over it) for a
+  frame or two - seen by the reader. Not the backend's: a sweep of 60
+  positions and facings around the street on the M3 never departs from the
+  software reference by more than 169 of 307200 pixels, and clipping every
+  triangle to the screen edges on the CPU (kept - the original clipped its
+  transformed triangles too) did not change it in Tiger. Suspected: how the
+  emulated R300 interpolates texture coordinates across a heavily magnified,
+  near-camera triangle. Noted for the ppcosxkvm report.
 
 **Open, from reading the original's device setup**: `sub_4638C0` creates
 the device from three GUIDs, and the arm `docs/ASSETS.md` §4 describes as

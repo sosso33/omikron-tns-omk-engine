@@ -271,20 +271,61 @@ public:
                 if (ina != inb && np < 4) poly[np++] = lerp(a, b, (kNearCut - a.v[2]) / (b.v[2] - a.v[2]));
             }
             if (np < 3) { ++st_.behind; continue; }
-            float sx[4], sy[4];
-            for (int k = 0; k < np; ++k) {
-                sx[k] = camW_ * 0.5f * (1.0f + (poly[k].v[0] / poly[k].v[2]) / th_);
-                sy[k] = camH_ * 0.5f * (1.0f - (poly[k].v[1] / poly[k].v[2]) / tv_);
-            }
+            // the single-sided cull on the near-clipped triangle - the
+            // reference's own test, before anything else is cut away
             if (haveCull && g.cornerCull[d.start + t] != 0 && !noCull()) {
-                const float area = (sx[1] - sx[0]) * (sy[2] - sy[0]) - (sx[2] - sx[0]) * (sy[1] - sy[0]);
+                float cx[3], cy[3];
+                for (int k = 0; k < 3; ++k) {
+                    cx[k] = camW_ * 0.5f * (1.0f + (poly[k].v[0] / poly[k].v[2]) / th_);
+                    cy[k] = camH_ * 0.5f * (1.0f - (poly[k].v[1] / poly[k].v[2]) / tv_);
+                }
+                const float area = (cx[1] - cx[0]) * (cy[2] - cy[0]) - (cx[2] - cx[0]) * (cy[1] - cy[0]);
                 if ((flipX_ ? -area : area) > 0.0f) { ++st_.culled; continue; }
             }
+            // ...then THE SCREEN EDGES, on the CPU too. A wall beside the eye
+            // projects thousands of pixels off-screen once near-clipped, and
+            // Tiger's emulated Radeon rasterised such a triangle unclipped -
+            // its texture coordinates collapsed and the wall drew flat. The
+            // original clipped its transformed triangles itself as well. A
+            // hair of margin keeps the edge pixels covered.
+            Vtx buf[2][8];
+            int nb = np;
+            for (int k = 0; k < np; ++k) buf[0][k] = poly[k];
+            const float gx = th_ * 1.01f, gy = tv_ * 1.01f;
+            int cur = 0;
+            for (int plane = 0; plane < 4 && nb >= 3; ++plane) {
+                const auto dist = [&](const Vtx& q) {
+                    switch (plane) {
+                    case 0:  return q.v[2] * gx - q.v[0];   // right:  x <= z tanh
+                    case 1:  return q.v[2] * gx + q.v[0];   // left:   x >= -z tanh
+                    case 2:  return q.v[2] * gy - q.v[1];   // top:    y <= z tanv
+                    default: return q.v[2] * gy + q.v[1];   // bottom: y >= -z tanv
+                    }
+                };
+                int no = 0;
+                for (int k = 0; k < nb && no < 8; ++k) {
+                    const Vtx& a = buf[cur][k];
+                    const Vtx& b = buf[cur][(k + 1) % nb];
+                    const float da = dist(a), db = dist(b);
+                    if (da >= 0.0f) buf[cur ^ 1][no++] = a;
+                    if ((da >= 0.0f) != (db >= 0.0f) && no < 8) buf[cur ^ 1][no++] = lerp(a, b, da / (da - db));
+                }
+                nb = no;
+                cur ^= 1;
+            }
+            if (nb < 3) { ++st_.offscreen; continue; }
+            np = nb;
+            const Vtx* out = buf[cur];
+            float sx[8], sy[8];
+            for (int k = 0; k < np; ++k) {
+                sx[k] = camW_ * 0.5f * (1.0f + (out[k].v[0] / out[k].v[2]) / th_);
+                sy[k] = camH_ * 0.5f * (1.0f - (out[k].v[1] / out[k].v[2]) / tv_);
+            }
             ++st_.drawn;
-            for (int k = 1; k + 1 < np; ++k) {            // a fan: 1 or 2 triangles
+            for (int k = 1; k + 1 < np; ++k) {            // a fan: up to 6 triangles after the clips
                 const int idx[3] = {0, k, k + 1};
                 for (int j : idx) {
-                    const Vtx& p = poly[j];
+                    const Vtx& p = out[j];
                     const float w = p.v[2];
                     // NDC from the reference's own screen mapping; depth
                     // 1 - near/z, increasing away from the eye (the original
