@@ -181,6 +181,8 @@ if(OMK_VITA_GAME)
     ${ENGINE}/backends/sdl/playframe.cpp
     ${ENGINE}/backends/sdl/playframe_input.cpp
     ${ENGINE}/backends/sdl/playframe_control.cpp
+    ${ENGINE}/backends/sdl/playframe_control_parts.cpp
+    ${ENGINE}/backends/sdl/playframe_control_adventure.cpp
     ${ENGINE}/backends/sdl/playframe_modes.cpp
     ${ENGINE}/backends/sdl/playframe_world.cpp
     ${ENGINE}/backends/sdl/playframe_world_scene.cpp

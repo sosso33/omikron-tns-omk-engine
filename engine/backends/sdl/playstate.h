@@ -573,6 +573,31 @@ struct PlayState {
 
     int step();
 
+    // ---- `controlAdventure`'s PARTS (todo/play-split.md) and the state they share: each
+    // was a local of the phase, and is assigned where it was declared, every turn
+    bool playerTicked{};
+    std::vector<std::string> kNoMoves{};   // was a function-local static
+    bool actionFromMove{};
+    bool actionTookObject{};
+    void adventureAim();   // the follow camera's offsets, first-person aim
+    void adventurePathField();   // the path field
+    void adventureDeath();   // the death's countdown
+    void adventureCrowdPush();   // the crowd push
+    void adventureScreenInput();   // a screen has the input, and the world still runs
+    void adventureSeated();   // seated, not driving; where the slider is after he gets out
+    void adventureRide();   // the ride
+    void adventureWalls();   // stuck between walls; where the floor ends
+    void adventureTake();   // the world take; where the action raise comes from
+    void adventureShot();   // the shot
+    void adventureAction();   // the action button, MDACTION, one activation per press
+
+    // ---- `phaseControl`'s PARTS (todo/play-split.md) and the state they share: each
+    // was a local of the phase, and is assigned where it was declared, every turn
+    const omk::WorldCamera * hc{};
+    void controlBinding();   // who is bound to him and who poses him, the shoot camera, the player made, the screens that stop the world, a teleport
+    void controlFlight();   // the bolts' flight, before the actors tick
+    void controlAdventure();   // the player ticked under a conversation, and adventure mode's controller frame
+
     // ---- `phaseWorld`'s PARTS (todo/play-split.md) and the state they share: each
     // was a local of the phase, and is assigned where it was declared, every turn
     const omk::WorldCamera * wc{};
