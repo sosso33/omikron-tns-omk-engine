@@ -65,6 +65,7 @@
 #include "o3de/pointplace.h"
 #include "app/playhelpers.h"
 #include "app/playoptions.h"
+#include "app/game.h"
 #include "sdlfront.h"
 #include "o3de/shadow.h"
 #include "platform/threads.h"
@@ -460,18 +461,7 @@ void drawSubtitle(omk::Surface& fb, const omk::TextLayout& lay,
     }
 }
 
-// THE DEVICE RATE, and it is the ORIGINAL'S: `Sound_Init` (`sub_46C3A0`) sets
-// the DirectSound primary buffer to 22050 Hz / 16-bit / stereo, and what the
-// game ships is 22050 too - 61 of its 63 WAVs (the other two 22080), the voice
-// lines' ADPCM, the music tracks. The device ran at 44100 for the world only
-// because the films are 44100 MP2 and opened it first; so every world sound
-// was stretched 2x on the way in, music per output frame and each voice line
-// whole on the main thread (a console's 91-132 ms at a line's start,
-// `optimization.md` step 28, rows g/i/m). The films keep their 44100 - the
-// original played them through DirectShow, whose output never met that
-// primary (`docs/RECONSTRUCTION.md` 2026-09-01) - and the device is REOPENED
-// at 22050 for the world after them (`Frontend::reopenAudio`).
-constexpr int kDeviceRate = 22050;
+using omk::kDeviceRate;
 
 // Raw int16 PCM to the device's interleaved float, the same nearest-neighbour
 // step `wavToDevice` uses and for the same reason (B5: a resampler's sound is
@@ -1051,6 +1041,9 @@ int main(int argc, char** argv) {
     auto& forceSoftware = opt.forceSoftware;
     auto& showFps = opt.showFps;
     auto& worldVulkan = opt.worldVulkan;
+    // THE GAME'S STATE (`todo/play-split.md` S3), one group at a time; each
+    // old local below is a REFERENCE to its field where it used to be declared.
+    omk::Game game;
     bool boardPress = false;
     bool mountSpent = false;    // the action button is edged, not held
     bool calledOpenTold = false;
@@ -2398,8 +2391,12 @@ int main(int argc, char** argv) {
     // opening. The start menu's are 1, 2, 0, which the table resolves to
     // `men002`, `men003`, `men001`. Both halves were already lifted and
     // nothing was playing them.
-    std::vector<float> sndMove, sndConfirm, sndBack;
-    std::vector<float> optSndMove, optSndConfirm, optSndBack;   // screen 35's own
+    auto& sndMove = game.audio.sndMove;
+    auto& sndConfirm = game.audio.sndConfirm;
+    auto& sndBack = game.audio.sndBack;
+    auto& optSndMove = game.audio.optSndMove;
+    auto& optSndConfirm = game.audio.optSndConfirm;
+    auto& optSndBack = game.audio.optSndBack;
     const omk::UiWalk* optWalkSeen = nullptr;   // the walk of 29 the options were opened for
     bool optEntered = false;                    // focused for this visit to panel 0x004CF420
     std::pair<int, int> pendingDisplay{0, 0};   // options row 2, served between frames
@@ -2633,16 +2630,17 @@ int main(int argc, char** argv) {
     //
     // The streaming and the LOOP live in `src/audio/music.h`, not here. A
     // frontend is a device; it must not be deciding when a track restarts.
-    const auto adpcmTables = omk::AdpcmTables::loadJson(tb + "/adpcm.json");
-    omk::MusicPlayer music(kDeviceRate);
-    int playingTrack = -1;
+    game.audio.adpcmTables = omk::AdpcmTables::loadJson(tb + "/adpcm.json");
+    const auto& adpcmTables = game.audio.adpcmTables;
+    auto& music = game.audio.music;
+    auto& playingTrack = game.audio.playingTrack;
     // The cutscene VOICES - `media.play` (op 92). `sub_41B200` plays one
     // through the morph streamer after a `Morph_Stop()`, so ONE at a time and
     // a second cuts the first (src/audio/voiceover.h).
-    omk::VoiceOverLibrary voiceLib;
+    auto& voiceLib = game.audio.voiceLib;
     voiceLib.load(fs);
-    omk::VoiceOverPlayer voices(voiceLib);
-    int voiceOverShot = -1;
+    auto& voices = game.audio.voices;
+    auto& voiceOverShot = game.audio.voiceOverShot;
 
     OMK_HEAPCHECK("before world");
     // ---- THE WORLD ------------------------------------------------------
