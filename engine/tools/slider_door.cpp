@@ -16,6 +16,7 @@
 // the character's frame, so the number the viewer uses is one a person can
 // read off. Group 61 (`H_SLDOUT`) is printed beside it for the exit.
 #include "formats/ctl.h"
+#include "formats/le.h"
 #include "formats/anim.h"
 #include "actor/pose.h"
 #include "platform/datafs.h"
@@ -30,7 +31,7 @@ static bool root0(const std::vector<std::byte>& data, const omk::CtlFile& f, int
     for (const auto& t : d->tracks) {                 // sub_471100: first track with keys
         if (!t.posOffset || t.posKeys <= 0) continue;
         if (t.posOffset + 12 > data.size()) return false;
-        std::memcpy(out, data.data() + t.posOffset, 12);
+        for (int c = 0; c < 3; ++c) out[c] = omk::loadLE<float>(data.data() + t.posOffset + 4 * c);
         return true;
     }
     return false;
@@ -84,7 +85,9 @@ int main(int argc, char** argv) {
                 float acc[3] = {0, 0, 0};
                 std::printf("   travel:");
                 for (int k = 1; k < t.posKeys && t.posOffset + 12u * (std::size_t)k + 12 <= data.size(); ++k) {
-                    float v[3]; std::memcpy(v, data.data() + t.posOffset + 12u * (std::size_t)k, 12);
+                    float v[3];
+                    for (int c = 0; c < 3; ++c)
+                        v[c] = omk::loadLE<float>(data.data() + t.posOffset + 12u * (std::size_t)k + 4 * c);
                     for (int c = 0; c < 3; ++c) acc[c] += v[c];
                     if (k % 18 == 0 || k == t.posKeys - 1)
                         std::printf("  f%d (%.1f %.1f %.1f)", k, acc[0], acc[1], acc[2]);

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "ui/radar.h"
 
+#include "formats/le.h"
 #include "ui/hudbar.h"
 
 #include <algorithm>
@@ -143,9 +144,10 @@ RadarWire readRadarWire(std::span<const std::byte> d) {
     const std::uint32_t nv = u32le(d, 0), ne = u32le(d, 4);
     if (8ull + 12ull * nv + 4ull * ne != d.size()) return w;
     std::vector<float> v(static_cast<std::size_t>(nv) * 3);
-    std::memcpy(v.data(), d.data() + 8, v.size() * sizeof(float));
+    for (std::size_t i = 0; i < v.size(); ++i) v[i] = loadLE<float>(d.data() + 8 + 4 * i);
     std::vector<std::uint16_t> e(static_cast<std::size_t>(ne) * 2);
-    std::memcpy(e.data(), d.data() + 8 + 12ull * nv, e.size() * sizeof(std::uint16_t));
+    for (std::size_t i = 0; i < e.size(); ++i)
+        e[i] = loadLE<std::uint16_t>(d.data() + 8 + 12ull * nv + 2 * i);
     for (const std::uint16_t i : e)
         if (i >= nv) return w;
     w.v = std::move(v);

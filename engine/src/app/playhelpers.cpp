@@ -2,8 +2,10 @@
 #include "app/playhelpers.h"
 
 #include "audio/mixer.h"   // `wavToDevice`'s loader
+#include "formats/le.h"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -21,6 +23,14 @@ std::vector<float> wavToDevice(std::span<const std::byte> file, int deviceRate) 
     const omk::audio::WavLoad w = omk::audio::loadWav(file);
     if (w.reject != omk::audio::WavReject::Ok || w.fmt.bits != 16 || !w.fmt.rate) return {};
     const auto* pcm = reinterpret_cast<const std::int16_t*>(file.data() + w.dataOffset);
+    // a .wav is little-endian PCM; on a big-endian host read it into a copy
+    std::vector<std::int16_t> native;
+    if constexpr (std::endian::native == std::endian::big) {
+        native.resize(w.dataBytes / 2);
+        for (std::size_t i = 0; i < native.size(); ++i)
+            native[i] = loadLE<std::int16_t>(file.data() + w.dataOffset + 2 * i);
+        pcm = native.data();
+    }
     const std::size_t frames = w.dataBytes / (2u * (w.fmt.channels ? w.fmt.channels : 1));
     // AN EXACT MULTIPLE (2026-09-27): a device rate 1, 2, 4 or 8 times the
     // sound's makes `i * step` exact in double, so the loop below takes source

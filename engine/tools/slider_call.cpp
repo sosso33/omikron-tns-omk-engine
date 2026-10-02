@@ -20,6 +20,7 @@
 //                 median and worst distance in metres
 //   route ...     the round-robin route pick off the best lane
 #include "actor/sliders.h"
+#include "formats/le.h"
 #include "formats/addresses.h"
 #include "formats/opt.h"
 #include "platform/datafs.h"
@@ -40,9 +41,8 @@ std::vector<std::byte> areaChunk(const omk::DataFs& fs, int idx) {
     if (d.size() < 8) return out;
     std::size_t first = d.size();
     for (std::size_t i = 0; i * 8 + 8 <= d.size() && i * 8 < first; ++i) {
-        std::uint32_t off, size;
-        std::memcpy(&off, d.data() + i * 8, 4);
-        std::memcpy(&size, d.data() + i * 8 + 4, 4);
+        const auto off = omk::loadLE<std::uint32_t>(d.data() + i * 8);
+        const auto size = omk::loadLE<std::uint32_t>(d.data() + i * 8 + 4);
         if (!off || !size || off + size > d.size()) continue;
         if (off < first) first = off;
         if (static_cast<int>(i) == idx)

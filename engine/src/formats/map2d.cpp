@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include <utility>
 #include "formats/map2d.h"
+#include "formats/le.h"
 #include "platform/datafs.h"
 
 #include <cstring>
@@ -9,22 +10,16 @@ namespace omk {
 namespace {
 
 std::uint32_t u32(std::span<const std::byte> b, std::size_t o) {
-    std::uint32_t v = 0;
     if (o + 4 > b.size()) return 0;
-    std::memcpy(&v, b.data() + o, 4);
-    return v;
+    return loadLE<std::uint32_t>(b.data() + o);
 }
 float f32(std::span<const std::byte> b, std::size_t o) {
-    float v = 0;
     if (o + 4 > b.size()) return 0;
-    std::memcpy(&v, b.data() + o, 4);
-    return v;
+    return loadLE<float>(b.data() + o);
 }
 std::int32_t i32(std::span<const std::byte> b, std::size_t o) {
-    std::int32_t v = 0;
     if (o + 4 > b.size()) return 0;
-    std::memcpy(&v, b.data() + o, 4);
-    return v;
+    return loadLE<std::int32_t>(b.data() + o);
 }
 
 }  // namespace

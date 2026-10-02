@@ -22,7 +22,11 @@
 
 PPC_CXX  ?= powerpc-apple-darwin8-g++
 CXXFLAGS ?= -std=c++20 -O2 -Wall -Wextra -Wpedantic -Isrc -Ithird_party
-PPCFLAGS := -mmacosx-version-min=10.4
+# -ffp-contract=off: GCC FUSES a*b+c into one PowerPC fmadd by default,
+# rounding once where the host rounds twice, and a 300-frame traffic run then
+# drifted by 0.1 unit (veh_probe, 2026-10-02) - with it off on both sides the
+# outputs are identical. The original ran on x87, which has no fused op.
+PPCFLAGS := -mmacosx-version-min=10.4 -ffp-contract=off
 LDFLAGS  := -static-libstdc++ -static-libgcc
 DEPFLAGS := -MMD -MP
 

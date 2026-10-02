@@ -9,6 +9,7 @@
 // and, with one model named, a line per light. `verify.py: light record`.
 // See `engine/src/formats/light3do.h` for the layout and `todo/mesh-lights.md`.
 #include "platform/datafs.h"
+#include "formats/le.h"
 #include "formats/light3do.h"
 #include "formats/mesh3do.h"
 
@@ -41,8 +42,7 @@ int main(int argc, char** argv) {
             // squared radii (+240) are all written by the loader
             bool z = true;
             for (std::size_t b : {60u, 64u, 68u, 124u, 128u, 132u, 240u, 244u}) {
-                float v = 0;
-                std::memcpy(&v, d.data() + o + b, 4);
+                const float v = omk::loadLE<float>(d.data() + o + b);
                 if (v != 0.0f) z = false;
             }
             if (z) ++scratch;

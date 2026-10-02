@@ -9,6 +9,7 @@
 // same area leaves the player standing, because landing in a room is not the
 // same as arriving in it. This says which slot the engine would have run.
 #include "formats/iam.h"
+#include "formats/le.h"
 #include "platform/datafs.h"
 #include "script/script.h"
 #include "platform/json.h"
@@ -45,8 +46,7 @@ int main(int argc, char** argv) {
             // ...AND THE STARTUP SCRIPT AT +4, which `chunkSlots` never
             // reaches: the zone walk comes from the zone records and the
             // message subscriptions, and a cutscene runs from `+4`.
-            std::uint32_t off = 0;
-            std::memcpy(&off, span.data() + 4, 4);
+            const std::uint32_t off = omk::loadLE<std::uint32_t>(span.data() + 4);
             if (off > 0 && off < span.size()) {
                 const auto d = omk::decodeScript(span, off, span.size(), table);
                 if (d.status == omk::DecodeStatus::Ok)

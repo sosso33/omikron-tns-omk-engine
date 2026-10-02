@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "formats/light3do.h"
 #include "formats/mesh3do.h"
+#include "formats/le.h"
 
 #include <cmath>
 #include <cstring>
@@ -12,14 +13,10 @@ bool fits(std::span<const std::byte> d, std::size_t off, std::size_t n) {
     return off <= d.size() && n <= d.size() - off;
 }
 std::uint32_t u32at(std::span<const std::byte> d, std::size_t o) {
-    std::uint32_t v = 0;
-    std::memcpy(&v, d.data() + o, 4);
-    return v;
+    return loadLE<std::uint32_t>(d.data() + o);
 }
 float f32at(std::span<const std::byte> d, std::size_t o) {
-    float v = 0;
-    std::memcpy(&v, d.data() + o, 4);
-    return v;
+    return loadLE<float>(d.data() + o);
 }
 
 }  // namespace

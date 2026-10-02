@@ -15,6 +15,7 @@
 // traffic shares the pool and is skipped throughout; `veh_probe` is its
 // probe.
 #include "actor/pose.h"
+#include "formats/le.h"
 #include "actor/sliders.h"
 #include "formats/opt.h"
 #include "platform/datafs.h"
@@ -225,8 +226,8 @@ int main(int argc, char** argv) {
         for (int c : {12, 21}) {
             const auto d = s.scene().scene().clipData(c);
             if (d.size() < 8) continue;
-            const auto rd = [&](std::size_t o) { std::int32_t v = 0; std::memcpy(&v, d.data() + o, 4); return v; };
-            const auto rf = [&](std::size_t o) { float v = 0; std::memcpy(&v, d.data() + o, 4); return v; };
+            const auto rd = [&](std::size_t o) { return omk::loadLE<std::int32_t>(d.data() + o); };
+            const auto rf = [&](std::size_t o) { return omk::loadLE<float>(d.data() + o); };
             const int n = rd(4);
             std::printf("programs raw clip %d: frames %d tracks %d\n", c, rd(0), n);
             for (int i = 0; i < n && 8u + 40u * static_cast<std::size_t>(i + 1) <= d.size(); ++i) {

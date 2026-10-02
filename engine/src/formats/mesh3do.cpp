@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "formats/mesh3do.h"
+#include "formats/le.h"
 
 #include <algorithm>
 #include <cstring>
@@ -233,18 +234,17 @@ std::vector<BodySphere> readBodySpheres(std::span<const std::byte> d,
     std::vector<BodySphere> out;
     const auto base = static_cast<std::size_t>(h.descOff);
     if (base + 248 > d.size()) return out;
-    std::int32_t n = 0;
-    std::memcpy(&n, d.data() + base + 244, 4);
+    const std::int32_t n = loadLE<std::int32_t>(d.data() + base + 244);
     if (n <= 0 || n > 4096) return out;
     if (base + 248 + 16u * static_cast<std::size_t>(n) > d.size()) return out;
     out.reserve(static_cast<std::size_t>(n));
     for (int i = 0; i < n; ++i) {
         const std::size_t o = base + 248 + 16u * static_cast<std::size_t>(i);
         BodySphere s;
-        std::memcpy(&s.x, d.data() + o, 4);
-        std::memcpy(&s.y, d.data() + o + 4, 4);
-        std::memcpy(&s.z, d.data() + o + 8, 4);
-        std::memcpy(&s.radius, d.data() + o + 12, 4);
+        s.x = loadLE<float>(d.data() + o);
+        s.y = loadLE<float>(d.data() + o + 4);
+        s.z = loadLE<float>(d.data() + o + 8);
+        s.radius = loadLE<float>(d.data() + o + 12);
         out.push_back(s);
     }
     return out;

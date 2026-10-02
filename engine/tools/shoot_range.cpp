@@ -11,6 +11,7 @@
 // 276-byte actor record - 26 is `0x1A`, an int16 at `+180`, and the rest are
 // its neighbours - so the values a designer authored can simply be read.
 #include "actor/shoot.h"
+#include "formats/le.h"
 #include "actor/shoothit.h"
 #include "formats/iam.h"
 #include "formats/mesh3do.h"
@@ -44,8 +45,8 @@ int main(int argc, char** argv) {
             if (span.size() < cAt + 2) continue;
             std::vector<std::byte> b(span.begin(), span.end());
             std::int32_t lo = 0; int n = 0;
-            std::memcpy(&lo, b.data() + pAt, 4);
-            std::memcpy(&n, b.data() + cAt, 2); n &= 0xFFFF;
+            lo = omk::loadLE<std::int32_t>(b.data() + pAt);
+            n = omk::loadLE<std::uint16_t>(b.data() + cAt);
             if (n <= 0 || lo <= 0 ||
                 static_cast<std::size_t>(lo) + 276u * n > b.size()) continue;
             for (int i = 0; i < n; ++i) {
@@ -62,8 +63,7 @@ int main(int argc, char** argv) {
                 if (omk::readActorProperty(rec, 37, v)) p.behaviourBits = v;
                 // +176 is the character type (`Session::typeOfActor`), +80 in
                 // the shoot record; property 37 bit 4 is the record's 0x800000
-                std::uint32_t ty = 0;
-                std::memcpy(&ty, rec.data() + 176, 4);
+                const std::uint32_t ty = omk::loadLE<std::uint32_t>(rec.data() + 176);
                 const bool sp = ty == 12, wa = (p.behaviourBits & 0x04) != 0;
                 spectres += sp; watchers += wa; spectreWatchers += sp && wa;
                 if (wa) ++watcherChunks[std::string(arch) + " " + std::to_string(ci)];

@@ -2,6 +2,7 @@
 #include "actor/sliders.h"
 
 #include "formats/anim.h"
+#include "formats/le.h"
 
 #include <algorithm>
 #include <cmath>
@@ -79,7 +80,8 @@ std::vector<PedClip> animGroupClips(std::span<const std::byte> ani, int group) {
             for (std::int32_t k = 0; k < t.posKeys; ++k) {
                 const std::size_t o = t.posOffset + 12 * static_cast<std::size_t>(k);
                 if (o + 12 > ani.size()) { c.root.clear(); break; }
-                std::memcpy(&c.root[static_cast<std::size_t>(3 * k)], ani.data() + o, 12);
+                for (std::size_t j = 0; j < 3; ++j)
+                    c.root[static_cast<std::size_t>(3 * k) + j] = loadLE<float>(ani.data() + o + 4 * j);
             }
             break;
         }
@@ -109,7 +111,8 @@ PedClips pedClipsFrom(std::span<const std::byte> ani) {
             for (std::int32_t k = 0; k < t.posKeys; ++k) {
                 const std::size_t o = t.posOffset + 12 * static_cast<std::size_t>(k);
                 if (o + 12 > ani.size()) { c.root.clear(); break; }
-                std::memcpy(&c.root[static_cast<std::size_t>(3 * k)], ani.data() + o, 12);
+                for (std::size_t j = 0; j < 3; ++j)
+                    c.root[static_cast<std::size_t>(3 * k) + j] = loadLE<float>(ani.data() + o + 4 * j);
             }
             break;
         }

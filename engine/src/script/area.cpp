@@ -2,6 +2,7 @@
 #include "script/area.h"
 
 #include "platform/datafs.h"
+#include "formats/le.h"
 #include "formats/mesh3do.h"
 #include "actor/pose.h"
 #include "script/scenehost.h"
@@ -961,7 +962,8 @@ bool Session::shootBegin(int weaponObject) {
         const auto g = readFile(iam_ + "/GLOBAL");
         if (g.size() >= 42u + 2u * static_cast<std::size_t>(omk::kWeaponSlotCount)) {
             std::int16_t slots[omk::kWeaponSlotCount];
-            std::memcpy(slots, g.data() + 42, sizeof slots);
+            for (int i = 0; i < omk::kWeaponSlotCount; ++i)
+                slots[i] = loadLE<std::int16_t>(g.data() + 42 + 2 * i);
             shoot_.setWeaponTable(slots, omk::kWeaponSlotCount);
         }
     }
@@ -1992,9 +1994,7 @@ std::uint32_t Session::typeOfActor(int actor) const {
     std::vector<std::byte> chunk;
     std::size_t o = 0;
     if (!actorRecord(actor, chunk, o)) return 0xFFFFFFFFu;
-    std::uint32_t v = 0;
-    std::memcpy(&v, chunk.data() + o + 176u, 4);
-    return v;
+    return loadLE<std::uint32_t>(chunk.data() + o + 176u);
 }
 
 const Session::Character* Session::characterOf(int actor) const {

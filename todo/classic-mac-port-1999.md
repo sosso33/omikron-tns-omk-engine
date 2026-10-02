@@ -201,6 +201,43 @@ takes the generic path; an AltiVec path would be an optimisation for a G4,
 not a fix. Not audited: `third_party/` (pl_mpeg, the Vulkan loader),
 `backends/vulkan`, `backends/vita`.
 
+#### 3a-i. Run on a big-endian CPU, and fixed - 2026-10-02
+
+Done the way §3e proposed, but with Tiger itself rather than `qemu-user`:
+`engine/ppc-darwin.mk` cross-compiles `src/` and all 196 tools for
+`powerpc-apple-darwin8`, and the tools ran in Tiger under ppcosxkvm against
+the same data as their Mac builds. **Before the fixes the audit held exactly**:
+every tool reaching an audited raw read disagreed - `shoot_range` found **0**
+actor records against 1032, `map2d_probe` printed 16 map lines against 79,
+`veh_probe` failed (exit 1), `ped_probe` and `light_probe` differed - while
+`dump_world_data` and `combine_probe`, which read byte by byte, matched to the
+output file's MD5. And `opt.cpp`'s range checks do NOT reject a byte-swapped
+circuit: `ped_probe` ran to exit 0 on it, with the wrong counts.
+
+The fix is `src/formats/le.h`, `loadLE<T>(const std::byte*)`, at all twelve
+sites of the table above plus `playhelpers.cpp`'s WAV - and **eleven more in
+six TOOLS** the audit had not covered (`shoot_range`, `slider_call`,
+`slider_door`, `ped_probe`, `shoot_trigger`, `light_probe`; `slider_call`,
+`slider_door` and `shoot_trigger` fixed by reading, not yet run on PowerPC): the probes read
+the data themselves, and a probe's raw read is as wrong on PowerPC as an
+engine's. `shoot_range` was the instructive one - two bytes copied into an
+`int` and masked with `0xFFFF`, which on big-endian keeps the half the bytes
+did NOT land in. After the fixes all seven tools give the same output on
+both CPUs, and on the Mac every output is byte-identical before and after
+(the fixes change nothing on little-endian).
+
+**One residue was not byte order**: `veh_probe` still differed by 0.1 unit
+after 300 simulated frames. GCC fuses `a*b+c` into PowerPC `fmadd` by default
+and rounds once where the host rounds twice; built with `-ffp-contract=off`
+on both sides the outputs are identical, so `ppc-darwin.mk` sets it - and a
+host build to compare against must too (`make -f ppc-darwin.mk PPC_CXX=c++
+PPCFLAGS=-ffp-contract=off LDFLAGS= OUT=build/host-ref`).
+
+**Not done**: `backends/sdl/sdlfront.cpp`'s `AUDIO_F32` (should be
+`AUDIO_F32SYS`) - viewer code, not in the PowerPC build, and in a file the
+play split was moving that day. Seven tools compared, not 196: the rest
+should run the same way before this is called closed.
+
 An offline "Mac CD" converter is possible as a side project but is NOT the
 path: its output must live outside `gamedata/` (§1, the `safeOutputPath`
 rule), every reader would need a big-endian twin, and `verify.py` could no
@@ -380,9 +417,9 @@ dropped.
    street start, recorded here as the baseline.
 2. **The memory cuts** of 3b, one row at a time, each "same output, less
    memory" in `optimization.md`'s discipline.
-3. **Byte order** - the `le.h` header and the 12 sites of 3a, then the
-   `qemu-user` big-endian run of `verify.py --only` over the format and
-   runtime checks, adding checks where a 3a site has none that would go red.
+3. **Byte order** - DONE for the audited sites and seven tools, 2026-10-02
+   (3a-i): `le.h`, the PowerPC build, the comparison in Tiger. Left: run the
+   other 189 tools the same way, and `sdlfront.cpp`'s `AUDIO_F32SYS`.
 4. **The GL 1.1 fixed-function backend** behind `renderer.h`, pre-transformed
    vertices, built and compared against the software reference on the dev
    Mac (PORTING B2: shown to fail).
@@ -398,7 +435,8 @@ dropped.
 
 Closed 2026-10-01: the HFS name limit (3d - not a problem), the movie codec
 (3f - MPEG-1, within a G3), how bodies pose (3b-i - rigid but for the seams
-and the face; the original's CPU transform is the model).
+and the face; the original's CPU transform is the model). Closed 2026-10-02:
+`opt.cpp`'s range checks PASS a byte-swapped circuit (3a-i).
 
 Still open:
 
@@ -406,8 +444,6 @@ Still open:
   whether one Carbon build runs on OS 9 and OS X both - or OS 9 needs a
   classic Toolbox build and OS X a separate Mach-O one (3d). A hello-world
   decides it.
-* Whether `opt.cpp`'s range checks would reject a byte-swapped circuit or
-  pass it (3a); the big-endian run answers it.
 * Period facts not confirmed: *Unreal* (1999) on RAVE + Glide, a Glide
   *Quake*, OpenGL for Mac OS 1.0/1.1's release dates, whether *Unreal
   Tournament* had OpenGL at launch, and whether a Mac Omikron was ever

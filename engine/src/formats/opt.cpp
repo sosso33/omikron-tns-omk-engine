@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "formats/opt.h"
+#include "formats/le.h"
 
 #include <cstring>
 
@@ -9,7 +10,7 @@ namespace {
 template <typename T>
 T at(std::span<const std::byte> d, std::size_t o) {
     T v{};
-    if (o + sizeof(T) <= d.size()) std::memcpy(&v, d.data() + o, sizeof(T));
+    if (o + sizeof(T) <= d.size()) v = loadLE<T>(d.data() + o);
     return v;
 }
 
