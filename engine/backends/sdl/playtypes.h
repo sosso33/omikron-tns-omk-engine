@@ -265,7 +265,6 @@ struct Staged {
     const omk::SceneRunner* poolWas = nullptr;   // which pool last drove him
     const char* src = "none";
     omk::HeadLook look;            // `character.look_at_player`'s head aim, eased
-    bool  lookSnap = true;
     bool  shootTold = false;
     bool  brainTold = false;
     // KILLED BY A BOLT (`sub_4240E0`): the death clip TYPE its band chose,

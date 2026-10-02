@@ -2164,9 +2164,20 @@ void PlayState::worldStaged() {
                 // player was last drawn - one frame old here, since
                 // the player is posed later in the frame. Until he has
                 // been drawn once, his feet less a standing head height.
-                const float world[3] = {playerHeadKnown ? playerHeadAt[0] : pp[0],
-                                        playerHeadKnown ? playerHeadAt[1] : pp[1] - 60.0f,
-                                        playerHeadKnown ? playerHeadAt[2] : pp[2]};
+                //
+                // ...AND WHILE A PROGRAM OWNS HIM, HIS STAGED BODY'S. A
+                // `scx.play.player` program poses the player as a staged
+                // body and the walker stops drawing him, so `playerHeadAt`
+                // froze where his head was before he sat down: Telis, at
+                // lunch, aimed at the spot Kay'l stood in when he pressed
+                // action, a head higher and 21 units off his seat.
+                const Staged* asPlayer = nullptr;
+                if (const int pid = session.playerActor(); pid >= 0)
+                    for (const auto& up : staged)
+                        if (up->actor == pid && up.get() != &s && up->headKnown) { asPlayer = up.get(); break; }
+                const float world[3] = {asPlayer ? asPlayer->headAt[0] : playerHeadKnown ? playerHeadAt[0] : pp[0],
+                                        asPlayer ? asPlayer->headAt[1] : playerHeadKnown ? playerHeadAt[1] : pp[1] - 60.0f,
+                                        asPlayer ? asPlayer->headAt[2] : playerHeadKnown ? playerHeadAt[2] : pp[2]};
                 float pelvis[3] = {0, 0, 0};
                 if (static_cast<std::size_t>(s.mo->root) < pose.size())
                     for (int k = 0; k < 3; ++k) pelvis[k] = pose[static_cast<std::size_t>(s.mo->root)].pos[k];
@@ -2184,17 +2195,28 @@ void PlayState::worldStaged() {
                 // sideways for as long as his zone held (a reader's
                 // frames, 2026-09-05: "head at 90 when I think they
                 // should be at 0"). Diner 71 wants -13 degrees.
+                // ...AND WHILE A LINE PLAYS: the body is drawn turned by
+                // the Euler latched with the line (`s.lineYaw`, the body
+                // yaw below - the clip's root heading is inside the
+                // morph's root, already in `pose`), so the aim is backed
+                // out through the same yaw. `s.facing` here was the same
+                // 90-degree trap for a program-turned speaker. (Telis at
+                // lunch has an Euler of 0, so it changes nothing for her.)
                 const bool progTurned = s.sceneTracks.valid() && !useLine &&
                                         s.progYawKnown;
-                const float bodyYaw = progTurned ? progYawSign * s.progYaw : s.facing;
+                const float bodyYaw = useLine ? s.lineYaw
+                                    : progTurned ? progYawSign * s.progYaw : s.facing;
                 omk::rotateYaw(-bodyYaw, rel, local);
                 const float target[3] = {local[0] + pelvis[0], local[1] + pelvis[1], local[2] + pelvis[2]};
+                // No snap: the angles live in the actor record (+432/+436)
+                // and ease from wherever they are; with no target they
+                // ease back to 0 (`Actor_SetHeadLook(a, 0, 0)`), which the
+                // zeroing below stands in for.
                 omk::aimHead(pose, s.mo->meshes, head, target, s.look,
-                             static_cast<float>(frameSec * 30.0), s.lookSnap);
-                s.lookSnap = false;
+                             static_cast<float>(frameSec * 30.0), false);
             }
         } else {
-            s.lookSnap = true;
+            s.look = omk::HeadLook{};
         }
         if (!s.placed) {
             if (!s.placeTold) {

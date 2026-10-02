@@ -272,10 +272,19 @@ struct HeadLook {
 // the first root; -1 when none.
 int headMeshOf(const std::vector<Mesh>& meshes);
 // Aim `pose[head]` (and every mesh under it) at `target`, both in the pose's
-// own space: the wanted pitch/yaw from the current forward, the clamp, the
-// ease into `look`, then the rotation applied about the head's origin.
-// `snap` skips the ease (the first frame). -> the wanted angles before the
-// clamp, for the probe.
+// own space, the way `Actors_TickAll` does it (read 2026-10-02):
+//  1. the head's OWN rotation is wiped - `sub_437190(head, 4)` resets its
+//     local +56 to identity - so the head takes its parent's (the neck's)
+//     orientation and no clip or line reaches it (the morph player also
+//     unbinds the speaker's head while a look runs, `sub_42D120`'s `a2`);
+//  2. the forward is measured with LAST frame's look still applied (+156
+//     still points at +324), so the angle asked is what is LEFT to turn,
+//     and the eighth-a-frame ease settles at HALF the turn from the neck to
+//     the target - the engine's fixed point;
+//  3. the clamp, the ease (overshoot lands on the target), and the look
+//     drawn as a rotation in the head's own frame.
+// `snap` skips the ease. -> the wanted angles before the clamp, for the
+// probe.
 void aimHead(std::vector<MeshPose>& pose, const std::vector<Mesh>& meshes, int head,
              const float target[3], HeadLook& look, float dt, bool snap,
              float* wantedPitch = nullptr, float* wantedYaw = nullptr);

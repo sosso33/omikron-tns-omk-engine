@@ -393,9 +393,23 @@ player, aimed at the player's HEAD NODE as the engine does (`th = *(tgt +
 16)`, his cached `Tete`; until 2026-10-02 a point 60 units above his feet
 stood in for it). The pitch and yaw senses were settled the same day from
 `Matrix3x3_FromEulerAngles` and the caller's formulas: positive pitch tilts
-up, positive yaw turns -Z toward +X, as ported. `verify.py: engine: head look` measures the
-Demon's forward after the aim: 45 turns 45, 120 and behind turn 70, up 60
-lifts 40, one frame of ease is 45/8. Six shipped startup scripts ask for it
+up, positive yaw turns -Z toward +X, as ported.
+
+**The head is the LOOK's, and the look settles at HALF the turn** (read
+2026-10-02, a reader's frame of Telis at lunch looking up and away). Before
+it measures, `Actors_TickAll` resets the head node's local +56 to identity
+(`sub_437190(head, 4)`, o3de_ResetXForm), so no clip reaches the head while a
+look runs - and the morph player unbinds a speaking actor's head track for the
+same reason (`Game_Tick` hands `sub_42D120` the speaker's head node when slot
+100 is set, and that track's id becomes -1). The head is drawn as its parent
+(the neck) times the look matrix (`sub_4942A0`: +56 x +156). But the reset
+leaves +156, last frame's look, in place, so the forward measured already
+carries it: the angle asked is what is LEFT to turn, the ease is
+`L += (T - 2L) / 8`, and it settles at T/2 from the neck. And the target is
+the player's head WHERE HE IS DRAWN - a staged body while a `scx.play.player`
+program owns him. `verify.py: engine: head look` measures the Demon's forward
+after the aim: 45 turns 45, 120 and behind turn 70, up 60 lifts 40, one frame
+of ease is 45/8, forty frames settle at 22.5. Six shipped startup scripts ask for it
 (AREA 148 once, AREA 155 five times); the intro's beats do too.
 
 **Found by a person, 2026-09-03 (`todo/omk-play.md` 61, 62).** A woman in

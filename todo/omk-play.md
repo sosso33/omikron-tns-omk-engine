@@ -15,6 +15,37 @@ waiting on its evidence.
 
 ## Open (batch 7, filed 2026-09-09)
 
+### 99. Telis at lunch does not look at the lens through her lines — A
+
+> **PARTLY FIXED 2026-10-02, committed on the reader's go; the report is NOT
+> closed.** The reader, with the original beside the port: in DIALOG 387, on
+> *"Et ton ami Den ? Tu as pu le voir ?"*, the original has Telis facing the
+> lens and the port has her head turned up and to the right.
+
+**Repro, headless** (frame ~640 is the reader's shot, line `0E859B`, camera
+4170 -> 4171): `--save ../traces/games-resto.bin --slot 2 --nofmv --stand
+2547,22,-6930,314 --hold "0*30,k28*2" + ",0*118,k28*2" x4 + ",0*400" --frames
+640`. Zone 3732's activate script runs `character.look_at_player 0` before
+`dialog.start 387`, so the look is real here; `--call 387` is not this path
+(it shows the line inside the sneak).
+
+**Fixed, three faults in the head look** (docs/STREET_LIFE.md, "The head look"):
+the line's own head track was drawn under the look, where the engine resets the
+head and unbinds it from the morph (the up-and-right tilt was the `.3DM`'s); the
+target was `playerHeadAt`, frozen where Kay'l stood when he pressed action,
+since a program then draws him as a staged body; and the ease went to the full
+turn where the engine's measure-with-last-look settles at half. The port's
+first-frame snap went too - the engine has none.
+
+**Still open: the body and the camera.** With the head right she looks DOWN AND
+RIGHT at the seated Kay'l, not into the lens: the port's eye for 4171 sits 36
+units beside her and ~30 degrees off Kay'l, and through the line her pelvis and
+chest turn ~20 degrees off the eye (-9 in the idle). The latched root heading is
+118 and must stay (dropping it was ~90 wrong against `dlg402-44`), though the
+composition `08_wave.c` 963-965 performs is DEAD in the image (`var_58` is
+written and never read) - so the engine carries the heading some other way, not
+yet found.
+
 ### 98. A `media.play` line was laid out as a DIALOGUE line: clipped, with a scroll arrow nothing could move — A
 
 > **FIXED 2026-09-29, NOT YET PLAYED.** The reader (Vita,

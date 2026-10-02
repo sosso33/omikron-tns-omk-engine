@@ -743,11 +743,72 @@ void aimHead(std::vector<MeshPose>& pose, const std::vector<Mesh>& meshes, int h
              float* wantedPitch, float* wantedYaw) {
     if (head < 0 || static_cast<std::size_t>(head) >= pose.size()) return;
     const float kDeg = 57.29577951308232f;
-    const MeshPose& h = pose[static_cast<std::size_t>(head)];
+    // the head's subtree: every mesh whose chain reaches the head
+    std::vector<char> under(pose.size(), 0);
+    for (std::size_t i = 0; i < pose.size() && i < meshes.size(); ++i) {
+        int m = static_cast<int>(i);
+        for (int guard = 0; guard < 64 && m >= 0; ++guard) {
+            if (m == head) { under[i] = 1; break; }
+            const std::int32_t pid = meshes[static_cast<std::size_t>(m)].parent;
+            int next = -1;
+            for (std::size_t j = 0; j < meshes.size(); ++j) if (meshes[j].id == pid) { next = static_cast<int>(j); break; }
+            m = next;
+        }
+    }
+    const float origin[3] = {pose[static_cast<std::size_t>(head)].pos[0],
+                             pose[static_cast<std::size_t>(head)].pos[1],
+                             pose[static_cast<std::size_t>(head)].pos[2]};
+    // turn the head and everything under it by `d` about the head's origin
+    const auto turn = [&](const Quatf& d) {
+        for (std::size_t i = 0; i < pose.size(); ++i) {
+            if (!under[i]) continue;
+            MeshPose& mp = pose[i];
+            mp.q = qmul(d, mp.q);
+            const float rel[3] = {mp.pos[0] - origin[0], mp.pos[1] - origin[1], mp.pos[2] - origin[2]};
+            float rot[3];
+            qrot(d, rel, rot);
+            for (int k = 0; k < 3; ++k) mp.pos[k] = origin[k] + rot[k];
+        }
+    };
+    // (1) THE HEAD'S OWN ANIMATION IS WIPED: `sub_437190(head, 4)`
+    // (o3de_ResetXForm) sets its local matrix +56 to identity before the
+    // aim, so the head takes its PARENT's orientation - the rest pose's
+    // local is identity (`composePose`: world = parent x local).
+    int parent = -1;
+    {
+        const std::int32_t pid = meshes[static_cast<std::size_t>(head)].parent;
+        for (std::size_t j = 0; j < meshes.size(); ++j) if (meshes[j].id == pid) { parent = static_cast<int>(j); break; }
+    }
+    if (parent >= 0 && static_cast<std::size_t>(parent) < pose.size()) {
+        const Quatf& hq = pose[static_cast<std::size_t>(head)].q;
+        const Quatf& pq = pose[static_cast<std::size_t>(parent)].q;
+        turn(qmul(pq, Quatf{hq.w, -hq.x, -hq.y, -hq.z}));
+    }
+    const Quatf base = pose[static_cast<std::size_t>(head)].q;
+    // the look as a rotation in the head's own (reset) frame: `Matrix3x3_
+    // FromEulerAngles(pitch, yaw, roll)` at +324, bound to the head's +156
+    // and multiplied after its +56 (`sub_4942A0`). Yaw about the local Y
+    // (turning -Z toward +X), then pitch about the turned local X (nose up
+    // positive, Y down).
+    const auto lookRot = [&](float pitchDeg, float yawDeg) {
+        const float hy = yawDeg / kDeg * 0.5f, hp = pitchDeg / kDeg * 0.5f;
+        const Quatf qy{std::cos(hy), 0.0f, -std::sin(hy), 0.0f};
+        const Quatf qx{std::cos(hp), -std::sin(hp), 0.0f, 0.0f};
+        const Quatf local = qmul(qy, qx);
+        return qmul(qmul(base, local), Quatf{base.w, -base.x, -base.y, -base.z});
+    };
+    // (2) THE FORWARD IS MEASURED WITH LAST FRAME'S LOOK STILL ON. The
+    // reset touches +56 only; +156 still points at +324, so `sub_440C80`
+    // rebuilds the head's world matrix as parent x look, and the angle
+    // asked is what is LEFT to turn. Eased an eighth of the way toward
+    // that, the stored angle settles at HALF the turn from the parent's
+    // frame to the target - the engine's own fixed point, not a port
+    // choice.
+    const Quatf prev = qmul(lookRot(look.pitch, look.yaw), base);
     const float local[3] = {0.0f, 0.0f, -1.0f};
     float f[3];
-    qrot(h.q, local, f);
-    const float to[3] = {target[0] - h.pos[0], target[1] - h.pos[1], target[2] - h.pos[2]};
+    qrot(prev, local, f);
+    const float to[3] = {target[0] - origin[0], target[1] - origin[1], target[2] - origin[2]};
     const float fh = std::sqrt(f[0] * f[0] + f[2] * f[2]);
     const float th = std::sqrt(to[0] * to[0] + to[2] * to[2]);
     // yaw: the signed angle in the ground plane from the forward to the
@@ -764,45 +825,16 @@ void aimHead(std::vector<MeshPose>& pose, const std::vector<Mesh>& meshes, int h
     if (p > 40.0f) p = 40.0f;
     if (y > 70.0f) y = 70.0f;
     if (y < -70.0f) y = -70.0f;
+    // the ease, and `Actor_SetHeadLook`'s two overshoot tests: a step that
+    // would pass the asked angle lands on it
+    const auto ease = [&](float cur, float want) {
+        const float next = cur + (want - cur) * 0.125f * dt;
+        return ((want - cur) * (want - next) < 0.0f) ? want : next;
+    };
     if (snap) { look.pitch = p; look.yaw = y; }
-    else {
-        look.pitch += (p - look.pitch) * 0.125f * dt;
-        look.yaw   += (y - look.yaw) * 0.125f * dt;
-    }
-    // the rotation: yaw about the world's Y, then pitch about the head's
-    // right axis, applied to the head and everything under it about the
-    // head's origin
-    const float hy = look.yaw / kDeg * 0.5f, hp = look.pitch / kDeg * 0.5f;
-    // yaw about -Y turns -Z toward +X in this handedness (Y points down)
-    const Quatf qy{std::cos(hy), 0.0f, -std::sin(hy), 0.0f};
-    float right[3];
-    const float lx[3] = {1.0f, 0.0f, 0.0f};
-    qrot(h.q, lx, right);
-    float rr[3];
-    qrot(qy, right, rr);
-    // a nose-up pitch is a rotation about the right axis that lifts -Z,
-    // which with Y down is the negative sense
-    const Quatf qp{std::cos(hp), -rr[0] * std::sin(hp), -rr[1] * std::sin(hp), -rr[2] * std::sin(hp)};
-    const Quatf d = qmul(qp, qy);
-    const float origin[3] = {h.pos[0], h.pos[1], h.pos[2]};
-    for (std::size_t i = 0; i < pose.size() && i < meshes.size(); ++i) {
-        int m = static_cast<int>(i);
-        bool under = false;
-        for (int guard = 0; guard < 64 && m >= 0; ++guard) {
-            if (m == head) { under = true; break; }
-            const std::int32_t pid = meshes[static_cast<std::size_t>(m)].parent;
-            int next = -1;
-            for (std::size_t j = 0; j < meshes.size(); ++j) if (meshes[j].id == pid) { next = static_cast<int>(j); break; }
-            m = next;
-        }
-        if (!under) continue;
-        MeshPose& mp = pose[i];
-        mp.q = qmul(d, mp.q);
-        const float rel[3] = {mp.pos[0] - origin[0], mp.pos[1] - origin[1], mp.pos[2] - origin[2]};
-        float rot[3];
-        qrot(d, rel, rot);
-        for (int k = 0; k < 3; ++k) mp.pos[k] = origin[k] + rot[k];
-    }
+    else { look.pitch = ease(look.pitch, p); look.yaw = ease(look.yaw, y); }
+    // (3) drawn as parent x look - the clip's head rotation is gone
+    turn(lookRot(look.pitch, look.yaw));
 }
 
 }  // namespace omk

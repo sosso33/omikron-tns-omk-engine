@@ -7313,8 +7313,15 @@ def c_engine_head_look():
     Demon's head (`D3Tete`): a target 45 degrees to either side turns the
     forward by exactly 45; one at 120 and one behind by 70, the clamp; one 60
     degrees up lifts it 40, one down -40; and from rest the ease covers 45/8
-    in one frame and lands within a degree in forty. The transition is the
-    thing tested: the forward MEASURED after the aim, not the angle asked.
+    in one frame. The transition is the thing tested: the forward MEASURED
+    after the aim, not the angle asked.
+
+    And forty frames of the ease settle at HALF the turn, 22.5 for 45
+    (2026-10-02): `Actors_TickAll` resets only the head's local +56 before
+    measuring, so last frame's look (+156 -> +324) is still in the forward,
+    the angle asked is what is LEFT to turn, and `L += (T - 2L) / 8` has its
+    fixed point at T/2. The full-turn reading this asserted before (> 44)
+    fails against the new code, and this one against the old.
     """
     eng = os.path.join(ROOT, "engine")
     if not os.path.isdir(eng):
@@ -7336,9 +7343,9 @@ def c_engine_head_look():
     def lifted(n): return round(C.get(n, {}).get("lifted", 999), 1)
     got = (head, turned("front"), abs(turned("left45")), abs(turned("right45")), abs(turned("right120")),
            abs(turned("behind")), lifted("up60"), lifted("down60"),
-           round(abs(C.get("left45", {}).get("eased_one", 0)), 2), abs(C.get("left45", {}).get("eased_forty", 0)) > 44.0)
-    want = ("D3Tete", 0.0, 45.0, 45.0, 70.0, 70.0, 40.0, -40.0, 5.62, True)
-    return got, want, "the Demon's head; turned front/left45/right45/right120/behind; lifted up60/down60; one frame of ease (45/8); forty frames land"
+           round(abs(C.get("left45", {}).get("eased_one", 0)), 2), round(abs(C.get("left45", {}).get("eased_forty", 0)), 1))
+    want = ("D3Tete", 0.0, 45.0, 45.0, 70.0, 70.0, 40.0, -40.0, 5.62, 22.5)
+    return got, want, "the Demon's head; turned front/left45/right45/right120/behind; lifted up60/down60; one frame of ease (45/8); forty frames settle at half (22.5)"
 
 
 def c_engine_city_crowd():
