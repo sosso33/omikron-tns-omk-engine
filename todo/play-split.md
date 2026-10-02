@@ -6,8 +6,10 @@ could be divided."* **Nothing here has been applied.** `play.cpp` is held by
 another session; this file is the design, and every step below is written so
 it can land one at a time between that session's commits.
 
-**Status 2026-10-02**: S0, S1, S1b, S1c and **S2** are done, the record was
-ENLARGED (S0b, below), and **S3 (`Game`, one sub-struct at a time) is next**. The file kept growing while the split waited -
+**Status 2026-10-02 (evening)**: S0-S2, **S3 (as S3a-S3f) and S4a are done**:
+`main` is three lines, `PlayState::run` twenty, `play.cpp` 57 (from 23069).
+How, and what is left, is §"S3 and S4a, done" below - the shape differs from
+§3's in ways it records. The file had kept growing while the split waited -
 `play_split_scan.py` on 2026-10-02, against the 2026-09-18 figures that §1
 still quotes:
 
@@ -415,6 +417,108 @@ after them changed. `kTypeMarker` / `kCharMarker` went with `--keys`.
   changed. The Vita still enters through `-Dmain=omk_play_main` and a built
   `argv`; filling a `PlayOptions` directly is now possible, and belongs with
   S5's per-backend `main`.
+
+### S3 and S4a, done 2026-10-02 — `main` becomes `PlayState`
+
+Eight commits, each gated by the 28-scene record (identical, `--gpu`), all
+four builds (`make`, `make play`, `make play-gles`, `make vita`) and the
+checks the step could reach. Every one was done by a script driven by
+**clang's AST** (`c++ -fsyntax-only -Xclang -ast-dump=json
+-Xclang -ast-dump-filter=main`), not by text matching: the declarations
+with their types and byte offsets, the names each block refers to, the
+statement boundaries. The scripts lived outside the tree; the method is the
+part worth keeping:
+
+| commit | step |
+|---|---|
+| `7f42af9` S3a | `omk::Game` with the AUDIO group (`src/app/game.h`) - the plan's alias method, one group |
+| `362c3ad` S3b | `main`'s 19 local structs to namespace scope (`backends/sdl/playtypes.h`, `namespace omk::play`) - a second unit has to be able to name them |
+| `fcbb143` S3c | the 16133-line `for (;;)` body out of `main` byte for byte, into a struct of REFERENCES to the 478 locals it used (then `PlayFrame`) |
+| `44bdbba` S4a | that body in six phase files, `playframe_{input,control,modes,world,screens,present}.cpp` |
+| `4ca6df7` S3d | `main`'s 518 locals become members of `PlayState` (`playstate.h`); `main`'s body is `PlayState::run` |
+| `182aae3` S3e | the 52 lambdas become methods (`playstate.cpp`); the phases become `PlayState` methods; `PlayFrame` retires |
+| `d09c330` | a fix: the Vita's load gate (below) |
+| `9aaf5b1` S3f | `run` in eight setup sections, `playsetup_<section>.cpp`, and `finish()`; the set viewer to `playscene.cpp` |
+
+**Four mechanisms, each of which keeps the moved text byte for byte:**
+
+* **a declaration becomes an assignment where it stood** - `T x = e` ->
+  `x = e`, `T x(a)` -> `x = T(a)`; a default-built local is simply the
+  member. So everything is still set in the order it was, and members in
+  declaration order are destroyed in the order the locals were. Type traits
+  over all 126 types first: every one default-constructible and
+  move-assignable except SEVEN built from others (`DataFs`, `TextLayout`,
+  `ScreenComposer`, `OptionsMenu`, `Input`, `Inventory`, `Session`) - those
+  are `std::optional` storage built in place by `emplace` where they were
+  declared, and a function that reads one names it first:
+  `auto& session = *session_;`;
+* **a lambda becomes a method** - signature from the AST's `operator()`,
+  body as it was. The one generic lambda (`spanned`) is a member template.
+  A lambda captured BY NAME somewhere (`[&fightRun]`, `[L, prepareSet]`)
+  captures `this`;
+* **a loop body keeps its `break`s inside `do { ... } while (false)`**: a
+  loop-level `break` leaves the `do` and the phase returns -2, `return 1`
+  is still `main`'s exit code, -1 goes on. The AST shows no loop-level
+  `continue`, which this would misread. The setup sections return -1 or
+  the exit code the same way;
+* **a cut is at a statement boundary, at preprocessor depth 0** - asserted,
+  so no `#if` is split across files. A local of one phase read by a later
+  one became a member assigned where it was declared (twelve of them); a
+  function-local `static` crossing a cut became a member with the same
+  initializer.
+
+**Four things that would have been wrong, each caught by measuring rather
+than by the build:**
+
+* **one build's AST is not the program.** The frame's first member list came
+  from the Vulkan build, and the GLES build named locals it lacked
+  (`glWin`, `glSwapMs`, `overlayFrame`); every list since is the union over
+  the four builds, Vita included (`-DOMK_GLES -D__vita__` parses on macOS);
+* **and a declaration inside one build's `#if` arm is not rewritten from
+  another's AST.** S3d's rewrite came from the Vulkan AST, so the Vita's
+  `const bool loadGate = ...` stayed a DECLARATION, shadowing the member
+  inside `run`. Harmless while the frame view bound to it; since S3e the
+  world phase reads the member, which on the Vita was never set - the load
+  gate would never have held a frame. It COMPILED. Found by listing `run`'s
+  remaining locals for each build: the Vita alone had an eighth (`d09c330`).
+  The rule: after any rewrite of declarations, list the function's locals
+  per build and require them equal;
+* **a member is visible before its old declaration point.** Before hoisting,
+  every name `main` used from namespace scope was checked against the names
+  becoming members: none collided. Had one, the code before the old
+  declaration would have silently changed meaning;
+* **a frame time measured beside a Vita compile is the compile's.** S3e's
+  street read 28.4 ms against 17.8 with `make vita` running; alone it is
+  16.1-16.3. Measure performance on an idle machine.
+
+**Where it differs from §3's shape**, and why: `PlayState` (not `Game`) lives
+in `backends/sdl/`, because several members are SDL types (`SdlFrontend`,
+`SDL_Window*`) and the phases still carry backend `#if`s; `src/app/game.h`
+keeps only the audio group. No `Presenter` yet (S5), no `harness.cpp` (S6).
+
+**Where everything is now** (`backends/sdl/`, 26 files, ~23k lines):
+`play.cpp` 57, `playstate.h` 659 (every member, in order - the place to look
+a name up), `playsetup_*.cpp` 34-819 each, `playframe_*.cpp` - input 1239,
+control 3350, modes 1823, world 6966, screens 2852, present 279 -
+`playstate.cpp` 1599 (the former lambdas), `playscene.cpp` 390,
+`sdlfront.*`, `playtypes.h` 816, `playshared.h` 270.
+
+**What is left**, in the order it pays:
+
+1. **the three big phases from the inside** - world (one 6143-line `if`),
+   control (one 3332-line statement), screens (per screen). The same tools
+   one level down: a local of the block crossing a cut becomes a member;
+2. **S5, the `Presenter`** - the 24 backend `#if`s out of game code. Not
+   mechanical: it is the one step that changes structure, and the one that
+   would let the SDL-free phases (control has no SDL call and no `#if`)
+   move to `src/app/`;
+3. **S6, the instruments** behind a seam (`--board`, `--ride`, the
+   harnesses, the flicker catcher), so a shipped build can drop them;
+4. **the aliases**: the 99 flag references into `opt` and the audio ones
+   into `game` are members now, so they cost nothing at a use site; folding
+   them into plain members is cosmetic;
+5. the Vita entry point can fill a `PlayOptions` instead of building an
+   `argv` (`backends/vita/vita_main.cpp`).
 
 ### What NOT to do
 

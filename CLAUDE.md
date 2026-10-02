@@ -130,7 +130,7 @@ One line per directory, then the files big enough to need a warning:
 | engine/src/audio/ | | `mixer.*` (voices, bank, attenuation), `voiceover.*` (media.play → VOICEOFF/*.ADP), `music.*` |
 | engine/src/input/ | | `bindings.*` the four control schemes |
 | engine/src/platform/ | | `datafs.*` (ALL data access, case-insensitive, and `safeOutputPath`), `boot.*`, `frontend.h`, `movie.*`, `json.*` |
-| engine/backends/sdl/play.cpp | 152 KB | the viewer `omk-play`; grep for the function you need, never read whole |
+| engine/backends/sdl/ | ~23k lines in 26 files | the viewer `omk-play`, split out of one `main` by `todo/play-split.md` (2026-10-02): `play.cpp` is `main` + `PlayState::run` (57 lines); `playstate.h` holds every piece of state as a member (read it to find a name's type); `playsetup_<section>.cpp` the setup in order, `playframe_<phase>.cpp` one turn of the loop (`world` ~7k lines, `control` ~3.4k, `screens` ~2.9k: grep, never read whole), `playstate.cpp` the former lambdas, `playscene.cpp` the `--scene` set viewer, `sdlfront.*` the SDL frontend, `playtypes.h` the model/staging structs, `playshared.h` the includes and constants |
 | engine/backends/vulkan/vkrender.cpp | 68 KB | the Vulkan backend; only for GPU-side work |
 | engine/tools/*.cpp (75) | small each | one probe or dump per check; `verify.py --list` says which check uses which |
 | engine/third_party/ | | vendored; never |

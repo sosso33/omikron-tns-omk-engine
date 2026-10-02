@@ -18,7 +18,7 @@ and the `verify.py` check that pins each result.
 | [`actor-runtime.md`](actor-runtime.md) | the `.CTL` channel and the actor runtime (`engine/src/actor/*`) - all closed |
 | [`road-traffic.md`](road-traffic.md) | the ROAD TRAFFIC (`engine/src/actor/vehicles.cpp`): the `.OPT` circuit's vehicle half, its reading and its steps |
 | [`classic-mac-port-1999.md`](classic-mac-port-1999.md) | **the what-if 1999 CLASSIC Mac port** (not a modern macOS one): Omikron as an Eidos Mac release of 2000 would have been - the box spec, how Westlake-style porters would have done it (OpenGL, QuickTime, byte order swapped at load), and how OMK reproduces it, with the endianness audit and the toolchain findings. Written 2026-10-01, none of it started |
-| [`omk-play.md`](omk-play.md) | **the viewer** (`engine/backends/sdl/play.cpp`): what it fails to draw, filed the same way |
+| [`omk-play.md`](omk-play.md) | **the viewer** (`engine/backends/sdl/`, `play.cpp` and its parts): what it fails to draw, filed the same way |
 | `pending/T*.md` | **a batch's deliverables**, one file per task, waiting to be integrated |
 
 One issues file per component. A new component gets its own file and a row in

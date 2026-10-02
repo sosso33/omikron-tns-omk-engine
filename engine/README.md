@@ -167,7 +167,10 @@ And **outside** `src/`, because A8 rule 1 says `make` with nothing installed
 must build everything and pass the suite:
 
 ```
-backends/sdl/play.cpp    the LIVE frontend - the only file in the tree that
+backends/sdl/            the LIVE frontend (`play.cpp` and the parts
+                         `todo/play-split.md` cut out of it in 2026-10:
+                         `PlayState`, its setup sections and frame phases,
+                         `sdlfront.*`) - the only place in the tree that
                          includes a library header. `make play` builds it when
                          pkg-config finds sdl3 or sdl2, and prints why it did
                          not otherwise. `make` is unaffected either way.

@@ -189,7 +189,7 @@ What is actually needed, and nothing beyond it:
 
 **Amended 2026-09-01, twice, and both are recorded rather than left to be
 found.** First, this named SDL3 and the machine the frontend was written on has
-only SDL2. The surface `backends/sdl/play.cpp` uses is a dozen calls both
+only SDL2. The surface `backends/sdl/` uses is a dozen calls both
 versions have, so it builds against either and the Makefile prefers 3
 (`pkg-config --exists sdl3 || sdl2`). Second, **pl_mpeg is now integrated** and two things about it were wrong here.
 It is **MIT**, not public domain (`SPDX-License-Identifier: MIT`, Dominic
