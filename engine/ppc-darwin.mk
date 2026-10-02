@@ -73,9 +73,14 @@ $(OUT)/%: $(OBJDIR)/tools/%.o $(SRCOBJS)
 # No GPU backend (playgpu_none) and no instruments (playharness_off), the
 # INSTRUMENTS=0 build of todo/play-split.md S6.
 SDL2_PREFIX ?=
+# PLAY_GPU picks the GPU-window file: `gl1` (the default) draws the world with
+# the fixed-function OpenGL 1.x backend, `backends/gl1/` - step 4 - offscreen,
+# its frame presented on the CPU; `none` is the software reference alone.
+PLAY_GPU ?= gl1
 PLAY_SRCS := $(filter-out backends/sdl/playgpu_%.cpp backends/sdl/playharness.cpp,$(wildcard backends/sdl/*.cpp)) \
-             backends/sdl/playgpu_none.cpp
-PLAY_OBJS := $(patsubst backends/sdl/%.cpp,$(OBJDIR)/play/%.o,$(PLAY_SRCS))
+             backends/sdl/playgpu_$(PLAY_GPU).cpp
+PLAY_OBJS := $(patsubst backends/sdl/%.cpp,$(OBJDIR)/play/%.o,$(PLAY_SRCS)) \
+             $(if $(filter gl1,$(PLAY_GPU)),$(OBJDIR)/gl1/gl1render.o)
 PLAY_FLAGS := -I$(SDL2_PREFIX)/include/SDL2 -D_THREAD_SAFE
 # what that build's `sdl2-config --static-libs` names (-lobjc: its Cocoa half)
 PLAY_LIBS := $(SDL2_PREFIX)/lib/libSDL2.a -lm -liconv -lobjc -framework OpenGL -framework Cocoa \
@@ -89,6 +94,10 @@ $(OBJDIR)/play/%.o: backends/sdl/%.cpp | check-cxx
 	@test -n "$(SDL2_PREFIX)" || { echo "ppc-darwin.mk: set SDL2_PREFIX to the Tiger SDL2 install"; exit 1; }
 	@mkdir -p $(@D)
 	$(PPC_CXX) $(CXXFLAGS) $(PPCFLAGS) $(DEPFLAGS) $(PLAY_FLAGS) -c -o $@ $<
+
+$(OBJDIR)/gl1/%.o: backends/gl1/%.cpp | check-cxx
+	@mkdir -p $(@D)
+	$(PPC_CXX) $(CXXFLAGS) $(PPCFLAGS) $(DEPFLAGS) -c -o $@ $<
 
 $(OUT)/omk-play: $(PLAY_OBJS) $(SRCOBJS)
 	@mkdir -p $(@D)

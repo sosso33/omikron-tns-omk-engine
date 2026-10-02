@@ -37998,6 +37998,9 @@ def c_licence_headers():
     `playgpu_{vulkan,gles}.h` (2026-10-02), the GPU window per backend (S5).
     **525 -> 526**: `src/formats/le.h` (2026-10-02), the little-endian read
     the PowerPC build needed (`todo/classic-mac-port-1999.md` 3a-i).
+    **526 -> 529**: `backends/gl1/gl1render.{h,cpp}` and
+    `backends/sdl/playgpu_gl1.cpp` (2026-10-02), the fixed-function OpenGL
+    1.x backend (`todo/classic-mac-port-1999.md` step 4).
     """
     import glob as _g
     TAG = "SPDX-License-Identifier: GPL-3.0-or-later"
@@ -38027,7 +38030,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (526, [], 1, []), \
+           (529, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \

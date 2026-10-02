@@ -476,6 +476,56 @@ by the reader - and the same format on a little-endian host. The patch lives wit
 the tools (`ppcosxkvm-r300-txo-endian.patch`), not in this repo; it is
 ppcosxkvm's to take.
 
+#### 3c-i. The fixed-function backend, built - 2026-10-02
+
+`engine/backends/gl1/` - OpenGL 1.x, no shader - behind `renderer.h`, in the
+world-harness slot (`backends/sdl/playgpu_gl1.cpp`, the `--world-vulkan`
+slot): it draws the world offscreen and its `readback()` frame is composited
+and presented on the CPU like the software reference's. `ppc-darwin.mk`'s
+`play` builds it by default (`PLAY_GPU=gl1`; `none` for software alone,
+`OMK_GL1=0` at run time to compare).
+
+Modelled on the ORIGINAL's Direct3D path (the reader's direction), which an
+agent read out of `Render_FlushBuckets`, `Raster_DrawTriangles` and
+`sub_4638C0`: the walk is one draw per bucket in ascending key order, every
+render state shadow-cached so the device is called only on a change, the
+texture bound by `bucketKey & 0x3F`; blends ONE/ONE (additive) and
+ZERO/INVSRCCOLOR (multiply), the colour key as an alpha test. So: state
+changed only when it differs, 16-bit textures (`GL_RGB5_A1`) point-sampled,
+and - forced by the emulator as much as chosen - the original's CPU side:
+vertices TRANSFORMED, near-clipped and culled on the CPU and handed over
+already projected (the `D3DTLVERTEX` of it, as clip-space `(x w, y w, z w,
+w)` so texturing stays perspective-correct), and FOG computed per vertex
+(colour * (1 - a), plus the fog colour * a as a secondary colour - the
+reference's lerp, vertex by vertex).
+
+Against the software reference on the M3 (Anekbah's street, 60 frames):
+**0.11%** of pixels differ by more than 24 in a channel, coverage agreement
+**0.9932** (Vulkan's is 0.995). In Tiger on the emulated Radeon 9700 it
+draws the same street at **7 fps**, against ~1 for the software renderer.
+Tier: none, like the Vulkan backend (`PORTING` B6) - its correctness is the
+reference's.
+
+What Tiger taught, each found by a probe rather than guessed:
+* **a CGL context needs a DRAWABLE on 10.4**: with none attached, nothing is
+  drawn and `glReadPixels` writes nothing, even into a framebuffer object -
+  on the Radeon and on Apple's software renderer alike. A small PBUFFER is
+  attached (`CGLCreatePBuffer`, 10.3+); a current Mac refuses pbuffers and
+  renders without one;
+* the GPU's own transform let near-plane-crossing triangles through as huge
+  garbage, and its fog darkened the near scene - both gone with the CPU
+  transform and per-vertex fog, which is the original's design anyway.
+
+**Open, from reading the original's device setup**: `sub_4638C0` creates
+the device from three GUIDs, and the arm `docs/ASSETS.md` §4 describes as
+the hardware one (POINT, no antialias) is the MMX/RGB SOFTWARE device; the
+HAL (hardware) arm sets MAGFILTER and MINFILTER to LINEAR (MIP NONE). If
+that holds once the driver option's mapping to `dword_53ADF0` is checked,
+the original's 3D CARD drew bilinear and the port's point sampling is the
+software device's look - a correction to ASSETS 4, not made yet. Also not
+modelled anywhere: the per-vertex DISTANCE FADE the original gives
+transparent and cutout buckets (vertex alpha, SRCALPHA/INVSRCALPHA).
+
 ### 3e. Testing without a 1999 Mac
 
 * **Correctness on a big-endian CPU, first and cheapest**: build the engine
@@ -538,9 +588,11 @@ dropped.
 3. **Byte order** - DONE, 2026-10-02 (3a-i, 3a-ii): `le.h`, the PowerPC
    build, every tool a check runs compared in Tiger, 1927 of 1928 identical.
    Left: the 50 tools no check calls.
-4. **The GL 1.1 fixed-function backend** behind `renderer.h`, pre-transformed
-   vertices, built and compared against the software reference on the dev
-   Mac (PORTING B2: shown to fail).
+4. **The GL 1.x fixed-function backend** - DONE 2026-10-02 (3c-i): built
+   from the original's D3D path, 0.9932 coverage agreement with the
+   reference, 7 fps on Tiger's emulated Radeon. Left: no `verify.py` check
+   runs it (an offscreen GL context needs no window, so one could), and the
+   two open readings in 3c-i.
 5. **Retro68 + Carbon bring-up**: the hello-world is DONE (3d-i, 2026-10-02):
    one Carbon binary runs on OS 9.2.1 and Tiger, C++20 + exceptions + RTTI
    hold, no `std::thread`, no `std::filesystem`. The GAME runs on Tiger
