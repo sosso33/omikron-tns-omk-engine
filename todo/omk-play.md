@@ -17,8 +17,7 @@ waiting on its evidence.
 
 ### 99. Telis at lunch does not look at the lens through her lines — A
 
-> **PARTLY FIXED 2026-10-02, committed on the reader's go; the report is NOT
-> closed.** The reader, with the original beside the port: in DIALOG 387, on
+> **FIXED 2026-10-02 in two commits, CONFIRMED IN PLAY ("better").** The reader, with the original beside the port: in DIALOG 387, on
 > *"Et ton ami Den ? Tu as pu le voir ?"*, the original has Telis facing the
 > lens and the port has her head turned up and to the right.
 
@@ -45,14 +44,23 @@ path, Euler 0), the line's own `.3DM` root adds 2-4 degrees of heading and a
 lean, and both screenshots show her shoulders square to the lens. So the
 original's Telis looks along her BODY's forward, not at Kay'l.
 
-**What is left is the neck and the look.** The line animates `TeCou` (only the
-head is unbound) and turns it 10-15 degrees past the chest toward Kay'l, and the
-half-look adds a little more. To match the original either the look is NOT
-running on her in the engine (no cached head node at actor +16 - but then the
-line's head track would play, and that tilts her up and right, which the
-original does not show) or the port's neck/head line tracks are turned the
-wrong way. Needs an oracle: frames of the original across this line, to see
-whether her head moves with the line or holds.
+**The look DOES own her head - the reader's longplay frames settle it, and
+the last fault was the target's height (2026-10-02).** Four frames of the
+original across the line have her head about 15 degrees to her left of her chest
+and tilted UP, steady; a port play with the look switched off showed her
+swinging into profile. Measured per frame in the port, the line's own head
+track does exactly that: head-vs-chest yaw 15-17 through line frames 20-50, then
+an authored turn to 47 at frame 64 and back - so the original, which never
+swings, is the look owning the head, as `52d947f` read it. What the committed
+look got wrong was the PITCH (level or down where the original is up), and that
+was the viewer's: it backed Kay'l's head into her pose space through `s.at`,
+her program's root key 0 (y -14), while she is drawn 19 units lower (TELRES05
+sits her down), so the target sat at her pelvis and the look tipped her head
+down. Now through the pelvis's DRAWN point (`pelvis + off`, kept from the last
+frame). Frame 650, the profile moment, now faces the lens a little to her left
+and up. Rejected on the way, each by render: no look during a line (the swing),
+the half-look over the animated head (the swing), the look over the reset head
+with the old target (head level/down).
 
 **A loose end on the way: how the engine keeps 118 through a line.** The
 `.3DM` root carries ~3 degrees, the heading composition `sub_42D120` performs

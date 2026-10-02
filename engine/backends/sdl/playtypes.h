@@ -330,6 +330,8 @@ struct Staged {
     // (`actor/shoothit.h`). The same frame `meshAt` is in.
     std::vector<float> meshRot;
     bool  headKnown = false;
+    float pelvisDrawnAt[3] = {0, 0, 0};   // `pelvis + off`, last frame: the head look's inverse
+    bool  pelvisDrawnKnown = false;
     // `Morph_Play` reads the node's world heading ONCE, when the line
     // starts, and `sub_42BE00` hands the morph that yaw for its whole
     // length - so the line's yaw is a LATCH, not a per-frame read.

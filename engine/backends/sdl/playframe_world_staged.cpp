@@ -2181,7 +2181,15 @@ void PlayState::worldStaged() {
                 float pelvis[3] = {0, 0, 0};
                 if (static_cast<std::size_t>(s.mo->root) < pose.size())
                     for (int k = 0; k < 3; ++k) pelvis[k] = pose[static_cast<std::size_t>(s.mo->root)].pos[k];
-                const float rel[3] = {world[0] - s.at[0], world[1] - s.at[1], world[2] - s.at[2]};
+                // ...THROUGH WHERE THE PELVIS IS DRAWN, the inverse of the
+                // placement below (`R(p - pelvis) + pelvis + off`). This
+                // used `s.at`, which is the program's root key 0: under a
+                // clip whose root DROPS (Telis sitting, TELRES05 19 units)
+                // the seated Kay'l came out 19 units below where he is in
+                // her frame, and the look tipped her head down at a man
+                // whose head is level with hers.
+                const float* base = s.pelvisDrawnKnown ? s.pelvisDrawnAt : s.at;
+                const float rel[3] = {world[0] - base[0], world[1] - base[1], world[2] - base[2]};
                 float local[3];
                 // ...IN THE FRAME THE BODY WILL ACTUALLY BE DRAWN IN.
                 // A body a scene program drives is turned by the
@@ -2502,6 +2510,10 @@ void PlayState::worldStaged() {
                               (s.pelvis ? s.at[1] - pelvis[1] : ground - feet)
                                   + rootMove[1],
                               s.at[2] - pelvis[2] + rootMove[2]};
+        // where the pelvis is DRAWN - `pelvis + off` - for next frame's
+        // head look, which backs its target out into the pose's space
+        for (int k = 0; k < 3; ++k) s.pelvisDrawnAt[k] = pelvis[k] + off[k];
+        s.pelvisDrawnKnown = true;
         // ...and WHERE THE FALL LEFT HIM: his pelvis over the floor under
         // his placement, once the death clip has played out (a standing
         // pelvis is ~42 above it; the reader's floating corpses were there)
