@@ -8,7 +8,8 @@ it can land one at a time between that session's commits.
 
 **Status 2026-10-02 (night)**: S0-S2, **S3 (as S3a-S3f), S4a, S7a and S8a-c
 are done**: `main` is three lines, `PlayState::run` twenty, `play.cpp` 57
-(from 23069), and no phase is one function any more. S5 and S6 are left.
+(from 23069), and no phase is one function any more. **S6 is done** (below);
+S5 is left.
 How, and what is left, is §"S3 and S4a, done" below - the shape differs from
 §3's in ways it records. The file had kept growing while the split waited -
 `play_split_scan.py` on 2026-10-02, against the 2026-09-18 figures that §1
@@ -544,13 +545,50 @@ candidates for `src/app/` once S5 gives them a renderer interface.
    mechanical: it is the one step that changes structure, and the one that
    would let the SDL-free phases (control has no SDL call and no `#if`)
    move to `src/app/`;
-3. **S6, the instruments** behind a seam (`--board`, `--ride`, the
-   harnesses, the flicker catcher), so a shipped build can drop them;
+3. ~~S6, the instruments~~ - done 2026-10-02, see "S6, done" below;
 4. **the aliases**: the 99 flag references into `opt` and the audio ones
    into `game` are members now, so they cost nothing at a use site; folding
    them into plain members is cosmetic;
 5. the Vita entry point can fill a `PlayOptions` instead of building an
    `argv` (`backends/vita/vita_main.cpp`).
+
+### S6, done 2026-10-02 — the instruments behind a seam
+
+Every harness the viewer carries is a `PlayState::harness...` method in
+**`backends/sdl/playharness.cpp`**, each a block of the code that calls it
+moved byte for byte, the call standing where it stood: the DB writes
+(`--money`, `--rings`, `--give`, `--var`, `--newgame-world`), the opcodes by
+hand (`--scene-load`, `--zone-disable`, `--zone-enable`, `--scx-play`), the
+DEBUG `--bank-reject`, the entries the game reaches through its scripts
+(`--ride`, `--board`, `--fight`, `--fight-foe-at`, `--fight-health`,
+`--anim-hold`, `--call`, `--shoot-end`, `--shoot-health`), the end-of-run
+save (`--save-slot`), `--snaps`, and the flicker catcher whole. Sixteen
+methods; a block that read a local of its caller takes it as a REFERENCE
+PARAMETER under the same name (`harnessShootHealth(hp)`,
+`harnessBoard(at, door)`), so nothing became a member just to be reachable.
+
+**The seam**: `make play INSTRUMENTS=0` (and `-DOMK_INSTRUMENTS=OFF` for the
+Vita's CMake) links **`playharness_off.cpp`** instead - the same methods as
+empty stubs. The flags still parse; a run given one says, once,
+`instruments: not built (INSTRUMENTS=0) - the harness flags given are
+parsed and ignored`. A stamp file per value (`build/obj/instruments-N.stamp`)
+is a link prerequisite, because the swapped object is OLDER than the
+binary and make would otherwise keep whichever build came last - switching
+back silently measuring the stubs is CLAUDE.md 1's "a check must build the
+binary it measures" again.
+
+**Shown both ways**: the default build matches the 28-scene record; the
+`INSTRUMENTS=0` build matches it for all 19 scenes that use no harness flag,
+and the shop scene (`--money 300`) differs and prints the line above. Back
+on the default build the stub's string is gone from the binary and the
+record matches again. Vita builds with them, as before.
+
+**Not moved, deliberately**: `--frames`, `--dump`, `--keys`/`--hold` and
+`--type` - every check drives the viewer through them, they are woven
+through twenty sites, and they are harmless in a shipped build;
+`--world-vulkan`'s renderer, which sits inside `#if defined(OMK_VULKAN)` and
+so belongs to S5; and single reads of a DEBUG flag inside a condition
+(`!noScriptSprites && ...`), which are a flag at its default when off.
 
 ### What NOT to do
 

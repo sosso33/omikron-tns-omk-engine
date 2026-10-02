@@ -156,7 +156,19 @@ PLAY_DEPS := $(wildcard $(PLAY_SW_DIR)/*.d $(PLAY_VK_DIR)/*.d $(PLAY_GL_DIR)/*.d
 
 # Every `backends/sdl/*.cpp` - `play.cpp`, and since `todo/play-split.md` S1c
 # `sdlfront.cpp` - compiles once per variant, into that variant's directory.
-PLAY_SDL_SRCS := $(wildcard backends/sdl/*.cpp)
+# ...except the INSTRUMENTS, which are one of two files (todo/play-split.md S6):
+# `playharness.cpp`, the harnesses every check drives, or with `INSTRUMENTS=0`
+# `playharness_off.cpp`, the same methods as empty stubs - a build without them.
+INSTRUMENTS ?= 1
+PLAY_SDL_SRCS := $(filter-out backends/sdl/playharness$(if $(filter 0,$(INSTRUMENTS)),,_off).cpp,\
+                 $(wildcard backends/sdl/*.cpp))
+# A stamp per value, so switching INSTRUMENTS RELINKS: the swapped object is
+# older than the binary, and make compares nothing else.
+INSTR_STAMP := $(OBJDIR)/instruments-$(INSTRUMENTS).stamp
+$(INSTR_STAMP):
+	@mkdir -p $(@D)
+	@rm -f $(OBJDIR)/instruments-*.stamp
+	@touch $@
 PLAY_SW_OBJS := $(PLAY_SDL_SRCS:backends/sdl/%.cpp=$(PLAY_SW_DIR)/%.o)
 PLAY_VK_OBJS := $(PLAY_SDL_SRCS:backends/sdl/%.cpp=$(PLAY_VK_DIR)/%.o)
 PLAY_GL_OBJS := $(PLAY_SDL_SRCS:backends/sdl/%.cpp=$(PLAY_GL_DIR)/%.o)
@@ -179,14 +191,14 @@ $(PLAY_GL_DIR)/glesrender.o: backends/gles/glesrender.cpp
 
 ifneq ($(SDL_PKG),)
 ifeq ($(VK_PKG)$(GLSLC),)
-build/omk-play: $(PLAY_SW_OBJS) $(SRCOBJS)
+build/omk-play: $(PLAY_SW_OBJS) $(SRCOBJS) $(INSTR_STAMP)
 	@mkdir -p $(@D)
-	$(CXX) $(CXXFLAGS) -o $@ $^ $(SDL_LIBS)
+	$(CXX) $(CXXFLAGS) -o $@ $(filter %.o,$^) $(SDL_LIBS)
 PLAY_WITH := $(SDL_PKG) (no Vulkan - software renderer only)
 else
-build/omk-play: $(PLAY_VK_OBJS) $(PLAY_VK_DIR)/vkrender.o $(SRCOBJS)
+build/omk-play: $(PLAY_VK_OBJS) $(PLAY_VK_DIR)/vkrender.o $(SRCOBJS) $(INSTR_STAMP)
 	@mkdir -p $(@D)
-	$(CXX) $(CXXFLAGS) -o $@ $^ $(SDL_LIBS) $(VK_LIBS)
+	$(CXX) $(CXXFLAGS) -o $@ $(filter %.o,$^) $(SDL_LIBS) $(VK_LIBS)
 PLAY_WITH := $(SDL_PKG) + $(VK_PKG)
 endif
 endif
@@ -287,9 +299,9 @@ build/gles_probe: backends/gles/gles_probe.cpp backends/gles/glesrender.cpp $(SR
 # Optional like `play`, and needs SDL the same way. `build/omk-play-gles`.
 GL_LIBS := $(if $(filter Darwin,$(UNAME_S)),-framework OpenGL,-lGLESv2)
 ifneq ($(SDL_PKG),)
-build/omk-play-gles: $(PLAY_GL_OBJS) $(PLAY_GL_DIR)/glesrender.o $(SRCOBJS)
+build/omk-play-gles: $(PLAY_GL_OBJS) $(PLAY_GL_DIR)/glesrender.o $(SRCOBJS) $(INSTR_STAMP)
 	@mkdir -p $(@D)
-	$(CXX) $(CXXFLAGS) -o $@ $^ $(SDL_LIBS) $(GL_LIBS)
+	$(CXX) $(CXXFLAGS) -o $@ $(filter %.o,$^) $(SDL_LIBS) $(GL_LIBS)
 endif
 
 .PHONY: play-gles

@@ -543,19 +543,7 @@ int PlayState::modesShoot() {
                             static_cast<std::size_t>(omk::GameState::kPlayerRecord),
                             static_cast<std::size_t>(omk::GameState::kPlayerRecordSize)),
                         1, hp);
-                    // (the TEST HARNESS `--shoot-health N`: property 1 written as N
-                    // first, so the record, the gauge and the property agree as
-                    // a save carrying N would make them)
-                    if (shootHealth >= 0) {
-                        omk::writeActorProperty(
-                            state.rawMutable().subspan(
-                                static_cast<std::size_t>(omk::GameState::kPlayerRecord),
-                                static_cast<std::size_t>(omk::GameState::kPlayerRecordSize)),
-                            1, shootHealth);
-                        hp = shootHealth;
-                        std::printf("frame %ld: SHOOT HEALTH - the test harness --shoot-health "
-                                    "writes property 1 = %d\n", n, shootHealth);
-                    }
+                    harnessShootHealth(hp);
                     playerShootRec.health = hp != 0 ? static_cast<int>(hp) : 10;
                     hudHealth = playerShootRec.health;   // `Shoot_SyncHudHealth`, `dword_90E100`
                     std::printf("frame %ld: SHOOT HEALTH (sub_422540) - property 1 = %d "

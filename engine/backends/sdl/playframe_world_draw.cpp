@@ -431,23 +431,7 @@ void PlayState::worldDrawLists() {
                     "  eye %.0f %.0f %.0f\n", n, runsDrawn, runsCulled, litBodies,
                     view.cam.eye[0], view.cam.eye[1], view.cam.eye[2]);
     }
-    // ...and the same facts as one line for the flicker catcher, which
-    // needs to say WHY a frame went dark, not just that it did.
-    if (!flickerDir.empty()) {
-        char buf[320];
-        std::snprintf(buf, sizeof buf,
-            "3D  cam %s  eye %.0f %.0f %.0f  at %.0f %.0f %.0f  fov %.1f"
-            "  set runs %zu drawn / %zu culled  bodies %zu  area %d scx '%s'",
-            haveDlgCam ? "dialogue" : haveEdit ? "editing" : holdEditCam ? "held"
-                : (takeCam && player) ? "take"
-                : (adventure && followCam) ? "follow" : "world",
-            view.cam.eye[0], view.cam.eye[1], view.cam.eye[2],
-            view.cam.at[0], view.cam.at[1], view.cam.at[2],
-            static_cast<double>(view.cam.hfovDeg),
-            runsDrawn, runsCulled, litBodies,
-            session.currentArea(), session.scene().file().c_str());
-        frameNote = buf;
-    }
+    harnessFlickerNote(runsDrawn, runsCulled, litBodies);
     phSpan["player"] += phaseNow() - player0;
     mark("pedestrians, traffic");
     // ---- THE LIGHTS, per pixel (`todo/enhancements.md` 7) -------

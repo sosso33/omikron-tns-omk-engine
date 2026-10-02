@@ -362,17 +362,7 @@ void PlayState::adventureScreenInput() {
                             "within 4.00 m of that side (its -X, heading "
                             "%.2f %.2f) and press the action button\n",
                             door[0], door[1], door[2], az[0], az[2]);
-                if (boardArg && !boarded && !boarding) {
-                    float feet[3] = {door[0], door[1] + player->cameraLift(), door[2]};
-                    const float yaw = static_cast<float>(
-                        std::atan2(at[0] - door[0], -(at[2] - door[2])) * 57.29577951308232);
-                    player->placeAt(feet, yaw);
-                    session.setPlayerPosition(player->pos(), yaw);
-                    boardPress = true;
-                    std::printf("harness: --board put him at the door point %.0f %.0f %.0f "
-                                "facing the slider, and presses the action button\n",
-                                feet[0], feet[1], feet[2]);
-                }
+                harnessBoard(at, door);
             }
             std::printf("slider: OPEN at %.0f %.0f %.0f - walk to "
                         "it and press the action button\n",
@@ -501,40 +491,7 @@ void PlayState::adventureScreenInput() {
         // `Actor_TickChannelOnly`, the channel and nothing else,
         // which is what `setChannelOnly` models - so `H_SLDIN`
         // plays and its root motion carries him in.
-        // THE HARNESS, and it is one: the engine reaches a fight
-        // through a script's op 62, and this fires the same entry
-        // by hand once the world and the player exist, so a fight
-        // can be watched without walking the story to it.
-        if (fightArg >= 0 && player && !fightRun.active &&
-            !fightRun.harnessFired) {
-            fightRun.harnessFired = true;
-            // ...and it PLACES him, which the engine does not:
-            // `fight.begin` teleports nobody, because the script
-            // that runs it has already staged the two face to
-            // face. Two metres ahead of the player, inside the
-            // AI's own closing distance, facing him. Forward is
-            // (sin yaw, -cos yaw) - `rotateYaw`'s convention.
-            for (auto& up : staged) {
-                if (up->actor != fightArg) continue;
-                const float rad = player->facing() * 3.14159265f / 180.0f;
-                up->at[0] = player->pos()[0] + std::sin(rad) * 78.74f;
-                up->at[1] = player->pos()[1];
-                up->at[2] = player->pos()[2] - std::cos(rad) * 78.74f;
-                up->facing = player->facing() + 180.0f;
-                up->placed = true;
-                std::printf("frame %ld: harness --fight places CHARACTERS %d "
-                            "two metres in front of the player, at "
-                            "%.0f %.0f %.0f facing %.0f (the engine stages "
-                            "them with a script instead)\n",
-                            n, fightArg, double(up->at[0]), double(up->at[1]),
-                            double(up->at[2]), double(up->facing));
-                break;
-            }
-            std::printf("frame %ld: harness --fight %d level %d - "
-                        "standing in for a script's fight.begin\n",
-                        n, fightArg, fightLevelArg);
-            beginMelee(fightArg, fightLevelArg);
-        }
+        harnessFight();
         if (fightRun.active) {
             // ACTOR_STATE 2, and **THE WALKER MUST NOT TICK
             // BESIDE IT** - the lesson states 7 and 8 taught with
@@ -1709,28 +1666,7 @@ void PlayState::adventureTake() {
     //             remove=0, so the prop returns to its placement
     //
     // The three-press shape a reader described - take and see the
-    // name, press again to bank it, another button to put it back
-    // - is these four rows and nothing else.
-    // `--sneak`: the same request the special move makes, once.
-    // `--call N`: the sneak-call idiom, fired once. The screen
-    // is requested the way a SCRIPT requests it (so it answers
-    // itself) and the conversation started right after, which is
-    // exactly `ui.open 0` / `dialog.start N`.
-    if (animHoldHarness) {
-        animHoldHarness = false;
-        session.harnessHoldPlayer(true);
-        std::printf("--anim-hold: the player is held (a harness "
-                    "for `player.anim.hold`)\n");
-    }
-    if (callDialog >= 0 && !walk && playerScreen < 0) {
-        std::printf("--call: ui.open 0 + dialog.start %d (a "
-                    "harness for the sneak call, UI 3i)\n",
-                    callDialog);
-        playerScreen = kScreenVideophone;
-        callHarness  = true;
-        callPending  = callDialog;
-        callDialog   = -1;
-    }
+    harnessHoldAndCall();
     if (startShoot && !walk && player) {
         // The harness way in. The engine's own is a script's
         // `shoot.begin`, which is what `verify.py: engine: shoot
@@ -1748,14 +1684,7 @@ void PlayState::adventureTake() {
         // tested.
         std::printf("--shoot: shoot.begin -1\n");
     }
-    // --shoot-end N: the harness's way OUT - `shoot.end 1` at frame
-    // N, what op 81 does for a script, so the RETURN to adventure
-    // mode (`todo/shoot-mode.md` 8.5e) can be driven headless.
-    if (shootEndAt >= 0 && n >= shootEndAt && session.shootMode().active()) {
-        shootEndAt = -1;
-        session.shootEnd(1);
-        std::printf("--shoot-end: shoot.end 1\n");
-    }
+    harnessShootEnd();
     if (openSneak && !walk && playerScreen < 0) {
         openSneak = false;
         inv.openList(0);

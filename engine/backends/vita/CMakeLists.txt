@@ -160,6 +160,14 @@ vita_create_vpk(omk_smoke.vpk ${OMK_TITLE_SMOKE} omk_smoke.self
 # and `vita_main.cpp` is the real entry point: a Vita title has no command
 # line, so it supplies the arguments (see that file). The tables compiled into
 # the exe travel IN the VPK as `app0:tables/`; the game data does not.
+# THE INSTRUMENTS (todo/play-split.md S6): the harnesses, or with
+# -DOMK_INSTRUMENTS=OFF their empty stubs - a build without them.
+option(OMK_INSTRUMENTS "build the viewer's harnesses (--money, --fight, --board...)" ON)
+if(OMK_INSTRUMENTS)
+  set(OMK_HARNESS_SRC ${ENGINE}/backends/sdl/playharness.cpp)
+else()
+  set(OMK_HARNESS_SRC ${ENGINE}/backends/sdl/playharness_off.cpp)
+endif()
 if(OMK_VITA_GAME)
   add_executable(omk_vita ${OMK_VITA_COMMON}
     ${CMAKE_CURRENT_SOURCE_DIR}/vita_main.cpp
@@ -169,6 +177,7 @@ if(OMK_VITA_GAME)
     ${ENGINE}/backends/sdl/sdlfront.cpp
     ${ENGINE}/backends/sdl/playscene.cpp
     ${ENGINE}/backends/sdl/playstate.cpp
+    ${OMK_HARNESS_SRC}
     ${ENGINE}/backends/sdl/playsetup_options.cpp
     ${ENGINE}/backends/sdl/playsetup_boot.cpp
     ${ENGINE}/backends/sdl/playsetup_session.cpp

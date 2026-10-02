@@ -753,5 +753,24 @@ struct PlayState {
     int setupSplash();   // the splash screen, the player's damage, the frame's instruments
     int finish();   // after the loop: the run's report, writing a save, the window closed
 
+    // ---- THE INSTRUMENTS (`playharness.cpp`; empty stubs in
+    // `playharness_off.cpp` for a build made with INSTRUMENTS=0)
+    void harnessNewWorld();   // --newgame-world: a new game's world under the save's player
+    void harnessStateWrites();   // --money, --rings, --give, --var: harness writes into the DB
+    void harnessBankReject();   // --bank-reject: every bank refused (DEBUG)
+    void harnessScriptForcing();   // --scene-load, --zone-disable, --zone-enable: the opcodes by hand
+    void harnessRide();   // --ride: mounted where he stands, without MDSLIDIN
+    void harnessSaveSlot();   // --save-slot: a save written when the run ends, without the panel
+    void harnessHoldAndCall();   // --anim-hold and --call: a held player, the sneak call, fired once
+    void harnessShootEnd();   // --shoot-end: shoot.end 1 at a frame
+    void harnessBoard(float (&at)[3], float (&door)[3]);   // --board: put at the called slider's door and the action pressed
+    void harnessFight();   // --fight: op 62's entry by hand
+    void harnessShootHealth(std::int32_t& hp);   // --shoot-health: property 1 written at shoot entry
+    void harnessFoeAt(const float *& foeAt);   // --fight-foe-at: the opponent started elsewhere
+    void harnessFightHealth(omk::FightStats& ps);   // --fight-health: the player's Vie at Fight_Begin
+    void harnessScxPlay();   // --scx-play: scene objects started by handle, once
+    void harnessFlickerNote(std::size_t& runsDrawn, std::size_t& runsCulled, std::size_t& litBodies);   // the frame's facts for the flicker catcher
+    void harnessSnaps();   // --snaps: the framebuffer every N frames from the hand-over
+
     int run(int argc, char** argv);
 };

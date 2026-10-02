@@ -193,16 +193,7 @@ int PlayState::phasePresent() {
                 phN = 0;
             }
         }
-        if (!snapsDir.empty() && handoverFrame >= 0 && ((n - handoverFrame) % snapEvery) == 0) {
-            const std::string path = snapsDir + "/snap-" + std::to_string(n) + ".bin";
-            if (omk::safeOutputPath(path)) {
-                std::ofstream o(path, std::ios::binary);
-                for (auto v : fb.px) {
-                    const char b2[2] = {static_cast<char>(v & 0xFF), static_cast<char>(v >> 8)};
-                    o.write(b2, 2);
-                }
-            }
-        }
+        harnessSnaps();
         ++n;
         if (frames && n >= frames) break;
         // 30 Hz, PORTING A7 - and it is a CAP, not an addition. A flat

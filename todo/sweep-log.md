@@ -39,7 +39,7 @@ adds **one**. Counting commits ran this number to 13 when about nine tasks had
 been finished, which would have called for a half-hour sweep long before the
 rule intends one.
 
-**tasks since the last full sweep: 0** (reset by the `--slow` run of 2026-10-02 below, at `174b846`.)
+**tasks since the last full sweep: 1** (2026-10-02: PLAY-SPLIT S6, the instruments into `playharness.cpp` behind `INSTRUMENTS=0`; verified by the 28-scene record (default build), the record's 19 harness-free scenes with `INSTRUMENTS=0`, all four builds, and `--only` over licence headers (518 -> 520), shop open, den locker, melee, slider ride, the board checks, shoot fire, shoot restart, training partner.) (reset by the `--slow` run of 2026-10-02 below, at `174b846`.)
 
 (2026-10-01: THE WHAT-IF MAC PORT plan, `todo/classic-mac-port-1999.md` - docs only, no check run or needed.)
 

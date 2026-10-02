@@ -34,64 +34,7 @@ int PlayState::finish() {
         std::printf("wrote %s (%dx%d RGB565, %zu bytes)\n", dump.c_str(),
                     fb.w, fb.h, fb.px.size() * 2);
     }
-    // ------------------------------------------------- WRITING A SAVE
-    //
-    // `Game_WriteSave` (0x00408EF0), with `State_Save`'s snapshot half in
-    // front of it (GAME_STATE 5a, 8b).  The order is the engine's: take the
-    // snapshot the block does not otherwise keep, then the four copies into
-    // the slot, then the whole file back.
-    //
-    // WHERE the scene comes from matters.  `State_Save` reads the LIVE
-    // resident slot (`dword_69BC4C[4 * dword_69BC60]`), not the scene-per-area
-    // table - and `State_Apply` copies the header back INTO that table before
-    // `Area_Load` reads it, so the header is what a load believes.  Taking it
-    // from the table here would make the port unable to express a divergence
-    // the engine can.
-    if (saveSlotArg >= 0) {
-        state.setCurrentArea(static_cast<std::int16_t>(session.activeArea()));
-        state.setCurrentScene(static_cast<std::int16_t>(
-            session.residentSlot(session.activeSlot()).scene));
-        state.setPlacement(session.playerPos(), session.playerYaw());
-
-        omk::SaveSlot out;
-        out.name = !saveNameArg.empty() ? saveNameArg
-                 : (!loadedName.empty() ? loadedName : std::string("omk-play"));
-        out.day  = state.clockDay();
-        out.time = state.clock();
-        out.state = state;
-
-        // The picture the load panel draws beside the selected row: the back
-        // buffer scaled into a 128 x 96 rect and repacked to X1R5G5B5
-        // (GAME_STATE 8b).  `fb` is what the window was shown, so this is the
-        // frame the player was looking at - which is what the engine's blit
-        // takes too.
-        const auto thumb = omk::thumbFromRgb565(fb.px, fb.w, fb.h);
-
-        auto file = omk::readSaveFile(savesPath, fr + "/IAM/GAMES");
-        if (file.size() < omk::kSaveFileSize) {
-            // `sub_4092A0`'s create arm - the settings, then 256 empty slots.
-            file = omk::blankSaveFile(saveSettings ? *saveSettings
-                                                   : omk::defaultSettingsBlock());
-            std::printf("save: %s did not exist - created, %zu bytes\n",
-                        savesPath.c_str(), file.size());
-        }
-        // ...and `Game_WriteSave`'s first copy: the settings over the head, on
-        // EVERY slot save.  Saving a game saves the options (GAME_STATE 8a).
-        if (saveSettings) omk::putSettings(file, *saveSettings);
-        if (!omk::writeSaveSlot(file, saveSlotArg, out, thumb))
-            std::fprintf(stderr, "save: slot %d is out of range\n", saveSlotArg);
-        else if (omk::writeSaveFile(savesPath, file))
-            std::printf("save: slot %d written to %s - '%s', %s %s, area %d "
-                        "scene %d, standing at %.0f %.0f %.0f facing %.0f, "
-                        "with a %dx%d picture\n",
-                        saveSlotArg, savesPath.c_str(), out.name.c_str(),
-                        omk::formatDate(out.day).c_str(),
-                        omk::formatTime(out.time).c_str(),
-                        state.currentArea(), state.currentScene(),
-                        session.playerPos()[0], session.playerPos()[1],
-                        session.playerPos()[2], session.playerYaw(),
-                        omk::kThumbW, omk::kThumbH);
-    }
+    harnessSaveSlot();
     {
         const auto& ps = session.scene().effects().particles();
         float lo[3] = {1e9f,1e9f,1e9f}, hi[3] = {-1e9f,-1e9f,-1e9f}, sc = 0;

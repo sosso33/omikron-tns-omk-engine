@@ -294,15 +294,7 @@ int PlayState::setupSession() {
         // clock row (`sub_0049E090`) is the first thing in this port to show
         // it, and it showed "1 Aqed 7216 - 0:00:00" against a save the same
         // function had just printed as a different date.
-        if (newWorld) {
-            // The save brought its own world - doors opened, addresses
-            // enabled. Put a new game's back, keeping the player record the
-            // save is loaded FOR.
-            if (state.debugCopyWorldFrom(omk::GameState::fromFile(fr + "/IAM/START")))
-                std::printf("--newgame-world: the six state arrays and the "
-                            "three object lists reset to IAM/START (a harness "
-                            "write, not `Game_NewGame`)\n");
-        }
+        harnessNewWorld();
         state.setClockDay(slot->day);
         state.setClock(slot->time);
         // `State_Apply`'s FIRST use of the header pair, and the port had only
@@ -373,79 +365,7 @@ int PlayState::setupSession() {
     // `IAM\GLOBAL +12`'s eleven combination recipes. `script/inventory.h` was
     // written, checked and never consumed by anything that runs - the sneak
     // is what the channel exists for, so this is where it is loaded.
-    // `--money N`: the player record's `+172`, the seteks, written before the
-    // first frame so a purchase can be driven from a save that has none (the
-    // shipped fixture reads 0). A HARNESS write like `--give`, not anything
-    // the game does.
-    if (moneyArg >= 0) {
-        state.setMoney(std::min(moneyArg, 0xFFFF));
-        std::printf("--money: the player record's +172 set to %d (a harness write)\n",
-                    state.money());
-    }
-    // `--rings N`: the ANNEAUX at `+174`, the other half of the same pair.
-    // A save costs one and a hint three, and both shipped fixtures carry
-    // two - so neither purchase can be driven from them without this. A
-    // HARNESS write, like `--money` and `--give`.
-    if (ringsArg >= 0) {
-        state.setRings(std::min(ringsArg, 0xFFFF));
-        std::printf("--rings: the player record's +174 set to %d (a harness write)\n",
-                    state.rings());
-    }
-    if (!giveList.empty()) {
-        int placed = 0, refused = 0;
-        std::string cur;
-        for (char ch : giveList + ",") {
-            if (ch != ',') { cur.push_back(ch); continue; }
-            if (cur.empty()) continue;
-            // `LIST:ID` names the list, a bare `ID` means list 0. Op 49
-            // `var.set.has_object`'s FIELD 0 is the list and field 1 the
-            // object, and the lists are not interchangeable: the flat's lift
-            // gate asks `has_object 1, 3, 20` - list ONE for the police card
-            // - so a bag written only into list 0 never satisfies it, and the
-            // cutscene behind that gate could not be reached at all.
-            int list = 0;
-            std::string idPart = cur;
-            const auto colon = cur.find(':');
-            if (colon != std::string::npos) {
-                list = std::atoi(cur.substr(0, colon).c_str());
-                idPart = cur.substr(colon + 1);
-            }
-            const int id = std::atoi(idPart.c_str());
-            cur.clear();
-            if (id <= 0) continue;
-            // `debugPutObject` fills the FIRST free slot, so the ids land in
-            // the order they are given - which is the reverse of what the
-            // game's own `ObjectList_InsertFront` would do, and is fine for a
-            // harness whose point is to have a bag at all.
-            if (state.debugPutObject(list, id)) ++placed;
-            else { ++refused; std::printf("--give: no free slot for object %d "
-                                          "in list %d\n", id, list); }
-        }
-        std::printf("--give: %d object%s put in the named list%s, %d refused "
-                    "(a harness write, not `inventory.add`)\n",
-                    placed, placed == 1 ? "" : "s",
-                    giveList.find(':') == std::string::npos ? " (0, carried)" : "",
-                    refused);
-    }
-    if (!varList.empty()) {
-        std::string cur;
-        int wrote = 0;
-        for (char ch : varList + ",") {
-            if (ch != ',') { cur.push_back(ch); continue; }
-            const auto eq = cur.find('=');
-            if (eq != std::string::npos) {
-                const int id = std::atoi(cur.substr(0, eq).c_str());
-                const int v  = std::atoi(cur.substr(eq + 1).c_str());
-                state.setVar(id, v);
-                std::printf("--var: VARIABLES[%d] = %d\n", id, v);
-                ++wrote;
-            }
-            cur.clear();
-        }
-        std::printf("--var: %d variable%s written straight into the DB "
-                    "(a harness write, not a script)\n", wrote,
-                    wrote == 1 ? "" : "s");
-    }
+    harnessStateWrites();
     objectRecords = omk::loadObjects(fs);
     globalFile = fs.read("IAM/GLOBAL");
     recipes = omk::globalRecipes(globalFile);
@@ -461,11 +381,7 @@ int PlayState::setupSession() {
         std::printf("no IAM/OBJECT - the sneak's inventory page will be "
                     "empty\n");
     auto& session = session_.emplace(fr + "/IAM", state, opcodes);
-    if (bankReject) {
-        session.setBankReject(true);
-        std::printf("DEBUG --bank-reject: every bank refused, the object stays in hand - "
-                    "NOT the original's rule\n");
-    }
+    harnessBankReject();
     if (!session.loadAnnounceMap(tb + "/vm_announce.json"))
         std::printf("tables: no vm_announce.json - the log will name fewer "
                     "operands\n");
@@ -503,39 +419,7 @@ int PlayState::setupSession() {
     // scene, and a run that never starts (a console, 2026-09-18)
     std::printf("session: area %d loaded, set '%s', waiting for its script\n",
                 startArea, session.setName().c_str());
-    // A HARNESS, and the narrowest one in this viewer: `zone.enable N`, the
-    // opcode itself, on a zone the STORY would have enabled. Everything after
-    // it is the game's own path - the player walks in, the zone fires its own
-    // enter script, and that script is what runs `shoot.begin` and the
-    // `shoot.actor.enter` / `.action` calls. AREA 141's 'Start Shoot' (2295)
-    // is enabled by the Nout book cutscene, which a headless run cannot reach;
-    // with it enabled the catacombs' ten spectres enter on ACTION 1 and
-    // PATROL (`todo/shoot-patrol.md` 5a).
-    // `--zone-disable N`: the mirror, for a start that skipped the script which
-    // would have disabled it - the supermarket harness never runs AREA 231's
-    // record 1, the airlock cutscene in, so its zone 3949 stays enabled from a
-    // save made before the supermarket and walking OUT re-fires that cutscene.
-    // `--scene-load A,S`: opcode 71, `scene.load`, and nothing else. Over an
-    // area that is not resident it only RECORDS the scene in the DB, and
-    // `Area_Load` brings it in when the area loads - which is how the story
-    // puts SCENE 56 over the supermarket before the player walks in from the
-    // airlock. `--scene-chunk` starts INSIDE the area instead, skipping the
-    // airlock cutscene (AREA 231 record 1) the real path plays.
-    for (const auto& [sa, ss] : sceneLoads) {
-        session.sceneLoad(sa, ss);
-        std::printf("--scene-load: SCENE %d recorded over AREA %d (the `scene.load` "
-                    "opcode, nothing else)\n", ss, sa);
-    }
-    for (const int z : zoneDisable) {
-        session.disableZoneById(z);
-        std::printf("--zone-disable: ZONE %d disabled (the `zone.disable` opcode, nothing "
-                    "else)\n", z);
-    }
-    for (const int z : zoneEnable) {
-        session.enableZoneById(z);
-        std::printf("--zone-enable: ZONE %d enabled (the `zone.enable` opcode, nothing "
-                    "else) - walk into it and its own script runs\n", z);
-    }
+    harnessScriptForcing();
     if (sceneChunk >= 0) {
         session.sceneLoad(startArea, sceneChunk);
         std::printf("--scene-chunk: SCENE %d over AREA %d - its startup script "
@@ -579,20 +463,7 @@ int PlayState::setupSession() {
             else
                 std::printf("street start: address %d is not in area %d\n", addressArg, startArea);
         }
-        // `--ride`: MOUNT him where he now stands. `MDSLIDIN`'s own gate is
-        // ACTOR_STATE 6 plus a slider standing OPEN (its mode 3), and neither
-        // exists here - this is the harness, and it says so.
-        if (rideArg) {
-            omk::SliderRide r;
-            r.x = session.playerPos()[0];
-            r.y = session.playerPos()[1];
-            r.z = session.playerPos()[2];
-            r.yaw = session.playerYaw();
-            ride = r;
-            std::printf("ride: mounted at %.0f %.0f %.0f facing %.0f - the "
-                        "harness, NOT `MDSLIDIN` (which wants ACTOR_STATE 6 "
-                        "and a slider in mode 3)\n", r.x, r.y, r.z, r.yaw);
-        }
+        harnessRide();
         // ...and the camera a hand-over ends on: `Camera Player` (0), the
         // follow preset, which the intro's scripts request and this has to.
         session.requestCamera(0, 0);

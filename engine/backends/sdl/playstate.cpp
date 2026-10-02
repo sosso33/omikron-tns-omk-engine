@@ -1006,12 +1006,7 @@ bool PlayState::beginMelee(int opponentId, int level) {
             }
         }
         if (omk::readActorProperty(rec, 1, v))  ps.vie = v;
-        // THE HARNESS, and it is one: the engine reads property 1 as it is.
-        if (fightHealth >= 0) {
-            std::printf("fight.begin: harness --fight-health gives the player Vie %d "
-                        "(his record says %d)\n", fightHealth, ps.vie);
-            ps.vie = fightHealth;
-        }
+        harnessFightHealth(ps);
         if (omk::readActorProperty(rec, 16, v)) ps.attack = v;
         if (omk::readActorProperty(rec, 18, v)) ps.dodge = v;
         if (omk::readActorProperty(rec, 19, v)) ps.experience = v;
@@ -1081,15 +1076,7 @@ bool PlayState::beginMelee(int opponentId, int level) {
     // (`todo/fight-mode.md` 15.8e). The same rule `npcBody` uses.
     const float* foeAt = s->progRan ? s->drawAt : s->at;
     fightRun.foe.x = foeAt[0]; fightRun.foe.y = foeAt[1]; fightRun.foe.z = foeAt[2];
-    // THE HARNESS, and it is one: the engine starts him where the script
-    // left him. This moves him so a check can put a wall in his way - the
-    // supermarket's real fight is short and never reaches one.
-    if (foeAtSet) {
-        fightRun.foe.x = foeAtXZ[0]; fightRun.foe.z = foeAtXZ[1];
-        std::printf("fight: harness --fight-foe-at starts the opponent at %.0f %.0f "
-                    "(the script left him at %.0f %.0f)\n", double(foeAtXZ[0]),
-                    double(foeAtXZ[1]), double(foeAt[0]), double(foeAt[2]));
-    }
+    harnessFoeAt(foeAt);
     fightRun.foe.yaw = s->facing;
     fightRun.foe.radius = bodyRadius(s->mo->meshes);
     fightRun.foe.channel = fightRun.foeChannel.get();
