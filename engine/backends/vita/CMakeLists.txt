@@ -167,6 +167,7 @@ if(OMK_VITA_GAME)
     ${CMAKE_CURRENT_SOURCE_DIR}/avmovie.cpp
     ${ENGINE}/backends/sdl/play.cpp
     ${ENGINE}/backends/sdl/sdlfront.cpp
+    ${ENGINE}/backends/sdl/playframe.cpp
     ${ENGINE}/backends/gles/glesrender.cpp)
   set_source_files_properties(${ENGINE}/backends/sdl/play.cpp
     PROPERTIES COMPILE_DEFINITIONS "main=omk_play_main")

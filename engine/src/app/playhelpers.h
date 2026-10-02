@@ -209,4 +209,8 @@ Geometry relight(const Geometry& src, Light mode);
 // hands it (a string literal), so a hit is a handful of pointer compares.
 bool envSet(const char* name);
 
+// Raw int16 PCM to the device's interleaved float (`playhelpers.cpp`).
+std::vector<float> resampleToDevice(const std::vector<std::int16_t>& pcm,
+                                    int channels, int rate, int deviceRate);
+
 }  // namespace omk

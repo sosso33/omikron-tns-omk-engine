@@ -153,4 +153,61 @@ bool envSet(const char* name) {
     return set;
 }
 
+// Raw int16 PCM to the device's interleaved float, the same nearest-neighbour
+// step `wavToDevice` uses and for the same reason (B5: a resampler's sound is
+// the driver's and has no reachable tier). This one exists because a dialogue
+// line arrives already DECODED - out of a `.3DM`'s ADPCM block - rather than
+// as a `.wav` file, so there is no header to read.
+std::vector<float> resampleToDevice(const std::vector<std::int16_t>& pcm,
+                                    int channels, int rate, int deviceRate) {
+    if (pcm.empty() || channels <= 0 || rate <= 0) return {};
+    const std::size_t frames = pcm.size() / static_cast<std::size_t>(channels);
+    // THE VOICES' OWN RATIO, exactly twice (22050 -> 44100): the loop below
+    // then takes source frame `i * 0.5` = `i / 2`, so every frame twice, and
+    // this writes the same floats without its double multiply and push_back
+    // per sample - a 27 s line is 2.4 million of them, which a console's A9
+    // spends a visible part of a line's start on (2026-09-23)
+    // ...and THE SAME RATE, the device's since it runs at the primary's
+    // 22050: a conversion to float and nothing else
+    if (deviceRate == rate && (channels == 1 || channels == 2)) {
+        std::vector<float> o(frames * 2);
+        float* w = o.data();
+        const std::int16_t* p = pcm.data();
+        // (times 1/32768, not divided by it: a power of two, so the same
+        // float, without a divide a sample on an A9)
+        constexpr float k = 1.0f / 32768.0f;
+        for (std::size_t f = 0; f < frames; ++f, p += channels) {
+            w[0] = p[0] * k;
+            w[1] = channels > 1 ? p[1] * k : w[0];
+            w += 2;
+        }
+        return o;
+    }
+    if (deviceRate == 2 * rate && (channels == 1 || channels == 2)) {
+        std::vector<float> o(frames * 4);
+        float* w = o.data();
+        const std::int16_t* p = pcm.data();
+        for (std::size_t f = 0; f < frames; ++f, p += channels) {
+            const float l = p[0] / 32768.0f;
+            const float r = channels > 1 ? p[1] / 32768.0f : l;
+            w[0] = l; w[1] = r; w[2] = l; w[3] = r;
+            w += 4;
+        }
+        return o;
+    }
+    const double step = static_cast<double>(rate) / deviceRate;
+    std::vector<float> o;
+    o.reserve(static_cast<std::size_t>(frames / step) * 2);
+    for (std::size_t i = 0;; ++i) {
+        const std::size_t src = static_cast<std::size_t>(i * step);
+        if (src >= frames) break;
+        const std::int16_t l = pcm[src * static_cast<std::size_t>(channels)];
+        const std::int16_t r = channels > 1
+            ? pcm[src * static_cast<std::size_t>(channels) + 1] : l;
+        o.push_back(l / 32768.0f);
+        o.push_back(r / 32768.0f);
+    }
+    return o;
+}
+
 }  // namespace omk

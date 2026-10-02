@@ -46,6 +46,17 @@ import tempfile as _tempfile
 _VIEWER_SAVES = os.path.join(_tempfile.mkdtemp(prefix="omk-verify-"), "GAMES")
 
 
+def _play_text(eng):
+    """The viewer's source as ONE text: every `backends/sdl/*.cpp` and `.h`.
+    `play.cpp` was one file until `todo/play-split.md` cut it up (2026-10-02);
+    a check that scans the viewer's code reads all of it, so moving a line from
+    one of these files to another cannot blind it."""
+    import glob as _g
+    return "\n".join(open(f, encoding="utf-8").read()
+                     for f in sorted(_g.glob(os.path.join(eng, "backends", "sdl", "*.cpp")) +
+                                     _g.glob(os.path.join(eng, "backends", "sdl", "*.h"))))
+
+
 def _viewer_args(args):
     if not isinstance(args, (list, tuple)) or not args:
         return args
@@ -25874,9 +25885,7 @@ def c_save_clock():
     hdr = 3496
     day, tim = struct.unpack_from("<ii", d, hdr + 32)
     # ...and that `play.cpp` APPLIES them rather than only printing them.
-    applied = ("state.setClockDay(slot->day)" in
-               open(os.path.join(eng, "backends/sdl/play.cpp"),
-                    encoding="utf-8", errors="replace").read())
+    applied = "state.setClockDay(slot->day)" in _play_text(eng)
     return (day, tim, applied), (52, 2566060, True), \
            "the day and time in `traces/save-appart.bin`'s slot header - " \
            "the two fields a loaded save has to restore, because the clock " \
@@ -26865,7 +26874,7 @@ def c_engine_anti_aliasing():
     # ---- the source: off by default, and asked only when above 1
     sh = open(os.path.join(eng, "src", "platform", "settings.h")).read()
     sc = open(os.path.join(eng, "src", "platform", "settings.cpp")).read()
-    pl = open(os.path.join(eng, "backends", "sdl", "play.cpp")).read()
+    pl = _play_text(eng)
     src = (bool(re.search(r"int\s+antiAliasing\s*=\s*0;", sh)),
            '"enhancements"' in sc and '"antialiasing"' in sc,
            # ANY renderer variable, not a list of the ones that existed when this
@@ -26976,7 +26985,7 @@ def c_engine_texture_filter():
 
     sh = open(os.path.join(eng, "src", "platform", "settings.h")).read()
     sc = open(os.path.join(eng, "src", "platform", "settings.cpp")).read()
-    pl = open(os.path.join(eng, "backends", "sdl", "play.cpp")).read()
+    pl = _play_text(eng)
     fs = open(os.path.join(eng, "backends", "vulkan", "shaders", "scene.frag")).read()
     # any renderer variable, not an enumerated one - see `engine: anti-aliasing`
     guarded = len(re.findall(r"if \((?:\w+ && )?texFilter > 0\) \w+->setTextureFilter\(texFilter\)", pl))
@@ -27072,7 +27081,7 @@ def c_engine_mipmaps():
 
     sh = open(os.path.join(eng, "src", "platform", "settings.h")).read()
     sc = open(os.path.join(eng, "src", "platform", "settings.cpp")).read()
-    pl = open(os.path.join(eng, "backends", "sdl", "play.cpp")).read()
+    pl = _play_text(eng)
     vk = open(os.path.join(eng, "backends", "vulkan", "vkrender.cpp")).read()
     # any renderer variable, not an enumerated one - see `engine: anti-aliasing`
     ga = len(re.findall(r"if \((?:\w+ && )?texAniso > 1\) \w+->setAnisotropy\(texAniso\)", pl))
@@ -27269,7 +27278,7 @@ def c_engine_ui_scaling():
 
     sh = open(os.path.join(eng, "src", "platform", "settings.h")).read()
     sc = open(os.path.join(eng, "src", "platform", "settings.cpp")).read()
-    pl = open(os.path.join(eng, "backends", "sdl", "play.cpp")).read()
+    pl = _play_text(eng)
     sd = open(os.path.join(eng, "src", "ui", "screendraw.cpp")).read()
     i2 = open(os.path.join(eng, "src", "ui", "i2d.cpp")).read()
     _nblt = len(re.findall(r"\bblt\(", sd))
@@ -27381,7 +27390,7 @@ def c_engine_unlimited_clip():
     if not (os.path.isdir(eng) and os.path.exists(save)):
         return ("skipped",), ("skipped",), "engine/ or the apartment save absent"
 
-    pl = open(os.path.join(eng, "backends", "sdl", "play.cpp")).read()
+    pl = _play_text(eng)
     sh = open(os.path.join(eng, "src", "platform", "settings.h")).read()
     sc = open(os.path.join(eng, "src", "platform", "settings.cpp")).read()
     src_ok = (bool(re.search(r"bool\s+unlimitedDrawDistance\s*=\s*false;", sh)),
@@ -37956,6 +37965,8 @@ def c_licence_headers():
     out of `main` by S3.
     **486 -> 487**: `backends/sdl/playtypes.h` (2026-10-02), `main`'s 19
     local structs moved to namespace scope.
+    **487 -> 491**: `backends/sdl/playshared.h`, `playframe.{h,cpp}` and
+    `src/app/functionref.h` (2026-10-02), the frame loop out of `main`.
     """
     import glob as _g
     TAG = "SPDX-License-Identifier: GPL-3.0-or-later"
@@ -37985,7 +37996,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (487, [], 1, []), \
+           (491, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
