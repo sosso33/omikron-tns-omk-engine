@@ -481,7 +481,10 @@ bool SdlFrontend::openAudio(int rate, int channels) {
     arate_ = rate; achan_ = channels;
     SDL_AudioSpec want{};
     want.freq = rate;
-    want.format = AUDIO_F32;
+    // native-order floats, which is what the mixer hands over: AUDIO_F32 is
+    // LITTLE-endian in SDL2 (and SDL3's old name maps it to F32LE), so on a
+    // big-endian Mac every sample played byte-reversed - noise on PowerPC
+    want.format = AUDIO_F32SYS;
     want.channels = static_cast<Uint8>(channels);
     want.samples = 1024;
     want.callback = &SdlFrontend::feed;   // MIXED, not queued

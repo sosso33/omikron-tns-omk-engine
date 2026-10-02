@@ -270,8 +270,8 @@ What the run found, beyond the twelve sites:
 
 **Not covered**: the 50 tools no check calls (no known-good arguments to
 replay) - `light_probe`, `map2d_probe` and `shoot_range` among them were
-compared by hand in 3a-i. And `backends/sdl/sdlfront.cpp`'s `AUDIO_F32`
-(should be `AUDIO_F32SYS`): the viewer, not in the PowerPC build.
+compared by hand in 3a-i. (`sdlfront.cpp`'s `AUDIO_F32` was fixed with the
+game on Tiger, 3d-ii.)
 
 How it was run, for next time: the harness, the recorder and the worktrees
 live outside the repo (the tools volume's `work/`); a Tiger run of all 1928
@@ -467,7 +467,12 @@ the emulator, which models neither, holds the guest's big-endian bytes in
 VRAM in both cases. It reversed them only for 0 (`decode = (off & 3) ==
 0`), so a mode-2 texture drew byte-reversed. With 2 decoded like 0 the
 colours are right with the Radeon - confirmed by the reader - and the start
-menu draws at **30 fps** (1 before, 5 in safe mode). The patch lives with
+menu draws at **30 fps** (1 before, 5 in safe mode).
+
+**The sound was noise** until `sdlfront.cpp` asked SDL for `AUDIO_F32SYS`:
+`AUDIO_F32` is LITTLE-endian float in SDL2 (SDL3's old name maps it to
+F32LE), so every mixed sample played byte-reversed. Correct now - confirmed
+by the reader - and the same format on a little-endian host. The patch lives with
 the tools (`ppcosxkvm-r300-txo-endian.patch`), not in this repo; it is
 ppcosxkvm's to take.
 
@@ -532,7 +537,7 @@ dropped.
    memory" in `optimization.md`'s discipline.
 3. **Byte order** - DONE, 2026-10-02 (3a-i, 3a-ii): `le.h`, the PowerPC
    build, every tool a check runs compared in Tiger, 1927 of 1928 identical.
-   Left: `sdlfront.cpp`'s `AUDIO_F32SYS`, and the 50 tools no check calls.
+   Left: the 50 tools no check calls.
 4. **The GL 1.1 fixed-function backend** behind `renderer.h`, pre-transformed
    vertices, built and compared against the software reference on the dev
    Mac (PORTING B2: shown to fail).
