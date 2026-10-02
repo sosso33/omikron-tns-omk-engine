@@ -156,25 +156,7 @@ std::vector<float> PlayState::loadSlot(int screen, int slot) {
 }
 
 void PlayState::present(const omk::Surface& pic) {
-#if defined(OMK_VULKAN)
-    if (vkRen) { omk::vulkanPresentSurface(vkRen, pic); return; }
-#endif
-#if defined(OMK_GLES)
-    if (glRen) {
-        int ww = 0, wh = 0;
-#if defined(OMK_SDL3)
-        SDL_GetWindowSizeInPixels(glWin, &ww, &wh);
-#else
-        SDL_GL_GetDrawableSize(glWin, &ww, &wh);
-#endif
-        omk::glesPresentSurface(glRen, pic, ww, wh);
-        const auto sw0 = SDL_GetPerformanceCounter();
-        SDL_GL_SwapWindow(glWin);
-        glSwapMs += static_cast<double>(SDL_GetPerformanceCounter() - sw0) * 1000.0 /
-                    static_cast<double>(SDL_GetPerformanceFrequency());
-        return;
-    }
-#endif
+    if (gpuPresentSurface(pic)) return;   // the GPU window's own (playgpu_<backend>.cpp)
     front.present(pic);
 }
 

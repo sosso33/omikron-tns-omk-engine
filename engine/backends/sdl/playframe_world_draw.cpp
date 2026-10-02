@@ -1070,8 +1070,8 @@ void PlayState::worldMirror() {
     // off; `OMK_VERIFY_GPU_PRESENT=1` composes the CPU frame as well and
     // compares the two - which is also how a gate missing from this list
     // would show.
-#if defined(OMK_VULKAN) || defined(OMK_GLES)
-    {
+    // only a build with a GPU window decides it (`playgpu_<backend>.cpp`)
+    if (gpuWindowBuild()) {
         static const bool noGpuPresent = std::getenv("OMK_NO_GPU_PRESENT") != nullptr;
         const bool lastDumped = !dump.empty() && frames && n + 1 >= frames;
         // THE GLES WINDOW TAKES THE SAME PATH (`todo/vita-port.md` G6
@@ -1080,14 +1080,7 @@ void PlayState::worldMirror() {
         // glReadPixels 36, the 888 -> 565 dither 35, the upload 16 -
         // against 9 ms for the game itself. `GlesRenderer::presentWorld`
         // dithers on the GPU as `present.frag` does on Vulkan.
-        bool onVulkan = false;
-#if defined(OMK_VULKAN)
-        onVulkan = (vkRen && &world == vkRen) ||
-                   (verifyGpuPresent && worldVk && &world == worldVk);
-#endif
-#if defined(OMK_GLES)
-        if (glRen && &world == glRen) onVulkan = true;
-#endif
+        const bool onVulkan = gpuWorldOnWindow();   // the world is the window's renderer
         // the gates in order; the first that holds names why the frame
         // stays on the CPU path (`OMK_GPU_PRESENT_STATS` counts them)
         const char* keep = nullptr;
@@ -1141,25 +1134,12 @@ void PlayState::worldMirror() {
         // ...and every other OPEN SCREEN: the composer's readers are the
         // alpha fill (the panel dim among them) and the 50% quad
         else if (walk) { keep = "open screen"; softGate = true; }
-#if defined(OMK_GLES)
-        {
-            static const bool noOverlay = std::getenv("OMK_NO_OVERLAY") != nullptr;
-            overlayFrame = softGate && !noOverlay && !verifyGpuPresent &&
-                           glRen && &world == glRen;
-            if (overlayFrame) {
-                // the statistics name the soft gate behind the overlay
-                static std::string overlayWhy;
-                overlayWhy = std::string("overlay (") + keep + ")";
-                keep = overlayWhy.c_str();
-            }
-        }
-#endif
+        gpuOverlayDecision(keep);   // the GLES window's overlay, for a soft gate
         gpuFrame = keep == nullptr;
         gpuKeep = keep ? keep : "";
         gpuVy = view.vy;
         gpuVh = view.vh;
     }
-#endif
     if (overlayFrame) {
         // the world's rows are the KEY: "the GPU's picture shows here"
         g_ov.begin(fb.w, fb.h);

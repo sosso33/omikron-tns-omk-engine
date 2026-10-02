@@ -33,10 +33,7 @@ int PlayState::inputPump() {
             const auto [nw, nh] = pendingDisplay;
             pendingDisplay = {0, 0};
             bool ok = true;
-#if defined(OMK_VULKAN)
-            if (vkRen) ok = omk::vulkanResize(vkRen, nw, nh);
-            if (ok && worldVk) ok = omk::vulkanResize(worldVk, nw, nh);
-#endif
+            gpuResize(nw, nh, ok);
             if (!ok) {
                 std::printf("options: resolution %dx%d - the Vulkan target could not be "
                             "remade; --res %dx%d next time\n", nw, nh, nw, nh);

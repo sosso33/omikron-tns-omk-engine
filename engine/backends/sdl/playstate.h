@@ -772,5 +772,23 @@ struct PlayState {
     void harnessFlickerNote(std::size_t& runsDrawn, std::size_t& runsCulled, std::size_t& litBodies);   // the frame's facts for the flicker catcher
     void harnessSnaps();   // --snaps: the framebuffer every N frames from the hand-over
 
+    // ---- THE GPU WINDOW, per backend (`playgpu_vulkan.cpp`, `playgpu_gles.cpp`
+    // or `playgpu_none.cpp` - each build links exactly one; todo/play-split.md S5)
+    bool gpuWindowBuild() const;                 // this build has a GPU window at all
+    void gpuOpenWindow();                         // the window and its renderer, if the device has one
+    void gpuOpenWorldHarness();                   // --world-vulkan: the world offscreen
+    bool gpuPresentSurface(const omk::Surface& pic);   // the composed frame; false = not taken
+    void gpuPresentVerify(bool& presentedWorld);  // OMK_VERIFY_GPU_PRESENT on the GLES window
+    void gpuPresentOverlay(bool& presentedWorld); // the GLES overlay pass
+    void gpuPresentWorld(bool& presentedWorld);   // the world straight from the GPU
+    bool gpuWorldOnWindow();                      // the world's renderer is the window's
+    void gpuOverlayDecision(const char*& keep);   // a soft gate presented as an overlay
+    void gpuResize(int nw, int nh, bool& ok);     // options row 2 on the GPU target
+    bool gpuDriverRow(std::vector<std::string>& drivers);   // options row 8's device name
+    void gpuReportTimings();                      // the backend's own counters, every 60 frames
+    void gpuSlowFrameReport();                    // ...and on a very slow frame
+    void gpuFinishReport();                       // ...and at the end of the run
+    void gpuVerifyWorldPicture();                 // --verify on the GPU world's picture
+
     int run(int argc, char** argv);
 };

@@ -14,112 +14,9 @@ int PlayState::phasePresent() {
             // to the window; anything else, or a backend that refuses, is the
             // composed `fb` as before
             bool presentedWorld = false;
-#if defined(OMK_GLES)
-            // `OMK_VERIFY_GPU_PRESENT` on the GLES window: present the world
-            // directly, read the window back and compare it byte for byte with
-            // the CPU frame composed beside it - the Vulkan verify's GLES twin.
-            // Only where the window is the frame's own size (1:1).
-            if (gpuFrame && verifyGpuPresent && glRen) {
-                int ww = 0, wh = 0;
-#if defined(OMK_SDL3)
-                SDL_GetWindowSizeInPixels(glWin, &ww, &wh);
-#else
-                SDL_GL_GetDrawableSize(glWin, &ww, &wh);
-#endif
-                if (ww == fb.w && wh == fb.h &&
-                    omk::glesPresentWorld(glRen, gpuVy, gpuVh, fb.w, fb.h, ww, wh)) {
-                    static std::vector<unsigned char> winPic;
-                    static long compared = 0, differing = 0;
-                    omk::glesWindowPicture(glRen, ww, wh, winPic);
-                    // compared in 565: the driver's 565 -> 888 expansion is
-                    // its own (rounding on a Mac), so an 888 compare reports
-                    // the driver (todo/vita-port.md, the 113303 differences)
-                    long diff = 0;
-                    for (std::size_t i = 0; i < fb.px.size(); ++i) {
-                        const unsigned char* q = &winPic[4 * i];
-                        const int r5 = (q[0] * 31 + 127) / 255, g6 = (q[1] * 63 + 127) / 255,
-                                  b5 = (q[2] * 31 + 127) / 255;
-                        if (static_cast<std::uint16_t>((r5 << 11) | (g6 << 5) | b5) != fb.px[i]) ++diff;
-                    }
-                    ++compared;
-                    if (diff) ++differing;
-                    if (diff || compared % 30 == 0)
-                        std::printf("gles present verify: frame %ld, %ld pixels differ; %ld of %ld frames differed\n",
-                                    n, diff, differing, compared);
-                    SDL_GL_SwapWindow(glWin);
-                    presentedWorld = true;
-                }
-            }
-#endif
-#if defined(OMK_GLES)
-            if (overlayFrame && glRen) {
-                // the key resolves into the two planes: C in `fb`, M beside it
-                // - only on the rows a pass touched; an untouched key pixel stays
-                // the key, which the shader reads as "the world" by itself, so
-                // M is zero everywhere else and mostly never changes
-                static std::vector<std::uint8_t> ovMask, ovMaskRow;
-                if (ovMask.size() != fb.px.size()) {
-                    ovMask.assign(fb.px.size(), std::uint8_t(0));
-                    ovMaskRow.assign(static_cast<std::size_t>(fb.h), 0);
-                }
-                for (int y = 0; y < fb.h; ++y) {
-                    const std::size_t o = static_cast<std::size_t>(y) * fb.w;
-                    if (!g_ov.rowInit[static_cast<std::size_t>(y)]) {
-                        if (ovMaskRow[static_cast<std::size_t>(y)]) {
-                            std::fill(ovMask.begin() + o, ovMask.begin() + o + fb.w, std::uint8_t(0));
-                            ovMaskRow[static_cast<std::size_t>(y)] = 0;
-                        }
-                        continue;
-                    }
-                    ovMaskRow[static_cast<std::size_t>(y)] = 1;
-                    for (std::size_t i = o; i < o + static_cast<std::size_t>(fb.w); ++i) {
-                        if (fb.px[i] == kOverlayKey) { fb.px[i] = g_ov.c[i]; ovMask[i] = g_ov.m[i]; }
-                        else ovMask[i] = 0;
-                    }
-                }
-                int ww = 0, wh = 0;
-#if defined(OMK_SDL3)
-                SDL_GetWindowSizeInPixels(glWin, &ww, &wh);
-#else
-                SDL_GL_GetDrawableSize(glWin, &ww, &wh);
-#endif
-                presentedWorld = omk::glesPresentOverlay(glRen, fb, ovMask.data(), ovMaskRow.data(), ovFade, gpuVy, gpuVh, ww, wh);
-                if (presentedWorld) {
-                    static const char* winDump = std::getenv("OMK_GLES_WINDUMP");
-                    if (winDump && frames && n + 1 >= frames) {
-                        std::vector<unsigned char> pic;
-                        omk::glesWindowPicture(glRen, ww, wh, pic);
-                        if (omk::safeOutputPath(winDump)) {
-                            std::ofstream o(winDump, std::ios::binary);
-                            o.write(reinterpret_cast<const char*>(pic.data()), static_cast<std::streamsize>(pic.size()));
-                        }
-                    }
-                    SDL_GL_SwapWindow(glWin);
-                }
-            }
-#endif
-            if (gpuFrame && !verifyGpuPresent) {
-#if defined(OMK_VULKAN)
-                if (vkRen) presentedWorld = omk::vulkanPresentWorld(vkRen, gpuVy, gpuVh);
-#endif
-#if defined(OMK_GLES)
-                if (!presentedWorld && glRen) {
-                    int ww = 0, wh = 0;
-#if defined(OMK_SDL3)
-                    SDL_GetWindowSizeInPixels(glWin, &ww, &wh);
-#else
-                    SDL_GL_GetDrawableSize(glWin, &ww, &wh);
-#endif
-                    presentedWorld = omk::glesPresentWorld(glRen, gpuVy, gpuVh, fb.w, fb.h, ww, wh);
-                    if (presentedWorld) {
-                        const auto sw0 = SDL_GetPerformanceCounter();
-                        SDL_GL_SwapWindow(glWin);
-                        glSwapMs += static_cast<double>(SDL_GetPerformanceCounter() - sw0) * 1000.0 /
-                                    static_cast<double>(SDL_GetPerformanceFrequency());
-                    }
-                }
-#endif
-            }
+            gpuPresentVerify(presentedWorld);    // the GLES window's verify
+            gpuPresentOverlay(presentedWorld);   // the GLES window's overlay pass
+            if (gpuFrame && !verifyGpuPresent) gpuPresentWorld(presentedWorld);
             if (!presentedWorld) present(fb);
             const double pr1 = phaseNow();
             mark("present, swap");
@@ -135,37 +32,7 @@ int PlayState::phasePresent() {
                             "compose %.1f, present %.1f\n", n, phSum[0] * 1000.0 / 60.0,
                             phSum[1] * 1000.0 / 60.0, phSum[2] * 1000.0 / 60.0,
                             phSum[3] * 1000.0 / 60.0);
-#if defined(OMK_GLES)
-                if (glRen) {
-                    double g[4];
-                    omk::glesTakeTimings(g);
-                    std::printf("frame %ld gles (ms, mean of 60): glReadPixels %.1f, to-565 %.1f, "
-                                "texture upload %.1f, present draw %.1f, swap %.1f; "
-                                "%.0f buffer patches a frame (%.0f the depth tie's)\n", n,
-                                g[0] / 60.0, g[1] / 60.0, g[2] / 60.0, g[3] / 60.0, glSwapMs / 60.0,
-                                omk::glesTakePatches() / 60.0, omk::glesTakeTiePatches() / 60.0);
-                    {
-                        // the draw-state cache's work (todo/optimization.md step 17)
-                        long sc[3];
-                        omk::glesTakeStateCalls(sc);
-                        std::printf("frame %ld gles state (a frame, mean of 60): %.0f draws, "
-                                    "%.0f state calls made, %.0f skipped\n", n,
-                                    sc[0] / 60.0, sc[1] / 60.0, sc[2] / 60.0);
-                    }
-                    {
-                        double gw[7];
-                        omk::glesTakeWindow(gw);
-                        std::printf("frame %ld gles world (a frame, mean of 60): %.1f vertex uploads, "
-                                    "%.1f of them whole, %.1f streamed, %.0f KB sent, %.1f ms; draws %.1f ms, "
-                                    "ties %.1f ms\n", n,
-                                    gw[0] / 60.0, gw[5] / 60.0, gw[6] / 60.0, gw[1] / 60.0, gw[2] / 60.0,
-                                    gw[3] / 60.0, gw[4] / 60.0);
-                    }
-                    std::printf("frame %ld overlay: %ld plane rows re-sent in 60 frames\n", n,
-                                omk::glesTakeOverlayRows(glRen));
-                    glSwapMs = 0.0;
-                }
-#endif
+                gpuReportTimings();   // the GLES backend's counters
                 std::printf("frame %ld present: %ld of 60 straight from the GPU; on the CPU:", n, phGpu);
                 for (const auto& [why, count] : phKept) std::printf(" %s %ld,", why.c_str(), count);
                 std::printf("\n");
@@ -250,9 +117,7 @@ int PlayState::phasePresent() {
             // simulation-and-submission span, and the GL backend's counts
             if (paceLeft > 0.0 && now - paceLeft > 0.5) {
                 std::printf("frame %ld: of which sim+draw %.0f ms", n, (phRb0 - phTop) * 1000.0);
-#if defined(OMK_GLES)
-                if (glRen) std::printf("; %s", omk::glesFrameReport().c_str());
-#endif
+                gpuSlowFrameReport();
                 std::printf("\n");
             }
             if (paceNext <= 0.0 || now > paceNext + kPeriod) paceNext = now;

@@ -7,14 +7,8 @@
 
 #if defined(OMK_SDL3)
 #  include <SDL3/SDL.h>
-#  if defined(OMK_VULKAN)
-#    include <SDL3/SDL_vulkan.h>
-#  endif
 #else
 #  include <SDL.h>
-#  if defined(OMK_VULKAN)
-#    include <SDL_vulkan.h>
-#  endif
 #endif
 
 #include "formats/anim.h"
@@ -129,45 +123,7 @@ namespace omk::vita {
 bool imeEdit(const char* title, const std::string& initial, int maxLen, std::string& out);
 }
 #endif
-#if defined(OMK_GLES)
-// The GLES2 backend (`backends/gles/glesrender.cpp`, `todo/vita-port.md` F1),
-// declared the same way as Vulkan's below: this file includes no GL header.
-namespace omk {
-Renderer* makeGlesRenderer();
-bool glesPresentSurface(Renderer*, const Surface&, int winW, int winH);
-bool glesPresentWorld(Renderer*, int vy, int vh, int frameW, int frameH, int winW, int winH);
-void glesTakeTimings(double out[4]);
-std::string glesFrameReport();
-long glesTakePatches();
-long glesTakeTiePatches();
-void glesTakeWindow(double out[7]);
-void glesTakeStateCalls(long out[3]);
-void glesGeometryStats(Renderer*, long out[3]);
-long glesTakeOverlayRows(Renderer*);
-void glesSetDepthTie(Renderer*, bool);
-bool glesPresentOverlay(Renderer*, const Surface&, const unsigned char* mask, const unsigned char* maskRows,
-                        const float fade[4], int vy, int vh, int winW, int winH);
-void glesWindowPicture(Renderer*, int w, int h, std::vector<unsigned char>& out);
-}
-#endif
 
-// The live renderer's factory. DECLARED rather than included: A8 rule 2 keeps
-// `vulkan.h` inside `backends/vulkan/`, and this file must build and link with
-// no Vulkan on the machine at all - which is what OMK_VULKAN guards.
-#if defined(OMK_VULKAN)
-namespace omk {
-Renderer* makeVulkanRenderer();
-const char* vulkanDeviceName(Renderer*);
-void  vulkanNeedExtensions(Renderer*, const char* const*, unsigned);
-void* vulkanCreateInstance(Renderer*);
-bool  vulkanAttachSurface(Renderer*, unsigned long long);
-bool  vulkanPresent(Renderer*);
-bool  vulkanPresentSurface(Renderer*, const Surface&);
-bool  vulkanPresentWorld(Renderer*, int vy, int vh);
-bool  vulkanWorldPicture(Renderer*, int vy, int vh, std::vector<unsigned char>&);
-bool  vulkanResize(Renderer*, int w, int h);
-}
-#endif
 
 using omk::kTypeMarker;
 using omk::kCharMarker;

@@ -53,105 +53,13 @@ int PlayState::setupDevices() {
     vkWin = nullptr;
     vkRen = nullptr;
     worldVk = nullptr;   // --world-vulkan, the offscreen harness
-#if defined(OMK_VULKAN)
-    if (!forceSoftware && !worldVulkan) {
-        if (SDL_Init(SDL_INIT_VIDEO) == 0) {
-            vkWin = SDL_CreateWindow("OMK Engine (vulkan)",
-                                     SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                     dispW, dispH, SDL_WINDOW_VULKAN | front.windowFlags());
-        }
-        if (vkWin) {
-            unsigned nx = 0;
-            SDL_Vulkan_GetInstanceExtensions(vkWin, &nx, nullptr);
-            std::vector<const char*> ext(nx);
-            SDL_Vulkan_GetInstanceExtensions(vkWin, &nx, ext.data());
-            omk::Renderer* vr = omk::makeVulkanRenderer();
-            if (aaSamples > 1) vr->setMultisample(aaSamples);   // the enhancements
-            if (texFilter > 0) vr->setTextureFilter(texFilter);
-            if (texAniso > 1) vr->setAnisotropy(texAniso);
-            if (ssaa > 1) vr->setSupersample(ssaa);
-            omk::vulkanNeedExtensions(vr, ext.data(), nx);
-            void* inst = omk::vulkanCreateInstance(vr);
-            VkSurfaceKHR surf{};
-            if (inst &&
-                SDL_Vulkan_CreateSurface(vkWin, static_cast<VkInstance>(inst), &surf) &&
-                omk::vulkanAttachSurface(vr, reinterpret_cast<unsigned long long>(surf)) &&
-                vr->init(dispW, dispH)) {
-                vkRen = vr;
-                std::printf("renderer: VULKAN - %s\n", omk::vulkanDeviceName(vr));
-            } else {
-                delete vr;
-                SDL_DestroyWindow(vkWin); vkWin = nullptr;
-                std::printf("renderer: no Vulkan device - the software "
-                            "reference\n");
-            }
-        }
-    }
-#endif
-    // ---- THE GLES2 WINDOW MODE (`todo/vita-port.md` F1) -------------------
-    //
-    // The PS Vita's renderer, and any host whose GPU speaks GLES2 / GL 2.1:
-    // `-DOMK_GLES` with `backends/gles/glesrender.cpp` linked in. The same
-    // shape as Vulkan's mode above - a window that carries a GL context
-    // cannot also carry an `SDL_Renderer`, so this decides before the window
-    // exists and `front.open` is skipped when it succeeds. What is presented is
-    // the COMPOSED frame, the world read back and the interface drawn over it
-    // on the CPU (`glesPresentSurface`); presenting the world without the
-    // readback is G6. The window is whatever size the host gives - 960x544 on
-    // a Vita - and the frame is scaled into it at its own aspect.
     glWin = nullptr;
     glRen = nullptr;
-    (void)glWin;   // read only by the OMK_GLES blocks
-#if defined(OMK_GLES)
-    if (!vkRen && !forceSoftware) {
-        if (SDL_InitSubSystem(SDL_INIT_VIDEO) == 0) {
-#if !defined(__APPLE__)
-            // GLES 2 where the platform has it (the Vita's vitaGL, Linux,
-            // WebGL); macOS's legacy GL 2.1 profile takes no attributes
-            SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
-            SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
-            SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
-#endif
-            SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);
-            // A MEASUREMENT RUN'S WINDOW IS HIDDEN. GL needs a window for its
-            // context, so `SDL_VIDEODRIVER=dummy` cannot keep this viewer off
-            // the screen as it does the software one; a run that never
-            // presents (`OMK_NO_GPU_PRESENT`) has no use for it being seen,
-            // and on 2026-09-25 a batch of such runs put windows - one of them
-            // playing the boot films - in front of the reader (CLAUDE.md 5).
-            const Uint32 glWinFlags = SDL_WINDOW_OPENGL |
-                (omk::envSet("OMK_NO_GPU_PRESENT") ? SDL_WINDOW_HIDDEN : front.windowFlags());
-#if defined(OMK_SDL3)
-            glWin = SDL_CreateWindow("OMK Engine (gles)", dispW, dispH, glWinFlags);
-#else
-            glWin = SDL_CreateWindow("OMK Engine (gles)", SDL_WINDOWPOS_CENTERED,
-                                     SDL_WINDOWPOS_CENTERED, dispW, dispH, glWinFlags);
-#endif
-        }
-        if (glWin && SDL_GL_CreateContext(glWin)) {
-            SDL_GL_SetSwapInterval(1);
-            omk::Renderer* gr = omk::makeGlesRenderer();
-            if (gr->init(dispW, dispH)) {
-                glRen = gr;
-                std::printf("renderer: GLES2 - %s\n", gr->name());
-                // G4 (todo/vita-port.md): the tie is ~1 ms of CPU on an M1 and
-                // ~50 in a console's city; whether the Vita's 16-bit depth
-                // shows the coincident faces without it is to be LOOKED at
-                if (noTieFlag) {
-                    omk::glesSetDepthTie(gr, false);
-                    std::printf("renderer: the depth tie is OFF (--no-tie)\n");
-                }
-            } else {
-                delete gr;
-            }
-        }
-        if (!glRen) {
-            if (glWin) { SDL_DestroyWindow(glWin); glWin = nullptr; }
-            std::printf("renderer: no GL context (%s) - the software reference\n",
-                        SDL_GetError());
-        }
-    }
-#endif
+    (void)glWin;   // read by the GLES window's file
+    // THE GPU WINDOW, per backend (`playgpu_<backend>.cpp`, todo/play-split.md
+    // S5): Vulkan's swapchain, or a GLES2 context, or neither - and then the
+    // software reference's window below.
+    gpuOpenWindow();
     if (!vkRen && !glRen && !front.open(dispW, dispH, "OMK Engine (software)")) {
         std::fprintf(stderr, "SDL: %s\n", SDL_GetError());
         return 1;
@@ -163,24 +71,7 @@ int PlayState::setupDevices() {
     if (front.fullscreen())
         std::printf("fullscreen: on - the %dx%d frame scaled to the desktop at its aspect "
                     "(F11 toggles)\n", dispW, dispH);
-#if defined(OMK_VULKAN)
-    // ...and the harness: a Vulkan renderer with no surface, for the WORLD
-    // alone. `run_vulkan` and `shadow_probe` already prove the backend comes
-    // up offscreen; this is the same thing inside the viewer.
-    if (!vkRen && worldVulkan) {
-        omk::Renderer* wv = omk::makeVulkanRenderer();
-        if (wv && aaSamples > 1) wv->setMultisample(aaSamples);
-        if (wv && texFilter > 0) wv->setTextureFilter(texFilter);
-        if (wv && texAniso > 1) wv->setAnisotropy(texAniso);
-        if (wv && ssaa > 1) wv->setSupersample(ssaa);
-        if (wv && wv->init(dispW, dispH)) {
-            worldVk = wv;
-            std::printf("renderer: the world through VULKAN offscreen - %s "
-                        "(a harness; the frame is still presented on the CPU)\n",
-                        omk::vulkanDeviceName(wv));
-        } else { delete wv; std::printf("--world-vulkan: no offscreen device\n"); }
-    }
-#endif
+    gpuOpenWorldHarness();   // --world-vulkan
     if (aaSamples > 1)
         std::printf("aa: %dx MSAA - an ENHANCEMENT the original never had; %s\n", aaSamples,
                     vkRen ? "drawn by the Vulkan backend"

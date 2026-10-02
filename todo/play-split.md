@@ -8,8 +8,8 @@ it can land one at a time between that session's commits.
 
 **Status 2026-10-02 (night)**: S0-S2, **S3 (as S3a-S3f), S4a, S7a and S8a-c
 are done**: `main` is three lines, `PlayState::run` twenty, `play.cpp` 57
-(from 23069), and no phase is one function any more. **S6 is done** (below);
-S5 is left.
+(from 23069), and no phase is one function any more. **S6 and S5 are done**
+(below): the plan's steps are all landed.
 How, and what is left, is §"S3 and S4a, done" below - the shape differs from
 §3's in ways it records. The file had kept growing while the split waited -
 `play_split_scan.py` on 2026-10-02, against the 2026-09-18 figures that §1
@@ -541,7 +541,7 @@ candidates for `src/app/` once S5 gives them a renderer interface.
 **What is left**, in the order it pays:
 
 1. ~~the three big phases from the inside~~ - done (S7a, S8a-c);
-2. **S5, the `Presenter`** - the 24 backend `#if`s out of game code. Not
+2. ~~S5, the `Presenter`~~ - done 2026-10-02, see "S5, done" below. Was: **S5, the `Presenter`** - the 24 backend `#if`s out of game code. Not
    mechanical: it is the one step that changes structure, and the one that
    would let the SDL-free phases (control has no SDL call and no `#if`)
    move to `src/app/`;
@@ -589,6 +589,44 @@ through twenty sites, and they are harmless in a shipped build;
 `--world-vulkan`'s renderer, which sits inside `#if defined(OMK_VULKAN)` and
 so belongs to S5; and single reads of a DEBUG flag inside a condition
 (`!noScriptSprites && ...`), which are a flag at its default when off.
+
+### S5, done 2026-10-02 — the GPU window per backend
+
+The backend `#if`s are out of the game code. Everything that talks to a
+backend is a `PlayState::gpu...` method in ONE of three files, and each build
+variant links exactly one: **`playgpu_vulkan.cpp`** (the Vulkan variant),
+**`playgpu_gles.cpp`** (the GLES window, the Vita's) and **`playgpu_none.cpp`**
+(software only). Fifteen methods: open the window and its renderer, the
+`--world-vulkan` harness, present the composed frame, the GLES verify and
+overlay passes, present the world straight from the GPU, whether the world
+is the window's renderer, the overlay decision for a soft gate, the resize
+on options row 2, row 8's device name, and the backend's own reports. Each
+body is the `#if defined(OMK_VULKAN)` / `#if defined(OMK_GLES)` arm it
+replaces, moved unchanged; the backends' entry points are declared in
+`playgpu_vulkan.h` / `playgpu_gles.h`, which only those files (and the set
+viewer) include.
+
+It is the §3 `Presenter` as a LINK-TIME seam rather than a virtual one: the
+backend is a property of the build, not of the run, so a vtable would buy
+nothing the linker does not already give, and every call site stays a plain
+call. Where a phase decided across backends, the decision stays in the phase
+and the backend supplies its part: `if (gpuWindowBuild())` stands where
+`#if defined(OMK_VULKAN) || defined(OMK_GLES)` stood, the three present
+arms are `gpuPresentVerify/Overlay/World(presentedWorld)` in the same order
+on the same flag, and options row 8 is
+`if (!gpuDriverRow(drivers) && glRen) ...`.
+
+**What is left with a backend `#if`**: `playscene.cpp`, the `--scene` set
+viewer - a separate instrument program with its own Vulkan window, not the
+game; and the PLATFORM conditionals (`__vita__`, `OMK_SDL3`), which are not
+backends. Game code calls no `omk::vulkan*` / `omk::gles*` function.
+
+Checked: the 28-scene record identical, Vulkan and GLES scenes included;
+the software-only variant (never linked on a Vulkan machine) linked by hand
+and run (30 frames, the software reference); `make vita`; `--only` over 21
+checks - the GPU present, the GLES family, every Vulkan enhancement, the
+options menu, the live window, the tie checks - green but `supersampling`,
+red before this with the same values (sweep log, 2026-10-02).
 
 ### What NOT to do
 

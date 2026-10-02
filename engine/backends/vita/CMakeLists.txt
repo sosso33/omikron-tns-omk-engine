@@ -177,6 +177,7 @@ if(OMK_VITA_GAME)
     ${ENGINE}/backends/sdl/sdlfront.cpp
     ${ENGINE}/backends/sdl/playscene.cpp
     ${ENGINE}/backends/sdl/playstate.cpp
+    ${ENGINE}/backends/sdl/playgpu_gles.cpp
     ${OMK_HARNESS_SRC}
     ${ENGINE}/backends/sdl/playsetup_options.cpp
     ${ENGINE}/backends/sdl/playsetup_boot.cpp

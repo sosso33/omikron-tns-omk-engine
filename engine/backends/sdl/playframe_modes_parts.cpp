@@ -1084,11 +1084,8 @@ int PlayState::modesShoot() {
                 // row 8's drivers: the GPU backend running, then string 68,
                 // "Rendu logiciel", which `0x00493380` draws for the last one
                 std::vector<std::string> drivers;
-#if defined(OMK_VULKAN)
-                if (vkRen) drivers.push_back(std::string("Vulkan - ") + omk::vulkanDeviceName(vkRen));
-                else
-#endif
-                if (glRen) drivers.push_back(std::string("OpenGL - ") + glRen->name());
+                if (!gpuDriverRow(drivers) && glRen)
+                    drivers.push_back(std::string("OpenGL - ") + glRen->name());
                 drivers.push_back(optMenu.str(68));
                 optMenu.setDevices(8, drivers, (vkRen || glRen) ? 0 : static_cast<int>(drivers.size()) - 1);
                 optEntered = false;

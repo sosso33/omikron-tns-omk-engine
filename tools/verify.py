@@ -37987,6 +37987,8 @@ def c_licence_headers():
     (2026-10-02), the modes and input phases' parts.
     **518 -> 520**: `backends/sdl/playharness.cpp` and `playharness_off.cpp`
     (2026-10-02), the instruments and their stubs (S6).
+    **520 -> 525**: `backends/sdl/playgpu_{vulkan,gles,none}.cpp` and
+    `playgpu_{vulkan,gles}.h` (2026-10-02), the GPU window per backend (S5).
     """
     import glob as _g
     TAG = "SPDX-License-Identifier: GPL-3.0-or-later"
@@ -38016,7 +38018,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (520, [], 1, []), \
+           (525, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \

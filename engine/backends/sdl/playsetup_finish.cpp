@@ -7,15 +7,7 @@
 int PlayState::finish() {
     auto& session = *session_;
     std::printf("%ld frames presented\n", n);
-#if defined(OMK_GLES)
-    // the buffers of geometries that are gone (todo/optimization.md step 26)
-    if (glRen) {
-        long gs[3];
-        omk::glesGeometryStats(glRen, gs);
-        std::printf("gles: %ld geometries released over the run, %ld vertex buffers and %ld "
-                    "posed buffers held at the end\n", gs[0], gs[1], gs[2]);
-    }
-#endif
+    gpuFinishReport();
     if (!dump.empty()) {
         // The framebuffer the WINDOW was shown, as raw LE RGB565 - so the
         // live half of PORTING A1's pair can be diffed against the reference

@@ -160,8 +160,8 @@ PLAY_DEPS := $(wildcard $(PLAY_SW_DIR)/*.d $(PLAY_VK_DIR)/*.d $(PLAY_GL_DIR)/*.d
 # `playharness.cpp`, the harnesses every check drives, or with `INSTRUMENTS=0`
 # `playharness_off.cpp`, the same methods as empty stubs - a build without them.
 INSTRUMENTS ?= 1
-PLAY_SDL_SRCS := $(filter-out backends/sdl/playharness$(if $(filter 0,$(INSTRUMENTS)),,_off).cpp,\
-                 $(wildcard backends/sdl/*.cpp))
+PLAY_SDL_SRCS := $(filter-out backends/sdl/playharness$(if $(filter 0,$(INSTRUMENTS)),,_off).cpp \
+                 backends/sdl/playgpu_%.cpp,$(wildcard backends/sdl/*.cpp))
 # A stamp per value, so switching INSTRUMENTS RELINKS: the swapped object is
 # older than the binary, and make compares nothing else.
 INSTR_STAMP := $(OBJDIR)/instruments-$(INSTRUMENTS).stamp
@@ -169,9 +169,11 @@ $(INSTR_STAMP):
 	@mkdir -p $(@D)
 	@rm -f $(OBJDIR)/instruments-*.stamp
 	@touch $@
-PLAY_SW_OBJS := $(PLAY_SDL_SRCS:backends/sdl/%.cpp=$(PLAY_SW_DIR)/%.o)
-PLAY_VK_OBJS := $(PLAY_SDL_SRCS:backends/sdl/%.cpp=$(PLAY_VK_DIR)/%.o)
-PLAY_GL_OBJS := $(PLAY_SDL_SRCS:backends/sdl/%.cpp=$(PLAY_GL_DIR)/%.o)
+# ...and THE GPU WINDOW, one file per variant (todo/play-split.md S5): the
+# code that talks to a backend lives there, so the rest carries no #if for it
+PLAY_SW_OBJS := $(PLAY_SDL_SRCS:backends/sdl/%.cpp=$(PLAY_SW_DIR)/%.o) $(PLAY_SW_DIR)/playgpu_none.o
+PLAY_VK_OBJS := $(PLAY_SDL_SRCS:backends/sdl/%.cpp=$(PLAY_VK_DIR)/%.o) $(PLAY_VK_DIR)/playgpu_vulkan.o
+PLAY_GL_OBJS := $(PLAY_SDL_SRCS:backends/sdl/%.cpp=$(PLAY_GL_DIR)/%.o) $(PLAY_GL_DIR)/playgpu_gles.o
 
 $(PLAY_SW_DIR)/%.o: backends/sdl/%.cpp
 	@mkdir -p $(@D)

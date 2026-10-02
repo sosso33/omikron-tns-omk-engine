@@ -3,6 +3,9 @@
 // WASD - no boot chain, no widget tree, no movies. Moved out of `play.cpp`
 // unchanged by `todo/play-split.md` (2026-10-02).
 #include "playshared.h"
+#if defined(OMK_VULKAN)
+#include "playgpu_vulkan.h"   // the set viewer's own Vulkan window
+#endif
 
 int sceneViewer(const std::string& fr, const std::string& setName,
                 int camIndex, const float* eyeArg, const float* atArg,

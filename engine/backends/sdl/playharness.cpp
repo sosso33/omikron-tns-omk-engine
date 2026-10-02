@@ -421,7 +421,6 @@ void PlayState::harnessSnaps() {
 
 // The flicker catcher
 void PlayState::screensFlicker() {
-    [[maybe_unused]] omk::Renderer& world = *world_;   // read under OMK_VULKAN only
     // ---- THE FLICKER CATCHER -------------------------------------
     if (!flickerDir.empty()) {
         long lit = 0;
@@ -476,30 +475,7 @@ void PlayState::screensFlicker() {
         }
         frameNote.clear();
     }
-#if defined(OMK_VULKAN)
-    if (gpuFrame && verifyGpuPresent) {
-        // the GPU's picture against the CPU frame, as the upload would
-        // expand it - every byte of every pixel
-        static std::vector<unsigned char> gpuPic;
-        static long compared = 0, differing = 0, badPixels = 0;
-        if (omk::vulkanWorldPicture(&world, gpuVy, gpuVh, gpuPic) &&
-            gpuPic.size() == fb.px.size() * 4) {
-            const unsigned char* lut = omk::expand565Rgba();
-            long diff = 0;
-            for (std::size_t i = 0; i < fb.px.size(); ++i)
-                if (std::memcmp(lut + 4 * static_cast<std::size_t>(fb.px[i]), &gpuPic[4 * i], 4) != 0) ++diff;
-            ++compared;
-            if (diff) {
-                ++differing; badPixels += diff;
-                // at once, so a run with only a few GPU frames still says so
-                std::printf("gpu present verify: frame %ld DIFFERS in %ld pixels\n", n, diff);
-            }
-        }
-        if (compared > 0 && compared % 30 == 0)
-            std::printf("gpu present verify: frame %ld, %ld frames compared, %ld differ (%ld pixels)\n",
-                        n, compared, differing, badPixels);
-    }
-#endif
+    gpuVerifyWorldPicture();   // --verify on the Vulkan world's own picture
     {
         static long gpuPresented = 0, framesSeen = 0;
         static std::map<std::string, long> keptBy;
