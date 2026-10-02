@@ -15,6 +15,7 @@
 //
 //     sprite_probe <gamedata> <vm_opcodes.json> <START> <SCPTDATA> <out.bin>
 #include "script/area.h"
+#include "formats/le.h"
 #include "platform/datafs.h"
 
 #include <cmath>
@@ -111,6 +112,6 @@ int main(int argc, char** argv) {
                          static_cast<int>(std::lround(roll * 1000)),
                          trackingTicks, doneAt, frozen, stillLinked,
                          row0linked, row0type, row0id};
-    o.write(reinterpret_cast<const char*>(rec), sizeof rec);
+    omk::writeLE(o, rec, sizeof rec / sizeof rec[0]);
     return 0;
 }

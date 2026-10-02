@@ -233,10 +233,53 @@ on both sides the outputs are identical, so `ppc-darwin.mk` sets it - and a
 host build to compare against must too (`make -f ppc-darwin.mk PPC_CXX=c++
 PPCFLAGS=-ffp-contract=off LDFLAGS= OUT=build/host-ref`).
 
-**Not done**: `backends/sdl/sdlfront.cpp`'s `AUDIO_F32` (should be
-`AUDIO_F32SYS`) - viewer code, not in the PowerPC build, and in a file the
-play split was moving that day. Seven tools compared, not 196: the rest
-should run the same way before this is called closed.
+#### 3a-ii. Every tool a check runs - 2026-10-02
+
+Then all of them, with the arguments the checks themselves use: a worktree
+whose build rule wraps each tool in a recorder ran the 148 `engine:` checks
+that call a tool (four worktrees in parallel), which logged 1959 calls - 1928
+distinct, over 146 tools - and each was replayed on PowerPC in Tiger and on
+the Mac (`-ffp-contract=off` both), comparing printed output (timings
+masked), exit code and every file written. **1927 of 1928 match**; the last,
+`dump_cull`, differs only in line ORDER (it lists a directory, and HFS+ and
+APFS return entries differently). On the Mac all 1928 are byte-identical
+before and after every fix below.
+
+What the run found, beyond the twelve sites:
+
+* **No more byte order in the engine.** Every remaining difference was a
+  TOOL's.
+* **Three use-after-frees, invisible on the Mac.** `launch_scene` built an
+  IAM archive over a temporary file buffer and `diff_traces` handed one to
+  `appendDialogScripts`, so their spans dangled; `used_object_probe` kept a
+  pointer into the zone registry across `useObject`. On the Mac the freed
+  memory stays mapped and still holds the old bytes, so all three gave the
+  right answers by luck; Mac OS X 10.4's allocator returns large blocks, so
+  the first two SEGFAULTED and the third printed zone 21075 for 3887. A
+  crash log (`~/Library/Logs/CrashReporter`) and the binary's own symbols
+  were enough to place each.
+* **Tool output in the CPU's byte order**: 18 tools wrote their result
+  arrays with a raw `ofstream::write`, which verify.py reads as
+  little-endian - now `writeLE` in `formats/le.h` (one write, unchanged, on
+  a little-endian host). And `play_dialog` and `run_audio` hashed 16-bit
+  PCM by its in-memory bytes - now low byte first, the same value on the Mac.
+* **Overflow-free bounds** in the IAM directory (`iam.cpp`) and `zonesOf`:
+  `off + size <= n` WRAPS with PowerPC's 32-bit `size_t`. Found while
+  chasing the crashes, which turned out to be the dangling spans instead, so
+  no observed failure stands behind these two; kept because the wrap is real.
+
+**Not covered**: the 50 tools no check calls (no known-good arguments to
+replay) - `light_probe`, `map2d_probe` and `shoot_range` among them were
+compared by hand in 3a-i. And `backends/sdl/sdlfront.cpp`'s `AUDIO_F32`
+(should be `AUDIO_F32SYS`): the viewer, not in the PowerPC build.
+
+How it was run, for next time: the harness, the recorder and the worktrees
+live outside the repo (the tools volume's `work/`); a Tiger run of all 1928
+calls takes about 1.5 h, mostly `probe_grid`, and must be started DETACHED
+inside the VM (`nohup`), as must QEMU itself - a background command on the
+host is stopped after two hours. Copy files into Tiger with `scp`, not a
+macOS `tar`: a sparse file (`traces/games-resto.bin`) goes as a pax sparse
+entry, which Tiger's GNU tar 1.14 unpacks as a DIRECTORY.
 
 An offline "Mac CD" converter is possible as a side project but is NOT the
 path: its output must live outside `gamedata/` (§1, the `safeOutputPath`
@@ -417,9 +460,9 @@ dropped.
    street start, recorded here as the baseline.
 2. **The memory cuts** of 3b, one row at a time, each "same output, less
    memory" in `optimization.md`'s discipline.
-3. **Byte order** - DONE for the audited sites and seven tools, 2026-10-02
-   (3a-i): `le.h`, the PowerPC build, the comparison in Tiger. Left: run the
-   other 189 tools the same way, and `sdlfront.cpp`'s `AUDIO_F32SYS`.
+3. **Byte order** - DONE, 2026-10-02 (3a-i, 3a-ii): `le.h`, the PowerPC
+   build, every tool a check runs compared in Tiger, 1927 of 1928 identical.
+   Left: `sdlfront.cpp`'s `AUDIO_F32SYS`, and the 50 tools no check calls.
 4. **The GL 1.1 fixed-function backend** behind `renderer.h`, pre-transformed
    vertices, built and compared against the software reference on the dev
    Mac (PORTING B2: shown to fail).

@@ -28,6 +28,7 @@
 // and dodge 50, experience 50) and the check measures the MECHANISM. `omk-play`
 // supplies the real properties in step 2.
 #include "actor/fight.h"
+#include "formats/le.h"
 #include "formats/ctl.h"
 #include "platform/datafs.h"
 
@@ -219,7 +220,7 @@ int main(int argc, char** argv) {
     };
     for (const long v : vals) {
         const std::int32_t w = static_cast<std::int32_t>(v);
-        out.write(reinterpret_cast<const char*>(&w), 4);
+        omk::writeLE(out, &w, 1);
     }
 
     std::printf("%ld combat files, %ld profiles, %ld fights, %ld frames\n",

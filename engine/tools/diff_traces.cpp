@@ -39,7 +39,10 @@ int main(int argc, char** argv) {
     const auto globalFile = omk::DataFs::readPath(iam + "/GLOBAL");
     auto slots = omk::worldSlots(areaFile, sceneFile, globalFile);
     const auto worldCount = slots.size();
-    omk::appendDialogScripts(omk::DataFs::readPath(iam + "/DIALOG"), slots);
+    // named, not a temporary: `slots` keeps spans into it (a temporary
+    // dangled - and crashed on Mac OS X 10.4, which unmaps freed memory)
+    const auto dialogFile = omk::DataFs::readPath(iam + "/DIALOG");
+    omk::appendDialogScripts(dialogFile, slots);
     const auto tight = omk::tightIndex(slots, table, ann);
 
     std::vector<std::string> caps;

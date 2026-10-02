@@ -69,7 +69,11 @@ int main(int argc, char** argv) {
     for (int a = 0; a < 2 && chunkIdx < 0; ++a) {
         const char* nm = a == 0 ? "SCENE" : "AREA";
         const auto k = a == 0 ? omk::ChunkKind::Scene : omk::ChunkKind::Area;
-        const auto ar = omk::IamArchive::open(omk::DataFs::readPath(iam + "/" + nm));
+        // the FILE must outlive the archive, which only holds spans into it: over
+        // a temporary the spans dangled - harmless where freed memory stays
+        // mapped, a crash on Mac OS X 10.4 (PowerPC), whose allocator unmaps it
+        const auto file = omk::DataFs::readPath(iam + "/" + nm);
+        const auto ar = omk::IamArchive::open(file);
         for (std::size_t c = 0; c < ar.size() && chunkIdx < 0; ++c) {
             const auto b = ar.chunk(c);
             if (b.empty()) continue;

@@ -12,6 +12,7 @@
 //
 //     prop_probe <gamedata> <vm_opcodes.json> <START> <SCPTDATA> <out.bin>
 #include "script/area.h"
+#include "formats/le.h"
 #include "platform/datafs.h"
 #include <cstdio>
 #include <fstream>
@@ -57,6 +58,6 @@ int main(int argc, char** argv) {
         static_cast<std::int32_t>(after.size()), shownAfter, ringAfter,
         static_cast<std::int32_t>(rx + 0.5f), static_cast<std::int32_t>(rz + 0.5f)};
     std::ofstream f(argv[5], std::ios::binary);
-    f.write(reinterpret_cast<const char*>(out), sizeof out);
+    omk::writeLE(f, out, sizeof out / sizeof out[0]);
     return 0;
 }

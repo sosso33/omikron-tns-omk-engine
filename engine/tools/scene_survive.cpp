@@ -13,6 +13,7 @@
 // a program, loads a scene over the SAME area, and checks the clock kept
 // counting; then changes the AREA, which must rebuild.
 #include "script/area.h"
+#include "formats/le.h"
 #include "platform/datafs.h"
 
 #include <cstdio>
@@ -96,7 +97,7 @@ int main(int argc, char** argv) {
         sameFile, pcBefore, rebuiltFile, rebuiltRun,
     };
     std::ofstream f(outPath, std::ios::binary);
-    f.write(reinterpret_cast<const char*>(out), sizeof out);
+    omk::writeLE(f, out, sizeof out / sizeof out[0]);
     std::printf("resident %d\n", resident);
     std::printf("program %d: clock %.1f -> %.1f (load) -> %.1f (+10 frames)\n",
                 idx, clockBefore, clockAfter, clockLater);

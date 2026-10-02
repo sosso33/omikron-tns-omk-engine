@@ -12,6 +12,7 @@
 //
 //     stopsound_probe <gamedata> <vm_opcodes.json> <START> <SCPTDATA> <out.bin>
 #include "script/area.h"
+#include "formats/le.h"
 #include "platform/datafs.h"
 
 #include <cstdio>
@@ -66,6 +67,6 @@ int main(int argc, char** argv) {
 
     std::ofstream o(argv[5], std::ios::binary);
     const int rec[5] = {plays, loops, stops, stopWav, same};
-    o.write(reinterpret_cast<const char*>(rec), sizeof rec);
+    omk::writeLE(o, rec, sizeof rec / sizeof rec[0]);
     return 0;
 }

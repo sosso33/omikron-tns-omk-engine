@@ -27,6 +27,7 @@
 //   * the batch order is the engine's own (opaque, additive, multiply), so
 //     what overlaps what is the engine's decision and not this file's.
 #include "formats/tex3dt.h"
+#include "formats/le.h"
 #include "o3de/geom3do.h"
 #include "o3de/raster.h"
 #include "platform/datafs.h"
@@ -156,11 +157,9 @@ int main(int argc, char** argv) {
     if (!omk::safeOutputPath(argv[6])) return 2;
     std::ofstream o(argv[6], std::ios::binary);
     const std::int32_t n = static_cast<std::int32_t>(out.size());
-    o.write(reinterpret_cast<const char*>(&n), 4);
-    o.write(reinterpret_cast<const char*>(out.data()),
-            static_cast<std::streamsize>(out.size() * 4));
-    o.write(reinterpret_cast<const char*>(proj.data()),
-            static_cast<std::streamsize>(proj.size() * 4));
+    omk::writeLE(o, &n, 1);
+    omk::writeLE(o, out.data(), out.size());
+    omk::writeLE(o, proj.data(), proj.size());
     for (auto v : fb.px) {
         const char b[2] = {static_cast<char>(v & 0xFF), static_cast<char>(v >> 8)};
         o.write(b, 2);
@@ -171,11 +170,9 @@ int main(int argc, char** argv) {
     if (argc > 8) {
         if (!omk::safeOutputPath(argv[8])) return 2;
         std::ofstream m(argv[8], std::ios::binary);
-        m.write(reinterpret_cast<const char*>(&n), 4);
-        m.write(reinterpret_cast<const char*>(out.data()),
-                static_cast<std::streamsize>(out.size() * 4));
-        m.write(reinterpret_cast<const char*>(proj.data()),
-                static_cast<std::streamsize>(proj.size() * 4));
+        omk::writeLE(m, &n, 1);
+        omk::writeLE(m, out.data(), out.size());
+        omk::writeLE(m, proj.data(), proj.size());
         for (auto v : fb2.px) {
             const char b[2] = {static_cast<char>(v & 0xFF),
                                static_cast<char>(v >> 8)};

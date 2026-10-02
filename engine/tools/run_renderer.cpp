@@ -27,6 +27,7 @@
 // frame applies here for the same reason. What is comparable is what B6 says
 // is comparable: silhouette and coverage.
 #include "formats/tex3dt.h"
+#include "formats/le.h"
 #include "o3de/geom3do.h"
 #include "o3de/raster.h"
 #include "o3de/renderer.h"
@@ -149,9 +150,8 @@ int main(int argc, char** argv) {
     if (!omk::safeOutputPath(argv[6])) return 2;
     std::ofstream o(argv[6], std::ios::binary);
     const std::int32_t n = static_cast<std::int32_t>(out.size());
-    o.write(reinterpret_cast<const char*>(&n), 4);
-    o.write(reinterpret_cast<const char*>(out.data()),
-            static_cast<std::streamsize>(out.size() * 4));
+    omk::writeLE(o, &n, 1);
+    omk::writeLE(o, out.data(), out.size());
     for (auto v : boundary.px) {
         const char b[2] = {static_cast<char>(v & 0xFF), static_cast<char>(v >> 8)};
         o.write(b, 2);

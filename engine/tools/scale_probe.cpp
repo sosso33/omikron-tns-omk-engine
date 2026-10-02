@@ -14,6 +14,7 @@
 //
 //     scale_probe <gamedata> <vm_opcodes.json> <START> <SCPTDATA> <out.bin>
 #include "script/area.h"
+#include "formats/le.h"
 #include "platform/datafs.h"
 
 #include <cmath>
@@ -75,6 +76,6 @@ int main(int argc, char** argv) {
     std::ofstream o(argv[5], std::ios::binary);
     const auto r = [](float v) { return static_cast<int>(std::lround(v * 100)); };
     const int rec[10] = {r(y1), r(y13), r(y25), r(y26), r(y49), r(y162), r(y175), r(x1), r(x2), nodes};
-    o.write(reinterpret_cast<const char*>(rec), sizeof rec);
+    omk::writeLE(o, rec, sizeof rec / sizeof rec[0]);
     return 0;
 }

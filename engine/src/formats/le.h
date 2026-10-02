@@ -35,4 +35,27 @@ T loadLE(const std::byte* p) {
     return std::bit_cast<T>(u);
 }
 
+// writeLE(out, p, n) writes n elements of p to a stream as little-endian -
+// what the tools' result files are, and what verify.py reads them as. On a
+// little-endian host it is one write, the same bytes as before; on a big-endian
+// one each element is swapped. Templated on the stream so this header needs
+// no <ostream>.
+template <typename Stream, typename T>
+void writeLE(Stream& out, const T* p, std::size_t n) {
+    static_assert(std::is_arithmetic_v<T>, "writeLE writes integers and floats");
+    if constexpr (std::endian::native == std::endian::little) {
+        out.write(reinterpret_cast<const char*>(p), static_cast<long long>(n * sizeof(T)));
+    } else {
+        for (std::size_t i = 0; i < n; ++i) {
+            using U = std::conditional_t<sizeof(T) == 1, std::uint8_t,
+                      std::conditional_t<sizeof(T) == 2, std::uint16_t,
+                      std::conditional_t<sizeof(T) == 4, std::uint32_t, std::uint64_t>>>;
+            const U u = std::bit_cast<U>(p[i]);
+            char b[sizeof(T)];
+            for (std::size_t k = 0; k < sizeof(T); ++k) b[k] = static_cast<char>((u >> (8 * k)) & 0xFF);
+            out.write(b, sizeof(T));
+        }
+    }
+}
+
 }  // namespace omk

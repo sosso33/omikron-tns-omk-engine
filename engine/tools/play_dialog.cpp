@@ -17,6 +17,7 @@
 #include <cstdio>
 #include <fstream>
 #include <string>
+#include <vector>
 
 int main(int argc, char** argv) {
     if (argc < 5) {
@@ -75,9 +76,17 @@ int main(int argc, char** argv) {
                 for (std::size_t i = 0; i < n; ++i) h = (h ^ b[i]) * 16777619u;
                 return h;
             };
+            // the samples hashed as LITTLE-ENDIAN bytes, low byte first: the
+            // in-memory bytes made the same audio hash differently on PowerPC
+            std::vector<unsigned char> le;
+            le.reserve(p.pcm().size() * 2);
+            for (const std::int16_t v : p.pcm()) {
+                const auto u = static_cast<std::uint16_t>(v);
+                le.push_back(static_cast<unsigned char>(u & 0xFF));
+                le.push_back(static_cast<unsigned char>(u >> 8));
+            }
             f << "pcm " << p.pcm().size() << ' '
-              << fnv(reinterpret_cast<const unsigned char*>(p.pcm().data()),
-                     p.pcm().size() * sizeof(std::int16_t)) << ' '
+              << fnv(le.data(), le.size()) << ' '
               << p.morph().size() << ' '
               << fnv(reinterpret_cast<const unsigned char*>(p.morph().data()), p.morph().size())
               << '\n';

@@ -25,6 +25,7 @@
 // out.bin: int32 editings that ran to an end, int32 of those ending exactly at
 //          their duration, int32 boxblow's end clock, int32 boxblow's duration.
 #include "script/area.h"
+#include "formats/le.h"
 #include "platform/datafs.h"
 #include <cstdio>
 #include <fstream>
@@ -95,6 +96,6 @@ int main(int argc, char** argv) {
                 ended, exact, static_cast<double>(boxEnd), boxDur);
     const std::int32_t out[4] = {ended, exact, static_cast<std::int32_t>(boxEnd), boxDur};
     std::ofstream of(argv[5], std::ios::binary);
-    of.write(reinterpret_cast<const char*>(out), sizeof out);
+    omk::writeLE(of, out, sizeof out / sizeof out[0]);
     return 0;
 }

@@ -22,6 +22,7 @@
 // out.bin: int32 screens, keep, hide, sneakKeeps, pauseKeeps,
 //          shootMecaKeeps, shootHumanKeeps, unknownKeeps
 #include "platform/datafs.h"
+#include "formats/le.h"
 #include "ui/widgets.h"
 
 #include <cstdint>
@@ -58,7 +59,7 @@ int main(int argc, char** argv) {
     };
     if (!omk::safeOutputPath(argv[3])) return 2;
     std::ofstream f(argv[3], std::ios::binary);
-    f.write(reinterpret_cast<const char*>(out), sizeof(out));
+    omk::writeLE(f, out, sizeof out / sizeof out[0]);
     std::printf("%d screens, %d keep the world, %d hide it\n", screens, keep, hide);
     return 0;
 }

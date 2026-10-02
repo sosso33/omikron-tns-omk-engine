@@ -9,6 +9,7 @@
 //
 //     tuto_camera <gamedata> <vm_opcodes.json> <START> <lift>
 #include "script/area.h"
+#include "formats/le.h"
 #include "o3de/worldcam.h"
 #include "platform/datafs.h"
 #include <cstdio>
@@ -46,7 +47,7 @@ int main(int argc, char** argv) {
     }
     if (argc > 5 && omk::safeOutputPath(argv[5])) {
         std::ofstream f(argv[5], std::ios::binary);
-        f.write(reinterpret_cast<const char*>(out), sizeof(std::int32_t) * static_cast<std::size_t>(n));
+        omk::writeLE(f, out, static_cast<std::size_t>(n));
     }
     return 0;
 }

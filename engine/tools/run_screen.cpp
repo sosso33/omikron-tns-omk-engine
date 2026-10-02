@@ -8,6 +8,7 @@
 // like can be checked without a device, and `make` needs nothing installed.
 // The SDL player calls exactly this composer and then uploads the result.
 #include "platform/datafs.h"
+#include "formats/le.h"
 #include "platform/frontend.h"
 #include <cstdlib>
 
@@ -114,9 +115,8 @@ int main(int argc, char** argv) {
     if (!omk::safeOutputPath(argv[4])) return 2;
     std::ofstream o(argv[4], std::ios::binary);
     const std::int32_t n = static_cast<std::int32_t>(out.size());
-    o.write(reinterpret_cast<const char*>(&n), 4);
-    o.write(reinterpret_cast<const char*>(out.data()),
-            static_cast<std::streamsize>(out.size() * 4));
+    omk::writeLE(o, &n, 1);
+    omk::writeLE(o, out.data(), out.size());
 
     // ...then screen 29's framebuffer, so the LIVE frontend's dump can be
     // diffed against it. That comparison is what `PORTING` A8 rule 3 is

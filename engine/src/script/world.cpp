@@ -62,7 +62,10 @@ std::vector<Zone> zonesOf(std::span<const std::byte> b, ChunkKind kind) {
     if (b.size() < cntAt + 2) return out;
     const auto p = static_cast<std::size_t>(static_cast<std::uint32_t>(i32(b, ptrAt)));
     const auto n = static_cast<std::int16_t>(u16(b, cntAt));
-    if (n <= 0 || p + kZoneStride * static_cast<std::size_t>(n) > b.size()) return out;
+    // overflow-free (p > size first): with a 32-bit size_t a huge pointer
+    // field made `p + stride * n` wrap and pass, and the walk read past the chunk
+    if (n <= 0 || p > b.size() ||
+        kZoneStride * static_cast<std::size_t>(n) > b.size() - p) return out;
 
     for (int i = 0; i < n; ++i) {
         const auto o = p + kZoneStride * static_cast<std::size_t>(i);

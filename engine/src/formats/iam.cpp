@@ -26,8 +26,10 @@ IamArchive IamArchive::open(std::span<const std::byte> data) {
     for (std::size_t i = 0; i + 8 <= n; ++i) {
         const auto off = u32(data, 8 * i);
         const auto sz  = u32(data, 8 * i + 4);
-        if (off != 0 && sz != 0 &&
-            static_cast<std::size_t>(off) + sz <= n) {
+        // `off <= n && sz <= n - off`, not `off + sz <= n`: with a 32-bit
+        // size_t (PowerPC Mac OS X) the sum WRAPS for a garbage entry, which
+        // then passed and pointed a chunk outside the file
+        if (off != 0 && sz != 0 && off <= n && sz <= n - off) {
             if (!haveFirst || off < first) { first = off; haveFirst = true; }
         }
         // stop once the next entry would sit inside the payload region
@@ -41,7 +43,7 @@ IamArchive IamArchive::open(std::span<const std::byte> data) {
         const auto off = u32(data, 8 * i);
         const auto sz  = u32(data, 8 * i + 4);
         // size >= 4 mirrors the reference reader: a shorter "chunk" is not one
-        if (off != 0 && sz >= 4 && static_cast<std::size_t>(off) + sz <= n)
+        if (off != 0 && sz >= 4 && off <= n && sz <= n - off)
             a.entries_[i] = IamEntry{off, sz};
     }
     return a;

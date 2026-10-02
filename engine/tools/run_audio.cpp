@@ -26,6 +26,7 @@
 //     both channels. `pause.wav` is the control - it ships at 22080 Hz, so it
 //     resamples and must NOT be identical.
 #include "audio/mixer.h"
+#include "formats/le.h"
 #include "platform/datafs.h"
 
 #include <cctype>
@@ -39,10 +40,16 @@ using namespace omk::audio;
 
 namespace {
 
-std::uint32_t fnv(const void* p, std::size_t n) {
-    const auto* b = static_cast<const std::uint8_t*>(p);
+// FNV-1a over 16-bit samples taken LITTLE-ENDIAN, low byte first. It hashed
+// their in-memory bytes until 2026-10-02, which made the same audio hash
+// differently on PowerPC; on a little-endian host the value is unchanged.
+std::uint32_t fnv16(const std::vector<std::int16_t>& v) {
     std::uint32_t h = 2166136261u;
-    for (std::size_t i = 0; i < n; ++i) h = (h ^ b[i]) * 16777619u;
+    for (const std::int16_t s : v) {
+        const auto u = static_cast<std::uint16_t>(s);
+        h = (h ^ (u & 0xFFu)) * 16777619u;
+        h = (h ^ (u >> 8)) * 16777619u;
+    }
     return h;
 }
 
@@ -221,10 +228,10 @@ int main(int argc, char** argv) {
                 mix[std::size_t(i) * 2 + 1] != pcm[std::size_t(i)]) ++bad;
         *mismatches = bad;
         *frames = n;
-        *hSrc = fnv(pcm.data(), pcm.size() * 2);
+        *hSrc = fnv16(pcm);
         std::vector<std::int16_t> left(std::size_t(n), 0);
         for (int i = 0; i < n; ++i) left[std::size_t(i)] = mix[std::size_t(i) * 2];
-        *hOut = fnv(left.data(), left.size() * 2);
+        *hOut = fnv16(left);
     };
     int bad1 = 0, n1 = 0, bad2 = 0, n2 = 0;
     std::uint32_t hs1 = 0, ho1 = 0, hs2 = 0, ho2 = 0;
@@ -248,12 +255,10 @@ int main(int argc, char** argv) {
     if (!omk::safeOutputPath(argv[3])) return 2;
     std::ofstream o(argv[3], std::ios::binary);
     const std::int32_t nScalars = std::int32_t(out.size());
-    o.write(reinterpret_cast<const char*>(&nScalars), 4);
-    o.write(reinterpret_cast<const char*>(out.data()),
-            std::streamsize(out.size() * 4));
+    omk::writeLE(o, &nScalars, 1);
+    omk::writeLE(o, out.data(), out.size());
     const std::int32_t nFiles = std::int32_t(table.size() / 2);
-    o.write(reinterpret_cast<const char*>(&nFiles), 4);
-    o.write(reinterpret_cast<const char*>(table.data()),
-            std::streamsize(table.size() * 4));
+    omk::writeLE(o, &nFiles, 1);
+    omk::writeLE(o, table.data(), table.size());
     return 0;
 }

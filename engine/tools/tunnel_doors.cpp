@@ -21,6 +21,7 @@
 //
 //     tunnel_doors <gamedata> <tables> <out.bin>
 #include "formats/iam.h"
+#include "formats/le.h"
 #include "script/area.h"
 #include "script/gamestate.h"
 #include "script/script.h"
@@ -125,6 +126,6 @@ int main(int argc, char** argv) {
     std::ofstream o(argv[3], std::ios::binary);
     const int rec[8] = {startArea, afterArea, outArea, outIsTunnel ? 1 : 0,
                         activeMoved ? 1 : 0, doorF1, doorProgram, resolved};
-    o.write(reinterpret_cast<const char*>(rec), sizeof rec);
+    omk::writeLE(o, rec, sizeof rec / sizeof rec[0]);
     return 0;
 }

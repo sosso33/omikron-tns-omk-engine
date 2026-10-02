@@ -13,6 +13,7 @@
 // and - the part a wrong decode would break - that a real number of frames
 // comes out and the first one is not blank.
 #include "platform/datafs.h"
+#include "formats/le.h"
 #include "platform/movie.h"
 #include "ui/surface.h"
 
@@ -85,8 +86,7 @@ int main(int argc, char** argv) {
     if (!omk::safeOutputPath(argv[2])) return 2;
     std::ofstream o(argv[2], std::ios::binary);
     const std::int32_t n = static_cast<std::int32_t>(out.size());
-    o.write(reinterpret_cast<const char*>(&n), 4);
-    o.write(reinterpret_cast<const char*>(out.data()),
-            static_cast<std::streamsize>(out.size() * 4));
+    omk::writeLE(o, &n, 1);
+    omk::writeLE(o, out.data(), out.size());
     return 0;
 }

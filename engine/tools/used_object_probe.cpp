@@ -198,10 +198,17 @@ int main(int argc, char** argv) {
                 if (lift) break;
             }
         if (!lift) { std::printf("used arm %d NO LIFT ZONE\n", arm); continue; }
+        const int liftId = lift->zone.id;   // BEFORE anything can change the registry
 
         const char* what = "empty";
         if (arm == 1) { state.debugPutObject(0, 6); s.useObject(6); what = "key"; }
         if (arm == 2) { state.debugPutObject(0, 5); s.useObject(5); what = "wrong"; }
+        // `lift` points INTO the zone registry, and using an object can change
+        // it: keep the id, look the zone up again. Reading the stale pointer
+        // printed the right id on the Mac by luck and 21075 on PowerPC (Mac OS
+        // X 10.4), whose allocator had reused the memory.
+        lift = s.zones().resolve(liftId);
+        if (!lift) { std::printf("used arm %s zone %d GONE after use\n", what, liftId); continue; }
 
         stand(s, lift);
         const std::size_t from = s.announced().size();
@@ -217,7 +224,7 @@ int main(int argc, char** argv) {
                 voice = a.value;
         }
         std::printf("used arm %s zone %d var13 %d goto237 %s voice %ld\n",
-                    what, static_cast<int>(lift->zone.id), state.var(13),
+                    what, liftId, state.var(13),
                     gotoArea == 237 ? "yes" : "no", voice);
     }
     return 0;

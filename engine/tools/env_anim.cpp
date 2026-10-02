@@ -5,6 +5,7 @@
 // `Impasse.SCX` with loopCount -1 (run for ever). It must be running after the
 // area loads, and must still be running once the scene plays over it.
 #include "script/area.h"
+#include "formats/le.h"
 #include "platform/datafs.h"
 #include <cstdio>
 #include <cmath>
@@ -79,6 +80,6 @@ int main(int argc, char** argv) {
         static_cast<std::int32_t>(s.scene().missed().size()),
     };
     std::ofstream of(argv[5], std::ios::binary);
-    of.write(reinterpret_cast<const char*>(out), sizeof out);
+    omk::writeLE(of, out, sizeof out / sizeof out[0]);
     return 0;
 }

@@ -20,6 +20,7 @@
 //     runs to y = 0 behind the dialog. A composer that blits the sheet for a
 //     panel with no tiles paints the band on BOTH.
 #include "platform/datafs.h"
+#include "formats/le.h"
 #include "platform/frontend.h"
 
 #include "ui/cloud.h"
@@ -224,7 +225,6 @@ int main(int argc, char** argv) {
 
     if (!omk::safeOutputPath(argv[4])) return 2;
     std::ofstream f(argv[4], std::ios::binary);
-    f.write(reinterpret_cast<const char*>(out.data()),
-            static_cast<std::streamsize>(out.size() * sizeof(std::int32_t)));
+    omk::writeLE(f, out.data(), out.size());
     return 0;
 }
