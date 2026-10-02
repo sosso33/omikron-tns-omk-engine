@@ -497,5 +497,38 @@ struct PlayFrame {
     long& phGpu;
     std::map<std::string, long>& phKept;
 
+
+    // ---- THE FRAME'S OWN STATE that one phase sets and a later one reads
+    // (todo/play-split.md): each was a local of the loop body, and is now
+    // assigned where it used to be declared, every turn.
+    omk::DeviceState st;                    // the devices, as the bindings read them
+    std::uint32_t bits = 0, heldBits = 0, edgeBits = 0;   // the input word, held, edged
+    bool uiPause = false;                   // the pause screen is the open one
+    bool gpuFrame = false;                  // the present pass: the world went to the GPU
+    bool overlayFrame = false, softGate = false;   // G6 step 2, the GLES window
+    float ovFade[4] = {0, 0, 0, 0};         // the colour fade, for its shader
+    int gpuVy = 0, gpuVh = 0;               // where the GPU world is placed
+    const char* gpuKeep = nullptr;          // the first gate that kept the frame on the CPU path
+    bool drawWorld = false;                 // the world is drawn this turn
+    // a function-local `static const` in the body, read once: the same here,
+    // read when the frame is built
+    const bool verifyGpuPresent = std::getenv("OMK_VERIFY_GPU_PRESENT") != nullptr;
+
+    // ---- THE PHASES, in the body's order (`playframe_<name>.cpp`). Each
+    // returns what `step()` does: -1 to go on, -2 for the body's `break`, or
+    // `main`'s exit code.
+    int phaseInput();   // input, the pause screen, the game tick, scripted object motion, the sound effects
+    int phaseControl();   // the hand-over and the controller's frame
+    int phaseModes();   // the pause's sound, the voices, dialogue mode, shoot mode, the quit and the pending load
+    int phaseWorld();   // whoever is on screen, and the world when no screen is over it
+    int phaseScreens();   // the screens' rows and the HUDs
+    int phasePresent();   // the fps counter, the fades, the flicker catcher and the present
+
     int step();
 };
+
+namespace {
+// THE OVERLAY'S SIDE PLANES live in `ui/overlay.h` (G6 steps 2 and 3), shared
+// with the HUD's blended quads.
+omk::OverlayPlanes& g_ov = omk::overlayPlanes();
+}  // namespace

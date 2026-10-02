@@ -168,6 +168,12 @@ if(OMK_VITA_GAME)
     ${ENGINE}/backends/sdl/play.cpp
     ${ENGINE}/backends/sdl/sdlfront.cpp
     ${ENGINE}/backends/sdl/playframe.cpp
+    ${ENGINE}/backends/sdl/playframe_input.cpp
+    ${ENGINE}/backends/sdl/playframe_control.cpp
+    ${ENGINE}/backends/sdl/playframe_modes.cpp
+    ${ENGINE}/backends/sdl/playframe_world.cpp
+    ${ENGINE}/backends/sdl/playframe_screens.cpp
+    ${ENGINE}/backends/sdl/playframe_present.cpp
     ${ENGINE}/backends/gles/glesrender.cpp)
   set_source_files_properties(${ENGINE}/backends/sdl/play.cpp
     PROPERTIES COMPILE_DEFINITIONS "main=omk_play_main")
