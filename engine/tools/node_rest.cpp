@@ -46,6 +46,7 @@
 #include "script/program.h"
 #include "script/zones.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>

@@ -17,6 +17,7 @@
 #include "o3de/collision.h"
 #include "platform/datafs.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>

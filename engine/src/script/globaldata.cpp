@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "script/globaldata.h"
 
+#include <algorithm>
 #include <cstring>
 
 namespace omk {
@@ -59,7 +60,9 @@ std::vector<Destination> globalDestinations(std::span<const std::byte> d) {
         // 39 shipped records terminates inside them.
         const char* p = reinterpret_cast<const char*>(&d[o + 4]);
         const std::size_t room = 32;
-        e.name.assign(p, ::strnlen(p, room));
+        // std::find, not strnlen: Mac OS X has strnlen only from 10.7, and the
+        // PowerPC build (ppc-darwin.mk) targets 10.4
+        e.name.assign(p, std::find(p, p + room, '\0'));
         out.push_back(std::move(e));
     }
     return out;
