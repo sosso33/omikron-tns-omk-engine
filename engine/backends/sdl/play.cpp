@@ -22,6 +22,7 @@
 // against either and the Makefile prefers 3. That divergence is recorded in A8
 // rather than left for someone to find.
 #include "playshared.h"
+#include "playstate.h"
 #include "playframe.h"
 
 namespace {
@@ -426,135 +427,31 @@ int sceneViewer(const std::string& fr, const std::string& setName,
 }  // namespace
 
 
-int main(int argc, char** argv) {
+int PlayState::run(int argc, char** argv) {
     OMK_HEAPCHECK("main");
     // THE FLAGS (`todo/play-split.md` S2): `omk::PlayOptions`, parsed in
     // `src/app/playoptions.cpp`. Each old local is a REFERENCE to its field, so
     // not one line below changed; a later step that moves a phase drops the
     // aliases it no longer needs.
-    omk::PlayOptions opt;
     if (const int rc = opt.parse(argc, argv); rc >= 0) return rc;
-    const std::string& fr = opt.fr;
-    auto& tb = opt.tb;
-    auto& screenId = opt.screenId;
-    auto& frames = opt.frames;
-    auto& playMovies = opt.playMovies;
-    auto& dump = opt.dump;
-    auto& typeText = opt.typeText;
-    auto& dispW = opt.dispW;
-    auto& dispH = opt.dispH;
-    auto& resFlag = opt.resFlag;
-    auto& fullscreenFlag = opt.fullscreenFlag;
-    auto& scripted = opt.scripted;
-    auto& bankReject = opt.bankReject;
-    auto& keyEvery = opt.keyEvery;
-    auto& holdStream = opt.holdStream;
-    auto& snapsDir = opt.snapsDir;
-    auto& flickerDir = opt.flickerDir;
-    auto& waterCamPreset = opt.waterCamPreset;
-    auto& snapEvery = opt.snapEvery;
-    auto& saveFile = opt.saveFile;
-    auto& savesPath = opt.savesPath;
-    auto& slotArg = opt.slotArg;
-    auto& saveSlotArg = opt.saveSlotArg;
-    auto& saveNameArg = opt.saveNameArg;
-    auto& areaArg = opt.areaArg;
-    auto& addressArg = opt.addressArg;
-    auto& density = opt.density;
-    auto& fightArg = opt.fightArg;
-    auto& noFoeCollision = opt.noFoeCollision;
-    auto& noFightCamRay = opt.noFightCamRay;
-    auto& foeAtSet = opt.foeAtSet;
-    auto& foeAtXZ = opt.foeAtXZ;
-    auto& fightLevelArg = opt.fightLevelArg;
-    auto& rideArg = opt.rideArg;
-    auto& boardArg = opt.boardArg;
-    auto& configFile = opt.configFile;
-    auto& densityFlag = opt.densityFlag;
-    auto& clipFlag = opt.clipFlag;
-    auto& clipArg = opt.clipArg;
-    auto& skyFlag = opt.skyFlag;
-    auto& shadowFlag = opt.shadowFlag;
-    auto& threadFlag = opt.threadFlag;
-    auto& noTieFlag = opt.noTieFlag;
-    auto& cpuBodiesFlag = opt.cpuBodiesFlag;
-    auto& detailFlag = opt.detailFlag;
-    auto& aaFlag = opt.aaFlag;
-    auto& filterFlag = opt.filterFlag;
-    auto& anisoFlag = opt.anisoFlag;
-    auto& shadowQFlag = opt.shadowQFlag;
-    auto& uiScaleFlag = opt.uiScaleFlag;
-    auto& textScaleFlag = opt.textScaleFlag;
-    auto& lightingFlag = opt.lightingFlag;
-    auto& ssaaFlag = opt.ssaaFlag;
-    auto& radarFlag = opt.radarFlag;
-    auto& frameRateFlag = opt.frameRateFlag;
-    auto& smoothAnimFlag = opt.smoothAnimFlag;
-    auto& dither = opt.dither;
-    auto& mouseInvertX = opt.mouseInvertX;
-    auto& mouseInvertY = opt.mouseInvertY;
-    auto& shootEyeLift = opt.shootEyeLift;
-    auto& shootEyeSet = opt.shootEyeSet;
-    auto& enhanceAll = opt.enhanceAll;
-    auto& drawFog = opt.drawFog;
-    auto& lightCrowd = opt.lightCrowd;
-    auto& fogRGB = opt.fogRGB;
-    auto& giveList = opt.giveList;
-    auto& moneyArg = opt.moneyArg;
-    auto& ringsArg = opt.ringsArg;
-    auto& varList = opt.varList;
-    auto& newWorld = opt.newWorld;
-    auto& sceneChunk = opt.sceneChunk;
-    auto& zoneEnable = opt.zoneEnable;
-    auto& zoneDisable = opt.zoneDisable;
-    auto& sceneLoads = opt.sceneLoads;
-    auto& noCrowd = opt.noCrowd;
-    auto& noScriptSprites = opt.noScriptSprites;
-    auto& scxPlay = opt.scxPlay;
-    auto& openSneak = opt.openSneak;
-    auto& startShoot = opt.startShoot;
-    auto& shootHealth = opt.shootHealth;
-    auto& fightHealth = opt.fightHealth;
-    auto& shootEndAt = opt.shootEndAt;
-    auto& standAt = opt.standAt;
-    auto& haveStand = opt.haveStand;
-    auto& scene = opt.scene;
-    auto& camIndex = opt.camIndex;
-    auto& eyeA = opt.eyeA;
-    auto& atA = opt.atA;
-    auto& fovA = opt.fovA;
-    auto& callDialog = opt.callDialog;
-    auto& animHoldHarness = opt.animHoldHarness;
-    auto& haveEye = opt.haveEye;
-    auto& haveAt = opt.haveAt;
-    auto& letterbox = opt.letterbox;
-    auto& startVulkan = opt.startVulkan;
-    auto& noDelay = opt.noDelay;
-    auto& speed = opt.speed;
-    auto& forceSoftware = opt.forceSoftware;
-    auto& showFps = opt.showFps;
-    auto& worldVulkan = opt.worldVulkan;
     // THE GAME'S STATE (`todo/play-split.md` S3), one group at a time; each
     // old local below is a REFERENCE to its field where it used to be declared.
-    omk::Game game;
-    bool boardPress = false;
-    bool mountSpent = false;    // the action button is edged, not held
-    bool calledOpenTold = false;
-    bool boarded = false;           // aboard, `Slider_TickRide` not yet driving
+    boardPress = false;
+    mountSpent = false;    // the action button is edged, not held
+    calledOpenTold = false;
+    boarded = false;           // aboard, `Slider_TickRide` not yet driving
     // ...and the BOARDING that comes first: `MDACTION` has put him at the
     // door, group 60 (`H_SLDIN`, 72 frames) is playing the door and the step
     // in, and the channel's own `MDSLIDIN` entry at the end of it is what
     // takes him aboard. Between the two he is ACTOR_STATE 6.
-    bool  boarding = false;
-    float doorOff[3] = {0, 0, 0};   // the placement, in the SLIDER's frame
-    int   doorOffState = 0;         // 0 not read yet, 1 read, -1 unavailable
-    double boardCam = 0;            // frames (at 30 Hz) left of `Camera_Request(9, ..)`
+    boarding = false;
+    doorOffState = 0;         // 0 not read yet, 1 read, -1 unavailable
+    boardCam = 0;            // frames (at 30 Hz) left of `Camera_Request(9, ..)`
     // ...and the EXIT, which is the same shape mirrored: `sub_468FA0` places
     // him from group 61's clip against a DIFFERENT reference (slf_113.3da,
     // `dword_9103D8`) and plays `H_SLDOUT`.
-    bool  leaving = false;
-    float exitOff[3] = {0, 0, 0};
-    int   exitOffState = 0;
+    leaving = false;
+    exitOffState = 0;
     // ---- THE SLIDER'S OWN DOOR CLIPS -------------------------------------
     //
     // `Cef_TickChannel`'s ACTOR_STATE switch (19_dsound.c, cases 6 and 8)
@@ -574,19 +471,17 @@ int main(int argc, char** argv) {
     // them. `build/slider_doorclip` measures what each drives: of the five
     // tracks, one moves - **`SlPorteG` turns 71.4 degrees**, the gull-wing
     // swing - and the other four and the root hold still.
-    omk::NodeTracks doorIn, doorOut;
-    bool doorClipsRead = false;
-    int  journeyTo = -1;            // the address the journey ends at
+    doorClipsRead = false;
+    journeyTo = -1;            // the address the journey ends at
     // `dword_6A17CC` - which destination row the call was made for.
-    int  calledDestination = -1;
+    calledDestination = -1;
     // THE LIVE RIDE, when there is one. `todo/slider.md` step 3's harness.
-    std::optional<omk::SliderRide> ride;
-    bool scxPlayed = false;
+    scxPlayed = false;
     // ...and the save's OWN placement, which is `State_Apply`'s and not a
     // harness flag: a loaded game stands where it was saved unless something
     // explicit says otherwise.
-    float savedAt[3] = {0, 0, 0}, savedYaw = 0.0f;
-    bool  haveSavedPlacement = false;
+    savedYaw = 0.0f;
+    haveSavedPlacement = false;
 
     // The viewer takes the whole program: it wants no boot chain, no widget
     // tree and no movies, and mixing it into the interface loop would make
@@ -600,8 +495,8 @@ int main(int argc, char** argv) {
                            // it takes the flag alone; `--config` is the game's
                            ssaaFlag < 0 ? 1 : ssaaFlag, dither);
 
-    const omk::DataFs fs(fr);
-    auto w = omk::UiWidgets::loadJson(tb + "/ui_widgets.json");
+    const auto& fs = fs_.emplace(fr);
+    w = omk::UiWidgets::loadJson(tb + "/ui_widgets.json");
     // `Ui_BuildLoadPanel`'s layout, applied for screen 29.  The four buttons
     // of the load panel all ship at (460, 210) and the builder moves three of
     // them apart; without this they draw on top of one another and the panel
@@ -614,23 +509,20 @@ int main(int argc, char** argv) {
                     "screens cannot be drawn or walked, so the Session answers "
                     "them itself and the start menu is skipped\n");
     w.loadScreens(tb + "/ui.json");
-    const auto fonts = omk::FontTable::loadJson(tb + "/ui.json");
-    omk::TextLayout lay(fonts, fr + "/FONTS");   // not const: the text-scaling enhancement
-    omk::ScreenComposer comp(fs, w, lay);
+    fonts = omk::FontTable::loadJson(tb + "/ui.json");
+    auto& lay = lay_.emplace(fonts, fr + "/FONTS");   // not const: the text-scaling enhancement
+    auto& comp = comp_.emplace(fs, w, lay);
     // SCREEN 35, the options (`todo/options-menu.md`): the page tree out of
     // the widget lift, the 74 rows out of `ui.json`, and the screen's own
     // strings - the labels by `+24`, the save prompt's and Accel 3D's.
-    const omk::OptionTree optTree =
-        omk::OptionTree::loadJson(tb + "/ui_widgets.json", tb + "/ui.json");
-    omk::OptionsMenu optMenu(optTree);
+    optTree = omk::OptionTree::loadJson(tb + "/ui_widgets.json", tb + "/ui.json");
+    auto& optMenu = optMenu_.emplace(optTree);
     optMenu.setText(omk::iamStrings(fs, "IAM/Options"));
     // The world rendered at a panel's 3D VIEWPORT item's size, for the
     // composer to place (`ScreenComposer::attachView3D`).
-    omk::Surface view3dPic;
     // The menu's animated background - `IMAGES/cloud.bmp` embossed by a
     // rotating light and warped by two cosine tables (`ui/cloud.h`). The
     // screen's own sheet is colour-keyed over it.
-    omk::MenuCloud cloud;
     if (cloud.load(fs)) comp.attachCloud(&cloud);
     else std::printf("no IMAGES/cloud.bmp - the menu draws on black\n");
 
@@ -638,8 +530,8 @@ int main(int argc, char** argv) {
     // `Game_Frame`'s edge filter in the middle, one 14-bit word out. Nothing
     // here hands the walk a word directly, which is the whole point of
     // `verify.py: engine input`.
-    const auto schemes = omk::ControlSchemes::loadJson(tb + "/key_bindings.json");
-    omk::Input in(schemes);
+    schemes = omk::ControlSchemes::loadJson(tb + "/key_bindings.json");
+    auto& in = in_.emplace(schemes);
     in.installScheme(0);
     in.setRepeatMask(0x203F);          // `Ui_BeginScreen`
 
@@ -659,9 +551,8 @@ int main(int argc, char** argv) {
     // reports them, and moves on. The first thing a player sees is therefore
     // missing here, and saying so is the point - a window that opens on the
     // menu would imply the app starts there.
-    omk::BootOptions bo;
     bo.root = fr; bo.tables = tb; bo.frames = 1;
-    const omk::BootReport br = omk::boot(bo);
+    br = omk::boot(bo);
     std::printf("boot: %d FLIS movie%s found; %s -> %d sprites, %d sounds; "
                 "start area %d\n",
                 br.moviesFound, br.moviesFound == 1 ? "" : "s",
@@ -683,7 +574,7 @@ int main(int argc, char** argv) {
     // the Session which screen is waiting and opens THAT. A build that opened
     // screen 29 itself would still show a menu and would be a different
     // program.
-    const auto opcodes = omk::OpcodeTable::loadJson(tb + "/vm_opcodes.json");
+    opcodes = omk::OpcodeTable::loadJson(tb + "/vm_opcodes.json");
     // The ONE that cannot be worked around: without the operand lengths the
     // VM cannot even step an instruction, and a hand-written table is not an
     // option - CLAUDE.md records one being wrong three ways in an hour. It is
@@ -698,7 +589,7 @@ int main(int argc, char** argv) {
             tb.empty() ? "<no tables dir>" : tb.c_str());
         return 1;
     }
-    omk::GameState state = omk::GameState::fromFile(fr + "/IAM/START");
+    state = omk::GameState::fromFile(fr + "/IAM/START");
     // THE SETTINGS, from the three sources in their own order: the engine's
     // defaults (`sub_41F4C0`), then the ini, then the save file's 3496-byte
     // header - which is what the options MENU last wrote, and so is later
@@ -710,8 +601,6 @@ int main(int argc, char** argv) {
     // slot cannot come from two different places: an explicit `--save` names
     // a file directly (the fixtures do), otherwise a `--slot` reads the saves
     // file - the writable one if it exists, else the shipped `IAM/GAMES`.
-    std::vector<std::byte> saveBytes;
-    std::string saveFrom, loadedName;
     if (!saveFile.empty()) {
         saveBytes = omk::DataFs::readPath(saveFile);
         saveFrom = saveFile;
@@ -722,7 +611,6 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "--slot: no save file at %s, and none in the "
                                  "game tree either\n", savesPath.c_str());
     }
-    std::optional<omk::SettingsBlock> saveSettings;
     if (!saveBytes.empty())
         saveSettings = omk::readSettingsBlock(saveBytes);
     // ...AND WITH NEITHER, THE SAVES FILE'S HEADER ALL THE SAME. The game's
@@ -735,13 +623,12 @@ int main(int argc, char** argv) {
         const auto head = omk::readSaveFile(savesPath, fr + "/IAM/GAMES");
         if (!head.empty()) saveSettings = omk::readSettingsBlock(head);
     }
-    const omk::OptionsFile ini =
-        configFile.empty() ? omk::OptionsFile{} : omk::loadOptionsFile(configFile);
+    ini = configFile.empty() ? omk::OptionsFile{} : omk::loadOptionsFile(configFile);
     if (!configFile.empty() && !ini.loaded)
         std::fprintf(stderr, "%s: no such config file - using defaults\n", configFile.c_str());
     // not const: the options menu writes `settings.v` as the game's apply
     // hooks write `byte_90E180`, and what reads it later reads the new value
-    omk::Settings settings = omk::resolveSettings(ini, saveSettings);
+    settings = omk::resolveSettings(ini, saveSettings);
     // THE DISPLAY SIZE: `--res`, else row 2 as the settings resolved it - the
     // save header (`+12`/`+14`, what the menu last saved) over the ini's
     // `screen_x` / `screen_y` - else 800x600. A run that must be a given size
@@ -786,10 +673,9 @@ int main(int argc, char** argv) {
     // `--enhance-all` includes it. What it lifts is the visible-set walk's
     // distance test and the fog, whose range IS the clip distance - so with
     // no distance there is nothing to fade over and the fog goes off.
-    const bool unlimitedClip = (clipFlag && clipArg <= 0)
+    unlimitedClip = (clipFlag && clipArg <= 0)
                             || (!clipFlag && (enhanceAll || settings.unlimitedDrawDistance));
-    double clipInches =
-        unlimitedClip ? std::numeric_limits<double>::infinity()
+    clipInches = unlimitedClip ? std::numeric_limits<double>::infinity()
                       : clipFlag ? static_cast<double>(clipArg) * omk::kInchesPerMetre
                                  : settings.clipInches();
     if (unlimitedClip)
@@ -797,7 +683,7 @@ int main(int argc, char** argv) {
                     "(the option's five values stop at %d m); the fog goes with it, "
                     "its range being the clip distance's own\n", omk::kMaxOptionClipMetres);
     // one line the first frame that draws, so a run says what the option did
-    bool clipReport = true;
+    clipReport = true;
     // THE FLICKER CATCHER (--flicker <dir>). A fault a player sees for one to
     // five frames cannot be screenshotted and cannot be found by choosing a
     // frame to render: a reader reported "a Kay'l with a black background" and
@@ -808,15 +694,11 @@ int main(int argc, char** argv) {
     //
     // It is an INSTRUMENT and no part of the port: nothing here changes a
     // pixel, and with the flag absent none of it runs.
-    std::vector<std::vector<std::uint16_t>> flickRing;   // the last kFlickPre frames
-    std::vector<std::string> flickNote;                  // ...and their context
-    std::vector<long> flickLit;                          // the lit-count window
-    std::string frameNote;                               // this frame's context
-    int  flickAfter = 0;                                 // frames still to write
-    long flickEvent = -1, flickQuietUntil = -1;
-    bool drawSky = skyFlag >= 0 ? skyFlag != 0 : settings.v.sky;
+    flickAfter = 0;                                 // frames still to write
+    flickEvent = -1, flickQuietUntil = -1;
+    drawSky = skyFlag >= 0 ? skyFlag != 0 : settings.v.sky;
     // Options rows 5 and 7, with a flag beating the save the way --sky does.
-    bool drawShadows = shadowFlag >= 0 ? shadowFlag != 0 : settings.v.shadows;
+    drawShadows = shadowFlag >= 0 ? shadowFlag != 0 : settings.v.shadows;
     // THREADED BODIES (`todo/vita-port.md` P4). ON by default since 2026-09-23:
     // the posing is bit-identical either way (`omk::Threads`' chunks are
     // disjoint and the merge is in index order), so this is not an enhancement
@@ -825,7 +707,7 @@ int main(int argc, char** argv) {
     // is gone: `omk_bench` on a real console said `threads: EXACT` with the
     // inline pass's own hash, 2.71x on three runners. `--no-thread-bodies`
     // puts it back on one core, for an A/B.
-    const bool threadBodies = threadFlag > 0;
+    threadBodies = threadFlag > 0;
     if (threadBodies)
         std::printf("bodies: posed over %d runners (the default; --no-thread-bodies for one); the frame is "
                     "bit-identical to one runner\n", omk::Threads::shared().runners());
@@ -839,32 +721,32 @@ int main(int argc, char** argv) {
     };
     // not const: a renderer that cannot draw an enhancement refuses it, once
     // the renderer exists (below `world`)
-    int shadowQuality = enh(shadowQFlag, settings.shadowQuality,
+    shadowQuality = enh(shadowQFlag, settings.shadowQuality,
                             omk::kMaxShadowQuality);
-    int        shadowDetail = detailFlag >= 0 ? detailFlag : settings.v.levelOfDetail;
+    shadowDetail = detailFlag >= 0 ? detailFlag : settings.v.levelOfDetail;
     // Row 7. Per pixel ALSO widens who receives: the engine lights the
     // procedural crowd and nothing else, and this lets every character.
-    int        lighting = enh(lightingFlag, settings.lighting, omk::kMaxLighting);
+    lighting = enh(lightingFlag, settings.lighting, omk::kMaxLighting);
     if (lighting > 0)
         std::printf("lighting: per pixel - an ENHANCEMENT the original never had "
                     "(it lights the crowd alone, per vertex); every character receives\n");
     // The enhancement: OFF unless --aa or [Enhancements] said otherwise.
-    const int aaSamples = enh(aaFlag, settings.antiAliasing, omk::kMaxAntiAliasing);
-    const int texFilter = enh(filterFlag, settings.textureFilter, omk::kMaxTextureFilter);
-    const int texAniso  = enh(anisoFlag, settings.anisotropy, omk::kMaxAnisotropy);
+    aaSamples = enh(aaFlag, settings.antiAliasing, omk::kMaxAntiAliasing);
+    texFilter = enh(filterFlag, settings.textureFilter, omk::kMaxTextureFilter);
+    texAniso = enh(anisoFlag, settings.anisotropy, omk::kMaxAnisotropy);
     // Supersampling is NOT under `--enhance-all` (settings.h, kMaxSupersample):
     // only `--ssaa` or `supersampling =` turn it on.
-    const int ssaa      = ssaaFlag >= 0 ? ssaaFlag : settings.supersample;
+    ssaa = ssaaFlag >= 0 ? ssaaFlag : settings.supersample;
     // The RADAR (`ui/radar.h`): the game draws shoot mode's minimap only when
     // a script's op 146 has turned it on; `always` draws it in every shoot
     // phase whose area has a radar file.
-    const bool radarAlways = enh(radarFlag, settings.radarAlways ? 1 : 0, omk::kMaxRadar) > 0;
+    radarAlways = enh(radarFlag, settings.radarAlways ? 1 : 0, omk::kMaxRadar) > 0;
     // Row 11: the PACER's rate. Not the simulation's - that steps on the
     // measured delta whatever this is - and never a `--frames` run's, which
     // steps a fixed 1/30 and never reaches the pacer.
-    const int frameRate = enh(frameRateFlag, settings.frameRate, omk::kMaxFrameRate);
+    frameRate = enh(frameRateFlag, settings.frameRate, omk::kMaxFrameRate);
     // Row 12, set once for every `composePose` that takes a float frame
-    const bool smoothAnim = enh(smoothAnimFlag, settings.smoothAnimation ? 1 : 0,
+    smoothAnim = enh(smoothAnimFlag, settings.smoothAnimation ? 1 : 0,
                                 omk::kMaxAnimation) > 0;
     omk::setPoseSmoothing(smoothAnim);
     if (smoothAnim)
@@ -880,12 +762,12 @@ int main(int argc, char** argv) {
     // The INTERFACE's own, and the one enhancement here that is not the
     // Vulkan backend's: the 640x480 layer is composed on the CPU for both, so
     // a filtered stretch reaches the software renderer too.
-    const int uiScaling = enh(uiScaleFlag, settings.uiScaling, omk::kMaxUiScaling);
+    uiScaling = enh(uiScaleFlag, settings.uiScaling, omk::kMaxUiScaling);
     comp.setScaling(uiScaling);
     // TEXT SCALING (settings.h `textScaling`): the glyphs at the smaller of the
     // layout's two scales, so a line keeps its proportion to its box whatever
     // the display. Re-applied wherever the display size changes.
-    const int textScaling = enh(textScaleFlag, settings.textScaling, omk::kMaxTextScaling);
+    textScaling = enh(textScaleFlag, settings.textScaling, omk::kMaxTextScaling);
     const auto applyTextScale = [&](int w, int h) {
         if (textScaling <= 0) { lay.setGlyphScale(1, 1, 0); return; }
         if (w * 480 <= h * 640) lay.setGlyphScale(w, 640, uiScaling);
@@ -912,7 +794,6 @@ int main(int argc, char** argv) {
                     omk::uiScalingName(uiScaling), unlimitedClip ? "unlimited" : "capped", ssaa);
     // The clip half of the line reads differently when it is unlimited:
     // "0 m = inf in" is arithmetic rather than a report.
-    char clipText[128];
     if (unlimitedClip)
         std::snprintf(clipText, sizeof clipText,
                       "clip UNLIMITED (enhancement), no fog, no distance cull");
@@ -1067,7 +948,7 @@ int main(int argc, char** argv) {
     // ...and a LOAD sets it too, below: loading a save is resuming, so the
     // hand-over should not wait on the scene's beats any more than `--slot`
     // does. Not const for that reason.
-    bool forceAdventure = areaArg >= 0 || slotArg >= 0;
+    forceAdventure = areaArg >= 0 || slotArg >= 0;
     // THE INVENTORY, out of the game data: `IAM\OBJECT`'s 1002 records and
     // `IAM\GLOBAL +12`'s eleven combination recipes. `script/inventory.h` was
     // written, checked and never consumed by anything that runs - the sneak
@@ -1145,24 +1026,21 @@ int main(int argc, char** argv) {
                     "(a harness write, not a script)\n", wrote,
                     wrote == 1 ? "" : "s");
     }
-    const auto objectRecords = omk::loadObjects(fs);
-    const auto globalFile = fs.read("IAM/GLOBAL");
-    const auto recipes = omk::globalRecipes(globalFile);
-    omk::Inventory inv(objectRecords, recipes);
+    objectRecords = omk::loadObjects(fs);
+    globalFile = fs.read("IAM/GLOBAL");
+    recipes = omk::globalRecipes(globalFile);
+    auto& inv = inv_.emplace(objectRecords, recipes);
     // `GLOBAL +16` - the sneak's slider destinations, 39 of them.
-    const auto destinations = omk::globalDestinations(globalFile);
-    bool sliderTold = false;
-    std::string examineTold;
-    std::string examineText;
+    destinations = omk::globalDestinations(globalFile);
+    sliderTold = false;
     // The memo the body box was fed this frame, reported AFTER the draw with
     // the lines the composer actually laid out - a line printed beside the
     // fill says what was intended, not what was drawn, and a mutation that
     // cut the text off from the composer passed exactly that way.
-    std::string memoBodyPending;
     if (objectRecords.empty())
         std::printf("no IAM/OBJECT - the sneak's inventory page will be "
                     "empty\n");
-    omk::Session session(fr + "/IAM", state, opcodes);
+    auto& session = session_.emplace(fr + "/IAM", state, opcodes);
     if (bankReject) {
         session.setBankReject(true);
         std::printf("DEBUG --bank-reject: every bank refused, the object stays in hand - "
@@ -1197,7 +1075,7 @@ int main(int argc, char** argv) {
     if (!noCrowd) session.loadTraffic(fr);
     // A movie chain is the intro's; a street start skips it.
     if (forceAdventure) playMovies = false;
-    const int startArea = areaArg >= 0 ? areaArg : state.currentArea();
+    startArea = areaArg >= 0 ? areaArg : state.currentArea();
     if (startArea < 0) { std::fprintf(stderr, "IAM/START names no area\n"); return 1; }
     session.loadArea(startArea);
     // ...with the SET it names, because an area whose chunk did not arrive
@@ -1334,32 +1212,27 @@ int main(int argc, char** argv) {
     // The screen currently on the player's hands, if any. `walk` is only
     // constructed once a script has actually asked for a screen - or, since
     // the sneak, once the PLAYER has.
-    std::unique_ptr<omk::UiWalk> walk;
-    int openScreen = -1, conversations = 0, lastArea = -1;
+    openScreen = -1, conversations = 0, lastArea = -1;
     OMK_HEAPCHECK("before sneak call");
-    omk::LoadPanel loadPanelState;   // rebuilt each time a screen opens
-    int  pendingLoadSlot = -1;       // `dword_4C09B4`
-    bool quitRequested = false;      // `dword_4E6C9C`, the pause screen's Oui
-    bool exitProgram = false;        // the start menu's Oui - WM_QUIT
+    pendingLoadSlot = -1;       // `dword_4C09B4`
+    quitRequested = false;      // `dword_4E6C9C`, the pause screen's Oui
+    exitProgram = false;        // the start menu's Oui - WM_QUIT
     // `dword_670BF0`: a sneak CALL is up. Set by the videophone's open arm,
     // cleared by the first close attempt.
-    bool videophoneCall = false;
-    bool videophoneSpoke = false;   // a line or a voice-over has played
-    bool callHarness = false;       // `--call` opened this one
-    int  callPending = -1;          // ...and the conversation it owes
+    videophoneCall = false;
+    videophoneSpoke = false;   // a line or a voice-over has played
+    callHarness = false;       // `--call` opened this one
+    callPending = -1;          // ...and the conversation it owes
     // THE LOADING SEQUENCE IS NOT WIRED HERE, and a first version of it
     // was. `Charger` answers **0**, and AREA 118's parked startup script
     // has an arm for exactly that: the Grid fly-through - cameras
     // 2152/2153/2154/2158 over `scx.play 20` with a `media.play 753` - after
     // which the script ends. So the engine covers a load with its own
     // script, and the port only has to answer the right number.
-    omk::UiCursor uiCursor;   // Ui_DrawItemCursor's one pool (dword_6A4D20)
-    omk::UiListState uiLists; // every list's `+2`, for as long as we run
     // The sneak's three turning previews. Loaded once - the engine loads them
     // in the sneak's OPEN callback and frees them in its close, which for a
     // viewer that opens the device repeatedly is the same three files each
     // time.
-    omk::UiModels uiModels;
     if (const int n = uiModels.load(fs))
         std::printf("sneak: %d of 3 preview models loaded (%s...)\n",
                     n, uiModels.name(0).c_str());
@@ -1370,22 +1243,21 @@ int main(int argc, char** argv) {
     // and the `-1` is the waiting-context argument, so `dword_930744` is
     // never written and there is nothing to resume. Answering the Session for
     // it would release whatever script happened to be parked.
-    bool screenFromScript = true;
+    screenFromScript = true;
     // The input word as it stood when the current screen opened - see the
     // edge gate below. Cleared once those bits are released.
-    std::uint32_t screenOpenBits = 0;
+    screenOpenBits = 0;
     // A screen the PLAYER asked for this frame, before it is opened below -
     // so the open, its sounds and its bookkeeping stay in one place.
-    int playerScreen = -1;
+    playerScreen = -1;
     // The world's action button is spent until it is RELEASED - see the
     // one-activation-per-press gate below. Cleared where `bits` is taken, so
     // a frame that never reaches the gate cannot leave it stale.
-    bool actionSpent = false;
+    actionSpent = false;
     // The sneak's inventory ROWS - item address -> what that row shows. The
     // nine slots of list 0x004DE6F0 ship `+28` as -1 and are never bound,
     // because their text is the carried object list read through the channel
     // (`Game_HandleEvent` 29 and 33), not a string in `IAM\Sneak`.
-    std::map<std::uint32_t, std::string> sneakRows;
     // THE ADDRESS MAP, watched. A screen whose script OPENS A PLACE is the whole
     // point of reading it - a reader: *"some scenes can be triggered only if an
     // entry on a terminal has been read"* - and ops 87/88 write a 791-bit map
@@ -1393,14 +1265,12 @@ int main(int argc, char** argv) {
     // Bar Zone 52', when his fourth dossier has been read, and the memo that
     // goes with it names the mission. Watched per frame and said once per
     // change, so a play log shows what a screen actually unlocked.
-    std::vector<std::uint8_t> addrSeen;
     // The row widgets `sub_42AAE0` switches off - past the object count, so
     // tag -1 and `0x40000001` set. Without it every one of the nine rows
     // draws its fill and the page is striped.
-    std::set<std::uint32_t> sneakHidden;
-    int sneakTold = 0;             // one line per run, not one per frame
-    int replySel = 0;            // which reply the player is on
-    int actionTold = 0;          // one line for a press that reaches nothing
+    sneakTold = 0;             // one line per run, not one per frame
+    replySel = 0;            // which reply the player is on
+    actionTold = 0;          // one line for a press that reaches nothing
     // THE ACTION BUTTON IS AN EDGE (omk-play 74). Bit 0x10 arrives as a LEVEL
     // - the world's repeat mask is 0, so a held key is set every frame - and
     // this remembers the previous frame's so the press fires once. See the
@@ -1409,18 +1279,16 @@ int main(int argc, char** argv) {
     // 0, so every bit arrives as a LEVEL and a held key is set every frame -
     // right for a walk, wrong for anything that COUNTS presses. This is the
     // previous frame's word; `edgeBits` below is the difference.
-    std::uint32_t prevBits = 0;
+    prevBits = 0;
     // `tab_special_move[]` as a TABLE rather than a string compare: a fired
     // move resolves to its ROW - the index the engine dispatches on and the
     // handler address it calls - so an unknown name comes back nullptr
     // instead of falling off the end of an if-chain. The shipped `.CTL` files
     // use 54 distinct names against the table's 66 rows.
-    omk::SpecialMoves specialMoves =
-        omk::SpecialMoves::loadJson(tb.empty() ? std::string() : tb + "/special_moves.json");
+    specialMoves = omk::SpecialMoves::loadJson(tb.empty() ? std::string() : tb + "/special_moves.json");
     // The sneak's CITY MAP tables - the four map rectangles and the fifteen
     // place overrides, both `.data` in the executable (`ui/citymap.h`).
-    const omk::CityMaps cityMaps =
-        omk::CityMaps::loadJson(tb.empty() ? std::string() : tb + "/city_maps.json");
+    cityMaps = omk::CityMaps::loadJson(tb.empty() ? std::string() : tb + "/city_maps.json");
     if (!cityMaps.valid())
         std::printf("sneak map: tables/city_maps.json not read - `Lire plan` will "
                     "bounce back, because no city can be matched\n");
@@ -1429,14 +1297,12 @@ int main(int argc, char** argv) {
                     "still work, but a fired move cannot name its row\n");
     // THE WEAPON TABLES `Shoot_InitWeapon` picks a row from - the rate, the
     // projectile's speed and what it deals (`actor/shootfire.h`).
-    const omk::ShootWeaponTable shootWeapons =
-        omk::ShootWeaponTable::loadJson(tb.empty() ? std::string() : tb + "/shoot_weapons.json");
+    shootWeapons = omk::ShootWeaponTable::loadJson(tb.empty() ? std::string() : tb + "/shoot_weapons.json");
     if (!shootWeapons.loaded())
         std::printf("shoot weapons: tables/shoot_weapons.json not read - shoot mode "
                     "will aim and never fire\n");
     // the LOOPING scene voices, keyed the way `Script_StopSound` matches them:
     // by (wav, node). Only loops are kept - a one-shot ends by itself.
-    std::map<std::pair<int,int>, int> sceneVoices;
     // omk-play 72: WHICH audio source is the one that will not stop. Every
     // start is labelled with its length, and `flushAudio` says how many
     // one-shots it does NOT clear - the streamed music is flushed on a switch
@@ -1455,22 +1321,21 @@ int main(int argc, char** argv) {
             std::printf("audio: %-14s %6.2f s  (%d, %d)  gain %.2f  peak %.3f\n",
                         what, secs, a, b, gain, static_cast<double>(peak));
     };
-    int         takeCandidate = -1;      // `dword_53AF6C`, MDACTION's pick
+    takeCandidate = -1;      // `dword_53AF6C`, MDACTION's pick
     // Which HEIGHT the take was, kept from MDACTION so the put-back can match
     // it. The engine keeps the same thing in `dword_53AE5C` - `(ret == 2) ? 3
     // : 0`, which `sub_46B530` turns back into a group (omk-play 69).
-    bool        takeWasLow = true;
-    int         heldInHand = -1;         // the object drawn on the left hand: from MDGETOBJ to the release
+    takeWasLow = true;
+    heldInHand = -1;         // the object drawn on the left hand: from MDGETOBJ to the release
     // The spoken line's SCROLL, in pixels, and the overflow it is clamped to -
     // `dword_6A52C0` and `dword_53AE24`. One pixel a tick while held, which is
     // what `Dialog_TickUI` does with input bits 4 (up) and 8 (down).
-    int lineScroll = 0, lineOverflow = 0;
-    bool menuShown = false;
-    int  lastDlgCam = -2;
+    lineScroll = 0, lineOverflow = 0;
+    menuShown = false;
+    lastDlgCam = -2;
     // The absolute world cameras the script has set, as rays: during the
     // beat before a conversation they are what aims at the character.
-    std::vector<omk::CameraRay> worldRays;
-    int lastRayCam = -2;
+    lastRayCam = -2;
     // THE CAMERA EDITING - camera mode 13. Every `scx.play*` handler ends by
     // asking `ScriptObject_HasCamEditing` and, when the object has a chunk-10
     // editing linked, requests mode 13 with the call's last field as the
@@ -1484,24 +1349,21 @@ int main(int argc, char** argv) {
     // - a cut back. The Session knows which editing is driving and what it
     // says; the travel FROM the previous camera is here, because this is
     // where the previous camera is: the one last drawn.
-    int   editingShown = -1;                  // the announced editing's program
-    bool  haveLastDrawn = false;              // a 3D camera has been drawn
-    float lastEye[3] = {0, 0, 0}, lastAt[3] = {0, 0, 0}, lastFov = 75.0f;
+    editingShown = -1;                  // the announced editing's program
+    haveLastDrawn = false;              // a 3D camera has been drawn
+    lastFov = 75.0f;
     // (struct CtlSpriteInst: `backends/sdl/playtypes.h`, todo/play-split.md)
-    std::vector<CtlSpriteInst> ctlSprites;
-    int   ctlFxState = -1; float ctlFxFrame = -1.0f;
+    ctlFxState = -1; ctlFxFrame = -1.0f;
     // ...and the MELEE OPPONENT's, from his own channel (`todo/fight-mode.md`
     // 15.10): `Cef_TickEffects` runs on every channel the engine ticks, and
     // `Actor_TickPlayerAndOpponent` ticks two.
-    std::vector<CtlSpriteInst> foeSprites;
-    int   foeFxState = -1; float foeFxFrame = -1.0f;
-    long  foeSpritesDrawn = 0;       // particle-frames placed on his bones
-    long  foeSpritesPooled = 0;      // ...of which the sprite had a texture slot
-    omk::ParticleField ctlField; omk::Geometry ctlGeo;
-    bool  takeCam = false;            // `C+12 == 1`: the mode-1 camera is live
-    int   takeCamPhase = 0;           // 1 travelling in, 2 holding, 3 travelling back
-    float takeCamClock = 0.0f;        // frames since the request
-    float takeCamFromEye[3] = {0, 0, 0}, takeCamFromAt[3] = {0, 0, 0}, takeCamFromFov = 75.0f;
+    foeFxState = -1; foeFxFrame = -1.0f;
+    foeSpritesDrawn = 0;       // particle-frames placed on his bones
+    foeSpritesPooled = 0;      // ...of which the sprite had a texture slot
+    takeCam = false;            // `C+12 == 1`: the mode-1 camera is live
+    takeCamPhase = 0;           // 1 travelling in, 2 holding, 3 travelling back
+    takeCamClock = 0.0f;        // frames since the request
+    takeCamFromFov = 75.0f;
     // preset 1: 62 cm to his side, 75 cm above the pelvis, 12 cm back, looking
     // 12 cm up and 50 cm ahead of him. In the mode-0 convention the follow
     // camera uses (`point = subject - R(yaw) * offset`, mode 0 = 3 m behind).
@@ -1515,10 +1377,10 @@ int main(int argc, char** argv) {
     // eye (-39.3701, 78.7402, 0) = 1.00 m and 2.00 m, target the actor,
     // subjects 0 and 0, over `dword_930818 = 60.0` frames. The take's
     // preset 1 was the only one wired, as constants.
-    float takeCamEye[3] = {kTakeCamEye[0], kTakeCamEye[1], kTakeCamEye[2]};
-    float takeCamAt[3]  = {kTakeCamAt[0], kTakeCamAt[1], kTakeCamAt[2]};
-    float takeCamFov    = kTakeCamFov;
-    float takeCamTravel = kTakeCamTravel;
+    takeCamEye[0] = kTakeCamEye[0], takeCamEye[1] = kTakeCamEye[1], takeCamEye[2] = kTakeCamEye[2];
+    takeCamAt[0] = kTakeCamAt[0], takeCamAt[1] = kTakeCamAt[1], takeCamAt[2] = kTakeCamAt[2];
+    takeCamFov = kTakeCamFov;
+    takeCamTravel = kTakeCamTravel;
     auto takeCamRequest = [&](int phase) {
         takeCamPhase = phase;
         takeCamClock = 0.0f;
@@ -1540,8 +1402,8 @@ int main(int argc, char** argv) {
     // overhead presets (eye 3 m above him, fov 75); 16 and 0 travel back to the
     // follow camera, the take's own way home. `fallCamMode` is `C+12` for these
     // four; the `C+140` test on 18 is not modelled (untraced) and reads 0.
-    int fallCamMode = 0;
-    bool fallBanded = false;   // `+1304` set this fall (1, 3 or 4) - once per fall
+    fallCamMode = 0;
+    fallBanded = false;   // `+1304` set this fall (1, 3 or 4) - once per fall
     auto fallCamRequest = [&](int mode, bool flag, const char* who, int actorState) {
         static constexpr float kOverEye[3] = {0.0f, 118.1102f, -3.937f};
         static constexpr float kOverAt[3]  = {0.0f, 0.0f, 0.0f};
@@ -1565,7 +1427,7 @@ int main(int argc, char** argv) {
         std::printf("frame %ld: %s - sub_414DE0 camera %d over %.0f frames\n",
                     session.frameNo(), who, mode, double(travel));
     };
-    float lastRoll = 0.0f;              // the camera ROLL, blended like the fov
+    lastRoll = 0.0f;              // the camera ROLL, blended like the fov
     // THE CAMERA HOLDS WHEN AN EDITING ENDS, and the fall-back this used to do
     // is a PREFERENCE that ships off. `Game_Frame` (05_sys.c 2144) requests
     // mode 0 on the player only under
@@ -1586,14 +1448,14 @@ int main(int argc, char** argv) {
     // 73-frame black stretch mid-cutscene - because the Session still held
     // camera 2158, AREA 118's, from the area the player had just left
     // (next-tasks 5).
-    bool  musicPaused = false;          // the pause screen suspends the sound
-    bool  holdEditCam = false;          // mode 13 with no active camera: hold
-    unsigned long heldUnderRequests = 0;  // the Session's request count when the hold began
-    bool  editFromKnown = false;              // ...and it was captured for the travel
-    float editFromEye[3] = {0, 0, 0}, editFromAt[3] = {0, 0, 0}, editFromFov = 75.0f;
-    float editFromRoll = 0.0f;
-    bool  rollTold = false;
-    int fxSpriteWas = -2;
+    musicPaused = false;          // the pause screen suspends the sound
+    holdEditCam = false;          // mode 13 with no active camera: hold
+    heldUnderRequests = 0;  // the Session's request count when the hold began
+    editFromKnown = false;              // ...and it was captured for the travel
+    editFromFov = 75.0f;
+    editFromRoll = 0.0f;
+    rollTold = false;
+    fxSpriteWas = -2;
 
     OMK_HEAPCHECK("before adventure mode");
     // ---- ADVENTURE MODE ------------------------------------------------
@@ -1613,8 +1475,6 @@ int main(int argc, char** argv) {
     // editing owns the frame. `player.anim.release` (op 105) is a no-op in
     // the Session, so the program ending is the signal it leaves - which is
     // also what `Actor_TickScxDriven` keys on (the program's `IsBusy`).
-    std::unique_ptr<omk::PlayerController> player;
-    omk::CtlFile playerCtl;
     // `Player_GoToMove` behind `player.move` (63) and `player.move.wait` (89)
     // - `PlayerController::goToMove`. Neither reached the walker until
     // 2026-09-08: op 63 was recorded and dropped, and 89 ran on because no
@@ -1628,7 +1488,7 @@ int main(int argc, char** argv) {
     // (0x004200F0) checks them after `Actors_TickAll` and raises event 3 the
     // frame the channel's current entry is in some other group - the release
     // below, before the next pump.
-    int moveWaitCtx = -1, moveWaitGroup = -1;
+    moveWaitCtx = -1, moveWaitGroup = -1;
     session.setMoveHook([&](int groupId, int ctx) -> bool {
         if (!player) return false;
         if (!player->goToMove(groupId)) {
@@ -1650,35 +1510,23 @@ int main(int argc, char** argv) {
                     ctx >= 0 ? ", the script parked until the channel leaves it" : "");
         return true;
     });
-    std::vector<std::byte> playerCtlData;
-    std::vector<omk::Mesh> playerMeshes;
-    omk::MeshNameIndex playerBoneIdx;      // rebuilt wherever `playerMeshes` is
-    std::vector<omk::Texture> playerTex;
-    omk::Geometry playerRest, playerPosed;
     // ...or, where the renderer poses bodies, his REST drawn with one affine a
     // mesh (`todo/gpu-skinning.md` step 5). `playerPosedFrame` is the last
     // frame his corners were built on the CPU - what a corner reader must check.
-    std::vector<float> playerAffine;
-    long playerPosedFrame = -1;
-    std::vector<omk::CollisionSphere> playerSpheres;   // the crowd push tests these
-    float playerReach = 0.0f;                           // his model's +88
-    omk::TriangleSoup playerSoup;
+    playerPosedFrame = -1;
+    playerReach = 0.0f;                           // his model's +88
     // ...and each of its triangles' MESH FLAGS, through the slots' `soupMesh`
     // (`todo/swimming.md`): what the step refusal and the water entry read.
     // Rebuilt whenever the soup it was built for is not the one there now.
-    std::vector<std::uint32_t> playerSoupFlags;
-    const float* soupFlagsFor = nullptr;
-    std::size_t  soupFlagsSize = 0;
+    soupFlagsFor = nullptr;
+    soupFlagsSize = 0;
     // ...and its probe GRID, rebuilt wherever `playerSoup` is refilled: the
     // shadows and the crowd's feet probe it every frame, and a linear scan of
     // the city per bone was most of the frame (todo/optimization.md step 2)
-    omk::SplitSoupGrid playerGrid;
     // Which of `playerSoup`'s triangles belong to a mesh that has moved since the
     // sets last changed: those go in `playerGrid.moving`, rebuilt every moving
     // frame, the rest in `playerGrid.fixed`, rebuilt only when this changes
     // (todo/optimization.md step 7c).
-    std::vector<std::uint8_t> playerMovingTri, playerFixedTri;
-    std::vector<std::uint32_t> playerMovingIds;   // the same set, ascending: the moving layer's build list
     const auto rebuildFixedGrid = [&]() {
         playerFixedTri.assign(playerMovingTri.size(), 0);
         for (std::size_t t = 0; t < playerMovingTri.size(); ++t) playerFixedTri[t] = !playerMovingTri[t];
@@ -1694,17 +1542,13 @@ int main(int argc, char** argv) {
     // True while `playerSoup` / `playerSteep` are exactly the shown slots' soups
     // concatenated - set by a full merge, cleared by a slot load - so a moving
     // mesh can be copied in at its offset instead of re-merging everything.
-    bool mergedValid = false;
+    mergedValid = false;
     // the same merge for the STEEP faces, so the controller can stand on a
     // slope and slide off it instead of finding no floor (omk-play 67)
-    omk::TriangleSoup playerSteep;
     // ...and ITS two-layer grid, kept exactly as `playerGrid` is kept over
     // `playerSoup` - rebuilt wherever `playerSteep` is refilled, the moving
     // layer from the steep triangles the motion patch re-places. The player's
     // body sweep and the camera's sweep walk it (todo/optimization.md step 11).
-    omk::SplitSoupGrid playerSteepGrid;
-    std::vector<std::uint8_t> steepMovingTri, steepFixedTri;
-    std::vector<std::uint32_t> steepMovingIds;
     const auto rebuildSteepFixedGrid = [&]() {
         steepFixedTri.assign(steepMovingTri.size(), 0);
         for (std::size_t t = 0; t < steepMovingTri.size(); ++t) steepFixedTri[t] = !steepMovingTri[t];
@@ -1715,23 +1559,19 @@ int main(int argc, char** argv) {
                                                     std::span<const std::uint32_t>(steepMovingIds));
         playerSteepGrid.useParts = false;
     };
-    std::string playerModel, playerCtlName;
-    bool  playerReady = false, adventure = false, followCam = false;
+    playerReady = false, adventure = false, followCam = false;
     // A `scx.play.player` program owns his body right now (op 46/90).
-    bool  playerProgram = false;
-    bool  playerProgramWas = false;   // ...and did last frame, for the hand-back
-    bool  mirrorLive = false;         // the set's mirror is reflecting, said once
-    bool  mirrorSeen = false;         // ...and has actually covered a pixel
-    float playerHeadAt[3] = {0, 0, 0};   // the player's `Tete`, for subject kinds 0/1
-    float playerHeadRise = 0.0f;         // the DRAWN head over the pelvis (Y up), the swim log
-    bool  playerHeadKnown = false;
-    std::vector<float> playerMeshAt;     // ...and every mesh, for the shadow
-    std::vector<float> playerMeshRot;    // ...and each one's world rotation, nine
+    playerProgram = false;
+    playerProgramWas = false;   // ...and did last frame, for the hand-back
+    mirrorLive = false;         // the set's mirror is reflecting, said once
+    mirrorSeen = false;         // ...and has actually covered a pixel
+    playerHeadRise = 0.0f;         // the DRAWN head over the pelvis (Y up), the swim log
+    playerHeadKnown = false;
                                          // floats a mesh like `Staged::meshRot` -
                                          // what the hit sweep turns his box by
-    bool  playerMeshAtKnown = false;
-    int   placementSeen = 0;      // Session::placementSeq() as last consumed
-    long  heldFrames = 0;         // frames under player.anim.hold
+    playerMeshAtKnown = false;
+    placementSeen = 0;      // Session::placementSeq() as last consumed
+    heldFrames = 0;         // frames under player.anim.hold
     // The `media.play` SUBTITLE: `Subtitle_Show(unk_4E6268)` is step 13 of
     // the handler (todo/pending/E1.md 1) - the ZVO record's +280 description,
     // `{C}`-prefixed when the player is in ACTOR_STATE 3 or 15, on screen for
@@ -1739,9 +1579,8 @@ int main(int argc, char** argv) {
     // readable/src/05_sys.c). The airlock's line 410 is the first the port
     // shows: its voice is a JINGOFF3 substitute, and the TEXT is what the
     // player reads.
-    std::string mediaText;
     // In FRAMES AT 30 HZ, run down by the delta (todo/sixty-fps.md 2)
-    double mediaTextFrames = 0;
+    mediaTextFrames = 0;
     // THE MEDIA BITMAP - `media.play` on a kind-16 DOCUMENT.
     //
     // `if (rec[+2] == 16)` takes the other arm entirely: build
@@ -1755,29 +1594,27 @@ int main(int argc, char** argv) {
     // nothing else - the words are in `IMAGES/ZVOG001.BMP`, 640x480 with the
     // logo on black. Nothing here drew it, which is why the Bowie opening
     // came up without its title (`todo/omk-play.md` 59).
-    omk::Surface mediaBmp;
-    float playerFeet = 0.0f;
-    bool  playerFeetKnown = false;
+    playerFeet = 0.0f;
+    playerFeetKnown = false;
     // ...AND THE PELVIS TRANS THE ANCHOR WAS LATCHED AT, which is the whole of
     // `todo/player-vertical.md` step 1. `playerFeet` is a POSE's lowest corner
     // and every pose carries its own pelvis translation, so an anchor latched
     // without recording that translation has no shared origin with the drop
     // measured below - see the long note at the latch.
-    float playerRootRef = 0.0f;
-    bool  playerStandLatched = false;   // the anchor came from H_STAND, not from whatever was up
+    playerRootRef = 0.0f;
+    playerStandLatched = false;   // the anchor came from H_STAND, not from whatever was up
     // The model-space x/z of the hierarchy root - the PELVIS - which is what
     // a turn must pivot about. `HO1_FN`'s is (2.87, 17.94); rotating about
     // (0,0) instead swings him around a point half a metre away.
-    float playerRootXZ[2] = {0.0f, 0.0f};
-    float lastRootDrop = 0.0f;         // the crouch's root drop as drawn last frame (the held prop rides it)
-    int   playerCamId = -2;
+    lastRootDrop = 0.0f;         // the crouch's root drop as drawn last frame (the held prop rides it)
+    playerCamId = -2;
     // The facing at the hand-over. `Actor_TickScxDriven` sets +1308 when
     // the player's program ends and `Actor_TickNpc` then derives the facing
     // from the node's matrix - which after a scene clip is the clip's root
     // rotation at the frame reached. Tracked while the program runs, since
     // `scene.load` replaces the runner and its clips with it.
-    float handoverFacing = 0.0f;
-    bool  handoverFacingKnown = false;
+    handoverFacing = 0.0f;
+    handoverFacingKnown = false;
     // A player program has RUN in this area: the hand-over is its ending,
     // not its absence. SCENE 55's startup script opens with `camera.set 0`
     // before any beat starts, so a camera-only signal fired a frame into
@@ -1785,16 +1622,15 @@ int main(int argc, char** argv) {
     // `player.become 49` - the first headless run showed exactly that.
     // Reset on every area change; an area whose scene has no programs at
     // all (a plain arrival) needs no beat to end.
-    bool  playerDrivenSeen = false;
-    int   playerDrivenArea = -1;
-    double frameSec = 1.0 / 30.0;
+    playerDrivenSeen = false;
+    playerDrivenArea = -1;
+    frameSec = 1.0 / 30.0;
     // GAME TIME in frames at 30 Hz: the sum of the deltas, so it stands still
     // under the pause and runs at the same speed at any presentation rate.
     // `n` counts PRESENTED frames and is the clock of the harness and the
     // log, never of anything the game times (todo/sixty-fps.md 2).
-    double gameClock = 0.0;
+    gameClock = 0.0;
     // (struct HoldRun: `backends/sdl/playtypes.h`, todo/play-split.md)
-    std::vector<HoldRun> holds;
     {
         std::string cur;
         for (char c : holdStream + ",") {
@@ -1815,7 +1651,7 @@ int main(int argc, char** argv) {
             cur.clear();
         }
     }
-    long handoverFrame = -1;
+    handoverFrame = -1;
 
     OMK_HEAPCHECK("before interface sounds");
     // ---- the INTERFACE SOUNDS.
@@ -1825,15 +1661,9 @@ int main(int argc, char** argv) {
     // opening. The start menu's are 1, 2, 0, which the table resolves to
     // `men002`, `men003`, `men001`. Both halves were already lifted and
     // nothing was playing them.
-    auto& sndMove = game.audio.sndMove;
-    auto& sndConfirm = game.audio.sndConfirm;
-    auto& sndBack = game.audio.sndBack;
-    auto& optSndMove = game.audio.optSndMove;
-    auto& optSndConfirm = game.audio.optSndConfirm;
-    auto& optSndBack = game.audio.optSndBack;
-    const omk::UiWalk* optWalkSeen = nullptr;   // the walk of 29 the options were opened for
-    bool optEntered = false;                    // focused for this visit to panel 0x004CF420
-    std::pair<int, int> pendingDisplay{0, 0};   // options row 2, served between frames
+    optWalkSeen = nullptr;   // the walk of 29 the options were opened for
+    optEntered = false;                    // focused for this visit to panel 0x004CF420
+    pendingDisplay = std::pair<int, int>{0, 0};   // options row 2, served between frames
     const auto loadSlot = [&](int screen, int slot) {
         const std::string& nm = w.soundName(screen, slot);
         if (nm.empty()) return std::vector<float>{};
@@ -1842,7 +1672,6 @@ int main(int argc, char** argv) {
         return wavToDevice(omk::DataFs::readPath(*path), kDeviceRate);
     };
 
-    SdlFrontend front;
     // fullscreen is a creation flag for whichever window comes up below
     front.setFullscreen(fullscreenFlag >= 0 ? fullscreenFlag != 0 : settings.fullscreen);
     comp.setDisplay(dispW, dispH);
@@ -1874,9 +1703,9 @@ int main(int argc, char** argv) {
     // finished picture through the swapchain. That readback is the cost the
     // scene viewer's `--vulkan` avoids by presenting the attachment directly,
     // and it cannot be avoided while anything is composited on the CPU.
-    SDL_Window* vkWin = nullptr;
-    omk::Renderer* vkRen = nullptr;
-    omk::Renderer* worldVk = nullptr;   // --world-vulkan, the offscreen harness
+    vkWin = nullptr;
+    vkRen = nullptr;
+    worldVk = nullptr;   // --world-vulkan, the offscreen harness
 #if defined(OMK_VULKAN)
     if (!forceSoftware && !worldVulkan) {
         if (SDL_Init(SDL_INIT_VIDEO) == 0) {
@@ -1923,8 +1752,8 @@ int main(int argc, char** argv) {
     // on the CPU (`glesPresentSurface`); presenting the world without the
     // readback is G6. The window is whatever size the host gives - 960x544 on
     // a Vita - and the frame is scaled into it at its own aspect.
-    SDL_Window* glWin = nullptr;
-    omk::Renderer* glRen = nullptr;
+    glWin = nullptr;
+    glRen = nullptr;
     (void)glWin;   // read only by the OMK_GLES blocks
 #if defined(OMK_GLES)
     if (!vkRen && !forceSoftware) {
@@ -2016,7 +1845,7 @@ int main(int argc, char** argv) {
                           : "the software reference has none, --vulkan for it");
     // One place that decides where a finished framebuffer goes, so the movies,
     // the splash and the frame loop cannot drift apart about it.
-    double glSwapMs = 0.0;   // SDL_GL_SwapWindow's share, for the phase line
+    glSwapMs = 0.0;   // SDL_GL_SwapWindow's share, for the phase line
     (void)glSwapMs;
     const auto present = [&](const omk::Surface& pic) {
 #if defined(OMK_VULKAN)
@@ -2065,16 +1894,10 @@ int main(int argc, char** argv) {
     // The streaming and the LOOP live in `src/audio/music.h`, not here. A
     // frontend is a device; it must not be deciding when a track restarts.
     game.audio.adpcmTables = omk::AdpcmTables::loadJson(tb + "/adpcm.json");
-    const auto& adpcmTables = game.audio.adpcmTables;
-    auto& music = game.audio.music;
-    auto& playingTrack = game.audio.playingTrack;
     // The cutscene VOICES - `media.play` (op 92). `sub_41B200` plays one
     // through the morph streamer after a `Morph_Stop()`, so ONE at a time and
     // a second cuts the first (src/audio/voiceover.h).
-    auto& voiceLib = game.audio.voiceLib;
     voiceLib.load(fs);
-    auto& voices = game.audio.voices;
-    auto& voiceOverShot = game.audio.voiceOverShot;
 
     OMK_HEAPCHECK("before world");
     // ---- THE WORLD ------------------------------------------------------
@@ -2132,42 +1955,31 @@ int main(int argc, char** argv) {
     // the `.3DM` and its face vertices, the voice, and the camera solve that
     // says where a speaker no scene object drives is standing. The GEOMETRY
     // moved into `Staged`/`CharModel` above, one per actor (issue 41).
-    std::vector<omk::Mesh> speakerMeshes;
-    omk::NodeTracks speakerTracks;
     // The scene clip's frame the last time it was drawn, and the frame it was
     // on when the current line began - `Morph_Play` hands the morph player
     // the actor's clip AND its frame (rec[47]), and the blend-in eases from
     // that frame into the line (pose.h, BLENDING TWO POSES).
-    float sceneFrameLast = 0.0f, lineIdleFrame = 0.0f;
+    sceneFrameLast = 0.0f, lineIdleFrame = 0.0f;
     // the line's .3DM, for the FACE - the conversation's own bytes, shared
-    std::shared_ptr<const std::vector<std::byte>> speakerMorph;
-    std::string speakerModel, speakerVoice;
-    int voiceShot = -1;   // the line's voice in the mixer, for the press that cuts it
-    float speakerAt[3] = {0, 0, 0};      // the camera solve, a GROUND point
-    bool  speakerSolved = false;
-    bool  speakerReady = false;
-    int   speakerConv = -1;
+    voiceShot = -1;   // the line's voice in the mixer, for the press that cuts it
+    speakerSolved = false;
+    speakerReady = false;
+    speakerConv = -1;
     // Whether the player's actor is in DIALOGUE MODE, so the two sides of
     // `Actor_EnterDialogueMode` / `Actor_LeaveDialogueMode` are called once
     // each per conversation. See the transition below.
-    bool  dialogMode = false;
-    bool  shootMode  = false;      // ops 80/81, `actor/shootmode.h`
+    dialogMode = false;
+    shootMode = false;      // ops 80/81, `actor/shootmode.h`
 
     OMK_HEAPCHECK("before every body");
     // (struct CharModel: `backends/sdl/playtypes.h`, todo/play-split.md)
     // (struct CharBank: `backends/sdl/playtypes.h`, todo/play-split.md)
     // `std::map` is node-based, so a `Staged`'s pointer into these survives
     // every later insert.
-    std::map<std::string, CharModel> charModels;
     // (struct PropModel: `backends/sdl/playtypes.h`, todo/play-split.md)
-    std::map<std::string, PropModel> propModels;
-    omk::Geometry propGeo;                 // the shown props, in world space
     // Which model each of `propGeo`'s batches came from: the geometry is
     // built before the pool assigns the sections their bases, so a batch's
     // slot is resolved at submission through its owner.
-    std::vector<const PropModel*> propBatchOwner;
-    std::set<int> propsTold;               // one line per prop, not per frame
-    std::map<std::string, CharBank>  charBanks;
     // (struct Staged: `backends/sdl/playtypes.h`, todo/play-split.md)
     // OWNING POINTERS, not a vector of values: the Vulkan backend caches a
     // vertex buffer by (pointer, revision), so a `Staged` may never be moved
@@ -2175,15 +1987,10 @@ int main(int argc, char** argv) {
     // could reuse - `posed.revision` is taken from the global `worldGeoRev`
     // every frame it is drawn, so a reused address can never carry a
     // revision the backend has already seen.
-    std::vector<std::unique_ptr<Staged>> staged;
     // (struct PedJob: `backends/sdl/playtypes.h`, todo/play-split.md)
-    std::vector<PedJob> pedJobs;
 
     // (struct PedStaged: `backends/sdl/playtypes.h`, todo/play-split.md)
-    std::vector<std::unique_ptr<PedStaged>> pedStaged;
     // level-k tracks: the level-0 ones with every mesh index moved k skeletons on
-    std::map<std::pair<const omk::NodeTracks*, int>, omk::NodeTracks> pedLodTracks;
-    std::map<std::string, std::map<int, omk::Geometry>> pedLodRest;   // model -> root mesh -> its subtree's rest
     // The skeleton a set of tracks poses: the first track's mesh followed up
     // to its root. A model with one skeleton answers its only root.
     const auto skeletonRootWalk = [](const CharModel& mo, const omk::NodeTracks& t) -> int {
@@ -2322,9 +2129,8 @@ int main(int argc, char** argv) {
         return per.emplace(rootMesh, std::move(g)).first->second;
     };
     // (struct VehStaged: `backends/sdl/playtypes.h`, todo/play-split.md)
-    std::vector<std::unique_ptr<VehStaged>> vehStaged;
-    int vehDrawn = 0, vehLive = 0, vehStopped = 0;
-    long vehTold = -1;
+    vehDrawn = 0, vehLive = 0, vehStopped = 0;
+    vehTold = -1;
     // `sub_453A70`: the model's root sub-objects sorted by vertex+face count
     // DESCENDING - the LOD ladder. Sub-object 0 is what `sub_4544B0` hands
     // ambient traffic (`v16[1]`); the reserved slider takes sub-object 1
@@ -2359,16 +2165,13 @@ int main(int argc, char** argv) {
         }
         return best;
     };
-    std::map<std::pair<int, int>, omk::NodeTracks> pedTracks;   // (sex, clip slot) -> its tracks
     // bumped wherever `pedTracks` or `pedStaged` is cleared: a walker's cached
     // root / rest / feet (`PedStaged::cacheGen`) are then taken afresh
-    long pedCacheGen = 0;
-    std::vector<std::byte> pedAni;
-    std::string pedAniName;
-    int pedDrawn = 0, pedLive = 0, pedInAction = 0, pedIdle = 0, pedOffView = 0;
+    pedCacheGen = 0;
+    pedDrawn = 0, pedLive = 0, pedInAction = 0, pedIdle = 0, pedOffView = 0;
     // how many (walker, light) pairs actually reached this frame
-    int pedLit = 0;
-    long pedTold = -1;
+    pedLit = 0;
+    pedTold = -1;
     // THE SHOOT-MODE POSE. These characters carry no `.CTL` in any of the
     // three 9-byte slots, so nothing the actor runtime does can pose them:
     // `Shoot_ActorEnter` resolves their CHARACTER TYPE's group in the area's
@@ -2397,7 +2200,6 @@ int main(int argc, char** argv) {
     // once per `Shoot_ActorAction` and this has no AI asking again, so a
     // per-request seed is the same shape and keeps a still frame
     // reproducible. LABELLED as that.
-    std::map<int, std::vector<omk::PedClip>> shootClips;      // character type -> its group
     const auto shootClipFor = [&](int group, int action) -> const omk::PedClip* {
         if (pedAni.empty()) return nullptr;
         auto it = shootClips.find(group);
@@ -2575,71 +2377,47 @@ int main(int argc, char** argv) {
     // person, leaving an empty room (`todo/omk-play.md` 97).
     // (the mouse's sensitivities are the engine's own now - `mouseSensX` below)
 
-    bool shootCameraLive = false;
+    shootCameraLive = false;
     // The first-person AIM. Yaw is the player's own facing (the mouse turns
     // the body, which is what the shoot scheme's `Tourner` keys do too);
     // pitch is the camera's alone, since nothing in the 14-slot word carries
     // it and the body has no bone for it here. Clamped to +/-70 degrees, a
     // choice this port is making - the engine's own limit is untraced.
-    float shootPitch = 0.0f;
-    std::map<int, omk::ShootRecord> shootBrains;
+    shootPitch = 0.0f;
     // A GUNMAN'S SHOTS (`sub_424DE0`'s fire epilogue, below): which of them
     // has said how his weapon resolved, and how many bolts each has fired.
     // The jitter's `rand()` is the CRT's own generator from its default seed
     // - the engine's is one stream shared by every caller, so this is the
     // formula and not the engine's place in the sequence.
-    std::map<int, long> gunShots;
-    std::set<int> gunTold;
     // (struct GunClip: `backends/sdl/playtypes.h`, todo/play-split.md)
-    std::map<int, GunClip> gunClips;
     // (struct GunAnim: `backends/sdl/playtypes.h`, todo/play-split.md)
-    std::map<int, GunAnim> gunAnims;
-    std::map<int, int> gunCurType;       // the clip TYPE his last action started
     // ...or the clip SLOT the brain started (`sub_4272B0` case 9, the attack by
     // +108) - when set it wins over the type, and an action's type clears it
-    std::map<int, int> gunCurSlot;
     // THE PLAYER'S DEATH (`sub_423FC0`): the countdown `dword_4E975C` his death
     // clip runs for, and the gunmen told to stand down on their next tick
-    float playerDeathCountdown = 0.0f;
-    std::set<int> gunStandDown;
-    std::set<int> gunLooped;          // who has said his clip looped
+    playerDeathCountdown = 0.0f;
     // (struct GunAim: `backends/sdl/playtypes.h`, todo/play-split.md)
-    std::map<int, GunAim> gunAims;
-    std::set<int> gunAimTold;         // who has said his first aim
-    std::set<int> gunDrawnTold;       // whose gun has been said drawn
-    std::set<int> gunBarrelTold;      // whose barrel direction has been said
     // THE GAUGE'S OWN VALUE, `dword_90E100` - what `Hud_DrawBar` draws. It is
     // NOT his record's +92: `Shoot_Enter` seeds it, `sub_423A40` (a property 1
     // write, the medikits) and a hit he survives copy +92 into it, and the
     // killing hit returns before it is touched, so the bar keeps its last value.
-    int hudHealth = 0;
+    hudHealth = 0;
     // the CRT's `rand()` (MSVC: `seed * 214013 + 2531011`, bits 16..30) from
     // its default seed, drawn by the gunmen AND the melee AI - the engine's is
     // one stream too. Never the host's `std::rand()`, which is another
     // generator and is shared with whatever system library calls it.
-    std::uint32_t gunRandSeed = 1;
+    gunRandSeed = 1;
     // THE PLAYER'S SHOT (`actor/shootfire.h`, todo/shoot-mode.md 7h): his own
     // shoot record - the engine keeps one for him among the 100, and the
     // gate's three numbers live on it - the two one-shot globals, and the
     // projectile pool the request fills.
-    omk::ShootRecord playerShootRec;
-    omk::ShotLatch shotLatch;
     // the arm's aim angles, `dword_6579A0/A4` (`actor/shootaim.h`)
-    omk::ShootAim shootAim;
     // the first-person MOVER's block at `dword_6579B0` (`actor/shootmove.h`),
     // and the run it is on, for the log: frames and distance since it started
-    omk::ShootMover shootMover;
     // THE SHOOT HUD (`todo/shoot-mode.md` 8.3): screen 34's panel composed over
     // the frame while the mode runs - a walk of its own, so it takes no input -
     // the runtime texts its items' native callbacks produce, and
     // `dword_90E11C`, the ammo counter `Shoot_InitWeapon` and the shot write.
-    std::unique_ptr<omk::UiWalk> hudWalk;
-    omk::HudBar hudBar;                  // `Hud_DrawBar` mode 0, the health gauge
-    omk::Radar radar;                    // 0x42F000, screen 34's minimap
-    omk::Map2d shootMap;                 // MAP2D\<+106>.MPT - the noise's floors
-    omk::ShootField shootField;          // `sub_436260`'s distance field toward the player
-    std::set<int> gunCellSeeded;
-    std::set<int> gunEntryPending;   // his entry action, waiting for a floor         // gunmen whose +136/+140 came off the grid
     // THE NOISE (`sub_4246E0`, `actor/shoot.h`): at a shot's muzzle, and where
     // a bolt stops on the world or on a body. Every gunman with a brain is a
     // record, tested in actor order (the engine's is slot order). His FLOOR
@@ -2697,21 +2475,18 @@ int main(int argc, char** argv) {
                     double(at[0]), double(at[1]), double(at[2]), nf, tested, dead,
                     unentered, alertedAlready, far, firstCells, heard);
     };
-    std::map<std::uint32_t, std::string> hudRows;
-    int  hudAmmo = -1;
-    std::string hudTold;
-    long  shootMoveFrames = 0;
-    float shootMoveDist = 0.0f;
-    float shootMoveFrom[3] = {0.0f, 0.0f, 0.0f};
+    hudAmmo = -1;
+    shootMoveFrames = 0;
+    shootMoveDist = 0.0f;
     // `sub_47D370`'s sensitivities and its invert, options rows 23, 24 and 25
     // (`word_90E1AC` / `word_90E1AE` / `byte_90E1B0`, the header's +44/+46/
     // +48) out of the save header or the ini's MouseSensX / MouseSensY - the
     // defaults 20, 15 and off. The mouse and the turn keys share row 23.
-    const int  mouseSensX = settings.v.mouseSensitivityX;
-    const int  mouseSensY = settings.v.mouseSensitivityY;
+    mouseSensX = settings.v.mouseSensitivityX;
+    mouseSensY = settings.v.mouseSensitivityY;
     // `--invert-y` flips the row, as choosing it in the menu would
-    const bool mouseInverted = settings.v.mouseInverted != mouseInvertY;
-    bool shootPitchDirty = false;   // MDLUP / MDLDO moved the pitch this frame
+    mouseInverted = settings.v.mouseInverted != mouseInvertY;
+    shootPitchDirty = false;   // MDLUP / MDLDO moved the pitch this frame
     // THE RAISE (`actor/shootaim.h`): the player's pose for this frame with the
     // shoot aim layer over its upper body - every bone the table at 0x4C3798
     // marks takes `S_AUTOLK`'s grid (group 202's default) at the aim angles,
@@ -2827,8 +2602,7 @@ int main(int argc, char** argv) {
         }
         return omk::composePose(mo->meshes, one, 0, false);
     };
-    omk::ProjectilePool projectiles;
-    long shotsFired = 0;
+    shotsFired = 0;
     // `scptdata\shoot2.sfx`, which `Shoot_Enter` loads for its section A -
     // the SHOT SPRITES, looked up by the held gun's root mesh name - and the
     // gun's own model facts a shot needs: that name, and where its `tir` node
@@ -2836,16 +2610,12 @@ int main(int argc, char** argv) {
     // string at 0x4C2E4C) and `Actor_TickProjectiles` clones it for each shot,
     // linked under the HAND with its own +128 local - so the muzzle is the
     // hand's pose applied to `tir`'s local, and the bolt IS that mesh.
-    omk::SfxFile shootSfx;
     // ...and `Game_Start("shoot2.scx")`: the mode's LIBRARY, loaded into
     // `stru_930780` over `aventure.scx`, which is the scene `Sfx_TickAmbient`
     // resolves a shot effect's SOUND id in (`Scene_FindSoundIndex`) when the
     // emitter names no scene of its own - and the shot's never does.
-    std::unique_ptr<omk::ScxRuntime> shootRt;
     // (struct SfxSample: `backends/sdl/playtypes.h`, todo/play-split.md)
-    std::map<std::pair<const std::byte*, std::size_t>, SfxSample> sfxCache;
-    std::string sfxSceneWas;
-    const auto sfxPcm = [&sfxCache](std::span<const std::byte> wav) -> const SfxSample& {
+    const auto sfxPcm = [this](std::span<const std::byte> wav) -> const SfxSample& {
         const auto key = std::make_pair(wav.data(), wav.size());
         auto it = sfxCache.find(key);
         if (it == sfxCache.end()) {
@@ -2881,8 +2651,6 @@ int main(int argc, char** argv) {
         if (!sm.pcm->empty()) front.playSound(sm.pcm, false, gain * fxGain());
     };
     // (struct GunFacts: `backends/sdl/playtypes.h`, todo/play-split.md)
-    std::map<std::string, GunFacts> gunFacts;
-    std::string shotGunStem;          // the stem the player's bolts are cloned from
     const auto gunFactsFor = [&](const std::string& stem) -> const GunFacts& {
         auto it = gunFacts.find(stem);
         if (it != gunFacts.end()) return it->second;
@@ -2910,27 +2678,24 @@ int main(int argc, char** argv) {
         }
         return gunFacts.emplace(stem, g).first->second;
     };
-    long stagedEver = 0;                 // for the summary line
-    std::vector<int> stagedIds;
+    stagedEver = 0;                 // for the summary line
     // The pool is rebuilt on a COMPOSITION change, not on a size change: two
     // models with the same texture count swapping is exactly what a size test
     // cannot see.
-    std::uint64_t poolComposition = 1, poolBuiltFor = 0, poolTold = 0;
-    bool poolHasSprites = false, poolHasPlayer = false;
-    std::size_t playerTexBase = 0, spriteTexBase = 0;
+    poolComposition = 1, poolBuiltFor = 0, poolTold = 0;
+    poolHasSprites = false, poolHasPlayer = false;
+    playerTexBase = 0, spriteTexBase = 0;
     // sprite id -> its slot within the pool's sprite section, or -1
-    std::unordered_map<int, int> spriteSlot;   // absent = -1, as an unassigned slot was
     // The sprite ids the resident scene can actually name - what goes in the
     // pool, as opposed to everything that decoded.
-    std::set<int> spriteWanted, spritePooled;
-    bool poolOverflowTold = false;
-    const bool stagedProbe = std::getenv("OMK_STAGE_PROBE") != nullptr;
+    poolOverflowTold = false;
+    stagedProbe = std::getenv("OMK_STAGE_PROBE") != nullptr;
     // `engine: camera obstruction` - one line per frame from `sub_417070`.
-    const bool obstructProbe = std::getenv("OMK_CAM_OBSTRUCT_PROBE") != nullptr;
+    obstructProbe = std::getenv("OMK_CAM_OBSTRUCT_PROBE") != nullptr;
     // A DIAGNOSTIC for the sign of the scene call's Euler: CLAUDE.md 5's
     // rule is that leaving the game's space reflects one axis and so
     // reverses the sense of every rotation about it.
-    const float progYawSign = std::getenv("OMK_PROGYAW_NEG") ? -1.0f : 1.0f;
+    progYawSign = std::getenv("OMK_PROGYAW_NEG") ? -1.0f : 1.0f;
     // One `.3DO`/`.3DT` per MODEL NAME, loaded once and shared by every actor
     // wearing it.
     const auto charModelFor = [&](const std::string& name) -> CharModel* {
@@ -3041,8 +2806,7 @@ int main(int argc, char** argv) {
     // ...and that clip as a pose, at FRAME 0. The recipe is
     OMK_HEAPCHECK("before melee");
     // (struct FightRun: `backends/sdl/playtypes.h`, todo/play-split.md)
-    FightRun fightRun;
-    bool fightCamTold = false;        // one line when mode 14 takes the view
+    fightCamTold = false;        // one line when mode 14 takes the view
     const auto playerRecordSpan = [&]() {
         return state.raw().subspan(
             static_cast<std::size_t>(omk::GameState::kPlayerRecord),
@@ -3242,11 +3006,11 @@ int main(int argc, char** argv) {
             // input thread drawing once before the fight shifted every roll
             // by one, and a headless fight came out two ways, about one run
             // in four. Same stream as the gunmen's (the engine has one).
-            [&gunRandSeed] {
+            [this] {
                 gunRandSeed = gunRandSeed * 214013u + 2531011u;
                 return static_cast<int>((gunRandSeed >> 16) & 0x7FFFu);
             },
-            [&fightRun] { return static_cast<long>(fightRun.ms); });
+            [this] { return static_cast<long>(fightRun.ms); });
         fightRun.fight->setBodyTick([&](float dt, std::uint32_t word) {
             if (player) player->tick(dt, word);
         });
@@ -3330,8 +3094,7 @@ int main(int argc, char** argv) {
         }
         return t;
     };
-    std::vector<omk::Texture> pool;
-    std::size_t poolSize = 0;
+    poolSize = 0;
 
     // The 3D renderer, behind `PORTING` A2's boundary: the GPU one when the
     // machine has it, the software reference otherwise. Everything below
@@ -3339,8 +3102,7 @@ int main(int argc, char** argv) {
     // be swapped by assigning a pointer.
     OMK_HEAPCHECK("before effect sprites");
     // (struct SpriteTable: `backends/sdl/playtypes.h`, todo/play-split.md)
-    SpriteTable spriteTab;
-    const omk::SpriteLookup spriteLookup = [&spriteTab](int id) { return spriteTab.framesOf(id); };
+    spriteLookup = [this](int id) { return spriteTab.framesOf(id); };
     const auto loadSpritesInto = [&](SpriteTable& spriteTab, const std::string& scx) {
         const auto ap = fs.resolve("SCPTDATA/" + scx);
         if (!ap) return 0;
@@ -3369,8 +3131,7 @@ int main(int argc, char** argv) {
     // which a console's memory card takes most of a second over, on the frame
     // of the hand-over. The table a scene change starts from is this one; the
     // order global, fight, scene - and so every collision - is unchanged.
-    SpriteTable spriteBase;
-    int spriteBaseGlobal = 0, spriteBaseFight = 0;
+    spriteBaseGlobal = 0, spriteBaseFight = 0;
     // WHICH scene's sprites `spriteTex` currently holds. An effect names its
     // sprite by ID and `Sfx_TickAmbient` resolves that id through the SCENE
     // (`sub_4A5800`), and the ids are scene-local: `Grid.sfx` wants 9..12 and
@@ -3391,7 +3152,6 @@ int main(int argc, char** argv) {
     // and its 187 is a DEMON footstep where the library's 187 is SNEAKIN.WAV.
     // Searching the resident scene - what this did until 2026-09-05 - made
     // the grab silent and played a demon's step on the confirm.
-    std::unique_ptr<omk::ScxRuntime> globalRt;
     if (const auto gp = fs.resolve("SCPTDATA/aventure.SCX")) {
         globalRt = std::make_unique<omk::ScxRuntime>(omk::DataFs::readPath(*gp));
         if (!globalRt->valid()) globalRt.reset();
@@ -3414,14 +3174,12 @@ int main(int argc, char** argv) {
     // Loaded once and kept, rather than at `fight.begin`: the engine's
     // `Game_Start` is a load, and doing it here costs one read instead of one
     // per fight.
-    std::unique_ptr<omk::ScxRuntime> fightRt;
     if (const auto fp = fs.resolve("SCPTDATA/fight.SCX")) {
         fightRt = std::make_unique<omk::ScxRuntime>(omk::DataFs::readPath(*fp));
         if (!fightRt->valid()) fightRt.reset();
         std::printf("fight library: SCPTDATA/fight.SCX %s\n",
                     fightRt ? "loaded (Fight_Begin's Game_Start)" : "INVALID");
     }
-    std::string spriteScx;
     {
         const int glob = loadSpritesInto(spriteBase, "aventure.SCX");
         // ...then the FIGHT's, which `Fight_Begin`'s own `Game_Start` installs
@@ -3477,7 +3235,6 @@ int main(int argc, char** argv) {
         ++poolComposition;          // the sprite section of the pool changed
     };
 
-    omk::SoftwareRenderer worldSw;
     omk::Renderer& world = vkRen ? *vkRen
                          : glRen ? *glRen
                          : worldVk ? *worldVk
@@ -3498,15 +3255,11 @@ int main(int argc, char** argv) {
                     world.name());
         shadowQuality = 1;
     }
-    bool worldReady = false;
+    worldReady = false;
     // (struct WorldSlot: `backends/sdl/playtypes.h`, todo/play-split.md)
-    std::array<WorldSlot, 2> worldSlots;
-    std::string worldSet;            // the ACTIVE slot's stem - the set under his feet
-    std::size_t worldTexBase[2] = {0, 0};   // each slot's first index in `worldTex`
-    unsigned worldGen = 0;                  // bumped by every `rebuildWorld`: re-bake the tie
+    worldGen = 0;                  // bumped by every `rebuildWorld`: re-bake the tie
 
     // (struct Sky: `backends/sdl/playtypes.h`, todo/play-split.md)
-    Sky sky;
     // ---------------------------------------------------- THE SHADOWS
     //
     // Option row 5 *Affichage des ombres*. `sub_419060` loads
@@ -3515,22 +3268,20 @@ int main(int argc, char** argv) {
     // fixed set of BONES each frame - see `o3de/shadow.h` for the whole
     // mechanism. Loaded once here for the same reason the engine loads it
     // once: it is not a set's asset and no area change touches it.
-    const omk::ShadowModel shadowModel = omk::loadShadowModel(fs);
+    shadowModel = omk::loadShadowModel(fs);
     // Rebuilt every frame into this one object, outside the loop so the
     // revision accumulates - the same rule `fxGeo` above states, and for the
     // same backend-side reason.
-    omk::Geometry shadowGeo;
-    std::size_t shadowTexBase = 0;
+    shadowTexBase = 0;
     // The worst distance from a walker's foot-pair midpoint to his own body
     // point this frame - the orphan-shadow detector (see the ped loop).
-    float shadowFootOffMax = 0.0f, pedFootOffMax = 0.0f;
+    shadowFootOffMax = 0.0f, pedFootOffMax = 0.0f;
     // The worst vertical spread inside ONE blob - 0 for every classic blob by
     // construction, nonzero for a fitted one wherever the ground is not flat.
-    float shadowSpreadMax = 0.0f, shadowSpreadPlayer = 0.0f;
-    long shadowBlobsDrawn = 0;
-    bool shadowTold = false, shadowLightTold = false, lightsTold = false;
-    float shimmerClock = 0.0f;   // `dword_907310`, wrapped at 256
-    std::vector<omk::DecorSoup> worldDecors; // every LOADED slot's soup, for decorUnder
+    shadowSpreadMax = 0.0f, shadowSpreadPlayer = 0.0f;
+    shadowBlobsDrawn = 0;
+    shadowTold = false, shadowLightTold = false, lightsTold = false;
+    shimmerClock = 0.0f;   // `dword_907310`, wrapped at 256
     // A set's geometry is REBUILT on every area change, and a fresh
     // Geometry's revision is 0 - the same value the previous set was cached
     // under by the Vulkan backend, which keys its vertex buffer on the
@@ -3539,9 +3290,8 @@ int main(int argc, char** argv) {
     // software renderer, which reads the Geometry directly, drew the alley.
     // The particle geometry hit the identical fault on 2026-09-02; the cure
     // is the same - a revision that only ever climbs.
-    std::uint64_t worldGeoRev = 0;
-    std::vector<omk::Texture> worldTex;     // the shown slots' textures, slot 0 first
-    long worldFrames = 0;
+    worldGeoRev = 0;
+    worldFrames = 0;
     // The particles' quads, REBUILT every frame into this one object. It lives
     // outside the frame loop so `Geometry::revision` accumulates: the Vulkan
     // backend caches a vertex buffer by pointer and revision, and a
@@ -3549,7 +3299,6 @@ int main(int argc, char** argv) {
     // frame, so the GPU drew the first frame's particles for ever while the
     // software path animated - the posed-character bug over again, one level
     // out, because this geometry is rebuilt rather than mutated.
-    omk::Geometry fxGeo;
     // Where the scene's character is this frame - his model origin, the
     // pelvis - for set pieces linked to him. `sub_450FC0` case 2 finds an
     // actor by the first THREE letters of its name, uppercased ('HO1' for
@@ -3560,8 +3309,7 @@ int main(int argc, char** argv) {
     // the runner ticks before the pose is composed. Type 3 (the PLAYER,
     // `unk_8F5EA0`) has no counterpart in this viewer and is left to the
     // runner's absolute fallback, which setpiece.h labels.
-    float actorAt[3] = {0, 0, 0};
-    bool  actorKnown = false;
+    actorKnown = false;
     session.sceneMutable().setPieceLinks(
         [&](int type, std::uint32_t id, omk::PieceLink& L) -> bool {
             if (type != 2) return false;
@@ -3591,14 +3339,11 @@ int main(int argc, char** argv) {
             L.hasMatrix = true;   // identity: the facing is unported
             return true;
         });
-    int  lastCamera = -2;
+    lastCamera = -2;
     // (struct SetLoad: `backends/sdl/playtypes.h`, todo/play-split.md)
-    std::shared_ptr<SetLoad> setLoads[2];
     // what each slot was last ASKED for - not `WorldSlot::stem`, which is what
     // is IN it: a set that does not resolve is asked for once, not every frame
-    std::string slotAsked[2];
-    int slotAskedArea[2] = {-1, -1};
-    const bool syncSets = omk::envSet("OMK_SYNC_SETS");   // A/B only
+    syncSets = omk::envSet("OMK_SYNC_SETS");   // A/B only
     // THE LOAD HELD FOR THE SET (`Session::setLoadGate`). A console's card and
     // A9 took 1.3 s over Anekbah where the slices give 0.57, and the frame
     // that brought the set in waited 727 ms for the rest (2026-09-30). With
@@ -3609,15 +3354,15 @@ int main(int argc, char** argv) {
 #if defined(__vita__)
     const bool loadGate = !syncSets && !omk::envSet("OMK_NO_LOAD_GATE");
 #else
-    const bool loadGate = !syncSets && omk::envSet("OMK_LOAD_GATE");
+    loadGate = !syncSets && omk::envSet("OMK_LOAD_GATE");
 #endif
     // (a test's slow card: the job sleeps this long first - desktop only)
-    const int loadDelayMs = std::getenv("OMK_LOAD_DELAY_MS") ? std::atoi(std::getenv("OMK_LOAD_DELAY_MS")) : 0;
+    loadDelayMs = std::getenv("OMK_LOAD_DELAY_MS") ? std::atoi(std::getenv("OMK_LOAD_DELAY_MS")) : 0;
     session.setVoiceToDevice([](const std::vector<std::int16_t>& pcm, int channels) {
         return resampleToDevice(pcm, channels, 22050, kDeviceRate);
     });
     if (loadGate)
-        session.setLoadGate([&setLoads](int slot) {
+        session.setLoadGate([this](int slot) {
             const auto& L = setLoads[slot & 1];
             return !L || !L->job || L->job->ready();
         });
@@ -4098,9 +3843,8 @@ int main(int argc, char** argv) {
     std::printf("screen %d. arrows move, ENTER confirms, TAB closes, "
                 "ESC opens the pause screen.\n", screenId);
 
-    omk::HostInput host;
-    omk::Surface fb(dispW, dispH, 0);
-    long n = 0;
+    fb = omk::Surface(dispW, dispH, 0);
+    n = 0;
     // WAIT FOR THE KEY THAT SKIPPED THE MOVIE TO COME UP. Any key now ends a
     // movie and ESC also quits, so one press did both: skipped the last movie
     // and closed the menu behind it - "0 frames presented", with the window
@@ -4110,22 +3854,20 @@ int main(int argc, char** argv) {
         if (host.held.empty() && host.pad.buttons == 0) break;   // pad buttons too
         SDL_Delay(10);
     }
-    Uint32 lastMs = SDL_GetTicks();
+    lastMs = SDL_GetTicks();
     // the interface's clock: the wall's, or a headless run's frames at 30 a second
     const auto uiClockMs = [&]() -> long {
         if (frames > 0) return n * 1000 / 30;
         return static_cast<long>(SDL_GetTicks());
     };
-    Uint32 fpsSince = lastMs, fpsLastMs = lastMs, fpsWorst = 0;
-    int    fpsFrames = 0;
+    fpsSince = lastMs, fpsLastMs = lastMs, fpsWorst = 0;
+    fpsFrames = 0;
     // Where `Script_Display3DSprite` puts a sprite: the active camera's
     // TARGET, read by the handler on every tick it runs (program.h has the
     // trace; the XYZ table it would prefer is never written). The runner is
     // handed the camera the LAST frame drew with - one frame behind, since
     // the script ticks before this frame's camera is settled.
-    float spriteAnchor[3] = {0.0f, 0.0f, 0.0f};
-    bool  spriteAnchorSet = false;
-    std::map<int, long> spriteLogged;     // row -> the link tick already reported
+    spriteAnchorSet = false;
     // ---- THE PLAYER'S DAMAGE, from the HIT onward ----
     // `sub_4240E0`'s (a bolt) and `sub_423B10`'s (a strike - the dogs' bite,
     // `todo/released-spectres.md` step 5) player arms are the SAME from the
@@ -4213,19 +3955,18 @@ int main(int argc, char** argv) {
                                                   "CANNOT SHOW a roll"
                                                 : "TIPS the view 2 degrees");
     };
-    std::set<std::string> motionLogged;   // mesh/pool pairs already reported
     // The 30 Hz pacer's next deadline, in seconds on the performance counter
     // (see the cap at the bottom of this loop).
-    double paceNext = 0.0;
+    paceNext = 0.0;
     // THE FRAME'S PHASES, timed - an instrument for the Vita (2026-09-18: the
     // city "unplayable", and the SLOW FRAME line below gives only the total).
     // Four spans on the performance counter: the simulation and the draw
     // submission up to the readback, the readback itself (on GLES the wait for
     // the GPU), the CPU compose after it, and the present with its swap.
     // Averaged over 60 frames and printed as one `frame phases:` line.
-    const double phaseHz = static_cast<double>(SDL_GetPerformanceFrequency());
+    phaseHz = static_cast<double>(SDL_GetPerformanceFrequency());
     const auto phaseNow = [&] { return static_cast<double>(SDL_GetPerformanceCounter()) / phaseHz; };
-    double phTop = 0.0, phRb0 = -1.0, phRb1 = -1.0;
+    phTop = 0.0, phRb0 = -1.0, phRb1 = -1.0;
     // ...and a few NAMED spans inside them, summed the same way, so a slow
     // phase says which call it is (the Vita's start menu: ~600 ms of
     // "sim+draw" with no world drawn).
@@ -4233,24 +3974,19 @@ int main(int argc, char** argv) {
     // mark is the end of the section before it, the gaps are printed on a
     // frame over `OMK_MARKS_MS` (default 150) from the largest down. The named
     // spans covered 6 of a console's 200 ms city frame (2026-09-22).
-    std::vector<std::pair<const char*, double>> phMarks;
     const auto mark = [&](const char* name) { phMarks.emplace_back(name, phaseNow()); };
-    std::map<std::string, double> phSpan;
     // ...and every SECTION between two marks, summed over the 60-frame window
     // and printed with the spans: the per-frame breakdown prints only past
     // `OMK_MARKS_MS` and only when paced, so a console frame of 65 ms - over
     // budget and under 150 - left ~50 ms of it attributed to nothing
     // (2026-09-30, the Bowie sequence).
-    std::map<std::string, double> phSection;
     const auto spanned = [&](const char* name, auto&& fn) {
         const double a = phaseNow();
         fn();
         phSpan[name] += phaseNow() - a;
     };
-    double phSum[4] = {0, 0, 0, 0};
-    long phN = 0;
-    long phGpu = 0;                          // frames presented from the GPU
-    std::map<std::string, long> phKept;      // ...and why the others were not
+    phN = 0;
+    phGpu = 0;                          // frames presented from the GPU
     // THE FRAME LOOP - `PlayFrame::step` in `playframe.cpp` (todo/play-split.md).
     PlayFrame frame{
         .fr = fr,
@@ -4899,4 +4635,13 @@ int main(int argc, char** argv) {
                 session.zones().heightSkips());
     front.close();
     return 0;
+}
+
+// THE VIEWER, as one object (`todo/play-split.md` S3): what `main` held as
+// locals is `PlayState`'s members, and `main`'s body is `PlayState::run`. On
+// the heap, as its members are hundreds of containers and caches - the Vita's
+// main thread has a small stack.
+int main(int argc, char** argv) {
+    const auto ps = std::make_unique<PlayState>();
+    return ps->run(argc, argv);
 }
