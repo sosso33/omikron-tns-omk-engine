@@ -573,6 +573,24 @@ struct PlayState {
 
     int step();
 
+    // ---- `phaseInput`'s PARTS (todo/play-split.md) and the state they share: each
+    // was a local of the phase, and is assigned where it was declared, every turn
+    std::vector<std::pair<std::string, std::array<float, 3>>> motionAt{};   // was a function-local static
+    const std::array<float, 3> * motionAtFind(const std::string& name);
+    int inputPump();   // the pump, a new display size, the mouse's first move
+    void inputPause();   // ESC opens the pause screen; the last screen's close flushes the input
+    void inputTick();   // the pause flag, one frame of the game, the Session under a screen
+    void inputMotion();   // scripted object motion - the crates, the doors, the lifts
+    void inputSounds();   // adventure mode's and the scene's own sound effects
+
+    // ---- `phaseModes`'s PARTS (todo/play-split.md) and the state they share: each
+    // was a local of the phase, and is assigned where it was declared, every turn
+
+    void modesSound();   // the pause screen stops the sound; the voices
+    void modesDialogue();   // dialogue mode
+    int modesShoot();   // shoot mode
+    int modesQuitLoad();   // the quit asked for, and the pending load, served between pumps
+
     // ---- `phaseScreens`'s PARTS (todo/play-split.md) and the state they share: each
     // was a local of the phase, and is assigned where it was declared, every turn
     std::map<std::uint32_t, std::pair<int, int>> itemMoved{};   // was a function-local static

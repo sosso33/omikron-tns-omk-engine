@@ -37983,6 +37983,8 @@ def c_licence_headers():
     (2026-10-02), the control phase's parts.
     **514 -> 516**: `backends/sdl/playframe_screens_{rows,huds}.cpp`
     (2026-10-02), the screens phase's parts.
+    **516 -> 518**: `backends/sdl/playframe_{modes,input}_parts.cpp`
+    (2026-10-02), the modes and input phases' parts.
     """
     import glob as _g
     TAG = "SPDX-License-Identifier: GPL-3.0-or-later"
@@ -38012,7 +38014,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (516, [], 1, []), \
+           (518, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
