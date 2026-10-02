@@ -6,8 +6,9 @@ could be divided."* **Nothing here has been applied.** `play.cpp` is held by
 another session; this file is the design, and every step below is written so
 it can land one at a time between that session's commits.
 
-**Status 2026-10-02 (evening)**: S0-S2, **S3 (as S3a-S3f) and S4a are done**:
-`main` is three lines, `PlayState::run` twenty, `play.cpp` 57 (from 23069).
+**Status 2026-10-02 (night)**: S0-S2, **S3 (as S3a-S3f), S4a, S7a and S8a-c
+are done**: `main` is three lines, `PlayState::run` twenty, `play.cpp` 57
+(from 23069), and no phase is one function any more. S5 and S6 are left.
 How, and what is left, is §"S3 and S4a, done" below - the shape differs from
 §3's in ways it records. The file had kept growing while the split waited -
 `play_split_scan.py` on 2026-10-02, against the 2026-09-18 figures that §1
@@ -503,11 +504,42 @@ control 3350, modes 1823, world 6966, screens 2852, present 279 -
 `playstate.cpp` 1599 (the former lambdas), `playscene.cpp` 390,
 `sdlfront.*`, `playtypes.h` 816, `playshared.h` 270.
 
+**Then the phases from the inside** (same tool, one level down - a local of
+the block that a later part reads becomes a member, assigned where it was
+declared; a part with a `break`/`continue`/`return` returns -1/-2/-3/the
+value and the caller turns it back into the same statement):
+
+| commit | step |
+|---|---|
+| `c26e558` S8a | world: the 6144-line `if (drawWorld)` in nine parts, `playframe_world_{scene,staged,crowd,draw}.cpp`; 18 locals and two lambdas to members |
+| `b25cc3b` S8b | control: `controlBinding`/`Flight`/`Adventure`, and adventure's eleven parts (`playframe_control_{parts,adventure}.cpp`) |
+| `5bf83fa` S8c | screens: eleven parts (`playframe_screens_{rows,huds}.cpp`); the eight shared static containers to members |
+| `10d735f` S7a | modes (four parts) and input (five parts), `playframe_{modes,input}_parts.cpp` |
+
+Two more things the measuring caught: **a per-frame local is not a run-once
+local** - hoisting `std::vector<omk::Draw> draws;` must RESET it where it
+was declared (`draws = std::vector<omk::Draw>{}`), not drop the line, or it
+carries from frame to frame; and **a local can shadow a member of the same
+name** (`int spriteBase` against `SpriteTable spriteBase`) - the tool now
+refuses that hoist and the cut moves instead.
+
+The biggest functions now: `worldStaged` 2849 (ONE loop over the staged
+bodies, ~50 per-iteration locals, several references - splitting it means
+pieces taking those by reference; the file would not shrink), `modesShoot`
+~1290, `worldCrowd` 1022, `worldDrawLists` 1012, `adventureScreenInput` 972,
+`screensSneakRows` 885, `setupSession` 812.
+
+**Where the backends still show** (backend `#if`s / SDL calls, 2026-10-02):
+`playframe_present.cpp` 6/17, `playsetup_devices.cpp` 4/28,
+`playstate.cpp` 3/17, `playscene.cpp` 3/15, `playframe_world_draw.cpp` 4/0,
+`playshared.h` 7 (declarations), and one or two each in the input, modes,
+screens and setup parts. NONE in any control file, in the world's scene,
+staged and crowd parts, or in the phases' dispatchers - those are the
+candidates for `src/app/` once S5 gives them a renderer interface.
+
 **What is left**, in the order it pays:
 
-1. **the three big phases from the inside** - world (one 6143-line `if`),
-   control (one 3332-line statement), screens (per screen). The same tools
-   one level down: a local of the block crossing a cut becomes a member;
+1. ~~the three big phases from the inside~~ - done (S7a, S8a-c);
 2. **S5, the `Presenter`** - the 24 backend `#if`s out of game code. Not
    mechanical: it is the one step that changes structure, and the one that
    would let the SDL-free phases (control has no SDL call and no `#if`)
