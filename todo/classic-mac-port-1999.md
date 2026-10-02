@@ -426,6 +426,40 @@ the emulator is stopped, not shut down - and the file was read back off the
 disk image. On Tiger: `ditto -c -k --sequesterRsrc` keeps the resource fork
 in transit, and `LaunchCFMApp` runs it from a shell.
 
+#### 3d-ii. The game on Tiger - 2026-10-02
+
+`omk-play` - the viewer, software renderer, no instruments - runs in Mac OS
+X 10.4.11 on PowerPC (ppcosxkvm): the three FLIS films with sound (EIDOS
+dropped 5 of 386 frames to keep up), the splash, the music, the start menu,
+and on into the intro conversation with its subtitles.
+
+How it is built: SDL 2.0.3 - the last SDL2 that runs on 10.4 is a community
+port, alex-free's `panther-sdl2` (Thomas Bernard's Tiger patches) - built
+NATIVELY in Tiger with Xcode 2.5, because its Cocoa half is Objective-C and
+the cross-compiler has only C and C++; its static `libSDL2.a` then links
+with the cross-compiled game: `make -f ppc-darwin.mk SDL2_PREFIX=... play`.
+Every viewer file compiled against 2.0.3's headers unchanged. The binary is
+`ppc_7400` (G4): SDL was built with `-maltivec`, so a G3 would refuse it.
+
+Launch it with `open` on an application bundle, not from a shell: a process
+started over SSH after a reboot is not in the desktop session, SDL gets no
+window (`bootstrap_register() failed`) and the game exits silently after
+"display 640x480". A two-file `OMKPlay.app` whose executable is a script
+running `omk-play` with its arguments does it.
+
+**The colours are the EMULATOR's**: with ppcosxkvm's Radeon 9700 the picture
+had a strong blue cast and black drew as pure BLUE - alpha in the blue
+channel, i.e. 32-bit pixels read as bytes in memory order. SDL 2.0.3 draws
+every window through an OpenGL texture (Cocoa has no native framebuffer
+there), uploaded as `GL_BGRA` + `GL_UNSIGNED_INT_8_8_8_8_REV`, which is
+right on either byte order by the GL spec; SDL's own software renderer
+showed the same cast; and with ppcosxkvm's `--vga` safe mode (Apple's
+software OpenGL, no Radeon) the colours are correct - confirmed by the
+reader. So the Radeon emulation reads packed pixel types as bytes on a
+big-endian guest. On real hardware that path follows the spec. Safe mode is
+also FASTER for this: 5 fps against 1 (a 2D window, software 3D, emulated
+CPU).
+
 ### 3e. Testing without a 1999 Mac
 
 * **Correctness on a big-endian CPU, first and cheapest**: build the engine
@@ -493,9 +527,14 @@ dropped.
    Mac (PORTING B2: shown to fail).
 5. **Retro68 + Carbon bring-up**: the hello-world is DONE (3d-i, 2026-10-02):
    one Carbon binary runs on OS 9.2.1 and Tiger, C++20 + exceptions + RTTI
-   hold, no `std::thread`, no `std::filesystem`. Left: the engine itself, with
-   ticked loading, Sound Manager audio, 555 video, the movies through
-   QuickTime.
+   hold, no `std::thread`, no `std::filesystem`. The GAME runs on Tiger
+   through SDL 2.0.3 (3d-ii). Left for OS 9: the engine itself, with ticked
+   loading, Sound Manager audio, 555 video, the movies through QuickTime -
+   and before that, the reader's direction of 2026-10-02: every SDL call
+   outside the frontend files replaced by calls through a gateway class
+   (the `Frontend` interface, extended), so a Carbon frontend can stand in
+   for SDL on both systems. Seven `backends/sdl/play*.cpp` files call SDL
+   directly today; they are the play split's, so coordinate first.
 6. **Correctness in QEMU** - OS 9.2.2 (`mac99`, Screamer), then Tiger on
    ppcosxkvm with the GPU.
 7. **RAVE** (optional, the *Unreal Tournament* route).

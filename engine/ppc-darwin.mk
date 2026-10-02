@@ -61,4 +61,37 @@ $(OUT)/%: $(OBJDIR)/tools/%.o $(SRCOBJS)
 	@mkdir -p $(@D)
 	$(PPC_CXX) $(CXXFLAGS) $(PPCFLAGS) -o $@ $^ $(LDFLAGS)
 
--include $(SRCOBJS:.o=.d) $(TOOLOBJS:.o=.d)
+# ---------------------------------------------------------------------------
+# THE VIEWER, omk-play, for Tiger: the software renderer behind SDL 2.0.3 -
+# the last SDL2 that runs on 10.4 is a community port (alex-free's
+# panther-sdl2, Thomas Bernard's Tiger patches), built natively in Tiger with
+# Xcode 2.5 because its Cocoa half is Objective-C. Point SDL2_PREFIX at its
+# install (include/SDL2, lib/libSDL2.a):
+#
+#     make -f ppc-darwin.mk SDL2_PREFIX=... play
+#
+# No GPU backend (playgpu_none) and no instruments (playharness_off), the
+# INSTRUMENTS=0 build of todo/play-split.md S6.
+SDL2_PREFIX ?=
+PLAY_SRCS := $(filter-out backends/sdl/playgpu_%.cpp backends/sdl/playharness.cpp,$(wildcard backends/sdl/*.cpp)) \
+             backends/sdl/playgpu_none.cpp
+PLAY_OBJS := $(patsubst backends/sdl/%.cpp,$(OBJDIR)/play/%.o,$(PLAY_SRCS))
+PLAY_FLAGS := -I$(SDL2_PREFIX)/include/SDL2 -D_THREAD_SAFE
+# what that build's `sdl2-config --static-libs` names (-lobjc: its Cocoa half)
+PLAY_LIBS := $(SDL2_PREFIX)/lib/libSDL2.a -lm -liconv -lobjc -framework OpenGL -framework Cocoa \
+             -framework Carbon -framework IOKit -framework CoreAudio -framework AudioToolbox \
+             -framework AudioUnit
+
+.PHONY: play
+play: check-cxx $(OUT)/omk-play
+
+$(OBJDIR)/play/%.o: backends/sdl/%.cpp | check-cxx
+	@test -n "$(SDL2_PREFIX)" || { echo "ppc-darwin.mk: set SDL2_PREFIX to the Tiger SDL2 install"; exit 1; }
+	@mkdir -p $(@D)
+	$(PPC_CXX) $(CXXFLAGS) $(PPCFLAGS) $(DEPFLAGS) $(PLAY_FLAGS) -c -o $@ $<
+
+$(OUT)/omk-play: $(PLAY_OBJS) $(SRCOBJS)
+	@mkdir -p $(@D)
+	$(PPC_CXX) $(CXXFLAGS) $(PPCFLAGS) -o $@ $^ $(LDFLAGS) $(PLAY_LIBS)
+
+-include $(SRCOBJS:.o=.d) $(TOOLOBJS:.o=.d) $(PLAY_OBJS:.o=.d)
