@@ -644,5 +644,16 @@ struct PlayState {
         phSpan[name] += phaseNow() - a;
     }
 
+    // ---- THE SETUP'S SECTIONS (`playsetup_<name>.cpp`), in `run`'s order
+    int setupOptions(int argc, char** argv);   // the command line, the game's state, the slider's door clips
+    int setupBoot();   // the boot chain
+    int setupSession();   // the live Session, the settings, the save, the sneak call
+    int setupAdventure();   // adventure mode
+    int setupDevices();   // the interface sounds, the renderer, the GLES window, the music, the world
+    int setupBodies();   // the speaker, every staged body, melee, the effect sprites
+    int setupPlay();   // the scripted objects start to play
+    int setupSplash();   // the splash screen, the player's damage, the frame's instruments
+    int finish();   // after the loop: the run's report, writing a save, the window closed
+
     int run(int argc, char** argv);
 };

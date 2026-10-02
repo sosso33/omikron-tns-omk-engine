@@ -167,7 +167,17 @@ if(OMK_VITA_GAME)
     ${CMAKE_CURRENT_SOURCE_DIR}/avmovie.cpp
     ${ENGINE}/backends/sdl/play.cpp
     ${ENGINE}/backends/sdl/sdlfront.cpp
+    ${ENGINE}/backends/sdl/playscene.cpp
     ${ENGINE}/backends/sdl/playstate.cpp
+    ${ENGINE}/backends/sdl/playsetup_options.cpp
+    ${ENGINE}/backends/sdl/playsetup_boot.cpp
+    ${ENGINE}/backends/sdl/playsetup_session.cpp
+    ${ENGINE}/backends/sdl/playsetup_adventure.cpp
+    ${ENGINE}/backends/sdl/playsetup_devices.cpp
+    ${ENGINE}/backends/sdl/playsetup_bodies.cpp
+    ${ENGINE}/backends/sdl/playsetup_play.cpp
+    ${ENGINE}/backends/sdl/playsetup_splash.cpp
+    ${ENGINE}/backends/sdl/playsetup_finish.cpp
     ${ENGINE}/backends/sdl/playframe.cpp
     ${ENGINE}/backends/sdl/playframe_input.cpp
     ${ENGINE}/backends/sdl/playframe_control.cpp

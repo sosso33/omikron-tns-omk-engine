@@ -260,3 +260,11 @@ constexpr float kTakeCamEye[3] = {24.4094f, 29.5276f, -4.7244f};
 constexpr float kTakeCamAt[3]  = {0.0f, 4.7244f, 19.685f};
 constexpr float kTakeCamFov    = 75.0f;
 constexpr float kTakeCamTravel = 30.0f;
+
+// THE SET VIEWER (`--scene`, `playscene.cpp`); run takes it when a set is named
+int sceneViewer(const std::string& fr, const std::string& setName,
+                int camIndex, const float* eyeArg, const float* atArg,
+                float fovArg, bool letterbox, int frameBudget,
+                const std::string& dump, bool startVulkan, bool noDelay,
+                int aaSamples, int texFilter, int texAniso, int ssaa,
+                bool sceneDither);

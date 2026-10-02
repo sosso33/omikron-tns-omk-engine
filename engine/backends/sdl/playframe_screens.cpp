@@ -269,7 +269,7 @@ int PlayState::phaseScreens() {
     auto& optMenu = *optMenu_;
     auto& inv = *inv_;
     auto& session = *session_;
-    omk::Renderer& world = *world_;
+    [[maybe_unused]] omk::Renderer& world = *world_;   // read under OMK_VULKAN only
     bool done = false;
     do {
         // ---- THE SNEAK'S INVENTORY ROWS ------------------------------
