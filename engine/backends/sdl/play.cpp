@@ -2130,7 +2130,7 @@ int PlayState::run(int argc, char** argv) {
     // the machine's, so it is ON only where that is wanted: a Vita, or
     // `OMK_LOAD_GATE=1`; every check runs by the count alone.
 #if defined(__vita__)
-    const bool loadGate = !syncSets && !omk::envSet("OMK_NO_LOAD_GATE");
+    loadGate = !syncSets && !omk::envSet("OMK_NO_LOAD_GATE");
 #else
     loadGate = !syncSets && omk::envSet("OMK_LOAD_GATE");
 #endif
