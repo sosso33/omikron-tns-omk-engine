@@ -70,15 +70,26 @@ yaw]` - `var_58`, which this entry called dead, is key 1. The port's
 `turnRootBy` is that composition. Corrected in CLAUDE.md 4, FILE_FORMATS 5,
 ASSETS, `pose.h` and the viewer's comments; no behaviour changes.
 
-**The arms (reader, 2026-10-02): early in the line her LEFT arm is out at
-shoulder or head height in the original and at table height in the port; the
-rest matches.** Ruled out by renders the reader judged: the lean flipped (both
-arms up), the lean composed in the other order (bent back), the lean removed
-(left arm better, right arm worse), the shoulder and belly tracks held still
-("worse"). Read and found the same as the port: the fade (`sub_471820`, a k/256
-slerp from the clip at `rec[47]`, length `min(30, frames / 4)`). Open; the next
-evidence wanted is the original's frames with their video times, to pair line
-frames.
+**The arms: the reference is a DIFFERENT RECORDING (2026-10-02).** Paired
+frame for frame against the longplay (8:55-9:12 downloaded, the cut into the
+line at 8:57.386 taken as line frame 0), the original's LEFT arm is held out
+near horizontal for the whole line where the port's hangs 48 degrees down -
+and the port is drawing its data faithfully: the `.3DM` decodes cleanly only
+with the root's 12 bytes before track 2 (0 of 1691 non-unit, against 73+ for
+every other placement), the skeleton's `+128` offsets equal `pos - parent`
+for every bone, and the left upper arm sits at -48 degrees in the file itself.
+The cause is the reference: the longplay is the ENGLISH release ("And what
+about Den? Did you see him?", subtitle on from 8:57.386 to 9:01.72, ~130
+frames) and `gamedata/` is FRENCH (`0E859B.3DM`, 89 frames, 2.97 s). A `.3DM`
+carries the body animation with the voice, so the two languages' lines are
+separate recordings and their gestures need not match. Ruled out on the way,
+each by render: the lean flipped, composed the other way round, removed; the
+shoulder and belly tracks held; the idle clip's left arm. **Not a port fault
+as far as this footage can show; closing the arm half needs French footage of
+the same line, or the English `MORPH\0E859B.3DM`.** And a caveat on the head
+half above: the "the original never swings" evidence is the same English
+footage, so it is evidence about the English line's head track; what stands on
+its own is the code (the reset, the morph's head unbind) and the pelvis fix.
 
 ### 98. A `media.play` line was laid out as a DIALOGUE line: clipped, with a scroll arrow nothing could move — A
 
