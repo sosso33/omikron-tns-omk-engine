@@ -154,16 +154,23 @@ PLAY_VK_FLAGS := $(SDL_CFLAGS) $(SDL_DEFS) $(VK_CFLAGS) -DOMK_VULKAN -Ibuild/sha
 PLAY_GL_FLAGS := $(SDL_CFLAGS) $(SDL_DEFS) -DOMK_GLES
 PLAY_DEPS := $(wildcard $(PLAY_SW_DIR)/*.d $(PLAY_VK_DIR)/*.d $(PLAY_GL_DIR)/*.d)
 
-$(PLAY_SW_DIR)/play.o: backends/sdl/play.cpp
+# Every `backends/sdl/*.cpp` - `play.cpp`, and since `todo/play-split.md` S1c
+# `sdlfront.cpp` - compiles once per variant, into that variant's directory.
+PLAY_SDL_SRCS := $(wildcard backends/sdl/*.cpp)
+PLAY_SW_OBJS := $(PLAY_SDL_SRCS:backends/sdl/%.cpp=$(PLAY_SW_DIR)/%.o)
+PLAY_VK_OBJS := $(PLAY_SDL_SRCS:backends/sdl/%.cpp=$(PLAY_VK_DIR)/%.o)
+PLAY_GL_OBJS := $(PLAY_SDL_SRCS:backends/sdl/%.cpp=$(PLAY_GL_DIR)/%.o)
+
+$(PLAY_SW_DIR)/%.o: backends/sdl/%.cpp
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) $(DEPFLAGS) $(PLAY_SW_FLAGS) -c -o $@ $<
-$(PLAY_VK_DIR)/play.o: backends/sdl/play.cpp | $(VK_SHADERS)
+$(PLAY_VK_DIR)/%.o: backends/sdl/%.cpp | $(VK_SHADERS)
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) $(DEPFLAGS) $(PLAY_VK_FLAGS) -c -o $@ $<
 $(PLAY_VK_DIR)/vkrender.o: backends/vulkan/vkrender.cpp | $(VK_SHADERS)
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) $(DEPFLAGS) $(PLAY_VK_FLAGS) -c -o $@ $<
-$(PLAY_GL_DIR)/play.o: backends/sdl/play.cpp
+$(PLAY_GL_DIR)/%.o: backends/sdl/%.cpp
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) $(DEPFLAGS) $(PLAY_GL_FLAGS) -c -o $@ $<
 $(PLAY_GL_DIR)/glesrender.o: backends/gles/glesrender.cpp
@@ -172,12 +179,12 @@ $(PLAY_GL_DIR)/glesrender.o: backends/gles/glesrender.cpp
 
 ifneq ($(SDL_PKG),)
 ifeq ($(VK_PKG)$(GLSLC),)
-build/omk-play: $(PLAY_SW_DIR)/play.o $(SRCOBJS)
+build/omk-play: $(PLAY_SW_OBJS) $(SRCOBJS)
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(SDL_LIBS)
 PLAY_WITH := $(SDL_PKG) (no Vulkan - software renderer only)
 else
-build/omk-play: $(PLAY_VK_DIR)/play.o $(PLAY_VK_DIR)/vkrender.o $(SRCOBJS)
+build/omk-play: $(PLAY_VK_OBJS) $(PLAY_VK_DIR)/vkrender.o $(SRCOBJS)
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(SDL_LIBS) $(VK_LIBS)
 PLAY_WITH := $(SDL_PKG) + $(VK_PKG)
@@ -280,7 +287,7 @@ build/gles_probe: backends/gles/gles_probe.cpp backends/gles/glesrender.cpp $(SR
 # Optional like `play`, and needs SDL the same way. `build/omk-play-gles`.
 GL_LIBS := $(if $(filter Darwin,$(UNAME_S)),-framework OpenGL,-lGLESv2)
 ifneq ($(SDL_PKG),)
-build/omk-play-gles: $(PLAY_GL_DIR)/play.o $(PLAY_GL_DIR)/glesrender.o $(SRCOBJS)
+build/omk-play-gles: $(PLAY_GL_OBJS) $(PLAY_GL_DIR)/glesrender.o $(SRCOBJS)
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(SDL_LIBS) $(GL_LIBS)
 endif

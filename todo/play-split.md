@@ -6,8 +6,8 @@ could be divided."* **Nothing here has been applied.** `play.cpp` is held by
 another session; this file is the design, and every step below is written so
 it can land one at a time between that session's commits.
 
-**Status 2026-10-02**: S0, S1 and S1b are done, the record was ENLARGED
-(S0b, below) and S1c is next. The file kept growing while the split waited -
+**Status 2026-10-02**: S0, S1, S1b and **S1c** are done, the record was
+ENLARGED (S0b, below), and **S2 (the flags) is next**. The file kept growing while the split waited -
 `play_split_scan.py` on 2026-10-02, against the 2026-09-18 figures that §1
 still quotes:
 
@@ -337,7 +337,7 @@ check in the suite.
 |---|---|---|---|
 | ~~S1~~ **DONE 2026-09-22** | the four PURE helpers (`shortArc`, `wavToDevice`, `SubBox` + `drawSubtitleBox`, `cp1252ToUtf8`) -> `src/app/playhelpers.{h,cpp}`; 184 lines out of `play.cpp`. `src/*/*.cpp` is globbed by BOTH builds, so no build file changed. See below |
 | ~~S1b~~ **DONE 2026-09-22** | `ViewCam`, `Light` and `relight` joined them - also pure. `play.cpp` -> **20913** |
-| **S1c — NEXT** | the SDL half still in `play.cpp`: `AudioLock`, `SdlFrontend`, `keymap`/`charmap`. These need the three Makefile lines and the Vita `CMakeLists.txt` to name a new `backends/sdl/*.cpp`, which is why they are their own step |
+| ~~S1c~~ **DONE 2026-10-02** | the SDL half still in `play.cpp`: `AudioLock`, `SdlFrontend`, `keymap`/`charmap`. These need the three Makefile lines and the Vita `CMakeLists.txt` to name a new `backends/sdl/*.cpp`, which is why they are their own step |
 | **S1 (original)** | file-level helpers → `sdlfront.{h,cpp}` and `src/app/*` (lines 1-1416) | 0 — they are outside `main` | none: no state |
 | **S2** | `PlayOptions` + `parseArgs` (1420-2198). Tactic: bind each old local as a REFERENCE to the struct field (`auto& startVulkan = opt.startVulkan;`) so not one line of the loop changes in this step | the 84 flags | low |
 | **S3** | `Game` introduced, sub-struct by sub-struct, same reference-alias trick: the loop keeps compiling unchanged while ownership moves. One sub-struct a commit | all 468, 40 or so at a time | medium: lifetimes (the caches return pointers into maps - must not move) |
@@ -352,6 +352,41 @@ check in the suite.
 into that phase's file as a static function taking `Game&`; one used across
 phases becomes a `Game` method. `play_split_scan.py -v` prints each section's
 names, which is the input to that decision.
+
+### S1c, done 2026-10-02 — the SDL frontend
+
+`keymap`, `charmap`, `AudioLock`, `optionDisplayModes` and `SdlFrontend`
+(652 lines) -> `backends/sdl/sdlfront.{h,cpp}`; `play.cpp` 23070 -> **22418**.
+The class keeps its declarations, its one-line accessors and its members in
+the header; its 21 multi-line methods are in the `.cpp` as `SdlFrontend::`
+definitions, each beside the comment that explained it, dedented one level.
+`keymap`, `charmap` and `AudioLock` are file-local there - nothing else used
+them. All in `namespace omk`, with two `using` lines in `play.cpp` as S1 did.
+
+* **Cut by script, not retyped**, and checked the same way: the multiset of
+  the region's non-blank lines against the two new files' differs in EXACTLY
+  the 21 signatures (each a declaration plus a qualified definition, without
+  `override`, `static` or the default arguments) and `optionDisplayModes`'s
+  `static` - every body line and every comment line is accounted for;
+* **the build**: the Makefile compiles every `backends/sdl/*.cpp` per variant
+  by pattern rule (`PLAY_{SW,VK,GL}_OBJS`), so a later step adding a file
+  there changes no build line; the Vita `CMakeLists.txt` names the file.
+  `sdlfront.o` adds no warning of its own (the two it prints are
+  `frontend.h`'s, which every includer gets). The software-only variant is
+  not linked on a machine with Vulkan, so its two objects were compiled by
+  name;
+* **the record**: 28 of 28 identical against the record taken before the
+  move, `--gpu` included;
+* **the checks**: `licence headers` 481 -> 483 (the two files, attributed in
+  its docstring), `play usage`, the `engine: screen` family (the live
+  window's bytes against the composer's) and `engine: audio queue bound` (the
+  `queueAudio` that moved) - green;
+* `make`, `make play`, `make play-gles` and `make vita` all built.
+
+And the prose it made false: `play.cpp`'s header and `engine: screen`'s
+docstring said `play.cpp` was "the only file in the tree that includes an SDL
+header"; it is now `backends/sdl/`, which is what A8 rule 2 actually asks
+(one dependency per backend).
 
 ### What NOT to do
 

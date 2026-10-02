@@ -23678,8 +23678,9 @@ def c_engine_screen():
       the LIFT's 7 do not, because its slots are placed absolutely.
 
     **And the live frontend.** `PORTING` A1 puts two implementations behind one
-    interface; `backends/sdl/play.cpp` is the live one and the ONLY file in the
-    tree that includes a library header. A8 rule 3 is the one that is not
+    interface; `backends/sdl/` (`play.cpp`, and `sdlfront.{h,cpp}` since
+    `todo/play-split.md` S1c) is the live one and the ONLY place in the tree
+    that includes a library header. A8 rule 3 is the one that is not
     hygiene: no dependency may do work a reference implementation is a port of.
     So SDL creates a window, reports keys and uploads a texture - it never
     blits, scales, blends or draws text.
@@ -37945,6 +37946,8 @@ def c_licence_headers():
     sit outside these roots, so they do not count here.
     **480 -> 481**: `engine/tools/framerate_probe.cpp` (2026-10-01), a
     fade's frames and time at 30 and 60 fps (`todo/sixty-fps.md`).
+    **481 -> 483**: `backends/sdl/sdlfront.{h,cpp}` (2026-10-02), the SDL
+    frontend moved out of `play.cpp` by `todo/play-split.md` S1c.
     """
     import glob as _g
     TAG = "SPDX-License-Identifier: GPL-3.0-or-later"
@@ -37974,7 +37977,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (481, [], 1, []), \
+           (483, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
