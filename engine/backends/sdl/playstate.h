@@ -573,6 +573,30 @@ struct PlayState {
 
     int step();
 
+    // ---- `phaseScreens`'s PARTS (todo/play-split.md) and the state they share: each
+    // was a local of the phase, and is assigned where it was declared, every turn
+    std::map<std::uint32_t, std::pair<int, int>> itemMoved{};   // was a function-local static
+    std::set<std::uint32_t> hintReport{};   // was a function-local static
+    std::map<std::uint32_t, int> itemSection{};   // was a function-local static
+    std::string hintTitleTold{};   // was a function-local static
+    std::uint32_t hintPanel{};
+    std::map<std::uint32_t, std::pair<int, int>> itemSource{};   // was a function-local static
+    std::map<std::uint32_t, std::pair<int, int>> itemLitSource{};   // was a function-local static
+    std::vector<std::uint32_t> denWheelItems{};   // was a function-local static
+    std::vector<std::uint32_t> xachenItems{};   // was a function-local static
+    bool liftHandled{};
+    void screensSneakRows();   // the sneak's inventory rows
+    void screensShopRows();   // the shop's stock rows
+    void screensMultiplanHints();   // Multiplan's rows and header, the Gandhar door's cursor, the hint shop
+    void screensPuzzles();   // Den's locker, Gandhar's door, Xachen's cartridges
+    void screensTerminals();   // the terminal family's display
+    void screensLift();   // the lift's description box
+    void screensPropertyTail();   // the tail of Actor_SetProperty
+    void screensHuds();   // the fight HUD, the breath gauge, the shoot HUD
+    void screensFps();   // the fps counter
+    void screensFades();   // the screen fades, over everything
+    void screensFlicker();   // the flicker catcher
+
     // ---- `controlAdventure`'s PARTS (todo/play-split.md) and the state they share: each
     // was a local of the phase, and is assigned where it was declared, every turn
     bool playerTicked{};

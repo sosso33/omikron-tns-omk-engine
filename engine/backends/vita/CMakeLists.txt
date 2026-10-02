@@ -190,6 +190,8 @@ if(OMK_VITA_GAME)
     ${ENGINE}/backends/sdl/playframe_world_crowd.cpp
     ${ENGINE}/backends/sdl/playframe_world_draw.cpp
     ${ENGINE}/backends/sdl/playframe_screens.cpp
+    ${ENGINE}/backends/sdl/playframe_screens_rows.cpp
+    ${ENGINE}/backends/sdl/playframe_screens_huds.cpp
     ${ENGINE}/backends/sdl/playframe_present.cpp
     ${ENGINE}/backends/gles/glesrender.cpp)
   set_source_files_properties(${ENGINE}/backends/sdl/play.cpp
