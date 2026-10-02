@@ -455,10 +455,21 @@ there), uploaded as `GL_BGRA` + `GL_UNSIGNED_INT_8_8_8_8_REV`, which is
 right on either byte order by the GL spec; SDL's own software renderer
 showed the same cast; and with ppcosxkvm's `--vga` safe mode (Apple's
 software OpenGL, no Radeon) the colours are correct - confirmed by the
-reader. So the Radeon emulation reads packed pixel types as bytes on a
-big-endian guest. On real hardware that path follows the spec. Safe mode is
-also FASTER for this: 5 fps against 1 (a 2D window, software 3D, emulated
-CPU).
+reader. Safe mode is slower than the fix below, though: 5 fps.
+
+**Found and fixed in ppcosxkvm, 2026-10-02.** Instrumenting the emulator's
+texture setup (`r300_draw.c`, `set_textures`) showed that over a whole
+session - desktop and game - Apple's driver programmed exactly ONE texture
+with `TXO_ENDIAN` 2: SDL's 640x480 ARGB frame; every other uses 0. On the
+card, 0 is data the CPU wrote through the swapping aperture and 2 is data
+copied in raw for the card to swap on read - the same word either way - and
+the emulator, which models neither, holds the guest's big-endian bytes in
+VRAM in both cases. It reversed them only for 0 (`decode = (off & 3) ==
+0`), so a mode-2 texture drew byte-reversed. With 2 decoded like 0 the
+colours are right with the Radeon - confirmed by the reader - and the start
+menu draws at **30 fps** (1 before, 5 in safe mode). The patch lives with
+the tools (`ppcosxkvm-r300-txo-endian.patch`), not in this repo; it is
+ppcosxkvm's to take.
 
 ### 3e. Testing without a 1999 Mac
 
