@@ -37,14 +37,30 @@ since a program then draws him as a staged body; and the ease went to the full
 turn where the engine's measure-with-last-look settles at half. The port's
 first-frame snap went too - the engine has none.
 
-**Still open: the body and the camera.** With the head right she looks DOWN AND
-RIGHT at the seated Kay'l, not into the lens: the port's eye for 4171 sits 36
-units beside her and ~30 degrees off Kay'l, and through the line her pelvis and
-chest turn ~20 degrees off the eye (-9 in the idle). The latched root heading is
-118 and must stay (dropping it was ~90 wrong against `dlg402-44`), though the
-composition `08_wave.c` 963-965 performs is DEAD in the image (`var_58` is
-written and never read) - so the engine carries the heading some other way, not
-yet found.
+**The body and the camera, read 2026-10-02 - neither is the fault.** 4170 /
+4171 are ABSOLUTE (subject -1), authored in front of her idle facing; Kay'l is
+~30 degrees to one side of the lens. Her heading is a steady 118 through idle
+and line alike (`TELRES05`/`TELRES02`, plain `Script_SelectBodyAnimation`, no
+path, Euler 0), the line's own `.3DM` root adds 2-4 degrees of heading and a
+lean, and both screenshots show her shoulders square to the lens. So the
+original's Telis looks along her BODY's forward, not at Kay'l.
+
+**What is left is the neck and the look.** The line animates `TeCou` (only the
+head is unbound) and turns it 10-15 degrees past the chest toward Kay'l, and the
+half-look adds a little more. To match the original either the look is NOT
+running on her in the engine (no cached head node at actor +16 - but then the
+line's head track would play, and that tilts her up and right, which the
+original does not show) or the port's neck/head line tracks are turned the
+wrong way. Needs an oracle: frames of the original across this line, to see
+whether her head moves with the line or holds.
+
+**A loose end on the way: how the engine keeps 118 through a line.** The
+`.3DM` root carries ~3 degrees, the heading composition `sub_42D120` performs
+is dead (`var_58` written, never read; `g_MorphRootTrack` = -2, its only write
+`0x0042BCA0`), an unmatched node is reset to identity (`Anim_BindNodeTrack`),
+and the facing matrix is the Euler (0). By that reading she would snap ~115
+degrees at every line; the originals say she does not. The port keeps the
+latch, which matches every capture; the mechanism is unfound.
 
 ### 98. A `media.play` line was laid out as a DIALOGUE line: clipped, with a scroll arrow nothing could move — A
 
