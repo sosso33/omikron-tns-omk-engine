@@ -220,7 +220,7 @@ NodeTracks clipTracks(std::span<const std::byte> d) {
             const Track& k = tr[i];
             if (!k.rotOffset || k.rotKeys <= 0) continue;
             // key 0 is the REST SENTINEL, so frame f is key f + 1
-            const int key = std::min(f + 1, k.rotKeys - 1);
+            const int key = std::min<std::int32_t>(f + 1, k.rotKeys - 1);
             const std::size_t o = static_cast<std::size_t>(k.rotOffset) +
                                   16u * static_cast<std::size_t>(key);
             row[i] = {f32at(d, o), f32at(d, o + 4),

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "platform/movie.h"
+#include "platform/datafs.h"
 
 #include <algorithm>
 
@@ -28,7 +29,7 @@ Movie::Movie() : p_(std::make_unique<Impl>()) {}
 Movie::~Movie() = default;
 
 bool Movie::open(const std::string& path) {
-    p_->plm = plm_create_with_filename(path.c_str());
+    p_->plm = plm_create_with_filename(hostPath(path).c_str());
     if (!p_->plm) return false;
 
     // **PROBE WIDE, and this line is here because of a wrong answer.** The

@@ -6,7 +6,6 @@
 
 #include <algorithm>
 #include <cstring>
-#include <fstream>
 #include <string>
 
 namespace omk {

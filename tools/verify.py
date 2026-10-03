@@ -27168,6 +27168,52 @@ def c_engine_frontend_gateway():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def c_engine_classic_build():
+    r"""THE CLASSIC MAC OS BUILD (`todo/classic-mac-port-1999.md` step 5): the
+    engine as ONE Carbon binary for Mac OS 9 and Mac OS X on PowerPC, built
+    with Retro68 (`make classic`, `backends/classic/`).
+
+    What was established by RUNNING it, and cannot be re-run here (it needs
+    the emulators): `OMKBoot` - `tools/omk.cpp`, the engine booted headless -
+    run on Mac OS 9.2 (QEMU `mac99`, from Startup Items) and on Mac OS X 10.4
+    (ppcosxkvm, `LaunchCFMApp`) wrote a boot dump BYTE-IDENTICAL to the Mac's
+    from the same arguments (2026-10-03): `aventure.scx`'s 20 sprites and 53
+    sounds, area 118, the start menu's answer, 61 announced decisions in the
+    same order.
+
+    What this check holds, because it is what made that possible and what a
+    later change would break silently: the classic build must contain NO C++
+    STREAM CODE. Any stream initialises libstdc++'s locale, and Retro68's
+    linker lays `num_get<char>::id` over `timepunct_cache_w`, so the locale's
+    own set-up corrupts it and the first stream crashes - in a large program
+    only, so a small test passes (`platform/datafs.h`, `readTextFile`). So:
+    `make classic` must build `OMKBoot`, and its symbol table must name none
+    of `ios_base::Init`, `basic_ios`, `basic_filebuf`, `_M_cache_locale`.
+
+    Skipped without Retro68 (`$OMK_RETRO68`, or `retro68 =` in omk.conf).
+    Shown to fail (2026-10-03): a `std::ifstream` put back into
+    `src/platform/json.cpp` - the stream symbols return, red.
+    """
+    import subprocess, re
+    r68 = omkpaths.retro68_path()
+    if not r68:
+        return ("skipped",), ("skipped",), "no Retro68 (set $OMK_RETRO68 or retro68 = in omk.conf)"
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "classic", "RETRO68=" + r68], cwd=eng, capture_output=True, text=True)
+    xcoff = os.path.join(eng, "build", "classic", "OMKBoot.xcoff")
+    appl = os.path.join(eng, "build", "classic", "OMKBoot.APPL")
+    if b.returncode != 0 or not (os.path.exists(xcoff) and os.path.exists(appl)):
+        return ("build failed",), ("built",), "make classic must build OMKBoot: " + (b.stdout + b.stderr)[-400:]
+    nm = subprocess.run([os.path.join(r68, "bin", "powerpc-apple-macos-nm"), xcoff],
+                        capture_output=True, text=True)
+    syms = nm.stdout.splitlines()
+    streams = sorted({l.split()[-1] for l in syms
+                      if re.search(r"ios_base4Init|basic_ios|basic_filebuf|_M_cache_locale", l)})
+    print(f"        OMKBoot: {len(syms)} symbols, {len(streams)} of them stream code")
+    return (len(syms) > 1000, streams[:4]), (True, []), \
+        "make classic builds OMKBoot (its symbol table read), and no C++ stream code is linked into it"
+
+
 def c_engine_texture_filter():
     r"""TEXTURE FILTERING - bilinear, the DEFAULT on a GPU backend since
     2026-10-03 (what the original drew on a 3D card), and the colour key
@@ -38262,6 +38308,8 @@ def c_licence_headers():
     **526 -> 529**: `backends/gl1/gl1render.{h,cpp}` and
     `backends/sdl/playgpu_gl1.cpp` (2026-10-02), the fixed-function OpenGL
     1.x backend (`todo/classic-mac-port-1999.md` step 4).
+    **529 -> 530**: `backends/classic/classic_main.cpp` (2026-10-03), the
+    classic Mac OS build's entry point (step 5).
     """
     import glob as _g
     TAG = "SPDX-License-Identifier: GPL-3.0-or-later"
@@ -38291,7 +38339,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (529, [], 1, []), \
+           (530, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -40679,6 +40727,7 @@ SLOW = [
     ("engine: renderer",   c_engine_renderer_boundary, "PORTING A2"),
     ("engine: gl1 backend", c_engine_gl1_backend, "todo/classic-mac-port-1999.md 3c-i; PORTING B6"),
     ("engine: frontend gateway", c_engine_frontend_gateway, "todo/classic-mac-port-1999.md step 5; PORTING A1"),
+    ("engine: classic build", c_engine_classic_build, "todo/classic-mac-port-1999.md step 5; platform/datafs.h"),
     ("engine: anti-aliasing", c_engine_anti_aliasing, "ASSETS 4"),
     ("engine: texture filter", c_engine_texture_filter, "ASSETS 4"),
     ("engine: mipmaps", c_engine_mipmaps, "ASSETS 4"),

@@ -205,7 +205,7 @@ void DepthTie::resolve(const Geometry& g, std::size_t start, std::size_t count, 
                 ++cursor_;
                 for (const std::uint32_t u : cl.losers) {
                     losers.push_back(units_[u].tri);
-                    if (units_[u].quad) losers.push_back(units_[u].tri + 1);
+                    if (units_[u].isQuad) losers.push_back(units_[u].tri + 1);
                 }
                 markApplied(losers, from);
                 return;
@@ -387,9 +387,9 @@ std::uint32_t DepthTie::findHead(const Geometry& g, std::uint64_t h, const P* ps
         if (((cell >> 32) & 0xFFFFull) != fp) continue;
         const std::uint32_t hd = static_cast<std::uint32_t>(hp1 - 1);
         const Unit& H = units_[hd];
-        if ((H.quad != 0) != (n == 4)) continue;
+        if ((H.isQuad != 0) != (n == 4)) continue;
         P hs[4];
-        unitKeyOf(g, H.tri, H.quad != 0, hs);
+        unitKeyOf(g, H.tri, H.isQuad != 0, hs);
         if (sameKeyP(hs, ps, n)) {
             slot = static_cast<std::size_t>(i);
             return hd;
@@ -430,7 +430,7 @@ void DepthTie::walkTracked(const Geometry& g, std::size_t start, std::size_t cou
         U.call = ci;
         U.next = kNone;
         U.tail = u;
-        U.quad = quad;
+        U.isQuad = quad;
         U.cand = open && !quad;
         U.writes = writes;
         if (hd == kNone) {
@@ -544,7 +544,7 @@ void DepthTie::unlinkUnit(std::uint32_t u) {
 // Put unit `u` back under the key its corners have now, in walk order.
 void DepthTie::linkUnit(const Geometry& g, std::uint32_t u) {
     P ps[4];
-    const int n = unitKeyOf(g, units_[u].tri, units_[u].quad != 0, ps);
+    const int n = unitKeyOf(g, units_[u].tri, units_[u].isQuad != 0, ps);
     const std::uint64_t h = unitHashOf(ps, n);
     unitHash_[u] = h;
     std::size_t slot = 0;
@@ -599,12 +599,12 @@ bool DepthTie::prepareReplay(const Geometry& g, std::size_t ntri, std::vector<st
         const std::uint32_t u = unitOfTri_[t];
         if (u != kNone) {
             const Unit& U = units_[u];
-            if (U.quad ? !pairsAsQuad(g, U.tri) : (U.cand && pairsAsQuad(g, U.tri))) return false;
+            if (U.isQuad ? !pairsAsQuad(g, U.tri) : (U.cand && pairsAsQuad(g, U.tri))) return false;
             if (stampUnit_[u] != stamp_) { stampUnit_[u] = stamp_; affected_.push_back(u); }
         }
         if (t > 0) {                     // the single before it, open to pair with it
             const std::uint32_t v = unitOfTri_[t - 1];
-            if (v != kNone && v != u && !units_[v].quad && units_[v].cand && pairsAsQuad(g, units_[v].tri))
+            if (v != kNone && v != u && !units_[v].isQuad && units_[v].cand && pairsAsQuad(g, units_[v].tri))
                 return false;
         }
     }
@@ -624,7 +624,7 @@ bool DepthTie::prepareReplay(const Geometry& g, std::size_t ntri, std::vector<st
             L.insert(it, u);
         } else {
             if (it != L.end() && *it == u) L.erase(it);
-            for (std::uint32_t t = U.tri; t <= U.tri + (U.quad ? 1u : 0u); ++t)
+            for (std::uint32_t t = U.tri; t <= U.tri + (U.isQuad ? 1u : 0u); ++t)
                 if (applied_[t]) { applied_[t] = 0; --appliedCount_; restore.push_back(t); }
         }
     }

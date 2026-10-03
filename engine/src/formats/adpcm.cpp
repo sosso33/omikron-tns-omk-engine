@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "formats/adpcm.h"
+#include "platform/datafs.h"
 
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
-#include <fstream>
-#include <sstream>
 
 namespace omk {
 namespace {
@@ -60,10 +59,8 @@ AdpcmTables AdpcmTables::builtin() {
 
 AdpcmTables AdpcmTables::loadJson(const std::string& path) {
     AdpcmTables t;
-    std::ifstream f(path);
-    if (!f) return t;
-    std::stringstream ss; ss << f.rdbuf();
-    const std::string s = ss.str();
+    const std::string s = readTextFile(path);
+    if (s.empty()) return t;
     const auto grab = [&](const char* key, std::vector<std::int32_t>& out) {
         const auto k = s.find(key);
         if (k == std::string::npos) return;

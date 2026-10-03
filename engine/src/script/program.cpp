@@ -41,7 +41,7 @@ int ScxRuntime::clipFrames(int i) const {
     if (i >= 0 && static_cast<std::size_t>(i) < stream_.anims.size()) {
         const auto& a = stream_.anims[static_cast<std::size_t>(i)];
         if (const auto d = animDescriptor(data_, a.offset))
-            n = std::max(1, d->frames);
+            n = std::max<std::int32_t>(1, d->frames);
     }
     frames_[i] = n;
     return n;

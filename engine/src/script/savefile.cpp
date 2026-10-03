@@ -5,7 +5,6 @@
 
 #include <algorithm>
 #include <cstdio>
-#include <fstream>
 
 namespace omk {
 namespace {
@@ -284,14 +283,11 @@ bool writeSaveFile(const std::string& path, std::span<const std::byte> file) {
     ++g_saveFileWrites;                  // before the write: a partial file is changed too
     const auto cut = path.find_last_of("/\\");
     if (cut != std::string::npos) makeDirectories(path.substr(0, cut));
-    std::ofstream f(path, std::ios::binary | std::ios::trunc);
-    if (!f) {
+    if (!writeWholeFile(path, file.data(), file.size())) {
         std::fprintf(stderr, "save: cannot write %s\n", path.c_str());
         return false;
     }
-    f.write(reinterpret_cast<const char*>(file.data()),
-            static_cast<std::streamsize>(file.size()));
-    return static_cast<bool>(f);
+    return true;
 }
 
 const std::array<const char*, 13>& monthNames() {

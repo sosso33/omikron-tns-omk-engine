@@ -65,6 +65,9 @@ _DEFAULTS = {
     "decomp": "Runtime.exe.c",
     "header": "Runtime.exe.h",
     "clean":  "clean",
+    # Retro68's install (bin/, powerpc-apple-macos/), for the classic Mac OS
+    # build - an optional TOOL, absent unless configured
+    "retro68": "retro68",
 }
 
 _ENV = {
@@ -73,6 +76,7 @@ _ENV = {
     "decomp": "OMK_DECOMP",
     "header": "OMK_DECOMP_H",
     "clean":  "OMK_CLEAN",
+    "retro68": "OMK_RETRO68",
 }
 
 # Overrides installed by set_*() - the tools' own flags.
@@ -287,6 +291,12 @@ def decomp_path():
 def header_path():
     """`Runtime.exe.h`, or None."""
     return _optional("header")
+
+
+def retro68_path():
+    """Retro68's install directory, or None: `$OMK_RETRO68`, or `retro68 = ...`
+    in omk.conf. Only the classic Mac OS build's check uses it."""
+    return _optional("retro68")
 
 
 def clean_dir():

@@ -48,3 +48,8 @@
 # Environment: OMK_CLEAN
 #
 # clean = clean
+
+# Retro68's install (the directory holding bin/ and powerpc-apple-macos/), for
+# the classic Mac OS build (`make classic`, `verify.py: engine: classic build`).
+# Optional: without it that check reports skipped.
+#retro68 = /path/to/retro68

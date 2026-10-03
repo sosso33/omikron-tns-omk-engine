@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "audio/music.h"
+#include "platform/datafs.h"
 
 #include <algorithm>
 #include <cmath>
@@ -20,7 +21,7 @@ bool MusicPlayer::play(const DataFs& fs, const AdpcmTables& tables,
     if (!path) { stop(); return false; }
     // the file stays open and is read as it plays (`kWindow`); only its
     // LENGTH is needed now
-    std::unique_ptr<std::FILE, FileClose> f(std::fopen(path->c_str(), "rb"));
+    std::unique_ptr<std::FILE, FileClose> f(std::fopen(hostPath(*path).c_str(), "rb"));
     long size = -1;
     if (f && std::fseek(f.get(), 0, SEEK_END) == 0) size = std::ftell(f.get());
     if (!f || size <= 0 || !tables.valid()) { stop(); return false; }

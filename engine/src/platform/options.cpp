@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "platform/options.h"
+#include "platform/datafs.h"
 
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
-#include <fstream>
 
 namespace omk {
 
@@ -79,11 +79,10 @@ bool OptionsFile::boolean(const std::string& section, const std::string& key,
 OptionsFile loadOptionsFile(const std::string& path) {
     OptionsFile o;
     o.path = path;
-    std::ifstream in(path);
-    if (!in) return o;                  // absent is not an error
+    if (fileSize(path) < 0) return o;   // absent is not an error
     o.loaded = true;
-    std::string line, section;
-    while (std::getline(in, line)) {
+    std::string section;
+    for (std::string line : splitLines(readTextFile(path))) {
         // a `;` or `#` comment, and the Win32 parser's own tolerance of blanks
         const auto cut = line.find_first_of(";#");
         if (cut != std::string::npos) line = line.substr(0, cut);

@@ -44,9 +44,13 @@
 #include <string>
 #include <vector>
 
-// The default: threads, unless this is an Emscripten build without pthreads.
+// The default: threads, unless this is an Emscripten build without pthreads
+// or CLASSIC MAC OS (Retro68 predefines `macintosh`): its libstdc++ has no
+// thread model at all - no `std::thread`, `std::mutex` or condition variable
+// (`todo/classic-mac-port-1999.md` 3d-i) - and the OS has none to offer a
+// game but cooperative ones, so every job runs where it is asked for.
 #if !defined(OMK_THREADS)
-#  if defined(__EMSCRIPTEN__) && !defined(__EMSCRIPTEN_PTHREADS__)
+#  if (defined(__EMSCRIPTEN__) && !defined(__EMSCRIPTEN_PTHREADS__)) || defined(macintosh)
 #    define OMK_THREADS 0
 #  else
 #    define OMK_THREADS 1

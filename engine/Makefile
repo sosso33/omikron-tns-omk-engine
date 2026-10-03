@@ -250,6 +250,28 @@ else
 	@echo "built build/vita/omk_vita.vpk (the game), omk_bench.vpk and omk_smoke.vpk"
 endif
 
+# THE CLASSIC MAC OS BUILD (`todo/classic-mac-port-1999.md` step 5): Carbon,
+# one PEF binary for Mac OS 9 and Mac OS X on PowerPC, with Retro68's
+# toolchain. Optional like the Vita's: `make` and the suite never need it.
+# `RETRO68` is Retro68's install (the directory holding bin/ and
+# powerpc-apple-macos/); nothing here names a machine's path.
+#
+#     make classic RETRO68=<retro68>
+#
+# Today it builds `OMKBoot` - `tools/omk.cpp`, the engine booted headless, as
+# an application (`backends/classic/`) - into build/classic/.
+.PHONY: classic
+classic:
+ifeq ($(wildcard $(RETRO68)/powerpc-apple-macos/cmake/retrocarbon.toolchain.cmake),)
+	@echo "no Retro68 at RETRO68=$(RETRO68) - the classic Mac build is optional;"
+	@echo "everything else builds and the suite passes without it (todo/classic-mac-port-1999.md)."
+else
+	cmake -S backends/classic -B build/classic \
+	    -DCMAKE_TOOLCHAIN_FILE=$(RETRO68)/powerpc-apple-macos/cmake/retrocarbon.toolchain.cmake >/dev/null
+	cmake --build build/classic -j$(NPROC)
+	@echo "built build/classic/OMKBoot.APPL (and .bin, MacBinary) - the engine booted, for Mac OS 9 and Tiger"
+endif
+
 # THE SAME, WITH `OMK_VITA_TUNE` (todo/optimization.md step 20): Cortex-A9
 # scheduling and LTO, into build/vita-tuned/ so the two can be laid side by
 # side on a console. Same title ids: installing one replaces the other.

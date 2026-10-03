@@ -95,6 +95,21 @@ private:
 // after the first `read_dir`s). There the same four answers come from the
 // kernel's own `sceIo` calls, and nothing else in the engine touches either.
 //
+// And on CLASSIC MAC OS (Retro68 predefines `macintosh`; Carbon, so OS 9
+// and OS X alike) they come from the File Manager: its C library's `open`
+// hands a name straight to `HOpenDF`, and `stat`, `mkdir` and directory
+// listing are not implemented at all (`todo/classic-mac-port-1999.md` 5).
+//
+// THE HOST'S FORM OF A PATH. Everywhere but classic Mac OS, `p` itself. There
+// the File Manager wants an HFS path - ':' separates, a LEADING ':' makes it
+// relative to the application's folder, a name before the first ':' is a
+// VOLUME, "::" is the parent - so "gamedata/IAM/AREA" becomes
+// ":gamedata:IAM:AREA", "/Macintosh HD/omk" becomes "Macintosh HD:omk", and a
+// root given as an HFS path ("Macintosh HD:omk:fr") keeps its colons. The
+// engine builds every path with '/', as it does on every host; anything that
+// opens a file itself passes the name through this first.
+std::string hostPath(const std::string& p);
+
 // Create `dir` and every missing parent. -> true when it exists afterwards.
 bool makeDirectories(const std::string& dir);
 // The size of a file in bytes, or -1 when it cannot be read.
@@ -107,6 +122,24 @@ long long fileSize(const std::string& path);
 // build's file whole; a short read there was silent, and the buffer's tail
 // stayed the zeros it was allocated with.
 std::vector<std::byte> readWholeFile(const std::string& path);
+
+// A whole TEXT file as a string - `readWholeFile`'s bytes, empty when it cannot
+// be read (`fileSize(path) < 0` tells absent from empty). The engine reads its
+// tables, its config and the trace logs this way and NOT through
+// `std::ifstream`: on classic Mac OS any C++ stream initialises libstdc++'s
+// locale, and Retro68's linker lays one of the locale's facet ids over the
+// next object (`num_get<char>::id` shares an address with
+// `timepunct_cache_w`), so the first stream crashes (2026-10-03,
+// `todo/classic-mac-port-1999.md` 5). No stream, no locale, no crash - and
+// one file path less, since this already goes through the platform layer.
+std::string readTextFile(const std::string& path);
+// The lines of `text` exactly as `std::getline` gives them: split on '\n',
+// the '\n' dropped and nothing else ('\r' kept), a last line without a '\n'
+// included, and no empty line after a final '\n'.
+std::vector<std::string> splitLines(const std::string& text);
+// `n` bytes as the whole of `path`, replacing it. -> false unless every byte
+// was written and the file closed. C stdio, for the reason above.
+bool writeWholeFile(const std::string& path, const void* data, std::size_t n);
 
 // REFUSE TO WRITE OVER SHIPPED GAME DATA.
 //

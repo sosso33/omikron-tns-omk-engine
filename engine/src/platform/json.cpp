@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "platform/json.h"
+#include "platform/datafs.h"
 
 #include <cstdlib>
-#include <fstream>
-#include <sstream>
 
 namespace omk {
 namespace {
@@ -102,11 +101,8 @@ Json Json::parse(const std::string& text) {
 }
 
 Json Json::parseFile(const std::string& path) {
-    std::ifstream f(path);
-    if (!f) return Json();
-    std::stringstream ss;
-    ss << f.rdbuf();
-    return parse(ss.str());
+    if (fileSize(path) < 0) return Json();
+    return parse(readTextFile(path));
 }
 
 const Json& Json::operator[](const std::string& key) const {

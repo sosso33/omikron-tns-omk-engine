@@ -24,9 +24,9 @@ TriangleSoup collisionSoup(std::span<const std::byte> d, SoupKind kind,
     std::size_t av = 0, at = 0, aq = 0;
     for (std::size_t i = 0; i < ms.size(); ++i) {
         basev[i] = av; baset[i] = at; baseq[i] = aq;
-        av += static_cast<std::size_t>(std::max(0, ms[i].vertices));
-        at += static_cast<std::size_t>(std::max(0, ms[i].triangles));
-        aq += static_cast<std::size_t>(std::max(0, ms[i].quads));
+        av += static_cast<std::size_t>(std::max<std::int32_t>(0, ms[i].vertices));
+        at += static_cast<std::size_t>(std::max<std::int32_t>(0, ms[i].triangles));
+        aq += static_cast<std::size_t>(std::max<std::int32_t>(0, ms[i].quads));
     }
     std::map<std::int32_t, std::size_t> byId;
     for (std::size_t i = 0; i < ms.size(); ++i) byId.emplace(ms[i].id, i);
@@ -143,7 +143,7 @@ TriangleSoup collisionSoup(std::span<const std::byte> d, SoupKind kind,
         const auto mi = static_cast<std::size_t>(m.index);
         curMesh = m.index;
         for (std::size_t t = baset[mi];
-             t < baset[mi] + static_cast<std::size_t>(std::max(0, m.triangles))
+             t < baset[mi] + static_cast<std::size_t>(std::max<std::int32_t>(0, m.triangles))
              && t < tris.size(); ++t) {
             const P a = resolve(m, tris[t].idx[0]);
             const P b = resolve(m, tris[t].idx[1]);
@@ -151,7 +151,7 @@ TriangleSoup collisionSoup(std::span<const std::byte> d, SoupKind kind,
             if (a.ok && b.ok && c.ok) emit(a, b, c);
         }
         for (std::size_t q = baseq[mi];
-             q < baseq[mi] + static_cast<std::size_t>(std::max(0, m.quads))
+             q < baseq[mi] + static_cast<std::size_t>(std::max<std::int32_t>(0, m.quads))
              && q < quads.size(); ++q) {
             const P p[4] = {resolve(m, quads[q].idx[0]), resolve(m, quads[q].idx[1]),
                             resolve(m, quads[q].idx[2]), resolve(m, quads[q].idx[3])};

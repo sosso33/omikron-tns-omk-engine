@@ -50,9 +50,9 @@ Bases runningBases(const std::vector<Mesh>& ms) {
         b.vertex.push_back(av);
         b.triangle.push_back(at);
         b.quad.push_back(aq);
-        av += static_cast<std::size_t>(std::max(0, m.vertices));
-        at += static_cast<std::size_t>(std::max(0, m.triangles));
-        aq += static_cast<std::size_t>(std::max(0, m.quads));
+        av += static_cast<std::size_t>(std::max<std::int32_t>(0, m.vertices));
+        at += static_cast<std::size_t>(std::max<std::int32_t>(0, m.triangles));
+        aq += static_cast<std::size_t>(std::max<std::int32_t>(0, m.quads));
     }
     return b;
 }
@@ -166,7 +166,7 @@ Geometry buildGeometry(std::span<const std::byte> d, DrawFilter filter) {
 
         const auto mi = static_cast<std::size_t>(m.index);
         for (std::size_t t = base.triangle[mi];
-             t < base.triangle[mi] + static_cast<std::size_t>(std::max(0, m.triangles))
+             t < base.triangle[mi] + static_cast<std::size_t>(std::max<std::int32_t>(0, m.triangles))
              && t < tris.size(); ++t) {
             const Triangle& tr = tris[t];
             if (tr.material < 0) continue;
@@ -197,7 +197,7 @@ Geometry buildGeometry(std::span<const std::byte> d, DrawFilter filter) {
         }
 
         for (std::size_t q = base.quad[mi];
-             q < base.quad[mi] + static_cast<std::size_t>(std::max(0, m.quads))
+             q < base.quad[mi] + static_cast<std::size_t>(std::max<std::int32_t>(0, m.quads))
              && q < quads.size(); ++q) {
             const Quad& qd = quads[q];
             if (qd.material < 0) continue;

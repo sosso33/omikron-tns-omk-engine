@@ -16,8 +16,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <fstream>
-#include <sstream>
 
 namespace omk {
 namespace {
@@ -165,10 +163,8 @@ std::vector<StartupRun> loadArea(const std::string& iamDir, int areaId,
 
 bool Session::loadAnnounceMap(const std::string& jsonPath) {
     announce_.clear();
-    std::ifstream f(jsonPath);
-    if (!f) return false;
-    std::stringstream ss; ss << f.rdbuf();
-    const std::string s = ss.str();
+    if (fileSize(jsonPath) < 0) return false;
+    const std::string s = readTextFile(jsonPath);
     // the same small scan the opcode table uses: the file's shape is fixed by
     // tools/exetables.py, and one table does not justify a JSON dependency
     std::size_t i = 0;

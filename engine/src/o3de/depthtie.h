@@ -160,7 +160,7 @@ private:
         std::uint32_t tri = 0, call = 0;
         std::uint32_t next = 0;        // the next unit sharing this key, in walk order
         std::uint32_t tail = 0;        // for a chain's head: its last unit
-        std::uint8_t quad = 0;
+        std::uint8_t isQuad = 0;   // not `quad`: BSD sys/types.h #defines quad (Retro68)
         std::uint8_t cand = 0;         // a single triangle whose successor was open to pair with it
         std::uint8_t writes = 0, loser = 0;
         std::uint8_t head = 0, hasWriter = 0;

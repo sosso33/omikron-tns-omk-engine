@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "script/script.h"
+#include "platform/datafs.h"
 
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
-#include <fstream>
-#include <sstream>
 
 namespace omk {
 namespace {
@@ -30,11 +29,8 @@ std::int16_t i16(std::span<const std::byte> d, std::size_t o) {
 
 OpcodeTable OpcodeTable::loadJson(const std::string& path) {
     OpcodeTable t;
-    std::ifstream f(path);
-    if (!f) return t;
-    std::stringstream ss;
-    ss << f.rdbuf();
-    const std::string s = ss.str();
+    const std::string s = readTextFile(path);
+    if (s.empty()) return t;
 
     // A deliberately small scan rather than a JSON library: the file is ours,
     // its shape is fixed by tools/exetables.py, and a dependency here would

@@ -2,13 +2,13 @@
 // `PlayOptions::parse` - see `playoptions.h`. Moved out of `play.cpp`'s
 // `main` by `todo/play-split.md` S2 (2026-10-02) without a change.
 #include "app/playoptions.h"
+#include "platform/datafs.h"
 
 #include "platform/settings.h"
 
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
-#include <fstream>
 
 namespace omk {
 
@@ -290,8 +290,7 @@ int PlayOptions::parse(int argc, char** argv) {
     if (argc >= 3 && argv[2][0] != '-') tb = argv[2];
     else {
         for (const char* cand : {"tables", "../tables", "../../tables"}) {
-            std::ifstream probe(std::string(cand) + "/vm_opcodes.json");
-            if (probe) { tb = cand; break; }
+            if (omk::fileSize(std::string(cand) + "/vm_opcodes.json") >= 0) { tb = cand; break; }
         }
         if (!tb.empty())
             std::printf("tables: none given, using %s\n", tb.c_str());

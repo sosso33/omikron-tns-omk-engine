@@ -2,27 +2,80 @@
 #include "platform/datafs.h"
 
 #include <algorithm>
+#include <cstring>
 #include <cctype>
 #include <cstdio>
-#include <fstream>
 
 #if defined(__vita__)
 #  include <psp2/io/dirent.h>
 #  include <psp2/io/fcntl.h>
 #  include <psp2/io/stat.h>
+#elif defined(macintosh)
+#  include <Files.h>
+#  include <TextUtils.h>
 #else
 #  include <filesystem>
 namespace fs = std::filesystem;
 #endif
 
 namespace omk {
+
+std::string hostPath(const std::string& p) {
+#if defined(macintosh)
+    if (p.empty()) return p;
+    const bool hfsRoot = p.find(':') != std::string::npos;   // the caller wrote HFS
+    const bool absolute = hfsRoot || p[0] == '/';
+    std::string out = absolute ? "" : ":";
+    std::size_t i = 0;
+    while (i <= p.size()) {
+        const std::size_t j = p.find_first_of("/\\", i);
+        const std::string part = p.substr(i, (j == std::string::npos ? p.size() : j) - i);
+        i = (j == std::string::npos) ? p.size() + 1 : j + 1;
+        if (part.empty() || part == ".") continue;
+        if (part == "..") {                                  // "::" climbs one
+            if (out.empty() || out.back() != ':') out += ':';
+            out += ':';
+            continue;
+        }
+        if (!out.empty() && out.back() != ':') out += ':';
+        out += part;
+    }
+    // a bare volume name is a file in the default folder until it has its ':'
+    if (absolute && out.find(':') == std::string::npos) out += ':';
+    return out;
+#else
+    return p;
+#endif
+}
+
 namespace {
+
+#if defined(macintosh)
+// The File Manager's view of a path: its FSSpec, and its catalog record.
+// -> false when the path does not name something that exists.
+bool catalogOf(const std::string& p, FSSpec& spec, CInfoPBRec& pb) {
+    const std::string h = hostPath(p);
+    if (h.empty() || h.size() > 255) return false;
+    Str255 name;
+    c2pstrcpy(name, h.c_str());
+    if (FSMakeFSSpec(0, 0, name, &spec) != noErr) return false;
+    std::memset(&pb, 0, sizeof pb);
+    pb.hFileInfo.ioNamePtr = spec.name;
+    pb.hFileInfo.ioVRefNum = spec.vRefNum;
+    pb.hFileInfo.ioDirID = spec.parID;
+    pb.hFileInfo.ioFDirIndex = 0;
+    return PBGetCatInfoSync(&pb) == noErr;
+}
+#endif
 
 // ---- the platform layer (see `datafs.h`): four questions and a join ------
 bool isDirectory(const std::string& p) {
 #if defined(__vita__)
     SceIoStat st;
     return sceIoGetstat(p.c_str(), &st) >= 0 && SCE_S_ISDIR(st.st_mode);
+#elif defined(macintosh)
+    FSSpec spec; CInfoPBRec pb;
+    return catalogOf(p, spec, pb) && (pb.hFileInfo.ioFlAttrib & kioFlAttribDirMask) != 0;
 #else
     std::error_code ec;
     return fs::is_directory(p, ec);
@@ -32,6 +85,9 @@ bool pathExists(const std::string& p) {
 #if defined(__vita__)
     SceIoStat st;
     return sceIoGetstat(p.c_str(), &st) >= 0;
+#elif defined(macintosh)
+    FSSpec spec; CInfoPBRec pb;
+    return catalogOf(p, spec, pb);
 #else
     std::error_code ec;
     return fs::exists(p, ec);
@@ -49,6 +105,21 @@ std::vector<std::string> listNames(const std::string& dir) {
         if (n != "." && n != "..") out.push_back(n);
     }
     sceIoDclose(d);
+#elif defined(macintosh)
+    // the folder's entries by index, 1 up, until the File Manager runs out
+    FSSpec spec; CInfoPBRec pb;
+    if (!catalogOf(dir, spec, pb) || !(pb.hFileInfo.ioFlAttrib & kioFlAttribDirMask)) return out;
+    const long dirID = pb.dirInfo.ioDrDirID;
+    for (short k = 1;; ++k) {
+        Str255 name;
+        std::memset(&pb, 0, sizeof pb);
+        pb.hFileInfo.ioNamePtr = name;
+        pb.hFileInfo.ioVRefNum = spec.vRefNum;
+        pb.hFileInfo.ioDirID = dirID;        // reset: an indexed call overwrites it
+        pb.hFileInfo.ioFDirIndex = k;
+        if (PBGetCatInfoSync(&pb) != noErr) break;
+        out.emplace_back(reinterpret_cast<const char*>(name + 1), name[0]);
+    }
 #else
     std::error_code ec;
     for (const auto& e : fs::directory_iterator(dir, ec))
@@ -211,8 +282,8 @@ bool safeOutputPath(const std::string& path) {
         }
     }
     // And anything inside a directory that looks like the shipped tree.
-#if defined(__vita__)
-    const std::string abs = path;   // no canonical form to take; the device paths are absolute
+#if defined(__vita__) || defined(macintosh)
+    const std::string abs = path;   // no canonical form to take (the Vita's device paths are absolute)
 #else
     std::error_code ec;
     const auto abs = fs::weakly_canonical(fs::path(path), ec).string();
@@ -241,6 +312,24 @@ bool makeDirectories(const std::string& dir) {
         }
     }
     return isDirectory(dir);
+#elif defined(macintosh)
+    // each prefix in turn, as on the Vita: `FSpDirCreate` makes one level
+    for (std::size_t i = 0; i <= dir.size(); ++i) {
+        if (i == dir.size() || dir[i] == '/' || dir[i] == '\\') {
+            const std::string p = dir.substr(0, i);
+            if (p.empty() || isDirectory(p)) continue;
+            const std::string h = hostPath(p);
+            if (h.size() > 255) return false;
+            Str255 name;
+            c2pstrcpy(name, h.c_str());
+            FSSpec spec;
+            if (FSMakeFSSpec(0, 0, name, &spec) == fnfErr) {
+                long made = 0;
+                FSpDirCreate(&spec, smSystemScript, &made);
+            }
+        }
+    }
+    return isDirectory(dir);
 #else
     std::error_code ec;
     fs::create_directories(dir, ec);
@@ -253,6 +342,10 @@ long long fileSize(const std::string& path) {
     SceIoStat st;
     if (sceIoGetstat(path.c_str(), &st) < 0) return -1;
     return static_cast<long long>(st.st_size);
+#elif defined(macintosh)
+    FSSpec spec; CInfoPBRec pb;
+    if (!catalogOf(path, spec, pb) || (pb.hFileInfo.ioFlAttrib & kioFlAttribDirMask)) return -1;
+    return static_cast<long long>(pb.hFileInfo.ioFlLgLen);   // the data fork
 #else
     std::error_code ec;
     const auto n = fs::file_size(path, ec);
@@ -276,6 +369,21 @@ std::vector<std::byte> readWholeFile(const std::string& path) {
         got += static_cast<std::size_t>(r);
     }
     sceIoClose(fd);
+#elif defined(macintosh)
+    // READ-ONLY, through the File Manager: the C library's `open` asks for
+    // read-WRITE whatever the mode, which a locked file or a CD refuses
+    FSSpec spec; CInfoPBRec pb;
+    if (!catalogOf(path, spec, pb)) return {};
+    short ref = 0;
+    if (FSpOpenDF(&spec, fsRdPerm, &ref) != noErr) return {};
+    while (got < d.size()) {
+        long want = static_cast<long>(std::min<std::size_t>(d.size() - got, 1u << 20));
+        const OSErr e = FSRead(ref, &want, d.data() + got);
+        if (want <= 0) break;
+        got += static_cast<std::size_t>(want);
+        if (e != noErr) break;
+    }
+    FSClose(ref);
 #else
     std::FILE* f = std::fopen(path.c_str(), "rb");
     if (!f) return {};
@@ -287,11 +395,35 @@ std::vector<std::byte> readWholeFile(const std::string& path) {
     std::fclose(f);
 #endif
     if (got < d.size()) {
-        std::printf("datafs: SHORT READ %s - %zu of %zu bytes\n", path.c_str(), got,
-                    d.size());
+        std::printf("datafs: SHORT READ %s - %lu of %lu bytes\n", path.c_str(),
+                    static_cast<unsigned long>(got), static_cast<unsigned long>(d.size()));
         d.resize(got);
     }
     return d;
+}
+
+std::string readTextFile(const std::string& path) {
+    const auto d = readWholeFile(path);
+    return std::string(reinterpret_cast<const char*>(d.data()), d.size());
+}
+
+std::vector<std::string> splitLines(const std::string& text) {
+    std::vector<std::string> out;
+    std::size_t i = 0;
+    while (i < text.size()) {
+        const std::size_t j = text.find('\n', i);
+        if (j == std::string::npos) { out.push_back(text.substr(i)); break; }
+        out.push_back(text.substr(i, j - i));
+        i = j + 1;
+    }
+    return out;
+}
+
+bool writeWholeFile(const std::string& path, const void* data, std::size_t n) {
+    std::FILE* f = std::fopen(hostPath(path).c_str(), "wb");
+    if (!f) return false;
+    const bool all = n == 0 || std::fwrite(data, 1, n, f) == n;
+    return std::fclose(f) == 0 && all;
 }
 
 }  // namespace omk

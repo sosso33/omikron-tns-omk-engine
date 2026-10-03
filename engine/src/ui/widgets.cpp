@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "ui/widgets.h"
+#include "platform/datafs.h"
 
 #include "script/savefile.h"
 
 #include "platform/json.h"
 
 #include <algorithm>
-#include <fstream>
 #include <iterator>
 #include <cstdlib>
 
@@ -2916,10 +2916,9 @@ bool UiWalk::press(std::uint32_t bits) {
 std::vector<SaveEntry> saveDirectory(const std::string& gamesPath,
                                      const UiWidgets& w) {
     std::vector<SaveEntry> out;
-    std::ifstream f(gamesPath, std::ios::binary);
-    if (!f) return out;
-    std::vector<char> d((std::istreambuf_iterator<char>(f)),
-                        std::istreambuf_iterator<char>());
+    if (fileSize(gamesPath) < 0) return out;
+    const std::string bytes = readTextFile(gamesPath);   // binary: a byte string
+    const std::vector<char> d(bytes.begin(), bytes.end());
     const auto u32 = [&d](std::size_t o) {
         std::uint32_t v = 0;
         for (int k = 3; k >= 0; --k)

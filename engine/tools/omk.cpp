@@ -17,7 +17,6 @@
 #include "platform/datafs.h"
 
 #include <cstdio>
-#include <fstream>
 #include <vector>
 #include <string>
 
@@ -56,9 +55,9 @@ int main(int argc, char** argv) {
                 r.uiScreen, r.uiVariable, r.interfaceAnswer);
     std::printf("  area     %d, from IAM/START +1414\n", r.startArea);
     std::printf("  loop     %d startup contexts, %d frames, %d conversations, "
-                "%d areas entered, %zu decisions announced\n",
+                "%d areas entered, %lu decisions announced\n",
                 r.startupContexts, r.framesRun, r.conversations,
-                r.areasEntered, r.announced.size());
+                r.areasEntered, static_cast<unsigned long>(r.announced.size()));
 
     // and the start menu with its labels resolved, which is what the IAM text
     // archives are for - without them every item is a number
@@ -100,9 +99,7 @@ int main(int argc, char** argv) {
             for (char c : dom) b.push_back(static_cast<std::uint8_t>(c));
             put32(v);
         }
-        std::ofstream f(dump, std::ios::binary);
-        f.write(reinterpret_cast<const char*>(b.data()),
-                static_cast<std::streamsize>(b.size()));
+        omk::writeWholeFile(dump, b.data(), b.size());   // not a stream: DataFs says why
     }
     return 0;
 }

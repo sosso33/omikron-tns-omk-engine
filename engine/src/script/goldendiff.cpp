@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "script/goldendiff.h"
+#include "platform/datafs.h"
 
 #include "formats/iam.h"
 #include "script/dialogue.h"
@@ -7,8 +8,6 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
-#include <fstream>
-#include <sstream>
 
 namespace omk {
 namespace {
@@ -31,10 +30,8 @@ std::uint32_t u32b(std::span<const std::byte> d, std::size_t o) {
 
 AnnounceMap AnnounceMap::loadJson(const std::string& path) {
     AnnounceMap m;
-    std::ifstream f(path);
-    if (!f) return m;
-    std::stringstream ss; ss << f.rdbuf();
-    const std::string s = ss.str();
+    const std::string s = readTextFile(path);
+    if (s.empty()) return m;
     std::size_t i = 0;
     while ((i = s.find("\"op\":", i)) != std::string::npos) {
         i += 5;
@@ -74,16 +71,15 @@ std::optional<TagEvent> AnnounceMap::of(std::uint8_t op,
 
 std::vector<TagEvent> parseCapture(const std::string& path) {
     std::vector<TagEvent> out;
-    std::ifstream f(path);
-    if (!f) return out;
-    std::string line;
+    if (fileSize(path) < 0) return out;
+    const std::string text = readTextFile(path);
     // The relay line, matched without a regex because its shape is fixed:
     //   Call KERNEL32.GetPrivateProfileStringA(... "<section>","<key>",
     //        "<default>",buf,size,"<filename>")
     // Only a `.TAG` filename counts - other .ini reads in a Wine process are
     // not the engine's operand log.
     const std::string tag = "GetPrivateProfileStringA(";
-    while (std::getline(f, line)) {
+    for (const std::string& line : splitLines(text)) {
         const auto at = line.find(tag);
         if (at == std::string::npos) continue;
         std::vector<std::string> q;
