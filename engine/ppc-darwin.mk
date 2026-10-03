@@ -13,8 +13,8 @@
 #
 # A SEPARATE file and a separate object directory on purpose: it shares
 # nothing with `Makefile`'s build/obj, so a PowerPC build never touches the
-# objects the host build, verify.py and the viewer are using - and the viewer
-# (backends/) is not built at all, only src/ and tools/.
+# objects the host build, verify.py and the viewer are using. The default
+# target builds src/ and tools/; `play` (below) builds the viewer.
 #
 # The C++ runtime is linked STATICALLY: Tiger's own libstdc++ is GCC 4.0's,
 # so a binary that needed GCC 14's at run time would not start there. The
@@ -70,8 +70,8 @@ $(OUT)/%: $(OBJDIR)/tools/%.o $(SRCOBJS)
 #
 #     make -f ppc-darwin.mk SDL2_PREFIX=... play
 #
-# No GPU backend (playgpu_none) and no instruments (playharness_off), the
-# INSTRUMENTS=0 build of todo/play-split.md S6.
+# No instruments (playharness_off), the INSTRUMENTS=0 build of
+# todo/play-split.md S6.
 SDL2_PREFIX ?=
 # PLAY_GPU picks the GPU-window file: `gl1` (the default) draws the world with
 # the fixed-function OpenGL 1.x backend, `backends/gl1/` - step 4 - offscreen,

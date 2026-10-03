@@ -197,6 +197,23 @@ backends/vulkan/vkrender.cpp   the LIVE renderer - Vulkan, MoltenVK on macOS,
                          `make vulkan` builds it when pkg-config finds vulkan
                          and glslc is present; `make` and the suite are
                          unaffected without either (PORTING A1/A8).
+backends/gl1/gl1render.cpp   the FIXED-FUNCTION OpenGL 1.x renderer, for the
+                         classic-Mac port (`todo/classic-mac-port-1999.md`
+                         3c-i): the same `Renderer`, drawn the way the
+                         original drove D3D - one draw per bucket, each
+                         state set only when it changes, the texture bound by
+                         `key & 0x3F`, 16-bit textures, the colour key as an
+                         alpha test - and with the original's CPU side:
+                         vertices transformed, clipped (near plane and screen
+                         edges) and culled on the CPU, fog per vertex. An
+                         offscreen CGL context; its frame comes back through
+                         `readback()`. Built only by `ppc-darwin.mk`'s `play`
+                         (for Tiger, or for the host with the host compiler,
+                         which is what `engine: gl1 backend` runs).
+ppc-darwin.mk            the engine, every tool and `omk-play` for Mac OS X
+                         10.4 on POWERPC, cross-compiled - the big-endian
+                         build that holds PORTING A9. Its own object
+                         directory, so it never touches the host build.
 ```
 
 **`build/omk-play ../fr ../tables` LAUNCHES THE GAME**: the three FLIS movies
@@ -3837,6 +3854,9 @@ branch, all three in I2D, behind two rasterizers that are both ported.
 | the PLAYER in adventure mode | **the chain, run from the keyboard**: `Input::frame`'s word (Aventure scheme, the world's repeat mask 0) -> `CefChannel` -> the clip's root delta (`Anim_RootDelta`, fractional ends, ROTATED by the facing matrix - node+156 = actor+288, which closes CLAUDE.md 6's "optional 3x3" for the actor path) -> `Walker` -> the floor; the window and whole-on-transition turn and root shift through `Cef_ApplyTurn`/`Cef_ApplyRootShift`; the idle word `sub_4A7A20` makes when nothing is held; the follow camera as `sub_415D10`/`sub_415E60` resolve and lag it (f42/f44/f46 = 3/8/8 for mode 0). Tier **5**: four replayable streams on `AIMPASSE`, `H_STAND -> H_SD-WK -> H_WALK -> H_WK-SD -> H_STAND`, 69.5 units in 60 frames along the facing, the eye 118.11 behind at fov 75, 1539/1595 tracks resolving | `Actor_Move`'s slide (a blocked step stops); the camera's flag 8 / 0x10 passes (`sub_417070`, `sub_416450`) and `sub_413C00`'s 0.7 x height rule, so the eye keeps the offset's own height and passes through walls; a blend is drawn as a cut; feet-or-pelvis for `+244..+252`; the world camera's own smoothing shorts (the preset's 3/8/8 stand in) |
 | input | 3 | the binding tables reproducing `tools/sim`'s decisions |
 | the Vulkan backend | none | explicitly unverifiable; correctness inherited from the software backend it mirrors. **It also carries the port's first ENHANCEMENT, off by default** (2026-09-08): `--aa N`, or `antialiasing = N` under the config's `[Enhancements]` section, is N-sample MSAA resolved into the same image the readback reads — an option the original explicitly turns OFF (ASSETS 4), so it has no tier by construction, and the software reference does not have it. `engine: anti-aliasing` pins that the default is off and that 4x moves only edge pixels (2.7% of the frame, 99.7% on an edge). **Bilinear texture filtering** (`--filter bilinear` / `texturefiltering = bilinear`) was the second, with the colour key carried in alpha so a keyed edge does not fringe; `engine: texture filter` pins the nearest path bit-identical and the filter's shape (55.6% of pixels moved by a mean of 4.6 levels). **Since 2026-10-03 it is not an enhancement but the DEFAULT** on every GPU backend (GLES and GL1 learned it too): the original's hardware device set MAG/MIN LINEAR (ASSETS 4). **Trilinear and anisotropic** (`--filter trilinear --anisotropy N`) generate the mip chain at upload, the key averaging correctly down it; `engine: mipmaps` pins the gradient order trilinear < anisotropic < bilinear. **Interface scaling** (`--ui-scaling linear`) filters the 640x480 layer's stretch and is the one enhancement BOTH backends draw, the interface being composed on the CPU; the colour key decides the silhouette and the blend the colour, so a keyed edge cannot fringe without an alpha to premultiply into (`engine: ui scaling`) |
+
+| the fixed-function OpenGL 1.x backend (`backends/gl1/`, 2026-10-02) | none | the same standing as Vulkan: what is asserted is agreement with the software reference, never with the original. `engine: gl1 backend` (macOS) - coverage 0.9932 and 153 pixels past 24 levels on Anekbah's street, and a bilinear frame. On Tiger's emulated Radeon 9700 it draws the street at 6-10 fps against ~1 in software; a wall grazed by the camera flashing flat for a frame there is open and suspected to be the emulator's (`todo/handoff-classic-mac.md` 5) |
+| big-endian hosts (`formats/le.h`, `ppc-darwin.mk`) | none | PORTING A9: every raw read through `loadLE`; 1927 of the 1928 tool calls the checks make identical on PowerPC (the last, directory order). The replay runs in the emulator, not in `verify.py` |
 
 **Still deliberately excluded**: DirectX, win32 and the C runtime. Those are
 host APIs the backends replace rather than code to port.

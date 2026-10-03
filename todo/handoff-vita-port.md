@@ -159,11 +159,18 @@ which cannot draw per-pixel light or a shadow map: now refused at start-up
 
 The port-vs-original audit is `todo/optimization.md` step 28 (the table, then
 dated "DONE" paragraphs); the console results are `todo/vita-port.md`'s
-2026-09-29/30 entries. Last console run: the apartment ~19 ms a frame (native
-mirror), the Bowie sequence ~50-67 ms a frame. The reader cannot test on the
-Vita for a while, so the next work should be provable on the Mac.
+2026-09-29/30 entries. Last console run: **2026-09-30 14:00**, the build of
+`a87e2c3` - steps 29-34 on the console, the city at 40-50 ms a frame (72 in
+the first minute), the player and the sky moved by the renderer, 0-0.2 whole
+uploads a frame (`todo/vita-port.md`'s 14:00 entry). The run before it: the
+apartment ~19 ms a frame (native mirror), the Bowie sequence ~50-67 ms. The
+reader cannot test on the Vita for a while, so the next work should be
+provable on the Mac.
 
-**Done since that run, none of it seen on a console** (each is a step of
+**Done since the run before the 14:00 one** - steps 29-34 SEEN in that log,
+step 35 its answer, and steps 36-38 (the texture pool set once, moving
+meshes by one matrix and their collision as whole meshes; not listed here,
+`todo/optimization.md`) seen on no console (each is a step of
 `todo/optimization.md`):
 * **step 29 - the depth tie decided once per set** and drawn a step back, on
   GLES and Vulkan: the per-frame tie's CPU (0.5-4.4 ms on the M3, ~50 ms of

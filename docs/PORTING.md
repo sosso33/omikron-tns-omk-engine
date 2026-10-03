@@ -245,6 +245,40 @@ A vendored file is checked in and `make` works without it being installed — a
 missing one is a broken checkout. A system one is found by the build and its
 absence merely disables the frontend, never the suite.
 
+## A9. Byte order: the data is little-endian, the host need not be
+
+Every shipped file is little-endian - the game ran on x86 - and so is every
+result file a tool writes for `verify.py`. A reader that copies bytes
+straight into an `int` or a `float` (`memcpy`, a cast through a pointer) is
+right on x86 and ARM and **silently wrong on a big-endian CPU**: nothing
+fails to parse, the numbers are simply other numbers. Run on PowerPC (Mac OS
+X 10.4 under QEMU, 2026-10-02, `todo/classic-mac-port-1999.md` 3a) such
+reads gave **0 actor records for 1032**, 16 map lines for 79 and a traffic
+circuit that would not load, with no error anywhere.
+
+So the rule, and it has no exceptions in ported code or in tools:
+
+* **every raw read of a multi-byte value goes through `loadLE<T>`**
+  (`src/formats/le.h`) - byte by byte, so alignment does not matter either;
+  a reader that already assembles its values from bytes is neutral and may
+  stay as it is;
+* **every multi-byte write of a result file goes through `writeLE`**, one
+  plain write on a little-endian host, swapped on a big-endian one.
+
+What holds it: `ppc-darwin.mk` builds the engine and every tool for
+big-endian PowerPC, and every tool call a `verify.py` check makes - 1928
+distinct calls over 146 tools - was replayed in Tiger against the Mac:
+**1927 identical**, the last differing only in directory order. That replay
+needs the emulator and is NOT part of `verify.py`, so a new raw read is
+caught only when someone runs it again; the rule above is what has to hold
+in between.
+
+Floats need one more thing to be byte-identical across the two: GCC fuses
+`a*b+c` into one PowerPC `fmadd` by default, rounding once where the host
+rounds twice, and a 300-frame traffic run drifted by 0.1 unit. Both builds
+compile with `-ffp-contract=off` for the comparison - and the original ran on
+x87, which has no fused operation.
+
 ---
 
 # Part B — the evidence
