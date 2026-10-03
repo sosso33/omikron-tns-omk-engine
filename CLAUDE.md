@@ -1011,7 +1011,16 @@ python3 tools/verify.py --only "engine: cull" "drawable mask"   # ~seconds
 python3 tools/verify.py --list   # what is checked, and which doc quotes it
 python3 tools/verify.py          # every number the docs quote, a few seconds
 python3 tools/verify.py --slow   # plus the whole-asset sweeps — MINUTES
+python3 tools/verify.py --slow --jobs 6   # the same, 6 checks at a time
 ```
+
+**`--jobs N` runs checks in parallel** (2026-10-03): each check is its own
+`verify.py --exact <name>` process, and every `make`/`cmake` a check runs takes
+one lock (`engine/build/.verify-make.lock`), so builds stay serial while the
+runs overlap. The first parallel `--slow` sweep took 20 minutes against about
+60 serially, and every red reproduced alone. Pre-build (`make`, `make play
+play-gles vulkan`) before a sweep so checks rarely queue on the lock; keep the
+display awake (`caffeinate -d -u -i`) for the GL checks.
 
 It exits with the number of failures, so it drops into a hook or a `&&` chain.
 
