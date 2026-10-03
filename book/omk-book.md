@@ -1390,6 +1390,14 @@ engine now reads its files without C++ streams at all. The lesson is one
 Part IV would recognise: a test too small to reach the fault proves nothing
 about the program that does.
 
+Then the viewer itself, through a frontend of the period: a window, a
+16-bit offscreen buffer copied to it, the keyboard read as a map of keys
+held. On Mac OS 9 and on Tiger it draws the street byte for byte as the Mac
+does. On the way it found three places where the viewer copied animation
+data straight into floats, which is wrong on a big-endian machine. Every
+tool had already been checked on the PowerPC, and none of them runs the
+viewer's crowd: a check covers what it runs, and nothing else.
+
 ## Two faces in the same place
 
 Chapter 8 said that when two faces occupy the same place, the first drawn

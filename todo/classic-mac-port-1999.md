@@ -604,6 +604,74 @@ into `System Folder:Startup Items` with its `omk.args`, the VM was booted and
 stopped after three minutes, and the output read off the image. On Tiger:
 `ditto -c -k --sequesterRsrc` to carry the resource fork, `LaunchCFMApp`.
 
+#### 3d-iv. The viewer on Mac OS 9: the Carbon frontend - 2026-10-03
+
+**`omk-play` runs on Mac OS 9.2 and on Tiger through `CarbonFrontend`, and 30
+frames of Anekbah's street start are BYTE-IDENTICAL to the host's
+framebuffer on both** (`e08bc23`; the host built with `-ffp-contract=off`,
+as the classic build is).
+
+The frontend (`backends/classic/carbonfront.cpp`) is what a 1999 Mac port
+would have used: a `NewCWindow`, a 16-bit `GWorld` - the Mac's 16-bit
+format is xRGB 1-5-5-5, so RGB565 loses green's low bit on the way, as it
+would have - `CopyBits` to the window and `QDFlushPortBuffer` for Mac OS X,
+`GetKeys` for the keys HELD (classic Mac OS does not deliver key-ups by
+default) mapped to the same DIK codes as `sdlfront.cpp`, `WaitNextEvent`
+for typed characters, the close box, dragging, Cmd-Q and the 'quit' Apple
+event, `Microseconds` for the clocks and `Delay` plus a spin for sleeping.
+No audio yet. `make classic` builds it as `OMKPlay`: the viewer's game files
+(SDL-free since the gateway), `playgpu_none`, `playharness_off` and a
+`--scene` stub.
+
+What running it found - four things, none of them the frontend's:
+
+* **THREE BIG-ENDIAN BUGS IN THE VIEWER.** Animation quaternions were
+  `memcpy`'d from the `.ani` bytes into `float[4]` - the crowd's `PASSANTH`
+  track (`playstate.cpp`), a bank's pose and the sneak's preview - so on
+  PowerPC every one was byte-reversed and a walker near the camera drew as a
+  shard across the frame. The PowerPC DARWIN build had them too: 3a-ii's
+  replay ran every TOOL a check calls, and no tool runs the viewer's crowd.
+  Cornered by elimination: the frame differed from the first frame on, the
+  same with `--no-crowd` agreed to float noise, the crowd probe's walkers
+  agreed exactly, and the Darwin build agreed with Retro68's against the
+  host - so big-endian, in the viewer. `loadLE<float>` now.
+* **RETRO68'S LINKER GIVES A WEAK `.bss` OBJECT NO STORAGE.** Its XCOFF
+  csect is laid out with length 0, so it sits on whatever follows. The same
+  fault as the stream bug of 3d-iii - that was libstdc++'s
+  `num_get<char>::id`, a weak template static - and it reaches our own code
+  through every inline variable with a constructor (`kScxStride`, a
+  `std::map` built at start-up over two guard variables) and every static
+  local in an inline function (`DialogPlayer::morph`). The crowd probe died
+  in `__cxa_guard_acquire`'s `recursive_init_error`. Each now has one strong
+  definition in its `.cpp` (`g_overlayPlanes` in a new `ui/overlay.cpp`);
+  libstdc++'s copy-on-write empty string, the one library object still
+  colliding, is defined strongly by its mangled name
+  (`xcoff_weak_storage.cpp`); zero-initialised objects are kept out of
+  `.bss` (`-fno-zero-initialized-in-bss`). Found from the symbol table: a
+  C_WEAKEXT label whose BS csect has length 0.
+* **`%zu` CONSUMES NO ARGUMENT** in Retro68's `printf` (the Vita's newlib
+  has the same gap), so a `%s` after it read a size as a pointer: the
+  viewer's setup faulted in `printf`. `classic_printf.h`, force-included,
+  redirects the printf family to the Vita's `c99format.h` rewrite; the
+  Vita's `-Wl,--wrap` cannot work on XCOFF, where a call names the
+  function's ENTRY symbol (`.vfprintf`).
+* `-ffp-contract=off`, as `ppc-darwin.mk`: without it Retro68's GCC fuses
+  multiply-adds and the frame differs by float noise (1495 pixels).
+
+Instruments that found them, worth keeping: the classic entry line-buffers
+its output, prints an escaping exception, and on `std::terminate` FAULTS on
+purpose after saying so - on Mac OS X the crash reporter then writes the
+whole backtrace (`~/Library/Logs/CrashReporter/<app>.crash.log`, PEF
+symbols resolved), which is how the guard was found. `make classic` turns
+any tool into an application on request (`-DOMK_CLASSIC_TOOLS="ped_probe"`),
+so a probe can be laid beside its host run.
+
+How it was run on OS 9: as the boot (3d-iii), from Startup Items, with the
+viewer's extra data - `FONTS`, `I2D`, `ANIMS`, `SOUNDS`, `MAP2D`, `RADAR`,
+`TRAJECTOIRES` beside `IAM`, `SCPTDATA`, `MESHES`, 408 MB, the smallest set
+that gives the host's frame - and `save-appart.bin` at `untitled:omk`. It
+took under three minutes from boot to the dump.
+
 ### 3e. Testing without a 1999 Mac
 
 * **Correctness on a big-endian CPU, first and cheapest**: build the engine
@@ -682,10 +750,10 @@ dropped.
    for SDL on both systems - **DONE 2026-10-03** (`12d77ec`; PORTING A1,
    `verify.py: engine: frontend gateway`). **And the engine itself runs on
    OS 9** (3d-iii, `aa7aa43`): the headless boot, byte-identical to the Mac.
-   Next in this step: the Carbon frontend - `CarbonFrontend :
-   omk::Frontend` and `makeHostFrontend` - so `omk-play` itself, not a
-   headless tool, comes up on OS 9 (a window, keys, Sound Manager audio, 555
-   video; the films through QuickTime after that).
+   **And `omk-play` itself** (3d-iv, `e08bc23`): the Carbon frontend, 30
+   frames byte-identical to the host on OS 9 and Tiger. Next in this step:
+   Sound Manager audio, then playing it by hand (the keys are mapped but no
+   person has driven it), then the films through QuickTime.
 6. **Correctness in QEMU** - OS 9.2.2 (`mac99`, Screamer), then Tiger on
    ppcosxkvm with the GPU.
 7. **RAVE** (optional, the *Unreal Tournament* route).

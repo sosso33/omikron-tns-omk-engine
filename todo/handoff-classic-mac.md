@@ -10,6 +10,12 @@ NOT a modern macOS port - OMK already runs on today's Macs.
 
 ## 1. Where it stands
 
+* **`omk-play` RUNS ON MAC OS 9 AND TIGER through the Carbon frontend**
+  (2026-10-03, `e08bc23`, plan 3d-iv): 30 frames of Anekbah's street start
+  BYTE-IDENTICAL to the host on both. Software renderer, no audio yet, and
+  nobody has driven it by hand. Getting there fixed three big-endian bugs in
+  the viewer (the PowerPC Darwin build had them too), worked round Retro68's
+  linker leaving weak `.bss` objects without storage, and `%zu`.
 * **THE ENGINE RUNS ON MAC OS 9** (2026-10-03, `aa7aa43`, plan 3d-iii): the
   headless boot (`tools/omk.cpp`) as ONE Carbon binary (`make classic`),
   run on Mac OS 9.2 and on Tiger - its boot dump BYTE-IDENTICAL to the
@@ -113,6 +119,23 @@ lets `verify.py` find the toolchain too):
 
     make classic RETRO68=/Volumes/omk-devtools/toolchains/retro68   # build/classic/OMKBoot.APPL
 
+`make classic` also builds `OMKPlay` (the viewer); add
+`-DOMK_CLASSIC_TOOLS="ped_probe;..."` to the cmake call for tool apps
+(`OMKTool_<name>`). **OMKPlay on Tiger**: its folder with `OMKPlay` and
+`omk.args` (one argument a line: `Macintosh HD:Users:qemudev:omk:fr`,
+`Macintosh HD:Users:qemudev:omk:repo:tables`, `--save`, `...:traces:
+save-appart.bin`, `--area`, `0`, `--stand`, `1804,0,-6890,336`, `--nofmv`,
+and `--frames 30 --res 640x480 --dump cplay.bin` for a comparison), launched
+with `open ./OMKPlay` (LaunchServices puts it in the desktop session;
+`LaunchCFMApp` from SSH gives a windowless run). Compare against the host
+built by `ppc-darwin.mk` with `PPC_CXX=c++ PPCFLAGS=-ffp-contract=off
+PLAY_GPU=none` - not `build/omk-play`, which contracts. **On OS 9**:
+`untitled:omk` holds the data (408 MB - the boot's three folders plus
+FONTS, I2D, ANIMS, SOUNDS, MAP2D, RADAR, TRAJECTOIRES), `save-appart.bin`,
+`OMKPlay` and `omkplay.args`; copy the last two into Startup Items (the
+args as `omk.args`), boot, wait ~3 minutes, stop QEMU, read `play.bin` and
+`omk-out.txt`, empty Startup Items.
+
 `OMKBoot` reads its arguments from `omk.args` beside it, one per line, HFS
 paths (`untitled:omk:fr`, `NOFMV`, `--tables`, `untitled:omk:tables`,
 `--dump`, `boot.bin`), and writes `omk-out.txt`. **On Tiger**: `ditto -c -k
@@ -143,13 +166,14 @@ file off the image.
    `c7a5443`; `--filter nearest` gives the old picture. LOOKED at in Tiger
    the same day: the street start through the emulated Radeon 9700,
    bilinear, still 10 fps, no artefact seen in one still.
-2. ~~**The engine on OS 9, headless**~~ - **DONE 2026-10-03**
-   (`aa7aa43`), above. **NEXT: the CARBON FRONTEND** -
-   `backends/classic/carbonfront.cpp`, `CarbonFrontend : omk::Frontend` and
-   `makeHostFrontend`, so `omk-play` comes up on OS 9: a window and a 555
-   GWorld blit, `WaitNextEvent` keys mapped to DIK codes, `TickCount` /
-   `Microseconds` for the clocks, then Sound Manager audio. The viewer's
-   files then build for Carbon with `playgpu_none` (software) first.
+2. ~~**The engine on OS 9, headless**~~ (`aa7aa43`) and ~~**the Carbon
+   frontend**~~ (`e08bc23`) - **DONE 2026-10-03**, above. **NEXT, in order**:
+   (a) PLAY it by hand on Tiger and OS 9 - keys, the menu, walking; the key
+   map is untested by a person; (b) SOUND MANAGER audio in `CarbonFrontend`
+   (`openAudio`/`queueAudio`/`playSound`: a double-buffered sound channel at
+   22050, the mixer's float samples to 16-bit); (c) speed - the software
+   renderer is ~1 fps on the emulated G4, and the gl1 backend is CGL (Tiger
+   only): AGL for OS 9; (d) the films through QuickTime.
    ~~**The gateway class**~~ - **DONE 2026-10-03** (`12d77ec`): the
    viewer's game code reaches the host only through `omk::Frontend` (the
    clocks, the window title, fullscreen, the display modes, text input and
@@ -200,6 +224,21 @@ file off the image.
   object directory, or the old objects are linked (it happened with
   `-ffp-contract=off`, which `ppc-darwin.mk` sets because GCC's fused
   multiply-add drifted a traffic run by 0.1 unit).
+* **NO WEAK OBJECT WITH A CONSTRUCTOR** (an `inline` variable built at
+  start-up, a static local in an inline function): Retro68's linker gives a
+  weak `.bss` object NO STORAGE, so its constructor writes over its
+  neighbour - `recursive_init_error` from a guard, or silent corruption
+  (PORTING A10, `engine: classic build`). The symbol-table test: a
+  C_WEAKEXT label whose BS csect has length 0.
+* **`%zu` CRASHES on Retro68** (it consumes no argument; a later `%s` reads a
+  size as a pointer) - `classic_printf.h` redirects the printf family; keep
+  it force-included.
+* **A run that "exits 0 and prints nothing"** is `std::terminate`: the
+  classic entry now says so and faults on purpose, so Tiger's crash reporter
+  writes the backtrace. Read it there.
+* **Compare frames against a host built WITHOUT fused multiply-add**
+  (`ppc-darwin.mk`, `-ffp-contract=off`); `build/omk-play` differs by float
+  noise.
 * **NO C++ STREAMS in anything the classic build links.** Retro68's linker
   lays libstdc++'s `num_get<char>::id` over `timepunct_cache_w`, so the
   locale's own set-up corrupts it and the first stream (even an

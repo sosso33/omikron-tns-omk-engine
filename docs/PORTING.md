@@ -281,7 +281,11 @@ distinct calls over 146 tools - was replayed in Tiger against the Mac:
 **1927 identical**, the last differing only in directory order. That replay
 needs the emulator and is NOT part of `verify.py`, so a new raw read is
 caught only when someone runs it again; the rule above is what has to hold
-in between.
+in between. And it covered only the TOOLS: the viewer's own reads in
+`backends/sdl/` were never replayed, and three of them `memcpy`'d animation
+quaternions - found when the classic Mac viewer drew a walker as a shard
+(2026-10-03, `todo/classic-mac-port-1999.md` 3d-iv). The rule is for every
+file that reads the data, not for the ones a check happens to run.
 
 Floats need one more thing to be byte-identical across the two: GCC fuses
 `a*b+c` into one PowerPC `fmadd` by default, rounding once where the host
@@ -302,8 +306,16 @@ stream crashes - in a large program only; a small test passes. Every path
 the engine opens also goes through `omk::hostPath()`, which is the identity
 everywhere but classic Mac OS, where it makes an HFS path.
 
-What holds it: `verify.py: engine: classic build` builds the classic engine
-and fails if stream code is linked into it (skipped without Retro68). The
+**And no WEAK object with a constructor**: no inline variable built at
+start-up (`inline const std::map<...> k = {...}`) and no static local in an
+inline function. Retro68's linker gives a weak `.bss` object no storage, so
+it sits on whatever follows - the stream bug above is one case, and
+`kScxStride` and `DialogPlayer::morph` were two in our own code (3d-iv). One
+strong definition in the `.cpp` instead; it costs nothing anywhere.
+
+What holds both: `verify.py: engine: classic build` builds the classic
+engine and viewer and fails if stream code is linked into either, or if any
+weak `.bss` object was left without storage (skipped without Retro68). The
 tools in `engine/tools/` are host programs and may use streams; the one the
 classic build links (`tools/omk.cpp`) does not.
 
