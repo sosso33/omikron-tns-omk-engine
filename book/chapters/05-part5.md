@@ -148,6 +148,13 @@ camera; GLES 0.996 there and 0.992 on the street), which is the right measure
 for a GPU:
 a driver's rasterisation rules and rounding are its own.
 
+They also filter. The original had two device set-ups: a 3D card got
+**bilinear** filtering, a software device **point** sampling. The live
+renderers stand where the card stood, so they filter by default; the software
+reference stands where the software device stood, so it does not. That
+agreement is measured with both on point sampling - the comparison is about
+which triangles land where, not how a texel is blended.
+
 The GLES backend goes further than the original ever did. It **poses and
 lights the characters in its vertex shader**: the rest geometry stays on the
 GPU, and each frame sends only one matrix per mesh and the lights that reach

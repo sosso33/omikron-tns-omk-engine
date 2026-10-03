@@ -361,7 +361,9 @@ Two backends, in this order:
    ATI renderer) and natively on Tiger/Leopard. [repo] The shipped render
    states map onto fixed function one for one: Gouraud vertex colour,
    additive and multiply blends, alpha-test cutout, LINEAR black fog, dither
-   on, point sampling (CLAUDE.md §4, `sub_4638C0`). The mirror is draw order
+   on, point sampling (CLAUDE.md §4, `sub_4638C0` - the SOFTWARE arm's, it
+   turned out: a card filtered bilinear, see 3c-i, and the port's default
+   does too since 2026-10-03). The mirror is draw order
    and depth with no stencil (`docs/ASSETS.md` 4c), which suits a Rage 128.
    Vertices go in pre-transformed (3b-i) through an orthographic projection.
 2. **RAVE** - optional, the *Unreal Tournament* route: closest to the
@@ -491,7 +493,8 @@ agent read out of `Render_FlushBuckets`, `Raster_DrawTriangles` and
 render state shadow-cached so the device is called only on a change, the
 texture bound by `bucketKey & 0x3F`; blends ONE/ONE (additive) and
 ZERO/INVSRCCOLOR (multiply), the colour key as an alpha test. So: state
-changed only when it differs, 16-bit textures (`GL_RGB5_A1`) point-sampled,
+changed only when it differs, 16-bit textures (`GL_RGB5_A1`) point-sampled
+(bilinear since 2026-10-03, by default - the HAL arm's, below),
 and - forced by the emulator as much as chosen - the original's CPU side:
 vertices TRANSFORMED, near-clipped and culled on the CPU and handed over
 already projected (the `D3DTLVERTEX` of it, as clip-space `(x w, y w, z w,

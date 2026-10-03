@@ -1597,15 +1597,22 @@ So the 1999 picture *on a software device* is Gouraud-shaded,
 perspective-correct, **nearest-sampled** textures with **no mipmaps and no
 anti-aliasing**, dithered into RGB565, with specular on and the linear black
 fog below (on a 3D card: the same but bilinear - see the correction above). Filtering and dithering are the
-DRIVER's (PORTING B, "not about the low bits of a pixel"), which is why the
-port samples NEAREST in both backends and checks no pixel value; enabling
-bilinear or MSAA in a replica would be an enhancement the original never
-drew, and this note is here so it is not mistaken for fidelity.
+DRIVER's (PORTING B, "not about the low bits of a pixel"), which is why no
+check asserts a filtered pixel's value. As first written this paragraph went
+on: "which is why the port samples NEAREST in both backends ... enabling
+bilinear or MSAA would be an enhancement the original never drew". The
+bilinear half was the software arm read as the hardware one; since
+2026-10-03 the GPU backends filter bilinear by DEFAULT and the software
+reference point-samples. MSAA stays an enhancement - neither arm turns
+ANTIALIAS on.
 
 **The dither is the exception in that sentence, and the port now does it**
-(2026-09-09). Filtering the original turned OFF and dithering it turned ON,
-so the two are not the same case: drawing hard 565 bands where the game drew
-dithered noise is a defect, and `--aa`/`--filter` are enhancements. A set is
+(2026-09-09). Anti-aliasing the original turned OFF and dithering it turned
+ON, so the two are not the same case: drawing hard 565 bands where the game
+drew dithered noise is a defect, and `--aa` is an enhancement (so is
+`--filter trilinear`; bilinear, the correction above found, is the
+original's own on a 3D card - this sentence once listed `--filter` beside
+`--aa`). A set is
 shaded by a colour baked into every vertex and the target is 16-bit, so a
 large smooth wall crosses a 5-bit step in one visible band; the dither trades
 that band for noise the eye integrates. It is ON by default in both backends,

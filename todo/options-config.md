@@ -174,7 +174,9 @@ line, OFF by default, which the software reference ignores because the
 original's ANTIALIAS state is explicitly off (`docs/ASSETS.md` 4). Nothing
 in the save header can carry it. `verify.py: engine: anti-aliasing`.
 The second key is `texturefiltering = nearest|bilinear|trilinear`
-(`--filter M`) with `anisotropy = N` (`--anisotropy N`), and
+(`--filter M`) - whose bilinear became the DEFAULT on 2026-10-03, being the
+original's own on a 3D card (`docs/ASSETS.md` 4) - with `anisotropy = N`
+(`--anisotropy N`), and
 `uiscaling = nearest|linear` (`--ui-scaling M`) filters the interface's own
 stretch, and `clipdistance = 0` lifts row 3's cap altogether (`--clip 0`),
 same rules; `todo/enhancements.md` carries the list. The last one is

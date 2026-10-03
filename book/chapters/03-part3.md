@@ -99,7 +99,8 @@ The engine sets its render states deliberately, and they are part of the
 game's look:
 
 * anti-aliasing **off**;
-* textures sampled **point**, no mipmaps;
+* textures filtered **bilinear** on a 3D card, sampled **point** on the
+  software devices, and **no mipmaps** on either;
 * the driver's **dither on**;
 * fog **linear**, and **black**;
 * the sky a **flat painted ceiling** that follows the camera, not a dome;

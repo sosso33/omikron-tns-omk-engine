@@ -1167,9 +1167,9 @@ pedestrians out.
 texture upload - and does the mirror with a GPU stencil. `--aa N` (or
 `antialiasing = N` under `[Enhancements]` in the config file, the section
 for what the original never had) turns on N-sample MSAA on the Vulkan
-backend only, and `--filter bilinear` (`texturefiltering = bilinear`) does
-the same for texture filtering, the colour key carried in alpha so keyed
-edges do not fringe. **OFF by default, and every enhancement that is not
+backend only, and `--filter M` (`texturefiltering = M`) chooses the
+texture filter on every GPU backend, the colour key carried in alpha so
+keyed edges do not fringe. **OFF by default, and every enhancement that is not
 the game's stays that way** (the reader's rule, 2026-09-08): the original
 never anti-aliases, and a replica judged against it must draw what it drew
 unless told otherwise. **But bilinear is NOT one of those** (corrected

@@ -221,6 +221,22 @@ fight (most of them) took the same fault.
 Knocked down, he should lie ON the floor, and after you win he should stay
 where he fell (`2edc423`).
 
+## 18. BILINEAR FILTERING, now the default on every GPU backend (2026-10-03)
+
+```
+build/omk-play ~/Documents/omk/fr ../tables --vulkan --save ../traces/save-appart.bin \
+    --area 0 --stand 1804,0,-6890,336
+```
+The original's 3D-card device filtered bilinear (`docs/ASSETS.md` 4), so the
+GPU backends now do by default - Vulkan, GLES (`omk-play-gles`, the Vita) and
+GL1 (seen in Tiger, one still). Look at three things, with `--filter
+nearest` to compare: CUTOUTS - grilles, railings, sign lettering - should keep
+a clean edge with no dark outline (GL1 may darken them by up to half; the
+other two should not); the Anekbah SHOP SIGNS, which sample rectangles of a
+shared atlas and may show a thin line of their neighbour at the edge (a known
+limit, never clamped); and anything that now looks blurry where the original
+looked sharp.
+
 ## What is NOT fixed, so do not report it as new
 
 * **The lift arrival is still black** and the camera is inside the lift-car

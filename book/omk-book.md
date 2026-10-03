@@ -769,7 +769,8 @@ The engine sets its render states deliberately, and they are part of the
 game's look:
 
 * anti-aliasing **off**;
-* textures sampled **point**, no mipmaps;
+* textures filtered **bilinear** on a 3D card, sampled **point** on the
+  software devices, and **no mipmaps** on either;
 * the driver's **dither on**;
 * fog **linear**, and **black**;
 * the sky a **flat painted ceiling** that follows the camera, not a dome;
@@ -1274,6 +1275,13 @@ reference on coverage, to 99% or better (Vulkan 0.995 through dialogue 402's
 camera; GLES 0.996 there and 0.992 on the street), which is the right measure
 for a GPU:
 a driver's rasterisation rules and rounding are its own.
+
+They also filter. The original had two device set-ups: a 3D card got
+**bilinear** filtering, a software device **point** sampling. The live
+renderers stand where the card stood, so they filter by default; the software
+reference stands where the software device stood, so it does not. That
+agreement is measured with both on point sampling - the comparison is about
+which triangles land where, not how a texel is blended.
 
 The GLES backend goes further than the original ever did. It **poses and
 lights the characters in its vertex shader**: the rest geometry stays on the

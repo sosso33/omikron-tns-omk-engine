@@ -2322,9 +2322,10 @@ all — which is the old report's "panel 2 stably wrong". Hardware breaks an
 exact tie by its own plane setup, consistently one way; the engine's rule is
 the first drawn, and both backends now impose it. `OMK_NO_TIE=1` leaves the
 fight in for a before/after, `OMK_TIE_LOG=1` lists every loser with its mesh.
-A residual twinkle on the glyphs is point sampling under a creeping camera,
-which is the engine's own filtering (`render states`) and what
-`--filter trilinear` exists to soften.
+A residual twinkle on the glyphs is point sampling under a creeping camera -
+the original's SOFTWARE devices' sampling (`render states`). Its 3D-card
+device filtered bilinear, which is every GPU backend's default since
+2026-10-03 and softens it; `--filter trilinear` softens it further.
 
 ### The back-face cull — the engine culls in SOFTWARE (2026-10-01)
 
