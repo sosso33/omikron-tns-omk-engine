@@ -26952,6 +26952,95 @@ def c_engine_anti_aliasing():
            "frame, and coverage agreement with the software reference >= 0.99"
 
 
+def c_engine_gl1_backend():
+    r"""THE FIXED-FUNCTION OpenGL 1.x BACKEND (`engine/backends/gl1/`,
+    `todo/classic-mac-port-1999.md` 3c-i) against the software reference.
+
+    TIER: none, like the Vulkan backend (`PORTING` B6) - its correctness is
+    the reference's, so what is asserted is AGREEMENT with the reference,
+    never with the original. Built by `ppc-darwin.mk`'s `play` target with
+    the HOST compiler (the shared Makefile does not build it), against the
+    host's SDL2 and legacy OpenGL; macOS only (the backend is CGL) and
+    skipped without SDL2.
+
+    One frame of Anekbah's street start (the CLAUDE.md example), 60 frames
+    in, rendered twice - the backend, and `OMK_GL1=0` for the software
+    reference - and compared:
+      * the log says the WORLD went through "OpenGL 1.x fixed-function" -
+        without it a context that failed to come up falls back to the
+        software reference, and two identical frames would agree perfectly:
+        a vacuous pass;
+      * ...and the two frames are NOT byte-identical, the same guard from
+        the other side;
+      * coverage agreement (both lit or both black) >= 0.99, and at most
+        0.5% of pixels differing by more than 24 in a channel.
+    Measured 2026-10-03 on the M3, in this check's own run (`--res 640x480`
+    named, the private saves file `_viewer_args` adds): coverage 0.9932,
+    153 pixels (0.05%) - the differences are rasterisation and per-vertex
+    rather than per-pixel fog, not content.
+
+    Shown to fail (2026-10-03): the texture slot taken as `key & 0x1F`
+    instead of the key's low SIX bits (ASSETS 4b), so every material past
+    slot 31 samples another atlas - coverage 0.9884 and 45523 pixels
+    (14.82%) differing, red on both bounds. Restored by an edit, the object
+    and binary deleted, and green again at 0.9932 / 153.
+    """
+    import subprocess, tempfile, shutil, platform
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if platform.system() != "Darwin":
+        return ("skipped",), ("skipped",), "the gl1 backend is CGL: macOS only"
+    pc = subprocess.run(["pkg-config", "--cflags", "--libs", "sdl2"], capture_output=True, text=True)
+    pfx = subprocess.run(["pkg-config", "--variable=prefix", "sdl2"], capture_output=True, text=True)
+    if pc.returncode != 0 or not os.path.isdir(os.path.join(fr, "IAM")):
+        return ("skipped",), ("skipped",), "no SDL2 (pkg-config) or no game data"
+    libs = subprocess.run(["pkg-config", "--libs", "sdl2"], capture_output=True, text=True).stdout.strip()
+    b = subprocess.run(["make", "-s", "-f", "ppc-darwin.mk", "PPC_CXX=c++", "PPCFLAGS=-ffp-contract=off",
+                        "LDFLAGS=", "OUT=build/host-gl1", "SDL2_PREFIX=" + pfx.stdout.strip(),
+                        "PLAY_LIBS=" + libs + " -framework OpenGL", "play"],
+                       cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "host-gl1", "omk-play")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "ppc-darwin.mk play (host) must build: " + b.stderr[-300:]
+    tmp = tempfile.mkdtemp()
+    try:
+        frames, logs = {}, {}
+        for tag, env in (("gl1", {}), ("sw", {"OMK_GL1": "0"})):
+            out = os.path.join(tmp, tag + ".bin")
+            r = subprocess.run([binp, fr, os.path.join(ROOT, "tables"),
+                                "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+                                "--area", "0", "--stand", "1804,0,-6890,336", "--nofmv",
+                                "--frames", "60", "--res", "640x480", "--dump", out],
+                               cwd=eng, capture_output=True, text=True,
+                               env=dict(os.environ, SDL_VIDEODRIVER="dummy", **env))
+            logs[tag] = r.stdout
+            if r.returncode == 0 and os.path.exists(out):
+                raw = open(out, "rb").read()
+                if len(raw) != 640 * 480 * 2:
+                    return (f"{tag} dump {len(raw)} bytes",), ("640x480",), \
+                        "the dump must be one 640x480 RGB565 frame: " + r.stdout[-400:]
+                frames[tag] = struct.unpack("<%dH" % (640 * 480), raw)
+        if len(frames) != 2:
+            return ("no frames",), ("two frames",), "omk-play must render both"
+        g, sw = frames["gl1"], frames["sw"]
+        N = len(g)
+        def big(x, y):
+            return max(abs(((x >> 11) & 31) - ((y >> 11) & 31)) * 8,
+                       abs(((x >> 5) & 63) - ((y >> 5) & 63)) * 4,
+                       abs((x & 31) - (y & 31)) * 8) > 24
+        differ = sum(1 for x, y in zip(g, sw) if x != y and big(x, y))
+        cover = sum(1 for x, y in zip(g, sw) if (x != 0) == (y != 0)) / N
+        got = ("the world through OpenGL 1.x fixed-function" in logs["gl1"],
+               g != sw, cover >= 0.99, differ <= N * 0.005)
+        print(f"        gl1 vs software: coverage {cover:.4f}, {differ} pixels differ by >24 "
+              f"({100.0 * differ / N:.2f}%)")
+        return got, (True, True, True, True), \
+            "the world drawn by the gl1 backend; its frame not the software one; " \
+            "coverage agreement >= 0.99; <= 0.5% of pixels differing by > 24"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def c_engine_texture_filter():
     r"""TEXTURE FILTERING - the second `[Enhancements]` option (bilinear), OFF
     by default, and the colour key surviving it.
@@ -40416,6 +40505,7 @@ SLOW = [
     ("engine: silhouette", c_engine_silhouette, "PORTING B6"),
     ("engine: near clip",  c_engine_near_clip,  "PORTING B6"),
     ("engine: renderer",   c_engine_renderer_boundary, "PORTING A2"),
+    ("engine: gl1 backend", c_engine_gl1_backend, "todo/classic-mac-port-1999.md 3c-i; PORTING B6"),
     ("engine: anti-aliasing", c_engine_anti_aliasing, "ASSETS 4"),
     ("engine: texture filter", c_engine_texture_filter, "ASSETS 4"),
     ("engine: mipmaps", c_engine_mipmaps, "ASSETS 4"),

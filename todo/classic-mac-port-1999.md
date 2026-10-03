@@ -599,9 +599,9 @@ dropped.
    Left: the 50 tools no check calls.
 4. **The GL 1.x fixed-function backend** - DONE 2026-10-02 (3c-i): built
    from the original's D3D path, 0.9932 coverage agreement with the
-   reference, 7 fps on Tiger's emulated Radeon. Left: no `verify.py` check
-   runs it (an offscreen GL context needs no window, so one could), and the
-   two open readings in 3c-i.
+   reference, 7 fps on Tiger's emulated Radeon. Checked by `verify.py:
+   engine: gl1 backend` (2026-10-03; macOS, built by `ppc-darwin.mk` with
+   the host compiler, shown to fail). Left: the two open readings in 3c-i.
 5. **Retro68 + Carbon bring-up**: the hello-world is DONE (3d-i, 2026-10-02):
    one Carbon binary runs on OS 9.2.1 and Tiger, C++20 + exceptions + RTTI
    hold, no `std::thread`, no `std::filesystem`. The GAME runs on Tiger
