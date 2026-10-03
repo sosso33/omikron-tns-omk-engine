@@ -160,6 +160,40 @@ int optionDisplayModes(int curW, int curH, std::vector<std::string>& names) {
     return current;
 }
 
+// ---- THE GATEWAY'S CLOCKS AND WINDOW (platform/frontend.h) -----------
+//
+// Each is the SDL call the viewer's game code used to make itself, moved here
+// unchanged (`todo/classic-mac-port-1999.md` step 5): the tick truncated to 32
+// bits as the old `Uint32` locals truncated it, the counter and its rate as
+// they were.
+std::uint32_t SdlFrontend::ticksMs() { return static_cast<std::uint32_t>(SDL_GetTicks()); }
+std::uint64_t SdlFrontend::perfCounter() { return SDL_GetPerformanceCounter(); }
+std::uint64_t SdlFrontend::perfFrequency() { return SDL_GetPerformanceFrequency(); }
+void SdlFrontend::delayMs(std::uint32_t ms) { SDL_Delay(ms); }
+std::string SdlFrontend::windowTitle() const {
+    SDL_Window* w = active();
+    const char* t = w ? SDL_GetWindowTitle(w) : nullptr;
+    return t ? t : "";
+}
+void SdlFrontend::setWindowTitle(const std::string& t) {
+    if (SDL_Window* w = active()) SDL_SetWindowTitle(w, t.c_str());
+}
+// The name field is real typing, so ask the host for characters. Not on
+// the Vita: there SDL answers with the system's on-screen keyboard, which
+// would cover the game from the first frame (`todo/vita-port.md` F4).
+void SdlFrontend::startTextInput() {
+#if !defined(__vita__)
+    SDL_StartTextInput();
+#endif
+}
+std::string SdlFrontend::lastError() const {
+    const char* e = SDL_GetError();
+    return e ? e : "";
+}
+
+std::unique_ptr<Frontend> makeHostFrontend() { return std::make_unique<SdlFrontend>(); }
+SdlFrontend& sdlFrontend(Frontend& f) { return static_cast<SdlFrontend&>(f); }
+
 // ---- FULLSCREEN (`todo/options-menu.md` 1) ---------------------------
 //
 // The original is FULLSCREEN unless told otherwise: `[Preferences]

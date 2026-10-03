@@ -11,8 +11,10 @@
 //   1. `make` with nothing installed builds every tool and passes the suite.
 //      Nothing under `src/` or `tools/` may need a library, which is why this
 //      header declares an interface and implements only the null case.
-//   2. No ported source includes a dependency header. SDL appears in exactly
-//      one file, `backends/sdl/play.cpp`, on the far side of this line.
+//   2. No ported source includes a dependency header. SDL appears only in
+//      the SDL-side files of `backends/sdl/` - the frontend `sdlfront.*`, the
+//      GPU glue `playgpu_*.cpp`, the `--scene` instrument - on the far side
+//      of this line (and not in the viewer's game code: the gateway below).
 //   3. **No dependency may perform work a reference implementation is a port
 //      of.** The frontend is handed an already-composed RGB565 `Surface` and
 //      uploads it. It must never blit, scale, blend or draw text - the ported
@@ -21,6 +23,15 @@
 //
 // So the frontend's whole job is: show these pixels, and tell me which keys
 // are down. Everything else is the engine's.
+//
+// **And it is the GATEWAY** (`todo/classic-mac-port-1999.md` step 5,
+// 2026-10-03): the viewer's game code - every `backends/sdl/play*.cpp` but
+// the frontend's own files, the per-backend GPU glue (`playgpu_*.cpp`) and
+// the `--scene` instrument - reaches the host through this class and nothing
+// else, and compiles without an SDL header (`verify.py: engine: frontend
+// gateway` proves it with a poisoned one). That is what lets a Carbon
+// frontend stand where SDL stands, on Mac OS 9 and on Tiger: it implements
+// this class and `makeHostFrontend`, and the game code does not change.
 #pragma once
 
 #include "input/pad.h"
@@ -153,8 +164,47 @@ public:
     // at the rate a person hears.
     virtual double queuedSeconds() { return 0.0; }
 
+    // ---- THE CLOCKS. What the viewer measures wall time with: a tick in
+    // milliseconds that wraps as a 32-bit one does (SDL_GetTicks, the
+    // original's timeGetTime), a high-resolution counter and its rate, and a
+    // sleep. None of it reaches a decision a headless run makes - a
+    // `--frames` run steps on the frame clock - so the reference frontend
+    // returns zeros and never sleeps.
+    virtual std::uint32_t ticksMs() { return 0; }
+    virtual std::uint64_t perfCounter() { return 0; }
+    virtual std::uint64_t perfFrequency() { return 1; }
+    virtual void delayMs(std::uint32_t) {}
+
+    // ---- THE WINDOW. Whichever is up: the frontend's own, or a GPU
+    // backend's it was handed. A frontend with no window does nothing.
+    virtual void setFullscreen(bool) {}
+    virtual bool fullscreen() const { return false; }
+    // The frame size changed (options row 2); -> false if it could not.
+    virtual bool resize(int, int) { return false; }
+    // OPTIONS ROW 2's list - the host's display modes, named as the
+    // engine labels them ("W x H x 16 bpp"),
+    // the running size among them; -> the running size's index.
+    virtual int displayModes(int curW, int curH, std::vector<std::string>& names) {
+        names.assign(1, std::to_string(curW) + " x " + std::to_string(curH) + " x 16 bpp");
+        return 0;
+    }
+    // An opaque identity for the window shown, null without one: a caller
+    // that labels a window keeps its base title per window.
+    virtual const void* windowId() const { return nullptr; }
+    virtual std::string windowTitle() const { return {}; }
+    virtual void setWindowTitle(const std::string&) {}
+    // Ask the host for typed characters (`HostInput::text`).
+    virtual void startTextInput() {}
+    // The host library's last error, for a message - "" when it has none.
+    virtual std::string lastError() const { return {}; }
+
     virtual void close() = 0;
 };
+
+// THE HOST'S frontend - the one function a frontend backend defines besides
+// its class: `backends/sdl/sdlfront.cpp` makes an `SdlFrontend`, and a
+// Carbon frontend would make its own. The viewer calls it once.
+std::unique_ptr<Frontend> makeHostFrontend();
 
 // The reference implementation: no window, no keys, and it never quits on its
 // own. It exists so that everything above this line can be built, linked and

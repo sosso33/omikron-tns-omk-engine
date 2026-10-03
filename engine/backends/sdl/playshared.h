@@ -3,13 +3,12 @@
 // (`playframe.cpp`): the includes, the backends' entry points, the Vita's
 // heap checkpoint, and the names the code uses unqualified. Moved out of the
 // top of `play.cpp` by `todo/play-split.md` (2026-10-02) without a change.
+//
+// NO SDL HEADER, since the gateway (2026-10-03, `platform/frontend.h`): what
+// includes this is game code, and reaches the host through `omk::Frontend`.
+// The SDL-side files - `sdlfront.*`, the GPU glue `playgpu_*.cpp`, the
+// `--scene` instrument - include `sdlfront.h` themselves.
 #pragma once
-
-#if defined(OMK_SDL3)
-#  include <SDL3/SDL.h>
-#else
-#  include <SDL.h>
-#endif
 
 #include "formats/anim.h"
 #include "formats/ctl.h"
@@ -44,7 +43,7 @@
 #include "app/playhelpers.h"
 #include "app/playoptions.h"
 #include "app/game.h"
-#include "sdlfront.h"
+#include "platform/frontend.h"
 #include "playtypes.h"
 #include "o3de/shadow.h"
 #include "platform/threads.h"
@@ -137,8 +136,6 @@ using omk::drawSubtitleBox;
 using omk::shortArc;
 using omk::SubBox;
 using omk::wavToDevice;
-using omk::optionDisplayModes;
-using omk::SdlFrontend;
 using omk::play::CtlSpriteInst;
 using omk::play::HoldRun;
 using omk::play::CharModel;

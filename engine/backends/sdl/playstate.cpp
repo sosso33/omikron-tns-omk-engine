@@ -1368,10 +1368,10 @@ bool PlayState::askSet(int slot, const std::string& stem, int area, long frame) 
 bool PlayState::integrateSet(SetLoad& L, long frame) {
     double waited = 0.0;
     if (L.job) {
-        const double w0 = static_cast<double>(SDL_GetPerformanceCounter());
+        const double w0 = static_cast<double>(front.perfCounter());
         L.job->wait();
-        waited = (static_cast<double>(SDL_GetPerformanceCounter()) - w0) * 1000.0 /
-                 static_cast<double>(SDL_GetPerformanceFrequency());
+        waited = (static_cast<double>(front.perfCounter()) - w0) * 1000.0 /
+                 static_cast<double>(front.perfFrequency());
     }
     if (!L.found) return false;
     WorldSlot& w = worldSlots[static_cast<std::size_t>(L.slot & 1)];
@@ -1408,7 +1408,7 @@ bool PlayState::integrateSet(SetLoad& L, long frame) {
 // way the engine's actor does (it is one record; only the decor changes).
 void PlayState::rebuildWorld() {
     omk::Renderer& world = *world_;
-    const double rebuild0 = static_cast<double>(SDL_GetPerformanceCounter());
+    const double rebuild0 = static_cast<double>(front.perfCounter());
     ++worldGen;
     worldTex.clear();
     worldDecors.clear();
@@ -1423,18 +1423,18 @@ void PlayState::rebuildWorld() {
         playerSoup.insert(playerSoup.end(), w.soup.begin(), w.soup.end());
         playerSteep.insert(playerSteep.end(), w.steep.begin(), w.steep.end());
     }
-    const double rebuildA = static_cast<double>(SDL_GetPerformanceCounter());
+    const double rebuildA = static_cast<double>(front.perfCounter());
     playerMovingTri.assign(playerSoup.size() / 9, 0);   // new sets: nothing has moved yet
     playerMovingIds.clear();
     rebuildFixedGrid();
     rebuildMovingGrid();
-    const double rebuildB = static_cast<double>(SDL_GetPerformanceCounter());
+    const double rebuildB = static_cast<double>(front.perfCounter());
     steepMovingTri.assign(playerSteep.size() / 9, 0);
     steepMovingIds.clear();
     rebuildSteepFixedGrid();
     rebuildSteepMovingGrid();
     mergedValid = true;
-    const double rebuild1 = static_cast<double>(SDL_GetPerformanceCounter());
+    const double rebuild1 = static_cast<double>(front.perfCounter());
     // NOT handed to the renderer here. The frame's pool - the sets', then
     // the characters', the player's and the sprites' - is composed and set
     // before anything is drawn, and this bumps `poolComposition`, so it
@@ -1448,19 +1448,19 @@ void PlayState::rebuildWorld() {
     if (poolTwice) world.setTextures(worldTex);
     poolSize = worldTex.size();
     ++poolComposition;   // the character and sprite sections re-append over this
-    const double hz = static_cast<double>(SDL_GetPerformanceFrequency());
+    const double hz = static_cast<double>(front.perfFrequency());
     std::printf("world: rebuild - soups and grids %.1f ms (the merge %.1f, the walkable grid "
                 "%.1f over %zu triangles, the steep one %.1f over %zu), the texture pool %.1f ms\n",
                 (rebuild1 - rebuild0) * 1000.0 / hz, (rebuildA - rebuild0) * 1000.0 / hz,
                 (rebuildB - rebuildA) * 1000.0 / hz, playerSoup.size() / 9,
                 (rebuild1 - rebuildB) * 1000.0 / hz, playerSteep.size() / 9,
-                (static_cast<double>(SDL_GetPerformanceCounter()) - rebuild1) * 1000.0 / hz);
+                (static_cast<double>(front.perfCounter()) - rebuild1) * 1000.0 / hz);
 }
 
 // the interface's clock: the wall's, or a headless run's frames at 30 a second
 long PlayState::uiClockMs() {
     if (frames > 0) return n * 1000 / 30;
-    return static_cast<long>(SDL_GetTicks());
+    return static_cast<long>(front.ticksMs());
 }
 
 // ---- THE PLAYER'S DAMAGE, from the HIT onward ----
@@ -1553,7 +1553,7 @@ void PlayState::applyPlayerDamage(long n, int owner, const char* what, int dmgIn
 }
 
 double PlayState::phaseNow() {
- return static_cast<double>(SDL_GetPerformanceCounter()) / phaseHz;
+ return static_cast<double>(front.perfCounter()) / phaseHz;
 }
 
 // ...and a few NAMED spans inside them, summed the same way, so a slow

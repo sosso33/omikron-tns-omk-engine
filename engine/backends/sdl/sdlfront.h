@@ -25,13 +25,22 @@
 
 namespace omk {
 
+// The host frontend AS SDL's, for the SDL-side files that need what is not
+// the gateway's - the GPU glue's window flags and window hand-over. Valid
+// because `makeHostFrontend` here makes an `SdlFrontend`; game code never
+// calls it (it does not include this header).
+class SdlFrontend;
+SdlFrontend& sdlFrontend(Frontend& f);
+
 // OPTIONS ROW 2's LIST - the host's display modes; see `sdlfront.cpp`.
 int optionDisplayModes(int curW, int curH, std::vector<std::string>& names);
 
 class SdlFrontend : public omk::Frontend {
 public:
-    void setFullscreen(bool on);
-    bool fullscreen() const { return fullscreen_; }
+    void setFullscreen(bool on) override;
+    bool fullscreen() const override { return fullscreen_; }
+    // The flags a GPU backend's window is created with (fullscreen or not) -
+    // for the GPU glue, which makes its own window; not part of the gateway.
     std::uint32_t windowFlags() const;
     // A GPU backend's window, which this frontend did not create but whose
     // fullscreen toggle and resize it still serves. A Vulkan one remakes its
@@ -39,7 +48,7 @@ public:
     void attachWindow(SDL_Window* w) { gpuWin_ = w; }
     SDL_Window* active() const { return win_ ? win_ : gpuWin_; }
 
-    bool resize(int w, int h);
+    bool resize(int w, int h) override;
 
     bool open(int w, int h, const std::string& title) override;
 
@@ -75,6 +84,20 @@ public:
     void flushAudio() override;
 
     double queuedSeconds() override;
+
+    // the gateway's clocks and window (platform/frontend.h)
+    std::uint32_t ticksMs() override;
+    std::uint64_t perfCounter() override;
+    std::uint64_t perfFrequency() override;
+    void delayMs(std::uint32_t ms) override;
+    int displayModes(int curW, int curH, std::vector<std::string>& names) override {
+        return optionDisplayModes(curW, curH, names);
+    }
+    const void* windowId() const override { return active(); }
+    std::string windowTitle() const override;
+    void setWindowTitle(const std::string& t) override;
+    void startTextInput() override;
+    std::string lastError() const override;
 
     void close() override;
 

@@ -50,24 +50,19 @@ int PlayState::setupDevices() {
     // finished picture through the swapchain. That readback is the cost the
     // scene viewer's `--vulkan` avoids by presenting the attachment directly,
     // and it cannot be avoided while anything is composited on the CPU.
-    vkWin = nullptr;
     vkRen = nullptr;
     worldVk = nullptr;   // --world-vulkan, the offscreen harness
-    glWin = nullptr;
     glRen = nullptr;
-    (void)glWin;   // read by the GLES window's file
     // THE GPU WINDOW, per backend (`playgpu_<backend>.cpp`, todo/play-split.md
     // S5): Vulkan's swapchain, or a GLES2 context, or neither - and then the
-    // software reference's window below.
+    // software reference's window below. A GPU window is handed to the
+    // frontend there, so F11 and the resolution row act on whichever is up.
     gpuOpenWindow();
     if (!vkRen && !glRen && !front.open(dispW, dispH, "OMK Engine (software)")) {
-        std::fprintf(stderr, "SDL: %s\n", SDL_GetError());
+        std::fprintf(stderr, "SDL: %s\n", front.lastError().c_str());
         return 1;
     }
     if (!vkRen && !glRen) std::printf("renderer: the software reference\n");
-    // F11 and the resolution row act on whichever window is up
-    if (vkRen) front.attachWindow(vkWin);
-    else if (glRen) front.attachWindow(glWin);
     if (front.fullscreen())
         std::printf("fullscreen: on - the %dx%d frame scaled to the desktop at its aspect "
                     "(F11 toggles)\n", dispW, dispH);
@@ -97,14 +92,11 @@ int PlayState::setupDevices() {
     }
     // One place that decides where a finished framebuffer goes, so the movies,
     // the splash and the frame loop cannot drift apart about it.
-    glSwapMs = 0.0;   // SDL_GL_SwapWindow's share, for the phase line
+    glSwapMs = 0.0;   // the GL swap's share, for the phase line
     (void)glSwapMs;
-    // The name field is real typing, so ask the host for characters. Not on
-    // the Vita: there SDL answers with the system's on-screen keyboard, which
-    // would cover the game from the first frame (`todo/vita-port.md` F4).
-#if !defined(__vita__)
-    SDL_StartTextInput();
-#endif
+    // The name field is real typing, so ask the host for characters (not on
+    // the Vita - the frontend says why).
+    front.startTextInput();
 
     OMK_HEAPCHECK("before music");
     // ---- THE MUSIC.

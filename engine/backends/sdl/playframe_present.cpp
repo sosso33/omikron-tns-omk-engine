@@ -82,10 +82,10 @@ int PlayState::phasePresent() {
         // bursting to catch up. The simulation is untouched - it steps on the
         // measured delta above - and `--frames` runs never reach here.
         if (!frames) {
-            static const double perfHz = static_cast<double>(SDL_GetPerformanceFrequency());
+            static const double perfHz = static_cast<double>(front.perfFrequency());
             const double kPeriod = 1.0 / static_cast<double>(frameRate);   // row 11
-            const auto nowSec = [] {
-                return static_cast<double>(SDL_GetPerformanceCounter()) / perfHz;
+            const auto nowSec = [this] {
+                return static_cast<double>(front.perfCounter()) / perfHz;
             };
             double now = nowSec();
             // A SLOW FRAME, SAID - an instrument. A reader reported "small freezes
@@ -123,7 +123,7 @@ int PlayState::phasePresent() {
             if (paceNext <= 0.0 || now > paceNext + kPeriod) paceNext = now;
             while (now < paceNext) {
                 const double left = paceNext - now;
-                SDL_Delay(left > 0.002 ? static_cast<Uint32>((left - 0.0015) * 1000.0) : 0);
+                front.delayMs(left > 0.002 ? static_cast<std::uint32_t>((left - 0.0015) * 1000.0) : 0);
                 now = nowSec();
             }
             paceNext += kPeriod;

@@ -30,7 +30,7 @@ void PlayState::gpuOpenWorldHarness() {
                     r->name());
         // the window was opened as "(software)" before this renderer existed;
         // the fps counter takes its base title from the window, so say it here
-        if (SDL_Window* w = front.active()) SDL_SetWindowTitle(w, "OMK Engine (OpenGL 1.x)");
+        front.setWindowTitle("OMK Engine (OpenGL 1.x)");
     } else {
         delete r;
         std::printf("renderer: no fixed-function OpenGL - the software reference\n");

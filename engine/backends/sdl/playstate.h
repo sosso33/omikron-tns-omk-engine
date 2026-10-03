@@ -352,13 +352,15 @@ struct PlayState {
     const omk::UiWalk * optWalkSeen{};   // the walk of 29 the options were opened for
     bool optEntered{};   // focused for this visit to panel 0x004CF420
     std::pair<int, int> pendingDisplay{};   // options row 2, served between frames
-    SdlFrontend front{};
-    SDL_Window * vkWin{};
+    // THE HOST, through the gateway (`platform/frontend.h`): the frontend
+    // backend's own object behind the interface. The GPU windows are the
+    // GPU glue's (`playgpu_<backend>.cpp`), not members.
+    std::unique_ptr<omk::Frontend> frontHost = omk::makeHostFrontend();
+    omk::Frontend & front = *frontHost;
     omk::Renderer * vkRen{};
     omk::Renderer * worldVk{};   // --world-vulkan, the offscreen harness
-    SDL_Window * glWin{};
     omk::Renderer * glRen{};
-    double glSwapMs{};   // SDL_GL_SwapWindow's share, for the phase line
+    double glSwapMs{};   // the GL swap's share, for the phase line
     const omk::AdpcmTables & adpcmTables = game.audio.adpcmTables;
     omk::MusicPlayer & music = game.audio.music;
     int & playingTrack = game.audio.playingTrack;
@@ -518,10 +520,10 @@ struct PlayState {
     omk::HostInput host{};
     omk::Surface fb{};
     long n{};
-    Uint32 lastMs{};
-    Uint32 fpsSince{};
-    Uint32 fpsLastMs{};
-    Uint32 fpsWorst{};
+    std::uint32_t lastMs{};
+    std::uint32_t fpsSince{};
+    std::uint32_t fpsLastMs{};
+    std::uint32_t fpsWorst{};
     int fpsFrames{};
     float spriteAnchor[3] = {0.0f, 0.0f, 0.0f};
     bool spriteAnchorSet{};

@@ -3,6 +3,8 @@
 // WASD - no boot chain, no widget tree, no movies. Moved out of `play.cpp`
 // unchanged by `todo/play-split.md` (2026-10-02).
 #include "playshared.h"
+#include "sdlfront.h"   // an SDL-side instrument: its own window and events
+using omk::SdlFrontend;
 #if defined(OMK_VULKAN)
 #include "playgpu_vulkan.h"   // the set viewer's own Vulkan window
 #endif

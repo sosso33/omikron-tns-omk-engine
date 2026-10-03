@@ -57,7 +57,9 @@ void drawSubtitle(omk::Surface& fb, const omk::TextLayout& lay,
                   int dispW, int dispH, int inset640 = 32,
                   SubBox box = SubBox::None, char face = 'J',
                   int scroll = 0, int* overflowOut = nullptr,
-                  bool mediaLine = false) {
+                  bool mediaLine = false, std::uint32_t nowMs = 0) {
+    // `nowMs`: the host's tick (`Frontend::ticksMs`), which pulses the scroll
+    // arrows below - handed in, as a free function has no frontend.
     // 32 is `Dialog_TickUI`'s block; `Subtitle_Show` (0x0041E040) lays a
     // `media.play` line out inset 16 - the caller says which.
     const int inset = inset640 * dispW / 640;
@@ -206,7 +208,7 @@ void drawSubtitle(omk::Surface& fb, const omk::TextLayout& lay,
     // more to see.
     if (overflow > 0) {
         const int pulse = 128 + static_cast<int>(127.0 * std::sin(
-                              static_cast<double>(SDL_GetTicks()) * 0.006));
+                              static_cast<double>(nowMs) * 0.006));
         const auto tri = [&](int apexY, int baseY) {
             const int xa = dispW - 32, xb = dispW - 25, xm = dispW - 29;
             const int lo = apexY < baseY ? apexY : baseY;
@@ -866,7 +868,7 @@ void PlayState::screensHuds() {
         const auto ptMedia = omk::parseMarkup(mediaText, 'V');
         if (!drawPositioned(fb, lay, ptMedia, dispW, dispH))
             drawSubtitle(fb, lay, mediaText, {}, -1, dispW, dispH, 16,
-                         SubBox::None, 'V', 0, nullptr, /*mediaLine*/ true);
+                         SubBox::None, 'V', 0, nullptr, /*mediaLine*/ true, front.ticksMs());
         mediaTextFrames -= frameSec * 30.0;
     }
     // The subtitle goes over whatever the frame already holds - which
@@ -909,7 +911,7 @@ void PlayState::screensHuds() {
                      inMenu ? std::string() : dlg.lineText(),
                      menu, sel, dispW, dispH, 32,
                      inMenu ? SubBox::Replies : SubBox::Line, 'J',
-                     lineScroll, &lineOverflow);
+                     lineScroll, &lineOverflow, false, front.ticksMs());
         });
     }
     mark("screens, hud");
@@ -930,24 +932,24 @@ void PlayState::screensFps() {
     // terminal line with the worst frame.
     {
         ++fpsFrames;
-        const Uint32 nowMs = SDL_GetTicks();
-        const Uint32 dtMs = nowMs - fpsLastMs;
+        const std::uint32_t nowMs = front.ticksMs();
+        const std::uint32_t dtMs = nowMs - fpsLastMs;
         if (dtMs > fpsWorst) fpsWorst = dtMs;
         fpsLastMs = nowMs;
         if (nowMs - fpsSince >= 1000) {
             const double secs = (nowMs - fpsSince) / 1000.0;
             const double rate = fpsFrames / secs;
-            if (SDL_Window* tw = front.active()) {
+            if (const void* tw = front.windowId()) {
                 static std::string baseTitle;
-                static SDL_Window* titled = nullptr;
+                static const void* titled = nullptr;
                 if (titled != tw) {
-                    const char* t = SDL_GetWindowTitle(tw);
-                    baseTitle = t ? t : "OMK Engine";
+                    baseTitle = front.windowTitle();
+                    if (baseTitle.empty()) baseTitle = "OMK Engine";
                     titled = tw;
                 }
                 char buf[48];
                 std::snprintf(buf, sizeof buf, " - %.0f fps", rate);
-                SDL_SetWindowTitle(tw, (baseTitle + buf).c_str());
+                front.setWindowTitle(baseTitle + buf);
             }
             if (showFps) {
                 std::printf("fps %.1f  (%d frames, worst %u ms)  %s%s\n",

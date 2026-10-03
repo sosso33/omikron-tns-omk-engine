@@ -1079,7 +1079,7 @@ int PlayState::modesShoot() {
                 optWalkSeen = walk.get();
                 optMenu.open(openScreen == 29 ? 1 : 0, settings.v);
                 std::vector<std::string> modes;
-                const int cur = optionDisplayModes(dispW, dispH, modes);
+                const int cur = front.displayModes(dispW, dispH, modes);
                 optMenu.setDevices(2, modes, cur);
                 // row 8's drivers: the GPU backend running, then string 68,
                 // "Rendu logiciel", which `0x00493380` draws for the last one

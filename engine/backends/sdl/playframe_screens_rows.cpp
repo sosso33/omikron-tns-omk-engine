@@ -933,7 +933,7 @@ void PlayState::screensShopRows() {
         // oscillator 0's 5000 ms, shown in place of line two (below).
         static std::string shopMessage;
         static long shopMessageMs = -1000000;
-        const long shopNowMs = static_cast<long>(SDL_GetTicks());
+        const long shopNowMs = static_cast<long>(front.ticksMs());
         const auto buyText = omk::iamStrings(fs, "IAM/Buy");
         const auto str = [&](int id) {
             return id >= 0 && id < static_cast<int>(buyText.size())
@@ -1516,7 +1516,7 @@ void PlayState::screensLift() {
         // to the buttons when they are left empty.
         static std::string mpMessage;
         static long mpMessageMs = -1000000;
-        const long mpNowMs = static_cast<long>(SDL_GetTicks());
+        const long mpNowMs = static_cast<long>(front.ticksMs());
         if (int request = -1, row = -1; walk->takeMultiplan(request, row)) {
             const auto from = omk::objectList(state, src == 0 ? omk::ObjectList::Carried
                                                                : omk::ObjectList::Second);

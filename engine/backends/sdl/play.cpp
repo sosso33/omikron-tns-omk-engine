@@ -5,8 +5,10 @@
 //     omk-play <gamedata> <tables/> --scene Aapkayl        the SCENE VIEWER
 //
 // **`backends/sdl/` is the only place in the tree that includes an SDL header**
-// - this file and, since `todo/play-split.md` S1c, `sdlfront.{h,cpp}`, the
-// window, keyboard, pad and audio device - which is
+// - and since the gateway (2026-10-03, `platform/frontend.h`) not this file:
+// only `sdlfront.{h,cpp}` (the window, keyboard, pad and audio device), the
+// GPU glue `playgpu_*.cpp` and the `--scene` instrument. This file and the
+// rest of the viewer reach the host through `omk::Frontend` - which is
 // `docs/PORTING.md` A8 rule 2. (`backends/vulkan/vkrender.cpp` is the only one
 // that includes Vulkan's, on the same terms and for the same reason; the rule
 // is one dependency per backend file, not one backend file in total.) Rule 3 is the one that is not hygiene, and

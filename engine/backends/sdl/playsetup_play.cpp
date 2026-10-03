@@ -51,12 +51,12 @@ int PlayState::setupPlay() {
                     // three (console log 2026-09-18). Vita3K is active at once,
                     // which is why it played there. Wait up to 3 s for the
                     // start; after that, inactive means the end.
-                    const Uint32 avStart = SDL_GetTicks();
+                    const std::uint32_t avStart = front.ticksMs();
                     bool avStarted = false;
                     const char* avEnd = "the film ended";
                     for (;;) {
                         if (omk::vita::avActive(av)) avStarted = true;
-                        else if (avStarted || SDL_GetTicks() - avStart > 3000) {
+                        else if (avStarted || front.ticksMs() - avStart > 3000) {
                             if (!avStarted) avEnd = "the player never became active (3 s)";
                             break;
                         }
@@ -82,7 +82,7 @@ int PlayState::setupPlay() {
                             omk::vita::avAudio(av, pcm, rate) && !pcm.empty())
                             front.queueAudio(pcm);
                         if (omk::vita::avVideo(av, film)) { present(film); ++shownAv; }
-                        else SDL_Delay(2);
+                        else front.delayMs(2);
                     }
                     omk::vita::avClose(av);
                     front.flushAudio();
@@ -90,7 +90,7 @@ int PlayState::setupPlay() {
                         omk::HostInput h;
                         if (!front.pump(h)) break;
                         if (h.held.empty() && h.pad.buttons == 0) break;
-                        SDL_Delay(10);
+                        front.delayMs(10);
                     }
                     std::printf("  %s: %ld frames shown, sound at %d Hz - %s\n", name, shownAv, rate, avEnd);
                     continue;
@@ -125,10 +125,10 @@ int PlayState::setupPlay() {
             // DECODER's position (nothing is queued, so nothing is
             // subtracted), which races ahead of real time, and the
             // frame-dropping below would discard nearly every frame.
-            const Uint32 movieStart = SDL_GetTicks();
+            const std::uint32_t movieStart = front.ticksMs();
             const auto heardSeconds = [&] {
                 return audioOk ? mov.audioSeconds() - front.queuedSeconds()
-                               : (SDL_GetTicks() - movieStart) / 1000.0;
+                               : (front.ticksMs() - movieStart) / 1000.0;
             };
             long shown = 0;
             // THE FILM AT ITS OWN SIZE on a GPU present: the GLES pass fits a
@@ -203,7 +203,7 @@ int PlayState::setupPlay() {
                 if (!frames) {
                     const double ahead = shown / fps - heardSeconds();
                     if (ahead > 0.001 && ahead < 1.0)
-                        SDL_Delay(static_cast<Uint32>(ahead * 1000.0));
+                        front.delayMs(static_cast<std::uint32_t>(ahead * 1000.0));
                 }
                 if (frames && mov.framesDecoded() >= frames) {
                     skipAll = bounded = true; break;
@@ -218,7 +218,7 @@ int PlayState::setupPlay() {
                 omk::HostInput h;
                 if (!front.pump(h)) break;
                 if (h.held.empty() && h.pad.buttons == 0) break;
-                SDL_Delay(10);
+                front.delayMs(10);
             }
             if (dropped)
                 std::printf("  %s: %ld of %ld frames dropped to keep up with the sound\n",
@@ -240,7 +240,7 @@ int PlayState::setupPlay() {
         if (front.reopenAudio(kDeviceRate, 2))
             std::printf("audio: device open at %d Hz stereo for the world\n", kDeviceRate);
         else
-            std::printf("audio: NO DEVICE (%s) - the world will be silent\n", SDL_GetError());
+            std::printf("audio: NO DEVICE (%s) - the world will be silent\n", front.lastError().c_str());
     }
 
 

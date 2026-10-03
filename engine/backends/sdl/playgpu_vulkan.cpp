@@ -6,6 +6,10 @@
 #include "playframe.h"
 #include "playgpu_vulkan.h"
 
+// The Vulkan window - this glue's, not the game's (the gateway: game code
+// holds no host handle). One viewer a process, so one window.
+static SDL_Window* vkWin = nullptr;
+
 bool PlayState::gpuWindowBuild() const { return true; }
 
 // Vulkan when the machine has it (see THE RENDERER in `playsetup_devices.cpp`)
@@ -14,7 +18,7 @@ void PlayState::gpuOpenWindow() {
         if (SDL_Init(SDL_INIT_VIDEO) == 0) {
             vkWin = SDL_CreateWindow("OMK Engine (vulkan)",
                                      SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                     dispW, dispH, SDL_WINDOW_VULKAN | front.windowFlags());
+                                     dispW, dispH, SDL_WINDOW_VULKAN | omk::sdlFrontend(front).windowFlags());
         }
         if (vkWin) {
             unsigned nx = 0;
@@ -34,6 +38,7 @@ void PlayState::gpuOpenWindow() {
                 omk::vulkanAttachSurface(vr, reinterpret_cast<unsigned long long>(surf)) &&
                 vr->init(dispW, dispH)) {
                 vkRen = vr;
+                omk::sdlFrontend(front).attachWindow(vkWin);   // F11 and row 2 act on it
                 std::printf("renderer: VULKAN - %s\n", omk::vulkanDeviceName(vr));
             } else {
                 delete vr;

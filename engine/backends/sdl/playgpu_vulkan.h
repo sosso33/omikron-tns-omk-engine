@@ -5,6 +5,7 @@
 #pragma once
 
 #include "playshared.h"
+#include "sdlfront.h"
 
 #if defined(OMK_SDL3)
 #  include <SDL3/SDL_vulkan.h>

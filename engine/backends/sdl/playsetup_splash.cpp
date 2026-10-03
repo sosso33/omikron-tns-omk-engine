@@ -35,12 +35,12 @@ int PlayState::setupSplash() {
             present(sf);
             std::printf("splash: IMAGES/OMIKRON.BMP, 5 s (Sleep(0x1388) - "
                         "not skippable in the original either)\n");
-            const Uint32 until = SDL_GetTicks() + 5000;
-            while (SDL_GetTicks() < until) {
+            const std::uint32_t until = front.ticksMs() + 5000;
+            while (front.ticksMs() < until) {
                 omk::HostInput h;
                 if (!front.pump(h)) break;      // the window closed
                 present(sf);
-                SDL_Delay(16);
+                front.delayMs(16);
             }
         } else {
             std::printf("no IMAGES/OMIKRON.BMP - no splash\n");
@@ -59,9 +59,9 @@ int PlayState::setupSplash() {
     for (int guard = 0; guard < 300; ++guard) {
         if (!front.pump(host)) break;
         if (host.held.empty() && host.pad.buttons == 0) break;   // pad buttons too
-        SDL_Delay(10);
+        front.delayMs(10);
     }
-    lastMs = SDL_GetTicks();
+    lastMs = front.ticksMs();
     fpsSince = lastMs, fpsLastMs = lastMs, fpsWorst = 0;
     fpsFrames = 0;
     // Where `Script_Display3DSprite` puts a sprite: the active camera's
@@ -79,7 +79,7 @@ int PlayState::setupSplash() {
     // submission up to the readback, the readback itself (on GLES the wait for
     // the GPU), the CPU compose after it, and the present with its swap.
     // Averaged over 60 frames and printed as one `frame phases:` line.
-    phaseHz = static_cast<double>(SDL_GetPerformanceFrequency());
+    phaseHz = static_cast<double>(front.perfFrequency());
     phTop = 0.0, phRb0 = -1.0, phRb1 = -1.0;
     phN = 0;
     phGpu = 0;                          // frames presented from the GPU

@@ -294,7 +294,7 @@ void PlayState::inputPause() {
     // deterministic. The clamp is for a hitch: a long stall must not jump
     // the pose forward by however long the window was dragged.
     if (!frames) {
-        const Uint32 nowMs = SDL_GetTicks();
+        const std::uint32_t nowMs = front.ticksMs();
         double dt = (nowMs - lastMs) / 1000.0;
         lastMs = nowMs;
         // THE ENGINE'S OWN CLAMP (docs/BOOT.md 4): `flt_4C30D8 = 30 / fps`,

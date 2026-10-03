@@ -27111,6 +27111,63 @@ def c_engine_gl1_backend():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def c_engine_frontend_gateway():
+    r"""THE GATEWAY (`src/platform/frontend.h`, `todo/classic-mac-port-1999.md`
+    step 5): the viewer's game code reaches the host through `omk::Frontend`
+    and nothing else, so a Carbon frontend can stand where SDL stands on Mac
+    OS 9 and Tiger without the game code changing.
+
+    Proved by COMPILING, not by scanning for names: every `backends/sdl/*.cpp`
+    that is game code - all but the frontend's own `sdlfront.cpp`, the
+    per-backend GPU glue `playgpu_*.cpp` and the `--scene` instrument
+    `playscene.cpp`, which are SDL's side - is syntax-checked with NO SDL
+    include path and a POISONED `SDL.h` (and `SDL3/SDL.h`) first on the path,
+    each a bare `#error`. A file that includes SDL, directly or through a
+    header, fails on the poison; one that calls an SDL function or names an
+    SDL type without the header fails as undeclared. Either way, red.
+
+    Two guards against a vacuous pass: the file count is asserted before
+    anything is judged (a glob that matched nothing would otherwise pass
+    everything), and `sdlfront.cpp` under the same flags must FAIL, and on the
+    poison's own message - so the poison is shown to bite.
+
+    Measured 2026-10-03: 30 game files, all compile; sdlfront.cpp stopped by
+    the poison. Shown to fail (2026-10-03): an `SDL_GetTicks()` put back into
+    `playframe_input_parts.cpp` - that file red, undeclared.
+    """
+    import subprocess, tempfile, shutil, glob, re
+    from concurrent.futures import ThreadPoolExecutor
+    eng = os.path.join(ROOT, "engine")
+    side = re.compile(r"(sdlfront|playgpu_[a-z0-9]+|playscene)\.cpp$")
+    files = sorted(f for f in glob.glob(os.path.join(eng, "backends", "sdl", "*.cpp"))
+                   if not side.search(f))
+    if len(files) < 25:
+        return (len(files),), (">= 25 game files",), "the glob found too few files to judge"
+    tmp = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(tmp, "SDL3"))
+        for h in ("SDL.h", os.path.join("SDL3", "SDL.h")):
+            open(os.path.join(tmp, h), "w").write(
+                "#error OMK-GATEWAY-POISON: an SDL header reached game code\n")
+        flags = ["c++", "-std=c++20", "-fsyntax-only", "-w", "-I" + tmp, "-Isrc", "-Ithird_party"]
+        def compile_one(f):
+            r = subprocess.run(flags + [f], cwd=eng, capture_output=True, text=True)
+            return f, r.returncode, r.stderr
+        with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as ex:
+            results = list(ex.map(compile_one, files + [os.path.join(eng, "backends", "sdl", "sdlfront.cpp")]))
+        game, front = results[:-1], results[-1]
+        bad = [os.path.basename(f) + ": " + (re.search(r"error: (.*)", err) or re.search(r"(.*)", err)).group(1)[:90]
+               for f, rc, err in game if rc != 0]
+        poison_bites = front[1] != 0 and "OMK-GATEWAY-POISON" in front[2]
+        print(f"        {len(game)} game files, {len(game) - len(bad)} compile without SDL; "
+              f"sdlfront.cpp {'stopped by the poison' if poison_bites else 'NOT stopped by the poison'}")
+        return (len(game) >= 25, bad, poison_bites), (True, [], True), \
+            "every game-side viewer file compiles with no SDL header (a poisoned one first on the path); " \
+            "sdlfront.cpp, which must include SDL, is stopped by the poison"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def c_engine_texture_filter():
     r"""TEXTURE FILTERING - bilinear, the DEFAULT on a GPU backend since
     2026-10-03 (what the original drew on a 3D card), and the colour key
@@ -40621,6 +40678,7 @@ SLOW = [
     ("engine: near clip",  c_engine_near_clip,  "PORTING B6"),
     ("engine: renderer",   c_engine_renderer_boundary, "PORTING A2"),
     ("engine: gl1 backend", c_engine_gl1_backend, "todo/classic-mac-port-1999.md 3c-i; PORTING B6"),
+    ("engine: frontend gateway", c_engine_frontend_gateway, "todo/classic-mac-port-1999.md step 5; PORTING A1"),
     ("engine: anti-aliasing", c_engine_anti_aliasing, "ASSETS 4"),
     ("engine: texture filter", c_engine_texture_filter, "ASSETS 4"),
     ("engine: mipmaps", c_engine_mipmaps, "ASSETS 4"),

@@ -4,6 +4,11 @@
 // arm it replaces, moved unchanged.
 #include "playframe.h"
 #include "playgpu_gles.h"
+#include "sdlfront.h"
+
+// The GLES window - this glue's, not the game's (the gateway: game code holds
+// no host handle). One viewer a process, so one window.
+static SDL_Window* glWin = nullptr;
 
 bool PlayState::gpuWindowBuild() const { return true; }
 
@@ -36,7 +41,7 @@ void PlayState::gpuOpenWindow() {
             // and on 2026-09-25 a batch of such runs put windows - one of them
             // playing the boot films - in front of the reader (CLAUDE.md 5).
             const Uint32 glWinFlags = SDL_WINDOW_OPENGL |
-                (omk::envSet("OMK_NO_GPU_PRESENT") ? SDL_WINDOW_HIDDEN : front.windowFlags());
+                (omk::envSet("OMK_NO_GPU_PRESENT") ? SDL_WINDOW_HIDDEN : omk::sdlFrontend(front).windowFlags());
 #if defined(OMK_SDL3)
             glWin = SDL_CreateWindow("OMK Engine (gles)", dispW, dispH, glWinFlags);
 #else
@@ -50,6 +55,7 @@ void PlayState::gpuOpenWindow() {
             if (texFilter > 0) gr->setTextureFilter(texFilter);
             if (gr->init(dispW, dispH)) {
                 glRen = gr;
+                omk::sdlFrontend(front).attachWindow(glWin);   // F11 and row 2 act on it
                 std::printf("renderer: GLES2 - %s\n", gr->name());
                 // G4 (todo/vita-port.md): the tie is ~1 ms of CPU on an M1 and
                 // ~50 in a console's city; whether the Vita's 16-bit depth
