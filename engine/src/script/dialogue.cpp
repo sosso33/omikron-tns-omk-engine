@@ -12,6 +12,12 @@
 #include <set>
 
 namespace omk {
+
+const std::vector<std::byte>& DialogPlayer::morph() const {
+    static const std::vector<std::byte> none;
+    return morph_ ? *morph_ : none;
+}
+
 namespace {
 
 std::int16_t i16(std::span<const std::byte> d, std::size_t o) {

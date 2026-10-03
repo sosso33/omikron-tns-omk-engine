@@ -27170,29 +27170,34 @@ def c_engine_frontend_gateway():
 
 def c_engine_classic_build():
     r"""THE CLASSIC MAC OS BUILD (`todo/classic-mac-port-1999.md` step 5): the
-    engine as ONE Carbon binary for Mac OS 9 and Mac OS X on PowerPC, built
-    with Retro68 (`make classic`, `backends/classic/`).
+    engine and the VIEWER as Carbon binaries for Mac OS 9 and Mac OS X on
+    PowerPC, built with Retro68 (`make classic`, `backends/classic/`).
 
-    What was established by RUNNING it, and cannot be re-run here (it needs
-    the emulators): `OMKBoot` - `tools/omk.cpp`, the engine booted headless -
-    run on Mac OS 9.2 (QEMU `mac99`, from Startup Items) and on Mac OS X 10.4
-    (ppcosxkvm, `LaunchCFMApp`) wrote a boot dump BYTE-IDENTICAL to the Mac's
-    from the same arguments (2026-10-03): `aventure.scx`'s 20 sprites and 53
-    sounds, area 118, the start menu's answer, 61 announced decisions in the
-    same order.
+    What was established by RUNNING them, and cannot be re-run here (it needs
+    the emulators), 2026-10-03:
+      * `OMKBoot` (`tools/omk.cpp`, the engine booted headless) on Mac OS 9.2
+        and on Tiger: its boot dump BYTE-IDENTICAL to the Mac's;
+      * `OMKPlay` (`omk-play` through the Carbon frontend) on Tiger, 30 frames
+        of Anekbah's street start: its framebuffer BYTE-IDENTICAL to the
+        host's (both built with -ffp-contract=off).
 
-    What this check holds, because it is what made that possible and what a
-    later change would break silently: the classic build must contain NO C++
-    STREAM CODE. Any stream initialises libstdc++'s locale, and Retro68's
-    linker lays `num_get<char>::id` over `timepunct_cache_w`, so the locale's
-    own set-up corrupts it and the first stream crashes - in a large program
-    only, so a small test passes (`platform/datafs.h`, `readTextFile`). So:
-    `make classic` must build `OMKBoot`, and its symbol table must name none
-    of `ios_base::Init`, `basic_ios`, `basic_filebuf`, `_M_cache_locale`.
+    What this check holds, because each is what made that possible and what a
+    later change would break silently (3d-iii, 3d-iv):
+      * NO C++ STREAM CODE in either: a stream initialises libstdc++'s
+        locale, whose own set-up corrupts it here (PORTING A10);
+      * NO WEAK .bss OBJECT WITHOUT STORAGE: Retro68's XCOFF linker gives a
+        weak object in .bss a csect of length 0, so it sits on whatever
+        follows - an inline variable with a constructor (`kScxStride`) or a
+        static local in an inline function (`DialogPlayer::morph`) wrote over
+        guard variables, and the crowd probe died in `recursive_init_error`.
+        Read from the symbol table: a C_WEAKEXT label whose BS csect has
+        length 0. Asserted as NONE, not "none colliding", because which ones
+        collide is layout luck.
 
     Skipped without Retro68 (`$OMK_RETRO68`, or `retro68 =` in omk.conf).
     Shown to fail (2026-10-03): a `std::ifstream` put back into
-    `src/platform/json.cpp` - the stream symbols return, red.
+    `src/platform/json.cpp` (222 stream symbols); `kScxStride` made an
+    `inline` variable again (weak objects without storage, red).
     """
     import subprocess, re
     r68 = omkpaths.retro68_path()
@@ -27200,18 +27205,38 @@ def c_engine_classic_build():
         return ("skipped",), ("skipped",), "no Retro68 (set $OMK_RETRO68 or retro68 = in omk.conf)"
     eng = os.path.join(ROOT, "engine")
     b = subprocess.run(["make", "-s", "classic", "RETRO68=" + r68], cwd=eng, capture_output=True, text=True)
-    xcoff = os.path.join(eng, "build", "classic", "OMKBoot.xcoff")
-    appl = os.path.join(eng, "build", "classic", "OMKBoot.APPL")
-    if b.returncode != 0 or not (os.path.exists(xcoff) and os.path.exists(appl)):
-        return ("build failed",), ("built",), "make classic must build OMKBoot: " + (b.stdout + b.stderr)[-400:]
-    nm = subprocess.run([os.path.join(r68, "bin", "powerpc-apple-macos-nm"), xcoff],
-                        capture_output=True, text=True)
-    syms = nm.stdout.splitlines()
-    streams = sorted({l.split()[-1] for l in syms
-                      if re.search(r"ios_base4Init|basic_ios|basic_filebuf|_M_cache_locale", l)})
-    print(f"        OMKBoot: {len(syms)} symbols, {len(streams)} of them stream code")
-    return (len(syms) > 1000, streams[:4]), (True, []), \
-        "make classic builds OMKBoot (its symbol table read), and no C++ stream code is linked into it"
+    apps = ("OMKBoot", "OMKPlay")
+    xs = {a: os.path.join(eng, "build", "classic", a + ".xcoff") for a in apps}
+    if b.returncode != 0 or not all(os.path.exists(x) and os.path.exists(x[:-6] + ".APPL") for x in xs.values()):
+        return ("build failed",), ("built",), "make classic must build OMKBoot and OMKPlay: " + (b.stdout + b.stderr)[-400:]
+    got = []
+    for a, x in xs.items():
+        syms = subprocess.run([os.path.join(r68, "bin", "powerpc-apple-macos-nm"), x],
+                              capture_output=True, text=True).stdout.splitlines()
+        streams = sorted({l.split()[-1] for l in syms
+                          if re.search(r"ios_base4Init|basic_ios|basic_filebuf|_M_cache_locale", l)})
+        table = subprocess.run([os.path.join(r68, "bin", "powerpc-apple-macos-objdump"), "-t", x],
+                               capture_output=True, text=True).stdout.splitlines()
+        ents = {}
+        for k, l in enumerate(table):
+            m = re.match(r"\[\s*(\d+)\]\(sec\s+(-?\d+)\).*\(scl\s+(\d+)\).*\(nx 1\) (0x[0-9a-f]+) (.*)$", l)
+            if not m or k + 1 >= len(table):
+                continue
+            aux = re.match(r"AUX (val|indx)\s+(\d+) .*typ (\d+) algn (\d+) clss (\d+)", table[k + 1])
+            if aux:
+                ents[int(m.group(1))] = (int(m.group(3)), int(aux.group(3)), int(aux.group(2)),
+                                         int(aux.group(5)), m.group(5))
+        # (scl, typ, val, clss, name): a weak label (scl 111, typ 2 LD) whose
+        # csect (val = its index) is a BS csect (clss 9) of length 0
+        weak0 = sorted({n for scl, typ, val, cls, n in ents.values()
+                        if scl == 111 and typ == 2 and val in ents
+                        and ents[val][1] in (1, 3) and ents[val][2] == 0 and ents[val][3] == 9})
+        print(f"        {a}: {len(syms)} symbols, {len(streams)} stream, "
+              f"{len(weak0)} weak .bss objects without storage {weak0[:3]}")
+        got.append((a, len(syms) > 1000, len(ents) > 1000, streams[:3], weak0[:4]))
+    return tuple(got), tuple((a, True, True, [], []) for a in apps), \
+        "make classic builds OMKBoot and OMKPlay (symbol tables read); in each, no C++ stream " \
+        "code and no weak .bss object the linker left without storage"
 
 
 def c_engine_texture_filter():
@@ -38310,6 +38335,10 @@ def c_licence_headers():
     1.x backend (`todo/classic-mac-port-1999.md` step 4).
     **529 -> 530**: `backends/classic/classic_main.cpp` (2026-10-03), the
     classic Mac OS build's entry point (step 5).
+    **530 -> 537**: `backends/classic/{carbonfront.h,carbonfront.cpp,
+    playscene_off.cpp,printf_c99.cpp,classic_printf.h,xcoff_weak_storage.cpp}`
+    and `src/ui/overlay.cpp` (2026-10-03), the Carbon frontend and the
+    Retro68 workarounds (3d-iv).
     """
     import glob as _g
     TAG = "SPDX-License-Identifier: GPL-3.0-or-later"
@@ -38339,7 +38368,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (530, [], 1, []), \
+           (537, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \

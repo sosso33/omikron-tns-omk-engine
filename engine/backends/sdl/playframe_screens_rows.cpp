@@ -607,9 +607,10 @@ void PlayState::screensSneakRows() {
                             const int key = tr.rotKeys > 2 ? 2 : tr.rotKeys - 1;   // frame 1
                             const std::size_t o = tr.rotOffset + 16u * static_cast<std::size_t>(key);
                             if (o + 16 > cb->data.size()) continue;
-                            float qv[4];
-                            std::memcpy(qv, cb->data.data() + o, 16);
-                            t.quats[0][i] = {qv[0], qv[1], qv[2], qv[3]};
+                            // little-endian floats (PORTING A9), not a memcpy
+                            const std::byte* src = cb->data.data() + o;
+                            t.quats[0][i] = {omk::loadLE<float>(src), omk::loadLE<float>(src + 4),
+                                             omk::loadLE<float>(src + 8), omk::loadLE<float>(src + 12)};
                         }
                         const auto pose = omk::composePose(cm->meshes, t, 0, false);
                         omk::Geometry posed = cm->rest;

@@ -289,10 +289,9 @@ public:
     const std::vector<std::int16_t>& pcm() const { return pcm_; }
     // the line's whole `.3DM`, as read for its voice - the face's tracks come
     // out of the same file, and a frontend need not read it again
-    const std::vector<std::byte>& morph() const {
-        static const std::vector<std::byte> none;
-        return morph_ ? *morph_ : none;
-    }
+    // out of line: a static local in an inline function is a WEAK object
+    // (see `kScxStride` in formats/scx.h for why that matters)
+    const std::vector<std::byte>& morph() const;
     // ...SHARED, so a frontend keeps the 3-4 MB for the face without copying
     // them on the frame the line starts (a console, 2026-09-30)
     std::shared_ptr<const std::vector<std::byte>> morphShared() const { return morph_; }

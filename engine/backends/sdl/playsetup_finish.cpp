@@ -13,11 +13,13 @@ int PlayState::finish() {
         // live half of PORTING A1's pair can be diffed against the reference
         // half, which is the property rule 3 is about: the frontend uploads
         // the pixels and must not have touched them.
-        std::ofstream o(dump, std::ios::binary);
-        for (auto v : fb.px) {
-            const char b2[2] = {static_cast<char>(v & 0xFF), static_cast<char>(v >> 8)};
-            o.write(b2, 2);
+        // not a stream (PORTING A10): little-endian bytes, written whole
+        std::vector<unsigned char> le(fb.px.size() * 2);
+        for (std::size_t i = 0; i < fb.px.size(); ++i) {
+            le[2 * i] = static_cast<unsigned char>(fb.px[i] & 0xFF);
+            le[2 * i + 1] = static_cast<unsigned char>(fb.px[i] >> 8);
         }
+        omk::writeWholeFile(dump, le.data(), le.size());
         // SAY THE SIZE. This wrote the bytes and no dimensions, and a reader
         // of the file has nothing to go on but its length - 960000 bytes is
         // 800x600, not the 640x480 that a `.bin` from this viewer is assumed

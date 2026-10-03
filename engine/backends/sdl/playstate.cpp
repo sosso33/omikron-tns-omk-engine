@@ -539,9 +539,11 @@ const omk::NodeTracks * PlayState::pedTracksFor(int sex, const omk::PedClip& c, 
                 if (k >= tr.rotKeys) k = tr.rotKeys - 1;
                 const std::size_t o = tr.rotOffset + 16u * static_cast<std::size_t>(k);
                 if (o + 16 > pedAni.size()) continue;
-                float q[4];
-                std::memcpy(q, pedAni.data() + o, 16);
-                row[i] = {q[0], q[1], q[2], q[3]};
+                // // little-endian floats, read as such (PORTING A9): a memcpy here reversed
+                // every quaternion on PowerPC - the crowd drew as shards (2026-10-03)
+                const std::byte* src = pedAni.data() + o;
+                row[i] = {omk::loadLE<float>(src), omk::loadLE<float>(src + 4),
+                          omk::loadLE<float>(src + 8), omk::loadLE<float>(src + 12)};
             }
         }
     }
@@ -1196,9 +1198,11 @@ omk::NodeTracks PlayState::idleTracksFor(const CharBank& b,
         const int key = tr.rotKeys > 1 ? 1 : 0;      // frame 0 reads key 1
         const std::size_t o = tr.rotOffset + 16u * static_cast<std::size_t>(key);
         if (o + 16 > b.data.size()) continue;
-        float q[4];
-        std::memcpy(q, b.data.data() + o, 16);
-        t.quats[0][i] = {q[0], q[1], q[2], q[3]};
+        // // little-endian floats, read as such (PORTING A9): a memcpy here reversed
+        // every quaternion on PowerPC - the crowd drew as shards (2026-10-03)
+        const std::byte* src = b.data.data() + o;
+        t.quats[0][i] = {omk::loadLE<float>(src), omk::loadLE<float>(src + 4),
+                         omk::loadLE<float>(src + 8), omk::loadLE<float>(src + 12)};
     }
     return t;
 }
@@ -1260,7 +1264,7 @@ void PlayState::prepareSet(SetLoad& L) {
         return std::chrono::duration<double, std::milli>(clk::now() - a).count();
     };
     WorldSlot& w = L.out;
-#if !defined(__vita__)
+#if !defined(__vita__) && !defined(macintosh)   // no std::this_thread on either
     if (L.delayMs > 0) std::this_thread::sleep_for(std::chrono::milliseconds(L.delayMs));
 #endif
     auto t = clk::now();

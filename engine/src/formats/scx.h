@@ -31,9 +31,12 @@
 
 namespace omk {
 
-// in-block record strides, by chunk tag; 2 and 10 are variable
-inline const std::map<int, std::size_t> kScxStride = {
-    {0, 32}, {1, 36}, {3, 26}, {4, 36}, {5, 28}, {6, 792}, {7, 32}};
+// in-block record strides, by chunk tag; 2 and 10 are variable.
+// ONE strong definition in the .cpp, not an `inline` variable: an inline
+// variable with a constructor is a WEAK object, and Retro68's XCOFF linker
+// gives a weak .bss object NO STORAGE - its constructor then writes over
+// whatever follows (`todo/classic-mac-port-1999.md` 3d-iv).
+extern const std::map<int, std::size_t> kScxStride;
 
 struct ScxFunction {
     std::uint32_t id = 0;

@@ -16,6 +16,7 @@
 #include "formats/mesh3do.h"
 #include "formats/scx.h"
 #include "formats/tex3dt.h"
+#include "formats/le.h"
 #include "input/bindings.h"
 #include "actor/fight.h"
 #include "actor/shoot.h"

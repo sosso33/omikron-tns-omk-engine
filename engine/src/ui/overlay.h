@@ -60,7 +60,11 @@ struct OverlayPlanes {
 // PIXEL, and a local static with a constructor is a thread-safe guard on every
 // call - five `dmb ish` barriers in the subtitle box's pixel loop on the Vita
 // (read in its object, 2026-09-29). Nothing touches it before `main`.
-inline OverlayPlanes g_overlayPlanes;
+// ONE strong definition in the .cpp, not an `inline` variable: an inline
+// variable with a constructor is a WEAK object, and Retro68's XCOFF linker
+// gives a weak .bss object NO STORAGE - its constructor then writes over
+// whatever follows (`todo/classic-mac-port-1999.md` 3d-iv).
+extern OverlayPlanes g_overlayPlanes;
 inline OverlayPlanes& overlayPlanes() { return g_overlayPlanes; }
 
 }  // namespace omk

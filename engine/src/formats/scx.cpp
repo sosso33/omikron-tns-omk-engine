@@ -7,6 +7,10 @@
 #include <cstring>
 
 namespace omk {
+
+const std::map<int, std::size_t> kScxStride = {
+    {0, 32}, {1, 36}, {3, 26}, {4, 36}, {5, 28}, {6, 792}, {7, 32}};
+
 namespace {
 
 std::uint32_t u32(std::span<const std::byte> d, std::size_t o) {
