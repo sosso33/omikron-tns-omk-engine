@@ -114,8 +114,9 @@ file off the image.
    backend, GL1 included, defaults to bilinear without mips (what a 3D card
    drew), the software reference stays POINT (the software devices). GL1 and
    GLES learned bilinear for it (`f2875ee`), the default flipped in
-   `c7a5443`; `--filter nearest` gives the old picture. Not yet LOOKED at in
-   Tiger: bilinear on the emulated Radeon is still to be seen.
+   `c7a5443`; `--filter nearest` gives the old picture. LOOKED at in Tiger
+   the same day: the street start through the emulated Radeon 9700,
+   bilinear, still 10 fps, no artefact seen in one still.
 2. **The gateway class** (the reader's direction): every SDL call outside
    the frontend files behind the `Frontend` interface, so a Carbon frontend
    can stand in for SDL on OS 9 and Tiger. Seven `backends/sdl/play*.cpp`
