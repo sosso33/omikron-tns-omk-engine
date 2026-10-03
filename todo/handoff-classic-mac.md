@@ -179,9 +179,14 @@ file off the image.
    left: the ring is six 100 ms buffers refilled between frames, so a frame
    slower than 0.6 s underruns (OS 9 under emulation); a bigger ring costs
    the interface blips latency, so measure on a real G3 before choosing;
-   (c) speed - the software
-   renderer is ~1 fps on the emulated G4, and the gl1 backend is CGL (Tiger
-   only): AGL for OS 9; (d) the films through QuickTime.
+   (c) ~~the films~~ DONE without QuickTime (`32784eb`): the vendored
+   pl_mpeg decodes them on PowerPC and the Sound Manager plays their 44100
+   track - Tiger drops 3-9% of frames once the offscreen matches the
+   window's depth; emulated OS 9 plays all three but drops ~74%, and the
+   films stretch to minutes because they pace by an audio clock that
+   underruns there; (d) speed - the software renderer is ~2 fps on the
+   emulated G4, and the gl1 backend is CGL (Tiger only): AGL for OS 9.
+   Measure on REAL hardware first: emulated timing is not a G3's or a G4's.
    ~~**The gateway class**~~ - **DONE 2026-10-03** (`12d77ec`): the
    viewer's game code reaches the host only through `omk::Frontend` (the
    clocks, the window title, fullscreen, the display modes, text input and
@@ -196,9 +201,9 @@ file off the image.
    plus a `playgpu_*.cpp` for its GPU window if it has one - `playgpu_gl1`
    is the model, since it presents on the CPU through the frontend. The
    play split had finished (S5/S6, 2026-10-02), so nothing was in flight.
-3. **What is left on OS 9 after the frontend**: `%lu` for `%zu` (cosmetic,
-   log lines), Sound Manager audio, QuickTime for the MPEG-1 films, and the
-   memory budget (the 96 MB partition is a guess). `DataFs` and no threads
+3. **What is left on OS 9 after the frontend**: the memory budget (the
+   partition is 192 MB preferred, 64 MB minimum - a guess, not measured);
+   `%zu` is handled (`classic_printf.h`), audio and the films work. `DataFs` and no threads
    are DONE (2 above); with `OMK_THREADS 0` the voice read-ahead already
    runs on its frame, so "ticked loading" is a speed question, not a gap.
 4. **Speed**: the 1999 budget (`classic-mac-port-1999.md` §3b, steps 1-2).

@@ -756,9 +756,12 @@ dropped.
    `verify.py: engine: frontend gateway`). **And the engine itself runs on
    OS 9** (3d-iii, `aa7aa43`): the headless boot, byte-identical to the Mac.
    **And `omk-play` itself** (3d-iv, `e08bc23`): the Carbon frontend, 30
-   frames byte-identical to the host on OS 9 and Tiger. Next in this step:
-   Sound Manager audio, then playing it by hand (the keys are mapped but no
-   person has driven it), then the films through QuickTime.
+   frames byte-identical to the host on OS 9 and Tiger; Sound Manager
+   audio (`8b536ad`); and the FILMS without QuickTime (`32784eb`) - the
+   vendored pl_mpeg decodes them on PowerPC, so QuickTime is not needed;
+   the offscreen at the window's depth took Tiger's drops from a third to
+   3-9%. Left in this step: playing it by hand (the keys are mapped but no
+   person has driven it), and speed on real hardware.
 6. **Correctness in QEMU** - OS 9.2.2 (`mac99`, Screamer), then Tiger on
    ppcosxkvm with the GPU.
 7. **RAVE** (optional, the *Unreal Tournament* route).
