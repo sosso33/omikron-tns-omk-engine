@@ -1529,10 +1529,43 @@ NOT touched; they decide draw order rather than draw distance.
 > `verify.py: world unit`, which measures the models rather than quoting
 > either constant, and fails if the metre reading of a human body is accepted.
 
-**No anti-aliasing, no texture filtering: the shipped renderer is point-sampled
-and dithered** (read 2026-09-08, asked by a reader). The hardware arm of the
-device set-up, `sub_4638C0` (0x004638C0), guarded by `dword_53ADF0` — the
-*Accélération 3D* option's driver mode — writes the render states once:
+**CORRECTED 2026-10-03: on a 3D card the original FILTERS - bilinear, no
+mipmaps. The point sampling below is the SOFTWARE devices'.** The block
+quoted next is the `if (dword_53ADF0)` arm of `sub_4638C0`, and a nonzero
+`dword_53ADF0` is a software device: the driver option is an index into the
+Direct3D devices the game enumerated (`12_win32.c` ~1140-1180) - an
+enumerated card gives mode **0** with that card's GUID, the index after the
+list mode **1** (Direct3D's MMX/RGB software device), the next mode **2**
+(the game's own rasteriser) - and the boot default, `dword_90E724 =
+0x01030000`, is mode 0 too (`05_sys.c` ~1607, 1790). The `else` arm, the
+HARDWARE (HAL) one, sets through the device's own vtable (`+88`
+SetRenderState, `+160` SetTextureStageState):
+
+    SetRenderState(31, 1)   SUBPIXEL on         SetRenderState(7, 1)   ZENABLE on
+    SetRenderState(23, 5)   ZFUNC                SetRenderState(22, 1)  CULLMODE = NONE
+    SetRenderState(4,  1)   TEXTUREPERSPECTIVE   SetRenderState(16, 1)  LASTPIXEL
+    SetRenderState(9,  2)   GOURAUD              SetRenderState(26, 1)  DITHERENABLE
+    SetRenderState(29, 1)   SPECULARENABLE       -- ANTIALIAS (2) never set: the device default, off
+    SetTextureStageState(0, 16, 2)   MAGFILTER = LINEAR
+    SetTextureStageState(0, 17, 2)   MINFILTER = LINEAR
+    SetTextureStageState(0, 18, 1)   MIPFILTER = NONE
+    ...and the same three on stage 1 when the card multitextures (`dword_53ADE8`)
+
+So a player with a 3D card saw **bilinear-filtered textures, no mipmaps**,
+dithered, no anti-aliasing. The reading below took the `if` arm for the
+hardware one without checking which mode a card selects; it was found while
+modelling the fixed-function OpenGL backend on the original's D3D path
+(`todo/classic-mac-port-1999.md` 3c-i). What it says of the software
+devices stands. What follows from it for the port's DEFAULTS - which look
+each backend stands for - is a decision not yet taken, and until it is
+taken the backends draw as they did; `--filter bilinear` is what the
+hardware arm drew, not an enhancement over it.
+
+**As first read (2026-09-08), true of the SOFTWARE devices only: no
+anti-aliasing, no texture filtering, point-sampled and dithered.** The
+software arm of the device set-up, `sub_4638C0` (0x004638C0), guarded by
+`dword_53ADF0` — the *Accélération 3D* option's driver mode — writes the
+render states once:
 
     SetRenderState(31, 0)   SUBPIXEL off        SetRenderState(7, 0)   ZENABLE off (here)
     SetRenderState(23, 5)   ZFUNC, the reversed depth (above)
@@ -1548,9 +1581,10 @@ device set-up, `sub_4638C0` (0x004638C0), guarded by `dword_53ADF0` — the
     SetTextureStageState(0, 18, 1)   MIPFILTER = NONE  -- no mipmaps; the .3DT ships one level
     SetTextureStageState(0, 12, 1) / (1, 12, 1)         -- ADDRESSV = WRAP on both stages
 
-So the 1999 picture is Gouraud-shaded, perspective-correct, **nearest-sampled**
-textures with **no mipmaps and no anti-aliasing**, dithered into RGB565, with
-specular on and the linear black fog below. Filtering and dithering are the
+So the 1999 picture *on a software device* is Gouraud-shaded,
+perspective-correct, **nearest-sampled** textures with **no mipmaps and no
+anti-aliasing**, dithered into RGB565, with specular on and the linear black
+fog below (on a 3D card: the same but bilinear - see the correction above). Filtering and dithering are the
 DRIVER's (PORTING B, "not about the low bits of a pixel"), which is why the
 port samples NEAREST in both backends and checks no pixel value; enabling
 bilinear or MSAA in a replica would be an enhancement the original never

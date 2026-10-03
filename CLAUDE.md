@@ -988,7 +988,7 @@ All of this is documented with its evidence in `docs/`. Headline verifications:
 
 | the **graphical options** and what they size | the settings resolve from three sources - defaults, the `[Preferences]` ini, and the SAVE FILE's 3496-byte header, which is the global `byte_90E180` and carries all 74 rows including the three binding tables verbatim, so saving a game saves the options. Row 3's clip distance is in METRES against an inch world unit and sizes FOUR things at once - the visible-set radius, both bucket splits and the fog range. Row 4's sky is the AREA chunk's `+133`: a flat painted CEILING, not a dome, following the camera in x and z. The fog is LINEAR and its colour is BLACK. All ported and drawn |
 | the **character SHADOWS** - option row 5 | there is no shadow pass: ONE shipped quad (`MESHES\MISC\shadows.3DO`, flags 0x5000 = the multiply bucket, `dst x (1 - src)`, over a soft white disc) whose copies `Actor_DrawShadow` writes into the frame's own pools under a fixed set of BONES each frame. Row 7's detail says how many (arms at 2, head and legs at 1, chest always; 3 or more draws nothing; an npc gets the level MINUS ONE), the reaches are 3.6 / 1.8 / 1.4 round METRES, the size is the bone's own bounding sphere over 10/12/14 clamped at 1.5, and the fade is the vertex colour `255 - dist*255/reach` and nothing else. The crowd's is a separate whole node at the midpoint of `Piedg` and `Piedd`. **The bones are found by `strstr` on the LAST match** - every character bone carries a prefix, so an equality test draws nothing at all. Ported and drawn |
-| the shipped **RENDER STATES** (`sub_4638C0`) | ANTIALIAS explicitly OFF, textures sampled POINT with no mipmaps, perspective-correct, Gouraud, specular on - **and `DITHERENABLE` 1 on both device arms**. The first two make `--aa` and `--filter` ENHANCEMENTS, off by default; the third makes the 4x4 ordered dither a FIDELITY fix, on by default, with the DECISION ported and the matrix a labelled reconstruction (the driver's, not the engine's). Beside it, mesh flag `0x8000000` - the **SHIMMER**, a 32-byte table oscillating 233 set meshes' vertex colour on the frame clock, decoded since the geometry loader and drawn since 2026-09-09. Both were defects the port had, not features it lacked  **And its CULLMODE NONE is the DEVICE's: the engine culls back faces in SOFTWARE first (`Render_SubmitMesh`, mesh flag `0x20000000` exempts; 93 of 16188), read 2026-10-01 and ported on all three renderers** |
+| the shipped **RENDER STATES** (`sub_4638C0`) | **CORRECTED 2026-10-03: two arms, and a 3D card takes the one that FILTERS.** The software devices (driver modes 1 and 2) sample POINT with no mipmaps and set ANTIALIAS off; the HARDWARE (HAL) device - mode 0, every enumerated card and the boot default - sets MAG/MIN **LINEAR**, still no mipmaps, and never sets ANTIALIAS (`docs/ASSETS.md` 4). Both: perspective-correct, Gouraud, specular on - **and `DITHERENABLE` 1 on both device arms**. So `--aa` is an ENHANCEMENT, off by default, and `--filter bilinear` is what a 3D card drew - which look each backend's DEFAULT stands for is an open decision; the third makes the 4x4 ordered dither a FIDELITY fix, on by default, with the DECISION ported and the matrix a labelled reconstruction (the driver's, not the engine's). Beside it, mesh flag `0x8000000` - the **SHIMMER**, a 32-byte table oscillating 233 set meshes' vertex colour on the frame clock, decoded since the geometry loader and drawn since 2026-09-09. Both were defects the port had, not features it lacked  **And its CULLMODE NONE is the DEVICE's: the engine culls back faces in SOFTWARE first (`Render_SubmitMesh`, mesh flag `0x20000000` exempts; 93 of 16188), read 2026-10-01 and ported on all three renderers** |
 | the **`.3DO` light table** - the 1999 spec sheet's *Multilights* | 4179 records of 304 bytes across 216 models, counted from `desc+240` (the loader OVERWRITES `desc+232` from it); each names itself `LIGHT`, and holds two radii in round metres, an RGB colour, a position and a footprint. **A decor set supplies them and the street's moving population receives them** - `sub_4380B0`'s eight call sites are all street-life. Per-vertex `-(N.L)` over a linear falloff through a `(t*c)>>8` ramp; ported and drawn. It needed the vertex NORMAL at `.3DO` vertex `+12`, twelve bytes this repo had skipped since the format was decoded |
 
 **And it is not only read: `engine/` runs it.** 31 of the 41 rows above are
@@ -1170,8 +1170,12 @@ backend only, and `--filter bilinear` (`texturefiltering = bilinear`) does
 the same for texture filtering, the colour key carried in alpha so keyed
 edges do not fringe. **OFF by default, and every enhancement that is not
 the game's stays that way** (the reader's rule, 2026-09-08): the original
-sets ANTIALIAS off and samples POINT (ASSETS 4), and a replica judged
-against it must draw what it drew unless told otherwise.
+never anti-aliases, and a replica judged against it must draw what it drew
+unless told otherwise. **But bilinear is NOT one of those** (corrected
+2026-10-03): the original's SOFTWARE devices sample POINT and its HARDWARE
+device - the one a 3D card selects, and the boot default - filters
+bilinear without mipmaps (ASSETS 4). The default stays nearest until it is
+decided which device each backend stands for.
 `todo/enhancements.md` is the list.
 `--shadow-quality classic|fitted|mapped`, `--lighting perpixel`,
 `--text-scaling fit` (the original never enlarges glyphs) and
@@ -1180,8 +1184,9 @@ every one to its top in one word - except supersampling, which costs the most
 by far and is asked for by name only (`--ssaa N`, 2026-10-01).
 
 **But read the same function's OTHER two states before assuming the rule
-covers everything it turned on.** `sub_4638C0` sets ANTIALIAS off and samples
-POINT - and it sets `DITHERENABLE` to 1 on both device arms, while mesh flag
+covers everything it turned on.** `sub_4638C0`'s software arm sets ANTIALIAS
+off and samples POINT (its hardware arm filters LINEAR - ASSETS 4, corrected
+2026-10-03) - and it sets `DITHERENABLE` to 1 on both device arms, while mesh flag
 `0x8000000` oscillates 233 meshes' vertex colour every frame. The port did
 neither, and both were fidelity DEFECTS rather than missing features: the
 dither and the SHIMMER are **on by default** and are not in

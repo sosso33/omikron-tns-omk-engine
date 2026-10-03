@@ -9032,14 +9032,28 @@ def c_engine_slider_journey_qalisar():
 
 
 def c_render_states():
-    r"""THE SHIPPED RENDERER HAS NO ANTI-ALIASING AND NO TEXTURE FILTERING.
+    r"""THE SHIPPED RENDER STATES, BOTH ARMS of `sub_4638C0` (docs/ASSETS.md 4).
 
-    `sub_4638C0`'s hardware arm sets the D3D7 render states once (docs/ASSETS.md
-    4): ANTIALIAS (2) = 0, TEXTUREPERSPECTIVE (4) = 1, SHADEMODE (9) = 2
-    (Gouraud), DITHERENABLE (26) = 1, SPECULARENABLE (29) = 1, and texture
-    stage 0's MAGFILTER (16) / MINFILTER (17) / MIPFILTER (18) all 1 - POINT,
-    POINT, NONE. EDGEANTIALIAS (40) is never set anywhere. Read out of the
-    decompilation, so skipped without it.
+    CORRECTED 2026-10-03. The function has two arms on `dword_53ADF0`, the
+    driver mode: nonzero is a SOFTWARE device (1 Direct3D's MMX/RGB, 2 the
+    game's own rasteriser), zero the HARDWARE (HAL) device a 3D card selects
+    - and the boot default. This check used to read the `if` arm as "the
+    hardware arm" and assert its POINT filters as the renderer's; it now
+    asserts each arm for what it is:
+      * SOFTWARE (`if (dword_53ADF0)`, through `D3D_SetRenderState` /
+        `D3D_SetTextureStageState`): ANTIALIAS (2) = 0, TEXTUREPERSPECTIVE
+        (4) = 1, SHADEMODE (9) = 2, DITHERENABLE (26) = 1, SPECULARENABLE
+        (29) = 1, stage 0 MAG/MIN/MIP (16/17/18) = 1/1/1 - POINT, POINT,
+        NONE;
+      * HARDWARE (`else`, through the device vtable: `+88` SetRenderState,
+        `+160` SetTextureStageState): DITHERENABLE = 1, stage 0 MAG/MIN =
+        **2/2 - LINEAR** - and MIP = 1, NONE; ANTIALIAS never set there.
+    EDGEANTIALIAS (40) is never set anywhere. Read out of the decompilation,
+    so skipped without it.
+
+    Shown to fail (2026-10-03): asserting the old reading - the hardware
+    arm's stage-0 filters POINT, (0, 16, 1) / (0, 17, 1) - gives False for
+    both, which is the correction.
     """
     if not omkpaths.decomp_path():
         return ("skipped",), ("skipped",), omkpaths.missing_for("decomp")
@@ -9050,18 +9064,36 @@ def c_render_states():
     import re as _re
     i = t.find("@func 0x004638C0 ")
     body = t[i:i + 20000] if i >= 0 else ""
-    def rs(state, value):
-        return bool(_re.search(r"SetRenderState\(\w+, %d, %d\)" % (state, value), body))
-    def tss(stage, state, value):
-        return bool(_re.search(r"SetTextureStageState\(\w+, %d, %d, %d\)" % (stage, state, value), body))
+    j = body.find("@func 0x", 20)
+    if j > 0:
+        body = body[:j]
+    # the two arms: the `if (dword_53ADF0)` whose block opens with the
+    # render states (the function tests the mode once before, at its top),
+    # then `else` to the end of the function
+    k = body.find("if (dword_53ADF0)\n  {\n    D3D_SetRenderState")
+    e = body.find("  else\n", k) if k >= 0 else -1
+    sw, hw = (body[k:e], body[e:]) if k >= 0 and e > k else ("", "")
+    def rs(arm, state, value):
+        return bool(_re.search(r"SetRenderState\(\w+, %d, %d\)" % (state, value), arm))
+    def tss(arm, stage, state, value):
+        return bool(_re.search(r"SetTextureStageState\(\w+, %d, %d, %d\)" % (stage, state, value), arm))
+    def vrs(arm, state, value):        # the device vtable's SetRenderState, +88
+        return bool(_re.search(r"\+ 88\)\)\(\w+, %d, %d\)" % (state, value), arm))
+    def vtss(arm, stage, state, value):  # ...and SetTextureStageState, +160
+        return bool(_re.search(r"\+ 160\)\)\(\w+, %d, %d, %d\)" % (stage, state, value), arm))
     allsrc = "".join(open(os.path.join(ROOT, "readable", "src", f), errors="replace").read()
                      for f in os.listdir(os.path.join(ROOT, "readable", "src")) if f.endswith(".c"))
     edge = len(_re.findall(r"SetRenderState\(\w+, 40,", allsrc))
-    got = (i >= 0, rs(2, 0), rs(4, 1), rs(9, 2), rs(26, 1), rs(29, 1),
-           tss(0, 16, 1), tss(0, 17, 1), tss(0, 18, 1), edge)
-    return got, (True,) * 9 + (0,), \
-        "sub_4638C0 found; ANTIALIAS off, perspective-correct, Gouraud, dither on, " \
-        "specular on; mag/min/mip filters POINT/POINT/NONE; EDGEANTIALIAS never set"
+    got = (i >= 0, bool(sw) and bool(hw),
+           rs(sw, 2, 0), rs(sw, 4, 1), rs(sw, 9, 2), rs(sw, 26, 1), rs(sw, 29, 1),
+           tss(sw, 0, 16, 1), tss(sw, 0, 17, 1), tss(sw, 0, 18, 1),
+           vrs(hw, 26, 1), vtss(hw, 0, 16, 2), vtss(hw, 0, 17, 2), vtss(hw, 0, 18, 1),
+           vrs(hw, 2, 0) or rs(hw, 2, 0),
+           edge)
+    return got, (True,) * 14 + (False, 0), \
+        "sub_4638C0 found, split into its two arms; SOFTWARE: ANTIALIAS off, " \
+        "perspective-correct, Gouraud, dither, specular, filters POINT/POINT/NONE; " \
+        "HARDWARE: dither, filters LINEAR/LINEAR/NONE, ANTIALIAS not set; EDGEANTIALIAS never set"
 
 
 def c_engine_slider_journey():
@@ -27045,8 +27077,10 @@ def c_engine_texture_filter():
     r"""TEXTURE FILTERING - the second `[Enhancements]` option (bilinear), OFF
     by default, and the colour key surviving it.
 
-    The original point-samples: `sub_4638C0` sets MAG/MIN POINT and MIP NONE
-    (`docs/ASSETS.md` 4). The port's bilinear mode is a linear sampler on the
+    The original's SOFTWARE devices point-sample: `sub_4638C0`'s `if
+    (dword_53ADF0)` arm sets MAG/MIN POINT and MIP NONE (`docs/ASSETS.md`
+    4). Its HARDWARE arm - a 3D card, the boot default - sets MAG/MIN
+    LINEAR (corrected 2026-10-03), so this mode is what a card drew. The port's bilinear mode is a linear sampler on the
     Vulkan side and nothing on the software side. Its one real difficulty is
     the CUTOUT path - flag 0x800, a colour key on black - which under a
     linear sampler would blend key texels into the edge as a dark fringe. So
