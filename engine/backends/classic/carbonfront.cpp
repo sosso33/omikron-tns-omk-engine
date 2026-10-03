@@ -77,6 +77,7 @@ bool CarbonFrontend::openAudio(int rate, int channels) {
     }
     ch->userInfo = reinterpret_cast<long>(played_);
     chan_ = ch;
+    refills_ = 0;                                  // counted per device opened
     arate_ = rate;
     achan_ = channels;
     const std::size_t frames = static_cast<std::size_t>(rate / 10);
@@ -268,23 +269,41 @@ void CarbonFrontend::present(const Surface& fb) {
         gw_ = nullptr;
         ::Rect b;
         SetRect(&b, 0, 0, static_cast<short>(fb.w), static_cast<short>(fb.h));
+        // AT THE WINDOW'S DEPTH: a GWorld of another depth makes CopyBits
+        // convert every pixel of every frame (Mac OS X windows are 32 bits;
+        // a 1999 Mac in thousands of colours is 16), so the one conversion
+        // is the 565 one below. The films dropped a third of their frames
+        // on Tiger with a 16-bit GWorld.
+        const int depth = GetPixDepth(GetPortPixMap(GetWindowPort(static_cast<WindowRef>(win_)))) >= 24 ? 32 : 16;
         GWorldPtr gw = nullptr;
-        if (NewGWorld(&gw, 16, &b, nullptr, nullptr, 0) != noErr || !gw) return;
+        if (NewGWorld(&gw, static_cast<short>(depth), &b, nullptr, nullptr, 0) != noErr || !gw) return;
         gw_ = gw;
         gwW_ = fb.w;
         gwH_ = fb.h;
+        gwDepth_ = depth;
     }
     PixMapHandle pm = GetGWorldPixMap(static_cast<GWorldPtr>(gw_));
     if (!LockPixels(pm)) return;
     char* base = GetPixBaseAddr(pm);
     const long rowBytes = GetPixRowBytes(pm);
-    // RGB565 -> xRGB1555, native (big-endian) 16-bit words: red and green
-    // shift down one, green's low bit is dropped, blue stays
     for (int y = 0; y < fb.h; ++y) {
-        auto* row = reinterpret_cast<std::uint16_t*>(base + y * rowBytes);
         const std::uint16_t* src = fb.px.data() + static_cast<std::size_t>(y) * fb.w;
-        for (int x = 0; x < fb.w; ++x)
-            row[x] = static_cast<std::uint16_t>(((src[x] & 0xFFC0) >> 1) | (src[x] & 0x1F));
+        if (gwDepth_ == 16) {
+            // RGB565 -> xRGB1555, native (big-endian) words: red and green
+            // shift down one, green's low bit is dropped, blue stays
+            auto* row = reinterpret_cast<std::uint16_t*>(base + y * rowBytes);
+            for (int x = 0; x < fb.w; ++x)
+                row[x] = static_cast<std::uint16_t>(((src[x] & 0xFFC0) >> 1) | (src[x] & 0x1F));
+        } else {
+            // RGB565 -> xRGB8888, each channel widened by bit replication -
+            // what the 16-bit target looks like expanded, the colours unchanged
+            auto* row = reinterpret_cast<std::uint32_t*>(base + y * rowBytes);
+            for (int x = 0; x < fb.w; ++x) {
+                const std::uint32_t v = src[x];
+                const std::uint32_t r = (v >> 11) & 31, g = (v >> 5) & 63, b = v & 31;
+                row[x] = ((r << 3 | r >> 2) << 16) | ((g << 2 | g >> 4) << 8) | (b << 3 | b >> 2);
+            }
+        }
     }
     UnlockPixels(pm);
     blit();

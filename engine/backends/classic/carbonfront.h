@@ -74,8 +74,8 @@ private:
     std::uint64_t quitAt_ = 0;   // `omk.quit`: the run ends by itself (an instrument)
     std::string lastError_;
     void* win_ = nullptr;        // WindowRef
-    void* gw_ = nullptr;         // GWorldPtr, 16 bits
-    int gwW_ = 0, gwH_ = 0;
+    void* gw_ = nullptr;         // GWorldPtr, at the WINDOW's depth (16 or 32)
+    int gwW_ = 0, gwH_ = 0, gwDepth_ = 0;
     bool quit_ = false;
 };
 
