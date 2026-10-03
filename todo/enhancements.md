@@ -13,7 +13,7 @@ measures the enhancement's own property on the GPU, shown to fail.
 |---|---|---|---|
 | — | **all of them at once** but supersampling (row 9, asked for by name only since 2026-10-01), each as high as it goes. A BASE: any specific key or flag beats it, whatever the order, and it touches nothing outside `[Enhancements]` | `all = max` / `--enhance-all` | **done 2026-09-09**; `enhance all` |
 | 0 | anti-aliasing (MSAA 2/4/8) | `antialiasing = N` / `--aa N` | **done 2026-09-08**, `ed349ca`; `engine: anti-aliasing` |
-| 1 | bilinear texture filtering. The colour key (flag 0x800, black) travels in the texture's ALPHA so a filtered sample is premultiplied: discard below 0.5, divide by alpha above - no dark fringe, and the nearest path is bit-identical to before | `texturefiltering = bilinear` / `--filter bilinear` | **done 2026-09-08**; `engine: texture filter`; judged by eye on Aapden's floor stain |
+| 1 | ~~bilinear texture filtering~~ - **NOT an enhancement** (2026-10-03): it is what the original's hardware device drew (ASSETS 4), and since that day the DEFAULT on every GPU backend, GLES and GL1 included. The colour key (flag 0x800, black) travels in the texture's ALPHA so a filtered sample is premultiplied: discard below 0.5, divide by alpha above - no dark fringe (GL1, fixed function, cannot divide: up to half the key's black at a cutout edge), and the nearest path is bit-identical to before | default; `texturefiltering = nearest` / `--filter nearest` for the software devices' picture | **done 2026-09-08, default 2026-10-03**; `engine: texture filter`, `engine: gl1 backend`; judged by eye on Aapden's floor stain |
 | 2 | mipmaps (trilinear) and anisotropic filtering, generated at upload; the alpha key averages correctly into the chain | `texturefiltering = trilinear`, `anisotropy = N` / `--filter trilinear --anisotropy N` | **done 2026-09-08**; `engine: mipmaps`; the stain judged by eye at 16x |
 | 3 | interface scaling: the 640x480 layer's stretch FILTERED instead of nearest. The key decides the silhouette and the blend decides the colour, so a keyed edge cannot fringe without an alpha channel to premultiply into. The one row that is NOT Vulkan-only. An INTEGER/centred mode is not done and is its own step - see below | `uiscaling = linear` / `--ui-scaling linear` | **done 2026-09-09**; `engine: ui scaling` |
 | 4 | unlimited draw distance: options row 3 is a CAP the port already runs the visible-set walk from; 0 lifts it, and the FOG with it, the fog's range being the clip's. **Measured, it buys nothing at 200 m**: the shipped sets have no sightline past the option's own maximum, in any of the four cities - see below | `clipdistance = 0` under `[Enhancements]` / `--clip 0` | **done 2026-09-09**; `engine: unlimited clip` |
@@ -87,7 +87,9 @@ than any enhancement and it is what the original looks like.
 
 `sub_4638C0` sets D3DRENDERSTATE 26, `DITHERENABLE`, to **1 on both of its
 device arms** - the same function that established, in the line above it, that
-the shipped renderer has no anti-aliasing and samples POINT. So dithering is
+the shipped renderer has no anti-aliasing and samples POINT (its SOFTWARE
+arm; the hardware arm filters bilinear - ASSETS 4, corrected 2026-10-03, and
+that is now the GPU default too). So dithering is
 what the game does, and the port drawing hard 565 bands where the original
 drew dithered noise was a fidelity defect, not a missing feature. Fixed
 2026-09-09: on by default, both backends, one quantisation point

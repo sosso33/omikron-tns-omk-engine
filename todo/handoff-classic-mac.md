@@ -30,7 +30,8 @@ NOT a modern macOS port - OMK already runs on today's Macs.
   coverage 0.9932, 153 px - `verify.py: engine: gl1 backend`.
 * **ASSETS 4 corrected (2026-10-03)**: on a 3D card (driver mode 0, the
   default) the original FILTERS bilinear, no mipmaps; POINT is the software
-  devices'. `render states` asserts both arms. No default changed.
+  devices'. `render states` asserts both arms. The DEFAULT followed the
+  same day, the reader's decision: bilinear on every GPU backend (4, item 1).
 
 Commits, oldest first: `9cabf0e` PowerPC build, `0a4a33f` le.h,
 `16f2ea1` every tool on PowerPC, `8287f8b` one Carbon binary, `2a7e025` the
@@ -108,10 +109,13 @@ file off the image.
 
 ## 4. What is next, in the order proposed
 
-1. **The filtering DEFAULT** - the reader's decision: should the GPU
-   backends default to bilinear-without-mips (what a 3D card drew) with the
-   software reference staying POINT (the software devices)? Nothing changes
-   until it is decided.
+1. ~~**The filtering DEFAULT**~~ - **DONE 2026-10-03**, the reader's
+   decision ("the default should be what the original does"): every GPU
+   backend, GL1 included, defaults to bilinear without mips (what a 3D card
+   drew), the software reference stays POINT (the software devices). GL1 and
+   GLES learned bilinear for it (`f2875ee`), the default flipped in
+   `c7a5443`; `--filter nearest` gives the old picture. Not yet LOOKED at in
+   Tiger: bilinear on the emulated Radeon is still to be seen.
 2. **The gateway class** (the reader's direction): every SDL call outside
    the frontend files behind the `Frontend` interface, so a Carbon frontend
    can stand in for SDL on OS 9 and Tiger. Seven `backends/sdl/play*.cpp`

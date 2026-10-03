@@ -1199,8 +1199,10 @@ the executable and compares.
 
 A second rule sits beside the boundary: **anything the original did not do is
 an enhancement, and every enhancement is off by default.** Multisampling,
-texture filtering, real shadow maps, per-pixel light, supersampling: all
-exist, all behind a flag. A replica judged against the original must draw what
+mipmaps, real shadow maps, per-pixel light, supersampling: all exist, all
+behind a flag. (Bilinear texture filtering was on that list until it was
+read that the original's 3D-card device set it; it is now the default on
+every GPU backend.) A replica judged against the original must draw what
 the original drew unless told otherwise.
 
 The flip side is just as important. Before building an enhancement, check

@@ -1556,10 +1556,22 @@ dithered, no anti-aliasing. The reading below took the `if` arm for the
 hardware one without checking which mode a card selects; it was found while
 modelling the fixed-function OpenGL backend on the original's D3D path
 (`todo/classic-mac-port-1999.md` 3c-i). What it says of the software
-devices stands. What follows from it for the port's DEFAULTS - which look
-each backend stands for - is a decision not yet taken, and until it is
-taken the backends draw as they did; `--filter bilinear` is what the
-hardware arm drew, not an enhancement over it.
+devices stands. **What follows for the port's defaults was decided the
+same day, by the reader: "the default should be what the original does".**
+The boot default is mode 0, a card, so `texturefiltering` defaults to
+**bilinear** and every GPU backend - Vulkan, GLES (the Vita) and the
+fixed-function GL1 (the classic Mac) - draws it; the software reference
+stands where the software devices stood and point-samples whatever is
+asked, which is also what the original drew in modes 1 and 2. `nearest`
+stays available for that picture on a GPU; `trilinear` (a mip chain) is
+still an enhancement, the original setting MIP NONE on both arms. GLES
+filters as Vulkan does (the key in alpha, the sample un-premultiplied),
+and through camera 4555 moves the same 55.6% of pixels by the same mean
+4.6. GL1 cannot divide in fixed function, so a filtered cutout edge keeps
+up to half the key's black - also what a card that turned the key into
+alpha before filtering drew; the card's own key path is not reachable
+from this tree. `verify.py: engine: texture filter` asserts the resolved
+default and the GLES half, `engine: gl1 backend` the GL1 half.
 
 **As first read (2026-09-08), true of the SOFTWARE devices only: no
 anti-aliasing, no texture filtering, point-sampled and dithered.** The
@@ -1628,7 +1640,9 @@ multisampling from a blur. `verify.py: engine: anti-aliasing` asserts the
 default is off in the source and the edge property on the GPU.
 
 **And bilinear texture filtering, the same way** (`--filter bilinear`,
-`texturefiltering = bilinear`; 2026-09-08). A linear sampler on the Vulkan
+`texturefiltering = bilinear`; 2026-09-08) - built as an enhancement and,
+since the 2026-10-03 correction above, the DEFAULT on every GPU backend,
+because it is what the original drew on a 3D card. A linear sampler on the Vulkan
 side, nothing on the software side. The one thing it had to get right is
 the CUTOUT path above: under a linear sampler the black key texels would
 blend into every keyed edge as a dark fringe. So the texture upload writes

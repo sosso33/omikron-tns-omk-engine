@@ -531,7 +531,9 @@ the hardware one (POINT, no antialias) is the MMX/RGB SOFTWARE device; the
 HAL (hardware) arm sets MAGFILTER and MINFILTER to LINEAR (MIP NONE). If
 that holds once the driver option's mapping to `dword_53ADF0` is checked,
 the original's 3D CARD drew bilinear and the port's point sampling is the
-software device's look - a correction to ASSETS 4, not made yet. Also not
+software device's look - a correction to ASSETS 4, MADE 2026-10-03 (`86ef012`),
+and the port's GPU backends, GL1 among them, DEFAULT to bilinear since the
+same day (`c7a5443`). Also not
 modelled anywhere: the per-vertex DISTANCE FADE the original gives
 transparent and cutout buckets (vertex alpha, SRCALPHA/INVSRCALPHA).
 

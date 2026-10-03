@@ -130,10 +130,13 @@
 ;antialiasing = 0
 
 ; Texture filtering: nearest | bilinear | trilinear (or 0 | 1 | 2).
-; The original samples POINT with no mip chain, so `nearest` is the game's
-; picture. `trilinear` generates a mip chain at upload. The colour key travels
-; in the texture's alpha so a filtered edge does not fringe.
-;texturefiltering = nearest
+; NOT an enhancement at bilinear, the DEFAULT: the original filtered bilinear
+; with no mip chain on a 3D card and sampled POINT on its software devices.
+; A GPU backend draws bilinear; the software reference always point-samples.
+; `nearest` is the software devices' picture on a GPU; `trilinear` (the
+; enhancement) generates a mip chain at upload, Vulkan only. The colour key
+; travels in the texture's alpha so a filtered edge does not fringe.
+;texturefiltering = bilinear
 
 ; Anisotropic filtering, 1 to 16; 1 is off. With trilinear only.
 ;anisotropy = 1
