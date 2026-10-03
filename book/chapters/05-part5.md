@@ -192,11 +192,22 @@ into one instruction that rounds once, where the Mac rounds twice, and a
 300-frame traffic run drifted by a tenth of a unit until fusion was turned
 off on both sides. The original, on an x87, had no fused operation at all.
 
-Mac OS 9 itself is the next step, and it has no SDL. So the viewer's game
-code now reaches the host (the window, the keys, the sound, the clocks)
-through **one interface**, the renderer boundary's counterpart for the host,
-and compiles without a single SDL header. A Carbon frontend will replace SDL
-by implementing that one class.
+Mac OS 9 itself has no SDL. So the viewer's game code now reaches the host
+(the window, the keys, the sound, the clocks) through **one interface**, the
+renderer boundary's counterpart for the host, and compiles without a single
+SDL header. A Carbon frontend will replace SDL by implementing that one class.
+
+The engine underneath is already there. Built once as a Carbon program, the
+headless boot runs on Mac OS 9 and on Tiger, and what it decides is
+byte-identical to the Mac's. The last obstacle was the most instructive. A
+file stream crashed on start-up, but only in a large program: a small test
+passed, and the same test crashed as soon as about two megabytes of other
+code were linked beside it, the engine's or anyone's. The cause was in the
+toolchain. Its linker gave two of the C++ library's objects the same
+address, so the library's own locale set-up overwrote one of them. The
+engine now reads its files without C++ streams at all. The lesson is one
+Part IV would recognise: a test too small to reach the fault proves nothing
+about the program that does.
 
 ## Two faces in the same place
 

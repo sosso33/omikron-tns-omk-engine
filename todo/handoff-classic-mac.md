@@ -10,6 +10,15 @@ NOT a modern macOS port - OMK already runs on today's Macs.
 
 ## 1. Where it stands
 
+* **THE ENGINE RUNS ON MAC OS 9** (2026-10-03, `aa7aa43`, plan 3d-iii): the
+  headless boot (`tools/omk.cpp`) as ONE Carbon binary (`make classic`),
+  run on Mac OS 9.2 and on Tiger - its boot dump BYTE-IDENTICAL to the
+  Mac's. It took `int32_t`-is-`long` fixes, a File Manager arm in `DataFs`
+  with `omk::hostPath()` (HFS paths), no threads, and NO C++ STREAMS in
+  `src/` (a Retro68 linker fault, trap below). `verify.py: engine: classic
+  build` keeps it building and stream-free.
+* **The viewer's game code reaches the host only through `omk::Frontend`**
+  (the gateway, `12d77ec`), so a Carbon frontend can replace SDL.
 * **OMK runs on Mac OS X 10.4 (Tiger) on PowerPC**, in QEMU (ppcosxkvm,
   emulated Radeon 9700): the films with sound, the menu, the intro, and the
   street **at 6-10 fps through the fixed-function OpenGL 1.x backend**
@@ -99,6 +108,23 @@ the log is `~/omk/play.log`; `screencapture -x` over SSH takes a screenshot.
 anything with a resource fork). Never a macOS `tar` of a sparse file: it
 goes as a pax sparse entry and Tiger's GNU tar 1.14 unpacks a DIRECTORY.
 
+**The engine for OS 9 / Carbon** (from `engine/`; `retro68 =` in `omk.conf`
+lets `verify.py` find the toolchain too):
+
+    make classic RETRO68=/Volumes/omk-devtools/toolchains/retro68   # build/classic/OMKBoot.APPL
+
+`OMKBoot` reads its arguments from `omk.args` beside it, one per line, HFS
+paths (`untitled:omk:fr`, `NOFMV`, `--tables`, `untitled:omk:tables`,
+`--dump`, `boot.bin`), and writes `omk-out.txt`. **On Tiger**: `ditto -c -k
+--sequesterRsrc` a folder holding it, `scp -O`, `ditto -x -k`, then
+`/System/Library/Frameworks/Carbon.framework/Versions/A/Support/LaunchCFMApp
+./OMKBoot` from its folder; arguments as `Macintosh HD:Users:qemudev:omk:fr`
+etc. **On OS 9**: the data is already on its disk (`untitled:omk:fr` - IAM,
+SCPTDATA, MESHES - and `untitled:omk:tables`, with `OMKBoot` and its
+`omk.args` in `untitled:omk`); copy the app and `omk.args` into
+`System Folder:Startup Items`, boot, wait ~3 minutes, stop QEMU, mount, read
+- and take the app OUT of Startup Items again, or it runs at every boot.
+
 **Mac OS 9**: no shell. Put a program in the OS 9 disk's
 `System Folder/Startup Items` (mount `vm/macos9.img` on the Mac with
 `hdiutil attach -imagekey diskimage-class=CRawDiskImage`), boot with
@@ -117,7 +143,14 @@ file off the image.
    `c7a5443`; `--filter nearest` gives the old picture. LOOKED at in Tiger
    the same day: the street start through the emulated Radeon 9700,
    bilinear, still 10 fps, no artefact seen in one still.
-2. ~~**The gateway class**~~ - **DONE 2026-10-03** (`12d77ec`): the
+2. ~~**The engine on OS 9, headless**~~ - **DONE 2026-10-03**
+   (`aa7aa43`), above. **NEXT: the CARBON FRONTEND** -
+   `backends/classic/carbonfront.cpp`, `CarbonFrontend : omk::Frontend` and
+   `makeHostFrontend`, so `omk-play` comes up on OS 9: a window and a 555
+   GWorld blit, `WaitNextEvent` keys mapped to DIK codes, `TickCount` /
+   `Microseconds` for the clocks, then Sound Manager audio. The viewer's
+   files then build for Carbon with `playgpu_none` (software) first.
+   ~~**The gateway class**~~ - **DONE 2026-10-03** (`12d77ec`): the
    viewer's game code reaches the host only through `omk::Frontend` (the
    clocks, the window title, fullscreen, the display modes, text input and
    the error string joined the interface; `makeHostFrontend()` is the one
@@ -131,10 +164,11 @@ file off the image.
    plus a `playgpu_*.cpp` for its GPU window if it has one - `playgpu_gl1`
    is the model, since it presents on the CPU through the frontend. The
    play split had finished (S5/S6, 2026-10-02), so nothing was in flight.
-3. **The engine on OS 9** (rest of step 5): ticked loading instead of the
-   voice read-ahead thread, `DataFs` instead of `std::filesystem`, `%lu`
-   for `%zu`, Sound Manager audio, 555 video, QuickTime for the MPEG-1
-   films - and the CARBON FRONTEND itself, which 2 made a class to write.
+3. **What is left on OS 9 after the frontend**: `%lu` for `%zu` (cosmetic,
+   log lines), Sound Manager audio, QuickTime for the MPEG-1 films, and the
+   memory budget (the 96 MB partition is a guess). `DataFs` and no threads
+   are DONE (2 above); with `OMK_THREADS 0` the voice read-ahead already
+   runs on its frame, so "ticked loading" is a speed question, not a gap.
 4. **Speed**: the 1999 budget (`classic-mac-port-1999.md` §3b, steps 1-2).
    Tiger's emulated G4 is not a G4's timing.
 5. **A G3 build**: SDL 2.0.3 rebuilt without `-maltivec` (the binary is
@@ -166,5 +200,20 @@ file off the image.
   object directory, or the old objects are linked (it happened with
   `-ffp-contract=off`, which `ppc-darwin.mk` sets because GCC's fused
   multiply-add drifted a traffic run by 0.1 unit).
+* **NO C++ STREAMS in anything the classic build links.** Retro68's linker
+  lays libstdc++'s `num_get<char>::id` over `timepunct_cache_w`, so the
+  locale's own set-up corrupts it and the first stream (even an
+  `ostringstream`) crashes - but only in a LARGE program: a stream test
+  passes alone, so a hello-world proves nothing. `src/` reads and writes
+  files through `DataFs` (`readTextFile`, `writeWholeFile`); `engine:
+  classic build` fails if stream symbols reappear. Bisecting the objects
+  found it; a crash log's backtrace on Tiger
+  (`~/Library/Logs/CrashReporter/<app>.crash.log`) names PEF symbols.
+* **Retro68's `open()` takes an HFS path and opens read-WRITE**, and has no
+  `stat`/`mkdir`/listing: everything goes through `DataFs` and
+  `omk::hostPath()`. A '/' in a path is a character of a file name there.
+* **Tiger's display sleeps after 10 minutes** and `screencapture` then writes
+  nothing: `/tmp/omk-wake` in Tiger (a 3-line `UpdateSystemActivity` program)
+  wakes it without root.
 * **Tiger has no `seq` or `pgrep`** (`jot`, `ps | grep`); a host loop that
   greps for `done` can be fooled by a script that wrote one early.

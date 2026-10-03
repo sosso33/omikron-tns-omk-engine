@@ -289,6 +289,24 @@ rounds twice, and a 300-frame traffic run drifted by 0.1 unit. Both builds
 compile with `-ffp-contract=off` for the comparison - and the original ran on
 x87, which has no fused operation.
 
+## A10. No C++ streams in the engine
+
+`src/` reads and writes files through `DataFs` - `readWholeFile`,
+`readTextFile`, `splitLines`, `writeWholeFile`, C stdio and the platform's
+own calls underneath - and never through `std::ifstream`, `ofstream` or a
+`stringstream`. Not a style rule: on classic Mac OS (Retro68, the
+`todo/classic-mac-port-1999.md` port) any stream initialises libstdc++'s
+locale, and that toolchain's linker lays `num_get<char>::id` over
+`timepunct_cache_w`, so the locale's own set-up corrupts it and the first
+stream crashes - in a large program only; a small test passes. Every path
+the engine opens also goes through `omk::hostPath()`, which is the identity
+everywhere but classic Mac OS, where it makes an HFS path.
+
+What holds it: `verify.py: engine: classic build` builds the classic engine
+and fails if stream code is linked into it (skipped without Retro68). The
+tools in `engine/tools/` are host programs and may use streams; the one the
+classic build links (`tools/omk.cpp`) does not.
+
 ---
 
 # Part B — the evidence

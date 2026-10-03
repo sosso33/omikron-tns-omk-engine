@@ -540,6 +540,70 @@ same day (`c7a5443`). Also not
 modelled anywhere: the per-vertex DISTANCE FADE the original gives
 transparent and cutout buckets (vertex alpha, SRCALPHA/INVSRCALPHA).
 
+#### 3d-iii. The engine on Mac OS 9 - 2026-10-03
+
+**`OMKBoot` - `tools/omk.cpp`, the engine booted headless, the program
+`verify.py: engine: boot` holds to `traces/intro.log` - runs on Mac OS 9.2
+(QEMU `mac99`) and on Tiger as ONE Carbon binary, and its boot dump is
+BYTE-IDENTICAL to the Mac's** from the same arguments: `aventure.scx`'s 20
+sprites and 53 sounds, area 118 from `IAM\START`, the start menu's answer
+and labels, 61 announced decisions in the same order (`aa7aa43`).
+
+How it is built: `make classic RETRO68=<retro68>` (`backends/classic/`,
+Retro68's Carbon toolchain through CMake): `src/` as a library, the tool's
+`main` renamed by `-Dmain=omk_tool_main`, and `classic_main.cpp` as the
+entry - a classic application has no command line, so it reads its
+arguments from `omk.args` beside it, ONE PER LINE (an HFS path has spaces),
+writes stdout to `omk-out.txt`, and flushes the volume (`FlushVol`) before
+returning. A `SIZE` resource asks for a 96 MB partition (Retro68's template
+asks for 1 MB, which on OS 9 is the whole heap; OS X ignores it).
+
+What the engine needed, each found by the compiler or by running:
+
+* **`int32_t` is `long`** on Retro68, so `std::max(0, m.quads)` (an `int`
+  and an `int32_t`) has no overload: five files name `std::int32_t` in the
+  call. On the host the two are the same type, and the six objects were
+  proved BYTE-IDENTICAL before and after.
+* **BSD's `sys/types.h` does `#define quad quad_t`**, so a member called
+  `quad` declared before it and used after it breaks: `DepthTie::Unit::quad`
+  is `isQuad`. Other `quad`s survive by include order.
+* **No thread model**: `platform/threads.h` selects `OMK_THREADS 0` on
+  `macintosh` (the path the Emscripten build already had).
+* **Files**: Retro68's `open()` hands the name straight to `HOpenDF` - an
+  HFS path, where '/' is a character of a file name - always read-WRITE, and
+  `stat`, `mkdir` and directory listing return failure. `DataFs`'s platform
+  layer gains a classic arm on the File Manager (`FSMakeFSSpec`,
+  `PBGetCatInfoSync` by index for a listing, `FSpOpenDF` read-only,
+  `FSpDirCreate`) beside the Vita's, and `omk::hostPath()` turns the
+  engine's '/' paths into HFS ones (":gamedata:IAM", a root given as
+  "Volume:omk:fr" kept); the eleven places that opened files themselves call
+  it.
+* **NO C++ STREAMS - the one that took the time.** The boot crashed in
+  `std::ifstream`'s constructor (`basic_ios::_M_cache_locale`); a stream
+  test passed alone and crashed once linked with the engine, and also with
+  NO engine code but 2 MB of generated functions - so a size-dependent
+  TOOLCHAIN fault, not ours. Bisecting the engine's objects, then reading
+  the crash: `locale::id::_M_id()` returned garbage for
+  `num_get<char>::id`, whose address the linker had given ALSO to
+  libstdc++'s private `timepunct_cache_w` - the weak 4-byte facet ids of
+  `locale-inst.o`'s `.bss` are laid out one word short, so the last overlaps
+  the next object, and the locale's own set-up overwrites it. Any program
+  that initialises a locale - every iostream does - is exposed; a small one
+  survives because something harmless happens to follow. So `src/` uses no
+  stream: `readTextFile`, `splitLines` (`std::getline`'s exact splitting)
+  and `writeWholeFile` in `DataFs`, C stdio underneath. The classic app links
+  no stream code at all, and `verify.py: engine: classic build` holds that.
+  Not reported upstream yet.
+* `%zu` prints as `zu` (3d-i) - cosmetic, in the boot's log lines; not yet
+  swept.
+
+How it was run on OS 9: the data it needs - `IAM`, `SCPTDATA` and `MESHES`,
+388 MB, the smallest set that gives the same dump on the Mac - is on the OS 9
+disk at `untitled:omk:fr`, the tables at `untitled:omk:tables`; the app went
+into `System Folder:Startup Items` with its `omk.args`, the VM was booted and
+stopped after three minutes, and the output read off the image. On Tiger:
+`ditto -c -k --sequesterRsrc` to carry the resource fork, `LaunchCFMApp`.
+
 ### 3e. Testing without a 1999 Mac
 
 * **Correctness on a big-endian CPU, first and cheapest**: build the engine
@@ -616,8 +680,12 @@ dropped.
    outside the frontend files replaced by calls through a gateway class
    (the `Frontend` interface, extended), so a Carbon frontend can stand in
    for SDL on both systems - **DONE 2026-10-03** (`12d77ec`; PORTING A1,
-   `verify.py: engine: frontend gateway`). Next in this step: the Carbon
-   frontend, `CarbonFrontend : omk::Frontend` and `makeHostFrontend`.
+   `verify.py: engine: frontend gateway`). **And the engine itself runs on
+   OS 9** (3d-iii, `aa7aa43`): the headless boot, byte-identical to the Mac.
+   Next in this step: the Carbon frontend - `CarbonFrontend :
+   omk::Frontend` and `makeHostFrontend` - so `omk-play` itself, not a
+   headless tool, comes up on OS 9 (a window, keys, Sound Manager audio, 555
+   video; the films through QuickTime after that).
 6. **Correctness in QEMU** - OS 9.2.2 (`mac99`, Screamer), then Tiger on
    ppcosxkvm with the GPU.
 7. **RAVE** (optional, the *Unreal Tournament* route).
