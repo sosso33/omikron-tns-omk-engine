@@ -192,6 +192,12 @@ into one instruction that rounds once, where the Mac rounds twice, and a
 300-frame traffic run drifted by a tenth of a unit until fusion was turned
 off on both sides. The original, on an x87, had no fused operation at all.
 
+Mac OS 9 itself is the next step, and it has no SDL. So the viewer's game
+code now reaches the host (the window, the keys, the sound, the clocks)
+through **one interface**, the renderer boundary's counterpart for the host,
+and compiles without a single SDL header. A Carbon frontend will replace SDL
+by implementing that one class.
+
 ## Two faces in the same place
 
 Chapter 8 said that when two faces occupy the same place, the first drawn
