@@ -90,7 +90,25 @@ if not hasattr(subprocess, "_omk_unwrapped"):
 _subprocess_run = subprocess._omk_unwrapped
 
 
+# BUILDS ARE SERIAL, even when checks are not (`--jobs`): every `make` and
+# `cmake` a check runs takes one lock file, so two checks never build the same
+# target at once - the checks run side by side, their builds one after the
+# other. A no-op `make` holds it for a moment. Without `--jobs` there is one
+# process and the lock is never contended.
+_MAKE_LOCK = os.path.join(ROOT, "engine", "build", ".verify-make.lock")
+
+
 def _viewer_run(args, *a, **k):
+    if isinstance(args, (list, tuple)) and args and \
+            os.path.basename(str(args[0])) in ("make", "cmake"):
+        import fcntl
+        os.makedirs(os.path.dirname(_MAKE_LOCK), exist_ok=True)
+        with open(_MAKE_LOCK, "w") as lk:
+            fcntl.flock(lk, fcntl.LOCK_EX)
+            try:
+                return _subprocess_run(args, *a, **k)
+            finally:
+                fcntl.flock(lk, fcntl.LOCK_UN)
     return _subprocess_run(_viewer_args(args), *a, **k)
 
 
@@ -40828,7 +40846,52 @@ def _run_isolated(fn):
     return pickle.loads(data)
 
 
+def _run_parallel(todo, jobs, slow):
+    """`--jobs`: every check of `todo` as `verify.py --exact <name>`, `jobs`
+    at a time. -> the number that failed, as `main` returns it."""
+    import time
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    names = list(dict.fromkeys(name for name, _, _ in todo))   # one run per name
+    passthru = [a for a in sys.argv[1:] if a.startswith("--data") or a.startswith("--asm")
+                or a.startswith("--decomp") or a.startswith("--clean")]
+    t0 = time.time()
+
+    def one(name):
+        r = subprocess.run([sys.executable, os.path.abspath(__file__), "--exact", name] + passthru,
+                           cwd=ROOT, capture_output=True, text=True)
+        lines = [l for l in r.stdout.splitlines() if l.startswith(name)]
+        return name, lines, r.stdout, r.returncode
+
+    done = {}
+    with ThreadPoolExecutor(max_workers=jobs) as ex:
+        futs = [ex.submit(one, n) for n in names]
+        for k, f in enumerate(as_completed(futs), 1):
+            name, lines, out, rc = f.result()
+            done[name] = (lines, out, rc)
+            print(f"[{k}/{len(names)} {time.time() - t0:5.0f} s] {name}: "
+                  f"{'ok' if rc == 0 else 'FAILED'}", file=sys.stderr, flush=True)
+    bad = 0
+    for name in names:
+        lines, out, rc = done[name]
+        if not lines:
+            print("%-20s ERROR  no result line (exit %d): %s" % (name, rc, out.strip()[-300:]))
+            bad += 1
+            continue
+        for l in lines:
+            print(l)
+            bad += (" ok " not in l[:40])
+    print()
+    print("%d checks, %d failed   (--jobs %d, %.0f s)" % (len(todo), bad, jobs, time.time() - t0))
+    return bad
+
+
 def main():
+    # `--jobs N` first, and out of argv: its N is not a check pattern
+    jobs = 1
+    if "--jobs" in sys.argv:
+        i = sys.argv.index("--jobs")
+        jobs = int(sys.argv[i + 1]) if i + 1 < len(sys.argv) else 1
+        del sys.argv[i:i + 2]
     slow = "--slow" in sys.argv
     todo = CHECKS + (SLOW if slow else [])
     # `--only <substring>` runs just the checks whose name matches, and it
@@ -40845,11 +40908,25 @@ def main():
         if not todo:
             print("no check matches %s; --list shows them all" % " ".join(pats))
             return 1
+    # `--exact <name>...`: just these checks, by their WHOLE name - what
+    # `--jobs` runs each one with, where a substring would also catch others
+    # ("engine: boot" is inside "engine: boot sequence").
+    if "--exact" in sys.argv:
+        i = sys.argv.index("--exact")
+        names = set(a for a in sys.argv[i + 1:] if not a.startswith("--"))
+        todo = [c for c in CHECKS + SLOW if c[0] in names]
     if "--list" in sys.argv:
         for name, fn, where in CHECKS + SLOW:
             print("  %-20s %s%s" % (name, where,
                                     "   (--slow)" if (name, fn, where) in SLOW else ""))
         return 0
+    # `--jobs N`: N checks at a time, each a `verify.py --exact` process of
+    # its own (a fresh interpreter, so nothing is forked from a thread), the
+    # results printed in the usual order and the usual summary line. Builds
+    # stay serial (`_MAKE_LOCK`). Wall clock, not CPU, is what it saves: most
+    # of a sweep is checks waiting on a viewer run or an emulated frame.
+    if jobs > 1 and "--list" not in sys.argv:
+        return _run_parallel(todo, jobs, slow)
     bad = 0
     # Each check in its own forked process, so its memory is freed when it
     # ends (`_run_isolated`). `--no-isolate` runs them all in this process, as
