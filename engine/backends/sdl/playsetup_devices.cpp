@@ -76,11 +76,25 @@ int PlayState::setupDevices() {
         std::printf("aa: %dx MSAA - an ENHANCEMENT the original never had; %s\n", aaSamples,
                     vkRen ? "drawn by the Vulkan backend"
                           : "the software reference has none, --vulkan for it");
-    if (texFilter > 0)
-        std::printf("filter: %s%s - an ENHANCEMENT the original never had; %s\n",
-                    omk::textureFilterName(texFilter), texAniso > 1 ? " with anisotropy" : "",
-                    vkRen ? "drawn by the Vulkan backend"
-                          : "the software reference has none, --vulkan for it");
+    // The filter is the DEVICE's (docs/ASSETS.md 4): bilinear is what the
+    // original's hardware arm set and the default, nearest its software
+    // devices', trilinear an enhancement. The software reference stands for
+    // the software devices and point-samples whatever is asked.
+    {
+        const bool gpu = vkRen || glRen || worldVk;
+        if (texFilter == 2)
+            std::printf("filter: trilinear%s - an ENHANCEMENT the original never had (it shipped "
+                        "one level, MIP NONE); %s\n", texAniso > 1 ? " with anisotropy" : "",
+                        vkRen || (worldVk && worldVulkan) ? "drawn by the Vulkan backend"
+                        : gpu ? "this backend has no mip chain and draws it bilinear"
+                              : "the software reference point-samples, --vulkan for it");
+        else
+            std::printf("filter: %s - %s; %s\n", omk::textureFilterName(texFilter),
+                        texFilter == 1 ? "what the original drew on a 3D card (MAG/MIN LINEAR, no mipmaps)"
+                                       : "what the original's software devices drew (POINT)",
+                        gpu ? "drawn by the GPU backend"
+                            : "the software reference point-samples, as the original's software devices did");
+    }
     // One place that decides where a finished framebuffer goes, so the movies,
     // the splash and the frame loop cannot drift apart about it.
     glSwapMs = 0.0;   // SDL_GL_SwapWindow's share, for the phase line

@@ -225,7 +225,7 @@ int PlayState::setupSession() {
                       clipInches, clipInches * 0.25, clipInches * 0.95);
     std::printf("settings: %s;"
                 " crowd %d (%s); sky %d (%s), shadows %d (%s), detail %d (%s);"
-                " aa %d (%s, enhancement), filter %s (%s, enhancement),"
+                " aa %d (%s, enhancement), filter %s (%s%s),"
                 " anisotropy %d (%s, enhancement), interface %s (%s, enhancement),"
                 " text %s (%s, enhancement)\n",
                 clipText,
@@ -236,6 +236,7 @@ int PlayState::setupSession() {
                 aaSamples, aaFlag >= 0 ? "flag" : omk::sourceName(settings.antiAliasingSource),
                 omk::textureFilterName(texFilter),
                 filterFlag >= 0 ? "flag" : omk::sourceName(settings.textureFilterSource),
+                texFilter == 2 ? ", enhancement" : "",
                 texAniso, anisoFlag >= 0 ? "flag" : omk::sourceName(settings.anisotropySource),
                 omk::uiScalingName(uiScaling),
                 uiScaleFlag >= 0 ? "flag" : omk::sourceName(settings.uiScalingSource),

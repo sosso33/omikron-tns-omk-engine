@@ -78,15 +78,23 @@ struct Settings {
     Source fullscreenSource = Source::Default;
 
     // ---- [Enhancements] - OFF unless the file or a flag says so ----------
+    // (all but `texturefiltering`'s bilinear, which is the original's own -
+    // see below; the key lives here because its other two values do not)
     // `antialiasing = N`: MSAA samples per pixel, 0 off, else 2/4/8. Only the
     // Vulkan backend honours it; the software reference stands where D3D
     // stood and draws what the original drew.
     int    antiAliasing = 0;
     Source antiAliasingSource = Source::Default;
-    // `texturefiltering = nearest|bilinear|trilinear` (or 0|1|2): the
-    // original is point-sampled (MAG/MIN POINT, MIP NONE), so 0 is the
-    // game's picture; 2 is a generated mip chain.
-    int    textureFilter = 0;
+    // `texturefiltering = nearest|bilinear|trilinear` (or 0|1|2). NOT an
+    // enhancement at 1, and the one key of this section that is on by
+    // default (decided 2026-10-03): the original's device set-up has two
+    // arms (`sub_4638C0`, docs/ASSETS.md 4), and the HARDWARE one - a 3D
+    // card, the boot default - sets MAG/MIN LINEAR with MIP NONE, while the
+    // SOFTWARE devices sample POINT. So 1 is the default, the GPU backends
+    // draw it as the card did, and the software reference declines it and
+    // point-samples as the software devices did. 0 is the software devices'
+    // picture on a GPU backend; 2, a generated mip chain, is the enhancement.
+    int    textureFilter = 1;
     Source textureFilterSource = Source::Default;
     // `anisotropy = N` (1..16, 1 off): with trilinear only.
     int    anisotropy = 1;

@@ -42,6 +42,15 @@ import omkpaths
 # the size the checks were written at - and every run that names no saves file
 # gets a private, empty one, so the settings come from the shipped `IAM/GAMES`
 # (or the run's own `--save`) and never from `engine/omk-saves`.
+#
+# And every run that names no `--filter` gets `--filter nearest`. The viewer's
+# DEFAULT is bilinear on a GPU backend since 2026-10-03 - what the original's
+# hardware device drew (docs/ASSETS.md 4) - while the software reference
+# point-samples, as its software devices did. The checks that lay a GPU frame
+# beside the reference were written against the reference's own sampler, and
+# measure decisions, not the driver's sampling; naming it keeps them so. The
+# default itself is asserted by `engine: texture filter` (the resolved
+# setting) and the bilinear path by it and `engine: gl1 backend`.
 import tempfile as _tempfile
 _VIEWER_SAVES = os.path.join(_tempfile.mkdtemp(prefix="omk-verify-"), "GAMES")
 
@@ -67,6 +76,8 @@ def _viewer_args(args):
         args += ["--res", "800x600"]
     if "--saves" not in args:
         args += ["--saves", _VIEWER_SAVES]
+    if "--filter" not in args:
+        args += ["--filter", "nearest"]
     return args
 
 
@@ -27101,8 +27112,16 @@ def c_engine_gl1_backend():
 
 
 def c_engine_texture_filter():
-    r"""TEXTURE FILTERING - the second `[Enhancements]` option (bilinear), OFF
-    by default, and the colour key surviving it.
+    r"""TEXTURE FILTERING - bilinear, the DEFAULT on a GPU backend since
+    2026-10-03 (what the original drew on a 3D card), and the colour key
+    surviving it.
+
+    The default was decided by the reader that day - "the default should be
+    what the original does" - and the original's boot default is driver mode
+    0, a card, whose arm sets MAG/MIN LINEAR with MIP NONE. Asserted here as
+    the RESOLVED setting: `settings_probe` with no ini must print
+    `enh filter 1 default`. Until then this was "OFF by default" and the
+    source half below asserted `textureFilter = 0`.
 
     The original's SOFTWARE devices point-sample: `sub_4638C0`'s `if
     (dword_53ADF0)` arm sets MAG/MIN POINT and MIP NONE (`docs/ASSETS.md`
@@ -27155,7 +27174,7 @@ def c_engine_texture_filter():
     fs = open(os.path.join(eng, "backends", "vulkan", "shaders", "scene.frag")).read()
     # any renderer variable, not an enumerated one - see `engine: anti-aliasing`
     guarded = len(re.findall(r"if \((?:\w+ && )?texFilter > 0\) \w+->setTextureFilter\(texFilter\)", pl))
-    src_ok = (bool(re.search(r"int\s+textureFilter\s*=\s*0;", sh)),
+    src_ok = (bool(re.search(r"int\s+textureFilter\s*=\s*1;", sh)),
               '"texturefiltering"' in sc,
               guarded == len(re.findall(r"->setTextureFilter\(", pl)) and guarded >= 3,
               "t.a < 0.5" in fs and "t.rgb /= t.a" in fs)   # the premultiplied key
@@ -27216,9 +27235,17 @@ def c_engine_texture_filter():
                 print(f"        gles bilinear: {m.group(2)}% changed, mean {m.group(3)}, "
                       f"coverage {m.group(4)}")
     want_gles = gles if gles == ("skipped",) else (True, True, True, True)
+    # the default, RESOLVED: no ini, no save - what a fresh install gets
+    dflt = "settings_probe did not build"
+    mk = subprocess.run(["make", "-s", "build/settings_probe"], cwd=eng, capture_output=True, text=True)
+    sp = os.path.join(eng, "build", "settings_probe")
+    if mk.returncode == 0 and os.path.exists(sp):
+        m = re.search(r"^enh filter (\d+) (\w+)", subprocess.run([sp], capture_output=True,
+                                                                  text=True).stdout, re.M)
+        dflt = (m.group(1), m.group(2)) if m else "no `enh filter` line"
     want_gpu = gpu if gpu == ("no vulkan",) else (True, True, True, True)
-    return (src_ok, gpu, gles), ((True, True, True, True), want_gpu, want_gles), \
-           "the source: `Settings::textureFilter` defaults to 0, the ini key " \
+    return (src_ok, gpu, gles, dflt), ((True, True, True, True), want_gpu, want_gles, ("1", "default")), \
+           "the source: `Settings::textureFilter` defaults to 1 (bilinear), the ini key " \
            "`texturefiltering` is read, every `setTextureFilter` call in omk-play " \
            "is guarded by `> 0`, and the shader carries the premultiplied key; " \
            "the GPU (skipped without Vulkan): the nearest frame is byte-identical " \

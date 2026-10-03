@@ -116,10 +116,12 @@ int sceneViewer(const std::string& fr, const std::string& setName,
                     live ? "the Vulkan backend has it, the software one does not"
                          : "no Vulkan device, so nothing here draws it");
     if (texFilter > 0)
-        std::printf("filter: %s%s asked - an ENHANCEMENT the original never had; "
-                    "%s\n", omk::textureFilterName(texFilter),
+        std::printf("filter: %s%s - %s; %s\n", omk::textureFilterName(texFilter),
                     texAniso > 1 ? " with anisotropy" : "",
-                    live ? "the Vulkan backend has it, the software one does not"
+                    texFilter == 1 ? "what the original drew on a 3D card"
+                                   : "an ENHANCEMENT the original never had",
+                    live ? "the Vulkan backend draws it, the software one point-samples "
+                           "as the original's software devices did"
                          : "no Vulkan device, so nothing here draws it");
 #else
     std::printf("built without Vulkan - software only "
