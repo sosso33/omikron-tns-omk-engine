@@ -7,10 +7,12 @@
 #include <MacWindows.h>
 #include <QDOffscreen.h>
 #include <Quickdraw.h>
+#include <Sound.h>
 #include <TextUtils.h>
 #include <Timer.h>
 #include <ToolUtils.h>
 
+#include <cstdio>
 #include <cstring>
 #include <memory>
 
@@ -53,9 +55,120 @@ pascal OSErr onQuit(const AppleEvent*, AppleEvent*, long) {
     return noErr;
 }
 
+// A buffer has PLAYED: the `callBackCmd` queued after it names its index. On
+// Mac OS 9 this runs at interrupt time, so it sets one flag and nothing more;
+// the main thread refills (`refillAudio`).
+pascal void soundPlayed(SndChannelPtr chan, SndCommand* cmd) {
+    reinterpret_cast<volatile bool*>(chan->userInfo)[cmd->param2] = true;
+}
+
 }  // namespace
 
 CarbonFrontend::~CarbonFrontend() { close(); }
+
+bool CarbonFrontend::openAudio(int rate, int channels) {
+    if (chan_) return true;
+    static SndCallBackUPP played = NewSndCallBackUPP(soundPlayed);
+    SndChannelPtr ch = nullptr;
+    const OSErr e = SndNewChannel(&ch, sampledSynth, channels == 2 ? initStereo : initMono, played);
+    if (e != noErr || !ch) {
+        lastError_ = "SndNewChannel " + std::to_string(e);
+        return false;
+    }
+    ch->userInfo = reinterpret_cast<long>(played_);
+    chan_ = ch;
+    arate_ = rate;
+    achan_ = channels;
+    const std::size_t frames = static_cast<std::size_t>(rate / 10);
+    for (int i = 0; i < kBuffers; ++i) {
+        buf_[i].assign(sizeof(ExtSoundHeader) + frames * static_cast<std::size_t>(channels) * 2, 0);
+        played_[i] = true;
+    }
+    refillAudio();
+    return true;
+}
+
+// The films open the device at their 44100 and the world reopens it at 22050
+// (`Frontend::reopenAudio`): closed first, everything queued dropped.
+bool CarbonFrontend::reopenAudio(int rate, int channels) {
+    if (chan_ && arate_ == rate && achan_ == channels) return true;
+    closeAudio();
+    mix_.clear();
+    return openAudio(rate, channels);
+}
+
+void CarbonFrontend::closeAudio() {
+    if (!chan_) return;
+    // what proves the device played: a buffer is refilled only after the
+    // Sound Manager has called back to say it played the last one
+    const long after = refills_ > kBuffers ? refills_ - kBuffers : 0;
+    std::printf("audio: Sound Manager at %d Hz, %d channel(s) - %ld buffers queued, %ld of "
+                "them after the device said one had played (%.1f s)\n",
+                arate_, achan_, refills_, after, after * 0.1);
+    SndDisposeChannel(static_cast<SndChannelPtr>(chan_), true);   // quietly, now
+    chan_ = nullptr;
+}
+
+void CarbonFrontend::refillAudio() {
+    if (!chan_) return;
+    auto* ch = static_cast<SndChannelPtr>(chan_);
+    const std::size_t frames = static_cast<std::size_t>(arate_ / 10);
+    mixed_.resize(frames * static_cast<std::size_t>(achan_));
+    for (int i = 0; i < kBuffers; ++i) {
+        if (!played_[i]) continue;
+        mix_.mix(mixed_.data(), mixed_.size());
+        auto* h = reinterpret_cast<ExtSoundHeader*>(buf_[i].data());
+        std::memset(h, 0, sizeof *h);
+        h->samplePtr = nullptr;                  // the samples follow the header
+        h->numChannels = static_cast<unsigned long>(achan_);
+        h->sampleRate = static_cast<UnsignedFixed>(static_cast<unsigned long>(arate_) << 16);
+        h->encode = extSH;
+        h->baseFrequency = kMiddleC;
+        h->numFrames = static_cast<unsigned long>(frames);
+        h->sampleSize = 16;                      // signed, big-endian: the host's own
+        auto* dst = reinterpret_cast<std::int16_t*>(h->sampleArea);
+        for (std::size_t k = 0; k < mixed_.size(); ++k)
+            dst[k] = static_cast<std::int16_t>(mixed_[k] * 32767.0f);   // already in [-1, 1]
+        played_[i] = false;
+        ++refills_;
+        SndCommand c;
+        c.cmd = bufferCmd; c.param1 = 0; c.param2 = reinterpret_cast<long>(h);
+        SndDoCommand(ch, &c, true);
+        c.cmd = callBackCmd; c.param1 = 0; c.param2 = i;
+        SndDoCommand(ch, &c, true);
+    }
+}
+
+void CarbonFrontend::queueAudio(std::span<const float> s) {
+    if (s.empty()) return;
+    if (!chan_) {
+        if (!droppedToldOnce_) {
+            droppedToldOnce_ = true;
+            std::printf("audio: no device - the stream is dropped, not queued\n");
+        }
+        return;
+    }
+    mix_.queue(s);
+    refillAudio();
+}
+
+int CarbonFrontend::playSound(std::span<const float> s, bool loop, float gain) {
+    if (s.empty()) return -1;
+    return playSound(std::make_shared<const std::vector<float>>(s.begin(), s.end()), loop, gain);
+}
+int CarbonFrontend::playSound(std::vector<float>&& s, bool loop, float gain) {
+    if (s.empty()) return -1;
+    return playSound(std::make_shared<const std::vector<float>>(std::move(s)), loop, gain);
+}
+int CarbonFrontend::playSound(std::shared_ptr<const std::vector<float>> s, bool loop, float gain) {
+    return mix_.play(std::move(s), loop, gain);
+}
+
+// The films pace their video by this (the audio clock), so it refills first.
+double CarbonFrontend::queuedSeconds() {
+    refillAudio();
+    return arate_ > 0 ? static_cast<double>(mix_.queued()) / (arate_ * achan_) : 0.0;
+}
 
 bool CarbonFrontend::open(int w, int h, const std::string& title) {
     InitCursor();
@@ -70,10 +183,23 @@ bool CarbonFrontend::open(int w, int h, const std::string& title) {
     if (!win) return false;
     win_ = win;
     SetPortWindowPort(win);
+    // AN INSTRUMENT: `omk.quit` beside the application, holding a number of
+    // seconds, ends the run by itself after that long, as Cmd-Q would - so a
+    // run on Mac OS 9 (no shell, nothing to send it a quit) still closes its
+    // audio device and writes its last lines. Absent, it does nothing.
+    if (std::FILE* q = std::fopen("omk.quit", "r")) {
+        double secs = 0.0;
+        if (std::fscanf(q, "%lf", &secs) == 1 && secs > 0.0) {
+            quitAt_ = microseconds() + static_cast<std::uint64_t>(secs * 1e6);
+            std::printf("quit: omk.quit - the run ends after %.0f s\n", secs);
+        }
+        std::fclose(q);
+    }
     return true;
 }
 
 bool CarbonFrontend::pump(HostInput& out) {
+    refillAudio();
     out.text.clear();
     EventRecord ev;
     // everything waiting, without sleeping: the frame loop is the clock
@@ -116,6 +242,10 @@ bool CarbonFrontend::pump(HostInput& out) {
         }
     }
     if (g_quitRequested) quit_ = true;
+    if (quitAt_ && !quit_ && microseconds() >= quitAt_) {
+        quit_ = true;
+        std::printf("quit: omk.quit's time is up\n");
+    }
     out.quit = quit_;
 
     // the keys HELD, from the keyboard's own state - not from key-up events,
@@ -178,6 +308,7 @@ void CarbonFrontend::blit() {
 }
 
 void CarbonFrontend::close() {
+    closeAudio();
     if (gw_) { DisposeGWorld(static_cast<GWorldPtr>(gw_)); gw_ = nullptr; }
     if (win_) { DisposeWindow(static_cast<WindowRef>(win_)); win_ = nullptr; }
 }

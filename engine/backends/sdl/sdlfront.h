@@ -14,6 +14,7 @@
 #  include <SDL.h>
 #endif
 
+#include "audio/hostmix.h"
 #include "platform/frontend.h"
 
 #include <cstddef>
@@ -123,14 +124,6 @@ private:
     SDL_GameController* pad_ = nullptr;
 #endif
 
-    // omk-play 72: a LOOPING shot wraps instead of ending. `Script_PlaySound`
-    // carries a loop flag the port recorded and never honoured, so an ambience
-    // was re-fired by its program every cycle - wav 23 started 33 times in 521
-    // frames, a 1.76 s sample overlapping itself three deep. That restart is
-    // what a reader heard as "the loop feels unnatural".
-    struct Shot { std::shared_ptr<const std::vector<float>> pcm; std::size_t pos; int id;
-                  bool loop = false; float gain = 1.0f; };
-    int                 nextShot_ = 1;
     // SDL's own mutex, not `std::mutex`: on the Vita the standard library's
     // threading sits on the SDK's pthread layer, and the engine keeps to the
     // platform's own calls there (`todo/vita-port.md`); SDL's is built on
@@ -141,10 +134,9 @@ private:
 #else
     SDL_mutex*          amx_ = SDL_CreateMutex();
 #endif
-    float musicGain_ = 1.0f;      // Music_SetVolume, applied to the stream in feed()
-    std::vector<float>  stream_;
-    std::size_t         sHead_ = 0;
-    std::vector<Shot>   shots_;
+    // the stream and the one-shots, summed in feed() (`audio/hostmix.h`;
+    // omk-play 72: a LOOPING shot wraps instead of being re-fired)
+    HostMixer mix_;
 };
 
 }  // namespace omk

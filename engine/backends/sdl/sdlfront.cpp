@@ -477,31 +477,8 @@ void SdlFrontend::present(const omk::Surface& fb) {
 // counterpart (`src/audio/mixer.h`). This is the device's job, done here.
 void SdlFrontend::feed(void* user, Uint8* out, int len) {
     auto* self = static_cast<SdlFrontend*>(user);
-    auto* dst = reinterpret_cast<float*>(out);
-    const std::size_t n = static_cast<std::size_t>(len) / sizeof(float);
     AudioLock lk(self->amx_);
-    for (std::size_t i = 0; i < n; ++i) {
-        float v = 0.0f;
-        if (self->sHead_ < self->stream_.size()) v += self->stream_[self->sHead_++] * self->musicGain_;
-        for (auto& one : self->shots_) {
-            const std::vector<float>& pcm = *one.pcm;
-            if (one.pos >= pcm.size()) {
-                if (!one.loop || pcm.empty()) continue;
-                one.pos = 0;                  // a looping shot wraps
-            }
-            v += pcm[one.pos++] * one.gain;
-        }
-        dst[i] = v < -1.0f ? -1.0f : (v > 1.0f ? 1.0f : v);
-    }
-    // Reclaim the consumed head rather than growing for ever.
-    if (self->sHead_ > (1u << 20)) {
-        self->stream_.erase(self->stream_.begin(),
-                            self->stream_.begin() + static_cast<std::ptrdiff_t>(self->sHead_));
-        self->sHead_ = 0;
-    }
-    std::erase_if(self->shots_, [](const Shot& o) {
-        return !o.loop && o.pos >= o.pcm->size();  // a loop ends only on stopSound
-    });
+    self->mix_.mix(reinterpret_cast<float*>(out), static_cast<std::size_t>(len) / sizeof(float));
 }
 
 bool SdlFrontend::openAudio(int rate, int channels) {
@@ -554,15 +531,14 @@ bool SdlFrontend::reopenAudio(int rate, int channels) {
         adev_ = 0;
 #endif
         AudioLock lk(amx_);
-        stream_.clear(); sHead_ = 0;
-        shots_.clear();
+        mix_.clear();
     }
     return openAudio(rate, channels);
 }
 
 void SdlFrontend::setMusicGain(float g) {
     AudioLock lk(amx_);
-    musicGain_ = g < 0.0f ? 0.0f : (g > 1.0f ? 1.0f : g);
+    mix_.setMusicGain(g);
 }
 
 void SdlFrontend::queueAudio(std::span<const float> s) {
@@ -586,7 +562,7 @@ void SdlFrontend::queueAudio(std::span<const float> s) {
         }
         return;
     }
-    stream_.insert(stream_.end(), s.begin(), s.end());
+    mix_.queue(s);
 }
 
 // Every play SHARES its samples (`Shot::pcm`): a caller's own span is
@@ -611,31 +587,24 @@ int SdlFrontend::playSound(std::shared_ptr<const std::vector<float>> s, bool loo
     // what the cap pushes out is freed AFTER the lock, not under it
     std::shared_ptr<const std::vector<float>> dropped;
     AudioLock lk(amx_);
-    // A cap, because a held key would otherwise stack voices without end.
-    if (shots_.size() >= 8) {
-        dropped = std::move(shots_.front().pcm);
-        shots_.erase(shots_.begin());
-    }
-    const int id = nextShot_++;
-    shots_.push_back({std::move(s), 0, id, loop, gain});
-    return id;
+    return mix_.play(std::move(s), loop, gain, &dropped);
 }
 
 void SdlFrontend::stopSound(int handle) {
     if (handle < 0) return;
     AudioLock lk(amx_);
-    std::erase_if(shots_, [handle](const Shot& o) { return o.id == handle; });
+    mix_.stop(handle);
 }
 
 void SdlFrontend::flushAudio() {
     AudioLock lk(amx_);
-    stream_.clear(); sHead_ = 0;
+    mix_.flush();
 }
 
 double SdlFrontend::queuedSeconds() {
     AudioLock lk(amx_);
     const double per = arate_ > 0 ? 1.0 / (arate_ * achan_) : 0.0;
-    return static_cast<double>(stream_.size() - sHead_) * per;
+    return static_cast<double>(mix_.queued()) * per;
 }
 
 void SdlFrontend::close() {

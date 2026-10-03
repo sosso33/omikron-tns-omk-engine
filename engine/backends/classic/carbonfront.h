@@ -10,13 +10,21 @@
 // the engine's RGB565 frame loses green's low bit on the way, as it would have
 // - `CopyBits` to the window, `GetKeys` for the keys held, `WaitNextEvent`
 // for typed characters and quitting, and `Microseconds` for the clocks.
-// No audio yet: `openAudio` says no and the game runs silent.
+// AUDIO through the Sound Manager: one sampled-sound channel and a ring of
+// short 16-bit buffers, refilled from `HostMixer` (`audio/hostmix.h`, the
+// same sum the SDL frontend makes) on the MAIN thread - the completion
+// callback runs at interrupt time on Mac OS 9, so it only marks a buffer
+// played and touches nothing else.
 #pragma once
 
+#include "audio/hostmix.h"
 #include "platform/frontend.h"
 
 #include <cstdint>
+#include <memory>
+#include <span>
 #include <string>
+#include <vector>
 
 namespace omk {
 
@@ -33,12 +41,38 @@ public:
     std::uint64_t perfFrequency() override { return 1000000; }   // Microseconds()
     void delayMs(std::uint32_t ms) override;
 
+    bool openAudio(int rate, int channels) override;
+    bool reopenAudio(int rate, int channels) override;
+    void queueAudio(std::span<const float> s) override;
+    void setMusicGain(float g) override { mix_.setMusicGain(g); }
+    int playSound(std::span<const float> s, bool loop = false, float gain = 1.0f) override;
+    int playSound(std::vector<float>&& s, bool loop = false, float gain = 1.0f) override;
+    int playSound(std::shared_ptr<const std::vector<float>> s, bool loop = false,
+                  float gain = 1.0f) override;
+    void stopSound(int handle) override { mix_.stop(handle); }
+    void flushAudio() override { mix_.flush(); }
+    double queuedSeconds() override;
+    std::string lastError() const override { return lastError_; }
+
     const void* windowId() const override { return win_; }
     std::string windowTitle() const override;
     void setWindowTitle(const std::string& t) override;
 
 private:
     void blit();                 // the GWorld to the window
+    void refillAudio();          // every played buffer, mixed again and queued
+    void closeAudio();
+    HostMixer mix_;
+    void* chan_ = nullptr;       // SndChannelPtr
+    int arate_ = 0, achan_ = 2;
+    static constexpr int kBuffers = 6;          // of a tenth of a second each
+    std::vector<unsigned char> buf_[kBuffers];  // an ExtSoundHeader, then the samples
+    volatile bool played_[kBuffers] = {};       // set by the completion callback
+    std::vector<float> mixed_;
+    bool droppedToldOnce_ = false;
+    long refills_ = 0;           // buffers mixed and queued after the first ring
+    std::uint64_t quitAt_ = 0;   // `omk.quit`: the run ends by itself (an instrument)
+    std::string lastError_;
     void* win_ = nullptr;        // WindowRef
     void* gw_ = nullptr;         // GWorldPtr, 16 bits
     int gwW_ = 0, gwH_ = 0;
