@@ -15349,7 +15349,10 @@ def c_engine_gles_backend():
         return ("build failed",), ("built",), "engine/ must build"
     r = subprocess.run([binp, omkpaths.data_root(), model, "3526,1015,-905",
                         "3412,1032,-882", "83"], capture_output=True, text=True)
-    cov = re.findall(r"coverage ([0-9.]+)", r.stdout)
+    # the PLAIN and DITHERED lines only: the probe prints a third coverage on
+    # its bilinear line since `f2875ee` (2026-10-03), which `engine: texture
+    # filter` reads - counted here, it turned this check red in that day's sweep
+    cov = re.findall(r"^(?:plain|dithered)\s.*coverage ([0-9.]+)", r.stdout, re.M)
     present = re.findall(r"present(?: world| surface)?: (EXACT|\d+ DIFFERENT)", r.stdout)
     fails = re.findall(r"^failures (\d+)$", r.stdout, re.M)
     if len(cov) != 2 or len(present) != 5 or len(fails) != 1:
@@ -18956,12 +18959,17 @@ def c_engine_scene_facing():
         return (len(v), sum(v) / len(v) if v else 999.0, max(v) if v else 999.0)
     nG, meanG, worstG = gaps(run({}, 1200))
     _, meanS, worstS = gaps(run({"OMK_STICKY_EULER": "1"}, 1200))
-    return (abs(t63) <= 20.0, abs(t71) <= 20.0 and abs(t71) >= 8.0,
+    # 71: HALF the -14 the geometry wants since `52d947f` (2026-10-02, the head
+    # look "settles at half the turn", confirmed in play) - measured -7; the
+    # full -14 is now outside the band. (Red in the sweep of 2026-10-03 until
+    # re-pinned: only `engine: head look` was re-run for that commit.)
+    return (abs(t63) <= 20.0, abs(t71) <= 10.0 and abs(t71) >= 4.0,
             abs(zOn - 695) <= 6, abs(zOff - 732) <= 6,
             nG, meanG <= 2.0, worstG <= 5.0, worstS >= 200.0), \
            (True, True, True, True, 68, True, True, True), \
         ("diner 63's head twist is inside the engine's +-70 clamp rather than "
-         "pinned on it; 71's is the -14 the geometry wants; Samyaza ends at z "
+         "pinned on it; 71's is HALF the -14 the geometry wants (the head look "
+         "settles at half the turn); Samyaza ends at z "
          "695 with the root delta turned by her Euler 180 and z 732 without; "
          "then the 68 clip hand-overs of the scene - their mean gap is at most "
          "2 units and the worst at most 5, and reading the Euler as STICKY "
