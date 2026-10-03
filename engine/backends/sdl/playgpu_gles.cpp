@@ -47,6 +47,7 @@ void PlayState::gpuOpenWindow() {
         if (glWin && SDL_GL_CreateContext(glWin)) {
             SDL_GL_SetSwapInterval(1);
             omk::Renderer* gr = omk::makeGlesRenderer();
+            if (texFilter > 0) gr->setTextureFilter(texFilter);
             if (gr->init(dispW, dispH)) {
                 glRen = gr;
                 std::printf("renderer: GLES2 - %s\n", gr->name());

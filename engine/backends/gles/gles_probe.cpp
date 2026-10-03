@@ -528,6 +528,44 @@ int main(int argc, char** argv) {
         omk::glesSetWindowTarget(gl, 0);
     }
 
+    // ---- TEXTURE FILTERING: a second renderer asked for BILINEAR - what the
+    // original's hardware arm set, MAG/MIN LINEAR with MIP NONE
+    // (`docs/ASSETS.md` 4) - against the default renderer's nearest frame,
+    // same plain view. A filter touches nearly every textured pixel and moves
+    // no geometry, so the frame changes over much of the picture by a SMALL
+    // mean, and its coverage agreement with the reference is kept. Printed
+    // for `verify.py: engine: texture filter`; a refusal or an unchanged
+    // frame is a failure here too.
+    {
+        omk::View v;
+        v.cam = cam; v.cam.w = W; v.cam.h = H;
+        v.dither = false;
+        omk::SoftwareRenderer sw;
+        const omk::Surface swF = *run(sw, v, W, H);
+        const omk::Surface n0 = *run(*gl, v, W, H);
+        omk::Renderer* bl = omk::makeGlesRenderer();
+        const bool took = bl->setTextureFilter(1);
+        const omk::Surface* b = run(*bl, v, W, H);
+        if (!b) { std::fprintf(stderr, "gles renderer failed to come up\n"); return 1; }
+        long changed = 0;
+        double tot = 0.0;
+        for (std::size_t i = 0; i < n0.px.size() && i < b->px.size(); ++i) {
+            const std::uint16_t x = n0.px[i], y = b->px[i];
+            if (x == y) continue;
+            ++changed;
+            tot += (std::abs(((x >> 11) & 31) * 8 - ((y >> 11) & 31) * 8) +
+                    std::abs(((x >> 5) & 63) * 4 - ((y >> 5) & 63) * 4) +
+                    std::abs((x & 31) * 8 - (y & 31) * 8)) / 3.0;
+        }
+        const Coverage c = compare(swF, *b);
+        std::printf("filter bilinear: %s  changed %ld (%.1f%%)  mean |d| %.1f of 255  "
+                    "coverage %.4f\n", took ? "taken" : "REFUSED", changed,
+                    100.0 * double(changed) / double(n0.px.size()),
+                    changed ? tot / double(changed) : 0.0, c.agree());
+        failures += !took || changed == 0 || c.agree() < 0.98;
+        delete bl;
+    }
+
     // ---- THE LETTERBOX: a 640x352 picture at row 64 of a 640x480 frame, the
     // dialogue camera mode's shape. The target is the full frame and the
     // picture its top rows, as `play.cpp` sets the view up.

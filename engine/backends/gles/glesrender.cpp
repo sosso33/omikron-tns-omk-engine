@@ -566,6 +566,18 @@ public:
     const Surface& readback() override;
     RasterStats stats() const override { return st_; }
     const char* name() const override { return "gles2"; }
+    // TEXTURE FILTERING (renderer.h): 0 nearest, 1 bilinear - what the
+    // original's HARDWARE device drew, MAG/MIN LINEAR with MIP NONE
+    // (`docs/ASSETS.md` 4). There is no mip chain here, so trilinear is drawn
+    // as bilinear, and said. Before `setTextures`: an upload keeps the filter
+    // it was made with. The colour key survives it as on Vulkan - the key is
+    // in alpha and the fragment shader un-premultiplies a filtered sample.
+    bool setTextureFilter(int mode) override {
+        filter_ = mode >= 1 ? 1 : 0;
+        if (mode >= 2)
+            std::printf("gles: trilinear asked - no mip chain in this backend, drawn bilinear\n");
+        return mode <= 1;
+    }
 
     // ---- presentation, the window side. `frameW x frameH` is the ENGINE's
     // frame (640x480); the window is whatever the device has (960x544 on a
@@ -831,6 +843,7 @@ private:
     std::unordered_map<const Geometry*, Vbo> vbo_;
     std::unordered_map<const Geometry*, DepthTie> tie_;
     bool tieOn_ = true;
+    int  filter_ = 0;        // 0 nearest (the software devices), 1 bilinear (a 3D card)
     GLuint windowFbo_ = 0;
 
     View view_;
@@ -1184,8 +1197,9 @@ void GlesRenderer::setTextures(std::span<const Texture> t) {
                          s.name.c_str(), s.width, s.height);
         glGenTextures(1, &out.id);
         glBindTexture(GL_TEXTURE_2D, out.id);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        const GLint f = filter_ ? GL_LINEAR : GL_NEAREST;
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, f);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, f);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, repeat ? GL_REPEAT : GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, repeat ? GL_REPEAT : GL_CLAMP_TO_EDGE);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, s.width, s.height, 0, GL_RGBA,

@@ -23,6 +23,7 @@ void PlayState::gpuOpenWorldHarness() {
         return;
     }
     omk::Renderer* r = omk::makeGl1Renderer();
+    if (texFilter > 0) r->setTextureFilter(texFilter);
     if (r->init(dispW, dispH)) {
         worldVk = r;
         std::printf("renderer: the world through %s (offscreen; the frame is presented on the CPU)\n",

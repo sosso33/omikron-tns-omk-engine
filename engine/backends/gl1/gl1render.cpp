@@ -9,9 +9,17 @@
 //     depth write, alpha test, fog, cull, texture - the D3D render-state calls
 //     the original made between buckets, and no more;
 //   * textures are 16-bit (`GL_RGB5_A1`), as the original's D3D surfaces
-//     were, point-sampled with no mip chain (`sub_4638C0`: POINT, MIP NONE);
+//     were, with no mip chain (`sub_4638C0`: MIP NONE) - point-sampled by
+//     default here, BILINEAR when `setTextureFilter(1)` asks, which is what
+//     the original's hardware arm set (MAG/MIN LINEAR, `docs/ASSETS.md` 4);
 //   * the colour key on black (`SetRenderState(27, 1)`, mesh flag 0x800) is
-//     a texel of alpha 0 and the alpha test - the fixed-function equivalent;
+//     a texel of alpha 0 and the alpha test - the fixed-function equivalent.
+//     Filtered, a kept edge fragment carries some of the key's black (the
+//     Vulkan and GLES shaders divide it back out; fixed function cannot), so
+//     a cutout's edge pixels are darkened by the key's share of their sample,
+//     at most half (the alpha test keeps above 0.5) - which is also
+//     what a card that turned the key into alpha before filtering drew. The
+//     card's own key path is not reachable from this tree;
 //   * the vertices are TRANSFORMED ON THE CPU, near-clipped and culled there,
 //     and handed over already projected - the original's `D3DTLVERTEX`
 //     (sx, sy, sz, rhw), here as clip-space (x w, y w, z w, w) so the
@@ -154,8 +162,8 @@ public:
                     px[d + 3] = (r | g | b) ? 255 : 0;
                 }
             glBindTexture(GL_TEXTURE_2D, tex_[i]);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter_ ? GL_LINEAR : GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter_ ? GL_LINEAR : GL_NEAREST);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
             // bytes in memory order: no packed type, so no byte order to get wrong
@@ -385,6 +393,26 @@ public:
 
     RasterStats stats() const override { return st_; }   // only `triangles` is known
     const char* name() const override { return "OpenGL 1.x fixed-function"; }
+    // TEXTURE FILTERING (renderer.h): 0 nearest, 1 bilinear. No mip chain -
+    // the original set MIP NONE on both arms - so trilinear is drawn bilinear
+    // and said. Recorded here; applied to every texture `setTextures` made
+    // and every one it makes after, so the order of the two calls is free.
+    bool setTextureFilter(int mode) override {
+        filter_ = mode >= 1 ? 1 : 0;
+        if (mode >= 2)
+            std::printf("gl1: trilinear asked - no mip chain in this backend, drawn bilinear\n");
+        if (!tex_.empty()) {
+            Current c(ctx_);
+            for (GLuint id : tex_) {
+                if (!id) continue;
+                glBindTexture(GL_TEXTURE_2D, id);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter_ ? GL_LINEAR : GL_NEAREST);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter_ ? GL_LINEAR : GL_NEAREST);
+            }
+            boundTex_ = ~0u;
+        }
+        return mode <= 1;
+    }
 
 private:
     // THE CONTEXT NEEDS A DRAWABLE ON TIGER. With none attached, Mac OS X
@@ -515,6 +543,7 @@ private:
     RasterStats st_;
     // the state cache
     bool stateValid_ = false, cutout_ = false;
+    int  filter_ = 0;        // 0 nearest (the software devices), 1 bilinear (a 3D card)
     Blend blend_ = Blend::Opaque;
     int fogKind_ = -1;
     float fogStart_ = 0, fogEnd_ = 0, fogRGB_[3]{};

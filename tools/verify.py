@@ -27006,10 +27006,25 @@ def c_engine_gl1_backend():
         the other side;
       * coverage agreement (both lit or both black) >= 0.99, and at most
         0.5% of pixels differing by more than 24 in a channel.
-    Measured 2026-10-03 on the M3, in this check's own run (`--res 640x480`
-    named, the private saves file `_viewer_args` adds): coverage 0.9932,
-    153 pixels (0.05%) - the differences are rasterisation and per-vertex
-    rather than per-pixel fog, not content.
+    Both of those frames are `--filter nearest`, NAMED: the reference
+    point-samples (the original's software devices), so agreement with it is
+    measured on the sampler it has. Measured 2026-10-03 on the M3, in this
+    check's own run (`--res 640x480` named, the private saves file
+    `_viewer_args` adds): coverage 0.9932, 153 pixels (0.05%) - the
+    differences are rasterisation and per-vertex rather than per-pixel fog,
+    not content.
+
+    And a third frame, `--filter bilinear` - the original's HARDWARE arm,
+    MAG/MIN LINEAR with MIP NONE (`docs/ASSETS.md` 4): it must differ from
+    the nearest frame over at least 20% of the picture by a mean of at most
+    16 levels (a blend of neighbours, not a change of content), and keep
+    coverage agreement with the reference >= 0.98. Measured 2026-10-03:
+    45.1% changed, mean 3.2, coverage 0.9885 - lower than nearest's because
+    a filtered colour key moves a cutout's edge by a fraction of a texel.
+
+    Shown to fail (2026-10-03), the bilinear half: `setTextureFilter` storing
+    0 whatever it is asked, so the bilinear frame is the nearest one -
+    changed 0, red.
 
     Shown to fail (2026-10-03): the texture slot taken as `key & 0x1F`
     instead of the key's low SIX bits (ASSETS 4b), so every material past
@@ -27037,12 +27052,14 @@ def c_engine_gl1_backend():
     tmp = tempfile.mkdtemp()
     try:
         frames, logs = {}, {}
-        for tag, env in (("gl1", {}), ("sw", {"OMK_GL1": "0"})):
+        for tag, env, filt in (("gl1", {}, "nearest"), ("sw", {"OMK_GL1": "0"}, "nearest"),
+                               ("bilinear", {}, "bilinear")):
             out = os.path.join(tmp, tag + ".bin")
             r = subprocess.run([binp, fr, os.path.join(ROOT, "tables"),
                                 "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
                                 "--area", "0", "--stand", "1804,0,-6890,336", "--nofmv",
-                                "--frames", "60", "--res", "640x480", "--dump", out],
+                                "--frames", "60", "--res", "640x480", "--filter", filt,
+                                "--dump", out],
                                cwd=eng, capture_output=True, text=True,
                                env=dict(os.environ, SDL_VIDEODRIVER="dummy", **env))
             logs[tag] = r.stdout
@@ -27052,9 +27069,9 @@ def c_engine_gl1_backend():
                     return (f"{tag} dump {len(raw)} bytes",), ("640x480",), \
                         "the dump must be one 640x480 RGB565 frame: " + r.stdout[-400:]
                 frames[tag] = struct.unpack("<%dH" % (640 * 480), raw)
-        if len(frames) != 2:
-            return ("no frames",), ("two frames",), "omk-play must render both"
-        g, sw = frames["gl1"], frames["sw"]
+        if len(frames) != 3:
+            return ("no frames",), ("three frames",), "omk-play must render all three"
+        g, sw, bl = frames["gl1"], frames["sw"], frames["bilinear"]
         N = len(g)
         def big(x, y):
             return max(abs(((x >> 11) & 31) - ((y >> 11) & 31)) * 8,
@@ -27062,13 +27079,23 @@ def c_engine_gl1_backend():
                        abs((x & 31) - (y & 31)) * 8) > 24
         differ = sum(1 for x, y in zip(g, sw) if x != y and big(x, y))
         cover = sum(1 for x, y in zip(g, sw) if (x != 0) == (y != 0)) / N
+        def mean_d(x, y):
+            return (abs(((x >> 11) & 31) - ((y >> 11) & 31)) * 8 +
+                    abs(((x >> 5) & 63) - ((y >> 5) & 63)) * 4 +
+                    abs((x & 31) - (y & 31)) * 8) / 3.0
+        changed = [i for i in range(N) if g[i] != bl[i]]
+        meanB = sum(mean_d(g[i], bl[i]) for i in changed) / len(changed) if changed else 0.0
+        coverB = sum(1 for x, y in zip(bl, sw) if (x != 0) == (y != 0)) / N
         got = ("the world through OpenGL 1.x fixed-function" in logs["gl1"],
-               g != sw, cover >= 0.99, differ <= N * 0.005)
+               g != sw, cover >= 0.99, differ <= N * 0.005,
+               len(changed) >= N * 0.2, meanB <= 16.0, coverB >= 0.98)
         print(f"        gl1 vs software: coverage {cover:.4f}, {differ} pixels differ by >24 "
-              f"({100.0 * differ / N:.2f}%)")
-        return got, (True, True, True, True), \
+              f"({100.0 * differ / N:.2f}%); bilinear: {100.0 * len(changed) / N:.1f}% changed, "
+              f"mean {meanB:.1f}, coverage {coverB:.4f}")
+        return got, (True, True, True, True, True, True, True), \
             "the world drawn by the gl1 backend; its frame not the software one; " \
-            "coverage agreement >= 0.99; <= 0.5% of pixels differing by > 24"
+            "coverage agreement >= 0.99; <= 0.5% of pixels differing by > 24; " \
+            "bilinear changes >= 20% of the pixels by a mean <= 16 and keeps coverage >= 0.98"
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -27105,6 +27132,15 @@ def c_engine_texture_filter():
 
     Shown to fail (2026-09-08) with `setTextureFilter` ignoring its argument:
     the bilinear frame is byte-identical to the nearest one.
+
+    THE GLES BACKEND (2026-10-03), through `gles_probe` on the same camera
+    (headless CGL, macOS only, skipped elsewhere): a second renderer asked
+    for bilinear against the default's nearest frame - taken, >= 20% of the
+    pixels changed by a mean <= 16, coverage with the reference >= 0.98.
+    Measured: 55.6%, 4.6, 0.9910 - the Vulkan figures to the decimal, which
+    is two backends agreeing about one sampler. The GL1 backend's bilinear is
+    asserted by `engine: gl1 backend`. Shown to fail (2026-10-03) with the
+    GLES `setTextureFilter` storing 0 whatever it is asked: changed 0, red.
     """
     import subprocess, tempfile, shutil, re
     eng = os.path.join(ROOT, "engine")
@@ -27162,8 +27198,26 @@ def c_engine_texture_filter():
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
+    gles = ("skipped",)
+    import platform
+    if platform.system() == "Darwin":
+        mk = subprocess.run(["make", "-s", "build/gles_probe"], cwd=eng, capture_output=True, text=True)
+        gp = os.path.join(eng, "build", "gles_probe")
+        gles = ("no gles_probe",)
+        if mk.returncode == 0 and os.path.exists(gp):
+            r = subprocess.run([gp, fr, model, "3526,1015,-905", "3412,1032,-882", "83", "640x352"],
+                               capture_output=True, text=True)
+            m = re.search(r"filter bilinear: (\w+)\s+changed \d+ \(([\d.]+)%\)\s+mean \|d\| ([\d.]+)"
+                          r" of 255\s+coverage ([\d.]+)", r.stdout)
+            gles = ("filter line not found",) if not m else \
+                (m.group(1) == "taken", float(m.group(2)) >= 20.0, float(m.group(3)) <= 16.0,
+                 float(m.group(4)) >= 0.98)
+            if m:
+                print(f"        gles bilinear: {m.group(2)}% changed, mean {m.group(3)}, "
+                      f"coverage {m.group(4)}")
+    want_gles = gles if gles == ("skipped",) else (True, True, True, True)
     want_gpu = gpu if gpu == ("no vulkan",) else (True, True, True, True)
-    return (src_ok, gpu), ((True, True, True, True), want_gpu), \
+    return (src_ok, gpu, gles), ((True, True, True, True), want_gpu, want_gles), \
            "the source: `Settings::textureFilter` defaults to 0, the ini key " \
            "`texturefiltering` is read, every `setTextureFilter` call in omk-play " \
            "is guarded by `> 0`, and the shader carries the premultiplied key; " \
