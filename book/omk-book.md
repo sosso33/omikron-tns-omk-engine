@@ -4,7 +4,7 @@
 
 <p><strong>The engine of <em>Omikron: The Nomad Soul</em> (1999), and the replica that runs it again</strong></p>
 <p>A book for developers, to be read in order</p>
-<p><em>Draft of 2026-09-29</em></p>
+<p><em>Draft of 2026-10-03</em></p>
 
 </div>
 
@@ -204,9 +204,14 @@ dt = 30 / fps
 ```
 
 At exactly 30 frames per second, `dt` is 1.0. At 60 it is 0.5, and every
-clock advances half a frame per rendered frame, so the game looks the same at
-any rate. This is why durations everywhere in this repository are quoted in
-frames. A clip "136 frames long" is four and a half seconds.
+clock advances half a frame per rendered frame, so the game runs at the same
+speed at any rate. This is why durations everywhere in this repository are
+quoted in frames. A clip "136 frames long" is four and a half seconds.
+
+It does not quite *look* the same, though. A body's pose is taken from its
+clip by truncating the clock to a whole key, so at 60 frames per second each
+key is simply shown twice. The port does the same by default; drawing the
+in-between poses is one of its enhancements (chapter 12).
 
 There is one more rule, and it matters for a slow machine: **`dt` is capped at
 3.0.** Below 10 frames per second the game does not take larger steps. It
@@ -238,7 +243,10 @@ lines matters.
 
 Everything that follows happens inside one pass around Figure 2. The scripts
 run first, then the bodies move, then the scene objects play, then the frame
-is drawn. No threads anywhere. A script that needs to wait for something
+is drawn, all on one thread. (There is one exception: while a line of
+dialogue plays, its voice and facial animation are streamed out of the file
+by a multimedia-timer callback, which Windows runs beside the frame. The
+game's logic never runs there.) A script that needs to wait for something
 cannot block, because blocking would stop the entire game. How the engine
 waits without blocking is the subject of chapter 4, and it is one of the most
 elegant ideas in it.
@@ -312,6 +320,19 @@ with an FTP client in *text* mode had its line endings "corrected", which
 silently damaged binary chunks. The symptom was an empty area where the
 game's first scene should have been. Binary data must be copied as binary,
 and a symptom that looks like an engine bug may be the copy.
+
+## Byte order, and a lesson from a PowerPC
+
+The game ran on x86, so every number in every file is stored
+**little-endian**, low byte first. Most of the replica's readers build their
+values byte by byte and never noticed. A handful copied four bytes straight
+into an integer, which is correct on x86 and on ARM and wrong on a
+big-endian processor. When the replica was built for a PowerPC Mac (chapter
+14), those reads found **no actors** where 1 032 should have been, 16 map
+lines of 79, and a traffic circuit that would not load. Nothing failed to
+parse: the numbers were simply other numbers. Every such read now goes
+through one helper that assembles the bytes in order, and every tool the
+checks run gives the same output on the PowerPC as on the Mac.
 
 
 
@@ -396,7 +417,7 @@ original's own shape: such a script is parked for good.
 
 This design is why a conversation can interrupt a cutscene, why an area
 transition can take three seconds of streaming without the game stopping,
-and why the engine never needed threads.
+and why the engine's logic never needed a thread.
 
 ## A script belongs to a place
 
@@ -648,12 +669,19 @@ body placed by a scene is placed along an authored `.3DP` path, not at the
 position stored in its clip, which is a detail that took several wrong
 attempts to settle.
 
-## Four rules learned the hard way
+## Rules learned the hard way
 
 * **A shot is as long as its editing**, not as long as the animation inside it.
 * **When an editing ends, the camera does not go anywhere.** It holds its last
   frame until the next beat takes it.
-* **A spoken line changes a character's pose, never their position.**
+* **A spoken line changes a character's pose, never their position.** Nor
+  does anything else during a conversation: a body in the dialogue states
+  plays its clip but is not moved by it, even one caught mid-stride.
+* **A conversation's camera eases; a script's does not.** A dialogue camera's
+  move speeds up and slows down along a curve. Every one of the 1 019 camera
+  moves the scripts wait on asks for the linear curve, and all of them
+  advance on `dt`, so a move lasts the same time whatever the frame rate: the
+  title sequence's 23 moves stay on its music.
 * **Not everything that waits is a cutscene.** A door sliding open parks a
   script exactly like a cutscene beat, and does not take away your control.
   What takes it away is the engine's own *hold*, and the black bars at the
@@ -703,9 +731,20 @@ before the engine's rule was read, and it disagreed with them in both
 directions. It is a good example of why reading the code beats reasoning
 about the data.
 
-Then a **visible-set walk** culls meshes against the camera's frustum. It
-culls whole meshes, not triangles, which is cheap and matches what the
-original does.
+Then a **visible-set walk** culls meshes against the camera's frustum: a
+distance test, then the four side planes, each against the mesh's bounding
+sphere. It culls whole meshes, not triangles, which is cheap. (The port at
+first left the side planes out, on the grounds that a wrong plane sign
+deletes the world silently. Put back, they halve the set runs a street frame
+draws.)
+
+Then, triangle by triangle, the CPU drops every face it sees **from
+behind**: a cross product of the projected corners decides, and only a mesh
+flagged two-sided (93 of 16 188, nearly all water) escapes it. The device
+itself is told not to cull, and for a month this project read that render
+state as "the engine never culls". The port drew the back of the scenery,
+and dialogue cameras authored behind a wall looked blocked. The cull was one
+level up, in the engine's own submit, before anything reached the device.
 
 ## The draw order is a number
 
@@ -731,11 +770,12 @@ Three consequences follow from that one design.
 * **Coincident faces are settled.** When two faces occupy exactly the same
   place, the one with the lower key is drawn first. The depth test is strict
   (a pixel is replaced only by something strictly nearer), so the first-drawn
-  face keeps every pixel. The shop signs in Anekbah are built exactly like
-  that: the two sides of a sign are the same four vertices wound the other
-  way, each with its own advert, and the engine always shows the one drawn
-  first. Chapter 14 comes back to this, because it turned out to be one of
-  the hardest things for a modern GPU to reproduce.
+  face keeps every pixel. Chapter 14 comes back to this, because it turned
+  out to be one of the hardest things for a modern GPU to reproduce. (The
+  shop signs in Anekbah look like the textbook case: the two sides of a sign
+  are the same four vertices, each with its own advert. They are not one.
+  The two sides are wound opposite ways, so the back-face test above keeps
+  exactly the side that faces you, and the two never compete.)
 
 > **From Unity:** the bucket key is a render queue plus a sort key. It is
 > roughly what URP does when it sorts opaque objects by material to batch
@@ -794,6 +834,12 @@ Six meshes in the whole game are mirrors. When one is visible, the engine
 **reflects the camera** through the mirror's plane and draws the whole scene a
 second time, with the screen flipped horizontally. It is the most expensive
 thing the renderer ever does, and it is used sparingly.
+
+There is no stencil, and nothing marks out the mirror's shape. The reflected
+pass is drawn **first**, and the real one over it with nothing cleared in
+between. The reflected pass leaves behind the depths of a virtual room
+beyond the glass, and the real room's nearer walls cover it everywhere except
+through the mirror's opening. Draw order and depth do all of it.
 
 ## The interface is a different world
 
@@ -955,7 +1001,8 @@ steps, and a crane's cargo swings along its path. The camera follows you,
 since no editing is holding it.
 
 **The draw** (chapter 8). The visible-set walk culls the set's meshes against
-the frustum. Every surviving triangle goes into a bucket by its 14-bit key: the
+the frustum, and every triangle seen from behind is dropped. Every surviving
+triangle goes into a bucket by its 14-bit key: the
 street's opaque walls and floors into the low buckets texture by texture, the
 lamp's additive glow near the top. The crowd and you are posed on the CPU, and
 lit per vertex by the lights the set's model carries. Under each body, a soft
@@ -963,9 +1010,9 @@ shadow quad is copied beneath its chest, and beneath its head, legs and arms
 depending on the detail setting, faded by how far the floor is below each
 bone. The far skyline's vertex colours shimmer on the frame clock.
 `Render_FlushBuckets` walks the keys upward. On the shop sign on the wall, the
-two sides of the panel share one position, the side with the lower texture
-slot is drawn first, and the strict depth test keeps it. The frame goes out
-dithered to 16 bits.
+two sides of the panel share one position, but only the side facing you
+survived the back-face test, so its advert is the one you see. The frame goes
+out dithered to 16 bits.
 
 **The sound** (chapter 9). The engine decides which of its voices play your
 footsteps, triggered on a frame of the walk clip, and how loud the street's
@@ -1075,6 +1122,12 @@ A surprising share of the wrong turns came from the tools, not the game:
   trusted the name and the player's action button went dead after the first
   conversation.
 * **A value in 4096ths of a turn reads plausibly as degrees.**
+* **A render state is not the picture.** The device was told not to cull, so
+  "the engine never culls" was written down; the engine had culled back faces
+  in its own code first. The block that set point sampling was read as the
+  game's look; it was the arm for *software* devices, and a 3D card took the
+  other arm, which filters. Both times the state was read correctly and
+  attributed wrongly. Read what reaches the device, and which device.
 * **A check that reads a log line** reports what the code *intended*, not what
   it produced. A line printed as a string literal cannot fail.
 
@@ -1134,8 +1187,8 @@ see that. Watching can.
 
 ## What it is
 
-`engine/` is the replica: C++20, roughly 57 000 lines in the engine proper and
-28 000 in the backends that draw and play it, and **no required dependency**.
+`engine/` is the replica: C++20, roughly 60 000 lines in the engine proper and
+33 000 in the backends that draw and play it, and **no required dependency**.
 `make` on a machine with nothing installed builds every probe and passes the
 test suite. SDL and a Vulkan loader are optional; they buy you a window.
 
@@ -1152,6 +1205,7 @@ The engine's directories follow the original's subsystems:
 | `o3de/` | the bucket keys, the 58-slot texture cache, the visible-set walk, particles, the depth tie, collision |
 | `ui/`, `audio/`, `input/` | the interface, the sound decisions, the four control schemes |
 | `platform/` | `DataFs` (every file access, case-insensitively), boot, films, threads |
+| `app/` | what a frontend needs and SDL does not: the command line, the game's state (no drawing in it), shared helpers |
 
 ## The one design decision
 
@@ -1160,7 +1214,7 @@ behind **one boundary**:
 
 | | reference | live |
 |---|---|---|
-| picture | a software rasterizer into an RGB565 framebuffer | Vulkan (MoltenVK on macOS), and GLES2 for the PS Vita |
+| picture | a software rasterizer into an RGB565 framebuffer | Vulkan (MoltenVK on macOS), GLES2 for the PS Vita, and fixed-function OpenGL 1.x for a PowerPC Mac |
 | sound | PCM buffers | an audio device |
 | input | a replayable event stream | a keyboard, or a gamepad as the engine's joystick |
 
@@ -1182,7 +1236,7 @@ end()              the frame
 Put the boundary at the API level instead, and the ported decisions, which
 are the thing that was actually reverse-engineered, would leak into
 Vulkan-specific code. A second backend would mean extracting them again. The
-boundary is what made three backends possible.
+boundary is what made four backends possible.
 
 > **From Unity:** it is the difference between writing game code against
 > `Graphics.DrawMesh` and writing it against the Vulkan API. The engine speaks
@@ -1200,10 +1254,11 @@ the executable and compares.
 
 A second rule sits beside the boundary: **anything the original did not do is
 an enhancement, and every enhancement is off by default.** Multisampling,
-mipmaps, real shadow maps, per-pixel light, supersampling: all exist, all
-behind a flag. (Bilinear texture filtering was on that list until it was
-read that the original's 3D-card device set it; it is now the default on
-every GPU backend.) A replica judged against the original must draw what
+mipmaps, real shadow maps, per-pixel light, supersampling, a 60 fps pacer,
+bodies smoothed between animation keys, text scaled with the screen: all
+exist, all behind a flag. (Bilinear texture filtering was on that list until
+it was read that the original's 3D-card device set it; it is now the default
+on every GPU backend.) A replica judged against the original must draw what
 the original drew unless told otherwise.
 
 The flip side is just as important. Before building an enhancement, check
@@ -1233,15 +1288,20 @@ startup script.
 ## The frame loop of the viewer
 
 `omk-play` is the playable frontend: SDL, a window, the pad, the audio device.
-Its main loop is long, over 21 000 lines in one file, and a split into
-smaller files has begun. Each frame it asks the Session to step, poses the
+It was once one `main` of over 21 000 lines. It is now a `PlayState` object
+whose `main` is 57 lines: the setup in sections, one turn of the loop in six
+phases (input, control, modes, world, screens, present), each phase in parts,
+and the GPU window in one file per backend, so that no game code carries a
+backend `#if`. The split was proven by a record of 28 scenes, each the same
+frame before and after. Each frame it asks the Session to step, poses the
 bodies, gathers the draws, and hands them to a backend.
 
 It also carries its own instruments, and they are part of how the port is
 developed: a frame's cost is marked section by section, a slow frame prints
 what took the time, a `--dump` writes the framebuffer, and `--flicker` catches
 a fault too short to screenshot by watching for frames much darker than their
-neighbours.
+neighbours. They sit behind one seam, so a build for players can leave them
+out (`INSTRUMENTS=0`).
 
 ## Determinism
 
@@ -1253,7 +1313,7 @@ exactly that way: **same output, less time**.
 
 <div class="pagebreak"></div>
 
-# 14. Three renderers, and two faces in the same place
+# 14. Four renderers, and two faces in the same place
 
 ## The software rasterizer
 
@@ -1290,55 +1350,85 @@ the body. The original did all of that on the CPU. A handheld needs it,
 because what a Pentium II did for this game's bodies is a large part of a
 Cortex-A9's frame.
 
+## A fourth, for a 1999 Mac
+
+The fourth renderer answers a what-if: how would Omikron have looked ported
+to a Macintosh of its own day? Such a machine has no shaders and, in 1999,
+mostly no hardware transform either. So this backend uses **OpenGL 1.x fixed
+function** and does what the original did with Direct3D: one draw per bucket,
+a render state changed only when it differs, the texture chosen by the key's
+low six bits, 16-bit textures, the colour key as an alpha test, and the
+vertices transformed, clipped and culled **on the CPU**, with the fog
+computed per vertex. Doing the CPU's share by hand was faithful, and it was
+also forced: under emulation, the card's own transform let triangles that
+cross the near plane through as garbage, and its fog darkened the near scene.
+
+It runs, cross-compiled, on Mac OS X 10.4 on PowerPC, in an emulator: the
+films, the menu and Anekbah's street at 6 to 10 frames per second, against
+about one for the software rasterizer on the same emulated machine. It
+agrees with the reference on coverage to 0.993. Getting there needed the
+byte-order fix of chapter 3, a big-endian build of every tool, and one more
+lesson about floating point: the PowerPC compiler fuses a multiply and an add
+into one instruction that rounds once, where the Mac rounds twice, and a
+300-frame traffic run drifted by a tenth of a unit until fusion was turned
+off on both sides. The original, on an x87, had no fused operation at all.
+
 ## Two faces in the same place
 
-Chapter 8 described the shop signs: two faces, the same four vertices, wound in
-opposite directions, each with its own advert. The original shows the first
-one drawn, from every angle, and never flickers. A strict depth test on a
-**quantised** depth buffer produces that: two faces at the same depth quantise
-to the same value, the second is not strictly nearer, and it loses every pixel.
+Chapter 8 said that when two faces occupy the same place, the first drawn
+keeps every pixel, from every angle, with no flicker. A strict depth test on
+a **quantised** depth buffer produces that: two faces at the same depth
+quantise to the same value, the second is not strictly nearer, and it loses
+every pixel. A later face wins only if it is nearer by a whole step of the
+buffer.
 
-A GPU does not behave that way. The two windings split the quad along
-different diagonals, their interpolated depths differ in the last bits (about
-two parts in ten million), and the depth test picks per pixel wherever the
-noise falls. The result is **dots of the other advert**, re-rolled by every
-sub-pixel camera move. Asking for a 16-bit depth buffer with the same strict
-test is not enough. The GLES backend has exactly that, and without help the
-GPU gave the whole sign to the second face.
+A GPU does not behave that way. Two faces that split the same quad along
+different diagonals have interpolated depths that differ in the last bits
+(about two parts in ten million), and the depth test picks per pixel
+wherever the noise falls. The result is **dots of the other face**, re-rolled
+by every sub-pixel camera move. Asking for a 16-bit depth buffer with the
+same strict test is not enough: a rounding boundary still falls inside the
+noise.
+
+The port met this first on Anekbah's shop signs, and drew the wrong
+conclusion from them for three weeks. A sign's two sides are the same four
+vertices with an advert each, and they flickered in the port. The tie was
+blamed. The real cause was that the port drew the back of the sign at all:
+the original culls it (chapter 8), so its two sides never compete. Once the
+port culled too, Anekbah's competing faces fell from 248 to 87. But 87 is
+not zero. The rest are faces that really do share a place and a side, and
+they still need the original's answer.
 
 ![The original's answer, a GPU's, and the port's.](figures/fig08-tie.svg)
 <p class="caption">Figure 10 — Two coincident faces: the original, a GPU float compare, and the port's depth tie.</p>
 
-The port's answer is the **depth tie**. Before a draw, it finds faces whose
-positions an earlier depth-writing face already claimed, and **degenerates**
-them in the vertex buffer: their three corners collapse to one point, so they
-draw nothing. The result is the original's picture. The cost is a walk over
-the faces, and for geometry that moves (a posed body, cargo swinging on a
-crane) the walk has to be kept up to date.
+The port's first answer was the **depth tie**. Before a draw, it found faces
+whose positions an earlier depth-writing face already claimed, and
+**degenerated** them in the vertex buffer: their three corners collapsed to
+one point, so they drew nothing. The picture was the original's. The cost was
+a walk over the faces every frame, kept up to date for geometry that moves.
 
-A great deal of work went into making that walk cheap: remembering its answer,
-replaying it for a rigid body, writing only what changed. It is still one of
-the largest costs of a street frame. And there is a better idea, prompted by a
-reader's question: *the original has no flicker, so its answer must be cheap
-to reproduce.* For the shop signs it is: both faces of each pair sit in **one
-mesh**, so they move together and stay coincident, and the texture slots that
-order them are fixed when the set **loads**. Their answer never changes while
-the set is resident, and could be computed **once, at load**.
+A great deal of work went into making that walk cheap, and a reader's
+question pointed past it: *the original has no flicker, so its answer must be
+cheap to reproduce.* The census that followed (Part IV's kind of check)
+seemed to block the easy version. 1 540 of the sets' coincident groups span
+two meshes, and the first examples are **the two leaves of a door**. Doors
+move. Open, the faces separate and the losing one must draw again. A loser
+removed once, at load, would stay missing while the door stood open, so a
+hybrid was argued: groups within one mesh answered at load, the rest watched
+every frame.
 
-Before building that, the project counted every coincident group in every
-model, keyed exactly as the tie keys them. The census is the kind of check
-Part IV argues for, and it changed the plan. In the sets, 3 821 of 5 361 groups
-lie within one mesh, but **1 540 span two meshes**, and the first examples are
-**the two leaves of a door**. Doors move. Open, the faces separate and the
-losing one must draw again; closed, they coincide again. A load-time answer
-would leave that face missing while the door stands open.
-
-So the design that reproduces the original exactly is a hybrid: the groups
-within one mesh resolved once at load, and the few across meshes (four door
-pairs in Anekbah, out of thirty thousand faces) still watched at run time
-(`todo/optimization.md` step 27). It is argued and not yet built: the proof
-would be the per-frame tie's answer and the hybrid's compared frame by frame
-while cargo moves and doors open.
+It was never built, because a closer look at what the original actually does
+made it unnecessary. The original does not *remove* the losing face. Its
+strict test on a quantised buffer only demands that a later face be nearer
+by a whole step. So the port now decides the losers **once per set**, from
+the set's whole draw order, and draws them **two 16-bit steps back**
+instead of degenerating them. A closed door's losing leaf stays hidden. An
+open door's leaf is far from its twin, the small push changes nothing, and it
+draws. No per-frame walk, no hybrid. The frames are byte-identical to the
+per-frame tie's over a walk past the signs, and the tie's share of a street
+frame (up to 4.4 ms on an M3, about 50 ms on the console) is gone for the
+set. Only posed bodies keep the per-frame tie.
 
 <div class="pagebreak"></div>
 
@@ -1397,14 +1487,17 @@ And the three levers the earlier analysis had named were pulled one by one:
   posed on a thread pool, with the frame bit-identical either way. On the
   console, 2.7× on three workers.
 * **Posing on the GPU.** The walkers and the staged bodies are skinned and lit
-  in the vertex shader (chapter 14). The player is next.
+  in the vertex shader (chapter 14), and since 2026-09-30 the player too. On
+  the console a GPU-posing self-test had quietly been switching it off: the
+  Vita's shader compiler *rounds* when it converts to an integer, where the
+  Mac's truncates, so every odd mesh took its even neighbour's matrix.
+  Fixed, the city frame went from 110-124 ms to 59-70.
 * **NEON.** Two hot loops got ARM vector versions beside the portable ones,
   each proven bit-identical.
 
 ## Fewer calls, fewer allocations
 
-The most recent round looked at what the GPU backend and the heap were paying
-for.
+The next round looked at what the GPU backend and the heap were paying for.
 
 ![Two measurements from 2026-09-29.](figures/fig11-optim.svg)
 <p class="caption">Figure 11 — The GL state calls and the heap allocations of a street frame, before and after (M3; counts, not milliseconds).</p>
@@ -1419,9 +1512,8 @@ for.
   moving meshes. It now makes about **160**, same frames.
 * The music decoder became a table (chapter 9).
 
-None of these has been measured on the console yet. They are measured in
-counts on a Mac, and what they are worth on a Vita is for the next console log
-to say.
+They were measured in counts on a Mac. The console log that followed is in
+the next section.
 
 ## A wrong turn worth telling
 
@@ -1437,6 +1529,39 @@ reverted, and the lesson went into the project's list of traps: **a dump is
 evidence only with the frame count it came from.** Part IV's rule, that a
 check must be shown to fail, caught it.
 
+## Doing it the original's way
+
+The round after that took a different method. Instead of profiling the port
+and asking what was slow, it read, section by section, **how the original did
+the same job**, and asked why the port did more. The answers were nearly
+always that the original did less:
+
+* **The view cull had four side planes** the port had left out. With them,
+  half of a street's set runs and most of its walkers are not drawn at all.
+* **The crowd has levels of detail.** The original picks a simpler skeleton by
+  view depth, at 10, 20, 30 and 40 m. The port now does too.
+* **A moving mesh moves by one matrix.** The original writes three floats on
+  the mesh's node and the vertices go through it on the way to the card. The
+  port had rewritten every moving corner into the set's buffer each frame. Its
+  collision layer, likewise, tests a moving mesh whole by its sphere first.
+* **A set streams in slices.** The original queues one read of a new set and
+  serves it a slice a frame while it draws on. The port read and built the
+  whole set in one frame. It now prepares the set on a thread while the
+  Session counts the original's frames.
+* **A line's voice is decoded while it plays**, on the original's timer
+  callback, never all at once when the line starts. The port now decodes the
+  next lines ahead, on a thread.
+* **The world's audio runs at 22 050 Hz.** The port's device was running at
+  the films' 44 100, so every world sound was being resampled.
+* **The tie is decided once** (chapter 14).
+
+The console's log of most of that round: the city at **40 to 50 ms a frame**,
+the player and the sky moved by the renderer, almost nothing re-uploaded. And
+one new lesson from the arrival in Anekbah: the set took 1.3 s on its thread
+against the half second of slices the original would allow, so the frame
+waited. The original simply waits on its reader, however long the disc
+takes, and so does the port now.
+
 ## Compared with the original
 
 Put side by side with the 1999 engine, the pattern is clear.
@@ -1446,9 +1571,11 @@ Put side by side with the 1999 engine, the pattern is clear.
 | draw state | the bucket order groups draws by blend and texture | a state cache at the API gives the same effect |
 | per-frame memory | fixed pools: the display list's node cap, shadows in the frame's own pools, a 160-buffer sound bank | down from ~720 to ~160 heap allocations a frame, heading toward pools |
 | scene programs | pointers followed in place | a small inline buffer |
-| characters' geometry | posed and transformed on the CPU | posed on the GPU, beyond the original |
+| characters' geometry | posed and transformed on the CPU | posed on the GPU, the player included, beyond the original |
+| moving meshes | one node matrix each | one matrix each, the same |
+| loading a set | one read served a slice a frame | a thread, released on the original's frame count |
 | music | decoded by branches | a table, cheaper than the original |
-| coincident faces | free: quantised depth, strict test | the depth tie; a hybrid is argued (pairs in one mesh answered once at load, door leaves watched) |
+| coincident faces | free: quantised depth, strict test | losers decided once per set and drawn a step back; per frame only for bodies |
 
 The original's speed came from **structure**: an integer draw order, fixed
 pools, a quantised depth buffer, pointers walked in place. Most of the port's
@@ -1480,7 +1607,7 @@ For the next step, go by question:
 * **"What is the standard for the port?"** `docs/PORTING.md`, the tiers and
   the boundary.
 * **"What is being worked on?"** `todo/`: the optimisation record, the Vita
-  handoff, the task files.
+  handoff, the classic-Mac handoff, the task files.
 * **"Why is it done this way, and what went wrong on the way?"** `CLAUDE.md`
   §1, the ground rules and the traps, each with the mistake that produced it.
 

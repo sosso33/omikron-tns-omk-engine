@@ -33,9 +33,20 @@ before the engine's rule was read, and it disagreed with them in both
 directions. It is a good example of why reading the code beats reasoning
 about the data.
 
-Then a **visible-set walk** culls meshes against the camera's frustum. It
-culls whole meshes, not triangles, which is cheap and matches what the
-original does.
+Then a **visible-set walk** culls meshes against the camera's frustum: a
+distance test, then the four side planes, each against the mesh's bounding
+sphere. It culls whole meshes, not triangles, which is cheap. (The port at
+first left the side planes out, on the grounds that a wrong plane sign
+deletes the world silently. Put back, they halve the set runs a street frame
+draws.)
+
+Then, triangle by triangle, the CPU drops every face it sees **from
+behind**: a cross product of the projected corners decides, and only a mesh
+flagged two-sided (93 of 16 188, nearly all water) escapes it. The device
+itself is told not to cull, and for a month this project read that render
+state as "the engine never culls". The port drew the back of the scenery,
+and dialogue cameras authored behind a wall looked blocked. The cull was one
+level up, in the engine's own submit, before anything reached the device.
 
 ## The draw order is a number
 
@@ -61,11 +72,12 @@ Three consequences follow from that one design.
 * **Coincident faces are settled.** When two faces occupy exactly the same
   place, the one with the lower key is drawn first. The depth test is strict
   (a pixel is replaced only by something strictly nearer), so the first-drawn
-  face keeps every pixel. The shop signs in Anekbah are built exactly like
-  that: the two sides of a sign are the same four vertices wound the other
-  way, each with its own advert, and the engine always shows the one drawn
-  first. Chapter 14 comes back to this, because it turned out to be one of
-  the hardest things for a modern GPU to reproduce.
+  face keeps every pixel. Chapter 14 comes back to this, because it turned
+  out to be one of the hardest things for a modern GPU to reproduce. (The
+  shop signs in Anekbah look like the textbook case: the two sides of a sign
+  are the same four vertices, each with its own advert. They are not one.
+  The two sides are wound opposite ways, so the back-face test above keeps
+  exactly the side that faces you, and the two never compete.)
 
 > **From Unity:** the bucket key is a render queue plus a sort key. It is
 > roughly what URP does when it sorts opaque objects by material to batch
@@ -124,6 +136,12 @@ Six meshes in the whole game are mirrors. When one is visible, the engine
 **reflects the camera** through the mirror's plane and draws the whole scene a
 second time, with the screen flipped horizontally. It is the most expensive
 thing the renderer ever does, and it is used sparingly.
+
+There is no stencil, and nothing marks out the mirror's shape. The reflected
+pass is drawn **first**, and the real one over it with nothing cleared in
+between. The reflected pass leaves behind the depths of a virtual room
+beyond the glass, and the real room's nearer walls cover it everywhere except
+through the mirror's opening. Draw order and depth do all of it.
 
 ## The interface is a different world
 

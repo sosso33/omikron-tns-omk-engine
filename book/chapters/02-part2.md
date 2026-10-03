@@ -79,7 +79,7 @@ original's own shape: such a script is parked for good.
 
 This design is why a conversation can interrupt a cutscene, why an area
 transition can take three seconds of streaming without the game stopping,
-and why the engine never needed threads.
+and why the engine's logic never needed a thread.
 
 ## A script belongs to a place
 
@@ -331,12 +331,19 @@ body placed by a scene is placed along an authored `.3DP` path, not at the
 position stored in its clip, which is a detail that took several wrong
 attempts to settle.
 
-## Four rules learned the hard way
+## Rules learned the hard way
 
 * **A shot is as long as its editing**, not as long as the animation inside it.
 * **When an editing ends, the camera does not go anywhere.** It holds its last
   frame until the next beat takes it.
-* **A spoken line changes a character's pose, never their position.**
+* **A spoken line changes a character's pose, never their position.** Nor
+  does anything else during a conversation: a body in the dialogue states
+  plays its clip but is not moved by it, even one caught mid-stride.
+* **A conversation's camera eases; a script's does not.** A dialogue camera's
+  move speeds up and slows down along a curve. Every one of the 1 019 camera
+  moves the scripts wait on asks for the linear curve, and all of them
+  advance on `dt`, so a move lasts the same time whatever the frame rate: the
+  title sequence's 23 moves stay on its music.
 * **Not everything that waits is a cutscene.** A door sliding open parks a
   script exactly like a cutscene beat, and does not take away your control.
   What takes it away is the engine's own *hold*, and the black bars at the

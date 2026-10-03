@@ -91,6 +91,12 @@ A surprising share of the wrong turns came from the tools, not the game:
   trusted the name and the player's action button went dead after the first
   conversation.
 * **A value in 4096ths of a turn reads plausibly as degrees.**
+* **A render state is not the picture.** The device was told not to cull, so
+  "the engine never culls" was written down; the engine had culled back faces
+  in its own code first. The block that set point sampling was read as the
+  game's look; it was the arm for *software* devices, and a 3D card took the
+  other arm, which filters. Both times the state was read correctly and
+  attributed wrongly. Read what reaches the device, and which device.
 * **A check that reads a log line** reports what the code *intended*, not what
   it produced. A line printed as a string literal cannot fail.
 

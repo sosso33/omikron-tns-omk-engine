@@ -186,9 +186,9 @@ def fig_keys():
 def fig_tie():
     s = Svg(780, 360)
     s.text(390, 26, "Two faces in the same place: the original's answer, a GPU's, and the port's", size=14, weight="bold")
-    cols = [("1999: quantised depth, strict test", "the FIRST drawn face wins", "everywhere, from every angle"),
-            ("a GPU float compare", "last-bit noise picks per pixel", "dots of the other advert"),
-            ("the port: the depth tie", "the loser is degenerated", "in the vertex buffer")]
+    cols = [("1999: quantised depth, strict test", "the FIRST drawn face wins", "a later face must beat it by a step"),
+            ("a GPU float compare", "last-bit noise picks per pixel", "dots of the other face"),
+            ("the port: the depth tie", "losers decided once per set", "and drawn two 16-bit steps back")]
     for k, (a, b, c) in enumerate(cols):
         x = 30 + k * 250
         s.box(x, 50, 220, 60, [a, b], fill=[C["machine"], C["warn"], C["port"]][k], size=12)
@@ -198,7 +198,7 @@ def fig_tie():
         s.rect(px, py, 160, 110, "#fff", INK)
         if k == 0 or k == 2:
             s.rect(px + 1, py + 1, 158, 108, "#9fc3e6")
-            s.text(px + 80, py + 60, "advert A", size=13, weight="bold")
+            s.text(px + 80, py + 60, "face A", size=13, weight="bold")
         else:
             s.rect(px + 1, py + 1, 158, 108, "#9fc3e6")
             import random
@@ -206,24 +206,25 @@ def fig_tie():
             for _ in range(160):
                 s.rect(px + 2 + random.random() * 154, py + 2 + random.random() * 104, 3, 3, "#e8a36b")
             s.text(px + 80, py + 60, "A + dots of B", size=13, weight="bold")
-    s.text(390, 290, "For a pair in ONE mesh the winner never changes (the faces move together, the texture slots are", size=12)
-    s.text(390, 308, "fixed at load), so it can be computed once. A pair across two meshes - a door's two leaves - can", size=12)
-    s.text(390, 326, "separate, and must still be watched (todo/optimization.md step 27: a hybrid, argued, not built).", size=12)
+    s.text(390, 290, "Pushed back by the engine's own band rather than removed, a loser that SEPARATES - a door's leaf", size=12)
+    s.text(390, 308, "swinging open - simply draws again: no per-frame watch, and no hybrid (bodies keep the per-frame tie).", size=12)
+    s.text(390, 326, "A shop sign's two sides are NOT such a pair: they wind opposite ways, and the back-face cull keeps one.", size=12)
     s.save("fig08-tie.svg")
 
 
 def fig_port():
     s = Svg(780, 420)
     s.text(390, 26, "The port: one engine, reference and live backends behind one boundary", size=14, weight="bold")
-    s.box(20, 50, 740, 50, ["frontends:  omk-play (SDL, macOS/Linux)   -   the PS Vita build   -   198 probes in engine/tools"], fill=C["grey"], size=12)
+    s.box(20, 50, 740, 50, ["frontends:  omk-play (SDL: macOS/Linux, Tiger on PowerPC)   -   the PS Vita build   -   200 probes in engine/tools"], fill=C["grey"], size=12)
     s.box(20, 120, 740, 90, ["the engine  (engine/src, C++20, no required dependency)",
                              "formats/  script/ (Session, VM, zones, dialogue, scenes)  actor/ (.CTL, walker, crowd, fight, shoot)",
                              "o3de/ (buckets, texture cache, depth tie, particles)  ui/  audio/  input/  platform/ (DataFs)"], fill=C["port"], size=12)
     s.box(20, 230, 740, 40, ["the renderer boundary - DECISIONS, not API calls:  begin(view)  submit(draw)  end()"], fill="#fff", size=12)
-    s.box(20, 290, 230, 70, ["software rasterizer", "the REFERENCE", "what the checks measure"], fill=C["machine"], size=12)
-    s.box(275, 290, 230, 70, ["Vulkan (MoltenVK)", "live, desktop"], fill=C["machine"], size=12)
-    s.box(530, 290, 230, 70, ["GLES2", "live, the Vita", "poses bodies in its shader"], fill=C["machine"], size=12)
-    for x in (135, 390, 645):
+    s.box(20, 290, 175, 70, ["software rasterizer", "the REFERENCE", "what the checks measure"], fill=C["machine"], size=12)
+    s.box(208, 290, 175, 70, ["Vulkan (MoltenVK)", "live, desktop"], fill=C["machine"], size=12)
+    s.box(396, 290, 175, 70, ["GLES2", "live, the Vita", "poses bodies in its shader"], fill=C["machine"], size=12)
+    s.box(585, 290, 175, 70, ["OpenGL 1.x", "fixed function", "a 1999 Mac, on PowerPC"], fill=C["machine"], size=12)
+    for x in (107, 295, 483, 672):
         s.arrow(x, 270, x, 288)
     s.arrow(390, 100, 390, 118)
     s.arrow(390, 210, 390, 228)

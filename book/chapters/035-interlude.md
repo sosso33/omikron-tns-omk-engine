@@ -37,7 +37,8 @@ steps, and a crane's cargo swings along its path. The camera follows you,
 since no editing is holding it.
 
 **The draw** (chapter 8). The visible-set walk culls the set's meshes against
-the frustum. Every surviving triangle goes into a bucket by its 14-bit key: the
+the frustum, and every triangle seen from behind is dropped. Every surviving
+triangle goes into a bucket by its 14-bit key: the
 street's opaque walls and floors into the low buckets texture by texture, the
 lamp's additive glow near the top. The crowd and you are posed on the CPU, and
 lit per vertex by the lights the set's model carries. Under each body, a soft
@@ -45,9 +46,9 @@ shadow quad is copied beneath its chest, and beneath its head, legs and arms
 depending on the detail setting, faded by how far the floor is below each
 bone. The far skyline's vertex colours shimmer on the frame clock.
 `Render_FlushBuckets` walks the keys upward. On the shop sign on the wall, the
-two sides of the panel share one position, the side with the lower texture
-slot is drawn first, and the strict depth test keeps it. The frame goes out
-dithered to 16 bits.
+two sides of the panel share one position, but only the side facing you
+survived the back-face test, so its advert is the one you see. The frame goes
+out dithered to 16 bits.
 
 **The sound** (chapter 9). The engine decides which of its voices play your
 footsteps, triggered on a frame of the walk clip, and how loud the street's

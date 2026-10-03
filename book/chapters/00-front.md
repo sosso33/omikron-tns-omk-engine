@@ -4,7 +4,7 @@
 
 <p><strong>The engine of <em>Omikron: The Nomad Soul</em> (1999), and the replica that runs it again</strong></p>
 <p>A book for developers, to be read in order</p>
-<p><em>Draft of 2026-09-29</em></p>
+<p><em>Draft of 2026-10-03</em></p>
 
 </div>
 

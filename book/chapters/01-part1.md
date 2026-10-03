@@ -124,9 +124,14 @@ dt = 30 / fps
 ```
 
 At exactly 30 frames per second, `dt` is 1.0. At 60 it is 0.5, and every
-clock advances half a frame per rendered frame, so the game looks the same at
-any rate. This is why durations everywhere in this repository are quoted in
-frames. A clip "136 frames long" is four and a half seconds.
+clock advances half a frame per rendered frame, so the game runs at the same
+speed at any rate. This is why durations everywhere in this repository are
+quoted in frames. A clip "136 frames long" is four and a half seconds.
+
+It does not quite *look* the same, though. A body's pose is taken from its
+clip by truncating the clock to a whole key, so at 60 frames per second each
+key is simply shown twice. The port does the same by default; drawing the
+in-between poses is one of its enhancements (chapter 12).
 
 There is one more rule, and it matters for a slow machine: **`dt` is capped at
 3.0.** Below 10 frames per second the game does not take larger steps. It
@@ -158,7 +163,10 @@ lines matters.
 
 Everything that follows happens inside one pass around Figure 2. The scripts
 run first, then the bodies move, then the scene objects play, then the frame
-is drawn. No threads anywhere. A script that needs to wait for something
+is drawn, all on one thread. (There is one exception: while a line of
+dialogue plays, its voice and facial animation are streamed out of the file
+by a multimedia-timer callback, which Windows runs beside the frame. The
+game's logic never runs there.) A script that needs to wait for something
 cannot block, because blocking would stop the entire game. How the engine
 waits without blocking is the subject of chapter 4, and it is one of the most
 elegant ideas in it.
@@ -232,4 +240,17 @@ with an FTP client in *text* mode had its line endings "corrected", which
 silently damaged binary chunks. The symptom was an empty area where the
 game's first scene should have been. Binary data must be copied as binary,
 and a symptom that looks like an engine bug may be the copy.
+
+## Byte order, and a lesson from a PowerPC
+
+The game ran on x86, so every number in every file is stored
+**little-endian**, low byte first. Most of the replica's readers build their
+values byte by byte and never noticed. A handful copied four bytes straight
+into an integer, which is correct on x86 and on ARM and wrong on a
+big-endian processor. When the replica was built for a PowerPC Mac (chapter
+14), those reads found **no actors** where 1 032 should have been, 16 map
+lines of 79, and a traffic circuit that would not load. Nothing failed to
+parse: the numbers were simply other numbers. Every such read now goes
+through one helper that assembles the bytes in order, and every tool the
+checks run gives the same output on the PowerPC as on the Mac.
 
