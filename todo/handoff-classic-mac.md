@@ -12,8 +12,10 @@ NOT a modern macOS port - OMK already runs on today's Macs.
 
 * **`omk-play` RUNS ON MAC OS 9 AND TIGER through the Carbon frontend**
   (2026-10-03, `e08bc23`, plan 3d-iv): 30 frames of Anekbah's street start
-  BYTE-IDENTICAL to the host on both. Software renderer, no audio yet, and
-  nobody has driven it by hand. Getting there fixed three big-endian bugs in
+  BYTE-IDENTICAL to the host on both. Software renderer, AUDIO through the
+  Sound Manager (`8b536ad`: 72 s played in a 75 s run on Tiger; choppy on
+  emulated OS 9, where a frame takes seconds), and nobody has driven it by
+  hand. Getting there fixed three big-endian bugs in
   the viewer (the PowerPC Darwin build had them too), worked round Retro68's
   linker leaving weak `.bss` objects without storage, and `%zu`.
 * **THE ENGINE RUNS ON MAC OS 9** (2026-10-03, `aa7aa43`, plan 3d-iii): the
@@ -147,6 +149,10 @@ SCPTDATA, MESHES - and `untitled:omk:tables`, with `OMKBoot` and its
 `omk.args` in `untitled:omk`); copy the app and `omk.args` into
 `System Folder:Startup Items`, boot, wait ~3 minutes, stop QEMU, mount, read
 - and take the app OUT of Startup Items again, or it runs at every boot.
+A run WITHOUT `--frames` (audio on) never ends by itself there: put
+`omk.quit` beside the app holding a number of seconds, and it quits after
+that long and writes its closing lines (`audio: Sound Manager ... played`).
+On Tiger, `osascript -e 'tell application "OMKPlay" to quit'` does it.
 
 **Mac OS 9**: no shell. Put a program in the OS 9 disk's
 `System Folder/Startup Items` (mount `vm/macos9.img` on the Mac with
@@ -169,9 +175,11 @@ file off the image.
 2. ~~**The engine on OS 9, headless**~~ (`aa7aa43`) and ~~**the Carbon
    frontend**~~ (`e08bc23`) - **DONE 2026-10-03**, above. **NEXT, in order**:
    (a) PLAY it by hand on Tiger and OS 9 - keys, the menu, walking; the key
-   map is untested by a person; (b) SOUND MANAGER audio in `CarbonFrontend`
-   (`openAudio`/`queueAudio`/`playSound`: a double-buffered sound channel at
-   22050, the mixer's float samples to 16-bit); (c) speed - the software
+   map is untested by a person; (b) ~~Sound Manager audio~~ DONE (`8b536ad`) -
+   left: the ring is six 100 ms buffers refilled between frames, so a frame
+   slower than 0.6 s underruns (OS 9 under emulation); a bigger ring costs
+   the interface blips latency, so measure on a real G3 before choosing;
+   (c) speed - the software
    renderer is ~1 fps on the emulated G4, and the gl1 backend is CGL (Tiger
    only): AGL for OS 9; (d) the films through QuickTime.
    ~~**The gateway class**~~ - **DONE 2026-10-03** (`12d77ec`): the

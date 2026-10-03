@@ -619,7 +619,12 @@ would have - `CopyBits` to the window and `QDFlushPortBuffer` for Mac OS X,
 default) mapped to the same DIK codes as `sdlfront.cpp`, `WaitNextEvent`
 for typed characters, the close box, dragging, Cmd-Q and the 'quit' Apple
 event, `Microseconds` for the clocks and `Delay` plus a spin for sleeping.
-No audio yet. `make classic` builds it as `OMKPlay`: the viewer's game files
+AUDIO since `8b536ad`: one Sound Manager channel, a ring of six 100 ms
+buffers (an `ExtSoundHeader` and 16-bit samples) refilled on the main thread
+from `HostMixer` (`src/audio/hostmix.*`, the SDL frontend's mix moved out so
+both sum the same way); the completion callback - interrupt time on OS 9 -
+only marks a buffer played. Tiger played 72.3 s of a 75 s run; emulated OS 9
+25.3 s of ~100, its frames being seconds long. `make classic` builds it as `OMKPlay`: the viewer's game files
 (SDL-free since the gateway), `playgpu_none`, `playharness_off` and a
 `--scene` stub.
 
