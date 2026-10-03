@@ -37,6 +37,16 @@ what makes the replica playable. **Neither may be required to build the other**,
 and in particular a bare checkout with no Vulkan SDK must still `make` and pass
 the suite — that property is what keeps the evidence half honest on any machine.
 
+**The host has one boundary too: `omk::Frontend`** (`src/platform/frontend.h`,
+the GATEWAY, 2026-10-03). The window, the keys, the pad, the audio device, the
+clocks, the window title and the display modes all cross it, and the viewer's
+game code - every `backends/sdl/` file but the frontend itself, the GPU glue
+and the `--scene` instrument - calls nothing else and compiles with no SDL
+header (`verify.py: engine: frontend gateway`, against a poisoned one). It is
+what lets a host without SDL - a Carbon frontend on Mac OS 9
+(`todo/classic-mac-port-1999.md` step 5) - stand in by implementing one class
+and `makeHostFrontend`.
+
 ## A2. The renderer boundary is at the DECISION level, not the API level
 
 This is the load-bearing design decision in Part A, and getting it wrong is

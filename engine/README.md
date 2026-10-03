@@ -171,7 +171,12 @@ backends/sdl/            the LIVE frontend (`play.cpp` and the parts
                          `todo/play-split.md` cut out of it in 2026-10:
                          `PlayState`, its setup sections and frame phases,
                          `sdlfront.*`) - the only place in the tree that
-                         includes a library header. `make play` builds it when
+                         includes a library header, and only its SDL-side
+                         files do: `sdlfront.*`, the GPU glue `playgpu_*.cpp`
+                         and `playscene.cpp`. The rest is game code and
+                         reaches the host through `omk::Frontend`, the
+                         GATEWAY (PORTING A1; `engine: frontend gateway`
+                         compiles it against a poisoned SDL.h). `make play` builds it when
                          pkg-config finds sdl3 or sdl2, and prints why it did
                          not otherwise. `make` is unaffected either way.
                          It carries TWO programs: the interface (the boot

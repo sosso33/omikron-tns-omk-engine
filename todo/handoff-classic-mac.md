@@ -117,15 +117,24 @@ file off the image.
    `c7a5443`; `--filter nearest` gives the old picture. LOOKED at in Tiger
    the same day: the street start through the emulated Radeon 9700,
    bilinear, still 10 fps, no artefact seen in one still.
-2. **The gateway class** (the reader's direction): every SDL call outside
-   the frontend files behind the `Frontend` interface, so a Carbon frontend
-   can stand in for SDL on OS 9 and Tiger. Seven `backends/sdl/play*.cpp`
-   call SDL directly; they are the play split's - **coordinate with that
-   session first**.
+2. ~~**The gateway class**~~ - **DONE 2026-10-03** (`12d77ec`): the
+   viewer's game code reaches the host only through `omk::Frontend` (the
+   clocks, the window title, fullscreen, the display modes, text input and
+   the error string joined the interface; `makeHostFrontend()` is the one
+   function a frontend defines besides its class). 30 game files compile
+   with no SDL header (`verify.py: engine: frontend gateway`, a poisoned
+   `SDL.h`); the SDL side is `sdlfront.*`, `playgpu_*.cpp` and
+   `playscene.cpp`. Proved by the 28-scene golden record and by building
+   for the Mac, Tiger (run: the title through the gateway), the Vita and
+   the software-only `INSTRUMENTS=0` variant. **What a Carbon frontend now
+   implements**: `CarbonFrontend : omk::Frontend` and `makeHostFrontend`,
+   plus a `playgpu_*.cpp` for its GPU window if it has one - `playgpu_gl1`
+   is the model, since it presents on the CPU through the frontend. The
+   play split had finished (S5/S6, 2026-10-02), so nothing was in flight.
 3. **The engine on OS 9** (rest of step 5): ticked loading instead of the
    voice read-ahead thread, `DataFs` instead of `std::filesystem`, `%lu`
    for `%zu`, Sound Manager audio, 555 video, QuickTime for the MPEG-1
-   films - after 2.
+   films - and the CARBON FRONTEND itself, which 2 made a class to write.
 4. **Speed**: the 1999 budget (`classic-mac-port-1999.md` §3b, steps 1-2).
    Tiger's emulated G4 is not a G4's timing.
 5. **A G3 build**: SDL 2.0.3 rebuilt without `-maltivec` (the binary is

@@ -615,8 +615,9 @@ dropped.
    and before that, the reader's direction of 2026-10-02: every SDL call
    outside the frontend files replaced by calls through a gateway class
    (the `Frontend` interface, extended), so a Carbon frontend can stand in
-   for SDL on both systems. Seven `backends/sdl/play*.cpp` files call SDL
-   directly today; they are the play split's, so coordinate first.
+   for SDL on both systems - **DONE 2026-10-03** (`12d77ec`; PORTING A1,
+   `verify.py: engine: frontend gateway`). Next in this step: the Carbon
+   frontend, `CarbonFrontend : omk::Frontend` and `makeHostFrontend`.
 6. **Correctness in QEMU** - OS 9.2.2 (`mac99`, Screamer), then Tiger on
    ppcosxkvm with the GPU.
 7. **RAVE** (optional, the *Unreal Tournament* route).

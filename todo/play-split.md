@@ -552,6 +552,18 @@ candidates for `src/app/` once S5 gives them a renderer interface.
 5. the Vita entry point can fill a `PlayOptions` instead of building an
    `argv` (`backends/vita/vita_main.cpp`).
 
+### After the split: THE GATEWAY, 2026-10-03 (`12d77ec`)
+
+Not a step of this plan, but its sequel, and it changes "where the backends
+still show" above: the SDL calls left in the game files (the clocks, the fps
+title, the GPU window hand-over, text input, the error string, options row 2's
+modes) now go through `omk::Frontend` (`src/platform/frontend.h`), and
+`playshared.h` includes no SDL header. The SDL side is `sdlfront.*`,
+`playgpu_*.cpp` and `playscene.cpp`; the other 30 files compile against a
+poisoned `SDL.h` (`verify.py: engine: frontend gateway`). For the classic-Mac
+port's Carbon frontend (`todo/classic-mac-port-1999.md` step 5). The 28-scene
+record proved it, identical.
+
 ### S6, done 2026-10-02 — the instruments behind a seam
 
 Every harness the viewer carries is a `PlayState::harness...` method in
