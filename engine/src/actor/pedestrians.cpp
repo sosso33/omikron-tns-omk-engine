@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "actor/sliders.h"
+#include "platform/profile.h"
 
 #include "formats/anim.h"
 #include "formats/le.h"
@@ -917,6 +918,7 @@ void Sliders::actionStep(int wi, float dt) {
 // ------------------------------------------------------------ the frame
 
 void Sliders::tick(float dt) {
+    OMK_ZONE("crowd: tick");   // the profiler (todo/debug-tools.md 6)
     // `Sliders_Tick`'s pedestrian loop
     if (!loaded_) return;
     for (int wi = 0; wi < static_cast<int>(movers_.size()); ++wi) {

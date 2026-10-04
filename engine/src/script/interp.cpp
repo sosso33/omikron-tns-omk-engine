@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "script/interp.h"
+#include "platform/profile.h"
 #include "script/props.h"
 
 namespace omk {
@@ -155,6 +156,7 @@ bool Interpreter::setProperty(int actor, int property, std::int32_t value) {
 }
 
 RunResult Interpreter::run(std::span<const std::byte> code, std::size_t at) {
+    OMK_ZONE("scripts: run");   // the profiler (todo/debug-tools.md 6)
     stack_.clear();
     return resume(code, at);
 }

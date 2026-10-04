@@ -23,6 +23,7 @@ static void turnRootBy(omk::NodeTracks& t, float yawDeg) {
 
 // Every staged body, posed by whatever drives it
 void PlayState::worldStaged() {
+    OMK_ZONE("world: staged");   // the profiler (todo/debug-tools.md 6)
     auto& session = *session_;
     omk::Renderer& world = *world_;
     // ---- EVERY STAGED BODY, POSED BY WHATEVER DRIVES IT --------

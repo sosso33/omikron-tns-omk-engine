@@ -150,8 +150,14 @@ private:
     int prev_;
 };
 
+bool recording();                  // a capture is open AND this is the recorded thread
+
+// A zone on a worker thread records nothing and leaves the category alone:
+// `recording()` is false there (and on the Vita a `thread_local` is shared by
+// the engine's kernel threads - `actor/pose.cpp` - so a worker swapping the
+// category would overwrite the main thread's).
 struct Zone {
-    explicit Zone(const char* name) : on_(on()), tag_(on_ ? memTagSwap(memTag(name)) : 0) {
+    explicit Zone(const char* name) : on_(recording()), tag_(on_ ? memTagSwap(memTag(name)) : 0) {
         if (on_) enter(name);
     }
     ~Zone() { if (on_) { leave(); memTagSwap(tag_); } }

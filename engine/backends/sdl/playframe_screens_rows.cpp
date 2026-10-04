@@ -6,6 +6,7 @@
 
 // The sneak's inventory rows
 void PlayState::screensSneakRows() {
+    OMK_ZONE("screens: sneak rows");   // the profiler (todo/debug-tools.md 6)
     const auto& fs = *fs_;
     auto& comp = *comp_;
     auto& inv = *inv_;
@@ -894,6 +895,7 @@ void PlayState::screensSneakRows() {
 
 // The shop's stock rows
 void PlayState::screensShopRows() {
+    OMK_ZONE("screens: shop rows");   // the profiler (todo/debug-tools.md 6)
     const auto& fs = *fs_;
     auto& inv = *inv_;
     auto& session = *session_;
@@ -1134,6 +1136,7 @@ void PlayState::screensShopRows() {
 
 // Multiplan's rows and header, the Gandhar door's cursor, the hint shop
 void PlayState::screensMultiplanHints() {
+    OMK_ZONE("screens: multiplan hints");   // the profiler (todo/debug-tools.md 6)
     const auto& fs = *fs_;
     auto& comp = *comp_;
     auto& inv = *inv_;
@@ -1246,6 +1249,7 @@ void PlayState::screensMultiplanHints() {
 
 // Den's locker, Gandhar's door, Xachen's cartridges
 void PlayState::screensPuzzles() {
+    OMK_ZONE("screens: puzzles");   // the profiler (todo/debug-tools.md 6)
     // ---- DEN'S LOCKER: the wheels show their digits -----------------
     //
     // `sub_4AFBE0` spins a wheel by writing `digit * 46` into its UNLIT
@@ -1319,6 +1323,7 @@ void PlayState::screensPuzzles() {
 
 // The terminal family's display
 void PlayState::screensTerminals() {
+    OMK_ZONE("screens: terminals");   // the profiler (todo/debug-tools.md 6)
     const auto& fs = *fs_;
     // ---- THE TERMINAL FAMILY'S DISPLAY (`todo/missing-ui.md` 3) ------
     //
@@ -1440,6 +1445,7 @@ void PlayState::screensTerminals() {
 
 // The lift's description box
 void PlayState::screensLift() {
+    OMK_ZONE("screens: lift");   // the profiler (todo/debug-tools.md 6)
     const auto& fs = *fs_;
     auto& comp = *comp_;
     auto& inv = *inv_;
@@ -1675,6 +1681,7 @@ void PlayState::screensLift() {
 
 // The tail of Actor_SetProperty
 void PlayState::screensPropertyTail() {
+    OMK_ZONE("screens: property tail");   // the profiler (todo/debug-tools.md 6)
     auto& session = *session_;
     // ---- `sub_423A40`, the tail of `Actor_SetProperty` (`script/hooks.h`)
     //

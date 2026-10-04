@@ -15,6 +15,7 @@ bool PlayState::outsideView(const float c[3], float r, bool bodies) {
 
 // The particles, the visible set, the lights and the shadows into the frame's draw lists
 void PlayState::worldDrawLists() {
+    OMK_ZONE("world: draw lists");   // the profiler (todo/debug-tools.md 6)
     auto& session = *session_;
     omk::Renderer& world = *world_;
     // THE PARTICLES. A section C effect names its sprite by an
@@ -1013,6 +1014,7 @@ void PlayState::worldDrawLists() {
 
 // The mirror and the present pass
 void PlayState::worldMirror() {
+    OMK_ZONE("world: mirror");   // the profiler (todo/debug-tools.md 6)
     auto& comp = *comp_;
     auto& session = *session_;
     omk::Renderer& world = *world_;

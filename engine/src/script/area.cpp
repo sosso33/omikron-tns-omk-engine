@@ -329,6 +329,7 @@ void Session::areaLoad(int area, int slot) {
 
 // `Area_LoadIntoSlot` (0x00402B70).
 void Session::loadIntoSlot(int slot, int area) {
+    OMK_ZONE("session: load into slot");   // the profiler (todo/debug-tools.md 6)
     slot &= 1;
     if (slots_[slot].area == area) {
         // `if (dword_69BC48[4 * a1] == a2) return sub_41D380(a2, block + 144)`
@@ -377,6 +378,7 @@ void Session::evictSlot(int slot) {
 // `Area_TickLoad` (0x0040C7E0). -> 1 when nothing is loading in the slot (a
 // block is there), 0 while the set is still streaming or the slot is empty.
 bool Session::tickLoad(int slot) {
+    OMK_ZONE("session: tick load");   // the profiler (todo/debug-tools.md 6)
     slot &= 1;
     if (slots_[slot].areaChunk.empty()) return false;     // `if (!v1) return 0`
     if (!load_.active) return true;                       // dword_4E6D8C == 0
@@ -454,6 +456,7 @@ void Session::completeLoad(int slot) {
 }
 
 int Session::loadArea(int areaId) {
+    OMK_ZONE("session: load area");   // the profiler (todo/debug-tools.md 6)
     // `Game_NewGame`: both slots reset, slot 0 active, no area. Then
     // `State_Apply`'s `Area_Load(START +1414, 0)` with the async reader in
     // mode 0 - the boot load is synchronous, and its startup contexts are in
@@ -2321,6 +2324,7 @@ float Session::musicGain() const {
 }
 
 void Session::frame() {
+    OMK_ZONE("session: frame");   // the profiler (todo/debug-tools.md 6)
     ++frameNo_;
     // Both screen fades, by the frame DELTA: the ticker (0x00451E60) does
     // `fadd flt_4C30D8` on each arm, colour and black alike. A bare

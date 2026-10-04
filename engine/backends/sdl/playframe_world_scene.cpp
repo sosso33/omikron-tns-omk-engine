@@ -6,6 +6,7 @@
 
 // The letterbox, the camera, the instrument override
 void PlayState::worldCamera() {
+    OMK_ZONE("world: camera");   // the profiler (todo/debug-tools.md 6)
     auto& session = *session_;
     view = dlgView;
     // THE LETTERBOX. Camera mode - conversations and cutscenes - is
@@ -564,6 +565,7 @@ void PlayState::worldCamera() {
 
 // The texture pool
 void PlayState::worldTexturePool() {
+    OMK_ZONE("world: texture pool");   // the profiler (todo/debug-tools.md 6)
     auto& session = *session_;
     // ---- THE TEXTURE POOL ------------------------------------
     //
@@ -627,6 +629,7 @@ void PlayState::worldTexturePool() {
 
 // The world's props
 void PlayState::worldProps() {
+    OMK_ZONE("world: props");   // the profiler (todo/debug-tools.md 6)
     auto& session = *session_;
     // ---- THE WORLD'S PROPS -----------------------------------
     //
@@ -837,6 +840,7 @@ void PlayState::worldProps() {
 
 // The gun in his hand, each gunman's gun
 void PlayState::worldGuns() {
+    OMK_ZONE("world: guns");   // the profiler (todo/debug-tools.md 6)
     auto& session = *session_;
     // ---- THE GUN IN HIS HAND (`todo/shoot-mode.md` 8.0) -----------
     //
@@ -953,6 +957,7 @@ void PlayState::worldGuns() {
 
 // The bolts
 void PlayState::worldBolts() {
+    OMK_ZONE("world: bolts");   // the profiler (todo/debug-tools.md 6)
     auto& session = *session_;
     omk::Renderer& world = *world_;
     // ---- THE BOLTS (`actor/projectile.h`) ------------------------

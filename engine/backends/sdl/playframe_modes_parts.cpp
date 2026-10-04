@@ -6,6 +6,7 @@
 
 // The pause screen stops the sound; the voices
 void PlayState::modesSound() {
+    OMK_ZONE("modes: sound");   // the profiler (todo/debug-tools.md 6)
     const auto& fs = *fs_;
     auto& session = *session_;
 
@@ -377,6 +378,7 @@ void PlayState::modesSound() {
 
 // Dialogue mode
 void PlayState::modesDialogue() {
+    OMK_ZONE("modes: dialogue");   // the profiler (todo/debug-tools.md 6)
     // ---- DIALOGUE MODE, and the bug its absence caused ---------------
     //
     // `Actor_EnterDialogueMode` (0x00468DE0) and `Actor_LeaveDialogueMode`
@@ -411,6 +413,7 @@ void PlayState::modesDialogue() {
 }
 
 int PlayState::modesShoot() {
+    OMK_ZONE("modes: shoot");   // the profiler (todo/debug-tools.md 6)
     const auto& fs = *fs_;
     auto& optMenu = *optMenu_;
     auto& in = *in_;
@@ -1701,6 +1704,7 @@ int PlayState::modesShoot() {
 }
 
 int PlayState::modesQuitLoad() {
+    OMK_ZONE("modes: quit load");   // the profiler (todo/debug-tools.md 6)
     auto& session = *session_;
     bool done = false;
     do {

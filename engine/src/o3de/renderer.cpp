@@ -14,6 +14,7 @@
 // that this data has coincident faces whose tie-break is decided by exactly
 // that order.
 #include "o3de/renderer.h"
+#include "platform/profile.h"
 #include <cstdio>
 
 #include <algorithm>
@@ -28,6 +29,7 @@ bool SoftwareRenderer::init(int w, int h) {
 }
 
 void SoftwareRenderer::begin(const View& v) {
+    OMK_ZONE("renderer: begin");   // the profiler (todo/debug-tools.md 6)
     view_ = v;
     // The picture is drawn into the top-left `vw x vh` of the framebuffer -
     // its vertical fov follows from that height, which is what makes the
@@ -40,6 +42,7 @@ void SoftwareRenderer::begin(const View& v) {
 }
 
 void SoftwareRenderer::submit(const Draw& d) {
+    OMK_ZONE("renderer: submit");   // the profiler (todo/debug-tools.md 6)
     if (!d.geo || d.count == 0) return;
     // One submission is one batch, so it is handed to `drawGeometry` as a
     // Geometry of exactly that range. The corners are copied rather than

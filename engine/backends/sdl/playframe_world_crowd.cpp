@@ -6,6 +6,7 @@
 
 // The pedestrians, the vehicles, the player
 void PlayState::worldCrowd() {
+    OMK_ZONE("world: crowd");   // the profiler (todo/debug-tools.md 6)
     const auto& fs = *fs_;
     auto& session = *session_;
     omk::Renderer& world = *world_;

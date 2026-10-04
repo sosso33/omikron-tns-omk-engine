@@ -27328,6 +27328,15 @@ def c_engine_profiler():
     The memory: a free that does not subtract (red: the street "grows" by
     every frame's transient buffers); every block filed as untagged (red:
     no textures, no geometry).
+
+    **And the depth (step 6)**: the world phase's renderer submits each hold a
+    `raster: drawGeometry` zone (79 of them a street frame on the software
+    renderer, about 1 ms each - the frame IS the rasterizer), and under 5% of
+    the street's memory is filed only under a phase or as untagged (2.3% on
+    2026-10-04: the zones on the set loads and the phases' parts gave the rest
+    owners - scripted motion 9.2 MB, sounds 2.8, the crowd 1.9...). Shown to
+    fail: the zone in `drawGeometry` removed (red); the zone on `inputMotion`
+    removed (red: 13% without an owner).
     """
     import subprocess, tempfile, shutil
     sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -27382,6 +27391,25 @@ def c_engine_profiler():
         byTag = {t[0]: t[1] for t in last["tags"]}
         owners = byTag.get("textures", 0) > 5 << 20 and byTag.get("geometry", 0) > 5 << 20
         growth = (mems[-1]["live"] - mems[15]["live"]) if memAll else -1
+        # STEP 6: the hot path is zoned - the software renderer's submits, each
+        # with its `drawGeometry`, inside the world phase - and the street's
+        # memory has OWNERS: under 5% of it filed only under a phase or as
+        # untagged
+        f29 = omkprof.tree(frames[-1]) if frames else None
+        wz = next((k for k in f29["kids"] if k["name"] == "world"), None) if f29 else None
+        def under(nd, name):                     # every zone of that name in the subtree
+            out = [nd] if nd["name"] == name else []
+            for k in nd["kids"]:
+                out += under(k, name)
+            return out
+        subs = under(wz, "renderer: submit") if wz else []
+        rasterUnder = sum(1 for k in subs if any(c["name"] == "raster: drawGeometry" for c in k["kids"]))
+        vague = {"frame", "input", "control", "modes", "world", "screens", "present", "untagged"}
+        vagueBytes = sum(t[1] for t in last["tags"] if t[0] in vague)
+        owned = memAll and last["live"] > 0 and vagueBytes < 0.05 * last["live"]
+        print("        world phase at frame 29: %d submits, %d with drawGeometry inside; "
+              "memory without an owner: %.1f%%" % (len(subs), rasterUnder,
+                                                    100.0 * vagueBytes / max(1, last["live"])))
         print("        memory at frame 29: %.1f MB live; textures %.1f, geometry %.1f MB; "
               "frames 15..29 grew %+d KB" % (last["live"] / 1048576.0, byTag.get("textures", 0) / 1048576.0,
                                             byTag.get("geometry", 0) / 1048576.0, growth // 1024))
@@ -27390,15 +27418,18 @@ def c_engine_profiler():
             len(frames), min(nums), max(nums), worldMs, len(dumps[0]), len(dumps[1])))
         got = (nums == list(range(-1, 30)), rooted == len(frames), ordered == 30,
                nested == len(frames), dropped, worldMs > 0, same,
-               memAll, sums, owners, 0 <= growth < 2 << 20)
+               memAll, sums, owners, 0 <= growth < 2 << 20,
+               len(subs) >= 20 and rasterUnder == len(subs), owned)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    return got, (True, True, True, True, 0, True, True, True, True, True, True), \
+    return got, (True, True, True, True, 0, True, True, True, True, True, True, True, True), \
         "the capture: the setup and frames 0..29, each rooted at `frame` with the six " \
         "phases in order, no child longer than its parent, nothing dropped, the world " \
         "phase holding real time; the frame dumped with and without --profile identical; " \
-        "and the memory: in every frame, its categories summing to the live total, " \
-        "textures and geometry over 5 MB each, and no growth over the street at rest"
+        "the memory: in every frame, its categories summing to the live total, " \
+        "textures and geometry over 5 MB each, and no growth over the street at rest; and " \
+        "step 6's depth - the world phase's submits each holding drawGeometry, and under " \
+        "5% of the memory without an owner"
 
 
 def c_engine_profiler_control():

@@ -28,7 +28,16 @@ namespace omk::prof::mem {
 constexpr int kTags = 128;
 #if OMK_THREADS
 using Count = std::atomic<long long>;
+#  if defined(__vita__)
+// On the Vita a `thread_local` is SHARED by the kernel threads `omk::Threads`
+// makes (`actor/pose.cpp`), so the category is the main thread's alone there:
+// a worker's blocks are counted as "worker threads" and its scopes swap
+// nothing (`memTagSwap`).
+int t_tag = 0;
+const std::thread::id g_main = std::this_thread::get_id();   // static init runs on main
+#  else
 thread_local int t_tag = 0;
+#  endif
 std::mutex g_tagLock;
 #else
 using Count = long long;
@@ -64,6 +73,8 @@ constexpr std::size_t kHeader = 16;
 static_assert(sizeof(Header) <= kHeader, "the header fits its 16 bytes");
 constexpr std::uint32_t kMagic = 0x4F4D4B6Du;   // "OMKm"
 
+int workersTag();
+
 void* counted(std::size_t n) {
     auto* p = static_cast<unsigned char*>(std::malloc(n + kHeader));
     if (!p) {
@@ -75,7 +86,11 @@ void* counted(std::size_t n) {
                     static_cast<long>(static_cast<long long>(g_totalBlocks)));
         throw std::bad_alloc();
     }
+#if OMK_THREADS && defined(__vita__)
+    const int tag = std::this_thread::get_id() == g_main ? t_tag : workersTag();
+#else
     const int tag = t_tag;
+#endif
     auto* h = reinterpret_cast<Header*>(p);
     h->size = n;
     h->tag = static_cast<std::uint32_t>(tag);
@@ -129,10 +144,20 @@ int memTag(const char* name) {
 }
 
 int memTagSwap(int id) {
+#if OMK_THREADS && defined(__vita__)
+    if (std::this_thread::get_id() != mem::g_main) return id;   // see mem::t_tag
+#endif
     const int prev = mem::t_tag;
     mem::t_tag = id;
     return prev;
 }
+
+namespace mem {
+int workersTag() {
+    static const int id = memTag("worker threads");
+    return id;
+}
+}  // namespace mem
 
 // ---- THE GPU MEMORY (step 5) ------------------------------------------------
 namespace {
@@ -329,6 +354,8 @@ void close() {
 }
 
 bool on() { return g_on; }
+
+bool recording() { return g_on && mine(); }
 
 void enter(const char* name) {
     if (!g_on || !mine()) return;

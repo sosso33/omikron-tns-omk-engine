@@ -6,6 +6,7 @@
 
 // Who is bound to him and who poses him, the shoot camera, the player made, the screens that stop the world, a teleport
 void PlayState::controlBinding() {
+    OMK_ZONE("control: binding");   // the profiler (todo/debug-tools.md 6)
     const auto& fs = *fs_;
     auto& session = *session_;
     const auto& sc = session.scene();
@@ -430,6 +431,7 @@ void PlayState::controlBinding() {
 
 // The bolts' flight, before the actors tick
 void PlayState::controlFlight() {
+    OMK_ZONE("control: flight");   // the profiler (todo/debug-tools.md 6)
     auto& session = *session_;
     // ---- THE FLIGHT - `Projectiles_Tick`, BEFORE `Actors_TickAll` --
     //
@@ -693,6 +695,7 @@ void PlayState::controlFlight() {
 
 // The player ticked under a conversation, and adventure mode's controller frame
 void PlayState::controlAdventure() {
+    OMK_ZONE("control: adventure");   // the profiler (todo/debug-tools.md 6)
     auto& session = *session_;
     playerTicked = false;
     if (player && !adventure && session.dialogOpen()) {

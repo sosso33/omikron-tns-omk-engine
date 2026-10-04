@@ -10,6 +10,7 @@ const std::array<float, 3> * PlayState::motionAtFind(const std::string& name) {
 }
 
 int PlayState::inputPump() {
+    OMK_ZONE("input: pump");   // the profiler (todo/debug-tools.md 6)
     auto& comp = *comp_;
     bool done = false;
     do {
@@ -75,6 +76,7 @@ int PlayState::inputPump() {
 
 // ESC opens the pause screen; the last screen's close flushes the input
 void PlayState::inputPause() {
+    OMK_ZONE("input: pause");   // the profiler (todo/debug-tools.md 6)
     auto& in = *in_;
     auto& session = *session_;
     // ---- ESC OPENS THE PAUSE SCREEN (next-tasks 3) -------------------
@@ -320,6 +322,7 @@ void PlayState::inputPause() {
 
 // The pause flag, one frame of the game, the Session under a screen
 void PlayState::inputTick() {
+    OMK_ZONE("input: tick");   // the profiler (todo/debug-tools.md 6)
     auto& session = *session_;
     // ---- THE PAUSE FLAG, and it is a DELTA and nothing else ----------
     //
@@ -384,6 +387,7 @@ void PlayState::inputTick() {
 
 // Scripted object motion - the crates, the doors, the lifts
 void PlayState::inputMotion() {
+    OMK_ZONE("input: motion");   // the profiler (todo/debug-tools.md 6)
     auto& session = *session_;
     omk::Renderer& world = *world_;
     // ---- SCRIPTED OBJECT MOTION - the crates, the doors, the lifts ---
@@ -1003,6 +1007,7 @@ void PlayState::inputMotion() {
 
 // Adventure mode's and the scene's own sound effects
 void PlayState::inputSounds() {
+    OMK_ZONE("input: sounds");   // the profiler (todo/debug-tools.md 6)
     auto& session = *session_;
     // ---- ADVENTURE MODE'S SOUND EFFECTS -----------------------------
     //

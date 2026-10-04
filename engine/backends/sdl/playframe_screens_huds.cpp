@@ -266,6 +266,7 @@ void drawSubtitle(omk::Surface& fb, const omk::TextLayout& lay,
 
 // The fight HUD, the breath gauge, the shoot HUD
 void PlayState::screensHuds() {
+    OMK_ZONE("screens: huds");   // the profiler (todo/debug-tools.md 6)
     const auto& fs = *fs_;
     auto& lay = *lay_;
     auto& comp = *comp_;
@@ -919,6 +920,7 @@ void PlayState::screensHuds() {
 
 // The fps counter
 void PlayState::screensFps() {
+    OMK_ZONE("screens: fps");   // the profiler (todo/debug-tools.md 6)
     // ---- THE FPS COUNTER -------------------------------------------
     //
     // Measured over a WINDOW rather than per frame, because a per-frame
@@ -965,6 +967,7 @@ void PlayState::screensFps() {
 
 // The screen fades, over everything
 void PlayState::screensFades() {
+    OMK_ZONE("screens: fades");   // the profiler (todo/debug-tools.md 6)
     auto& session = *session_;
     // ---- THE SCREEN FADES, over everything --------------------------
     //

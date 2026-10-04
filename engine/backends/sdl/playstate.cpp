@@ -1259,6 +1259,7 @@ void PlayState::refreshSprites() {
 }
 
 void PlayState::prepareSet(SetLoad& L) {
+ OMK_ZONE("set: prepare");   // the profiler (todo/debug-tools.md 6)
     using clk = std::chrono::steady_clock;
     const auto since = [](clk::time_point a) {
         return std::chrono::duration<double, std::milli>(clk::now() - a).count();
@@ -1334,6 +1335,7 @@ void PlayState::prepareSet(SetLoad& L) {
 // The slot emptied and the new set's preparation started. -> whether the
 // world lost a set by it (the rebuild is then owed at once).
 bool PlayState::askSet(int slot, const std::string& stem, int area, long frame) {
+ OMK_ZONE("set: ask");   // the profiler (todo/debug-tools.md 6)
     const auto& fs = *fs_;
     auto& session = *session_;
     slot &= 1;
@@ -1370,6 +1372,7 @@ bool PlayState::askSet(int slot, const std::string& stem, int area, long frame) 
 
 // The prepared set into its slot, on the frame's thread. -> whether it came.
 bool PlayState::integrateSet(SetLoad& L, long frame) {
+ OMK_ZONE("set: integrate");   // the profiler (todo/debug-tools.md 6)
     double waited = 0.0;
     if (L.job) {
         const double w0 = static_cast<double>(front.perfCounter());
@@ -1411,6 +1414,7 @@ bool PlayState::integrateSet(SetLoad& L, long frame) {
 // and his `.CTL` state, position and facing survive the transition the
 // way the engine's actor does (it is one record; only the decor changes).
 void PlayState::rebuildWorld() {
+ OMK_ZONE("set: rebuild world");   // the profiler (todo/debug-tools.md 6)
     omk::Renderer& world = *world_;
     const double rebuild0 = static_cast<double>(front.perfCounter());
     ++worldGen;

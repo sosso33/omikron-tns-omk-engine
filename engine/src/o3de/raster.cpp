@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "o3de/raster.h"
+#include "platform/profile.h"
 #include "o3de/shimmer.h"
 #include "ui/surface.h"
 
@@ -187,6 +188,7 @@ RasterStats drawGeometry(Surface& fb, std::vector<float>& depth,
                          const RCamera& cam, const Geometry& g,
                          std::span<const Texture> textures, const Fog& fog,
                          float shimmerClock, bool dither) {
+    OMK_ZONE("raster: drawGeometry");   // the profiler (todo/debug-tools.md 6)
     RasterStats st;
     if (depth.size() != static_cast<std::size_t>(fb.w) * fb.h)
         clearDepth(depth, fb.w, fb.h);
