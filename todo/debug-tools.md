@@ -97,7 +97,17 @@ cut: which code allocates what, which function takes the frame.
    frames - about 1.2 MB of geometry is ALLOCATED AND FREED every frame,
    churn the live figure never shows. A per-frame "allocated" counter would
    show it directly; noted for step 6 or the optimisation work.
-5. VRAM by tag in the GPU backends (Vulkan, GLES, GL1).
+5. ~~VRAM by tag in the GPU backends~~ - **DONE 2026-10-04** (`76d62c6`):
+   `OMK_GPU_ALLOC(tag, key, bytes)` / `OMK_GPU_FREE(key)`, reported by the
+   renderer - Vulkan at every `vkAllocateMemory`/`vkFreeMemory` (a buffer's
+   category from its usage flags), GLES and GL1 at every `glTexImage2D` /
+   `glBufferData` / `glRenderbufferStorage` and delete. The street on an M1:
+   Vulkan 26.4 MB (textures 9.8 in 41 atlases, vertex buffers 8.5, shadow
+   map 4.0, targets 2.9, readback 1.2); GLES 18.6 MB. **The cross-check**:
+   GLES's 41 atlases at 9.75 MB (width x height x 4) against Vulkan's 9.83
+   (the device's own sizes) - two accountings 1% apart. And seen through the
+   check's mutation: the renderer replaces some 30 texture images over the
+   run, which correct accounting absorbs. `engine: profiler gpu`.
 6. Zones through the engine's hot paths (session tick, scripts, actors,
    pose, render submit, raster) - the "every function" the ask names, as
    deep as a measurement shows it is worth.
