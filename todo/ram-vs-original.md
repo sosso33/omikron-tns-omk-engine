@@ -63,4 +63,55 @@ The rest - some 540 functions - is under 0.3 MB each, 4 MB together.
 
 ## Item by item
 
-(step 2 fills this)
+**Step 2 DONE 2026-10-04**: six parallel readings of the decompilation (the
+textures, the set geometry, collision and moving meshes, the `.SCX` and the
+archives, the sounds, the small items), and the decisive line of each
+re-read here before it was written down (`SetMaterialsMemory`'s two
+`Mem_Alloc`s, `Scene_Load3DO`'s `File_LoadWhole`, `Read3DO_Init`'s
+`Mem_Calloc(count, 0xB8)`, `Scene_LoadSCX`'s block and `fclose`,
+`Archive_ReadChunk`'s directory-then-chunk reads, `sub_46C740`'s
+`CreateSoundBuffer` in the file's own format, and the port's `ScxRuntime`
+copying whole files). MB are the street's, 64-bit; INFERRED is marked.
+
+| item | port | original | how the original does it | deliberate in the port? |
+|---|---|---|---|---|
+| **textures** | 14.1 | 3.87 fixed | `SetMaterialsMemory` (0x004406B0): ONE arena of 58 pages of 256x256 **8-bit palette indices**, `Mem_Alloc((58+1) << 16)` aligned to 64 KB, + `768 * n` of palettes; never freed (the software path samples it, D3D re-uploads from it); the card gets PAL8 or 16-bit 1555 (`sub_461D50`); D3D's managed copy is the driver's (INFERRED) | the CPU copy yes (the software raster and the GPU re-uploads read it); the **RGB888** form no - 3x the original's byte a texel |
+| **set geometry** | 11.3 (+ 2.65 copies, + 1.63 rebuildWorld) | 2.26 | `Scene_Load3DO` (0x0044EA10) keeps the file AS LOADED (`File_LoadWhole`), `Read3DO_Init` (0x0044DF10) points into it and adds a 184-byte node a mesh (`Mem_Calloc(count, 0xB8)`); vertices transformed each frame into SHARED pools (75000 x 48, 25000 x 124), faces indexed | the flat per-corner layout yes (the GPU vertex, the depth tie, the dirty lists and the motion patch index corners); the 31% `insert` slack, `cornerDeclared` (kept "to render the wrong reading beside") and `cornerVertex` (the face morph only) for decor, no |
+| **moving set meshes** (`inputMotion`) | 9.16 | ~0 | a scene program writes a node's matrix; the probe and the sweep read it on their next call - nothing copied | no: `baseCorners` is a copy of the WHOLE set's corners (6.7 MB) to re-place ~30 moving meshes, plus whole-set base soups (1.6) |
+| **collision** | 7.19 + player soups / grids ~2 | ~0 | `Walk_ProbeGround` (0x00467030) and `Sweep_ActorMove` (0x004AD360) walk the resident meshes by bounding sphere (`o3de_ForEachMeshInBox`) and test the mesh's own shipped faces IN MESH SPACE (`sub_498B10`, `Sweep_MeshTest`); no grid, no BSP, no separate collision mesh | world-space float soups and the grid yes (one grid for every probe; the slope pre-split); the 2.35 MB of doubling slack and FOUR soups of the same faces (walkable, steep, shot, sight) no |
+| **`.SCX`** | 7.39 | ~6.4 | `Scene_LoadSCX` (0x00449750) keeps the 69 KB structural block and gives each streamed resource its own buffer (clips, paths, sounds into DirectSound, sprites), then `fclose`s; the global library has ONE slot (`Game_Start` swaps `aventure.scx` and `fight.scx`) | the whole files kept yes (the readers point into them); `fight.scx` resident beside `aventure.scx` (1.0 MB) yes - "one read instead of one per fight" - and not the original's |
+| **IAM archives** | 3.0 | ~0.12 | `Archive_ReadChunk` (0x0040FF90): a 2 KB directory read and freed, then ONE chunk; two area slots keep their chunks; a conversation's chunk is freed when it ends | yes: kept whole (2.6 MB) because a Vita card's read took 0.7-0.9 s; and a BUG beside it - `SceneRunner::load` and `loadArea` still read AREA and SCENE whole on every load, past the cache |
+| **sounds** | 2.76 (+ the raw ones inside the kept `.SCX`) | 5.07 | `sub_46C740` creates each DirectSound buffer in the FILE's own format (16-bit mono, native rates); a playing sound is a `DuplicateSoundBuffer` sharing the data | no: `wavToDevice` makes float stereo copies at 22050 Hz, ~4x a mono source |
+| posed bodies' copies | 2.65 | 0 | one per-frame scratch pool (`sub_4947F0`) | the crowd's release (done) does not cover the staged bodies' `g = rest` |
+| depth tie | ~1.25 (its own comment: up to 9.7 across a street's bodies) | 0 | a first-wins Z-buffer needs no state | a GPU decision; not needed by the software renderer |
+| particles | 1.23 | fixed pools (INFERRED) | - | capacity kept at the peak frame |
+| animation tracks | 0.82 | same keys | `.ani` keys are 16-byte float quaternions, as the port's | the keys yes; a heap block per frame no |
+| `IAM\OBJECT` | 0.54 | ~0.001 | each record read, 56 bytes kept, the record freed | no: up to five copies of the parsed records |
+| the splash | 1.18 | 0 | `sub_420A20` frees the bitmap BEFORE its `Sleep` | NOT an item: the 0.59 + 0.59 is the frame's own compose surface `fb` (INFERRED from the source) |
+
+**What it adds up to**: the original holds roughly **12 MB** of these in the
+street (textures 3.9, geometry 2.3, the SCX's resources ~6.4 with the sounds
+inside them, the archives 0.1, collision and motion nothing of their own);
+the port holds **~62 MB** of the same things. The cuts below take back
+about **35 MB** of the 73 on a 64-bit host.
+
+## Step 3 - the cuts, proposed in three tiers
+
+**A. Safe, frames identical, small code** (~14 MB): size the soups exactly
+(-2.35, bit-identical); `reserve` the set geometry and stop filling
+`cornerDeclared` / `cornerVertex` for decor (-3.8); rest copies of the
+MOVING meshes only, not the whole set (-7.9 - both the geometry and the
+collision readings found it); one shared `IAM\OBJECT` table (-0.45); and
+the AREA/SCENE whole-file reads that bypass the cache (a speed bug).
+
+**B. Medium** (~10 MB): sounds kept 16-bit mono at their own rate and
+converted while mixing (-2.76); `fight.scx` swapped with `aventure.scx` as
+`Game_Start` does (-1.0); one collision soup with a class byte a triangle
+instead of four (-5.3); the staged bodies' copies released like the crowd's
+(-2.65 max); no depth tie on the software renderer.
+
+**C. Large** (~12 MB): textures kept as 8-bit indices + palette, expanded
+at upload and looked up by the software raster (-9.4; every pixel reader
+changes); ranged archive reads like `Archive_ReadChunk` (-2.4; to be timed
+on a Vita card first); an indexed decor geometry (toward the original's 2.3).
+
