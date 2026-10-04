@@ -739,10 +739,14 @@ struct PlayState {
 // (2026-09-30, the Bowie sequence).
     template <class F>
     void spanned(const char* name, F&& fn) {
+        OMK_ZONE(name);                     // and the profiler's (a literal: kept by pointer)
         const double a = phaseNow();
         fn();
         phSpan[name] += phaseNow() - a;
     }
+    // the profiler's view of the marks: each a SECTION from the mark before
+    // it (`--profile`, todo/debug-tools.md), outside the call tree
+    std::uint64_t profMarkT = 0;
 
     // ---- THE SETUP'S SECTIONS (`playsetup_<name>.cpp`), in `run`'s order
     int setupOptions(int argc, char** argv);   // the command line, the game's state, the slider's door clips

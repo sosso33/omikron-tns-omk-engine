@@ -344,6 +344,7 @@ int PlayOptions::parse(int argc, char** argv) {
         else if (a == "--snaps" && i + 1 < argc) snapsDir = argv[++i];
         else if (a == "--snap-every" && i + 1 < argc) snapEvery = std::max(1, std::atoi(argv[++i]));
         else if (a == "--flicker" && i + 1 < argc) flickerDir = argv[++i];
+        else if (a == "--profile" && i + 1 < argc) profilePath = argv[++i];
         else if (a == "--res" && i + 1 < argc) {
             std::sscanf(argv[++i], "%dx%d", &dispW, &dispH);
             resFlag = true;

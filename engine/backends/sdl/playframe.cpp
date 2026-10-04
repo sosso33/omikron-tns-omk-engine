@@ -7,11 +7,12 @@
 
 int PlayState::step() {
     int r = -1;
-    if ((r = phaseInput()) != -1) return r;
-    if ((r = phaseControl()) != -1) return r;
-    if ((r = phaseModes()) != -1) return r;
-    if ((r = phaseWorld()) != -1) return r;
-    if ((r = phaseScreens()) != -1) return r;
-    if ((r = phasePresent()) != -1) return r;
+    // each phase a profiler zone (`--profile`, todo/debug-tools.md)
+    { OMK_ZONE("input"); if ((r = phaseInput()) != -1) return r; }
+    { OMK_ZONE("control"); if ((r = phaseControl()) != -1) return r; }
+    { OMK_ZONE("modes"); if ((r = phaseModes()) != -1) return r; }
+    { OMK_ZONE("world"); if ((r = phaseWorld()) != -1) return r; }
+    { OMK_ZONE("screens"); if ((r = phaseScreens()) != -1) return r; }
+    { OMK_ZONE("present"); if ((r = phasePresent()) != -1) return r; }
     return -1;
 }

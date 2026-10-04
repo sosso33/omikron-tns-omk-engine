@@ -1569,4 +1569,9 @@ double PlayState::phaseNow() {
 // spans covered 6 of a console's 200 ms city frame (2026-09-22).
 void PlayState::mark(const char* name) {
  phMarks.emplace_back(name, phaseNow());
+ if (omk::prof::on()) {
+  const std::uint64_t t = omk::prof::now();
+  OMK_SECTION(name, profMarkT, t);
+  profMarkT = t;
+ }
 }

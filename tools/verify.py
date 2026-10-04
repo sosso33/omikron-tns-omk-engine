@@ -27181,6 +27181,80 @@ def c_engine_gl1_backend():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def c_engine_profiler():
+    r"""The PROFILER (`todo/debug-tools.md` step 1): `omk-play --profile`.
+
+    This project's own instrument (PORTING B6), and its one obligation is to
+    change NOTHING the game does - so the check has two halves:
+
+      * **the capture is right**: a 30-frame street start writes the setup
+        (frame -1) and frames 0..29; every frame's tree is rooted at `frame`
+        with the six phases (`input` .. `present`) under it IN ORDER, no
+        child outlasts its parent, nothing is dropped, and the `world` phase
+        holds real time (the street draws in it). Read by `tools/omkprof.py`,
+        the same reader a person uses;
+      * **profiling changes no pixel**: the 30th frame dumped with and without
+        `--profile` is byte-identical.
+
+    Shown to fail (2026-10-04): `leave()` made to record no end - every zone
+    0 us long, the world's time 0 (red); and the world phase skipped while
+    profiling (`playframe.cpp`) - the two dumps differ (red). (A `std::rand`
+    in the probe would NOT show it: the game draws from its own generators.)
+    """
+    import subprocess, tempfile, shutil
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import omkprof
+    eng = os.path.join(ROOT, "engine")
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    tmp = tempfile.mkdtemp()
+    try:
+        base = [play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                "--save", os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "0",
+                "--stand", "1804,0,-6890,336", "--nofmv", "--software", "--res", "640x480",
+                "--frames", "30"]
+        env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+        cap = os.path.join(tmp, "run.prof")
+        dumps = []
+        for k, extra in enumerate((["--profile", cap], [])):
+            d = os.path.join(tmp, "f%d.bin" % k)
+            subprocess.run(base + extra + ["--dump", d], capture_output=True, env=env)
+            dumps.append(open(d, "rb").read() if os.path.exists(d) else b"")
+        if not os.path.exists(cap):
+            return ("no capture",), ("capture",), "--profile wrote nothing"
+        _, frames = omkprof.read(cap)
+        phases = ["input", "control", "modes", "world", "screens", "present"]
+        nums = [f["frame"] for f in frames]
+        rooted = ordered = nested = 0
+        worldUs = []
+        def fits(nd):
+            return all(k["dur"] <= nd["dur"] + 1 and fits(k) for k in nd["kids"])
+        for f in frames:
+            t = omkprof.tree(f)
+            if t and t["name"] == "frame":
+                rooted += 1
+            if f["frame"] >= 0 and t and [k["name"] for k in t["kids"]] == phases:
+                ordered += 1
+                worldUs.append(t["kids"][3]["dur"])
+            if t and fits(t):
+                nested += 1
+        dropped = sum(f["dropped"] for f in frames)
+        same = len(dumps[0]) == 640 * 480 * 2 and dumps[0] == dumps[1]
+        worldMs = round(sorted(worldUs)[len(worldUs) // 2] / 1000.0) if worldUs else 0
+        print("        %d frames (%d..%d), median world %.1f ms, dumps %d / %d bytes" % (
+            len(frames), min(nums), max(nums), worldMs, len(dumps[0]), len(dumps[1])))
+        got = (nums == list(range(-1, 30)), rooted == len(frames), ordered == 30,
+               nested == len(frames), dropped, worldMs > 0, same)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return got, (True, True, True, True, 0, True, True), \
+        "the capture: the setup and frames 0..29, each rooted at `frame` with the six " \
+        "phases in order, no child longer than its parent, nothing dropped, the world " \
+        "phase holding real time; and the frame dumped with and without --profile identical"
+
+
 def c_engine_frontend_gateway():
     r"""THE GATEWAY (`src/platform/frontend.h`, `todo/classic-mac-port-1999.md`
     step 5): the viewer's game code reaches the host through `omk::Frontend`
@@ -40852,6 +40926,7 @@ SLOW = [
     ("engine: gl1 backend", c_engine_gl1_backend, "todo/classic-mac-port-1999.md 3c-i; PORTING B6"),
     ("engine: frontend gateway", c_engine_frontend_gateway, "todo/classic-mac-port-1999.md step 5; PORTING A1"),
     ("engine: classic build", c_engine_classic_build, "todo/classic-mac-port-1999.md step 5; platform/datafs.h"),
+    ("engine: profiler", c_engine_profiler, "todo/debug-tools.md step 1; PORTING B6"),
     ("engine: anti-aliasing", c_engine_anti_aliasing, "ASSETS 4"),
     ("engine: texture filter", c_engine_texture_filter, "ASSETS 4"),
     ("engine: mipmaps", c_engine_mipmaps, "ASSETS 4"),

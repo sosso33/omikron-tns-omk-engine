@@ -33,20 +33,30 @@ int PlayState::run(int argc, char** argv) {
     // THE SETUP, in order (`playsetup_<section>.cpp`, todo/play-split.md)
     int r = -1;
     if ((r = setupOptions(argc, argv)) != -1) return r;
-    if ((r = setupBoot()) != -1) return r;
-    if ((r = setupSession()) != -1) return r;
-    if ((r = setupAdventure()) != -1) return r;
-    if ((r = setupDevices()) != -1) return r;
-    if ((r = setupBodies()) != -1) return r;
-    if ((r = setupPlay()) != -1) return r;
-    if ((r = setupSplash()) != -1) return r;
+    // the profiler (`--profile`, todo/debug-tools.md): the setup is FRAME -1,
+    // each section a zone; then one capture frame per `step`
+    omk::prof::beginFrame(-1);
+    {
+        { OMK_ZONE("setup: boot"); if ((r = setupBoot()) != -1) return r; }
+        { OMK_ZONE("setup: session"); if ((r = setupSession()) != -1) return r; }
+        { OMK_ZONE("setup: adventure"); if ((r = setupAdventure()) != -1) return r; }
+        { OMK_ZONE("setup: devices"); if ((r = setupDevices()) != -1) return r; }
+        { OMK_ZONE("setup: bodies"); if ((r = setupBodies()) != -1) return r; }
+        { OMK_ZONE("setup: play"); if ((r = setupPlay()) != -1) return r; }
+        { OMK_ZONE("setup: splash"); if ((r = setupSplash()) != -1) return r; }
+    }
+    omk::prof::endFrame();
     // THE FRAME LOOP - `PlayState::step` in `playframe.cpp` (todo/play-split.md).
     for (;;) {
+        omk::prof::beginFrame(n);
         const int stepped = step();
+        omk::prof::endFrame();
         if (stepped == -2) break;
-        if (stepped >= 0) return stepped;
+        if (stepped >= 0) { omk::prof::close(); return stepped; }
     }
-    return finish();
+    const int rc = finish();
+    omk::prof::close();
+    return rc;
 }
 
 // THE VIEWER, as one object (`todo/play-split.md` S3): what `main` held as

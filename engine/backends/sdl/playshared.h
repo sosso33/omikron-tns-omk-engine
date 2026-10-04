@@ -32,6 +32,7 @@
 #include <unordered_map>
 #include <limits>
 #include <optional>
+#include "platform/profile.h"
 #include "actor/pose.h"
 #include "actor/speaker.h"
 #include "actor/player.h"

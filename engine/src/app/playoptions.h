@@ -50,6 +50,7 @@ struct PlayOptions {
     // RGB565 every 30 frames from the hand-over on (`snap-<frame>.bin`,
     // 640x480 after the display size), which is how the walk was LOOKED at.
     std::string holdStream, snapsDir, flickerDir;
+    std::string profilePath;   // --profile: the profiler's capture (todo/debug-tools.md)
     bool waterCamPreset = false;   // `--water-cam preset`: the old fixed-offset reading
     int snapEvery = 30;            // `--snap-every N`: 1 catches a flicker
     // A STREET START (docs/STREET_LIFE.md, step 4): `--save FILE` takes the

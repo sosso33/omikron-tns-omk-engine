@@ -10,6 +10,19 @@ int PlayState::setupOptions(int argc, char** argv) {
     // `src/app/playoptions.cpp`; each flag is a reference member of
     // `PlayState` into it under its old name (`playstate.h`).
     if (const int rc = opt.parse(argc, argv); rc >= 0) return rc;
+    // THE PROFILER (`todo/debug-tools.md`): `--profile <file>` writes a
+    // capture for `tools/omkprof.py`, the clock being the frontend's
+    if (!opt.profilePath.empty()) {
+        static omk::Frontend* profFront = nullptr;
+        profFront = &front;
+        omk::prof::setClock([] { return profFront->perfCounter(); }, front.perfFrequency());
+        if (omk::prof::open(opt.profilePath))
+            std::printf("profile: writing %s - one chunk a frame, for tools/omkprof.py\n",
+                        opt.profilePath.c_str());
+        else
+            std::printf("profile: cannot write %s%s\n", opt.profilePath.c_str(),
+                        OMK_PROFILE ? "" : " (built with OMK_PROFILE=0)");
+    }
     // THE GAME'S STATE (`todo/play-split.md` S3), one group at a time; each
     // old local below is a REFERENCE to its field where it used to be declared.
     boardPress = false;

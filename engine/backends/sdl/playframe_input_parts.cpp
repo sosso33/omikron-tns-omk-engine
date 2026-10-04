@@ -17,6 +17,7 @@ int PlayState::inputPump() {
         phRb0 = phRb1 = -1.0;
         phMarks.clear();
         phMarks.emplace_back("top", phTop);
+        profMarkT = omk::prof::now();
         bool pumpOk = true;
         spanned("pump", [&] { pumpOk = front.pump(host); });
         mark("pump");
