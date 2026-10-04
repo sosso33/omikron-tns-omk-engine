@@ -195,6 +195,18 @@ patch all index; an indexed one rewrites the vertex path of all three
 renderers, and frames identical by construction is not on offer. The set's
 geometry is 8.24 MB here against the original's 2.26.
 
+**THE .SCX, DONE 2026-10-05** (asked for in place of the geometry): the
+runtime keeps the clips' and sounds' bytes and drops the file, as
+`Scene_LoadSCX` keeps its block and a buffer a resource. **Smaller than this
+file's step-3 table implied**: the SOUNDS are most of every `.SCX` (2.4 of
+Anekbah's 3.5 MB, 2.5 of `aventure`'s 3.0) and the original keeps them too,
+in DirectSound buffers - what it drops is the container, the sprites'
+embedded models and textures and the raw path records. Measured over all 220
+files 94% of the bytes stay; in the street 6.39 -> 5.67 MB, **the street
+40.8 -> 40.1**. `engine: scx kept` (1490 clips with their frame counts, 1667
+sounds, identical through the runtime); 29 checks over the scene programs,
+the sounds and the cross builds green.
+
 **DEFERRED by the reader (2026-10-05), with what it would buy and cost.**
 Measured that day: a vertex can be shared only where position, UV, colour,
 normal and shimmer phase all agree, and Anekbah's 139245 corners (6.5 MB)
