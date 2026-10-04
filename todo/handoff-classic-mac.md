@@ -181,8 +181,9 @@ file off the image.
    and the CARBON `OMKPlay` at the street start (`~/omk/cplay/omk.args`; the
    boot's args are `omk.args.boot`) - "carbon build is running correctly":
    25 bodies, 200 walkers, adventure mode, Sound Manager audio, 67 frames in
-   35 s (~2 fps, the software renderer on the emulated G4). Keys and walking
-   not yet reported on; (b) ~~Sound Manager audio~~ DONE (`8b536ad`) -
+   35 s (~2 fps, the software renderer on the emulated G4). **Walked in
+   BOTH builds** (SDL/GL1 and Carbon), the reader: "controls felt
+   correct" - (a) is done on Tiger; OS 9 by hand is still unplayed; (b) ~~Sound Manager audio~~ DONE (`8b536ad`) -
    left: the ring is six 100 ms buffers refilled between frames, so a frame
    slower than 0.6 s underruns (OS 9 under emulation); a bigger ring costs
    the interface blips latency, so measure on a real G3 before choosing;
