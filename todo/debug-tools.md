@@ -108,8 +108,23 @@ cut: which code allocates what, which function takes the frame.
    (the device's own sizes) - two accountings 1% apart. And seen through the
    check's mutation: the renderer replaces some 30 texture images over the
    run, which correct accounting absorbs. `engine: profiler gpu`.
-6. Zones through the engine's hot paths (session tick, scripts, actors,
-   pose, render submit, raster) - the "every function" the ask names, as
+6. ~~Zones through the engine's hot paths~~ - **DONE 2026-10-04**
+   (`be63d3e`): the software renderer (begin, submit, `drawGeometry`), the
+   session (frame, area load, tick load, slot load), the interpreter's run,
+   the crowd's tick, the viewer's set loading, and all 31 parts of the
+   frame's phases; each zone also names the memory allocated inside it.
+   Zones and categories are the MAIN thread's (on the Vita a `thread_local`
+   is shared by the kernel threads - `actor/pose.cpp`). **What it showed, the
+   street, software, M1**: the world phase is 77 renderer submits at ~1 ms
+   each in `drawGeometry` - the frame IS the rasterizer - and `submit` copies
+   each batch's corners into a new `Geometry` (an allocation per batch, and
+   likely the geometry churn step 4 saw). Memory with owners: scripted
+   motion 9.2 MB, sounds 2.8, the crowd 1.9, staged bodies 1.4, draw lists
+   1.4, set loading 3.4; 2.2% left without one. Deeper than this (inside
+   `drawGeometry`, per triangle) costs more than it tells: a sampling
+   profiler is the tool there. Was: "Zones through the engine's hot paths
+   (session tick, scripts, actors, pose, render submit, raster) - the "every
+   function" the ask names, as
    deep as a measurement shows it is worth.
 7. ~~`make RELEASE=1` and its check~~ - done in step 3 (`make release`);
    left: the same for the classic Mac and Vita builds.

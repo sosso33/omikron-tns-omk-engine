@@ -27336,7 +27336,7 @@ def c_engine_profiler():
     2026-10-04: the zones on the set loads and the phases' parts gave the rest
     owners - scripted motion 9.2 MB, sounds 2.8, the crowd 1.9...). Shown to
     fail: the zone in `drawGeometry` removed (red); the zone on `inputMotion`
-    removed (red: 13% without an owner).
+    removed (red: 15.4% without an owner).
     """
     import subprocess, tempfile, shutil
     sys.path.insert(0, os.path.join(ROOT, "tools"))
