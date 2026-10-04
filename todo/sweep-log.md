@@ -39,7 +39,9 @@ adds **one**. Counting commits ran this number to 13 when about nine tasks had
 been finished, which would have called for a half-hour sweep long before the
 rule intends one.
 
-**tasks since the last full sweep: 0** (reset by the `--slow --jobs 6` run of 2026-10-03 below, at `2205413`.)
+**tasks since the last full sweep: 1** (reset by the `--slow --jobs 6` run of 2026-10-03 below, at `2205413`.)
+
+(2026-10-04: the two standing reds `engine: supersampling` and `engine: near clip` CLOSED, `c15c59b` - both turned by the back-face cull, not by a fault: near clip re-pinned (+18 culled pixels in the old rule's hole), supersampling's distinct-colour signature replaced, because the cull removed the wall its view was magnifying. `--exact` over the two, each shown to fail. 1 task.)
 
 (2026-10-01: THE WHAT-IF MAC PORT plan, `todo/classic-mac-port-1999.md` - docs only, no check run or needed.)
 
