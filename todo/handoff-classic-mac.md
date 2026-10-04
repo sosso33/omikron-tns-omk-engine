@@ -72,7 +72,7 @@ where and why; the build scripts in its `scripts/` are re-runnable.
 |---|---|
 | PowerPC cross-compiler (GCC 14.4, `powerpc-apple-darwin8`) | `toolchains/ppc-darwin8/bin` |
 | Retro68 (classic Mac OS / Carbon, Universal Interfaces) | `toolchains/retro68/bin` |
-| SDL 2.0.3 for Tiger (built IN Tiger, its Cocoa half is ObjC) | `sdl2-tiger/` |
+| SDL 2.0.3 for Tiger (built IN Tiger, its Cocoa half is ObjC) | `sdl2-tiger-g3/` - generic PowerPC, runs on a G3 (2026-10-04; the build tree is Tiger's `~/src/panther-sdl2-g3`); `sdl2-tiger/` is the first build, `-maltivec`, G4 only |
 | ppcosxkvm (Tiger VM, **locally patched** - see 5) | `emulators/ppcosxkvm/` |
 | QEMU with Screamer sound, for OS 9 | `emulators/qemu-screamer/`, `scripts/run-os9.sh` |
 | the 10.4u SDK (cross sysroot), MPW GM, Xcode 2.5 dmg | `sdk/` |
@@ -98,7 +98,7 @@ the shared `Makefile` is untouched by all of it):
 
     PATH=/Volumes/omk-devtools/toolchains/ppc-darwin8/bin:$PATH
     make -f ppc-darwin.mk                                   # 196 tools, build/ppc-darwin8/
-    make -f ppc-darwin.mk SDL2_PREFIX=/Volumes/omk-devtools/sdl2-tiger play   # omk-play, gl1
+    make -f ppc-darwin.mk SDL2_PREFIX=/Volumes/omk-devtools/sdl2-tiger-g3 play   # omk-play, gl1, any G3
     # PLAY_GPU=none for software only; OMK_GL1=0 at run time to compare
     # the same, for the MAC (what the check builds):
     make -f ppc-darwin.mk PPC_CXX=c++ PPCFLAGS=-ffp-contract=off LDFLAGS= OUT=build/host-gl1 \
@@ -220,15 +220,43 @@ file off the image.
    plus a `playgpu_*.cpp` for its GPU window if it has one - `playgpu_gl1`
    is the model, since it presents on the CPU through the frontend. The
    play split had finished (S5/S6, 2026-10-02), so nothing was in flight.
-3. **What is left on OS 9 after the frontend**: the memory budget (the
-   partition is 192 MB preferred, 64 MB minimum - a guess, not measured);
+3. **What is left on OS 9 after the frontend**: ~~the memory budget~~ -
+   **MEASURED 2026-10-04** (`backends/classic/heapcount.*`: this build's own
+   `operator new`/`delete` count every C++ block by `GetPtrSize`, exactly,
+   and `FreeMem`/`MaxBlock` are sampled each frame; a flushed line every 30
+   frames, the totals at exit). Retro68's `malloc` is `NewPtr`, so all of it
+   comes out of the partition. On OS 9, the street start in Anekbah: peak
+   **79886 KB** of live C++ blocks (during the load), **79009 KB** used by
+   FreeMem at the low-water mark - about 82 MB with the C allocations and
+   the blocks' overhead - and MaxBlock 5 MB under FreeMem (fragmentation).
+   Kay'l's apartment (`games-resto.bin` slot 0): **49741 KB**. The
+   conversation itself (402, ~600 frames in) was NOT reached: twice the run
+   on Tiger ended early with exit 0 and no reason given (the frontend now
+   prints each quit's cause), and OS 9 runs ~5 s a frame. The partition is
+   now **128 MB preferred, 96 MB minimum** (was 192 / 64, a guess - 64 would
+   not hold the street). Against `classic-mac-port-1999.md` 3b's 136.8 MB on
+   a 64-bit host, the 32-bit build holds ~80;
    `%zu` is handled (`classic_printf.h`), audio and the films work. `DataFs` and no threads
    are DONE (2 above); with `OMK_THREADS 0` the voice read-ahead already
    runs on its frame, so "ticked loading" is a speed question, not a gap.
 4. **Speed**: the 1999 budget (`classic-mac-port-1999.md` §3b, steps 1-2).
    Tiger's emulated G4 is not a G4's timing.
-5. **A G3 build**: SDL 2.0.3 rebuilt without `-maltivec` (the binary is
-   `ppc_7400` today).
+5. ~~**A G3 build**~~ - **DONE 2026-10-04.** Our own objects were always
+   generic (`PPC ALL`); the 119 objects of SDL were `ppc7400`, because its
+   configure finds AltiVec and adds `-maltivec` to every unit, and the
+   linker marks the binary with the highest subtype. Rebuilt in Tiger with
+   `--disable-altivec` (`~/src/panther-sdl2-g3`, installed to
+   `~/sdl2-tiger-g3`, copied to the tools volume) - which needed ONE patch:
+   `SDL_cocoavideo.m` and `SDL_cocoamessagebox.m` include `altivec.h` under
+   `__POWERPC__ && !__APPLE_ALTIVEC__` to undo its `bool`/`vector`/`pixel`
+   macros, which errors without `-maltivec`; the guard now also asks for
+   `__ALTIVEC__`. The binary is `ppc`; a scan of `otool -tv` finds 24
+   vector instructions against 230 in the G4 build, all in libgcc's
+   `save_world` / `eh_rest_world_r10`, which test `__cpu_has_altivec` and
+   return before them on a CPU without it - and no `fsqrt`. Its 30-frame
+   street dump is BYTE-IDENTICAL to the G4 build's on Tiger. Not run on a
+   G3 (QEMU's `mac99` is a G4 here): the evidence is the subtype, the
+   scan and the identical frame.
 6. **The ppcosxkvm report**: test the fix seriously (the checklist in the
    draft), and narrow the second artefact (below) to a minimal GL repro.
 

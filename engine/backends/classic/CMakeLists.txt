@@ -20,7 +20,8 @@
 #             `backends/sdl/` - SDL-free since the gateway - with the software
 #             renderer (`playgpu_none`), no instruments (`playharness_off`),
 #             and no `--scene` set viewer (an SDL instrument). `omk.args` and
-#             `omk-out.txt` as above. No audio yet.
+#             `omk-out.txt` as above. Audio through the Sound Manager, and
+#             OPENGL through AGL when the inputs below are found.
 #
 # No threads (`platform/threads.h` selects OMK_THREADS 0 on `macintosh`), and
 # every path the engine opens goes through `omk::hostPath` (HFS colons).
@@ -60,6 +61,7 @@ target_compile_options(omkengine PUBLIC -O2 -ffunction-sections -fdata-sections)
 function(omk_classic_tool app tool)
     add_application(${app}
         classic_main.cpp
+        heapcount.cpp
         printf_c99.cpp
         xcoff_weak_storage.cpp
         ${ENGINE}/tools/${tool}.cpp
@@ -75,18 +77,62 @@ endforeach()
 
 file(GLOB OMK_PLAY ${ENGINE}/backends/sdl/*.cpp)
 list(FILTER OMK_PLAY EXCLUDE REGEX "/(sdlfront|playscene|playharness|playgpu_[a-z0-9]+)\\.cpp$")
+
+# OPENGL, when the machine has what it takes (2026-10-04): the fixed-function
+# backend (`backends/gl1/`) through AGL on the window - the same calls on Mac
+# OS 9 (OpenGL 1.2.1) and Tiger. Two inputs from outside the tree, both on the
+# tools volume next to Retro68 by default:
+#   OMK_MACOS_SDK   the 10.4u SDK, for AGL's and OpenGL's headers (AGL's own
+#                   non-framework branch: `#include <Carbon.h>`, `<gl.h>`);
+#   OMK_OPENGL_PEF  Mac OS 9's `OpenGLLibrary`, WITH its resource fork, which
+#                   Retro68's MakeImport turns into the import stub. Tiger's
+#                   CFMSupport/OpenGLLib exports the same fragment name.
+# Either missing, OMKPlay is built as before: the software reference alone.
+get_filename_component(OMK_R68_BIN ${CMAKE_CXX_COMPILER} DIRECTORY)
+get_filename_component(OMK_TOOLS_ROOT ${OMK_R68_BIN}/../../.. ABSOLUTE)
+set(OMK_MACOS_SDK ${OMK_TOOLS_ROOT}/sdk/MacOSX10.4u.sdk CACHE PATH "the Mac OS X 10.4u SDK (AGL and OpenGL headers)")
+set(OMK_OPENGL_PEF ${OMK_TOOLS_ROOT}/sdk/os9-opengl/OpenGLLibrary CACHE FILEPATH "Mac OS 9's OpenGLLibrary, with its resource fork")
+set(OMK_AGL_HEADERS ${OMK_MACOS_SDK}/System/Library/Frameworks/AGL.framework/Headers)
+find_program(OMK_MAKEIMPORT MakeImport HINTS ${OMK_R68_BIN})
+if(EXISTS ${OMK_AGL_HEADERS}/agl.h AND EXISTS ${OMK_OPENGL_PEF} AND OMK_MAKEIMPORT)
+    set(OMK_CLASSIC_GL ON)
+    # AGL's gl.h includes <OpenGL/glext.h>: give it an OpenGL/ to find
+    file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/glinc)
+    file(CREATE_LINK ${OMK_MACOS_SDK}/System/Library/Frameworks/OpenGL.framework/Headers
+         ${CMAKE_BINARY_DIR}/glinc/OpenGL SYMBOLIC)
+    add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/libOpenGLLibrary.a
+        COMMAND ${CMAKE_COMMAND} -E env "PATH=${OMK_R68_BIN}:$ENV{PATH}"
+                ${OMK_MAKEIMPORT} ${OMK_OPENGL_PEF} ${CMAKE_BINARY_DIR}/libOpenGLLibrary.a
+        DEPENDS ${OMK_OPENGL_PEF}
+        COMMENT "MakeImport: the OpenGLLibrary import stub")
+    add_custom_target(omk_opengl_stub DEPENDS ${CMAKE_BINARY_DIR}/libOpenGLLibrary.a)
+    set(OMK_PLAY_GPU ${ENGINE}/backends/sdl/playgpu_gl1.cpp ${ENGINE}/backends/gl1/gl1render.cpp)
+    message(STATUS "OMKPlay: OpenGL through AGL (${OMK_OPENGL_PEF})")
+else()
+    set(OMK_CLASSIC_GL OFF)
+    set(OMK_PLAY_GPU ${ENGINE}/backends/sdl/playgpu_none.cpp)
+    message(STATUS "OMKPlay: no AGL headers or OpenGLLibrary - the software reference alone")
+endif()
+
 add_application(OMKPlay
     classic_main.cpp
+    heapcount.cpp
     printf_c99.cpp
     xcoff_weak_storage.cpp
     carbonfront.cpp
     playscene_off.cpp
     ${OMK_PLAY}
-    ${ENGINE}/backends/sdl/playgpu_none.cpp
+    ${OMK_PLAY_GPU}
     ${ENGINE}/backends/sdl/playharness_off.cpp
     omk-classic.r
     TYPE APPL CREATOR OMKp)
 target_compile_definitions(OMKPlay PRIVATE OMK_CLASSIC_ENTRY=omk_play_main)
+if(OMK_CLASSIC_GL)
+    add_dependencies(OMKPlay omk_opengl_stub)
+    target_compile_definitions(OMKPlay PRIVATE OMK_GL1_AGL)
+    target_include_directories(OMKPlay PRIVATE ${OMK_AGL_HEADERS} ${CMAKE_BINARY_DIR}/glinc)
+    target_link_libraries(OMKPlay ${CMAKE_BINARY_DIR}/libOpenGLLibrary.a)
+endif()
 set_source_files_properties(${ENGINE}/backends/sdl/play.cpp PROPERTIES COMPILE_DEFINITIONS main=omk_play_main)
 target_include_directories(OMKPlay PRIVATE ${ENGINE}/backends/sdl ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(OMKPlay omkengine)

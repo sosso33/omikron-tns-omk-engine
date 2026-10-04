@@ -15,6 +15,14 @@
 // same sum the SDL frontend makes) on the MAIN thread - the completion
 // callback runs at interrupt time on Mac OS 9, so it only marks a buffer
 // played and touches nothing else.
+//
+// OPENGL (the build with `OMK_GL1_AGL`, 2026-10-04): when the fixed-function
+// backend asks (`backends/gl1/gl1host.h`), an AGL context is attached to the
+// window, the world is drawn into its back buffer, and from then on every
+// frame is PRESENTED through it - `glDrawPixels` of the composited RGB565
+// frame, then `aglSwapBuffers` - since on Mac OS X an AGL surface lies over
+// the window and would hide what CopyBits draws. Never asked, the window stays
+// plain and CopyBits presents as before.
 #pragma once
 
 #include "audio/hostmix.h"
@@ -55,11 +63,14 @@ public:
     std::string lastError() const override { return lastError_; }
 
     const void* windowId() const override { return win_; }
+    // The AGL context on the window, made on the first call (`gl1host.h`).
+    void* glContext();
     std::string windowTitle() const override;
     void setWindowTitle(const std::string& t) override;
 
 private:
     void blit();                 // the GWorld to the window
+    void presentGL(const Surface& fb);   // the frame through the AGL context
     void refillAudio();          // every played buffer, mixed again and queued
     void closeAudio();
     HostMixer mix_;
@@ -76,6 +87,7 @@ private:
     void* win_ = nullptr;        // WindowRef
     void* gw_ = nullptr;         // GWorldPtr, at the WINDOW's depth (16 or 32)
     int gwW_ = 0, gwH_ = 0, gwDepth_ = 0;
+    void* agl_ = nullptr;        // AGLContext, once the GL backend asked
     bool quit_ = false;
 };
 

@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The Carbon frontend - see carbonfront.h.
 #include "carbonfront.h"
+#include "heapcount.h"
 
+#if defined(OMK_GL1_AGL)
+#  include "../gl1/gl1host.h"
+#  include <agl.h>
+#  include <gl.h>
+#endif
 #include <AppleEvents.h>
 #include <Events.h>
 #include <MacWindows.h>
@@ -64,7 +70,14 @@ pascal void soundPlayed(SndChannelPtr chan, SndCommand* cmd) {
 
 }  // namespace
 
-CarbonFrontend::~CarbonFrontend() { close(); }
+namespace {
+CarbonFrontend* g_carbon = nullptr;     // the one frontend, for gl1AglContext
+}
+
+CarbonFrontend::~CarbonFrontend() {
+    close();
+    if (g_carbon == this) g_carbon = nullptr;
+}
 
 bool CarbonFrontend::openAudio(int rate, int channels) {
     if (chan_) return true;
@@ -208,7 +221,11 @@ bool CarbonFrontend::pump(HostInput& out) {
         switch (ev.what) {
         case keyDown: case autoKey: {
             const char c = static_cast<char>(ev.message & charCodeMask);
-            if ((ev.modifiers & cmdKey) && (c == 'q' || c == 'Q')) { quit_ = true; break; }
+            if ((ev.modifiers & cmdKey) && (c == 'q' || c == 'Q')) {
+                if (!quit_) std::printf("quit: Cmd-Q\n");
+                quit_ = true;
+                break;
+            }
             // the characters `WM_CHAR` carries: printable text, and the four
             // control characters the name field reads (sdlfront.cpp, charmap)
             if (c >= 32 && c < 127) out.text += c;
@@ -223,8 +240,14 @@ bool CarbonFrontend::pump(HostInput& out) {
                 ::Rect bounds;
                 GetRegionBounds(GetGrayRgn(), &bounds);
                 DragWindow(w, ev.where, &bounds);
+#if defined(OMK_GL1_AGL)
+                if (agl_) aglUpdateContext(static_cast<AGLContext>(agl_));
+#endif
             } else if (w == win_ && part == inGoAway) {
-                if (TrackGoAway(w, ev.where)) quit_ = true;
+                if (TrackGoAway(w, ev.where)) {
+                    if (!quit_) std::printf("quit: the window's close box\n");
+                    quit_ = true;
+                }
             }
             break;
         }
@@ -242,7 +265,10 @@ bool CarbonFrontend::pump(HostInput& out) {
             break;
         }
     }
-    if (g_quitRequested) quit_ = true;
+    if (g_quitRequested && !quit_) {
+        std::printf("quit: a Quit Apple event (the Finder, the Dock, or another program)\n");
+        quit_ = true;
+    }
     if (quitAt_ && !quit_ && microseconds() >= quitAt_) {
         quit_ = true;
         std::printf("quit: omk.quit's time is up\n");
@@ -264,6 +290,11 @@ bool CarbonFrontend::pump(HostInput& out) {
 
 void CarbonFrontend::present(const Surface& fb) {
     if (!win_ || fb.w <= 0 || fb.h <= 0) return;
+    if (agl_) {
+        presentGL(fb);
+        classic_heap_sample();
+        return;
+    }
     if (!gw_ || gwW_ != fb.w || gwH_ != fb.h) {
         if (gw_) DisposeGWorld(static_cast<GWorldPtr>(gw_));
         gw_ = nullptr;
@@ -307,10 +338,11 @@ void CarbonFrontend::present(const Surface& fb) {
     }
     UnlockPixels(pm);
     blit();
+    classic_heap_sample();   // the memory budget's low-water mark, once a frame
 }
 
 void CarbonFrontend::blit() {
-    if (!win_ || !gw_) return;
+    if (!win_ || !gw_ || agl_) return;       // under GL the next frame redraws
     CGrafPtr port = GetWindowPort(static_cast<WindowRef>(win_));
     SetPort(port);
     ForeColor(blackColor);   // CopyBits colourises with the port's colours
@@ -328,6 +360,15 @@ void CarbonFrontend::blit() {
 
 void CarbonFrontend::close() {
     closeAudio();
+#if defined(OMK_GL1_AGL)
+    if (agl_) {
+        AGLContext ctx = static_cast<AGLContext>(agl_);
+        agl_ = nullptr;
+        if (aglGetCurrentContext() == ctx) aglSetCurrentContext(nullptr);
+        aglSetDrawable(ctx, nullptr);
+        aglDestroyContext(ctx);
+    }
+#endif
     if (gw_) { DisposeGWorld(static_cast<GWorldPtr>(gw_)); gw_ = nullptr; }
     if (win_) { DisposeWindow(static_cast<WindowRef>(win_)); win_ = nullptr; }
 }
@@ -365,6 +406,95 @@ void CarbonFrontend::setWindowTitle(const std::string& title) {
     SetWTitle(static_cast<WindowRef>(win_), t);
 }
 
-std::unique_ptr<Frontend> makeHostFrontend() { return std::make_unique<CarbonFrontend>(); }
+// ---- OPENGL through AGL ------------------------------------------------------
+
+void* CarbonFrontend::glContext() {
+#if defined(OMK_GL1_AGL)
+    if (agl_ || !win_) return agl_;
+    // a hardware renderer first; else whatever renders (Mac OS 9 under
+    // emulation has only Apple's software one)
+    const GLint accel[] = {AGL_RGBA, AGL_DOUBLEBUFFER, AGL_DEPTH_SIZE, 16,
+                           AGL_ACCELERATED, AGL_NO_RECOVERY, AGL_NONE};
+    const GLint any[] = {AGL_RGBA, AGL_DOUBLEBUFFER, AGL_DEPTH_SIZE, 16, AGL_NONE};
+    AGLPixelFormat pf = aglChoosePixelFormat(nullptr, 0, accel);
+    const bool accelerated = pf != nullptr;
+    if (!pf) pf = aglChoosePixelFormat(nullptr, 0, any);
+    if (!pf) {
+        std::printf("display: no AGL pixel format (%s)\n",
+                    reinterpret_cast<const char*>(aglErrorString(aglGetError())));
+        return nullptr;
+    }
+    AGLContext ctx = aglCreateContext(pf, nullptr);
+    aglDestroyPixelFormat(pf);
+    if (!ctx) return nullptr;
+    if (!aglSetDrawable(ctx, GetWindowPort(static_cast<WindowRef>(win_)))) {
+        std::printf("display: aglSetDrawable failed (%s)\n",
+                    reinterpret_cast<const char*>(aglErrorString(aglGetError())));
+        aglDestroyContext(ctx);
+        return nullptr;
+    }
+    aglSetCurrentContext(ctx);
+    // the surface brought up to the window now, and one black frame shown, so
+    // the window holds nothing stale before the first world is drawn
+    aglUpdateContext(ctx);
+    glClearColor(0, 0, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT);
+    aglSwapBuffers(ctx);
+    agl_ = ctx;
+    std::printf("display: an AGL context on the window (%s); the frame is presented "
+                "by glDrawPixels and aglSwapBuffers from here on\n",
+                accelerated ? "accelerated" : "NOT accelerated");
+#endif
+    return agl_;
+}
+
+void CarbonFrontend::presentGL(const Surface& fb) {
+#if defined(OMK_GL1_AGL)
+    AGLContext ctx = static_cast<AGLContext>(agl_);
+    const AGLContext prev = aglGetCurrentContext();
+    if (prev != ctx) aglSetCurrentContext(ctx);
+    ::Rect b;
+    GetPortBounds(GetWindowPort(static_cast<WindowRef>(win_)), &b);
+    const int ww = b.right - b.left, wh = b.bottom - b.top;
+    // the 2D state for one image; the renderer sets all of its own in begin()
+    glViewport(0, 0, ww, wh);
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(0, ww, 0, wh, -1, 1);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_BLEND);
+    glDisable(GL_ALPHA_TEST);
+    glDisable(GL_FOG);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_SCISSOR_TEST);
+    glDrawBuffer(GL_BACK);
+    // RGB565 in the host's own word order, which is what the packed type reads
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 2);
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+    // the raster position at the TOP-left (a move by glBitmap is never
+    // clipped away, where a position on the window's edge can be), and the
+    // rows drawn downward, scaled to the window
+    glRasterPos2i(0, 0);
+    glBitmap(0, 0, 0.0f, 0.0f, 0.0f, static_cast<GLfloat>(wh), nullptr);
+    glPixelZoom(static_cast<GLfloat>(ww) / fb.w, -static_cast<GLfloat>(wh) / fb.h);
+    glDrawPixels(fb.w, fb.h, GL_RGB, GL_UNSIGNED_SHORT_5_6_5, fb.px.data());
+    glPixelZoom(1.0f, 1.0f);
+    aglSwapBuffers(ctx);
+    if (prev != ctx) aglSetCurrentContext(prev);
+#else
+    (void)fb;
+#endif
+}
+
+void* gl1AglContext() { return g_carbon ? g_carbon->glContext() : nullptr; }
+
+std::unique_ptr<Frontend> makeHostFrontend() {
+    auto f = std::make_unique<CarbonFrontend>();
+    g_carbon = f.get();
+    return f;
+}
 
 }  // namespace omk

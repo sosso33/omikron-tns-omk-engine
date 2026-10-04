@@ -47,19 +47,31 @@
 // EXT_framebuffer_object (Tiger 10.4.3 onwards). EVERY entry point makes the
 // context current and gives the caller's back - SDL keeps a GL context of its
 // own for its window, and drawing into it is exactly the bug that guard is.
-#if !defined(__APPLE__)
-#error "gl1render.cpp: CGL is Mac OS X only - another platform needs its own context"
+//
+// ON CLASSIC MAC OS (`OMK_GL1_AGL`, the Carbon build, 2026-10-04) the context
+// is AGL's and the WINDOW's: Mac OS 9's OpenGL 1.2.1 has neither pbuffers nor
+// framebuffer objects, so the world is drawn into the window context's BACK
+// buffer, read back from there before the frontend presents (`gl1host.h`),
+// and the frontend then draws the composited frame over it and swaps. Every
+// call on that path is OpenGL 1.2 or AGL, which OS 9's `OpenGLLibrary` and
+// Tiger's CFM bridge both export under that one fragment name.
+#if defined(OMK_GL1_AGL)
+#  include <agl.h>
+#  include <gl.h>
+#elif defined(__APPLE__)
+#  define GL_SILENCE_DEPRECATION 1
+#  include <OpenGL/OpenGL.h>
+#  include <OpenGL/gl.h>
+#  include <OpenGL/glext.h>
+#else
+#  error "gl1render.cpp: CGL is Mac OS X only - another platform needs its own context"
 #endif
-#define GL_SILENCE_DEPRECATION 1
 
 #include "gl1render.h"
+#include "gl1host.h"
 
 #include "o3de/shimmer.h"
 #include "ui/surface.h"
-
-#include <OpenGL/OpenGL.h>
-#include <OpenGL/gl.h>
-#include <OpenGL/glext.h>
 
 #include <algorithm>
 #include <cmath>
@@ -71,14 +83,32 @@
 namespace omk {
 namespace {
 
+#if defined(OMK_GL1_AGL)
+// The fog's colour sum is EXT_secondary_color on OpenGL 1.2 (core only from
+// 1.4), and Mac OS 9's library exports the EXT names alone.
+#  define OMK_GL_COLOR_SUM GL_COLOR_SUM_EXT
+#  define OMK_GL_SECONDARY_ARRAY GL_SECONDARY_COLOR_ARRAY_EXT
+#  define omkSecondaryColorPointer glSecondaryColorPointerEXT
+using GlContext = AGLContext;
+GlContext currentContext() { return aglGetCurrentContext(); }
+void makeCurrent(GlContext c) { aglSetCurrentContext(c); }
+#else
+#  define OMK_GL_COLOR_SUM GL_COLOR_SUM
+#  define OMK_GL_SECONDARY_ARRAY GL_SECONDARY_COLOR_ARRAY
+#  define omkSecondaryColorPointer glSecondaryColorPointer
+using GlContext = CGLContextObj;
+GlContext currentContext() { return CGLGetCurrentContext(); }
+void makeCurrent(GlContext c) { CGLSetCurrentContext(c); }
+#endif
+
 // The caller's context out, ours in - and back on scope exit.
 struct Current {
-    CGLContextObj prev;
-    explicit Current(CGLContextObj ours) : prev(CGLGetCurrentContext()) {
-        if (prev != ours) CGLSetCurrentContext(ours);
+    GlContext prev;
+    explicit Current(GlContext ours) : prev(currentContext()) {
+        if (prev != ours) makeCurrent(ours);
     }
     ~Current() {
-        if (CGLGetCurrentContext() != prev) CGLSetCurrentContext(prev);
+        if (currentContext() != prev) makeCurrent(prev);
     }
 };
 
@@ -92,21 +122,37 @@ class Gl1Renderer final : public Renderer {
 public:
     ~Gl1Renderer() override {
         if (!ctx_) return;
+#if defined(OMK_GL1_AGL)
+        // the context is the frontend's, and it may have closed first
+        if (gl1AglContext() != ctx_) return;
+#endif
         {
             Current c(ctx_);
             if (!tex_.empty()) glDeleteTextures(static_cast<GLsizei>(tex_.size()), tex_.data());
+#if defined(OMK_GL1_AGL)
+            if (readTex_) glDeleteTextures(1, &readTex_);
+#else
             if (fbo_) glDeleteFramebuffersEXT(1, &fbo_);
             if (colour_) glDeleteRenderbuffersEXT(1, &colour_);
             if (depth_) glDeleteRenderbuffersEXT(1, &depth_);
+#endif
         }
+#if !defined(OMK_GL1_AGL)                    // the AGL context is the frontend's
         CGLDestroyContext(ctx_);
         if (pbuf_) CGLDestroyPBuffer(pbuf_);
+#endif
     }
 
     bool init(int w, int h) override {
         if (!ctx_ && !makeContext()) return false;
         Current c(ctx_);
         w_ = w; h_ = h;
+#if defined(OMK_GL1_AGL)
+        // the window's own back buffer, which is the window's size - the
+        // frame the viewer asks for (the display size)
+        glDrawBuffer(GL_BACK);
+        glReadBuffer(GL_BACK);
+#else
         if (!fbo_) glGenFramebuffersEXT(1, &fbo_);
         if (!colour_) glGenRenderbuffersEXT(1, &colour_);
         if (!depth_) glGenRenderbuffersEXT(1, &depth_);
@@ -127,6 +173,7 @@ public:
                 return false;
             }
         }
+#endif
         fb_ = Surface(w, h, 0);
         rgba_.assign(static_cast<std::size_t>(w) * static_cast<std::size_t>(h) * 4, 0);
         readDone_ = false;
@@ -182,7 +229,7 @@ public:
         cam.w = v.letterboxed() ? v.vw : w_;
         cam.h = v.letterboxed() ? v.vh : h_;
         flipX_ = cam.flipX;
-        glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fbo_);
+        bindTarget();
         glViewport(0, 0, w_, h_);
         glDisable(GL_SCISSOR_TEST);
         glClearColor(0, 0, 0, 1);
@@ -225,8 +272,16 @@ public:
         fogRGB_[1] = v.fogColour[1] / 255.0f;
         fogRGB_[2] = v.fogColour[2] / 255.0f;
         fogSum_ = fogRGB_[0] > 0 || fogRGB_[1] > 0 || fogRGB_[2] > 0;
-        if (fogSum_) { glEnable(GL_COLOR_SUM); glEnableClientState(GL_SECONDARY_COLOR_ARRAY); }
-        else { glDisable(GL_COLOR_SUM); glDisableClientState(GL_SECONDARY_COLOR_ARRAY); }
+        if (fogSum_ && !hasColourSum_) {
+            // a renderer without EXT_secondary_color (Mac OS 9's software
+            // one): the fog's colour is lost, its fade kept. The game's fog is
+            // BLACK (`docs/ASSETS.md`), so the shipped scenes never get here.
+            static bool told = false;
+            if (!told) { told = true; std::printf("gl1: no EXT_secondary_color - a coloured fog draws black\n"); }
+            fogSum_ = false;
+        }
+        if (fogSum_) { glEnable(OMK_GL_COLOR_SUM); glEnableClientState(OMK_GL_SECONDARY_ARRAY); }
+        else if (hasColourSum_) { glDisable(OMK_GL_COLOR_SUM); glDisableClientState(OMK_GL_SECONDARY_ARRAY); }
         glDisable(GL_CULL_FACE);              // culled on the CPU, the reference's rule
         glEnableClientState(GL_VERTEX_ARRAY);
         glEnableClientState(GL_COLOR_ARRAY);
@@ -361,7 +416,7 @@ public:
         glVertexPointer(4, GL_FLOAT, 0, pos_.data());
         glColorPointer(4, GL_UNSIGNED_BYTE, 0, col_.data());
         glTexCoordPointer(2, GL_FLOAT, 0, uv_.data());
-        if (fogSum_) glSecondaryColorPointer(3, GL_FLOAT, 0, fogc_.data());
+        if (fogSum_) omkSecondaryColorPointer(3, GL_FLOAT, 0, fogc_.data());
         glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(pos_.size() / 4));
     }
 
@@ -373,10 +428,17 @@ public:
     const Surface& readback() override {
         if (readDone_) return fb_;           // idempotent (renderer.h)
         Current c(ctx_);
-        glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fbo_);
+        bindTarget();
         glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        // the first read over a known pattern: a read that writes nothing
+        // then shows as 85 85 85, not as a black frame (the report below)
+        if (!toldRead_) std::memset(rgba_.data(), 0x55, rgba_.size());
         // bytes, not a packed type: endian-free on any Mac
+#if defined(OMK_GL1_AGL)
+        readWindow();
+#else
         glReadPixels(0, 0, w_, h_, GL_RGBA, GL_UNSIGNED_BYTE, rgba_.data());
+#endif
         // bottom-up rows into the top-down RGB565 frame, with the dither the
         // reference applies (`DITHERENABLE` 1 on both device arms)
         for (int y = 0; y < h_; ++y) {
@@ -388,6 +450,16 @@ public:
             }
         }
         readDone_ = true;
+        if (!toldRead_) {
+            // what the first read found, once: a black window is otherwise
+            // indistinguishable from a renderer that drew nothing
+            toldRead_ = true;
+            const unsigned char* m = rgba_.data() +
+                (static_cast<std::size_t>(h_ / 2) * w_ + static_cast<std::size_t>(w_ / 2)) * 4;
+            std::printf("gl1: first readback %dx%d, %ld triangles, GL error 0x%x, centre "
+                        "pixel %u %u %u\n", w_, h_, st_.triangles,
+                        static_cast<unsigned>(glGetError()), m[0], m[1], m[2]);
+        }
         return fb_;
     }
 
@@ -415,6 +487,73 @@ public:
     }
 
 private:
+#if defined(OMK_GL1_AGL)
+    // THE WINDOW'S BACK BUFFER, READ THROUGH A TEXTURE. `glReadPixels` from a
+    // window surface returns zeros on Tiger's emulated Radeon 9700 while the
+    // same frame draws correctly when swapped (2026-10-04, probed: a cleared
+    // red read back black, and with the composite skipped the street showed
+    // in the window); the copy into a texture and `glGetTexImage` go through
+    // texture memory instead. Both calls are OpenGL 1.1, so Mac OS 9 has them.
+    void readWindow() {
+        const GLsizei tw = static_cast<GLsizei>(nextPow2(static_cast<unsigned>(w_)));
+        const GLsizei th = static_cast<GLsizei>(nextPow2(static_cast<unsigned>(h_)));
+        if (!readTex_ || readTexW_ != tw || readTexH_ != th) {
+            if (!readTex_) glGenTextures(1, &readTex_);
+            glBindTexture(GL_TEXTURE_2D, readTex_);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, tw, th, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+            readTexW_ = tw; readTexH_ = th;
+            readBig_.assign(static_cast<std::size_t>(tw) * static_cast<std::size_t>(th) * 4, 0);
+        }
+        glBindTexture(GL_TEXTURE_2D, readTex_);
+        glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, w_, h_);
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, readBig_.data());
+        boundTex_ = ~0u;                     // the next draw binds its own
+        // the texture's rows are the back buffer's, bottom-up, at its stride
+        for (int y = 0; y < h_; ++y)
+            std::memcpy(rgba_.data() + static_cast<std::size_t>(y) * w_ * 4,
+                        readBig_.data() + static_cast<std::size_t>(y) * tw * 4,
+                        static_cast<std::size_t>(w_) * 4);
+    }
+    GLuint readTex_ = 0;
+    GLsizei readTexW_ = 0, readTexH_ = 0;
+    std::vector<unsigned char> readBig_;
+#endif
+
+    // Where the world is drawn and read from: the framebuffer object, or on
+    // classic Mac OS the window's back buffer (the frontend presents after).
+    void bindTarget() {
+#if defined(OMK_GL1_AGL)
+        glDrawBuffer(GL_BACK);
+        glReadBuffer(GL_BACK);
+#else
+        glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fbo_);
+#endif
+    }
+
+#if defined(OMK_GL1_AGL)
+    // The window's context, made by the frontend (`gl1host.h`); nothing to
+    // attach here, and no extension needed - the back buffer is the target.
+    bool makeContext() {
+        ctx_ = static_cast<GlContext>(gl1AglContext());
+        if (!ctx_) {
+            std::fprintf(stderr, "gl1: no AGL context on the window\n");
+            return false;
+        }
+        Current c(ctx_);
+        const char* ext = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
+        hasColourSum_ = ext && std::strstr(ext, "GL_EXT_secondary_color");
+        GLint vp[4] = {0, 0, 0, 0};
+        glGetIntegerv(GL_VIEWPORT, vp);      // the default: the drawable's size
+        std::printf("gl1: the window's drawable is %dx%d\n", static_cast<int>(vp[2]),
+                    static_cast<int>(vp[3]));
+        std::printf("gl1: %s, OpenGL %s, on the window's back buffer (AGL)\n",
+                    reinterpret_cast<const char*>(glGetString(GL_RENDERER)),
+                    reinterpret_cast<const char*>(glGetString(GL_VERSION)));
+        return true;
+    }
+#else
     // THE CONTEXT NEEDS A DRAWABLE ON TIGER. With none attached, Mac OS X
     // 10.4 draws nothing and `glReadPixels` writes nothing - not even a clear,
     // not even into a framebuffer object, on the Radeon and on Apple's own
@@ -465,6 +604,7 @@ private:
                     pbuf_ ? ", on a pbuffer" : "");
         return true;
     }
+#endif
 
     struct Vtx { float v[3]; float c[3]; float u, t; };
     static Vtx lerp(const Vtx& a, const Vtx& b, float t) {
@@ -529,8 +669,10 @@ private:
         stateValid_ = true;
     }
 
-    CGLContextObj ctx_ = nullptr;
+    GlContext ctx_ = nullptr;
+#if !defined(OMK_GL1_AGL)
     CGLPBufferObj pbuf_ = nullptr;
+#endif
     GLuint fbo_ = 0, colour_ = 0, depth_ = 0;
     int w_ = 0, h_ = 0;
     std::vector<GLuint> tex_;
@@ -539,7 +681,7 @@ private:
     bool flipX_ = false;
     Surface fb_{1, 1, 0};
     std::vector<unsigned char> rgba_;
-    bool readDone_ = false;
+    bool readDone_ = false, toldRead_ = false;
     RasterStats st_;
     // the state cache
     bool stateValid_ = false, cutout_ = false;
@@ -548,6 +690,7 @@ private:
     int fogKind_ = -1;
     float fogStart_ = 0, fogEnd_ = 0, fogRGB_[3]{};
     bool fogSum_ = false;
+    bool hasColourSum_ = true;   // EXT_secondary_color, asked on AGL (makeContext)
     unsigned boundTex_ = ~0u;
     // the scratch arrays, kept between draws (no allocation per frame)
     std::vector<float> pos_, uv_, fogc_;

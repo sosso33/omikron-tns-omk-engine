@@ -27265,6 +27265,10 @@ def c_engine_classic_build():
         collide is layout luck.
 
     Skipped without Retro68 (`$OMK_RETRO68`, or `retro68 =` in omk.conf).
+    **And OPENGL** (2026-10-04): with the 10.4u SDK's AGL headers and Mac OS
+    9's `OpenGLLibrary` on the tools volume, OMKPlay must import that fragment
+    (`aglSwapBuffers` in its loader section). Shown to fail with the CMake
+    condition forced off (OMKPlay built without GL while the inputs exist).
     Shown to fail (2026-10-03): a `std::ifstream` put back into
     `src/platform/json.cpp` (222 stream symbols); `kScxStride` made an
     `inline` variable again (weak objects without storage, red).
@@ -27304,9 +27308,23 @@ def c_engine_classic_build():
         print(f"        {a}: {len(syms)} symbols, {len(streams)} stream, "
               f"{len(weak0)} weak .bss objects without storage {weak0[:3]}")
         got.append((a, len(syms) > 1000, len(ents) > 1000, streams[:3], weak0[:4]))
-    return tuple(got), tuple((a, True, True, [], []) for a in apps), \
+    # OPENGL (2026-10-04): when the tools volume holds AGL's headers and Mac OS
+    # 9's OpenGLLibrary (the CMake defaults, beside Retro68), OMKPlay must
+    # IMPORT that fragment and call AGL - a build that fell back to the
+    # software reference without saying so would otherwise pass
+    tools = os.path.normpath(os.path.join(r68, "..", ".."))
+    glInputs = os.path.exists(os.path.join(tools, "sdk", "os9-opengl", "OpenGLLibrary")) and \
+        os.path.exists(os.path.join(tools, "sdk", "MacOSX10.4u.sdk", "System", "Library",
+                                    "Frameworks", "AGL.framework", "Headers", "agl.h"))
+    pef = open(os.path.join(eng, "build", "classic", "OMKPlay.APPL"), "rb").read()
+    glLinked = b"OpenGLLibrary" in pef and b"aglSwapBuffers" in pef
+    print(f"        OMKPlay: OpenGL inputs {'present' if glInputs else 'absent'}, "
+          f"OpenGLLibrary imported: {glLinked}")
+    got.append(("OpenGL", glInputs, glLinked))
+    return tuple(got), tuple((a, True, True, [], []) for a in apps) + (("OpenGL", glInputs, glInputs),), \
         "make classic builds OMKBoot and OMKPlay (symbol tables read); in each, no C++ stream " \
-        "code and no weak .bss object the linker left without storage"
+        "code and no weak .bss object the linker left without storage; and OMKPlay imports " \
+        "OpenGLLibrary (AGL) exactly when the tools volume has the inputs for it"
 
 
 def c_engine_texture_filter():
@@ -38409,6 +38427,11 @@ def c_licence_headers():
     playscene_off.cpp,printf_c99.cpp,classic_printf.h,xcoff_weak_storage.cpp}`
     and `src/ui/overlay.cpp` (2026-10-03), the Carbon frontend and the
     Retro68 workarounds (3d-iv).
+    **541 -> 542**: `backends/gl1/gl1host.h` (2026-10-04), the AGL context
+    the Carbon frontend lends the fixed-function backend.
+    **539 -> 541**: `backends/classic/heapcount.{h,cpp}` (2026-10-04), the
+    classic build's memory-budget counters.
+
     **537 -> 539**: `src/audio/hostmix.{h,cpp}` (2026-10-03), the frontends'
     shared mix, moved out of `sdlfront.cpp` for the Carbon frontend's audio.
     """
@@ -38440,7 +38463,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (539, [], 1, []), \
+           (542, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \

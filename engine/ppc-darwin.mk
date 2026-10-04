@@ -66,7 +66,10 @@ $(OUT)/%: $(OBJDIR)/tools/%.o $(SRCOBJS)
 # the last SDL2 that runs on 10.4 is a community port (alex-free's
 # panther-sdl2, Thomas Bernard's Tiger patches), built natively in Tiger with
 # Xcode 2.5 because its Cocoa half is Objective-C. Point SDL2_PREFIX at its
-# install (include/SDL2, lib/libSDL2.a):
+# install (include/SDL2, lib/libSDL2.a) - the one configured
+# `--disable-altivec` for a binary a G3 runs: our own objects are generic
+# PowerPC, and one `-maltivec` library makes the linker mark the whole
+# program ppc7400 (todo/handoff-classic-mac.md 4.5):
 #
 #     make -f ppc-darwin.mk SDL2_PREFIX=... play
 #

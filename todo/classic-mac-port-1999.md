@@ -312,6 +312,14 @@ The largest sites of that 136.8 MB, each with what replaces it:
 Every enhancement (Vulkan, SSAA, mapped shadows, per-pixel lighting,
 mipmaps) is out of the build at compile time.
 
+**Measured on Mac OS 9, 2026-10-04** (`engine/backends/classic/heapcount.*`):
+the same street start peaks at **79886 KB** of live C++ blocks in the 32-bit
+Carbon build - the 64-bit host's 136.8 MB is pointers and padding as much as
+data - and uses ~82 MB of the partition in all; Kay'l's apartment, 49741 KB.
+The partition is 128 MB preferred, 96 minimum (`omk-classic.r`). A 1999 G3
+shipped with 64 to 128 MB, so the street does not fit the low end yet: the
+table above is still the list of what would make it.
+
 #### 3b-i. How a body poses - read 2026-10-01
 
 [repo] **Mostly rigid, with no weights**: every corner is posed by exactly
@@ -440,8 +448,11 @@ port, alex-free's `panther-sdl2` (Thomas Bernard's Tiger patches) - built
 NATIVELY in Tiger with Xcode 2.5, because its Cocoa half is Objective-C and
 the cross-compiler has only C and C++; its static `libSDL2.a` then links
 with the cross-compiled game: `make -f ppc-darwin.mk SDL2_PREFIX=... play`.
-Every viewer file compiled against 2.0.3's headers unchanged. The binary is
-`ppc_7400` (G4): SDL was built with `-maltivec`, so a G3 would refuse it.
+Every viewer file compiled against 2.0.3's headers unchanged. The binary was
+`ppc_7400` (G4) at first - SDL's configure adds `-maltivec` everywhere - so a
+G3 would refuse it; since 2026-10-04 SDL is also built `--disable-altivec`
+(`sdl2-tiger-g3`, one guard patched) and the binary is generic `ppc`, its
+frame byte-identical to the G4 build's (`todo/handoff-classic-mac.md` 4.5).
 
 Launch it with `open` on an application bundle, not from a shell: a process
 started over SSH after a reboot is not in the desktop session, SDL gets no
