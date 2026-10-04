@@ -27528,7 +27528,9 @@ def c_engine_release_build():
     profiler, `OMK_INSTRUMENTS` forced off: 53 profiler symbols in
     development, none in release) - each scanned only where its toolchain is
     present, and skipped as such otherwise. Shown to fail: the classic
-    release option made not to define `OMK_PROFILE=0` (red).
+    release option made not to define `OMK_PROFILE=0` (red - as a LINK
+    failure: `heapcount.cpp` is left out while its calls, no longer
+    compiled away, remain; a build failure is a failure here, not a skip).
 
     Shown to fail (2026-10-04): `-DOMK_PROFILE=0` dropped from the release
     target, the release objects deleted first (red: 24 profiler symbols).

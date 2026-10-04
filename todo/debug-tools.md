@@ -126,8 +126,32 @@ cut: which code allocates what, which function takes the frame.
    (session tick, scripts, actors, pose, render submit, raster) - the "every
    function" the ask names, as
    deep as a measurement shows it is worth.
-7. ~~`make RELEASE=1` and its check~~ - done in step 3 (`make release`);
-   left: the same for the classic Mac and Vita builds.
+7. ~~`make RELEASE=1` and its check~~ - done in step 3 (`make release`),
+   and **for the classic Mac and the Vita 2026-10-04** (`eaa6c55`): `make
+   classic-release` (no profiler, no `heapcount`) and `make vita-release`
+   (no profiler, instruments off), each scanned by `engine: release build`
+   where its toolchain is present.
+
+## Done - what there is, in one place
+
+| what | where |
+|---|---|
+| record a run | `omk-play ... --profile run.prof` |
+| read it | `python3 tools/omkprof.py run.prof` (summary), `--frame N`, `--slowest K` |
+| the page | `python3 tools/omkprof.py run.prof --serve 8753`: frame graph, call tree, sections, memory and GPU memory by category, pause / step / resume / snapshot |
+| steer a game from a shell | `python3 tools/omkprof.py run.prof --ctl pause` (`resume`, `step N`, `snapshot`) |
+| time a scope | `OMK_ZONE("name")` - also names the memory allocated in it |
+| name memory | `OMK_MEM_TAG("name")` |
+| report GPU memory | `OMK_GPU_ALLOC(tag, key, bytes)` / `OMK_GPU_FREE(key)` |
+| build without any of it | `make release`, `make classic-release`, `make vita-release` (`OMK_PROFILE=0`) |
+| the checks | `engine: profiler`, `profiler control`, `profiler gpu`, `release build`, `profiler page` |
+
+What it already found, for the work it was built for: the street's software
+frame is the rasterizer (77 submits, ~1 ms each); `submit` copies each
+batch's corners into a new `Geometry`; ~1.2 MB of geometry churns every
+frame; and the street's 69.7 MB (64-bit, M1) by owner - textures 14.1,
+geometry 12.0, scripted motion 9.2, collision 7.2, set loading 3.4,
+sounds 2.8 - the list the 64 MB classic budget will be cut from.
 
 Nothing here is a reading of the original; it is this project's own
 instrument (PORTING B6), and its one obligation is to change NOTHING the

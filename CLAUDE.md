@@ -147,7 +147,7 @@ One line per directory, then the files big enough to need a warning:
 | tools/omkweb.html (104 KB), omkcut.html (60), omkui.html (16), stagecheck.js (20) | large | the viewer clients; only for viewer work |
 | tools/sim/ (7 modules, ~3.8k lines) | medium | the Python simulator the engine is compared against: vm, world, scene, dialogue, actor, ui, run |
 | the rest of tools/*.py | 4–24 KB each | one reader/one job each, named for it; §2 lists the ones with findings behind them |
-| tools/omkprof.py, omkprof.html, profcheck.js | small | the PROFILER's external side: `omk-play --profile run.prof`, then `omkprof.py run.prof` (summary, `--frame N`), `--serve PORT` (the page: frame graph, call tree, pause / step / snapshot), `--ctl CMD` |
+| tools/omkprof.py, omkprof.html, profcheck.js | small | the PROFILER's external side: `omk-play --profile run.prof`, then `omkprof.py run.prof` (summary, `--frame N`), `--serve PORT` (the page: frame graph, call tree, memory and GPU memory by category, pause / step / snapshot), `--ctl CMD`. `todo/debug-tools.md` is the whole of it; `make release` / `classic-release` / `vita-release` build without any |
 | tools/_*.py | | one-shot scratch from earlier passes; ignore |
 
 **Snapshots and scratch — do not read**
