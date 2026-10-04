@@ -175,7 +175,14 @@ file off the image.
 2. ~~**The engine on OS 9, headless**~~ (`aa7aa43`) and ~~**the Carbon
    frontend**~~ (`e08bc23`) - **DONE 2026-10-03**, above. **NEXT, in order**:
    (a) PLAY it by hand on Tiger and OS 9 - keys, the menu, walking; the key
-   map is untested by a person; (b) ~~Sound Manager audio~~ DONE (`8b536ad`) -
+   map is untested by a person; **2026-10-04, first look by the reader on Tiger**: the SDL
+   build through the GL1 backend booted through the films toward the menu
+   (rebuilt that day, the previous binary kept as `~/omk/bin/omk-play.1003`),
+   and the CARBON `OMKPlay` at the street start (`~/omk/cplay/omk.args`; the
+   boot's args are `omk.args.boot`) - "carbon build is running correctly":
+   25 bodies, 200 walkers, adventure mode, Sound Manager audio, 67 frames in
+   35 s (~2 fps, the software renderer on the emulated G4). Keys and walking
+   not yet reported on; (b) ~~Sound Manager audio~~ DONE (`8b536ad`) -
    left: the ring is six 100 ms buffers refilled between frames, so a frame
    slower than 0.6 s underruns (OS 9 under emulation); a bigger ring costs
    the interface blips latency, so measure on a real G3 before choosing;
