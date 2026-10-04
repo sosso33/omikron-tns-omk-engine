@@ -316,9 +316,11 @@ mipmaps) is out of the build at compile time.
 the same street start peaks at **79886 KB** of live C++ blocks in the 32-bit
 Carbon build - the 64-bit host's 136.8 MB is pointers and padding as much as
 data - and uses ~82 MB of the partition in all; Kay'l's apartment, 49741 KB.
-The partition is 128 MB preferred, 96 minimum (`omk-classic.r`). A 1999 G3
-shipped with 64 to 128 MB, so the street does not fit the low end yet: the
-table above is still the list of what would make it.
+**The budget is 64 MB, and it is the goal** (the reader, 2026-10-04): the
+original runs correctly in 32 MB, so 64 is already twice its requirement,
+and the street's ~82 MB is ~18 MB of the PORT'S overshoot - the table above
+is the list of what takes it back. The partition's minimum stays 64 MB; the
+preferred 96 lets today's code reach the street meanwhile (`omk-classic.r`).
 
 #### 3b-i. How a body poses - read 2026-10-01
 

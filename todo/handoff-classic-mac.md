@@ -253,10 +253,14 @@ file off the image.
    Kay'l's apartment (`games-resto.bin` slot 0): **49741 KB**. The
    conversation itself (402, ~600 frames in) was NOT reached: twice the run
    on Tiger ended early with exit 0 and no reason given (the frontend now
-   prints each quit's cause), and OS 9 runs ~5 s a frame. The partition is
-   now **128 MB preferred, 96 MB minimum** (was 192 / 64, a guess - 64 would
-   not hold the street). Against `classic-mac-port-1999.md` 3b's 136.8 MB on
-   a 64-bit host, the 32-bit build holds ~80;
+   prints each quit's cause), and OS 9 runs ~5 s a frame. **THE BUDGET IS
+   64 MB, A GOAL** (the reader, 2026-10-04: "the original game works
+   correctly with 32MB, we already ask for twice the requirement of the
+   original") - so the street is **~18 MB OVER**, and that is the code's to
+   fix, never the budget's: `classic-mac-port-1999.md` 3b's table is the
+   list. The partition is 96 MB preferred (what today's code needs to reach
+   the street), **64 MB minimum**. Against 3b's 136.8 MB on a 64-bit host,
+   the 32-bit build holds ~80;
    `%zu` is handled (`classic_printf.h`), audio and the films work. `DataFs` and no threads
    are DONE (2 above); with `OMK_THREADS 0` the voice read-ahead already
    runs on its frame, so "ticked loading" is a speed question, not a gap.
