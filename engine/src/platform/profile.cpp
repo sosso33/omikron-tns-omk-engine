@@ -8,13 +8,140 @@
 #include "platform/threads.h"
 
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <new>
 #include <unordered_map>
 #include <vector>
 #if OMK_THREADS
+#  include <atomic>
+#  include <mutex>
 #  include <thread>
 #endif
 
+// ---- THE MEMORY COUNTERS (step 4) -------------------------------------------
+//
+// Outside `omk::prof` so `operator new` below can reach them with nothing
+// constructed: every one is constant-initialised (it runs before `main`).
+namespace omk::prof::mem {
+
+constexpr int kTags = 128;
+#if OMK_THREADS
+using Count = std::atomic<long long>;
+thread_local int t_tag = 0;
+std::mutex g_tagLock;
+#else
+using Count = long long;
+int t_tag = 0;
+#endif
+Count g_live[kTags] = {};
+Count g_blocks[kTags] = {};
+Count g_total{0}, g_peak{0}, g_framePeak{0}, g_totalBlocks{0};
+const char* g_names[kTags] = {"untagged"};
+int g_count = 1;
+
+inline void raise(Count& peak, long long v) {
+#if OMK_THREADS
+    long long cur = peak.load(std::memory_order_relaxed);
+    while (v > cur && !peak.compare_exchange_weak(cur, v, std::memory_order_relaxed)) {}
+#else
+    if (v > peak) peak = v;
+#endif
+}
+
+inline void account(int tag, long long bytes, long blocks) {
+    g_live[tag] += bytes;
+    g_blocks[tag] += blocks;
+    const long long now = (g_total += bytes);
+    g_totalBlocks += blocks;
+    if (bytes > 0) { raise(g_peak, now); raise(g_framePeak, now); }
+}
+
+// The header before every block: its size and its category, 16 bytes so the
+// block keeps `malloc`'s alignment.
+struct Header { std::size_t size; std::uint32_t tag; std::uint32_t magic; };
+constexpr std::size_t kHeader = 16;
+static_assert(sizeof(Header) <= kHeader, "the header fits its 16 bytes");
+constexpr std::uint32_t kMagic = 0x4F4D4B6Du;   // "OMKm"
+
+void* counted(std::size_t n) {
+    auto* p = static_cast<unsigned char*>(std::malloc(n + kHeader));
+    if (!p) {
+        // A REFUSED ALLOCATION SAYS ITS SIZE - the Vita's own `operator new`
+        // did (vita_main.cpp, a city load dead at 86 MB of 192); this one
+        // takes its place in a profiling build, so it says it too
+        std::printf("new: %lu bytes REFUSED - %ld KB live in %ld counted blocks\n",
+                    static_cast<unsigned long>(n), static_cast<long>(static_cast<long long>(g_total) / 1024),
+                    static_cast<long>(static_cast<long long>(g_totalBlocks)));
+        throw std::bad_alloc();
+    }
+    const int tag = t_tag;
+    auto* h = reinterpret_cast<Header*>(p);
+    h->size = n;
+    h->tag = static_cast<std::uint32_t>(tag);
+    h->magic = kMagic;
+    account(tag, static_cast<long long>(n), 1);
+    return p + kHeader;
+}
+
+void uncounted(void* q) {
+    if (!q) return;
+    auto* p = static_cast<unsigned char*>(q) - kHeader;
+    auto* h = reinterpret_cast<Header*>(p);
+    if (h->magic == kMagic && h->tag < static_cast<std::uint32_t>(kTags))
+        account(static_cast<int>(h->tag), -static_cast<long long>(h->size), -1);
+    h->magic = 0;
+    std::free(p);
+}
+
+}  // namespace omk::prof::mem
+
+// The standard's replaceable allocation functions: defined here, they take
+// the place of the library's in every program linking the engine - a
+// PROFILING build only (`OMK_PROFILE=0` has none of this file).
+void* operator new(std::size_t n) { return omk::prof::mem::counted(n); }
+void* operator new[](std::size_t n) { return omk::prof::mem::counted(n); }
+void* operator new(std::size_t n, const std::nothrow_t&) noexcept {
+    try { return omk::prof::mem::counted(n); } catch (...) { return nullptr; }
+}
+void* operator new[](std::size_t n, const std::nothrow_t&) noexcept {
+    try { return omk::prof::mem::counted(n); } catch (...) { return nullptr; }
+}
+void operator delete(void* p) noexcept { omk::prof::mem::uncounted(p); }
+void operator delete[](void* p) noexcept { omk::prof::mem::uncounted(p); }
+void operator delete(void* p, std::size_t) noexcept { omk::prof::mem::uncounted(p); }
+void operator delete[](void* p, std::size_t) noexcept { omk::prof::mem::uncounted(p); }
+void operator delete(void* p, const std::nothrow_t&) noexcept { omk::prof::mem::uncounted(p); }
+void operator delete[](void* p, const std::nothrow_t&) noexcept { omk::prof::mem::uncounted(p); }
+
 namespace omk::prof {
+
+int memTag(const char* name) {
+    using namespace mem;
+#if OMK_THREADS
+    std::lock_guard<std::mutex> lk(g_tagLock);
+#endif
+    for (int i = 0; i < g_count; ++i)
+        if (g_names[i] == name || std::strcmp(g_names[i], name) == 0) return i;
+    if (g_count >= kTags) return 0;              // full: counted as untagged
+    g_names[g_count] = name;
+    return g_count++;
+}
+
+int memTagSwap(int id) {
+    const int prev = mem::t_tag;
+    mem::t_tag = id;
+    return prev;
+}
+
+MemTotals memTotals() {
+    MemTotals t;
+    t.live = mem::g_total;
+    t.peak = mem::g_peak;
+    t.blocks = static_cast<long>(mem::g_totalBlocks);
+    return t;
+}
+
 namespace {
 
 constexpr std::size_t kZones = 16384;     // a frame's zones; past it, counted as dropped
@@ -45,6 +172,7 @@ struct State {
     bool snapOwed = false;
     long snaps = 0;
     std::string told;                   // the last state written
+    int tagsWritten = 0;                // TAG chunks already in the capture
 };
 
 State& st() {                            // made on first use, never destroyed
@@ -119,6 +247,7 @@ bool open(const std::string& path) {
     s.snapOwed = false;
     s.snaps = 0;
     s.told.clear();
+    s.tagsWritten = 0;
     // a control file from an earlier run is not a command to this one
     if (std::FILE* c = std::fopen(hostPath(path + ".ctl").c_str(), "r")) {
         long q = -1;
@@ -176,6 +305,7 @@ void section(const char* name, std::uint64_t t0, std::uint64_t t1) {
 
 void beginFrame(long frame) {
     if (!g_on) return;
+    mem::g_framePeak = static_cast<long long>(mem::g_total);   // the frame's own peak from here
     State& s = st();
     s.frame = frame;
     s.zones.clear();
@@ -209,6 +339,33 @@ void endFrame() {
         put32(us((z.t1 >= z.t0 ? z.t1 : z.t0) - z.t0));
     }
     endChunk(at);
+    // THE MEMORY at the frame's end, every category that ever held a block
+    {
+        const int n = mem::g_count;
+        for (; s.tagsWritten < n; ++s.tagsWritten) {
+            const std::size_t t = beginChunk(4);
+            put32(static_cast<std::uint32_t>(s.tagsWritten));
+            for (const char* p = mem::g_names[s.tagsWritten]; *p; ++p) put8(static_cast<unsigned char>(*p));
+            endChunk(t);
+        }
+        const std::size_t m = beginChunk(3);
+        put32(static_cast<std::uint32_t>(s.frame));
+        put64(static_cast<std::uint64_t>(static_cast<long long>(mem::g_total)));
+        put64(static_cast<std::uint64_t>(static_cast<long long>(mem::g_framePeak)));
+        put32(static_cast<std::uint32_t>(static_cast<long long>(mem::g_totalBlocks)));
+        int used = 0;
+        for (int i = 0; i < n; ++i)
+            if (static_cast<long long>(mem::g_blocks[i]) != 0) ++used;
+        put32(static_cast<std::uint32_t>(used));
+        for (int i = 0; i < n; ++i) {
+            const long long b = mem::g_blocks[i];
+            if (b == 0) continue;
+            put32(static_cast<std::uint32_t>(i));
+            put64(static_cast<std::uint64_t>(static_cast<long long>(mem::g_live[i])));
+            put32(static_cast<std::uint32_t>(b));
+        }
+        endChunk(m);
+    }
     std::fwrite(s.out.data(), 1, s.out.size(), s.file);
     std::fflush(s.file);                    // a live reader sees each frame as it ends
     s.out.clear();

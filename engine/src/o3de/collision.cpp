@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "o3de/collision.h"
+#include "platform/profile.h"
 
 #include <algorithm>
 #include <cmath>
@@ -9,6 +10,7 @@ namespace omk {
 
 TriangleSoup collisionSoup(std::span<const std::byte> d, SoupKind kind,
                            std::vector<int>* meshOf) {
+    OMK_MEM_TAG("collision");   // the profiler's category (todo/debug-tools.md 4)
     TriangleSoup out;
     if (meshOf) meshOf->clear();
     int curMesh = -1;
@@ -373,6 +375,10 @@ SoupGrid buildOver(const TriangleSoup& tris, double cell, ForEach forEach) {
 
 SoupGrid buildSoupGrid(const TriangleSoup& tris, double cell,
                        const std::vector<std::uint8_t>* include) {
+    // the profiler's category (todo/debug-tools.md 4) - here and not in the
+    // template `buildOver`: a static local in a template is a WEAK object,
+    // which Retro68's linker can leave without storage (PORTING A10)
+    OMK_MEM_TAG("collision grids");
     const std::size_t n = tris.size() / 9;
     return buildOver(tris, cell, [&](auto&& f) {
         for (std::size_t t = 0; t < n; ++t)
@@ -382,6 +388,7 @@ SoupGrid buildSoupGrid(const TriangleSoup& tris, double cell,
 
 SoupGrid buildSoupGrid(const TriangleSoup& tris, double cell,
                        std::span<const std::uint32_t> ids) {
+    OMK_MEM_TAG("collision grids");   // the profiler's category (see above)
     const std::size_t n = tris.size() / 9;
     return buildOver(tris, cell, [&](auto&& f) {
         for (const std::uint32_t t : ids)

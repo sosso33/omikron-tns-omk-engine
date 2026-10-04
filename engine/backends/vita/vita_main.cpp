@@ -183,8 +183,14 @@ int main(int, char**) {
 
 // A REFUSED ALLOCATION SAYS ITS SIZE. The city's load died of `bad_alloc` with
 // 86 MB in use of 192 (console log 2026-09-18) - so one request, not the sum,
-// and nothing said which. Global `operator new` on the Vita build only.
+// and nothing said which. Global `operator new` on the Vita build only -
+// and only in a RELEASE build (`OMK_PROFILE=0`): a profiling build has the
+// profiler's own (`platform/profile.cpp`), which counts every block by
+// category and says the same of a refused one, and two definitions would not
+// link (2026-10-04).
+#include "platform/profile.h"
 #include <new>
+#if !OMK_PROFILE
 void* operator new(std::size_t n) {
     if (void* p = std::malloc(n ? n : 1)) return p;
     const struct mallinfo mi = mallinfo();
@@ -197,3 +203,4 @@ void operator delete(void* p) noexcept { std::free(p); }
 void operator delete[](void* p) noexcept { std::free(p); }
 void operator delete(void* p, std::size_t) noexcept { std::free(p); }
 void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
+#endif

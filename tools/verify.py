@@ -27221,9 +27221,14 @@ def c_profiler_page():
             p += struct.pack("<IHHII", nid, 0, 1, s0, du)
         return chunk(2, p)
     out += frame(-1, 5000, [(0, 0, 0, 5000), (1, 1, 0, 4000)], [])
+    # the memory categories (TAG) and each frame's memory (MEM, after its FRAME)
+    for i, n in enumerate(["untagged", "textures"]):
+        out += chunk(4, struct.pack("<I", i) + n.encode())
     for no in (0, 1):
         out += frame(no, 20000, [(0, 0, 0, 20000), (2, 1, 0, 3000), (3, 1, 3000, 16000),
                                  (4, 2, 4000, 10000)], [(5, 0, 19000)])
+        out += chunk(3, struct.pack("<iQQII", no, 3 << 20, 4 << 20, 30, 2) +
+                     struct.pack("<IQI", 0, 1 << 20, 10) + struct.pack("<IQI", 1, 2 << 20, 20))
     open(cap, "wb").write(out)
     # the game's side of the control, as profile.h writes it: a state and a
     # 2x2 snapshot (red, green / blue, white)
@@ -27245,6 +27250,7 @@ def c_profiler_page():
         fr = get("/api/prof/frame?i=1")
         zs = get("/api/prof/zones")
         world = next((k for k in fr["tree"]["kids"] if k["name"] == "world"), None) if fr else None
+        mem = (fl and fl["frames"][1][4:], fr and fr["mem"] and fr["mem"]["tags"])
         gs = get("/api/prof/state")
         try:
             png = urllib.request.urlopen("http://127.0.0.1:%d/api/prof/snapshot.png" % port).read()
@@ -27256,7 +27262,7 @@ def c_profiler_page():
             ctl = open(cap + ".ctl").read().split()[1:]
         except OSError:
             ctl = None
-        ctlApi = (gs, png[:8] == b"\x89PNG\r\n\x1a\n", len(png) > 60, ctl)
+        ctlApi = (gs, png[:8] == b"\x89PNG\r\n\x1a\n", len(png) > 60, ctl, mem)
         api = (fl and fl["count"], fl and [f[1] for f in fl["frames"]],
                fr and [k["name"] for k in fr["tree"]["kids"]], world and (world["dur"], world["self"]),
                fr and len(fr["sections"]),
@@ -27274,13 +27280,15 @@ def c_profiler_page():
                 d = json.loads(r.stdout.strip().splitlines()[-1])
             except (ValueError, IndexError):
                 d = {"error": (r.stdout + r.stderr)[-300:]}
-            page = (d.get("frames"), d.get("tree"), d.get("sections"), d.get("zones"), d.get("error"))
+            page = (d.get("frames"), d.get("tree"), d.get("sections"), d.get("zones"),
+                    d.get("memtags"), d.get("error"))
     finally:
         srv.terminate()
         shutil.rmtree(tmp, ignore_errors=True)
     want_api = (3, [-1, 0, 1], ["input", "world"], (16000, 6000), 1, [("world", 6000), ("submit", 10000)][::-1])
-    want_page = (3, 5, 2, 5, None) if node else ("node absent",)
-    want_ctl = ({"state": "paused", "frame": 1, "snap": 3}, True, True, ["step", "4"])
+    want_page = (3, 5, 2, 5, 3, None) if node else ("node absent",)
+    want_ctl = ({"state": "paused", "frame": 1, "snap": 3}, True, True, ["step", "4"],
+                ([3 << 20, 4 << 20], [["textures", 2 << 20, 20], ["untagged", 1 << 20, 10]]))
     return (api, ctlApi, page), (want_api, want_ctl, want_page), \
         "a capture written to profile.h's format: the server lists the setup and both " \
         "frames, nests a frame's zones (world 16 ms, 6 ms of it its own), keeps the " \
@@ -27304,10 +27312,19 @@ def c_engine_profiler():
       * **profiling changes no pixel**: the 30th frame dumped with and without
         `--profile` is byte-identical.
 
+    **And the memory (step 4)**: every frame carries its categories, which sum
+    EXACTLY to the live total in bytes and in blocks; the frame's peak is
+    never under its live; the two largest tagged owners, `textures` and
+    `geometry`, hold over 5 MB each in the street; and the street at rest
+    grows by less than 2 MB over frames 15..29.
+
     Shown to fail (2026-10-04): `leave()` made to record no end - every zone
     0 us long, the world's time 0 (red); and the world phase skipped while
     profiling (`playframe.cpp`) - the two dumps differ (red). (A `std::rand`
     in the probe would NOT show it: the game draws from its own generators.)
+    The memory: a free that does not subtract (red: the street "grows" by
+    every frame's transient buffers); every block filed as untagged (red:
+    no textures, no geometry).
     """
     import subprocess, tempfile, shutil
     sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -27350,17 +27367,35 @@ def c_engine_profiler():
                 nested += 1
         dropped = sum(f["dropped"] for f in frames)
         same = len(dumps[0]) == 640 * 480 * 2 and dumps[0] == dumps[1]
+        # THE MEMORY (step 4): every frame carries it; the categories add up to
+        # the live total, bytes and blocks; the peak is never under it; the
+        # tagged owners hold real memory; and the street at rest does not grow
+        mems = [f["mem"] for f in frames if f["frame"] >= 0]
+        memAll = len(mems) == 30 and all(mems)
+        sums = memAll and all(sum(t[1] for t in m["tags"]) == m["live"] and
+                              sum(t[2] for t in m["tags"]) == m["blocks"] and
+                              m["peak"] >= m["live"] for m in mems)
+        last = mems[-1] if memAll else {"tags": [], "live": 0}
+        byTag = {t[0]: t[1] for t in last["tags"]}
+        owners = byTag.get("textures", 0) > 5 << 20 and byTag.get("geometry", 0) > 5 << 20
+        growth = (mems[-1]["live"] - mems[15]["live"]) if memAll else -1
+        print("        memory at frame 29: %.1f MB live; textures %.1f, geometry %.1f MB; "
+              "frames 15..29 grew %+d KB" % (last["live"] / 1048576.0, byTag.get("textures", 0) / 1048576.0,
+                                            byTag.get("geometry", 0) / 1048576.0, growth // 1024))
         worldMs = round(sorted(worldUs)[len(worldUs) // 2] / 1000.0) if worldUs else 0
         print("        %d frames (%d..%d), median world %.1f ms, dumps %d / %d bytes" % (
             len(frames), min(nums), max(nums), worldMs, len(dumps[0]), len(dumps[1])))
         got = (nums == list(range(-1, 30)), rooted == len(frames), ordered == 30,
-               nested == len(frames), dropped, worldMs > 0, same)
+               nested == len(frames), dropped, worldMs > 0, same,
+               memAll, sums, owners, 0 <= growth < 2 << 20)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    return got, (True, True, True, True, 0, True, True), \
+    return got, (True, True, True, True, 0, True, True, True, True, True, True), \
         "the capture: the setup and frames 0..29, each rooted at `frame` with the six " \
         "phases in order, no child longer than its parent, nothing dropped, the world " \
-        "phase holding real time; and the frame dumped with and without --profile identical"
+        "phase holding real time; the frame dumped with and without --profile identical; " \
+        "and the memory: in every frame, its categories summing to the live total, " \
+        "textures and geometry over 5 MB each, and no growth over the street at rest"
 
 
 def c_engine_profiler_control():

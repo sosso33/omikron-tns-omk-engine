@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "formats/tex3dt.h"
+#include "platform/profile.h"
 
 #include "formats/mesh3do.h"
 
@@ -11,6 +12,7 @@ namespace omk {
 
 std::vector<std::uint8_t> decodeImage(std::span<const std::byte> data,
                                       std::size_t want, bool& exact) {
+    OMK_MEM_TAG("textures");   // the profiler's category (todo/debug-tools.md 4)
     std::vector<std::uint8_t> out;
     out.reserve(want);
 
@@ -85,6 +87,7 @@ std::vector<std::uint8_t> decodeImage(std::span<const std::byte> data,
 
 std::vector<Texture> textures(std::span<const std::byte> d,
                               std::span<const std::byte> t) {
+    OMK_MEM_TAG("textures");   // the profiler's category (todo/debug-tools.md 4)
     std::vector<Texture> out;
     const auto header = readHeader(d);
     if (!header) return out;

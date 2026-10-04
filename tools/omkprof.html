@@ -30,6 +30,7 @@ main { padding: 0 16px 24px; display: grid; gap: 12px; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px; }
 .panel h2 { font-size: 13px; margin: 0 0 8px; }
 #graph { width: 100%; height: 150px; display: block; cursor: crosshair; }
+#memgraph { width: 100%; height: 110px; display: block; cursor: crosshair; }
 .row { display: grid; grid-template-columns: minmax(0, 1fr) 90px 90px 70px; gap: 8px;
        padding: 1px 0; align-items: center; }
 .row.head { color: var(--dim); border-bottom: 1px solid var(--line); margin-bottom: 4px; }
@@ -70,9 +71,16 @@ button { font: inherit; padding: 2px 8px; }
     <canvas id="graph"></canvas>
     <div id="hover" class="dim">&nbsp;</div>
   </div>
+  <div class="panel"><h2>Memory <span class="dim">(MB of live C++ blocks at each frame's end, and the frame's peak)</span></h2>
+    <canvas id="memgraph"></canvas>
+    <div id="memhover" class="dim">&nbsp;</div>
+  </div>
   <div class="cols">
     <div class="panel"><h2 id="ftitle">Frame</h2><div id="tree"></div></div>
-    <div class="panel"><h2>Sections <span class="dim">(the viewer's marks: a flat partition of the frame)</span></h2><div id="sections"></div></div>
+    <div>
+      <div class="panel"><h2 id="mtitle">Memory at the frame</h2><div id="memtags"></div></div>
+      <div class="panel" style="margin-top:12px"><h2>Sections <span class="dim">(the viewer's marks: a flat partition of the frame)</span></h2><div id="sections"></div></div>
+    </div>
   </div>
   <div class="panel"><h2>Zones over the capture <span class="dim">(mean per frame, by self time)</span></h2><div id="zones"></div></div>
 </main>
@@ -110,6 +118,7 @@ async function pollOnce() {
     if (d.frames.length) {
       frames = frames.concat(d.frames);
       drawGraph();
+      drawMemGraph();
       stats();
       if (sel < 0 || (followTail && $("live").checked)) select(lastPlayFrame());
       loadZones();
@@ -171,6 +180,91 @@ function drawGraph() {
   }
 }
 
+// THE MEMORY GRAPH: live MB at each frame's end (the line) and the frame's
+// own peak (the band above it, a load's transient buffers); the setup left out.
+function drawMemGraph() {
+  const c = $("memgraph");
+  const dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth, h = c.clientHeight;
+  c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+  const g = c.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  const play = frames.filter(f => f[1] >= 0 && f[4] >= 0);
+  if (!play.length) return;
+  const css = getComputedStyle(document.documentElement);
+  const top = Math.max(...play.map(f => f[5])) * 1.08 || 1;
+  const x = k => play.length < 2 ? 0 : k * (w - 1) / (play.length - 1);
+  const y = b => h - (b / top) * (h - 4);
+  g.fillStyle = css.getPropertyValue("--bar2");
+  g.beginPath(); g.moveTo(x(0), h);
+  play.forEach((f, k) => g.lineTo(x(k), y(f[5])));
+  g.lineTo(x(play.length - 1), h); g.closePath(); g.fill();
+  g.strokeStyle = css.getPropertyValue("--bar");
+  g.lineWidth = 1.5;
+  g.beginPath();
+  play.forEach((f, k) => (k ? g.lineTo(x(k), y(f[4])) : g.moveTo(x(k), y(f[4]))));
+  g.stroke();
+  // the classic Mac budget (64 MB, todo/classic-mac-port-1999.md 3b) when in range
+  const budget = 64 * 1048576;
+  if (budget < top) {
+    g.strokeStyle = css.getPropertyValue("--budget");
+    g.setLineDash([4, 3]);
+    g.beginPath(); g.moveTo(0, y(budget)); g.lineTo(w, y(budget)); g.stroke();
+    g.setLineDash([]);
+  }
+  if (sel >= 0 && frames[sel] && frames[sel][1] >= 0) {
+    const k = play.indexOf(frames[sel]);
+    if (k >= 0) {
+      g.strokeStyle = css.getPropertyValue("--sel");
+      g.beginPath(); g.moveTo(x(k), 0); g.lineTo(x(k), h); g.stroke();
+    }
+  }
+}
+
+$("memgraph").addEventListener("click", ev => {
+  const play = frames.filter(f => f[1] >= 0 && f[4] >= 0);
+  if (!play.length) return;
+  const k = Math.max(0, Math.min(play.length - 1, Math.round(ev.offsetX / $("memgraph").clientWidth * (play.length - 1))));
+  const i = frames.indexOf(play[k]);
+  followTail = i === lastPlayFrame();
+  select(i);
+});
+$("memgraph").addEventListener("mousemove", ev => {
+  const play = frames.filter(f => f[1] >= 0 && f[4] >= 0);
+  if (!play.length) return;
+  const k = Math.max(0, Math.min(play.length - 1, Math.round(ev.offsetX / $("memgraph").clientWidth * (play.length - 1))));
+  const f = play[k];
+  $("memhover").textContent = "frame " + f[1] + ": " + mb(f[4]) + " MB live, peak " + mb(f[5]) + " MB";
+});
+
+const mb = b => (b / 1048576).toFixed(1);
+
+function renderMem(m) {
+  const box = $("memtags");
+  box.textContent = "";
+  if (!m) { $("mtitle").textContent = "Memory at the frame (none recorded)"; return; }
+  $("mtitle").textContent = "Memory at the frame - " + mb(m.live) + " MB in " + m.blocks + " blocks (peak " + mb(m.peak) + ")";
+  box.appendChild(headRow(["category", "MB", "blocks", "% live"]));
+  for (const [name, bytes, blocks] of m.tags) {
+    if (bytes < 1024) continue;
+    const row = document.createElement("div");
+    row.className = "row";
+    const n = document.createElement("div");
+    n.className = "name"; n.textContent = name;
+    row.appendChild(n);
+    row.appendChild(numCell(mb(bytes)));
+    row.appendChild(numCell(String(blocks)));
+    const bar = document.createElement("div");
+    bar.className = "barcell";
+    const s = document.createElement("span");
+    s.style.width = Math.min(100, 100 * bytes / Math.max(1, m.live)) + "%";
+    bar.appendChild(s);
+    row.appendChild(bar);
+    box.appendChild(row);
+  }
+}
+
 function frameAt(ev) {
   const c = $("graph");
   const play = frames.filter(f => f[1] >= 0);
@@ -203,6 +297,8 @@ async function select(i) {
     (d.dropped ? " (" + d.dropped + " zones dropped)" : "");
   renderTree(d.tree, d.dur);
   renderSections(d.sections, d.dur);
+  renderMem(d.mem);
+  drawMemGraph();
 }
 
 // THE TREE: each zone's total and self time, a bar of its share of the
@@ -333,7 +429,7 @@ $("bStep10").addEventListener("click", () => command("step", 10));
 $("bResume").addEventListener("click", () => command("resume"));
 $("bSnap").addEventListener("click", () => command("snapshot"));
 
-window.addEventListener("resize", drawGraph);
+window.addEventListener("resize", () => { drawGraph(); drawMemGraph(); });
 poll();
 gameState();
 setInterval(() => { if ($("live").checked) poll(); gameState(); }, 1000);

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "o3de/geom3do.h"
+#include "platform/profile.h"
 
 #include <cmath>
 #include <cstddef>
@@ -83,6 +84,7 @@ struct Resolved {
 }  // namespace
 
 Geometry buildGeometry(std::span<const std::byte> d, DrawFilter filter) {
+    OMK_MEM_TAG("geometry");   // the profiler's category (todo/debug-tools.md 4)
     Geometry out;
     const auto header = readHeader(d);
     if (!header) return out;

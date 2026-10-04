@@ -39,6 +39,7 @@ class Capture:
 
     def __init__(self, path):
         self.path, self.names, self.frames, self.offset = path, {}, [], 0
+        self.tags = {}                      # memory category id -> name
 
     def poll(self):
         with open(self.path, "rb") as f:
@@ -52,9 +53,9 @@ class Capture:
             version = struct.unpack_from("<I", data, 8)[0]
             if version != 1:
                 raise ValueError("%s: capture version %d, this reader knows 1" % (self.path, version))
-            used = parseChunks(data, 12, self.names, self.frames)
+            used = parseChunks(data, 12, self.names, self.frames, self.tags)
         else:
-            used = parseChunks(data, 0, self.names, self.frames)
+            used = parseChunks(data, 0, self.names, self.frames, self.tags)
         before = self.offset
         self.offset += used
         return self.offset - before
@@ -71,8 +72,12 @@ def read(path):
     return c.names, c.frames
 
 
-def parseChunks(data, o, names, frames):
-    """Parse whole chunks from `o`; -> the offset after the last whole one."""
+def parseChunks(data, o, names, frames, tags=None):
+    """Parse whole chunks from `o`; -> the offset after the last whole one.
+    A MEM chunk (step 4) belongs to the FRAME chunk before it: it becomes
+    that frame's `mem` - {live, peak, blocks, tags: [(name, bytes, blocks)]}."""
+    if tags is None:
+        tags = {}
     while o + 5 <= len(data):
         typ, n = struct.unpack_from("<BI", data, o)
         if o + 5 + n > len(data):
@@ -95,7 +100,21 @@ def parseChunks(data, o, names, frames):
             if q != len(p):
                 raise ValueError("frame %d: %d bytes of zones, %d in the chunk" % (fr, q - 24, len(p) - 24))
             frames.append({"frame": fr, "start": start, "dur": dur, "dropped": dropped,
-                           "zones": zones, "sections": sections})
+                           "zones": zones, "sections": sections, "mem": None})
+        elif typ == 4:
+            tags[struct.unpack_from("<I", p, 0)[0]] = p[4:].decode("latin-1")
+        elif typ == 3:
+            fr, live, peak, blocks, nt = struct.unpack_from("<iQQII", p, 0)
+            q, per = 28, []
+            for _ in range(nt):
+                tid, by, bl = struct.unpack_from("<IQI", p, q)
+                per.append((tags.get(tid, "?%d" % tid), by, bl))
+                q += 16
+            if q != len(p):
+                raise ValueError("frame %d: memory chunk of %d bytes, %d read" % (fr, len(p), q))
+            if frames and frames[-1]["frame"] == fr:
+                frames[-1]["mem"] = {"live": live, "peak": peak, "blocks": blocks,
+                                     "tags": sorted(per, key=lambda t: -t[1])}
         o += 5 + n
     return o
 
@@ -170,6 +189,15 @@ def summary(frames, out=sys.stdout):
         out.write("\n%-44s %12s\n" % ("section (the viewer's marks; mean per frame)", "ms"))
         for name in sorted(secT, key=lambda k: -secT[k])[:25]:
             out.write("%-44s %12.2f\n" % (name, secT[name] / 1000.0 / len(play)))
+    last = next((f for f in reversed(frames) if f.get("mem")), None)
+    if last:
+        m = last["mem"]
+        peak = max(f["mem"]["peak"] for f in frames if f.get("mem"))
+        out.write("\nmemory at frame %d: %.1f MB live in %d blocks (the run's peak frame: %.1f MB)\n" % (
+            last["frame"], m["live"] / 1048576.0, m["blocks"], peak / 1048576.0))
+        out.write("%-44s %12s %10s\n" % ("category", "MB", "blocks"))
+        for name, by, bl in m["tags"][:30]:
+            out.write("%-44s %12.2f %10d\n" % (name, by / 1048576.0, bl))
     dropped = sum(f["dropped"] for f in frames)
     if dropped:
         out.write("\n%d zones DROPPED (a frame's buffer full)\n" % dropped)
@@ -286,14 +314,16 @@ def serve(path, port):
                     elif u.path == "/api/prof/frames":
                         since = int(q.get("since", ["0"])[0])
                         self.js({"file": os.path.basename(path), "count": len(frames),
-                                 "frames": [[k, f["frame"], f["dur"], f["dropped"]]
+                                 "frames": [[k, f["frame"], f["dur"], f["dropped"],
+                                             f["mem"]["live"] if f.get("mem") else -1,
+                                             f["mem"]["peak"] if f.get("mem") else -1]
                                             for k, f in enumerate(frames[since:], since)]})
                     elif u.path == "/api/prof/frame":
                         k = int(q.get("i", ["0"])[0])
                         f = frames[k]
                         self.js({"i": k, "frame": f["frame"], "dur": f["dur"],
                                  "dropped": f["dropped"], "tree": tree(f),
-                                 "sections": f["sections"]})
+                                 "sections": f["sections"], "mem": f.get("mem")})
                     elif u.path == "/api/prof/state":
                         self.js(gameState(path))
                     elif u.path == "/api/prof/snapshot.png":

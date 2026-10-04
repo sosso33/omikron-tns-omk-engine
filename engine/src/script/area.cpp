@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "script/area.h"
+#include "platform/profile.h"
 
 #include "platform/datafs.h"
 #include "formats/le.h"
@@ -87,6 +88,7 @@ std::string headerName(std::span<const std::byte> b, std::size_t off,
 // (2026-09-30). The three are inputs and never written, so they are kept:
 // 2.6 MB, against a ranged read this port's file layer does not have.
 const std::vector<std::byte>& archiveBytes(const std::string& path) {
+    OMK_MEM_TAG("archives");   // the profiler's category (todo/debug-tools.md 4)
     static std::map<std::string, std::vector<std::byte>> kept;
     auto it = kept.find(path);
     if (it == kept.end()) {

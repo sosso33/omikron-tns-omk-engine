@@ -46,5 +46,6 @@ eval(src + "\n;global.__t = { poll, select, get frames() { return frames; }, get
   const n = id => els[id].children.length;
   console.log(JSON.stringify({ frames: __t.frames.length, sel: __t.sel, title: els.ftitle.textContent,
                                tree: n("tree"), sections: n("sections"), zones: n("zones"),
+                               memtags: n("memtags"),
                                stats: els.stats.textContent }));
 })().catch(e => { console.log(JSON.stringify({ error: String(e.stack || e) })); process.exit(1); });

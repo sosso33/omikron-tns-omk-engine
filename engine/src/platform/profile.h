@@ -49,6 +49,20 @@
 //                      snap number, then width*height RGB565 words, LE
 // While paused the game does not step: it keeps its window alive and
 // presents the last frame. `step n` runs n frames and pauses again.
+//
+// THE MEMORY (step 4): this build's own `operator new` / `delete` count every
+// C++ block - a 16-byte header before it holds its size and its CATEGORY, so
+// a free is attributed on any platform - and each frame's capture carries
+// the live bytes and blocks per category and the frame's PEAK (a load's
+// transient buffers included). A block's category is the innermost
+//     OMK_MEM_TAG("textures")    this scope's allocations, by name
+// or else the innermost open ZONE's name (so an untagged allocation still
+// says which part of the frame or the setup made it), per thread. The header
+// and the counting exist only in a profiling build: release has neither.
+//       3 MEM    i32 frame, u64 live bytes, u64 the frame's peak, u32 live
+//                blocks, u32 categories, then per category: u32 id, u64
+//                bytes, u32 blocks
+//       4 TAG    u32 id, the category's name                (once per name)
 #pragma once
 
 #include <cstdint>
@@ -90,13 +104,31 @@ Run control(long frame);
 bool snapshotOwed();
 void snapshot(long frame, int w, int h, const std::uint16_t* px);
 
+// The memory categories: a name (a literal, kept by pointer) -> its id.
+int memTag(const char* name);
+int memTagSwap(int id);            // the thread's category set, the old one back
+struct MemTotals { long long live = 0, peak = 0; long blocks = 0; };
+MemTotals memTotals();             // live and peak over the whole run (heapcount)
+
+struct MemScope {
+    explicit MemScope(int id) : prev_(memTagSwap(id)) {}
+    ~MemScope() { memTagSwap(prev_); }
+    MemScope(const MemScope&) = delete;
+    MemScope& operator=(const MemScope&) = delete;
+private:
+    int prev_;
+};
+
 struct Zone {
-    explicit Zone(const char* name) : on_(on()) { if (on_) enter(name); }
-    ~Zone() { if (on_) leave(); }
+    explicit Zone(const char* name) : on_(on()), tag_(on_ ? memTagSwap(memTag(name)) : 0) {
+        if (on_) enter(name);
+    }
+    ~Zone() { if (on_) { leave(); memTagSwap(tag_); } }
     Zone(const Zone&) = delete;
     Zone& operator=(const Zone&) = delete;
 private:
     bool on_;
+    int tag_;                      // the category before this zone's
 };
 
 #  define OMK_PROF_CAT2(a, b) a##b
@@ -104,6 +136,9 @@ private:
 #  define OMK_ZONE(name) ::omk::prof::Zone OMK_PROF_CAT(omkZone_, __LINE__)(name)
 #  define OMK_SECTION(name, t0, t1) \
        do { if (::omk::prof::on()) ::omk::prof::section((name), (t0), (t1)); } while (0)
+#  define OMK_MEM_TAG(name) \
+       static const int OMK_PROF_CAT(omkTagId_, __LINE__) = ::omk::prof::memTag(name); \
+       ::omk::prof::MemScope OMK_PROF_CAT(omkTag_, __LINE__)(OMK_PROF_CAT(omkTagId_, __LINE__))
 
 #else   // OMK_PROFILE == 0: the release build - nothing at all
 
@@ -117,11 +152,14 @@ inline void endFrame() {}
 inline std::uint64_t now() { return 0; }
 enum class Run { Go, Hold };
 inline Run control(long) { return Run::Go; }
+struct MemTotals { long long live = 0, peak = 0; long blocks = 0; };
+inline MemTotals memTotals() { return {}; }
 inline bool snapshotOwed() { return false; }
 inline void snapshot(long, int, int, const std::uint16_t*) {}
 
 #  define OMK_ZONE(name) do {} while (0)
 #  define OMK_SECTION(name, t0, t1) do {} while (0)
+#  define OMK_MEM_TAG(name) do {} while (0)
 
 #endif
 

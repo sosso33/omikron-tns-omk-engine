@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "audio/mixer.h"
+#include "platform/profile.h"
 
 #include <algorithm>
 #include <cmath>
@@ -26,6 +27,7 @@ bool tag(std::span<const std::byte> b, std::size_t o, const char* s) {
 
 // ---------------------------------------------------------------------------
 WavLoad loadWav(std::span<const std::byte> file) {
+    OMK_MEM_TAG("sounds");   // the profiler's category (todo/debug-tools.md 4)
     WavLoad r;
     // `fread(header, 0x14, 1)` - the whole 20 bytes or nothing.
     if (file.size() < 20) { r.reject = WavReject::Header; return r; }
@@ -91,6 +93,7 @@ int volumeFromPercent(int percent) {
 // ---------------------------------------------------------------------------
 int Mixer::createBuffer(const WaveFormat& fmt, std::uint32_t bytes,
                         std::span<const std::int16_t> pcm) {
+    OMK_MEM_TAG("sounds");   // the profiler's category (todo/debug-tools.md 4)
     int i = 0;
     for (; i < kMaxBuffers; ++i)
         if (!buffers_[i].used) break;

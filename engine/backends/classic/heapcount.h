@@ -8,10 +8,12 @@
 //
 // Two measurements, because they answer different questions:
 //
-//   * the PEAK of live C++ allocations, counted EXACTLY by this build's own
-//     `operator new` / `delete` (`heapcount.cpp`), each block by the Memory
-//     Manager's own `GetPtrSize` - a load's transient buffers included, which
-//     a per-frame sample would miss;
+//   * the PEAK of live C++ allocations, counted EXACTLY by the profiler's
+//     `operator new` / `delete` (`platform/profile.cpp` - this file's own
+//     until the profiler took them for every build, with categories), each
+//     block's requested size - a load's transient buffers included, which a
+//     per-frame sample would miss. The profiler's 16-byte header per block
+//     is in FreeMem's figure, not in this one; a release build has neither;
 //   * the lowest `FreeMem` and `MaxBlock` seen, sampled once a frame
 //     (`classic_heap_sample`, called by the frontend's present) - the heap's
 //     own overhead, the C allocations (`fopen` buffers, pl_mpeg) and the

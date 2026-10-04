@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "audio/music.h"
+#include "platform/profile.h"
 #include "platform/datafs.h"
 
 #include <algorithm>
@@ -10,6 +11,7 @@ namespace omk {
 
 bool MusicPlayer::play(const DataFs& fs, const AdpcmTables& tables,
                        int track, bool loop) {
+    OMK_MEM_TAG("music");   // the profiler's category (todo/debug-tools.md 4)
     // `Music_PlayTrack` returns without playing for anything below 2, which is
     // why 3 of the 521 shipped `music.play` sites name track 0 and are not a
     // decode gap (docs/SCRIPT_VM 103). Treat it as the STOP it is.
