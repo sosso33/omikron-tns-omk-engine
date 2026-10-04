@@ -226,3 +226,24 @@ minus the cap's sleep (`present`'s own time).
     frame scratch pool and submitted from it (`sub_4947F0`) - no posed copy
     kept per body. The cut in its spirit: pose the crowd into a per-frame
     pool, not into 240 slots' own geometry.
+
+  **BOTH DONE, 2026-10-04** (`02271fb`, `b462128`), at the reader's word ("do
+  both fixes like the original"):
+  * the music stream is a RING (`audio/hostmix.*`): nothing played is kept,
+    256 KB for the music's queue where 5.4 MB were held; `engine: music
+    ring`. NOT taken from the original: holding the compressed track whole
+    (1-4 MB) - the port reads a 32 KB window because one 4 MB read froze a
+    Vita for 700-870 ms at a track change (`audio/music.h`);
+  * the crowd keeps the original's FOOTPRINT, not its layout: a slot idle
+    for two seconds gives back its posed geometry (destroyed in place, so
+    the renderers free its GPU buffers) and its buffers, and a vehicle's
+    composed sub-object is shared per (model, sub-object). The literal
+    single pool was not taken: `applyPose` writes eight per-corner arrays
+    besides the corners, so pooling would re-copy every visible body's
+    metadata every frame - the copy `optimization.md` step 10 removed - the
+    posing runs a slot per thread, and the renderers cache buffers by a
+    geometry's address. `engine: crowd memory`.
+  Standing in the street after both (M1, capped): RAM 71.6 -> 72.1 MB over
+  a minute where it reached 86 MB in 100 s; the crowd ~1.3 MB flat (was
+  8.1 and climbing); the music 0.25 MB (5.38); GPU 26.5 MB flat (30.0 and
+  climbing). Frames byte-identical at 900 on software and Vulkan.

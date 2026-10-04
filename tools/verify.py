@@ -27357,13 +27357,13 @@ def c_engine_crowd_memory():
     Standing in the street, 1200 frames (40 s of game time) through the
     Vulkan world renderer with `--profile`: the crowd's categories together
     under 3 MB at the end and grown under 0.5 MB over the second half
-    (before: 4.8 MB and climbing). NOT the music here: a `--frames` run never
+    (with the release disabled: 2.64 -> 3.85 MB). NOT the music here: a `--frames` run never
     opens the audio device, so nothing is queued and an assertion on it
     would pass for free - its first version did (0.00 MB). The music is
     `engine: music ring`'s.
 
     Shown to fail (2026-10-04): `releaseIdleCrowd` made to release nothing
-    (red: the crowd climbs).
+    (red: 2.64 -> 3.85 MB, +1.2 over the second half).
     """
     import subprocess, tempfile, shutil
     sys.path.insert(0, os.path.join(ROOT, "tools"))
