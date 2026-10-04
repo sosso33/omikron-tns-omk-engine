@@ -178,3 +178,33 @@ at upload and looked up by the software raster (-9.4; every pixel reader
 changes); ranged archive reads like `Archive_ReadChunk` (-2.4; to be timed
 on a Vita card first); an indexed decor geometry (toward the original's 2.3).
 
+**Tier C, two of three DONE 2026-10-05: the street 51.6 -> 40.8 MB
+(-10.8)**, Vulkan, standing, 900 frames, M1 (software 50.5 -> 39.9).
+Frames identical to the binary before tier A standing, walking and through
+the new-game opening; the software renderer the same speed (22.1 s for 300
+frames either way).
+
+| cut | before | after | how it's held |
+|---|---|---|---|
+| textures as the file holds them: 8-bit INDICES and a 256-entry palette (`Texture::idx` / `pal`), expanded where read - the software sampler looks the colour up as the original's software path does, the GPU uploads take keyed RGBA from a 256-entry table (3.1x faster than the per-texel test, EXACT - the Vita bench's `texkey` stage) | 14.10 | 4.77 | `engine: indexed textures`: every shipped texture - 2534 under MESHES, 230 sprites in the `.SCX` - hashed as RGB, equal to the hashes the RGB decode gave before the change; a third of the bytes |
+| a chunk read alone, as `Archive_ReadChunk` does: each archive's directory kept (`IamArchive::directory`, from the file's head against its size), a chunk one seek and one read (`readFileRange`: Vita, classic Mac, stdio); the scene -> area map built once and kept instead of AREA and SCENE | 1.48 | 0.03 | `engine: archive chunks`: all 750 chunks of AREA, SCENE and DIALOG byte-identical both ways. The street no longer opens SCENE at all |
+
+**NOT done: the indexed decor geometry.** The flat per-corner layout is
+what the GPU vertex buffers, the depth tie, the dirty lists and the motion
+patch all index; an indexed one rewrites the vertex path of all three
+renderers, and frames identical by construction is not on offer. The set's
+geometry is 8.24 MB here against the original's 2.26: the largest item
+left, and the reader's call.
+
+**Not yet measured where it matters**: a chunk read on a Vita memory card
+(two small reads a load, where the kept archives made it none after the
+first), and the ranged read and the palette sampler running on the classic
+Mac (both build; neither has been run on OS 9 or Tiger).
+
+Checked with `--only` over the 62 checks tier C could reach - every render,
+texture, load and transition check and the three builds (`--jobs 6`, M1):
+four red, all this work's. `engine: vita build`, `classic build` and
+`release build` - `datafs.h` used `std::uint64_t` without `<cstdint>`, which
+the Mac's headers had supplied and the cross toolchains do not; fixed, all
+three green. `licence headers` - the census (547 -> 549, the two probes).
+

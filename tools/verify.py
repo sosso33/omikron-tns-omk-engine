@@ -39261,6 +39261,9 @@ def c_licence_headers():
     playscene_off.cpp,printf_c99.cpp,classic_printf.h,xcoff_weak_storage.cpp}`
     and `src/ui/overlay.cpp` (2026-10-03), the Carbon frontend and the
     Retro68 workarounds (3d-iv).
+    **547 -> 549**: `engine/tools/texture_hash.cpp` and
+    `engine/tools/archive_chunks.cpp` (2026-10-05, `engine: indexed textures`
+    and `engine: archive chunks`).
     **545 -> 547**: `engine/tools/hostmix_probe.cpp` (2026-10-04, `engine:
     music ring` - the census was not re-run that day) and
     `engine/tools/sound_equiv.cpp` (2026-10-05, `engine: device sounds`).
@@ -39303,7 +39306,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (547, [], 1, []), \
+           (549, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \

@@ -29,6 +29,7 @@
 // not inferred from the filesystem's behaviour.
 #pragma once
 
+#include <cstdint>
 #include <cstddef>
 #include <map>
 #include <optional>
