@@ -57,6 +57,8 @@ public:
     int playSound(std::vector<float>&& s, bool loop = false, float gain = 1.0f) override;
     int playSound(std::shared_ptr<const std::vector<float>> s, bool loop = false,
                   float gain = 1.0f) override;
+    int playSound(std::shared_ptr<const omk::DeviceSound> s, bool loop = false,
+                  float gain = 1.0f) override;
     void stopSound(int handle) override { mix_.stop(handle); }
     void flushAudio() override { mix_.flush(); }
     double queuedSeconds() override;

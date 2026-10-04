@@ -527,7 +527,9 @@ struct GunAim { bool live = false; float yaw = 0.0f, pitch = 0.0f; };
 // duplicates the bank's buffer rather than its memory. A sample still
 // sounding when the scene's cache is cleared lives until its voice ends.
 struct SfxSample {
-    std::shared_ptr<const std::vector<float>> pcm;
+    // kept as the file holds it, read at the device rate as it plays
+    // (`omk::DeviceSound`; todo/ram-vs-original.md tier B) - never null
+    std::shared_ptr<const omk::DeviceSound> pcm;
     float peak = 0.0f;
 };
 

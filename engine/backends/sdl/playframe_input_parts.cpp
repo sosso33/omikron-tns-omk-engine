@@ -1155,7 +1155,7 @@ void PlayState::inputSounds() {
                 continue;
             }
             const SfxSample& sm = sfxPcm(rt->wavData(i));
-            if (!sm.pcm->empty()) { sfxLog("ctl-effect", sm.pcm->size(), es.id, i, 1.0f, &sm.peak);
+            if (sm.pcm->size) { sfxLog("ctl-effect", sm.pcm->size, es.id, i, 1.0f, &sm.peak);
                                     front.playSound(sm.pcm, false, fxGain()); }
         }
     }
@@ -1213,8 +1213,7 @@ void PlayState::inputSounds() {
                                             // `sub_48CB30` returns -1 and
                                             // the engine plays nothing
             const SfxSample& sm = sfxPcm(raw);
-            const std::vector<float>& pcm = *sm.pcm;
-            if (pcm.empty()) continue;
+            if (!sm.pcm->size) continue;
             // ---- POSITIONAL, because `Script_PlaySound` is 3D ------
             //
             // The handler (0x004A12D0) ends in three calls to
@@ -1260,7 +1259,7 @@ void PlayState::inputSounds() {
                 }
             }
             sfxLog(fs.cue.loop ? "scene-LOOP" : "scene-sound",
-                   pcm.size(), fs.cue.wav, fs.object, gain, &sm.peak);
+                   sm.pcm->size, fs.cue.wav, fs.object, gain, &sm.peak);
             if (sceneSoundDist >= 0.0f)
                 std::printf("audio:   ...at %.0f units from the nearest motion of object %d\n",
                             static_cast<double>(sceneSoundDist), fs.object);

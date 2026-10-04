@@ -585,7 +585,15 @@ int SdlFrontend::playSound(std::shared_ptr<const std::vector<float>> s, bool loo
               float gain) {
     if (!s || s->empty()) return -1;
     // what the cap pushes out is freed AFTER the lock, not under it
-    std::shared_ptr<const std::vector<float>> dropped;
+    std::shared_ptr<const void> dropped;
+    AudioLock lk(amx_);
+    return mix_.play(std::move(s), loop, gain, &dropped);
+}
+
+int SdlFrontend::playSound(std::shared_ptr<const omk::DeviceSound> s, bool loop,
+              float gain) {
+    if (!s || !s->size) return -1;
+    std::shared_ptr<const void> dropped;
     AudioLock lk(amx_);
     return mix_.play(std::move(s), loop, gain, &dropped);
 }

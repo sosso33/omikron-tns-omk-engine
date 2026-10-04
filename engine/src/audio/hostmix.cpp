@@ -6,16 +6,29 @@
 
 namespace omk {
 
-int HostMixer::play(std::shared_ptr<const std::vector<float>> s, bool loop, float gain,
-                    std::shared_ptr<const std::vector<float>>* dropped) {
-    if (!s || s->empty()) return -1;
+int HostMixer::add(Shot s, std::shared_ptr<const void>* dropped) {
     if (shots_.size() >= 8) {
-        if (dropped) *dropped = std::move(shots_.front().pcm);
+        if (dropped) {
+            if (shots_.front().pcm) *dropped = std::move(shots_.front().pcm);
+            else                    *dropped = std::move(shots_.front().snd);
+        }
         shots_.erase(shots_.begin());
     }
-    const int id = nextShot_++;
-    shots_.push_back({std::move(s), 0, id, loop, gain});
-    return id;
+    s.id = nextShot_++;
+    shots_.push_back(std::move(s));
+    return shots_.back().id;
+}
+
+int HostMixer::play(std::shared_ptr<const std::vector<float>> s, bool loop, float gain,
+                    std::shared_ptr<const void>* dropped) {
+    if (!s || s->empty()) return -1;
+    return add({std::move(s), 0, 0, loop, gain}, dropped);
+}
+
+int HostMixer::play(std::shared_ptr<const DeviceSound> s, bool loop, float gain,
+                    std::shared_ptr<const void>* dropped) {
+    if (!s || !s->size) return -1;
+    return add({nullptr, 0, 0, loop, gain, std::move(s)}, dropped);
 }
 
 void HostMixer::queue(std::span<const float> s) {
@@ -50,17 +63,18 @@ void HostMixer::mix(float* dst, std::size_t n) {
             --count_;
         }
         for (auto& one : shots_) {
-            const std::vector<float>& pcm = *one.pcm;
-            if (one.pos >= pcm.size()) {
-                if (!one.loop || pcm.empty()) continue;
+            const std::size_t size = one.size();
+            if (one.pos >= size) {
+                if (!one.loop || !size) continue;
                 one.pos = 0;                  // a looping shot wraps
             }
-            v += pcm[one.pos++] * one.gain;
+            v += (one.pcm ? (*one.pcm)[one.pos] : one.snd->at(one.pos)) * one.gain;
+            ++one.pos;
         }
         dst[i] = v < -1.0f ? -1.0f : (v > 1.0f ? 1.0f : v);
     }
     std::erase_if(shots_, [](const Shot& o) {
-        return !o.loop && o.pos >= o.pcm->size();  // a loop ends only on stop
+        return !o.loop && o.pos >= o.size();  // a loop ends only on stop
     });
 }
 

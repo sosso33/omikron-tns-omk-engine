@@ -27398,6 +27398,43 @@ def c_engine_crowd_memory():
         "over the second half - as the original keeps it"
 
 
+def c_engine_device_sounds():
+    r"""A SOUND KEPT AS ITS FILE HOLDS IT plays the same floats (2026-10-05,
+    `todo/ram-vs-original.md` tier B). `sub_46C740` creates each DirectSound
+    buffer in the file's own format - 16-bit, its own rate - and DirectSound
+    converts while mixing; the port held a float stereo copy at 22050 Hz,
+    four times a mono file's bytes and eight times an 11025 Hz one's. Now a
+    scene's or a mode library's sound is an `omk::DeviceSound` that the host
+    mixer reads at the device rate (`audio/hostmix.h`).
+
+    `engine/tools/sound_equiv` takes every shipped sound - the 61 interface
+    `.wav` and the 1667 inside the 220 `.SCX` - and asserts the compact form
+    gives `wavToDevice`'s floats BITWISE (same length, every sample), then
+    mixes each both ways, looped past its end at a gain, and compares the
+    mixes bitwise. 0 differ; the scene sounds keep 170929 KB where the floats
+    were 686947.
+
+    Shown to fail (2026-10-05): `DeviceSound::at` reading the RIGHT channel
+    of a stereo sound as its left (`i & 1` dropped).
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/sound_equiv"], cwd=eng, capture_output=True, text=True)
+    if b.returncode != 0:
+        return ("build failed",), ("built",), "engine/tools/sound_equiv must build"
+    r = subprocess.run([os.path.join(eng, "build", "sound_equiv"), omkpaths.data_root()],
+                       capture_output=True, text=True)
+    print("        " + r.stdout.strip().replace("\n", "\n        "))
+    rows = re.findall(r"^(interface \.wav|scene sounds): (\d+) sounds, (\d+) samples, (\d+) differ, "
+                      r"(\d+) mixes differ", r.stdout, re.M)
+    if len(rows) != 2:
+        return ("rows", len(rows)), ("rows", 2), "the probe's two sections must parse"
+    got = tuple((int(n), int(d), int(m)) for _, n, _, d, m in rows)
+    return got, ((61, 0, 0), (1667, 0, 0)), \
+        "every shipped sound - 61 interface .wav, 1667 in the .SCX files - kept 16-bit at its own " \
+        "rate reads back wavToDevice's floats bitwise, and mixes bitwise the same, looped"
+
+
 def c_engine_street_memory():
     r"""THE STREET'S MEMORY AGAINST THE ORIGINAL'S, tier A (2026-10-04,
     `todo/ram-vs-original.md`): what the port keeps in Anekbah where the
@@ -41540,6 +41577,7 @@ SLOW = [
     ("engine: music ring", c_engine_music_ring, "audio/hostmix.h; todo/debug-tools.md"),
     ("engine: crowd memory", c_engine_crowd_memory, "STREET_LIFE; todo/debug-tools.md"),
     ("engine: street memory", c_engine_street_memory, "todo/ram-vs-original.md tier A"),
+    ("engine: device sounds", c_engine_device_sounds, "todo/ram-vs-original.md tier B; audio/hostmix.h"),
     ("engine: profiler control", c_engine_profiler_control, "todo/debug-tools.md step 3"),
     ("engine: profiler gpu", c_engine_profiler_gpu, "todo/debug-tools.md step 5"),
     ("engine: release build", c_engine_release_build, "todo/debug-tools.md"),

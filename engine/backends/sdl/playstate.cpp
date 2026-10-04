@@ -779,8 +779,9 @@ const SfxSample & PlayState::sfxPcm(std::span<const std::byte> wav) {
     auto it = sfxCache.find(key);
     if (it == sfxCache.end()) {
         SfxSample sm;
-        auto v = std::make_shared<std::vector<float>>(wavToDevice(wav, kDeviceRate));
-        for (const float x : *v) sm.peak = std::max(sm.peak, std::fabs(x));
+        auto v = wavToDeviceSound(wav, kDeviceRate);
+        if (!v) v = std::make_shared<const omk::DeviceSound>();   // empty, as before
+        for (std::size_t i = 0; i < v->size; ++i) sm.peak = std::max(sm.peak, std::fabs(v->at(i)));
         sm.pcm = std::move(v);
         it = sfxCache.emplace(key, std::move(sm)).first;
     }
@@ -808,7 +809,7 @@ void PlayState::shotSound(long frame, int effectId, const float at[3],
     std::printf("frame %ld: SHOT SOUND %s - effect %d sound %d '%s', %.0f from him, "
                 "gain %.2f\n", frame, what, effectId, e->sound,
                 shootRt->wavName(w).c_str(), double(d), double(gain));
-    if (!sm.pcm->empty()) front.playSound(sm.pcm, false, gain * fxGain());
+    if (sm.pcm->size) front.playSound(sm.pcm, false, gain * fxGain());
 }
 
 // (struct GunFacts: `backends/sdl/playtypes.h`, todo/play-split.md)
@@ -1569,7 +1570,7 @@ void PlayState::applyPlayerDamage(long n, int owner, const char* what, int dmgIn
                                         shootMover.hurtSound);
                         else {
                             const SfxSample& sm = sfxPcm(shootRt->wavData(w));
-                            if (!sm.pcm->empty()) front.playSound(sm.pcm, false, fxGain());
+                            if (sm.pcm->size) front.playSound(sm.pcm, false, fxGain());
                         }
                     }
                     const bool shoved = player &&

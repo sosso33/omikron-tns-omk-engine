@@ -23,11 +23,34 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <span>
 #include <vector>
 
 namespace omk {
+
+// A SOUND KEPT AS ITS FILE HOLDS IT - 16-bit at its own rate and channel
+// count - and read at the device's rate as it plays (todo/ram-vs-original.md
+// tier B). `sub_46C740` creates each DirectSound buffer in the file's own
+// format and DirectSound converts while mixing; this held a float stereo copy
+// at 22050 instead, four times a mono file's bytes. `at(i)` is EXACTLY the
+// float `wavToDevice` puts at index i (the same nearest frame, the same
+// /32768), so the mix is bit-identical; `wavToDeviceSound` builds one.
+struct DeviceSound {
+    std::vector<std::int16_t> pcm;   // interleaved, host byte order
+    std::size_t channels = 1;
+    unsigned shift = 0;              // device rate = source rate << shift, when exact
+    bool exact = false;              // ...that, else `step`
+    double step = 0.0;               // source frames per device frame
+    std::size_t size = 0;            // device samples, interleaved stereo
+    float at(std::size_t i) const {
+        const std::size_t frame = i >> 1;
+        const std::size_t src = exact ? frame >> shift
+                                      : static_cast<std::size_t>(frame * step);
+        return pcm[src * channels + (channels > 1 ? (i & 1) : 0)] / 32768.0f;
+    }
+};
 
 class HostMixer {
 public:
@@ -39,7 +62,10 @@ public:
     // bank's buffer: same memory, a second voice). What the cap pushes out is
     // moved to `*dropped` when given, so a caller under a lock frees it after.
     int play(std::shared_ptr<const std::vector<float>> s, bool loop, float gain,
-             std::shared_ptr<const std::vector<float>>* dropped = nullptr);
+             std::shared_ptr<const void>* dropped = nullptr);
+    // ...and one kept in its file's own form, read at the device rate
+    int play(std::shared_ptr<const DeviceSound> s, bool loop, float gain,
+             std::shared_ptr<const void>* dropped = nullptr);
     void stop(int handle);
     void flush() { head_ = 0; count_ = 0; }                   // the stream only
     // everything, and the ring's memory back: the next device's rate and
@@ -57,7 +83,10 @@ public:
 
 private:
     struct Shot { std::shared_ptr<const std::vector<float>> pcm; std::size_t pos; int id;
-                  bool loop = false; float gain = 1.0f; };
+                  bool loop = false; float gain = 1.0f;
+                  std::shared_ptr<const DeviceSound> snd = nullptr;   // when `pcm` is null
+                  std::size_t size() const { return pcm ? pcm->size() : snd->size; } };
+    int add(Shot s, std::shared_ptr<const void>* dropped);
     int nextShot_ = 1;
     float musicGain_ = 1.0f;     // Music_SetVolume, applied to the stream
     std::vector<float> ring_;    // a power of two in size, or empty

@@ -16,6 +16,7 @@
 // to that same object.
 #pragma once
 
+#include "audio/hostmix.h"
 #include "o3de/renderer.h"
 #include "ui/overlay.h"
 
@@ -51,6 +52,8 @@ float shortArc(float deg);
 
 
 std::vector<float> wavToDevice(std::span<const std::byte> file, int deviceRate);
+std::shared_ptr<const omk::DeviceSound> wavToDeviceSound(std::span<const std::byte> file,
+                                                         int deviceRate);
 
 // THE DIALOGUE SUBTITLE.
 //

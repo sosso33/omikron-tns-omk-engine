@@ -138,6 +138,7 @@ using omk::drawSubtitleBox;
 using omk::shortArc;
 using omk::SubBox;
 using omk::wavToDevice;
+using omk::wavToDeviceSound;
 using omk::play::CtlSpriteInst;
 using omk::play::HoldRun;
 using omk::play::CharModel;

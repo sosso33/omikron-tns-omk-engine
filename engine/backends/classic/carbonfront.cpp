@@ -180,6 +180,9 @@ int CarbonFrontend::playSound(std::vector<float>&& s, bool loop, float gain) {
 int CarbonFrontend::playSound(std::shared_ptr<const std::vector<float>> s, bool loop, float gain) {
     return mix_.play(std::move(s), loop, gain);
 }
+int CarbonFrontend::playSound(std::shared_ptr<const omk::DeviceSound> s, bool loop, float gain) {
+    return mix_.play(std::move(s), loop, gain);
+}
 
 // The films pace their video by this (the audio clock), so it refills first.
 double CarbonFrontend::queuedSeconds() {

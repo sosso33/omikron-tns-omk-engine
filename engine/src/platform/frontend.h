@@ -34,6 +34,7 @@
 // this class and `makeHostFrontend`, and the game code does not change.
 #pragma once
 
+#include "audio/hostmix.h"
 #include "input/pad.h"
 #include "ui/surface.h"
 
@@ -148,6 +149,16 @@ public:
     virtual int  playSound(std::shared_ptr<const std::vector<float>> s, bool loop = false,
                            float gain = 1.0f) {
         return s ? playSound(std::span<const float>(*s), loop, gain) : -1;
+    }
+    // A sound kept in its file's own form (`audio/hostmix.h`), read at the
+    // device rate as it plays. A frontend without the host mixer gets the
+    // float samples it would have had.
+    virtual int  playSound(std::shared_ptr<const DeviceSound> s, bool loop = false,
+                           float gain = 1.0f) {
+        if (!s || !s->size) return -1;
+        std::vector<float> f(s->size);
+        for (std::size_t i = 0; i < f.size(); ++i) f[i] = s->at(i);
+        return playSound(std::move(f), loop, gain);
     }
     // Silence one shot before it ends. `Dialog_TickUI` case 2/7/8 calls
     // `Morph_Stop` on the press that leaves a line, and `Morph_Stop` stops the

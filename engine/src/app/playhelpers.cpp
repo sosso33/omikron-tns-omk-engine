@@ -19,6 +19,39 @@ float shortArc(float deg) {
     return deg;
 }
 
+// The same sound kept in its file's form (`DeviceSound`, audio/hostmix.h):
+// its 16-bit samples at their own rate, and the index rule of
+// `wavToDevice` below, so `at(i)` is that function's float i and `size` its
+// length. The sound's file stays the source of truth; the floats are made
+// as the mixer reads them.
+std::shared_ptr<const omk::DeviceSound> wavToDeviceSound(std::span<const std::byte> file,
+                                                         int deviceRate) {
+    const omk::audio::WavLoad w = omk::audio::loadWav(file);
+    if (w.reject != omk::audio::WavReject::Ok || w.fmt.bits != 16 || !w.fmt.rate) return nullptr;
+    auto d = std::make_shared<omk::DeviceSound>();
+    d->channels = w.fmt.channels ? w.fmt.channels : 1;
+    d->pcm.resize(w.dataBytes / 2);
+    for (std::size_t i = 0; i < d->pcm.size(); ++i)        // a .wav is little-endian
+        d->pcm[i] = loadLE<std::int16_t>(file.data() + w.dataOffset + 2 * i);
+    const std::size_t frames = w.dataBytes / (2u * d->channels);
+    if (deviceRate % static_cast<int>(w.fmt.rate) == 0) {
+        const int k = deviceRate / static_cast<int>(w.fmt.rate);
+        if (k == 1 || k == 2 || k == 4 || k == 8) {
+            d->exact = true;
+            d->shift = k == 1 ? 0u : k == 2 ? 1u : k == 4 ? 2u : 3u;
+            d->size = frames * static_cast<std::size_t>(k) * 2;
+            return d;
+        }
+    }
+    // `wavToDevice`'s other arm: `out` frames, cut where the nearest source
+    // frame runs off the end
+    d->step = static_cast<double>(w.fmt.rate) / deviceRate;
+    std::size_t out = static_cast<std::size_t>(frames / d->step);
+    while (out > 0 && static_cast<std::size_t>((out - 1) * d->step) >= frames) --out;
+    d->size = out * 2;
+    return d;
+}
+
 std::vector<float> wavToDevice(std::span<const std::byte> file, int deviceRate) {
     const omk::audio::WavLoad w = omk::audio::loadWav(file);
     if (w.reject != omk::audio::WavReject::Ok || w.fmt.bits != 16 || !w.fmt.rate) return {};
