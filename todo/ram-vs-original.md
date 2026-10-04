@@ -123,6 +123,14 @@ AREA, as the 2026-09-30 decision kept all three archives - it had simply
 never been reached through the cache. Its cost goes with tier C's ranged
 reads.
 
+`engine: street memory` holds all five from a 60-frame run (2 s): each
+category under its bound at the last frame, the motion patch having run,
+and SCENE among the kept archives. Each cut was shown to fail it alone -
+and the first geometry bound (9.5) did not see `cornerVertex` /
+`cornerDeclared` coming back (9.30), so it is 8.8. The changes are
+`f9fad39`; `engine: classic build` caught two `static inline` empty tables
+on the way (PORTING A10), now one `noObjects()` in `objects.cpp`.
+
 **B. Medium** (~10 MB): sounds kept 16-bit mono at their own rate and
 converted while mixing (-2.76); `fight.scx` swapped with `aventure.scx` as
 `Game_Start` does (-1.0); one collision soup with a class byte a triangle

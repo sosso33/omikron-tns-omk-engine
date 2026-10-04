@@ -27410,8 +27410,9 @@ def c_engine_street_memory():
       * `input: motion` - the moving set meshes' REST copies - under 3 MB
         (1.40; the whole set's corners and soups made it 9.17) and over
         0.5, so the motion patch really ran;
-      * `geometry` under 9.5 MB (8.24; 11.99 with the corners' growth slack
-        and the decor's `cornerVertex` / `cornerDeclared`);
+      * `geometry` under 8.8 MB (8.24; 11.99 with the corners' growth slack
+        and the decor's `cornerVertex` / `cornerDeclared`, which alone are
+        1.1 of it - a bound of 9.5 let that half back in unseen);
       * `collision` under 6 MB (4.94; 7.19 with the soups' doubling slack);
       * `objects` - `IAM\OBJECT` - ONE table, between 0.1 and 0.4 MB (0.27;
         each extra holder adds 0.27);
@@ -27455,7 +27456,7 @@ def c_engine_street_memory():
     print("        motion %.2f, geometry %.2f, collision %.2f, objects %.2f, archives %.2f MB; kept %s"
           % (motion, geo, coll, objs, arch, sorted(kept.items())))
     both = (kept.get("AREA", 0) + kept.get("SCENE", 0)) / 1024.0
-    return ((0.5 < motion < 3.0), geo < 9.5, coll < 6.0, (0.1 < objs < 0.4),
+    return ((0.5 < motion < 3.0), geo < 8.8, coll < 6.0, (0.1 < objs < 0.4),
             "SCENE" in kept, arch >= both - 0.05), (True,) * 6, \
         "standing in the street: the moving meshes' rest copies, the set geometry, the collision " \
         "soups and IAM\\OBJECT each under its tier-A bound, the motion patch having run; and SCENE " \

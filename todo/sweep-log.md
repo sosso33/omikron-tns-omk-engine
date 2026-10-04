@@ -39,7 +39,9 @@ adds **one**. Counting commits ran this number to 13 when about nine tasks had
 been finished, which would have called for a half-hour sweep long before the
 rule intends one.
 
-**tasks since the last full sweep: 4** (reset by the `--slow --jobs 6` run of 2026-10-03 below, at `2205413`.)
+**tasks since the last full sweep: 7** (reset by the `--slow --jobs 6` run of 2026-10-03 below, at `2205413`.)
+
+(2026-10-05: three tasks of 2026-10-04 not yet counted - the full street capture and its analysis, the music ring and the crowd's release (`02271fb`, `b462128`), and RAM AGAINST THE ORIGINAL, `todo/ram-vs-original.md` steps 1-3 tier A (`657914f`..`f9fad39`). The last ran `--only` over 29 checks its cuts could reach - the walker, motion and grid family, the lift and door walks, the object and voice-over checks, the classic / Vita / release builds and the profiler's (`--jobs 6`, 394 s, M1): one red, `engine: classic build`, this task's own (two `static inline` empty tables, weak objects with constructors - PORTING A10), fixed and green alone. New: `engine: street memory`, each of its five cuts shown to fail alone.)
 
 (2026-10-04: the two standing reds `engine: supersampling` and `engine: near clip` CLOSED, `c15c59b` - both turned by the back-face cull, not by a fault: near clip re-pinned (+18 culled pixels in the old rule's hole), supersampling's distinct-colour signature replaced, because the cull removed the wall its view was magnifying. `--exact` over the two, each shown to fail. 1 task.)
 
