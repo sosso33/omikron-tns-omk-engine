@@ -132,8 +132,9 @@ with `open ./OMKPlay` (LaunchServices puts it in the desktop session;
 `LaunchCFMApp` from SSH gives a windowless run). Compare against the host
 built by `ppc-darwin.mk` with `PPC_CXX=c++ PPCFLAGS=-ffp-contract=off
 PLAY_GPU=none` - not `build/omk-play`, which contracts. **On OS 9**:
-`untitled:omk` holds the data (408 MB - the boot's three folders plus
-FONTS, I2D, ANIMS, SOUNDS, MAP2D, RADAR, TRAJECTOIRES), `save-appart.bin`,
+`untitled:omk` holds the data (595 MB - the boot's three folders plus
+FONTS, I2D, ANIMS, SOUNDS, MAP2D, RADAR, TRAJECTOIRES and, since 2026-10-04,
+TRACKS - without it the game has no music), `save-appart.bin`,
 `OMKPlay` and `omkplay.args`; copy the last two into Startup Items (the
 args as `omk.args`), boot, wait ~3 minutes, stop QEMU, read `play.bin` and
 `omk-out.txt`, empty Startup Items.
@@ -183,7 +184,15 @@ file off the image.
    25 bodies, 200 walkers, adventure mode, Sound Manager audio, 67 frames in
    35 s (~2 fps, the software renderer on the emulated G4). **Walked in
    BOTH builds** (SDL/GL1 and Carbon), the reader: "controls felt
-   correct" - (a) is done on Tiger; OS 9 by hand is still unplayed; (b) ~~Sound Manager audio~~ DONE (`8b536ad`) -
+   correct" - (a) is done on Tiger; **OS 9 by hand, 2026-10-04** (the
+   street start from Startup Items), the reader: the MUSIC played, STOPPED
+   when he started running and never came back, while the sound effects
+   (footsteps) kept playing. NOT the mixer: the OS 9 disk's `omk:fr` had
+   no `TRACKS` folder, so `music switch to 2` found no file and the game's
+   music never played at all; what was heard was the street's own scene
+   sounds (`anekbah.sfx`, one-shots of 6.6-8 s at the area load), which end;
+   the footsteps are one-shots too. TRACKS (145 files, 187 MB) COPIED onto
+   that disk the same day, byte-identical; (b) ~~Sound Manager audio~~ DONE (`8b536ad`) -
    left: the ring is six 100 ms buffers refilled between frames, so a frame
    slower than 0.6 s underruns (OS 9 under emulation); a bigger ring costs
    the interface blips latency, so measure on a real G3 before choosing;
