@@ -22,10 +22,33 @@ float asFloat(std::int32_t bits) {
 
 }  // namespace
 
-ScxRuntime::ScxRuntime(std::span<const std::byte> file)
-    : data_(file.begin(), file.end()) {
-    scene_  = readScx(data_);
-    stream_ = readScxStream(data_);
+// WHAT THE ORIGINAL KEEPS OF AN .SCX (todo/ram-vs-original.md tier C):
+// `Scene_LoadSCX` (0x00449750) keeps the structural block and gives each
+// streamed resource its own buffer - the clips, the sounds (DirectSound
+// buffers in the file's format), the sprites into the texture pages - then
+// `fclose`s. This kept the whole FILE. The objects and paths are already
+// parsed copies (`scene_`, `stream_`), the camera editing is read by the
+// runner from the file it loads, and the sprites are decoded by the viewer
+// from its own read - so what is kept here is the clips' and the sounds'
+// bytes, one region each, at their own offsets; the rest goes with the file.
+// A resource whose range runs past the file keeps nothing, as `clipData` /
+// `wavData` already answered for it.
+ScxRuntime::ScxRuntime(std::span<const std::byte> file) {
+    scene_  = readScx(file);
+    stream_ = readScxStream(file);
+    std::size_t need = 0;
+    for (const auto& a : stream_.anims) if (a.offset + a.size <= file.size()) need += a.size;
+    for (const auto& w : stream_.wavs)  if (w.offset + w.size <= file.size()) need += w.size;
+    data_.reserve(need);
+    const auto keep = [&](std::size_t& offset, std::size_t& size) {
+        if (offset + size > file.size()) { offset = 0; size = 0; return; }
+        const std::size_t at = data_.size();
+        data_.insert(data_.end(), file.begin() + static_cast<long>(offset),
+                     file.begin() + static_cast<long>(offset + size));
+        offset = at;
+    };
+    for (auto& a : stream_.anims) keep(a.offset, a.size);
+    for (auto& w : stream_.wavs)  keep(w.offset, w.size);
 }
 
 const ScxObject* ScxRuntime::byName(const std::string& n) const {
@@ -40,8 +63,10 @@ int ScxRuntime::clipFrames(int i) const {
     int n = 0;
     if (i >= 0 && static_cast<std::size_t>(i) < stream_.anims.size()) {
         const auto& a = stream_.anims[static_cast<std::size_t>(i)];
-        if (const auto d = animDescriptor(data_, a.offset))
-            n = std::max<std::int32_t>(1, d->frames);
+        // within the clip's own bytes: its descriptor and keys are in it
+        if (a.size && a.offset + a.size <= data_.size())
+            if (const auto d = animDescriptor(clipData(i), 0))
+                n = std::max<std::int32_t>(1, d->frames);
     }
     frames_[i] = n;
     return n;

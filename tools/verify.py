@@ -27548,6 +27548,39 @@ def c_engine_archive_chunks():
         "is byte-identical to the whole file's, and an index past the directory reads nothing"
 
 
+def c_engine_scx_kept():
+    r"""WHAT A SCENE KEEPS OF ITS .SCX (2026-10-05, `todo/ram-vs-original.md`
+    tier C). `Scene_LoadSCX` (0x00449750) keeps the structural block and gives
+    each streamed resource its own buffer, then `fclose`s; `ScxRuntime` kept
+    the whole file. Now it keeps the clips' and the sounds' bytes (the objects
+    and paths are parsed copies, the camera editing and the sprites are read
+    by their own readers from their own reads). The SOUNDS are most of every
+    file and the original keeps them too, so the cut is small: 94% of the
+    bytes stay (227065 of 240754 KB over the 220 files); in the street 6.39 ->
+    5.67 MB.
+
+    `engine/tools/scx_kept`: for every `.SCX`, each clip's bytes and frame
+    count and each sound's bytes and id through the runtime, against the same
+    read straight from the file. 1490 clips, 1667 sounds, 0 differ.
+
+    Shown to fail (2026-10-05): a kept region's offset one byte late.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/scx_kept"], cwd=eng, capture_output=True, text=True)
+    if b.returncode != 0:
+        return ("build failed",), ("built",), "engine/tools/scx_kept must build"
+    r = subprocess.run([os.path.join(eng, "build", "scx_kept"), omkpaths.data_root()],
+                       capture_output=True, text=True)
+    print("        " + r.stdout.strip())
+    m = re.search(r"scx: (\d+) scenes, (\d+) clips, (\d+) sounds, (\d+) differ", r.stdout)
+    if not m:
+        return ("no row",), ("row",), "the probe's line must parse"
+    return tuple(int(x) for x in m.groups()), (220, 1490, 1667, 0), \
+        "every .SCX's clips (bytes and frame counts) and sounds (bytes and ids) read through the " \
+        "runtime that keeps only them, identical to the file's"
+
+
 def c_engine_street_memory():
     r"""THE STREET'S MEMORY AGAINST THE ORIGINAL'S, tier A (2026-10-04,
     `todo/ram-vs-original.md`): what the port keeps in Anekbah where the
@@ -39261,6 +39294,8 @@ def c_licence_headers():
     playscene_off.cpp,printf_c99.cpp,classic_printf.h,xcoff_weak_storage.cpp}`
     and `src/ui/overlay.cpp` (2026-10-03), the Carbon frontend and the
     Retro68 workarounds (3d-iv).
+    **549 -> 550**: `engine/tools/scx_kept.cpp` (2026-10-05, `engine: scx
+    kept`).
     **547 -> 549**: `engine/tools/texture_hash.cpp` and
     `engine/tools/archive_chunks.cpp` (2026-10-05, `engine: indexed textures`
     and `engine: archive chunks`).
@@ -39306,7 +39341,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (549, [], 1, []), \
+           (550, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -41704,6 +41739,7 @@ SLOW = [
     ("engine: sight mask", c_engine_sight_mask, "todo/ram-vs-original.md tier B; o3de/collision.h"),
     ("engine: indexed textures", c_engine_indexed_textures, "todo/ram-vs-original.md tier C; formats/tex3dt.h"),
     ("engine: archive chunks", c_engine_archive_chunks, "todo/ram-vs-original.md tier C; script/area.h"),
+    ("engine: scx kept", c_engine_scx_kept, "todo/ram-vs-original.md tier C; script/program.h"),
     ("engine: profiler control", c_engine_profiler_control, "todo/debug-tools.md step 3"),
     ("engine: profiler gpu", c_engine_profiler_gpu, "todo/debug-tools.md step 5"),
     ("engine: release build", c_engine_release_build, "todo/debug-tools.md"),

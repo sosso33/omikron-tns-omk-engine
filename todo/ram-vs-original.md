@@ -193,8 +193,24 @@ frames either way).
 what the GPU vertex buffers, the depth tie, the dirty lists and the motion
 patch all index; an indexed one rewrites the vertex path of all three
 renderers, and frames identical by construction is not on offer. The set's
-geometry is 8.24 MB here against the original's 2.26: the largest item
-left, and the reader's call.
+geometry is 8.24 MB here against the original's 2.26.
+
+**DEFERRED by the reader (2026-10-05), with what it would buy and cost.**
+Measured that day: a vertex can be shared only where position, UV, colour,
+normal and shimmer phase all agree, and Anekbah's 139245 corners (6.5 MB)
+hold 63079 such vertices - indexed, 2.96 MB + 0.54 of indices = 3.5 MB, so
+about **-3 MB**, not the -6 the gap to the original suggests (Qalisar 4.2 ->
+2.1, Aapkayl 0.5 -> 0.2). The original's 2.26 comes from keeping the file's
+own vertices and transforming them each frame into a shared pool - another
+renderer design. **The risk** is that a corner's index is an ADDRESS shared
+by the motion patch and its rest copies, the back-face cull flags, the
+shimmer, the depth tie and the GLES dirty-corner uploads, across three
+renderers; a wrong re-keying draws a plausible frame, wrong only when
+something moves or only on one backend - invisible to a standing identity
+run (CLAUDE.md 1, "invisible at rest"). If it is taken up: keep the corner
+index as the shared address and add the vertex index BENEATH it, test every
+consumer over the transition (a moving mesh, the GLES partial upload), and
+accept part of the saving for it.
 
 **Not yet measured where it matters**: a chunk read on a Vita memory card
 (two small reads a load, where the kept archives made it none after the
