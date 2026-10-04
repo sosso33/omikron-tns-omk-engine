@@ -374,6 +374,11 @@ Two backends, in this order:
    does too since 2026-10-03). The mirror is draw order
    and depth with no stencil (`docs/ASSETS.md` 4c), which suits a Rage 128.
    Vertices go in pre-transformed (3b-i) through an orthographic projection.
+   **Built 2026-10-04 as one Carbon binary** (`OMK_GL1_AGL`): AGL on the
+   window, importing OS 9's `OpenGLLibrary` - which Tiger's CFM bridge also
+   answers to - and, since OS 9's 1.2.1 has no framebuffer objects, the
+   world drawn into the window's back buffer. Accelerated on Tiger's
+   emulated Radeon 9700 (`todo/handoff-classic-mac.md` 4.2(d)).
 2. **RAVE** - optional, the *Unreal Tournament* route: closest to the
    engine's own pre-transformed D3D path and kind to a Rage Pro. OS 9 only;
    RAVE does not exist on OS X.

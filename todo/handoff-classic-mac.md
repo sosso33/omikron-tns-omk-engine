@@ -139,6 +139,15 @@ TRACKS - without it the game has no music), `save-appart.bin`,
 args as `omk.args`), boot, wait ~3 minutes, stop QEMU, read `play.bin` and
 `omk-out.txt`, empty Startup Items.
 
+**OpenGL in the Carbon build** comes with `make classic` when the tools
+volume has its two inputs - `sdk/MacOSX10.4u.sdk` (AGL's and OpenGL's
+headers) and `sdk/os9-opengl/OpenGLLibrary`, Mac OS 9's library WITH its
+resource fork, which `MakeImport` turns into the import stub (CMake cache
+variables `OMK_MACOS_SDK` / `OMK_OPENGL_PEF` relocate them). Without them
+OMKPlay is the software build, and `engine: classic build` says which. The
+log names the path: `display: an AGL context on the window (accelerated)`
+and `gl1: ATI Radeon 9700 OpenGL Engine, OpenGL 1.5 ...`.
+
 `OMKBoot` reads its arguments from `omk.args` beside it, one per line, HFS
 paths (`untitled:omk:fr`, `NOFMV`, `--tables`, `untitled:omk:tables`,
 `--dump`, `boot.bin`), and writes `omk-out.txt`. **On Tiger**: `ditto -c -k
@@ -204,7 +213,19 @@ file off the image.
    window's depth; emulated OS 9 plays all three but drops ~74%, and the
    films stretch to minutes because they pace by an audio clock that
    underruns there; (d) speed - the software renderer is ~2 fps on the
-   emulated G4, and the gl1 backend is CGL (Tiger only): AGL for OS 9.
+   emulated G4. ~~the gl1 backend is CGL (Tiger only): AGL for OS 9~~ -
+   **DONE 2026-10-04, the reader's ask ("integrate opengl in the carbon
+   build, it would be easier to test on tiger")**: the Carbon `OMKPlay`
+   draws the world through the fixed-function backend in an AGL context on
+   its own window (`OMK_GL1_AGL`, `backends/gl1/gl1host.h`) - one binary
+   for OS 9's OpenGL 1.2.1 and Tiger's. On Tiger: ATI Radeon 9700, OpenGL
+   1.5, accelerated, the street drawn; ~5 fps, because the frame is read
+   back (through a texture - see 5), composited on the CPU and drawn back
+   with `glDrawPixels`; 17 fps with the world swapped straight, which is
+   the next step: the interface drawn OVER the world in GL, as the GLES
+   window's overlay does, instead of the world under the interface on the
+   CPU. NOT run on OS 9 yet (its emulation has no 3D card: Apple's software
+   renderer). `--software` in `omk.args` keeps the reference.
    Measure on REAL hardware first: emulated timing is not a G3's or a G4's.
    ~~**The gateway class**~~ - **DONE 2026-10-03** (`12d77ec`): the
    viewer's game code reaches the host only through `omk::Frontend` (the
@@ -272,6 +293,19 @@ file off the image.
 * **Still open, suspected emulation**: a wall grazed by the camera flashes
   FLAT for a frame in Tiger; the M3 never shows it (60-position sweep, worst
   169 px). Not cured by the screen-edge clip.
+* **`glReadPixels` FROM A WINDOW SURFACE RETURNS ZEROS on the emulated
+  Radeon** (2026-10-04): the AGL build's world drew correctly - swapped
+  straight, the street showed - while every read of the back buffer came
+  back black, even a cleared red. The backend copies the back buffer into a
+  texture (`glCopyTexSubImage2D`) and reads THAT (`glGetTexImage`). A frame
+  at frame 1 is legitimately black (the area's fade-in): look at frame 30.
+* **Retro68's `MakeImport` CRASHES on Tiger's `CFMSupport/OpenGLLib`** (its
+  `cfrg` holds three fragments) - make the stub from OS 9's `OpenGLLibrary`,
+  which exports the same names under the same fragment name.
+* **`scp` DROPS A RESOURCE FORK**: an app copied that way fails with
+  `cfragRsrcForkErr` (-2856), a library loses its fragment name. `ditto -c
+  -k --sequesterRsrc` on the Mac, `ditto -x -k` in Tiger; onto the OS 9
+  disk image, `cp -p` keeps it.
 * **A CGL context on Tiger needs a DRAWABLE**, or nothing is drawn or read
   back, even into an FBO - the backend attaches a 16x16 pbuffer (a current
   Mac refuses pbuffers and goes on without).
