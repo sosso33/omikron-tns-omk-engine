@@ -163,6 +163,14 @@ vita_create_vpk(omk_smoke.vpk ${OMK_TITLE_SMOKE} omk_smoke.self
 # THE INSTRUMENTS (todo/play-split.md S6): the harnesses, or with
 # -DOMK_INSTRUMENTS=OFF their empty stubs - a build without them.
 option(OMK_INSTRUMENTS "build the viewer's harnesses (--money, --fight, --board...)" ON)
+# THE RELEASE BUILD (todo/debug-tools.md): every debugging aid compiled out -
+# the profiler (OMK_PROFILE=0: its probes, its allocator, the pause) and the
+# instruments. `make vita-release` builds it beside the default.
+option(OMK_RELEASE "a release build: no profiler, no instruments" OFF)
+if(OMK_RELEASE)
+  add_compile_definitions(OMK_PROFILE=0)
+  set(OMK_INSTRUMENTS OFF CACHE BOOL "" FORCE)
+endif()
 if(OMK_INSTRUMENTS)
   set(OMK_HARNESS_SRC ${ENGINE}/backends/sdl/playharness.cpp)
 else()

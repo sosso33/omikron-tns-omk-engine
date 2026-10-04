@@ -27522,6 +27522,14 @@ def c_engine_release_build():
     Not asserted: the instruments' FLAG NAMES (`--money`...) are still
     parsed in release (`src/app/playoptions.cpp`), their code stubbed out.
 
+    **And the other targets (step 7, 2026-10-04)**: `make classic-release`
+    (no profiler, and no `heapcount` memory counter: 105 profiler symbols and
+    the counter in development, none in release) and `make vita-release` (no
+    profiler, `OMK_INSTRUMENTS` forced off: 53 profiler symbols in
+    development, none in release) - each scanned only where its toolchain is
+    present, and skipped as such otherwise. Shown to fail: the classic
+    release option made not to define `OMK_PROFILE=0` (red).
+
     Shown to fail (2026-10-04): `-DOMK_PROFILE=0` dropped from the release
     target, the release objects deleted first (red: 24 profiler symbols).
     Without the delete the stale objects did not link - and the first
@@ -27559,10 +27567,52 @@ def c_engine_release_build():
         shutil.rmtree(tmp, ignore_errors=True)
     ds, rs = scan(dev), scan(rel)
     print("        development: %d profiler symbols, %d snapshot markers; release: %d, %d" % (ds + rs))
-    return (ds[0] > 0, ds[1] > 0, rs, len(dumps[1]) == 640 * 480 * 2 and dumps[0] == dumps[1]), \
-           (True, True, (0, 0), True), \
+    # THE OTHER TARGETS' RELEASE BUILDS, where their toolchains are here: the
+    # classic Mac (`make classic-release` - no profiler, no memory counter)
+    # and the Vita (`make vita-release` - no profiler, no instruments). Each
+    # compared with its own development build, so the scan is known to see.
+    def nmCount(nm, path, pattern):
+        out = subprocess.run([nm, path], capture_output=True, text=True).stdout
+        return sum(1 for l in out.splitlines() if pattern in l)
+    classic = ("no Retro68",)
+    r68 = omkpaths.retro68_path()
+    if r68:
+        c1 = subprocess.run(["make", "-s", "classic", "RETRO68=" + r68], cwd=eng, capture_output=True, text=True)
+        c2 = subprocess.run(["make", "-s", "classic-release", "RETRO68=" + r68], cwd=eng, capture_output=True, text=True)
+        if c1.returncode or c2.returncode:
+            classic = ("build failed", (c1.stderr + c2.stderr)[-300:])
+        else:
+            nm = os.path.join(r68, "bin", "powerpc-apple-macos-nm")
+            cd = os.path.join(eng, "build", "classic", "OMKPlay.xcoff")
+            cr = os.path.join(eng, "build", "classic-release", "OMKPlay.xcoff")
+            classic = (nmCount(nm, cd, "_ZN3omk4prof") > 0, nmCount(nm, cd, "classic_heap_report") > 0,
+                       nmCount(nm, cr, "_ZN3omk4prof"), nmCount(nm, cr, "classic_heap_report"))
+    vita = ("no VitaSDK",)
+    vsdk = os.environ.get("VITASDK") or os.path.expanduser("~/vitasdk")
+    vnm = os.path.join(vsdk, "bin", "arm-vita-eabi-nm")
+    if os.path.exists(os.path.join(vsdk, "share", "vita.toolchain.cmake")) and os.path.exists(vnm):
+        v1 = subprocess.run(["make", "-s", "vita"], cwd=eng, capture_output=True, text=True)
+        v2 = subprocess.run(["make", "-s", "vita-release"], cwd=eng, capture_output=True, text=True)
+        if v1.returncode or v2.returncode:
+            vita = ("build failed", (v1.stderr + v2.stderr)[-300:])
+        else:
+            vd = os.path.join(eng, "build", "vita-cmake", "omk_vita")
+            vr = os.path.join(eng, "build", "vita-release-cmake", "omk_vita")
+            cache = open(os.path.join(eng, "build", "vita-release-cmake", "CMakeCache.txt")).read()
+            vita = (nmCount(vnm, vd, "_ZN3omk4prof") > 0, nmCount(vnm, vr, "_ZN3omk4prof"),
+                    "OMK_INSTRUMENTS:BOOL=OFF" in cache)
+    print("        classic (dev profiler, dev counter, release profiler, release counter): %s; "
+          "vita (dev profiler, release profiler, instruments off): %s" % (classic, vita))
+    wantClassic = (True, True, 0, 0) if r68 else ("no Retro68",)
+    wantVita = (True, 0, True) if vita[0] != "no VitaSDK" else ("no VitaSDK",)
+    return (ds[0] > 0, ds[1] > 0, rs, len(dumps[1]) == 640 * 480 * 2 and dumps[0] == dumps[1],
+            classic, vita), \
+           (True, True, (0, 0), True, wantClassic, wantVita), \
         "make release: no profiler symbol and no snapshot marker (both present in the " \
-        "development build), and its frame byte-identical to the development build's"
+        "development build), and its frame byte-identical to the development build's; " \
+        "and where their toolchains are here, the classic Mac's and the Vita's release " \
+        "builds with no profiler symbol (nor the classic's memory counter, nor the " \
+        "Vita's instruments) where their development builds have them"
 
 
 def c_engine_profiler_gpu():

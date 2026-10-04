@@ -48,6 +48,17 @@ add_compile_options(-fno-zero-initialized-in-bss)
 add_compile_options(-ffp-contract=off)
 set_source_files_properties(printf_c99.cpp PROPERTIES COMPILE_DEFINITIONS OMK_PRINTF_IMPL)
 
+# THE RELEASE BUILD (todo/debug-tools.md): every debugging aid out - the
+# profiler (OMK_PROFILE=0) and with it the memory counter (`heapcount.cpp`).
+# `make classic-release` builds it into build/classic-release.
+option(OMK_RELEASE "a release build: no profiler, no memory counter" OFF)
+if(OMK_RELEASE)
+    add_compile_definitions(OMK_PROFILE=0)
+    set(OMK_HEAPCOUNT)
+else()
+    set(OMK_HEAPCOUNT heapcount.cpp)
+endif()
+
 file(GLOB OMK_SRC ${ENGINE}/src/*/*.cpp)
 
 add_library(omkengine STATIC ${OMK_SRC})
@@ -61,7 +72,7 @@ target_compile_options(omkengine PUBLIC -O2 -ffunction-sections -fdata-sections)
 function(omk_classic_tool app tool)
     add_application(${app}
         classic_main.cpp
-        heapcount.cpp
+        ${OMK_HEAPCOUNT}
         printf_c99.cpp
         xcoff_weak_storage.cpp
         ${ENGINE}/tools/${tool}.cpp
@@ -116,7 +127,7 @@ endif()
 
 add_application(OMKPlay
     classic_main.cpp
-    heapcount.cpp
+    ${OMK_HEAPCOUNT}
     printf_c99.cpp
     xcoff_weak_storage.cpp
     carbonfront.cpp

@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The Carbon frontend - see carbonfront.h.
 #include "carbonfront.h"
-#include "heapcount.h"
+#include "platform/profile.h"     // OMK_PROFILE, before it is tested
+#if OMK_PROFILE
+#  include "heapcount.h"
+#endif
 
 #if defined(OMK_GL1_AGL)
 #  include "../gl1/gl1host.h"
@@ -292,7 +295,9 @@ void CarbonFrontend::present(const Surface& fb) {
     if (!win_ || fb.w <= 0 || fb.h <= 0) return;
     if (agl_) {
         presentGL(fb);
+#if OMK_PROFILE
         classic_heap_sample();
+#endif
         return;
     }
     if (!gw_ || gwW_ != fb.w || gwH_ != fb.h) {
@@ -338,7 +343,9 @@ void CarbonFrontend::present(const Surface& fb) {
     }
     UnlockPixels(pm);
     blit();
+#if OMK_PROFILE
     classic_heap_sample();   // the memory budget's low-water mark, once a frame
+#endif
 }
 
 void CarbonFrontend::blit() {

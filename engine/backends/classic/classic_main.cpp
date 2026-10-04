@@ -21,7 +21,10 @@
 // `omk_tool_main` for a tool, `omk_play_main` for the viewer.
 #include <Files.h>
 
-#include "heapcount.h"
+#include "platform/profile.h"
+#if OMK_PROFILE
+#  include "heapcount.h"
+#endif
 
 #include <cstdio>
 #include <exception>
@@ -58,7 +61,9 @@ int main() {
         *static_cast<volatile int*>(nullptr) = 0;
         std::abort();
     });
+#if OMK_PROFILE
     classic_heap_launch();
+#endif
     std::vector<std::string> args{"omk"};
     if (std::FILE* f = std::fopen("omk.args", "r")) {
         char line[1024];
@@ -83,7 +88,9 @@ int main() {
     } catch (...) {
         std::printf("uncaught exception (not a std::exception)\n");
     }
+#if OMK_PROFILE
     classic_heap_report();
+#endif
     std::printf("exit %d\n", rc);
     std::fflush(stdout);
     std::fflush(stderr);

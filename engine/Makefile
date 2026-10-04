@@ -292,9 +292,38 @@ else
 	@echo "built build/classic/OMKBoot.APPL (and .bin, MacBinary) - the engine booted, for Mac OS 9 and Tiger"
 endif
 
+# THE CLASSIC RELEASE BUILD (todo/debug-tools.md): -DOMK_RELEASE=ON - no
+# profiler and no memory counter - into build/classic-release.
+.PHONY: classic-release
+classic-release:
+ifeq ($(wildcard $(RETRO68)/powerpc-apple-macos/cmake/retrocarbon.toolchain.cmake),)
+	@echo "no Retro68 at RETRO68=$(RETRO68) - the classic Mac build is optional."
+else
+	cmake -S backends/classic -B build/classic-release -DOMK_RELEASE=ON \
+	    -DCMAKE_TOOLCHAIN_FILE=$(RETRO68)/powerpc-apple-macos/cmake/retrocarbon.toolchain.cmake >/dev/null
+	cmake --build build/classic-release -j$(NPROC)
+	@echo "built build/classic-release/OMKPlay.APPL - no profiler, no memory counter"
+endif
+
 # THE SAME, WITH `OMK_VITA_TUNE` (todo/optimization.md step 20): Cortex-A9
 # scheduling and LTO, into build/vita-tuned/ so the two can be laid side by
 # side on a console. Same title ids: installing one replaces the other.
+# THE VITA RELEASE BUILD (todo/debug-tools.md): -DOMK_RELEASE=ON - no
+# profiler, no instruments - beside the default, into build/vita-release/.
+.PHONY: vita-release
+vita-release:
+ifeq ($(wildcard $(VITASDK_DIR)/share/vita.toolchain.cmake),)
+	@echo "no VitaSDK found (\$$VITASDK or ~/vitasdk) - the Vita build is optional."
+else
+	@mkdir -p build/vita-release
+	VITASDK=$(VITASDK_DIR) PATH="$(VITASDK_DIR)/bin:$$PATH" \
+	    cmake -S backends/vita -B build/vita-release-cmake -DOMK_RELEASE=ON >/dev/null
+	VITASDK=$(VITASDK_DIR) PATH="$(VITASDK_DIR)/bin:$$PATH" \
+	    cmake --build build/vita-release-cmake -j$(NPROC)
+	cp build/vita-release-cmake/omk_vita.vpk build/vita-release/
+	@echo "built build/vita-release/omk_vita.vpk - no profiler, no instruments"
+endif
+
 .PHONY: vita-tuned
 vita-tuned:
 ifeq ($(wildcard $(VITASDK_DIR)/share/vita.toolchain.cmake),)
