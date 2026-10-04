@@ -27314,7 +27314,8 @@ def c_engine_music_ring():
     256 KB - the queue's 55123 floats rounded up to a power of two).
 
     Shown to fail (2026-10-04): the head made not to wrap (red: 1967436
-    samples out of order); the ring DOUBLED on every queue (red: its size).
+    samples out of order); the ring DOUBLED on every queue (red: memory ran
+    out before the probe printed, and an unread line is a failure).
     A first try only REALLOCATED on every queue - same size, so nothing
     changed and the check stayed green: a mutation that is a no-op proves
     nothing (CLAUDE.md 1).
