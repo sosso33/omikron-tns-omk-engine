@@ -48,9 +48,24 @@ int PlayState::run(int argc, char** argv) {
     omk::prof::endFrame();
     // THE FRAME LOOP - `PlayState::step` in `playframe.cpp` (todo/play-split.md).
     for (;;) {
-        omk::prof::beginFrame(n);
+#if OMK_PROFILE
+        // the profiler's PAUSE (todo/debug-tools.md step 3): held, the game
+        // does not step - it keeps its window alive on the last frame
+        if (omk::prof::control(n) == omk::prof::Run::Hold) {
+            // the frame on screen is the last one stepped
+            if (omk::prof::snapshotOwed()) omk::prof::snapshot(profLastFrame, fb.w, fb.h, fb.px.data());
+            if (!profPauseTick()) break;
+            continue;
+        }
+#endif
+        const long frameNo = n;                 // the frame this step draws
+        omk::prof::beginFrame(frameNo);
         const int stepped = step();
         omk::prof::endFrame();
+#if OMK_PROFILE
+        profLastFrame = frameNo;
+        if (omk::prof::snapshotOwed()) omk::prof::snapshot(frameNo, fb.w, fb.h, fb.px.data());
+#endif
         if (stepped == -2) break;
         if (stepped >= 0) { omk::prof::close(); return stepped; }
     }

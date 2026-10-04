@@ -37,6 +37,14 @@ struct State {
 #if OMK_THREADS
     std::thread::id owner;
 #endif
+    // the control (step 3)
+    std::string base;                   // the capture's path, the three files beside it
+    long seenSeq = -1;
+    bool paused = false;
+    long steps = 0;                     // frames owed while paused
+    bool snapOwed = false;
+    long snaps = 0;
+    std::string told;                   // the last state written
 };
 
 State& st() {                            // made on first use, never destroyed
@@ -104,6 +112,19 @@ bool open(const std::string& path) {
     State& s = st();
     s.file = std::fopen(hostPath(path).c_str(), "wb");
     if (!s.file) return false;
+    s.base = path;
+    s.seenSeq = -1;
+    s.paused = false;
+    s.steps = 0;
+    s.snapOwed = false;
+    s.snaps = 0;
+    s.told.clear();
+    // a control file from an earlier run is not a command to this one
+    if (std::FILE* c = std::fopen(hostPath(path + ".ctl").c_str(), "r")) {
+        long q = -1;
+        if (std::fscanf(c, "%ld", &q) == 1) s.seenSeq = q;
+        std::fclose(c);
+    }
 #if OMK_THREADS
     s.owner = std::this_thread::get_id();
 #endif
@@ -192,6 +213,80 @@ void endFrame() {
     std::fflush(s.file);                    // a live reader sees each frame as it ends
     s.out.clear();
     s.zones.clear();
+}
+
+namespace {
+
+void tellState(long frame) {
+    State& s = st();
+    char line[96];
+    std::snprintf(line, sizeof line, "%s %ld %ld\n", s.paused ? "paused" : "running", frame, s.snaps);
+    if (s.told == line) return;
+    s.told = line;
+    if (std::FILE* f = std::fopen(hostPath(s.base + ".state").c_str(), "w")) {
+        std::fputs(line, f);
+        std::fclose(f);
+    }
+}
+
+}  // namespace
+
+Run control(long frame) {
+    if (!g_on || !mine()) return Run::Go;
+    State& s = st();
+    if (std::FILE* c = std::fopen(hostPath(s.base + ".ctl").c_str(), "r")) {
+        long q = -1, n = 1;
+        char cmd[32] = {};
+        const int got = std::fscanf(c, "%ld %31s %ld", &q, cmd, &n);
+        std::fclose(c);
+        if (got >= 2 && q != s.seenSeq) {
+            s.seenSeq = q;
+            const std::string k = cmd;
+            if (k == "pause") { s.paused = true; s.steps = 0; s.snapOwed = true; }
+            else if (k == "resume") { s.paused = false; s.steps = 0; }
+            else if (k == "step") { s.paused = true; s.steps += (got >= 3 && n > 0) ? n : 1; }
+            else if (k == "snapshot") s.snapOwed = true;
+            std::printf("profile: control %ld - %s\n", q, cmd);
+        }
+    }
+    if (s.paused && s.steps > 0) {
+        if (--s.steps == 0) s.snapOwed = true;   // the frame the step comes to rest on
+        tellState(frame);
+        return Run::Go;
+    }
+    tellState(frame);
+    return s.paused ? Run::Hold : Run::Go;
+}
+
+bool snapshotOwed() { return g_on && st().snapOwed; }
+
+void snapshot(long frame, int w, int h, const std::uint16_t* px) {
+    State& s = st();
+    s.snapOwed = false;
+    if (!g_on || w <= 0 || h <= 0 || !px) return;
+    ++s.snaps;
+    std::vector<unsigned char> out;
+    out.reserve(24 + static_cast<std::size_t>(w) * static_cast<std::size_t>(h) * 2);
+    auto p32 = [&](std::uint32_t v) { for (int k = 0; k < 4; ++k) out.push_back(static_cast<unsigned char>((v >> (8 * k)) & 0xFF)); };
+    for (const char* m = "OMKSNAP1"; *m; ++m) out.push_back(static_cast<unsigned char>(*m));
+    p32(static_cast<std::uint32_t>(w));
+    p32(static_cast<std::uint32_t>(h));
+    p32(static_cast<std::uint32_t>(frame));
+    p32(static_cast<std::uint32_t>(s.snaps));
+    for (std::size_t i = 0, n = static_cast<std::size_t>(w) * static_cast<std::size_t>(h); i < n; ++i) {
+        out.push_back(static_cast<unsigned char>(px[i] & 0xFF));
+        out.push_back(static_cast<unsigned char>(px[i] >> 8));
+    }
+    // written beside, then renamed over: a reader never sees half a picture
+    const std::string tmp = s.base + ".snap.tmp";
+    if (std::FILE* f = std::fopen(hostPath(tmp).c_str(), "wb")) {
+        std::fwrite(out.data(), 1, out.size(), f);
+        std::fclose(f);
+        std::remove(hostPath(s.base + ".snap").c_str());
+        std::rename(hostPath(tmp).c_str(), hostPath(s.base + ".snap").c_str());
+    }
+    s.told.clear();                      // the state names the new snapshot
+    tellState(frame);
 }
 
 }  // namespace omk::prof

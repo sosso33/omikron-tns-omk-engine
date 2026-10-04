@@ -12,6 +12,7 @@ int PlayState::setupOptions(int argc, char** argv) {
     if (const int rc = opt.parse(argc, argv); rc >= 0) return rc;
     // THE PROFILER (`todo/debug-tools.md`): `--profile <file>` writes a
     // capture for `tools/omkprof.py`, the clock being the frontend's
+#if OMK_PROFILE
     if (!opt.profilePath.empty()) {
         static omk::Frontend* profFront = nullptr;
         profFront = &front;
@@ -20,9 +21,12 @@ int PlayState::setupOptions(int argc, char** argv) {
             std::printf("profile: writing %s - one chunk a frame, for tools/omkprof.py\n",
                         opt.profilePath.c_str());
         else
-            std::printf("profile: cannot write %s%s\n", opt.profilePath.c_str(),
-                        OMK_PROFILE ? "" : " (built with OMK_PROFILE=0)");
+            std::printf("profile: cannot write %s\n", opt.profilePath.c_str());
     }
+#else
+    if (!opt.profilePath.empty())
+        std::printf("profile: this is a RELEASE build - no profiler (OMK_PROFILE=0)\n");
+#endif
     // THE GAME'S STATE (`todo/play-split.md` S3), one group at a time; each
     // old local below is a REFERENCE to its field where it used to be declared.
     boardPress = false;

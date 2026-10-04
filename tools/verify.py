@@ -27225,6 +27225,11 @@ def c_profiler_page():
         out += frame(no, 20000, [(0, 0, 0, 20000), (2, 1, 0, 3000), (3, 1, 3000, 16000),
                                  (4, 2, 4000, 10000)], [(5, 0, 19000)])
     open(cap, "wb").write(out)
+    # the game's side of the control, as profile.h writes it: a state and a
+    # 2x2 snapshot (red, green / blue, white)
+    open(cap + ".state", "w").write("paused 1 3\n")
+    open(cap + ".snap", "wb").write(b"OMKSNAP1" + struct.pack("<IIII", 2, 2, 1, 3) +
+                                    struct.pack("<4H", 0xF800, 0x07E0, 0x001F, 0xFFFF))
     s0 = socket.socket(); s0.bind(("127.0.0.1", 0)); port = s0.getsockname()[1]; s0.close()
     srv = subprocess.Popen([sys.executable, os.path.join(ROOT, "tools", "omkprof.py"), cap,
                             "--serve", str(port)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -27240,6 +27245,18 @@ def c_profiler_page():
         fr = get("/api/prof/frame?i=1")
         zs = get("/api/prof/zones")
         world = next((k for k in fr["tree"]["kids"] if k["name"] == "world"), None) if fr else None
+        gs = get("/api/prof/state")
+        try:
+            png = urllib.request.urlopen("http://127.0.0.1:%d/api/prof/snapshot.png" % port).read()
+        except OSError:
+            png = b""
+        try:
+            req = urllib.request.Request("http://127.0.0.1:%d/api/prof/control?cmd=step&n=4" % port, method="POST")
+            urllib.request.urlopen(req).read()
+            ctl = open(cap + ".ctl").read().split()[1:]
+        except OSError:
+            ctl = None
+        ctlApi = (gs, png[:8] == b"\x89PNG\r\n\x1a\n", len(png) > 60, ctl)
         api = (fl and fl["count"], fl and [f[1] for f in fl["frames"]],
                fr and [k["name"] for k in fr["tree"]["kids"]], world and (world["dur"], world["self"]),
                fr and len(fr["sections"]),
@@ -27263,10 +27280,12 @@ def c_profiler_page():
         shutil.rmtree(tmp, ignore_errors=True)
     want_api = (3, [-1, 0, 1], ["input", "world"], (16000, 6000), 1, [("world", 6000), ("submit", 10000)][::-1])
     want_page = (3, 5, 2, 5, None) if node else ("node absent",)
-    return (api, page), (want_api, want_page), \
+    want_ctl = ({"state": "paused", "frame": 1, "snap": 3}, True, True, ["step", "4"])
+    return (api, ctlApi, page), (want_api, want_ctl, want_page), \
         "a capture written to profile.h's format: the server lists the setup and both " \
         "frames, nests a frame's zones (world 16 ms, 6 ms of it its own), keeps the " \
-        "section apart, ranks the zones by self time; and the page's own script, run " \
+        "section apart, ranks the zones by self time; the game's state, its snapshot as a " \
+        "PNG and a command written to its control file; and the page's own script, run " \
         "against it, draws the frame's tree, sections and the zone table"
 
 
@@ -27342,6 +27361,132 @@ def c_engine_profiler():
         "the capture: the setup and frames 0..29, each rooted at `frame` with the six " \
         "phases in order, no child longer than its parent, nothing dropped, the world " \
         "phase holding real time; and the frame dumped with and without --profile identical"
+
+
+def c_engine_profiler_control():
+    r"""The profiler's CONTROL (`todo/debug-tools.md` step 3): a running game
+    steered through `<capture>.ctl`, as the page's buttons do.
+
+    `omk-play --profile` with no frame limit, then, through `omkprof.control`
+    (the same function the server calls): PAUSE - the state file says
+    `paused`, NO frame is written over a second and a half, and a snapshot
+    of the frame on screen appears, numbered as the state says; STEP 5 -
+    exactly five more frames, paused again; RESUME - running, frames
+    growing. Waits are polls with deadlines, not fixed sleeps.
+
+    Shown to fail (2026-10-04): `control()` made to ignore `step` (red: 0
+    frames stepped, not 5); and the held loop's snapshot removed (red: no
+    picture of the paused frame - the bug the first version had).
+    """
+    import subprocess, tempfile, shutil, time
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import omkprof
+    eng = os.path.join(ROOT, "engine")
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    tmp = tempfile.mkdtemp()
+    cap = os.path.join(tmp, "c.prof")
+    p = subprocess.Popen([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                          "--save", os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "0",
+                          "--stand", "1804,0,-6890,336", "--nofmv", "--software", "--res", "640x480",
+                          "--profile", cap], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+    def frames():
+        try:
+            return len([f for f in omkprof.read(cap)[1] if f["frame"] >= 0])
+        except (OSError, ValueError):
+            return 0
+    def until(cond, secs):
+        end = time.time() + secs
+        while time.time() < end:
+            if cond():
+                return True
+            time.sleep(0.1)
+        return False
+    try:
+        started = until(lambda: frames() >= 10, 60)
+        omkprof.control(cap, "pause")
+        paused = until(lambda: omkprof.gameState(cap)["state"] == "paused", 10)
+        time.sleep(0.5)                          # a frame in flight may still land
+        a = frames(); time.sleep(1.5); b = frames()
+        st = omkprof.gameState(cap)
+        snap = omkprof.snapshotPng(cap)
+        snapOk = bool(snap) and snap[2] == st["snap"] and snap[1] == a - 1
+        omkprof.control(cap, "step", 5)
+        until(lambda: frames() >= b + 5, 20)
+        time.sleep(1.0)
+        stepped = frames() - b
+        held = omkprof.gameState(cap)["state"]
+        omkprof.control(cap, "resume")
+        c = frames()
+        resumed = until(lambda: frames() >= c + 10, 30) and omkprof.gameState(cap)["state"] == "running"
+    finally:
+        p.terminate()
+        try:
+            p.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            p.kill()
+        shutil.rmtree(tmp, ignore_errors=True)
+    print("        paused at %d frames, %d after 1.5 s; snapshot of frame %s (state %s); "
+          "step 5 -> %d frames; resumed %s" % (a, b, snap and snap[1], st, stepped, resumed))
+    return (started, paused, b - a, snapOk, stepped, held, resumed), \
+           (True, True, 0, True, 5, "paused", True), \
+        "a running game paused (no frame written while held, a snapshot of the frame on " \
+        "screen), stepped exactly 5 frames and held again, then resumed - all through " \
+        "the control file the page writes"
+
+
+def c_engine_release_build():
+    r"""THE RELEASE BUILD (`todo/debug-tools.md`): `make release` - the
+    viewer with every debugging aid compiled out (`OMK_PROFILE=0`,
+    `INSTRUMENTS=0`), in its own object tree and binary.
+
+    Two properties, one each way:
+      * NOTHING OF THE PROFILER IS IN IT: no `omk::prof::` symbol, no
+        snapshot marker (the development build has both - asserted too, so
+        the scan is known to see them);
+      * IT DRAWS THE SAME: the street's 30th frame, dumped by the release
+        binary and by the development one, is byte-identical - taking the
+        debugging code out changes no pixel.
+    Not asserted: the instruments' FLAG NAMES (`--money`...) are still
+    parsed in release (`src/app/playoptions.cpp`), their code stubbed out.
+
+    Shown to fail (2026-10-04): `-DOMK_PROFILE=0` dropped from the release
+    target (red: 24 profiler symbols).
+    """
+    import subprocess, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    rel = os.path.join(eng, "build", "release", "omk-play")
+    dev = os.path.join(eng, "build", "omk-play")
+    mk = subprocess.run(["make", "-s", "release"], cwd=eng, capture_output=True, text=True)
+    mk2 = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    if mk.returncode != 0 or mk2.returncode != 0 or not os.path.exists(rel) or not os.path.exists(dev):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    def scan(b):
+        syms = subprocess.run(["nm", "-C", b], capture_output=True, text=True).stdout
+        data = open(b, "rb").read()
+        return sum(1 for l in syms.splitlines() if "omk::prof::" in l), data.count(b"OMKSNAP1")
+    tmp = tempfile.mkdtemp()
+    try:
+        dumps = []
+        for k, b in enumerate((dev, rel)):
+            d = os.path.join(tmp, "f%d.bin" % k)
+            subprocess.run([b, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                            "--save", os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "0",
+                            "--stand", "1804,0,-6890,336", "--nofmv", "--software", "--res", "640x480",
+                            "--frames", "30", "--dump", d], capture_output=True,
+                           env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+            dumps.append(open(d, "rb").read() if os.path.exists(d) else b"")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    ds, rs = scan(dev), scan(rel)
+    print("        development: %d profiler symbols, %d snapshot markers; release: %d, %d" % (ds + rs))
+    return (ds[0] > 0, ds[1] > 0, rs, len(dumps[1]) == 640 * 480 * 2 and dumps[0] == dumps[1]), \
+           (True, True, (0, 0), True), \
+        "make release: no profiler symbol and no snapshot marker (both present in the " \
+        "development build), and its frame byte-identical to the development build's"
 
 
 def c_engine_frontend_gateway():
@@ -41020,6 +41165,8 @@ SLOW = [
     ("engine: frontend gateway", c_engine_frontend_gateway, "todo/classic-mac-port-1999.md step 5; PORTING A1"),
     ("engine: classic build", c_engine_classic_build, "todo/classic-mac-port-1999.md step 5; platform/datafs.h"),
     ("engine: profiler", c_engine_profiler, "todo/debug-tools.md step 1; PORTING B6"),
+    ("engine: profiler control", c_engine_profiler_control, "todo/debug-tools.md step 3"),
+    ("engine: release build", c_engine_release_build, "todo/debug-tools.md"),
     ("engine: anti-aliasing", c_engine_anti_aliasing, "ASSETS 4"),
     ("engine: texture filter", c_engine_texture_filter, "ASSETS 4"),
     ("engine: mipmaps", c_engine_mipmaps, "ASSETS 4"),

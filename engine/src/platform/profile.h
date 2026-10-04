@@ -35,6 +35,20 @@
 //     A zone's PARENT is the nearest zone before it of one less depth; zones
 //     are in the order they OPENED. Sections are not in that order (each is
 //     written when it ENDS) and belong to no tree.
+//
+// THE CONTROL (step 3): the tool steers the game through three files beside
+// the capture - files, again, because every target has them:
+//     <capture>.ctl    the TOOL writes one line, "<seq> <command> [n]":
+//                      pause | resume | step <n> | snapshot. The game reads
+//                      it once a frame (and while paused) and acts on a seq
+//                      it has not seen.
+//     <capture>.state  the GAME writes "paused <frame> <snap>" or
+//                      "running <frame> <snap>" whenever that changes
+//     <capture>.snap   the GAME writes the frame it is paused on (or was
+//                      asked for): "OMKSNAP1", u32 width, height, frame,
+//                      snap number, then width*height RGB565 words, LE
+// While paused the game does not step: it keeps its window alive and
+// presents the last frame. `step n` runs n frames and pauses again.
 #pragma once
 
 #include <cstdint>
@@ -66,6 +80,16 @@ void enter(const char* name);      // a zone opens (a string literal: kept by po
 void leave();                      // the innermost open zone closes
 void section(const char* name, std::uint64_t t0, std::uint64_t t1);
 
+// The control: -> HOLD when the game must not step this time round (paused,
+// no step owed). Called by the frame loop before every step, and by the
+// paused loop as it waits.
+enum class Run { Go, Hold };
+Run control(long frame);
+// After a step: -> true when a snapshot is owed (asked for, or the frame a
+// pause or a step came to rest on); `snapshot` writes it.
+bool snapshotOwed();
+void snapshot(long frame, int w, int h, const std::uint16_t* px);
+
 struct Zone {
     explicit Zone(const char* name) : on_(on()) { if (on_) enter(name); }
     ~Zone() { if (on_) leave(); }
@@ -91,6 +115,10 @@ inline bool on() { return false; }
 inline void beginFrame(long) {}
 inline void endFrame() {}
 inline std::uint64_t now() { return 0; }
+enum class Run { Go, Hold };
+inline Run control(long) { return Run::Go; }
+inline bool snapshotOwed() { return false; }
+inline void snapshot(long, int, int, const std::uint16_t*) {}
 
 #  define OMK_ZONE(name) do {} while (0)
 #  define OMK_SECTION(name, t0, t1) do {} while (0)

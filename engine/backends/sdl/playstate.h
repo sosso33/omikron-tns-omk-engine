@@ -747,6 +747,12 @@ struct PlayState {
     // the profiler's view of the marks: each a SECTION from the mark before
     // it (`--profile`, todo/debug-tools.md), outside the call tree
     std::uint64_t profMarkT = 0;
+#if OMK_PROFILE
+    // one turn of the profiler's PAUSE: the window's events, the last frame
+    // presented again, a short sleep. -> false when the window was closed
+    bool profPauseTick();
+    long profLastFrame = -1;    // the last frame stepped: what a pause shows
+#endif
 
     // ---- THE SETUP'S SECTIONS (`playsetup_<name>.cpp`), in `run`'s order
     int setupOptions(int argc, char** argv);   // the command line, the game's state, the slider's door clips

@@ -13,7 +13,11 @@ analysis costs the game nothing.
     python3 tools/omkprof.py run.prof --slowest 5   the five slowest frames' trees
     python3 tools/omkprof.py run.prof --serve 8753  the PAGE (tools/omkprof.html):
                                                     the frame graph, a frame's
-                                                    tree, live while the game runs
+                                                    tree, live while the game runs;
+                                                    pause / step / resume it, and
+                                                    the paused frame's picture
+    python3 tools/omkprof.py run.prof --ctl pause   one command to the game
+                                                    (pause, resume, step N, snapshot)
 
 Zones nest by the depth and order the recorder wrote them: a zone's parent
 is the nearest zone before it of one less depth. SECTIONS (the viewer's
@@ -190,6 +194,59 @@ def zoneTable(frames):
     return sorted(((k, tot[k] / n, own[k] / n, cnt[k] / n) for k in own), key=lambda r: -r[2])
 
 
+def gameState(path):
+    """The game's `<capture>.state` (profile.h, the control): -> {state,
+    frame, snap}, or state "none" while no game has written one."""
+    try:
+        parts = open(path + ".state").read().split()
+        return {"state": parts[0], "frame": int(parts[1]), "snap": int(parts[2])}
+    except (OSError, IndexError, ValueError):
+        return {"state": "none", "frame": -1, "snap": 0}
+
+
+def control(path, cmd, n=1):
+    """One command to the game through `<capture>.ctl` - a seq it has not
+    seen (the time in ms, so a restarted tool never repeats one), the command
+    and its count. -> the seq written."""
+    if cmd not in ("pause", "resume", "step", "snapshot"):
+        raise ValueError("no command %r" % cmd)
+    import time
+    seq = int(time.time() * 1000) % 2000000000
+    tmp = path + ".ctl.tmp"
+    with open(tmp, "w") as f:
+        f.write("%d %s %d\n" % (seq, cmd, max(1, int(n))))
+    os.replace(tmp, path + ".ctl")             # the game never reads half a line
+    return seq
+
+
+def snapshotPng(path):
+    """The game's `<capture>.snap` as a PNG: -> (bytes, frame, snap number),
+    or None. RGB565 widened by bit replication, as the viewer presents it."""
+    import zlib
+    try:
+        d = open(path + ".snap", "rb").read()
+    except OSError:
+        return None
+    if d[:8] != b"OMKSNAP1" or len(d) < 24:
+        return None
+    w, h, frame, snap = struct.unpack_from("<IIII", d, 8)
+    px = d[24:]
+    if len(px) != w * h * 2:
+        return None
+    rows = []
+    for y in range(h):
+        r = bytearray(b"\0")
+        for v in struct.unpack_from("<%dH" % w, px, y * w * 2):
+            r5, g6, b5 = v >> 11, (v >> 5) & 63, v & 31
+            r += bytes(((r5 << 3) | (r5 >> 2), (g6 << 2) | (g6 >> 4), (b5 << 3) | (b5 >> 2)))
+        rows.append(bytes(r))
+    def chunk(tag, data):
+        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+    png = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)) +
+           chunk(b"IDAT", zlib.compress(b"".join(rows), 6)) + chunk(b"IEND", b""))
+    return png, frame, snap
+
+
 def serve(path, port):
     """The page and its JSON, read from the capture on every request (so a
     live run is followed) - `no-store` throughout: nothing here is worth a
@@ -237,6 +294,14 @@ def serve(path, port):
                         self.js({"i": k, "frame": f["frame"], "dur": f["dur"],
                                  "dropped": f["dropped"], "tree": tree(f),
                                  "sections": f["sections"]})
+                    elif u.path == "/api/prof/state":
+                        self.js(gameState(path))
+                    elif u.path == "/api/prof/snapshot.png":
+                        got = snapshotPng(path)
+                        if got:
+                            self.send(200, got[0], "image/png")
+                        else:
+                            self.send(404, b"no snapshot", "text/plain")
                     elif u.path == "/api/prof/zones":
                         lo = int(q.get("from", ["0"])[0])
                         hi = int(q.get("to", [str(len(frames))])[0])
@@ -245,6 +310,17 @@ def serve(path, port):
                     else:
                         self.send(404, b"not here", "text/plain")
             except (IndexError, ValueError) as e:
+                self.send(400, str(e).encode(), "text/plain")
+
+        def do_POST(self):
+            u = urlparse(self.path)
+            q = parse_qs(u.query)
+            if u.path != "/api/prof/control":
+                return self.send(404, b"not here", "text/plain")
+            try:
+                seq = control(path, q.get("cmd", [""])[0], int(q.get("n", ["1"])[0]))
+                self.js({"seq": seq})
+            except ValueError as e:
                 self.send(400, str(e).encode(), "text/plain")
 
     srv = ThreadingHTTPServer(("127.0.0.1", port), H)
@@ -262,6 +338,12 @@ def main(argv):
         return 1
     if "--serve" in argv:
         return serve(argv[1], int(argv[argv.index("--serve") + 1]))
+    if "--ctl" in argv:
+        k = argv.index("--ctl")
+        cmd = argv[k + 1]
+        n = int(argv[k + 2]) if len(argv) > k + 2 and argv[k + 2].isdigit() else 1
+        print("seq", control(argv[1], cmd, n))
+        return 0
     _, frames = read(argv[1])
     if "--frame" in argv:
         want = int(argv[argv.index("--frame") + 1])

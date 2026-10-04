@@ -41,6 +41,8 @@ main { padding: 0 16px 24px; display: grid; gap: 12px; }
 .cols { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 12px; }
 @media (max-width: 800px) { .cols { grid-template-columns: 1fr; } }
 button { font: inherit; padding: 2px 8px; }
+.ctl { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+#snap { display: block; max-width: 100%; image-rendering: pixelated; border: 1px solid var(--line); }
 .dim { color: var(--dim); }
 </style>
 </head>
@@ -53,6 +55,17 @@ button { font: inherit; padding: 2px 8px; }
   <span class="stat">click a frame, or the arrow keys</span>
 </header>
 <main>
+  <div class="panel"><h2>The game <span id="gstate" class="dim"></span></h2>
+    <div class="ctl">
+      <button id="bPause">Pause</button>
+      <button id="bStep1">Step 1</button>
+      <button id="bStep10">Step 10</button>
+      <button id="bResume">Resume</button>
+      <button id="bSnap">Snapshot</button>
+      <span class="dim">(the game reads the command at its next frame; paused, it holds its last one)</span>
+    </div>
+    <img id="snap" alt="" hidden>
+  </div>
   <div class="panel"><h2>Frame time <span class="dim">(ms; the lines are 30 and 60 fps)</span></h2>
     <canvas id="graph"></canvas>
     <div id="hover" class="dim">&nbsp;</div>
@@ -291,9 +304,39 @@ function numCell(t) {
   return c;
 }
 
+// THE CONTROL (step 3): a command is POSTed, the server writes the game's
+// control file; the game's state file says what it did, and a new snapshot
+// number brings its picture.
+let snapShown = -1;
+async function command(cmd, n) {
+  await fetch("/api/prof/control?cmd=" + cmd + "&n=" + (n || 1), {method: "POST", cache: "no-store"});
+  setTimeout(gameState, 300);
+}
+async function gameState() {
+  try {
+    const g = await getJson("/api/prof/state");
+    $("gstate").textContent = g.state === "none" ? "(no game has answered yet)" :
+      "- " + g.state + " at frame " + g.frame;
+    if (g.snap > 0 && g.snap !== snapShown) {
+      snapShown = g.snap;
+      const img = $("snap");
+      img.src = "/api/prof/snapshot.png?s=" + g.snap;
+      img.hidden = false;
+    }
+  } catch (e) {
+    $("gstate").textContent = String(e);
+  }
+}
+$("bPause").addEventListener("click", () => command("pause"));
+$("bStep1").addEventListener("click", () => command("step", 1));
+$("bStep10").addEventListener("click", () => command("step", 10));
+$("bResume").addEventListener("click", () => command("resume"));
+$("bSnap").addEventListener("click", () => command("snapshot"));
+
 window.addEventListener("resize", drawGraph);
 poll();
-setInterval(() => { if ($("live").checked) poll(); }, 1000);
+gameState();
+setInterval(() => { if ($("live").checked) poll(); gameState(); }, 1000);
 </script>
 </body>
 </html>

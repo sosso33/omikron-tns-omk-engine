@@ -1567,6 +1567,16 @@ double PlayState::phaseNow() {
 // mark is the end of the section before it, the gaps are printed on a
 // frame over `OMK_MARKS_MS` (default 150) from the largest down. The named
 // spans covered 6 of a console's 200 ms city frame (2026-09-22).
+#if OMK_PROFILE
+bool PlayState::profPauseTick() {
+ omk::HostInput in;
+ if (!front.pump(in) || in.quit) return false;
+ present(fb);
+ front.delayMs(30);
+ return true;
+}
+#endif
+
 void PlayState::mark(const char* name) {
  phMarks.emplace_back(name, phaseNow());
  if (omk::prof::on()) {

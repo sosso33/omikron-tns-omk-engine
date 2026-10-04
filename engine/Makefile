@@ -47,7 +47,9 @@ SRC   := $(wildcard src/*/*.cpp)
 TOOLS := $(filter-out tools/run_vulkan.cpp tools/shadow_probe.cpp tools/perpixel_probe.cpp tools/present_probe.cpp,$(wildcard tools/*.cpp))
 BINS  := $(patsubst tools/%.cpp,build/%,$(TOOLS))
 
-OBJDIR   := build/obj
+OBJDIR   ?= build/obj
+# the viewer's binary - `make release` puts its own elsewhere
+PLAY_BIN ?= build/omk-play
 SRCOBJS  := $(patsubst %.cpp,$(OBJDIR)/%.o,$(SRC))
 TOOLOBJS := $(patsubst %.cpp,$(OBJDIR)/%.o,$(TOOLS))
 DEPS     := $(SRCOBJS:.o=.d) $(TOOLOBJS:.o=.d)
@@ -193,25 +195,36 @@ $(PLAY_GL_DIR)/glesrender.o: backends/gles/glesrender.cpp
 
 ifneq ($(SDL_PKG),)
 ifeq ($(VK_PKG)$(GLSLC),)
-build/omk-play: $(PLAY_SW_OBJS) $(SRCOBJS) $(INSTR_STAMP)
+$(PLAY_BIN): $(PLAY_SW_OBJS) $(SRCOBJS) $(INSTR_STAMP)
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) -o $@ $(filter %.o,$^) $(SDL_LIBS)
 PLAY_WITH := $(SDL_PKG) (no Vulkan - software renderer only)
 else
-build/omk-play: $(PLAY_VK_OBJS) $(PLAY_VK_DIR)/vkrender.o $(SRCOBJS) $(INSTR_STAMP)
+$(PLAY_BIN): $(PLAY_VK_OBJS) $(PLAY_VK_DIR)/vkrender.o $(SRCOBJS) $(INSTR_STAMP)
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) -o $@ $(filter %.o,$^) $(SDL_LIBS) $(VK_LIBS)
 PLAY_WITH := $(SDL_PKG) + $(VK_PKG)
 endif
 endif
 
+# THE RELEASE BUILD (todo/debug-tools.md): the viewer with EVERY debugging
+# aid compiled out - the profiler (`OMK_PROFILE=0`: its probes, the pause,
+# the capture) and the instruments (`INSTRUMENTS=0`) - into its own object
+# tree and binary, so it never mixes with the development build's objects
+# (make does not track flags). `verify.py: engine: release build` holds it to
+# having none of them.
+.PHONY: release
+release:
+	$(MAKE) play OBJDIR=build/obj-release PLAY_BIN=build/release/omk-play INSTRUMENTS=0 \
+	    CXXFLAGS="$(CXXFLAGS) -DOMK_PROFILE=0"
+
 .PHONY: play
-play: $(if $(SDL_PKG),build/omk-play)
+play: $(if $(SDL_PKG),$(PLAY_BIN))
 ifeq ($(SDL_PKG),)
 	@echo "no SDL found (pkg-config sdl3 or sdl2) - the frontend is optional;"
 	@echo "everything else builds and the suite passes without it (PORTING A8)."
 else
-	@echo "built build/omk-play against $(PLAY_WITH)"
+	@echo "built $(PLAY_BIN) against $(PLAY_WITH)"
 endif
 
 # ------------------------------------------------------------ THE PS VITA
