@@ -27198,7 +27198,9 @@ def c_profiler_page():
     flight (2026-10-04).
 
     Shown to fail (2026-10-04): `tree()` given the children's time as self
-    time (red, the self figure); the poll guard removed (red, 6 frames).
+    time (red: world 10 ms of self instead of 6, the ranking changed); the
+    poll guard removed (red: the frame list doubled, and selecting a frame
+    then asked the server for an index past the end - the page threw).
     """
     import subprocess, tempfile, shutil, struct, socket, time, json, urllib.request
     sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -38588,6 +38590,9 @@ def c_licence_headers():
     playscene_off.cpp,printf_c99.cpp,classic_printf.h,xcoff_weak_storage.cpp}`
     and `src/ui/overlay.cpp` (2026-10-03), the Carbon frontend and the
     Retro68 workarounds (3d-iv).
+    **542 -> 545**: the profiler (2026-10-04, `todo/debug-tools.md` 1-2):
+    `src/platform/profile.{h,cpp}` and `tools/omkprof.py` - re-pinned at step 2,
+    as step 1 had run only its own check.
     **541 -> 542**: `backends/gl1/gl1host.h` (2026-10-04), the AGL context
     the Carbon frontend lends the fixed-function backend.
     **539 -> 541**: `backends/classic/heapcount.{h,cpp}` (2026-10-04), the
@@ -38624,7 +38629,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (542, [], 1, []), \
+           (545, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \

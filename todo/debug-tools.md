@@ -57,7 +57,16 @@ cut: which code allocates what, which function takes the frame.
    so they are written as SECTIONS (kind 1) and summed beside the tree, not
    in it. First reading, the street on an M3, software: 77 of 78 ms is the
    `world` phase, with no zone inside it yet - step 6's first target.
-2. The external tool: frame graph and zone tree from a capture.
+2. ~~The external tool: frame graph and zone tree from a capture~~ -
+   **DONE 2026-10-04** (`4167c3e`): `tools/omkprof.py <capture> --serve
+   PORT` and `tools/omkprof.html` - the frame graph (30/60 fps lines, slow
+   frames marked; click or arrow keys), the frame's call tree (total, self,
+   share of the frame, folding), its sections, the capture's zone table;
+   LIVE, the capture re-read incrementally as the game writes it.
+   `verify.py: profiler page` writes a capture in Python to the documented
+   format, queries the server and runs the page's own script under node
+   (`tools/profcheck.js`) - which found the page doubling its frame list
+   when two polls overlapped.
 3. Pause / step / resume through `omk.ctl`, and the paused frame's dump.
 4. Memory by tag: the counting `operator new` (host and classic), tags at
    the large owners (`classic-mac-port-1999.md` 3b's table: corners, posed
