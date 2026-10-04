@@ -81,9 +81,22 @@ cut: which code allocates what, which function takes the frame.
    the frame byte-identical. From here every debugging addition goes inside
    `#if OMK_PROFILE` and that check is run with it. Left in release: the
    instruments' FLAG NAMES, parsed and stubbed (`playoptions.cpp`).
-4. Memory by tag: the counting `operator new` (host and classic), tags at
-   the large owners (`classic-mac-port-1999.md` 3b's table: corners, posed
-   bodies, textures, collision, audio, scripts).
+4. ~~Memory by tag~~ - **DONE 2026-10-04** (`2b47a8a`): the profiler's
+   `operator new`/`delete` in every profiling build (a 16-byte header: size
+   and category), `OMK_MEM_TAG(name)`, and every open ZONE names the
+   category otherwise - so an untagged block still says what made it. A MEM
+   chunk per frame: live bytes and blocks per category, the frame's peak.
+   Tags at textures, geometry, collision (+ grids), sounds, music, archives.
+   The page: a memory graph (live, the frame's peak, the 64 MB line) and the
+   frame's categories. The classic `heapcount` now reads these totals (one
+   counter); the Vita's own `operator new` is the release build's.
+   **The street on an M3 (64-bit)**: 69.7 MB live - textures 14.1, geometry
+   12.0, collision 7.2, the area load (`input`) 11.9, the `world` phase 8.8
+   (both untagged yet: step 6's zones will split them). **And a lead**: with
+   frees uncounted (the check's mutation), geometry reached 49 MB in 30
+   frames - about 1.2 MB of geometry is ALLOCATED AND FREED every frame,
+   churn the live figure never shows. A per-frame "allocated" counter would
+   show it directly; noted for step 6 or the optimisation work.
 5. VRAM by tag in the GPU backends (Vulkan, GLES, GL1).
 6. Zones through the engine's hot paths (session tick, scripts, actors,
    pose, render submit, raster) - the "every function" the ask names, as
