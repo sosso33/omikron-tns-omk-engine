@@ -192,7 +192,9 @@ file off the image.
    music never played at all; what was heard was the street's own scene
    sounds (`anekbah.sfx`, one-shots of 6.6-8 s at the area load), which end;
    the footsteps are one-shots too. TRACKS (145 files, 187 MB) COPIED onto
-   that disk the same day, byte-identical; (b) ~~Sound Manager audio~~ DONE (`8b536ad`) -
+   that disk the same day, byte-identical re-run, the reader: "good now" - the
+   music plays on OS 9 through the Sound Manager ring at emulated speed.
+   So (a) is done on Tiger AND OS 9; (b) ~~Sound Manager audio~~ DONE (`8b536ad`) -
    left: the ring is six 100 ms buffers refilled between frames, so a frame
    slower than 0.6 s underruns (OS 9 under emulation); a bigger ring costs
    the interface blips latency, so measure on a real G3 before choosing;
