@@ -156,3 +156,51 @@ sounds 2.8 - the list the 64 MB classic budget will be cut from.
 Nothing here is a reading of the original; it is this project's own
 instrument (PORTING B6), and its one obligation is to change NOTHING the
 game does - which step 1's check holds it to.
+
+## The first full capture - the street, 2026-10-04 (M1, `sysctl`)
+
+Capped runs (no `--frames`: the real clock and the 30 Hz cap), headless, the
+street start in Anekbah, the player walked by `--hold` (stand 1.5 s, walk,
+turn left, run, turn right, walk, stand): **A** the software renderer (95 s,
+709 frames), **B** the Vulkan world renderer (50 s, 1343 frames), and **C**
+standing still with Vulkan for 3 minutes (5537 frames). "Work" is a frame
+minus the cap's sleep (`present`'s own time).
+
+| segment | A median ms | A draws | B work ms | RAM MB (B) |
+|---|---|---|---|---|
+| stand | 76.7 | 77 | 4.0 | 72.2 |
+| walk | 65.5 | 66 | 4.3 | 74.8 |
+| run | 180.5 | 192 | 4.9 | 77.8 |
+| walk 2 | 155.0 | 162 | 4.5 | 79.2 |
+
+* **The software frame is the rasterizer and nothing else**: ~0.94 ms per
+  `drawGeometry` call, and the calls follow the view - 66 walking the quiet
+  end, 192 running into the busy part. Everything else in the frame is under
+  1 ms together. 6.7 fps median over the walk.
+* **Vulkan holds 30 fps with the CPU at 4-5 ms of the 33** (14%), worst
+  7.3 ms after the first frames (frame 1: 19.8 ms).
+* **The setup is 7.5 s, and 5.0 of it is the original's**: the splash is
+  `Sleep(0x1388)`, five seconds, reproduced. The rest: reopening the audio
+  device at 22050 Hz (0.1 to 2.4 s - it varies between runs), the session
+  and the area 20 ms, the bodies 11 ms.
+* **RAM grows 57 -> 82 MB along the walk (64-bit)** - the standing figure
+  of step 4 (69.7) understated the street. By when and what:
+  * frame 1, once: the scripted motion 9.2 MB, the input bindings 1.5 MB;
+  * **the music stream buffer, 5.4 MB, of which ~5 MB is waste**:
+    `HostMixer` appends 176 KB/s (22050 Hz stereo floats) and compacts only
+    when its read head passes `1 << 20` floats - 4 MB of already-played
+    music kept, and the vector's doubling takes it to 5.4 MB (the
+    profiler shows the doublings: +0.34, 0.67, 1.35, 2.69 MB at frames 28,
+    88, 208, 449). The queue it serves is one second long. The same mixer
+    runs on the classic Mac - ~5 MB of the 64 MB budget for nothing;
+  * **the crowd's per-model caches, ~9.4 MB after 3 minutes and still
+    filling** (C: +2.3, 1.4, 1.2, 0.7, 0.4, 0.2, 0.5, 0.2 MB per 20 s) - a
+    cache, not a leak: each new walker model brings its rest geometry and
+    LOD cuts (`lodRestFor`, `pedLodTracks`...), more rarely as the pool has
+    shown them all. GPU memory follows the same curve, 23.8 -> 30.9 MB.
+  After 3 minutes standing: 88 MB RAM, 31 MB GPU.
+* **For the 64 MB classic budget** (measured on 32-bit at ~82 MB standing):
+  the two cheapest cuts are now named - the music buffer (compact when the
+  played part exceeds the queue: ~5 MB back) and a bound on the crowd's
+  model caches (~9 MB of growth over a session) - before any of the 3b
+  table's structural work.
