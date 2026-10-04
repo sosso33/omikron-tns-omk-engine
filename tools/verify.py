@@ -7076,18 +7076,36 @@ def c_engine_supersampling():
         frame check compares pixels, so an "off" that is not exactly off would
         move all of them. Asserted at 0 pixels, not "few".
       * 4x differs from 1x by a real amount, so it is doing something;
-      * and the frame gains DISTINCT COLOURS - 95 to 138 on this view. That is
-        the signature of a resolve rather than a shift: averaging four samples
-        makes values that were in neither. A count of changed pixels alone
+      * and the 4x frame is the SAME PICTURE, SMOOTHER: its mean colour
+        difference from 1x is small (under 20 of 765 a pixel; 5.4 measured)
+        while its mean neighbour difference - the frame's own high-frequency
+        energy - falls below 90% of the 1x frame's (12.1 against 15.7, 77%).
+        That is the signature of a resolve rather than a shift or a
+        decimation, and it needs both halves: a count of changed pixels alone
         would pass on a frame that merely moved.
+
+    **2026-10-04: the third property was "the frame gains DISTINCT COLOURS"
+    (95 -> 138, later 166 -> 201) and it went red at `80c1015`, the back-face
+    cull on the GPU backends - with the resolve unchanged.** Before the cull,
+    Anekbah's camera 3 looked straight at the BACK of a wall a few units from
+    the lens, every texel magnified into a block, and averaging across block
+    edges makes colours that were in neither block. The cull removed the wall
+    and the room behind it shows, its textures MINIFIED: averaging fine detail
+    pulls neighbours toward their mean, and the count FELL, 646 -> 508. So the
+    colour count was a property of one magnified view, not of a resolve.
+    Bisected on the Vulkan dump, 166/201 at `626b74a` and 646/508 at
+    `80c1015`, the 1x frame byte-identical from there to HEAD.
 
     Deliberately NOT asserted: that the picture looks less aliased. Edge energy
     over a texture-heavy set falls about 1%, because most of the high-frequency
     content there is the artists' texture and supersampling averages that too.
     The eye settles whether it looks better; this settles that it resolves.
 
-    Shown to fail: dropping the resolve to the 1x branch takes the colour
-    count back to 95 and the difference to a squashed corner of the frame.
+    Shown to fail, 2026-10-04, both on `readback`'s resolve: dropping it to
+    the 1x branch (the squashed top-left corner of the large frame) keeps the
+    neighbour difference low, 5.5, but the picture moves by 51.1; taking one
+    sample per block instead of the mean keeps the picture, 9.0, but the
+    neighbour difference stays at 15.68, 100% of 1x. Each fails one half.
     """
     eng = os.path.join(ROOT, "engine")
     if not os.path.isdir(eng):
@@ -7117,13 +7135,31 @@ def c_engine_supersampling():
     one, four = shot(["--ssaa", "1"]), shot(["--ssaa", "4"])
     same = sum(1 for i in range(0, len(none), 2) if none[i:i+2] != one[i:i+2])
     moved = sum(1 for i in range(0, len(none), 2) if four[i:i+2] != one[i:i+2])
-    colours = lambda d: len({d[i:i+2] for i in range(0, len(d), 2)})
-    c1, c4 = colours(one), colours(four)
-    return (defaultOff, same, moved > 5000, c4 > c1 + 20), (True, 0, True, True), \
+    W, H = 640, 480
+    if len(one) != 2 * W * H or len(four) != len(one):
+        return ("dump size", len(one), len(four)), ("dump size", 2 * W * H, 2 * W * H), \
+               "the dumps must be one 640x480 RGB565 frame each"
+    def rgb(d):
+        v = struct.unpack("<%dH" % (len(d) // 2), d)
+        return [((p >> 11) << 3, ((p >> 5) & 63) << 2, (p & 31) << 3) for p in v]
+    p1, p4 = rgb(one), rgb(four)
+    def energy(px):       # mean neighbour difference, the three channels summed
+        t = 0
+        for y in range(H):
+            row = px[y * W:(y + 1) * W]
+            for a_, b_ in zip(row, row[1:]):
+                t += abs(a_[0] - b_[0]) + abs(a_[1] - b_[1]) + abs(a_[2] - b_[2])
+        return t / (H * (W - 1))
+    e1, e4 = energy(p1), energy(p4)
+    mad = sum(abs(a_[0] - b_[0]) + abs(a_[1] - b_[1]) + abs(a_[2] - b_[2])
+              for a_, b_ in zip(p1, p4)) / len(p1)
+    return (defaultOff, same, moved > 5000, mad < 20.0, e4 < 0.9 * e1), \
+           (True, 0, True, True, True), \
            ("the default is 1 in the source; `--ssaa 1` differs from no flag in %d "
-            "pixels; 4x moves %d; and the frame goes from %d distinct colours to %d, "
-            "which is the resolve making values that were in neither sample"
-            % (same, moved, c1, c4))
+            "pixels; 4x moves %d; it is the same picture, a mean difference of "
+            "%.2f a pixel from 1x, and smoother - neighbour difference %.2f "
+            "against %.2f (%.0f%%), which is the resolve averaging"
+            % (same, moved, mad, e4, e1, 100.0 * e4 / e1))
 
 
 def c_engine_street_frame():
@@ -26729,9 +26765,17 @@ def c_engine_near_clip():
     | camera | pixels the clip changes | unlit, dropped -> clipped |
     |---|---|---|
     | 4555, the one `engine: silhouette` uses | **0** | 9520 -> 9520 |
-    | one 60 units along, inside the room | **12710** | **14689 -> 3811** |
+    | one 60 units along, inside the room | **12710** | **14707 -> 3811** |
 
-    The second is the bug: **10878 pixels of floor** that were a black hole.
+    The second is the bug: **10896 pixels of floor** that were a black hole.
+
+    **2026-10-04: 14689 -> 14707 and 10878 -> 10896, the back-face cull
+    (`626b74a`).** 18 pixels that the OLD rule's hole showed as the BACK of
+    the scenery behind a dropped front face are culled now, so they are unlit
+    too; the clipped render draws the front face over them and does not move
+    (3811), nor does the clip's difference (12710, those pixels differed
+    already). `OMK_NO_CULL=1` gives the old figures exactly; the near plane's
+    move to 2.0 (`7b8584a`) moves none of them.
     The first is why no check here saw it.
 
     **Tier**: this is a REFERENCE implementation (`PORTING` B6), so the clip is
@@ -26742,7 +26786,7 @@ def c_engine_near_clip():
 
     Shown to fail: it is a differential, so the old rule is rendered every run
     and the check is the gap between them - a build that stopped clipping would
-    report 0 and 14689 on the second camera.
+    report 0 and 14707 on the second camera.
     """
     import subprocess, tempfile, shutil
     eng = os.path.join(ROOT, "engine")
@@ -26767,7 +26811,7 @@ def c_engine_near_clip():
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return (out[0], out[1], out[1][1] - out[1][2]), \
-           ((0, 9520, 9520), (12710, 14689, 3811), 10878), \
+           ((0, 9520, 9520), (12710, 14707, 3811), 10896), \
            "two cameras in Aapkayl, each rendered BOTH ways - with the near " \
            "clip and with the pre-2026-09-01 rule that dropped any triangle " \
            "with a vertex behind the cut. Per camera: the pixels the clip " \
@@ -26776,7 +26820,7 @@ def c_engine_near_clip():
            "changes by NOTHING, which is why no check in this file saw the " \
            "bug and why that check says in three places that one camera is " \
            "not a claim about the renderer; one step into the room changes " \
-           "12710, and the last number is the hole itself - 10878 pixels of " \
+           "12710, and the last number is the hole itself - 10896 pixels of " \
            "floor that simply were not drawn"
 
 
