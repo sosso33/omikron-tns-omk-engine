@@ -1806,7 +1806,8 @@ void VulkanRenderer::setTextures(std::span<const omk::Texture> t) {
     // One VkImage and one descriptor set per material, plus a white 1x1 for a
     // material with no texture - which `raster.cpp` handles by leaving the
     // texel at 255 and letting the vertex colour stand alone.
-    auto upload = [&](const unsigned char* rgb, int tw, int th, Tex& out) {
+    // `fill` writes tw*th RGBA texels, alpha the colour key
+    auto upload = [&](auto&& fill, int tw, int th, Tex& out) {
         const VkDeviceSize bytes = static_cast<VkDeviceSize>(tw) * th * 4;
         VkBuffer sb; VkDeviceMemory sm;
         if (!makeBuffer(bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
@@ -1822,12 +1823,7 @@ void VulkanRenderer::setTextures(std::span<const omk::Texture> t) {
         // make the sample PREMULTIPLIED, which is what lets the edge stay
         // clean. A non-cutout batch never reads alpha, so a black texel
         // still draws black.
-        for (int i = 0; i < tw * th; ++i) {
-            dst[4 * i + 0] = rgb[3 * i + 0];
-            dst[4 * i + 1] = rgb[3 * i + 1];
-            dst[4 * i + 2] = rgb[3 * i + 2];
-            dst[4 * i + 3] = (rgb[3 * i] | rgb[3 * i + 1] | rgb[3 * i + 2]) ? 255 : 0;
-        }
+        fill(dst);
         vkUnmapMemory(dev_, sm);
 
         // THE MIP CHAIN - the trilinear enhancement's, generated here by a
@@ -1949,13 +1945,13 @@ void VulkanRenderer::setTextures(std::span<const omk::Texture> t) {
         makeShadowSet();
     }
 
-    const unsigned char white[3] = {255, 255, 255};
-    if (white_.img == VK_NULL_HANDLE) upload(white, 1, 1, white_);
+    if (white_.img == VK_NULL_HANDLE)
+        upload([](unsigned char* d) { d[0] = d[1] = d[2] = d[3] = 255; }, 1, 1, white_);
 
     tex_.assign(t.size(), Tex{});
     for (std::size_t i = 0; i < t.size(); ++i) {
-        if (t[i].width > 0 && t[i].height > 0 && !t[i].rgb.empty())
-            upload(t[i].rgb.data(), t[i].width, t[i].height, tex_[i]);
+        if (t[i].hasPixels())
+            upload([&](unsigned char* d) { t[i].toRgbaKeyed(d); }, t[i].width, t[i].height, tex_[i]);
     }
 }
 

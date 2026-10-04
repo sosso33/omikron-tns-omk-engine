@@ -212,7 +212,7 @@ public:
         std::vector<unsigned char> px;
         for (std::size_t i = 0; i < t.size(); ++i) {
             const Texture& x = t[i];
-            if (x.width <= 0 || x.height <= 0 || x.rgb.empty()) { tex_[i] = 0; continue; }
+            if (!x.hasPixels()) { tex_[i] = 0; continue; }
             // OpenGL 1.x wants power-of-two sides; the UVs are in texels, so
             // a padded texture keeps them and only the texture matrix's scale
             // changes. Every shipped .3DT is already a power of two.
@@ -221,9 +221,12 @@ public:
             px.assign(static_cast<std::size_t>(pw) * ph * 4, 0);
             for (int y = 0; y < x.height; ++y)
                 for (int xx = 0; xx < x.width; ++xx) {
-                    const std::size_t s = (static_cast<std::size_t>(y) * x.width + xx) * 3;
                     const std::size_t d = (static_cast<std::size_t>(y) * pw + xx) * 4;
-                    const unsigned char r = x.rgb[s], g = x.rgb[s + 1], b = x.rgb[s + 2];
+                    int ri, gi, bi;
+                    x.texel(static_cast<std::size_t>(y) * x.width + xx, ri, gi, bi);
+                    const unsigned char r = static_cast<unsigned char>(ri),
+                                        g = static_cast<unsigned char>(gi),
+                                        b = static_cast<unsigned char>(bi);
                     px[d] = r; px[d + 1] = g; px[d + 2] = b;
                     // the colour key on black: alpha 0, which only a cutout
                     // draw's alpha test reads

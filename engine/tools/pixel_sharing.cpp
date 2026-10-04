@@ -49,31 +49,31 @@ int main(int argc, char** argv) {
 
     // synthetic: share, detach, independence
     omk::Texture a;
-    a.rgb.assign(12, 7);
+    a.idx.assign(12, 7);
     omk::Texture b = a;
-    expect(b.rgb.sharesWith(a.rgb), "a copy shares its source's storage");
-    expect(b.rgb.size() == 12 && b.rgb[5] == 7, "a copy reads the same bytes");
+    expect(b.idx.sharesWith(a.idx), "a copy shares its source's storage");
+    expect(b.idx.size() == 12 && b.idx[5] == 7, "a copy reads the same bytes");
     omk::Texture c = a;
     // READING a non-const copy must not detach it - the trap the first
     // PixelBuffer fell into with a non-const operator[]
     std::uint8_t readBack = 0;
-    for (std::size_t i = 0; i < b.rgb.size(); ++i) readBack = static_cast<std::uint8_t>(readBack + b.rgb[i]);
-    expect(readBack == 84 && b.rgb.sharesWith(a.rgb) && c.rgb.sharesWith(a.rgb),
+    for (std::size_t i = 0; i < b.idx.size(); ++i) readBack = static_cast<std::uint8_t>(readBack + b.idx[i]);
+    expect(readBack == 84 && b.idx.sharesWith(a.idx) && c.idx.sharesWith(a.idx),
            "reading a non-const copy leaves every copy sharing");
-    b.rgb.mutableData()[5] = 99;
-    expect(!b.rgb.sharesWith(a.rgb), "a write detaches the copy");
-    expect(b.rgb[5] == 99, "the written copy holds the write");
-    expect(a.rgb[5] == 7 && c.rgb[5] == 7, "the source and another copy are unchanged");
-    expect(c.rgb.sharesWith(a.rgb), "the untouched copy still shares");
+    b.idx.mutableData()[5] = 99;
+    expect(!b.idx.sharesWith(a.idx), "a write detaches the copy");
+    expect(b.idx[5] == 99, "the written copy holds the write");
+    expect(a.idx[5] == 7 && c.idx[5] == 7, "the source and another copy are unchanged");
+    expect(c.idx.sharesWith(a.idx), "the untouched copy still shares");
     omk::Texture d = a;
-    d.rgb = {1, 2, 3};
-    expect(!d.rgb.sharesWith(a.rgb) && d.rgb.size() == 3 && a.rgb.size() == 12,
+    d.idx = {1, 2, 3};
+    expect(!d.idx.sharesWith(a.idx) && d.idx.size() == 3 && a.idx.size() == 12,
            "brace-assignment gives fresh storage");
     omk::Texture e = a;
-    e.rgb.assign(4, 1);
-    expect(!e.rgb.sharesWith(a.rgb) && a.rgb[0] == 7, "assign gives fresh storage");
+    e.idx.assign(4, 1);
+    expect(!e.idx.sharesWith(a.idx) && a.idx[0] == 7, "assign gives fresh storage");
     const omk::Texture empty;
-    expect(empty.rgb.empty() && empty.rgb.size() == 0 && empty.rgb.data() == nullptr,
+    expect(empty.idx.empty() && empty.idx.size() == 0 && empty.idx.data() == nullptr,
            "a default buffer is empty");
 
     // a real set, copied into a pool the way the viewer builds one
@@ -87,10 +87,10 @@ int main(int argc, char** argv) {
     for (std::size_t i = 0; i < pool.size(); ++i) {
         const auto& s = src[i % src.size()];
         ++textures;
-        shared += pool[i].rgb.sharesWith(s.rgb) || s.rgb.empty();
-        identical += pool[i].rgb.size() == s.rgb.size() &&
-                     (s.rgb.empty() || std::memcmp(pool[i].rgb.data(), s.rgb.data(), s.rgb.size()) == 0);
-        if (i < src.size()) bytes += s.rgb.size();
+        shared += pool[i].idx.sharesWith(s.idx) || s.idx.empty();
+        identical += pool[i].idx.size() == s.idx.size() &&
+                     (s.idx.empty() || std::memcmp(pool[i].idx.data(), s.idx.data(), s.idx.size()) == 0);
+        if (i < src.size()) bytes += s.idx.size();
     }
     expect(!src.empty(), "the set decodes");
     expect(shared == textures, "every pooled copy shares its source's storage");

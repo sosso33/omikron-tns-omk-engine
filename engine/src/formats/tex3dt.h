@@ -77,13 +77,51 @@ struct Texture {
     int                      width  = 0;
     int                      height = 0;
     int                      bpp    = 0;
-    // width*height*3 bytes, palette applied. Empty only on a malformed file.
-    // SHARED between copies of this Texture - see `PixelBuffer` above.
-    PixelBuffer rgb;
+    // THE FILE'S OWN FORM (todo/ram-vs-original.md tier C): width*height
+    // palette INDICES, one byte a texel, and the palette - always 256 RGB
+    // entries (768 bytes), zero past a 4-bit file's 16, so an index past the
+    // file's palette is black, which is what the RGB expansion this replaced
+    // drew. `SetMaterialsMemory` keeps exactly this: an arena of 8-bit pages
+    // plus 768 bytes a palette; the RGB form held three times the bytes.
+    // Both SHARED between copies of this Texture - see `PixelBuffer` above.
+    // Empty only on a malformed file.
+    PixelBuffer idx;
+    PixelBuffer pal;
     // false if the stream did not produce exactly width*height indices. True
     // for every one of the 2534 textures shipped under gamedata/MESHES; kept because
     // this same reader is used on the .3DO files embedded in the SCX stream.
     bool exact = false;
+
+    // Something to draw: the indices for every texel and a whole palette.
+    bool hasPixels() const {
+        return width > 0 && height > 0 && pal.size() == 768 &&
+               idx.size() >= static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+    }
+    // Texel k's colour (k = y * width + x).
+    void texel(std::size_t k, int& r, int& g, int& b) const {
+        const std::uint8_t* p = pal.data() + 3u * idx.data()[k];
+        r = p[0]; g = p[1]; b = p[2];
+    }
+    // Every texel expanded: RGB, 3 bytes a texel (a tool, a dump)...
+    std::vector<std::uint8_t> rgbCopy() const;
+    // ...and RGBA for an upload, alpha the COLOUR KEY - 0 where the texel is
+    // black, 255 elsewhere - exactly `rgbToRgbaKeyed` of the RGB form, taken
+    // from a 256-entry table rather than a test a texel. `rgba` holds
+    // width*height*4 bytes.
+    void toRgbaKeyed(std::uint8_t* rgba) const;
+    std::size_t keptBytes() const { return idx.size() + pal.size(); }
+    // A w x h texture of one colour (a probe's): every index 0, entry 0 the
+    // colour, the rest of the palette black.
+    static Texture solid(std::string name, int w, int h, std::uint8_t r, std::uint8_t g,
+                         std::uint8_t b) {
+        Texture t;
+        t.name = std::move(name); t.width = w; t.height = h; t.bpp = 8; t.exact = true;
+        t.idx.assign(static_cast<std::size_t>(w) * static_cast<std::size_t>(h), 0);
+        t.pal.assign(768, 0);
+        std::uint8_t* p = t.pal.mutableData();
+        p[0] = r; p[1] = g; p[2] = b;
+        return t;
+    }
 };
 
 // Expand `data` until `want` palette indices are produced.

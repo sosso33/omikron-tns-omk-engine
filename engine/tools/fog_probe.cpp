@@ -84,9 +84,7 @@ int main() {
     };
 
     // one white texel, so the texture path does not change the colour
-    omk::Texture t;
-    t.name = "white"; t.width = 1; t.height = 1; t.bpp = 24; t.exact = true;
-    t.rgb = {255, 255, 255};
+    const omk::Texture t = omk::Texture::solid("white", 1, 1, 255, 255, 255);
     const std::vector<omk::Texture> pool = {t};
     ren.setTextures(pool);
 

@@ -14768,7 +14768,11 @@ def c_engine_audio_queue_bound():
 
 
 def c_engine_pixel_sharing():
-    r"""A texture's pixels are shared by its copies, and only an explicit write
+    r"""(**2026-10-05**: the shared buffer is now the palette INDICES, one byte
+    a texel - `todo/ram-vs-original.md` tier C - so Anekbah's pixel bytes are
+    3932160 / 3 = 1310720; the sharing rules are unchanged.)
+
+    A texture's pixels are shared by its copies, and only an explicit write
     detaches (todo/optimization.md step 6).
 
     A `Texture` is copied into every list that holds it - a decor set's own
@@ -14823,7 +14827,7 @@ def c_engine_pixel_sharing():
             "format no longer matches this check"
     failed = tuple(ln[len("FAILED: "):] for ln in r.stdout.splitlines() if ln.startswith("FAILED: "))
     return tuple(int(x) for x in m.groups()) + (int(f.group(1)), failed), \
-        (20, 60, 60, 60, 3932160, 0, ()), \
+        (20, 60, 60, 60, 1310720, 0, ()), \
         "Anekbah's textures, their pooled copies, those sharing their source's " \
         "storage and reading byte-identical, the pixel bytes; then the ownership " \
         "rules that failed, by name"
@@ -27467,6 +27471,45 @@ def c_engine_sight_mask():
     return (g[0], g[3], g[6], g[5] > g[4] // 2), (220, 0, 0, True), \
         "all 220 sets: the shot soup's unmasked triangles are the sight soup, bitwise and in " \
         "order, and face-to-face segments hit the same face either way (most of them hitting)"
+
+
+def c_engine_indexed_textures():
+    r"""TEXTURES KEPT AS THE FILE HOLDS THEM (2026-10-05,
+    `todo/ram-vs-original.md` tier C). `SetMaterialsMemory` (0x004406B0) keeps
+    one arena of 8-bit palette pages plus 768 bytes a palette; the port
+    expanded every texture to RGB at load, three bytes a texel. Now a
+    `Texture` is its INDICES and a 256-entry palette, expanded where a texel is
+    read: the software sampler looks the colour up (as the original's software
+    path does), the GPU uploads take keyed RGBA from a 256-entry table.
+
+    `engine/tools/texture_hash` decodes every shipped texture - 2534 under
+    MESHES and the 230 sprites inside the `.SCX` streams - expands each texel
+    to RGB and hashes it all. The two hashes asserted here were taken from the
+    RGB decode BEFORE the change, so equal hashes say every texel has the same
+    colour; the kept bytes must be a third of the RGB form's, plus the
+    palettes. In the street: 14.1 -> 4.77 MB.
+
+    Shown to fail (2026-10-05): the palette's entries read G, R, B
+    (`pp[c]` filled from the file's `c ^ 1`) - both hashes move.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/texture_hash"], cwd=eng, capture_output=True, text=True)
+    if b.returncode != 0:
+        return ("build failed",), ("built",), "engine/tools/texture_hash must build"
+    r = subprocess.run([os.path.join(eng, "build", "texture_hash"), omkpaths.data_root()],
+                       capture_output=True, text=True)
+    print("        " + r.stdout.strip().replace("\n", "\n        "))
+    rows = re.findall(r"^(meshes|sprites): (\d+) textures \((\d+) inexact\), (\d+) texels, "
+                      r"(\d+) KB as RGB, (\d+) KB kept, hash ([0-9a-f]{16})", r.stdout, re.M)
+    if len(rows) != 2:
+        return ("rows", len(rows)), ("rows", 2), "the probe's two sections must parse"
+    got = tuple((name, int(n), h, int(kept) * 3 < int(rgb) + 3 * int(n)) for
+                name, n, _, _, rgb, kept, h in rows)
+    return got, (("meshes", 2534, "cf10a8dc8ad0e857", True),
+                 ("sprites", 230, "7d9a954f6d5cb0ae", True)), \
+        "every shipped texture's colours, hashed, equal to the RGB decode's (taken before the " \
+        "change), and each form keeping about a third of the RGB bytes"
 
 
 def c_engine_street_memory():
@@ -41616,6 +41659,7 @@ SLOW = [
     ("engine: street memory", c_engine_street_memory, "todo/ram-vs-original.md tier A"),
     ("engine: device sounds", c_engine_device_sounds, "todo/ram-vs-original.md tier B; audio/hostmix.h"),
     ("engine: sight mask", c_engine_sight_mask, "todo/ram-vs-original.md tier B; o3de/collision.h"),
+    ("engine: indexed textures", c_engine_indexed_textures, "todo/ram-vs-original.md tier C; formats/tex3dt.h"),
     ("engine: profiler control", c_engine_profiler_control, "todo/debug-tools.md step 3"),
     ("engine: profiler gpu", c_engine_profiler_gpu, "todo/debug-tools.md step 5"),
     ("engine: release build", c_engine_release_build, "todo/debug-tools.md"),

@@ -1207,13 +1207,12 @@ void GlesRenderer::setTextures(std::span<const Texture> t) {
     int reused = 0, fresh = 0;
     for (std::size_t i = 0; i < t.size(); ++i) {
         const auto& s = t[i];
-        if (s.width <= 0 || s.height <= 0 || s.rgb.empty() ||
-            s.rgb.size() < static_cast<std::size_t>(s.width) * s.height * 3) continue;
+        if (!s.hasPixels()) continue;
         auto& out = tex_[i];
         out.w = static_cast<float>(s.width);
         out.h = static_cast<float>(s.height);
         // already on the GPU from an earlier pool: the same storage, the same bytes
-        const auto key = std::make_tuple(s.rgb.data(), s.width, s.height);
+        const auto key = std::make_tuple(s.idx.data(), s.width, s.height);
         const auto hit = uploaded_.find(key);
         if (hit != uploaded_.end()) {
             hit->second.used = true;
@@ -1226,7 +1225,7 @@ void GlesRenderer::setTextures(std::span<const Texture> t) {
         // alpha carries the COLOUR KEY, exactly as the Vulkan upload does:
         // 0 where the texel is black, 255 elsewhere (`formats/tex3dt.h`, NEON
         // where the platform has it)
-        rgbToRgbaKeyed(s.rgb.data(), px.data(), static_cast<std::size_t>(n));
+        s.toRgbaKeyed(px.data());
         // REPEAT is the engine's addressing (the sampler Vulkan builds), and
         // GLES2 allows it only on power-of-two textures. All 2534 shipped under
         // MESHES are (max 256x256, measured 2026-09-18); a texture that is not
@@ -1247,7 +1246,7 @@ void GlesRenderer::setTextures(std::span<const Texture> t) {
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, s.width, s.height, 0, GL_RGBA,
                      GL_UNSIGNED_BYTE, px.data());
 gpuTexture("textures", out.id, 4LL * s.width * s.height);
-        uploaded_[key] = Uploaded{out.id, s.width, s.height, s.rgb, true};
+        uploaded_[key] = Uploaded{out.id, s.width, s.height, s.idx, true};
         ++fresh;
     }
     // what no slot of this pool uses any more leaves the GPU

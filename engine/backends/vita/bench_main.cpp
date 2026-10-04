@@ -436,7 +436,8 @@ int main(int argc, char** argv) {
             return h;
         };
         const int passes = 20;
-        const auto run = [&](bool neon, double& ms) {
+        // `table`: the palette form's upload; else the RGB form's, expanded first
+        const auto run = [&](bool table, double& ms) {
             ms = 0.0;
             std::uint64_t h = 1469598103934665603ull;
             for (int k = 0; k < passes; ++k) {
@@ -444,9 +445,11 @@ int main(int argc, char** argv) {
                 std::size_t at = 0;
                 for (const auto& x : tex) {
                     const std::size_t n = static_cast<std::size_t>(x.width) * x.height;
-                    if (x.rgb.size() < n * 3) continue;
-                    if (neon) omk::rgbToRgbaKeyedNeon(x.rgb.data(), out.data() + 4 * at, n);
-                    else omk::rgbToRgbaKeyedGeneric(x.rgb.data(), out.data() + 4 * at, n);
+                    if (!x.hasPixels()) continue;
+                    // the palette form's table (`Texture::toRgbaKeyed`) against
+                    // the RGB form's per-texel test, which it replaced
+                    if (table) x.toRgbaKeyed(out.data() + 4 * at);
+                    else omk::rgbToRgbaKeyedGeneric(x.rgbCopy().data(), out.data() + 4 * at, n);
                     at += n;
                 }
                 ms += msSince(t0);
@@ -456,14 +459,13 @@ int main(int argc, char** argv) {
         };
         double msG = 0, msN = 0;
         const std::uint64_t hG = run(false, msG), hN = run(true, msN);
-        const bool neon = omk::pointPlaceHasNeon();
-        texOk = !neon || hG == hN;
-        say("texkey   %zu textures, %zu pixels x%d  generic %.3f ms  neon %.3f ms a pool  "
+        texOk = hG == hN;
+        say("texkey   %zu textures, %zu pixels x%d  rgb %.3f ms  palette %.3f ms a pool  "
             "speedup %.2fx\n", tex.size(), px, passes, msG / passes, msN / passes,
             msN > 0 ? msG / msN : 0.0);
-        say("hash generic %016llx neon %016llx  texkey: %s\n",
+        say("hash rgb %016llx palette %016llx  texkey: %s\n",
             static_cast<unsigned long long>(hG), static_cast<unsigned long long>(hN),
-            !neon ? "ABSENT (no __ARM_NEON)" : hG == hN ? "EXACT" : "DIFFERENT");
+            hG == hN ? "EXACT" : "DIFFERENT");
     }
 
     if (g_report) std::fclose(g_report);

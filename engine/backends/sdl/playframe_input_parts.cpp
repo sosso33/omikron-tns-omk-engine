@@ -1072,7 +1072,7 @@ void PlayState::inputSounds() {
                 if (!e.sprite || (e.flags & 2)) continue;
                 ctlSprites.push_back({e.sprite, e.duration, e.from, e.to, e.scale,
                                       e.flags, e.attach, st});
-                if (!spriteTab.texOf(e.sprite) || spriteTab.texOf(e.sprite)->rgb.empty())
+                if (!spriteTab.texOf(e.sprite) || !spriteTab.texOf(e.sprite)->hasPixels())
                     std::printf("ctl-effect: sprite %d is not registered by the library or the "
                                 "scene - nothing will draw\n", e.sprite);
                 std::printf("ctl-effect: state %d '%s' spawns sprite %d on attach %d "

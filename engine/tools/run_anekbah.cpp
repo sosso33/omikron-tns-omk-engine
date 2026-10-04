@@ -112,8 +112,9 @@ int main(int argc, char** argv) {
     std::vector<omk::Texture> marked = ane.tex;
     if (target >= 0) {
         auto& m = marked[static_cast<std::size_t>(target)];
-        std::uint8_t* const mp = m.rgb.mutableData();   // a write: detach, then paint
-        for (std::size_t k = 0; k + 2 < m.rgb.size(); k += 3) {
+        // every palette entry magenta, so every texel is (the palette form)
+        std::uint8_t* const mp = m.pal.mutableData();   // a write: detach, then paint
+        for (std::size_t k = 0; k + 2 < m.pal.size(); k += 3) {
             mp[k] = 255; mp[k + 1] = 0; mp[k + 2] = 255;
         }
     }

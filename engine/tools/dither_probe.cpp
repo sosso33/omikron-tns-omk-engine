@@ -80,9 +80,7 @@ int main() {
     omk::SoftwareRenderer ren;
     if (!ren.init(W, H)) { std::fprintf(stderr, "no software renderer\n"); return 1; }
 
-    omk::Texture t;
-    t.name = "white"; t.width = 1; t.height = 1; t.bpp = 24; t.exact = true;
-    t.rgb = {255, 255, 255};
+    const omk::Texture t = omk::Texture::solid("white", 1, 1, 255, 255, 255);
     const std::vector<omk::Texture> pool = {t};
     ren.setTextures(pool);
 

@@ -1086,7 +1086,7 @@ void PlayState::worldBolts() {
             for (int id : spriteWanted) {
                 if (id < 0 || static_cast<std::size_t>(id) >= spriteTab.idCount) continue;
                 const omk::Texture* st = spriteTab.texOf(id);
-                if (!st || st->rgb.empty()) continue;   // an id nothing decoded
+                if (!st || !st->hasPixels()) continue;   // an id nothing decoded
                 spriteSlot[id] = static_cast<int>(pool.size() - spriteTexBase);
                 pool.push_back(*st);
             }

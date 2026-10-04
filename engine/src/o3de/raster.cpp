@@ -155,8 +155,9 @@ inline void sample(const Texture& t, float u, float v,
     int y = static_cast<int>(v) % t.height;
     if (x < 0) x += t.width;
     if (y < 0) y += t.height;
-    const std::size_t i = (static_cast<std::size_t>(y) * t.width + x) * 3;
-    r = t.rgb[i]; g = t.rgb[i + 1]; b = t.rgb[i + 2];
+    // the palette form (`Texture::idx`/`pal`): the index, then its colour -
+    // the original's software path samples its 8-bit pages the same way
+    t.texel(static_cast<std::size_t>(y) * t.width + x, r, g, b);
 }
 
 }  // namespace
@@ -207,7 +208,7 @@ RasterStats drawGeometry(Surface& fb, std::vector<float>& depth,
         if (batch.material >= 0 &&
             static_cast<std::size_t>(batch.material) < textures.size()) {
             const Texture& t = textures[static_cast<std::size_t>(batch.material)];
-            if (t.width > 0 && t.height > 0 && !t.rgb.empty()) tex = &t;
+            if (t.hasPixels()) tex = &t;
         }
         for (std::size_t i = batch.start; i + 2 < batch.start + batch.count; i += 3) {
             ++st.triangles;

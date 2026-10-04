@@ -66,8 +66,9 @@ int main(int argc, char** argv) {
         const auto& tx = txs[i];
         const auto out = outdir / (stem + "." + std::to_string(i) + ".rgb");
         std::ofstream f(out, std::ios::binary);
-        f.write(reinterpret_cast<const char*>(tx.rgb.data()),
-                static_cast<std::streamsize>(tx.rgb.size()));
+        const std::vector<std::uint8_t> rgb = tx.rgbCopy();
+        f.write(reinterpret_cast<const char*>(rgb.data()),
+                static_cast<std::streamsize>(rgb.size()));
         std::printf("%zu\t%s\t%d\t%d\t%d\t%d\n", i, tx.name.c_str(),
                     tx.width, tx.height, tx.bpp, tx.exact ? 1 : 0);
     }
