@@ -751,6 +751,29 @@ std::vector<omk::MeshPose> PlayState::gunmanPoseNow(int actor, int deathType, co
 // resolves a shot effect's SOUND id in (`Scene_FindSoundIndex`) when the
 // emitter names no scene of its own - and the shot's never does.
 // (struct SfxSample: `backends/sdl/playtypes.h`, todo/play-split.md)
+// A mode's LIBRARY (`fight.scx`, `shoot2.scx`), loaded when the mode is
+// entered and released when it ends - the engine's `Game_Start` swaps it into
+// `stru_930780` and puts `aventure.scx` back (todo/ram-vs-original.md tier B).
+// Its converted samples go with it: `sfxCache` is keyed by the file's own
+// bytes, and a later load at the same address would find another file's
+// sounds there. A voice still playing keeps its own samples (shared).
+void PlayState::loadLibrary(std::unique_ptr<omk::ScxRuntime>& rt, const char* path) {
+    const omk::DataFs fs(fr);
+    if (const auto p = fs.resolve(path)) {
+        rt = std::make_unique<omk::ScxRuntime>(omk::DataFs::readPath(*p));
+        if (!rt->valid()) rt.reset();
+    }
+}
+
+void PlayState::dropLibrary(std::unique_ptr<omk::ScxRuntime>& rt) {
+    if (!rt) return;
+    for (int i = 0; i < rt->wavCount(); ++i) {
+        const auto w = rt->wavData(i);
+        sfxCache.erase(std::make_pair(w.data(), w.size()));
+    }
+    rt.reset();
+}
+
 const SfxSample & PlayState::sfxPcm(std::span<const std::byte> wav) {
     const auto key = std::make_pair(wav.data(), wav.size());
     auto it = sfxCache.find(key);
@@ -1133,6 +1156,12 @@ bool PlayState::beginMelee(int opponentId, int level) {
                           settings.v.fightDifficulty,
                           settings.v.combatCamera);
     in.installScheme(3);          // `Input_InstallScheme(3)`, group Combat
+    // `Fight_Begin`'s own `Game_Start("fight.scx")` (playsetup_bodies.cpp)
+    if (!fightRt) {
+        loadLibrary(fightRt, "SCPTDATA/fight.SCX");
+        std::printf("fight library: SCPTDATA/fight.SCX %s\n",
+                    fightRt ? "loaded (Fight_Begin's Game_Start)" : "INVALID");
+    }
     fightRun.active = true;
     fightRun.camRaySet = false;
     fightRun.hudRefresh = true;

@@ -710,6 +710,8 @@ struct PlayState {
     std::vector<omk::MeshPose> gunmanPoseNow(int actor, int deathType, const CharModel* mo,
                                    const omk::NodeTracks& pt, float frame);
     const SfxSample & sfxPcm(std::span<const std::byte> wav);
+    void loadLibrary(std::unique_ptr<omk::ScxRuntime>& rt, const char* path);
+    void dropLibrary(std::unique_ptr<omk::ScxRuntime>& rt);
     void shotSound(long frame, int effectId, const float at[3],
                                const float* listener, const char* what);
     const GunFacts & gunFactsFor(const std::string& stem);

@@ -869,6 +869,7 @@ void PlayState::adventureScreenInput() {
                                                         : "the opponent",
                             myHp, hisHp);
                 fightRun.active = false;
+                dropLibrary(fightRt);     // `aventure.scx` back (`loadLibrary`)
                 fightRun.fight.reset();
                 fightRun.foeChannel.reset();
                 if (fightRun.body) {

@@ -205,15 +205,11 @@ int PlayState::setupBodies() {
     // `ELECMB02`, `MVT02` and `ELECMB03`). A reader: *"no sound fx, no visual
     // effect"* (`todo/fight-mode.md` 15.2).
     //
-    // Loaded once and kept, rather than at `fight.begin`: the engine's
-    // `Game_Start` is a load, and doing it here costs one read instead of one
-    // per fight.
-    if (const auto fp = fs.resolve("SCPTDATA/fight.SCX")) {
-        fightRt = std::make_unique<omk::ScxRuntime>(omk::DataFs::readPath(*fp));
-        if (!fightRt->valid()) fightRt.reset();
-        std::printf("fight library: SCPTDATA/fight.SCX %s\n",
-                    fightRt ? "loaded (Fight_Begin's Game_Start)" : "INVALID");
-    }
+    // Loaded at `fight.begin` and released at the fight's end
+    // (`loadLibrary` / `dropLibrary`), as the engine's `Game_Start` swaps it
+    // in and `aventure.scx` back: kept from the boot it was 1 MB of a street
+    // that never fights (todo/ram-vs-original.md tier B). Its SPRITES are
+    // decoded here, below, once.
     {
         const int glob = loadSpritesInto(spriteBase, "aventure.SCX");
         // ...then the FIGHT's, which `Fight_Begin`'s own `Game_Start` installs

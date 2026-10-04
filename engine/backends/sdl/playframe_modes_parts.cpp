@@ -436,6 +436,7 @@ int PlayState::modesShoot() {
                 if (shootMode) player->enterShootMode();
                 else           player->leaveShootMode();
             }
+            if (!shootMode) dropLibrary(shootRt);   // `aventure.scx` back
             in.installScheme(shootMode ? omk::ShootMode::kInputScheme : 0);
             // ---- THE CAMERA, and it belongs HERE ------------------------
             //
@@ -677,14 +678,10 @@ int PlayState::modesShoot() {
                 if (!shootSfx.valid && shootSfx.shotSprites.empty())
                     shootSfx = omk::readSfx(fs.read("SCPTDATA/shoot2.sfx"));
                 // ...and `Game_Start("shoot2.scx")`, the library the shot's
-                // sounds resolve in. Kept once loaded: the engine reloads it
-                // on every entry and puts `aventure.scx` back on the way out,
-                // and the only reader here is the shot.
-                if (!shootRt)
-                    if (const auto gp = fs.resolve("SCPTDATA/shoot2.scx")) {
-                        shootRt = std::make_unique<omk::ScxRuntime>(omk::DataFs::readPath(*gp));
-                        if (!shootRt->valid()) shootRt.reset();
-                    }
+                // sounds resolve in: loaded on every entry and released on the
+                // way out, as the engine puts `aventure.scx` back - kept, it
+                // was 4 MB for the rest of the run (`loadLibrary`)
+                if (!shootRt) loadLibrary(shootRt, "SCPTDATA/shoot2.scx");
                 shotGunStem = known ? objs[static_cast<std::size_t>(obj)].stem : std::string();
                 if (!shotGunStem.empty()) {
                     const GunFacts& gf = gunFactsFor(shotGunStem);
