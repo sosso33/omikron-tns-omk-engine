@@ -977,15 +977,18 @@ void PlayState::worldStaged() {
                                     to[k] = s.meshAt[i * 3 + static_cast<std::size_t>(k)];
                             break;
                         }
-                    const omk::TriangleSoup* soup = nullptr;
+                    const WorldSlot* sightSlot = nullptr;
                     for (const auto& ws : worldSlots)
-                        if (!ws.stem.empty() && ws.stem == worldSet) soup = &ws.sightSoup;
+                        if (!ws.stem.empty() && ws.stem == worldSet) sightSlot = &ws;
                     double hitT = -1.0;
-                    if (soup) {
+                    if (sightSlot) {
                         const double p0[3] = {from[0], from[1], from[2]};
                         const double d[3] = {double(to[0]) - from[0], double(to[1]) - from[1],
                                              double(to[2]) - from[2]};
-                        if (const auto h = omk::sweepSphere(*soup, p0, d, 0.0)) hitT = h->t;
+                        // the shot soup without its cutouts (`shotCutout`)
+                        if (const auto h = omk::sweepSphere(sightSlot->shotSoup,
+                                                            sightSlot->shotCutout, p0, d, 0.0))
+                            hitT = h->t;
                     }
                     ein.rayHits = hitT >= 0.0;
                     static std::map<int, int> rayTold;
@@ -1002,7 +1005,7 @@ void PlayState::worldStaged() {
                                         double(ao.dist3d),
                                         spectreArm ? "the SPECTRE's sight (type 12)"
                                                    : "the CROSS-FLOOR watcher's sight (0x800000)",
-                                        !soup ? "no set to cast over"
+                                        !sightSlot ? "no set to cast over"
                                         : ein.rayHits ? "HITS the set" : "CLEAR",
                                         (spectreArm ? cone : wideCone) ? "inside his"
                                                                        : "outside his");
@@ -1011,7 +1014,7 @@ void PlayState::worldStaged() {
                                     "half his inner range %.1f: %s\n", n, s.actor,
                                     s.model.c_str(), double(ao.dist3d),
                                     double(rec.rangeInner) * 0.5,
-                                    !soup ? "no set to cast over"
+                                    !sightSlot ? "no set to cast over"
                                     : ein.rayHits ? "HITS the set - he holds in state 6"
                                                   : "CLEAR - he may close (13 or 8)");
                         if (ein.rayHits)

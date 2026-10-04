@@ -830,6 +830,37 @@ std::optional<SweepHit> sweepSphere(const TriangleSoup& tris, const double p0[3]
     return best;
 }
 
+std::optional<SweepHit> sweepSphere(const TriangleSoup& tris,
+                                    const std::vector<std::uint8_t>& skip,
+                                    const double p0[3], const double d[3], double radius) {
+    std::optional<SweepHit> best;
+    double lo[3], hi[3];
+    sweptBox(p0, d, radius, lo, hi);
+    for (std::size_t i = 0, t = 0; i + 9 <= tris.size(); i += 9, ++t)
+        if (t >= skip.size() || !skip[t])
+            sweepOne(&tris[i], &tris[i + 3], &tris[i + 6], p0, d, radius, lo, hi, best);
+    return best;
+}
+
+std::vector<std::uint8_t> cutoutMask(std::span<const std::byte> d, const std::vector<int>& meshOf) {
+    OMK_MEM_TAG("collision");
+    std::vector<std::uint8_t> out(meshOf.size(), 0);
+    const auto header = readHeader(d);
+    if (!header) return out;
+    const auto ms = readMeshes(d, *header);
+    std::vector<std::uint8_t> cut;
+    for (const auto& m : ms) {
+        const auto i = static_cast<std::size_t>(std::max<std::int32_t>(0, m.index));
+        if (i >= cut.size()) cut.resize(i + 1, 0);
+        cut[i] = (static_cast<std::uint32_t>(m.flags) & 0x800u) ? 1 : 0;
+    }
+    for (std::size_t t = 0; t < meshOf.size(); ++t) {
+        const auto mi = static_cast<std::size_t>(meshOf[t]);
+        out[t] = meshOf[t] >= 0 && mi < cut.size() ? cut[mi] : 0;
+    }
+    return out;
+}
+
 std::optional<SweepHit> sweepSphere(const TriangleSoup& tris, const SplitSoupGrid& g,
                                     const double p0[3], const double d[3], double radius) {
     double lo[3], hi[3];

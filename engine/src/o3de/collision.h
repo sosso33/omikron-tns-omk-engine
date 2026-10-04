@@ -130,6 +130,19 @@ struct SweepHit {
 };
 std::optional<SweepHit> sweepSphere(const TriangleSoup& tris, const double p0[3],
                                     const double d[3], double radius);
+// ...skipping every triangle whose `skip` byte is set: the SIGHT ray through
+// the SHOT soup (`cutoutMask`). The sight soup is the shot soup minus the
+// cutout meshes, in the same order, so the same faces are tried in the same
+// order and the same one wins - one soup kept where there were two
+// (todo/ram-vs-original.md tier B).
+std::optional<SweepHit> sweepSphere(const TriangleSoup& tris,
+                                    const std::vector<std::uint8_t>& skip,
+                                    const double p0[3], const double d[3], double radius);
+// One byte a triangle of a `Shot` soup: 1 where its mesh carries the cutout
+// bit 0x800, which `sub_444460` skips for the sight (`SoupKind::Sight`).
+// `meshOf` is the soup's own (`collisionSoup`'s third argument).
+std::vector<std::uint8_t> cutoutMask(std::span<const std::byte> model,
+                                     const std::vector<int>& meshOf);
 
 // `Walk_ClampNormal` (0x0046A020), transcribed. Bits 0..5 (or 16..21 when
 // `high`) are +x -x +y -y +z -z; a set bit zeroes that component of the

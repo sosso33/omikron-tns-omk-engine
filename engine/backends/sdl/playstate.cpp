@@ -1339,8 +1339,13 @@ void PlayState::prepareSet(SetLoad& L) {
     t = clk::now();
     w.soup = omk::collisionSoup(d, omk::SoupKind::Walkable, &w.soupMesh);
     w.steep = omk::collisionSoup(d, omk::SoupKind::Steep, &w.steepMesh);
-    w.shotSoup = omk::collisionSoup(d, omk::SoupKind::Shot);
-    w.sightSoup = omk::collisionSoup(d, omk::SoupKind::Sight);
+    {
+        // the sight's soup is the shot's minus the cutouts: one soup and a
+        // byte a triangle (`omk::cutoutMask`), not two soups
+        std::vector<int> shotMesh;
+        w.shotSoup = omk::collisionSoup(d, omk::SoupKind::Shot, &shotMesh);
+        w.shotCutout = omk::cutoutMask(d, shotMesh);
+    }
     w.restXyzOfMesh.clear(); w.restSoupOfMesh.clear(); w.restSteepOfMesh.clear();
     L.ms[3] = since(t);
     t = clk::now();

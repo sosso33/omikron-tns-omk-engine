@@ -757,11 +757,13 @@ struct WorldSlot {
     // set's meshes through `sub_444460`, which skips CollisionOnly
     // (0x800000) and gives a mesh with either bit of 0x41 no triangle
     // test: the bolts' `sub_444810` tests the rest (`shotSoup`), and the
-    // engage's sight `sub_4449E0` also skips the 0x800 cutouts
-    // (`sightSoup`, its context +444 set to 1). Baked at rest: unlike the
-    // walker's soups above, a mesh a scene program moves is not followed,
-    // which is this port's and labelled.
-    omk::TriangleSoup shotSoup, sightSoup;
+    // engage's sight `sub_4449E0` also skips the 0x800 cutouts (its
+    // context +444 set to 1) - the shot soup through `shotCutout`, a byte a
+    // triangle, rather than a second soup (todo/ram-vs-original.md tier B).
+    // Baked at rest: unlike the walker's soups above, a mesh a scene program
+    // moves is not followed, which is this port's and labelled.
+    omk::TriangleSoup shotSoup;
+    std::vector<std::uint8_t> shotCutout;
 };
 
 // ------------------------------------------------------------- THE SKY

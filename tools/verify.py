@@ -27435,6 +27435,40 @@ def c_engine_device_sounds():
         "rate reads back wavToDevice's floats bitwise, and mixes bitwise the same, looped"
 
 
+def c_engine_sight_mask():
+    r"""THE SIGHT RAY OVER THE SHOT SOUP (2026-10-05, `todo/ram-vs-original.md`
+    tier B). `sub_4449E0`, the engage's sight, walks the same meshes as the
+    bolts' `sub_444810` and skips the 0x800 cutouts too; the port kept the two
+    as two soups of the same faces. Now one shot soup and a byte a triangle
+    (`omk::cutoutMask`), the sight's `sweepSphere` skipping the marked ones.
+
+    `engine/tools/shot_ray --mask` over all 220 decor sets: the shot soup's
+    unmasked triangles ARE the sight soup's, bitwise and in order (so the same
+    faces are tried in the same order and the same one wins), and 64
+    face-to-face segments a set hit the same face at the same t with the same
+    normal either way. 560504 shot triangles, 17460 cutouts, 14080 rays.
+
+    Shown to fail (2026-10-05): `cutoutMask` testing 0x41 instead of 0x800.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/shot_ray"], cwd=eng, capture_output=True, text=True)
+    if b.returncode != 0:
+        return ("build failed",), ("built",), "engine/tools/shot_ray must build"
+    sets = sorted(glob.glob(os.path.join(omkpaths.data_root(), "MESHES", "DECORS", "*.[3][dD][oO]")))
+    r = subprocess.run([os.path.join(eng, "build", "shot_ray"), "--mask"] + sets,
+                       capture_output=True, text=True)
+    print("        " + r.stdout.strip())
+    m = re.search(r"mask: (\d+) sets, (\d+) shot triangles, (\d+) masked as cutouts, (\d+) soups "
+                  r"differ; (\d+) rays, (\d+) hit, (\d+) differ", r.stdout)
+    if not m:
+        return ("no row",), ("row",), "the probe's line must parse"
+    g = tuple(int(x) for x in m.groups())
+    return (g[0], g[3], g[6], g[5] > g[4] // 2), (220, 0, 0, True), \
+        "all 220 sets: the shot soup's unmasked triangles are the sight soup, bitwise and in " \
+        "order, and face-to-face segments hit the same face either way (most of them hitting)"
+
+
 def c_engine_street_memory():
     r"""THE STREET'S MEMORY AGAINST THE ORIGINAL'S, tier A (2026-10-04,
     `todo/ram-vs-original.md`): what the port keeps in Anekbah where the
@@ -41578,6 +41612,7 @@ SLOW = [
     ("engine: crowd memory", c_engine_crowd_memory, "STREET_LIFE; todo/debug-tools.md"),
     ("engine: street memory", c_engine_street_memory, "todo/ram-vs-original.md tier A"),
     ("engine: device sounds", c_engine_device_sounds, "todo/ram-vs-original.md tier B; audio/hostmix.h"),
+    ("engine: sight mask", c_engine_sight_mask, "todo/ram-vs-original.md tier B; o3de/collision.h"),
     ("engine: profiler control", c_engine_profiler_control, "todo/debug-tools.md step 3"),
     ("engine: profiler gpu", c_engine_profiler_gpu, "todo/debug-tools.md step 5"),
     ("engine: release build", c_engine_release_build, "todo/debug-tools.md"),

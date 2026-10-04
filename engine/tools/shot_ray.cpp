@@ -3,6 +3,12 @@
 //
 //     shot_ray <set.3DO> x0 y0 z0 x1 y1 z1
 //     shot_ray --kinds <set.3DO>
+//     shot_ray --mask <set.3DO>...
+//
+// `--mask` proves the SIGHT ray can run over the SHOT soup (`cutoutMask`,
+// todo/ram-vs-original.md tier B): per set, the shot soup's unmasked
+// triangles are the sight soup's, bitwise and in order, and 64 segments
+// between the set's own faces hit the same face at the same t either way.
 //
 // `--kinds` measures the two world rays' soups against the render soup
 // (`todo/shoot-sight.md` step 6): the triangles each keeps, the meshes `Shot`
@@ -96,8 +102,54 @@ static int kinds(const char* path) {
     return 0;
 }
 
+static int mask(int argc, char** argv) {
+    long sets = 0, tris = 0, masked = 0, rays = 0, hits = 0, badSoup = 0, badRay = 0;
+    for (int k = 2; k < argc; ++k) {
+        const auto d = omk::DataFs::readPath(argv[k]);
+        std::vector<int> meshOf;
+        const auto shot = omk::collisionSoup(d, omk::SoupKind::Shot, &meshOf);
+        const auto sight = omk::collisionSoup(d, omk::SoupKind::Sight);
+        const auto skip = omk::cutoutMask(d, meshOf);
+        ++sets;
+        tris += static_cast<long>(shot.size() / 9);
+        // the unmasked shot triangles, in order, ARE the sight soup
+        omk::TriangleSoup kept;
+        for (std::size_t t = 0; t < skip.size(); ++t)
+            if (!skip[t]) kept.insert(kept.end(), shot.begin() + static_cast<long>(9 * t),
+                                      shot.begin() + static_cast<long>(9 * t + 9));
+            else ++masked;
+        if (skip.size() * 9 != shot.size() || kept != sight) { ++badSoup; continue; }
+        if (shot.size() < 18) continue;
+        // segments from one face's centre to another's, a fixed sequence
+        std::uint32_t r = 12345u;
+        const std::size_t n = shot.size() / 9;
+        for (int i = 0; i < 64; ++i) {
+            double a[3], b[3];
+            for (double* p : {a, b}) {
+                r = r * 1664525u + 1013904223u;
+                const std::size_t t = (r >> 8) % n;
+                for (int c = 0; c < 3; ++c)
+                    p[c] = (shot[9 * t + c] + shot[9 * t + 3 + c] + shot[9 * t + 6 + c]) / 3.0;
+            }
+            const double dv[3] = {b[0] - a[0], b[1] - a[1], b[2] - a[2]};
+            const auto h1 = omk::sweepSphere(sight, a, dv, 0.0);
+            const auto h2 = omk::sweepSphere(shot, skip, a, dv, 0.0);
+            ++rays;
+            if (h1) ++hits;
+            if (bool(h1) != bool(h2) ||
+                (h1 && (h1->t != h2->t || h1->n[0] != h2->n[0] || h1->n[1] != h2->n[1] ||
+                        h1->n[2] != h2->n[2]))) ++badRay;
+        }
+    }
+    std::printf("mask: %ld sets, %ld shot triangles, %ld masked as cutouts, %ld soups "
+                "differ; %ld rays, %ld hit, %ld differ\n",
+                sets, tris, masked, badSoup, rays, hits, badRay);
+    return badSoup || badRay ? 1 : 0;
+}
+
 int main(int argc, char** argv) {
     if (argc == 3 && std::string(argv[1]) == "--kinds") return kinds(argv[2]);
+    if (argc >= 3 && std::string(argv[1]) == "--mask") return mask(argc, argv);
     if (argc < 8) {
         std::fprintf(stderr, "usage: shot_ray <set.3DO> x0 y0 z0 x1 y1 z1 | --kinds <set.3DO>\n");
         return 2;
