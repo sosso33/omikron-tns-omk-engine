@@ -32,7 +32,34 @@ build gains.
 
 ## The inventory
 
-(step 1 fills this)
+**Step 1 DONE 2026-10-04** (`657914f`): the profiler's allocation sites
+(`omkprof.py <capture> --sites`). The street, standing, the Vulkan world
+renderer, 900 frames, on an M1 (`sysctl`), a 64-bit build - so every pointer
+and `size_t` here is twice the classic Mac's - after the music ring and the
+crowd's release (`todo/debug-tools.md`): **72.9 MB live**.
+
+| # | MB | owner (`--sites`) | what it is | what step 2 reads in the original |
+|---|---|---|---|---|
+| 1 | 14.10 | `omk::textures` | the set's and the bodies' texture pixels, decoded | `Tex3DT_BindMaterials`, the 58-slot cache: 16-bit surfaces, whether the file's pixels are kept after the upload |
+| 2 | 11.99 | `omk::buildGeometry` | the set's geometry as expanded corners | `.3DO` load: vertices and faces as the file holds them, transformed per frame into the pool |
+| 3 | 9.16 | `PlayState::inputMotion` | the scripted objects' meshes, soups and grids | how the engine moves a scripted set mesh (`Anim` on a node) and what it keeps for its collision |
+| 4 | 7.39 | `omk::ScxRuntime` | the scene's `.SCX` (3 blocks) | `Scene_LoadSCX`: what of the file stays resident |
+| 5 | 7.19 | `omk::collisionSoup` | collision triangles (6 blocks) | the ground probe and wall test - what geometry they read |
+| 6 | 3.00 | `omk::readWholeFile` | files kept whole (IAM archives and more) | whether `IAM` chunks are read on demand or kept |
+| 7 | 2.76 | `omk::wavToDevice` | sounds converted to the device's format | `Wav_LoadToBuffer`, the 160-buffer bank: 8/16-bit as shipped |
+| 8 | 2.65 | `Geometry::operator=` | geometry copies (218) | - (the port's own: which copies, and whether any need be kept) |
+| 9 | 1.63 | `PlayState::rebuildWorld` | the world's draw state | - |
+| 10 | 1.25 | `DepthTie::*`, `bakeDepthTie` | the GPU depth tie's tables | none: a GPU-only decision (the original's Z-buffer is first-wins) |
+| 11 | 1.23 | `particleGeometry` | particle quads | the sprite/particle pools |
+| 12 | 1.18 | `setupSplash`, `Surface` | the splash's 640x480 surfaces, still held after it | the splash's bitmap - freed after the `Sleep`? |
+| 13 | 1.06 | `lodRestFor` | the crowd's LOD cuts | `sub_453A70` (already read: once per model) |
+| 14 | 0.82 | `clipTracks` | animation tracks (2656 blocks) | `.ani` load: keys as stored |
+| 15 | 0.72 | `0x19b20ecbb` | 15694 small blocks in a system library | (unsymbolized: libc++'s strings, likely) |
+| 16 | 0.54 | `loadObjects` | `IAM\OBJECT` | the object table's load |
+| 17 | 0.50 | `setupOptions` | the options' state | - |
+| 18 | 0.35 | `buildSoupGrid` | the collision grids | the port's own (no grid in the original) |
+
+The rest - some 540 functions - is under 0.3 MB each, 4 MB together.
 
 ## Item by item
 
