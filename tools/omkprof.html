@@ -71,7 +71,7 @@ button { font: inherit; padding: 2px 8px; }
     <canvas id="graph"></canvas>
     <div id="hover" class="dim">&nbsp;</div>
   </div>
-  <div class="panel"><h2>Memory <span class="dim">(MB of live C++ blocks at each frame's end, and the frame's peak)</span></h2>
+  <div class="panel"><h2>Memory <span class="dim">(MB of live C++ blocks at each frame's end, the frame's peak, and - dashed - the GPU's, as the renderer reported it)</span></h2>
     <canvas id="memgraph"></canvas>
     <div id="memhover" class="dim">&nbsp;</div>
   </div>
@@ -79,6 +79,7 @@ button { font: inherit; padding: 2px 8px; }
     <div class="panel"><h2 id="ftitle">Frame</h2><div id="tree"></div></div>
     <div>
       <div class="panel"><h2 id="mtitle">Memory at the frame</h2><div id="memtags"></div></div>
+      <div class="panel" style="margin-top:12px"><h2 id="gtitle">GPU memory at the frame</h2><div id="gputags"></div></div>
       <div class="panel" style="margin-top:12px"><h2>Sections <span class="dim">(the viewer's marks: a flat partition of the frame)</span></h2><div id="sections"></div></div>
     </div>
   </div>
@@ -193,7 +194,7 @@ function drawMemGraph() {
   const play = frames.filter(f => f[1] >= 0 && f[4] >= 0);
   if (!play.length) return;
   const css = getComputedStyle(document.documentElement);
-  const top = Math.max(...play.map(f => f[5])) * 1.08 || 1;
+  const top = Math.max(...play.map(f => Math.max(f[5], f[6] || 0))) * 1.08 || 1;
   const x = k => play.length < 2 ? 0 : k * (w - 1) / (play.length - 1);
   const y = b => h - (b / top) * (h - 4);
   g.fillStyle = css.getPropertyValue("--bar2");
@@ -205,6 +206,15 @@ function drawMemGraph() {
   g.beginPath();
   play.forEach((f, k) => (k ? g.lineTo(x(k), y(f[4])) : g.moveTo(x(k), y(f[4]))));
   g.stroke();
+  // the GPU's (step 5), dashed, where a renderer reported any
+  if (play.some(f => f[6] > 0)) {
+    g.strokeStyle = css.getPropertyValue("--hot");
+    g.setLineDash([3, 2]);
+    g.beginPath();
+    play.forEach((f, k) => (k ? g.lineTo(x(k), y(Math.max(0, f[6]))) : g.moveTo(x(k), y(Math.max(0, f[6])))));
+    g.stroke();
+    g.setLineDash([]);
+  }
   // the classic Mac budget (64 MB, todo/classic-mac-port-1999.md 3b) when in range
   const budget = 64 * 1048576;
   if (budget < top) {
@@ -235,10 +245,38 @@ $("memgraph").addEventListener("mousemove", ev => {
   if (!play.length) return;
   const k = Math.max(0, Math.min(play.length - 1, Math.round(ev.offsetX / $("memgraph").clientWidth * (play.length - 1))));
   const f = play[k];
-  $("memhover").textContent = "frame " + f[1] + ": " + mb(f[4]) + " MB live, peak " + mb(f[5]) + " MB";
+  $("memhover").textContent = "frame " + f[1] + ": " + mb(f[4]) + " MB live, peak " + mb(f[5]) + " MB" +
+    (f[6] > 0 ? "; GPU " + mb(f[6]) + " MB" : "");
 });
 
 const mb = b => (b / 1048576).toFixed(1);
+
+function renderGpu(m) {
+  const box = $("gputags");
+  box.textContent = "";
+  if (!m || !m.tags.length) {
+    $("gtitle").textContent = "GPU memory at the frame (none reported - the software renderer holds none)";
+    return;
+  }
+  $("gtitle").textContent = "GPU memory at the frame - " + mb(m.live) + " MB";
+  box.appendChild(headRow(["category", "MB", "resources", "% GPU"]));
+  for (const [name, bytes, count] of m.tags) {
+    const row = document.createElement("div");
+    row.className = "row";
+    const n = document.createElement("div");
+    n.className = "name"; n.textContent = name;
+    row.appendChild(n);
+    row.appendChild(numCell(mb(bytes)));
+    row.appendChild(numCell(String(count)));
+    const bar = document.createElement("div");
+    bar.className = "barcell";
+    const sp = document.createElement("span");
+    sp.style.width = Math.min(100, 100 * bytes / Math.max(1, m.live)) + "%";
+    bar.appendChild(sp);
+    row.appendChild(bar);
+    box.appendChild(row);
+  }
+}
 
 function renderMem(m) {
   const box = $("memtags");
@@ -298,6 +336,7 @@ async function select(i) {
   renderTree(d.tree, d.dur);
   renderSections(d.sections, d.dur);
   renderMem(d.mem);
+  renderGpu(d.gpu);
   drawMemGraph();
 }
 

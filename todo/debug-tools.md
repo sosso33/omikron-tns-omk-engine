@@ -55,7 +55,7 @@ cut: which code allocates what, which function takes the frame.
    (shown to fail both ways). The viewer's marks turned out to be a
    different thing from zones - a flat partition that CROSSES the phases -
    so they are written as SECTIONS (kind 1) and summed beside the tree, not
-   in it. First reading, the street on an M3, software: 77 of 78 ms is the
+   in it. First reading, the street on an M1 (corrected from "M3" 2026-10-04: `sysctl` says M1), software: 77 of 78 ms is the
    `world` phase, with no zone inside it yet - step 6's first target.
 2. ~~The external tool: frame graph and zone tree from a capture~~ -
    **DONE 2026-10-04** (`4167c3e`): `tools/omkprof.py <capture> --serve
@@ -90,7 +90,7 @@ cut: which code allocates what, which function takes the frame.
    The page: a memory graph (live, the frame's peak, the 64 MB line) and the
    frame's categories. The classic `heapcount` now reads these totals (one
    counter); the Vita's own `operator new` is the release build's.
-   **The street on an M3 (64-bit)**: 69.7 MB live - textures 14.1, geometry
+   **The street on an M1 (corrected from "M3" 2026-10-04: `sysctl` says M1) (64-bit)**: 69.7 MB live - textures 14.1, geometry
    12.0, collision 7.2, the area load (`input`) 11.9, the `world` phase 8.8
    (both untagged yet: step 6's zones will split them). **And a lead**: with
    frees uncounted (the check's mutation), geometry reached 49 MB in 30

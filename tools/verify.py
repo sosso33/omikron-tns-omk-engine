@@ -27229,6 +27229,7 @@ def c_profiler_page():
                                  (4, 2, 4000, 10000)], [(5, 0, 19000)])
         out += chunk(3, struct.pack("<iQQII", no, 3 << 20, 4 << 20, 30, 2) +
                      struct.pack("<IQI", 0, 1 << 20, 10) + struct.pack("<IQI", 1, 2 << 20, 20))
+        out += chunk(5, struct.pack("<iQI", no, 5 << 20, 1) + struct.pack("<IQI", 1, 5 << 20, 7))
     open(cap, "wb").write(out)
     # the game's side of the control, as profile.h writes it: a state and a
     # 2x2 snapshot (red, green / blue, white)
@@ -27250,7 +27251,8 @@ def c_profiler_page():
         fr = get("/api/prof/frame?i=1")
         zs = get("/api/prof/zones")
         world = next((k for k in fr["tree"]["kids"] if k["name"] == "world"), None) if fr else None
-        mem = (fl and fl["frames"][1][4:], fr and fr["mem"] and fr["mem"]["tags"])
+        mem = (fl and fl["frames"][1][4:], fr and fr["mem"] and fr["mem"]["tags"],
+               fr and fr["gpu"] and fr["gpu"]["tags"])
         gs = get("/api/prof/state")
         try:
             png = urllib.request.urlopen("http://127.0.0.1:%d/api/prof/snapshot.png" % port).read()
@@ -27281,14 +27283,15 @@ def c_profiler_page():
             except (ValueError, IndexError):
                 d = {"error": (r.stdout + r.stderr)[-300:]}
             page = (d.get("frames"), d.get("tree"), d.get("sections"), d.get("zones"),
-                    d.get("memtags"), d.get("error"))
+                    d.get("memtags"), d.get("gputags"), d.get("error"))
     finally:
         srv.terminate()
         shutil.rmtree(tmp, ignore_errors=True)
     want_api = (3, [-1, 0, 1], ["input", "world"], (16000, 6000), 1, [("world", 6000), ("submit", 10000)][::-1])
-    want_page = (3, 5, 2, 5, 3, None) if node else ("node absent",)
+    want_page = (3, 5, 2, 5, 3, 2, None) if node else ("node absent",)
     want_ctl = ({"state": "paused", "frame": 1, "snap": 3}, True, True, ["step", "4"],
-                ([3 << 20, 4 << 20], [["textures", 2 << 20, 20], ["untagged", 1 << 20, 10]]))
+                ([3 << 20, 4 << 20, 5 << 20], [["textures", 2 << 20, 20], ["untagged", 1 << 20, 10]],
+                 [["textures", 5 << 20, 7]]))
     return (api, ctlApi, page), (want_api, want_ctl, want_page), \
         "a capture written to profile.h's format: the server lists the setup and both " \
         "frames, nests a frame's zones (world 16 ms, 6 ms of it its own), keeps the " \
@@ -27529,6 +27532,66 @@ def c_engine_release_build():
            (True, True, (0, 0), True), \
         "make release: no profiler symbol and no snapshot marker (both present in the " \
         "development build), and its frame byte-identical to the development build's"
+
+
+def c_engine_profiler_gpu():
+    r"""The profiler's GPU MEMORY (`todo/debug-tools.md` step 5): what a
+    renderer holds on the device, as it reports it - the street through the
+    Vulkan world renderer (`--world-vulkan`), 30 frames, `--profile`.
+
+    Every frame carries a GPU chunk whose categories sum to its total; the
+    set's 41 texture atlases are there (over 8 MB); NO staging buffer is
+    left at rest (each upload's staging memory is freed - a free the profiler
+    missed would leave it standing); and the device memory does not grow
+    over frames 15..29.
+
+    The cross-check that makes the figures more than self-consistent was
+    made by hand, 2026-10-04, on an M1: the GLES backend - which computes
+    each texture from its own arguments, width x height x 4 - reports the
+    same 41 atlases at 9.75 MB where Vulkan, reading the device's own
+    allocation sizes, reports 9.83: two accountings, 1% apart.
+
+    Shown to fail (2026-10-04): `freeDeviceMemory` made not to tell the
+    profiler (red: staging left standing); every buffer filed as "buffers"
+    (red: no vertex buffers).
+    """
+    import subprocess, tempfile, shutil
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import omkprof
+    eng = os.path.join(ROOT, "engine")
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    tmp = tempfile.mkdtemp()
+    cap = os.path.join(tmp, "g.prof")
+    try:
+        r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                            "--save", os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "0",
+                            "--stand", "1804,0,-6890,336", "--nofmv", "--world-vulkan",
+                            "--res", "640x480", "--frames", "30", "--profile", cap],
+                           capture_output=True, text=True, env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+        if "through VULKAN" not in r.stdout:
+            return ("skipped",), ("skipped",), "no Vulkan device - the GPU backend is optional"
+        frames = [f for f in omkprof.read(cap)[1] if f["frame"] >= 0]
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    gpus = [f["gpu"] for f in frames]
+    every = len(gpus) == 30 and all(gpus)
+    sums = every and all(sum(t[1] for t in g["tags"]) == g["live"] for g in gpus)
+    last = {t[0]: (t[1], t[2]) for t in (gpus[-1]["tags"] if every else [])}
+    tex = last.get("textures", (0, 0))
+    growth = (gpus[-1]["live"] - gpus[15]["live"]) if every else -1
+    print("        GPU at frame 29: %.1f MB - %s; frames 15..29 grew %+d KB" % (
+        (gpus[-1]["live"] if every else 0) / 1048576.0,
+        ", ".join("%s %.1f MB (%d)" % (k, v[0] / 1048576.0, v[1]) for k, v in sorted(last.items())),
+        growth // 1024))
+    return (every, sums, tex[1], tex[0] > 8 << 20, "vertex buffers" in last, "staging" in last,
+            0 <= growth < 1 << 20), \
+           (True, True, 41, True, True, False, True), \
+        "the street through the Vulkan world renderer: GPU memory in every frame, its " \
+        "categories summing to the total, the 41 texture atlases over 8 MB, vertex " \
+        "buffers, no staging left at rest, no growth over frames 15..29"
 
 
 def c_engine_frontend_gateway():
@@ -41208,6 +41271,7 @@ SLOW = [
     ("engine: classic build", c_engine_classic_build, "todo/classic-mac-port-1999.md step 5; platform/datafs.h"),
     ("engine: profiler", c_engine_profiler, "todo/debug-tools.md step 1; PORTING B6"),
     ("engine: profiler control", c_engine_profiler_control, "todo/debug-tools.md step 3"),
+    ("engine: profiler gpu", c_engine_profiler_gpu, "todo/debug-tools.md step 5"),
     ("engine: release build", c_engine_release_build, "todo/debug-tools.md"),
     ("engine: anti-aliasing", c_engine_anti_aliasing, "ASSETS 4"),
     ("engine: texture filter", c_engine_texture_filter, "ASSETS 4"),

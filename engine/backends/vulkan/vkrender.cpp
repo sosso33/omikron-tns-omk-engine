@@ -55,6 +55,7 @@
 // suite must pass on a machine with no Vulkan SDK, so nothing under `src/`
 // includes this and the Makefile builds it only when pkg-config finds vulkan.
 #include <vulkan/vulkan.h>
+#include "platform/profile.h"
 
 #include "o3de/renderer.h"
 #include "o3de/depthtie.h"
@@ -255,6 +256,12 @@ private:
     bool makePipelines();
     void makeShadowSet();
     uint32_t memType(uint32_t bits, VkMemoryPropertyFlags want) const;
+    // every device memory released here, so the profiler's GPU table
+    // (todo/debug-tools.md 5) loses it too
+    void freeDeviceMemory(VkDeviceMemory m) {
+        OMK_GPU_FREE(omk::prof::gpuKey(omk::prof::kVkMemory, m));
+        vkFreeMemory(dev_, m, nullptr);
+    }
     bool makeBuffer(VkDeviceSize n, VkBufferUsageFlags use,
                     VkMemoryPropertyFlags props, VkBuffer& b, VkDeviceMemory& m);
     VkCommandBuffer oneShotBegin();
@@ -495,6 +502,13 @@ bool VulkanRenderer::makeBuffer(VkDeviceSize n, VkBufferUsageFlags use,
     ai.allocationSize = req.size;
     ai.memoryTypeIndex = memType(req.memoryTypeBits, props);
     VKCHECK(vkAllocateMemory(dev_, &ai, nullptr, &m), "vkAllocateMemory");
+    // the profiler's GPU memory (todo/debug-tools.md 5): a buffer's category
+    // from what it is for
+    OMK_GPU_ALLOC((use & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) ? "vertex buffers"
+                  : (use & VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT) ? "uniforms"
+                  : (use & VK_BUFFER_USAGE_TRANSFER_SRC_BIT) ? "staging"
+                  : (use & VK_BUFFER_USAGE_TRANSFER_DST_BIT) ? "readback" : "buffers",
+                  omk::prof::gpuKey(omk::prof::kVkMemory, m), ai.allocationSize);
     VKCHECK(vkBindBufferMemory(dev_, b, m, 0), "vkBindBufferMemory");
     return true;
 }
@@ -681,6 +695,7 @@ bool VulkanRenderer::makeTarget() {
         ai.allocationSize = req.size;
         ai.memoryTypeIndex = memType(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
         VKCHECK(vkAllocateMemory(dev_, &ai, nullptr, &mem), "vkAllocateMemory(image)");
+        OMK_GPU_ALLOC("render targets", omk::prof::gpuKey(omk::prof::kVkMemory, mem), ai.allocationSize);
         VKCHECK(vkBindImageMemory(dev_, img, mem, 0), "vkBindImageMemory");
         VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
         vi.image = img; vi.viewType = VK_IMAGE_VIEW_TYPE_2D; vi.format = f;
@@ -803,6 +818,7 @@ bool VulkanRenderer::makeTarget() {
             ai.allocationSize = req.size;
             ai.memoryTypeIndex = memType(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
             vkAllocateMemory(dev_, &ai, nullptr, &shMem_);
+            OMK_GPU_ALLOC("shadow map", omk::prof::gpuKey(omk::prof::kVkMemory, shMem_), ai.allocationSize);
             vkBindImageMemory(dev_, shImg_, shMem_, 0);
             VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
             vi.image = shImg_; vi.viewType = VK_IMAGE_VIEW_TYPE_2D; vi.format = shFmt_;
@@ -1362,12 +1378,12 @@ bool VulkanRenderer::resize(int w, int h) {
     const auto img = [&](VkImageView& v, VkImage& i, VkDeviceMemory& m) {
         if (v) vkDestroyImageView(dev_, v, nullptr);
         if (i) vkDestroyImage(dev_, i, nullptr);
-        if (m) vkFreeMemory(dev_, m, nullptr);
+        if (m) freeDeviceMemory(m);
         v = VK_NULL_HANDLE; i = VK_NULL_HANDLE; m = VK_NULL_HANDLE;
     };
     const auto buf = [&](VkBuffer& b, VkDeviceMemory& m) {
         if (b) vkDestroyBuffer(dev_, b, nullptr);
-        if (m) vkFreeMemory(dev_, m, nullptr);
+        if (m) freeDeviceMemory(m);
         b = VK_NULL_HANDLE; m = VK_NULL_HANDLE;
     };
     if (fbuf_) { vkDestroyFramebuffer(dev_, fbuf_, nullptr); fbuf_ = VK_NULL_HANDLE; }
@@ -1574,6 +1590,7 @@ bool VulkanRenderer::makePresentPass() {
         ai.allocationSize = req.size;
         ai.memoryTypeIndex = memType(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
         VKCHECK(vkAllocateMemory(dev_, &ai, nullptr, &presMem_), "present image memory");
+        OMK_GPU_ALLOC("present image", omk::prof::gpuKey(omk::prof::kVkMemory, presMem_), ai.allocationSize);
         VKCHECK(vkBindImageMemory(dev_, presImg_, presMem_, 0), "present image bind");
         VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
         vi.image = presImg_; vi.viewType = VK_IMAGE_VIEW_TYPE_2D; vi.format = fmt;
@@ -1836,6 +1853,7 @@ void VulkanRenderer::setTextures(std::span<const omk::Texture> t) {
         ai.allocationSize = req.size;
         ai.memoryTypeIndex = memType(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
         vkAllocateMemory(dev_, &ai, nullptr, &out.mem);
+        OMK_GPU_ALLOC("textures", omk::prof::gpuKey(omk::prof::kVkMemory, out.mem), ai.allocationSize);
         vkBindImageMemory(dev_, out.img, out.mem, 0);
 
         VkCommandBuffer cb = oneShotBegin();
@@ -1893,7 +1911,7 @@ void VulkanRenderer::setTextures(std::span<const omk::Texture> t) {
                              VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &bar);
         oneShotEnd(cb);
         vkDestroyBuffer(dev_, sb, nullptr);
-        vkFreeMemory(dev_, sm, nullptr);
+        freeDeviceMemory(sm);
 
         VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
         vi.image = out.img; vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
@@ -1922,7 +1940,7 @@ void VulkanRenderer::setTextures(std::span<const omk::Texture> t) {
         for (auto& old : tex_) {
             if (old.view) vkDestroyImageView(dev_, old.view, nullptr);
             if (old.img)  vkDestroyImage(dev_, old.img, nullptr);
-            if (old.mem)  vkFreeMemory(dev_, old.mem, nullptr);
+            if (old.mem)  freeDeviceMemory(old.mem);
         }
         tex_.clear();
         vkResetDescriptorPool(dev_, dpool_, 0);
@@ -1989,7 +2007,7 @@ bool VulkanRenderer::uploadGeometry(const omk::Geometry* g) {
             }
         }
         vkDestroyBuffer(dev_, vbo_[g].first, nullptr);
-        vkFreeMemory(dev_, vbo_[g].second, nullptr);
+        freeDeviceMemory(vbo_[g].second);
         vbo_.erase(g); vboN_.erase(g); vboRev_.erase(g);
         grow = true;                   // it has changed size once: give it room
     }
@@ -2240,7 +2258,7 @@ void VulkanRenderer::begin(const omk::View& view) {
     // the previous frame's fence has been waited on (the present ends with it)
     for (auto& bm : deadBufs_) {
         vkDestroyBuffer(dev_, bm.first, nullptr);
-        vkFreeMemory(dev_, bm.second, nullptr);
+        freeDeviceMemory(bm.second);
     }
     deadBufs_.clear();
     fog_ = view.fog;
@@ -2550,17 +2568,17 @@ VulkanRenderer::~VulkanRenderer() {
     vkDeviceWaitIdle(dev_);
     for (auto& bm : deadBufs_) {
         vkDestroyBuffer(dev_, bm.first, nullptr);
-        vkFreeMemory(dev_, bm.second, nullptr);
+        freeDeviceMemory(bm.second);
     }
     deadBufs_.clear();
     for (auto& [g, bm] : vbo_) {
         vkDestroyBuffer(dev_, bm.first, nullptr);
-        vkFreeMemory(dev_, bm.second, nullptr);
+        freeDeviceMemory(bm.second);
     }
     auto killTex = [&](Tex& t) {
         if (t.view) vkDestroyImageView(dev_, t.view, nullptr);
         if (t.img)  vkDestroyImage(dev_, t.img, nullptr);
-        if (t.mem)  vkFreeMemory(dev_, t.mem, nullptr);
+        if (t.mem)  freeDeviceMemory(t.mem);
     };
     for (auto& t : tex_) killTex(t);
     killTex(white_);
@@ -2570,18 +2588,18 @@ VulkanRenderer::~VulkanRenderer() {
     if (plo_) vkDestroyPipelineLayout(dev_, plo_, nullptr);
     if (dsl_) vkDestroyDescriptorSetLayout(dev_, dsl_, nullptr);
     if (readBuf_) vkDestroyBuffer(dev_, readBuf_, nullptr);
-    if (readMem_) vkFreeMemory(dev_, readMem_, nullptr);
+    if (readMem_) freeDeviceMemory(readMem_);
     if (fbuf_) vkDestroyFramebuffer(dev_, fbuf_, nullptr);
     if (pass_) vkDestroyRenderPass(dev_, pass_, nullptr);
     if (colourView_) vkDestroyImageView(dev_, colourView_, nullptr);
     if (colour_) vkDestroyImage(dev_, colour_, nullptr);
-    if (colourMem_) vkFreeMemory(dev_, colourMem_, nullptr);
+    if (colourMem_) freeDeviceMemory(colourMem_);
     if (msColourView_) vkDestroyImageView(dev_, msColourView_, nullptr);
     if (msColour_) vkDestroyImage(dev_, msColour_, nullptr);
-    if (msColourMem_) vkFreeMemory(dev_, msColourMem_, nullptr);
+    if (msColourMem_) freeDeviceMemory(msColourMem_);
     if (depthView_) vkDestroyImageView(dev_, depthView_, nullptr);
     if (depth_) vkDestroyImage(dev_, depth_, nullptr);
-    if (depthMem_) vkFreeMemory(dev_, depthMem_, nullptr);
+    if (depthMem_) freeDeviceMemory(depthMem_);
     if (presPipe_) vkDestroyPipeline(dev_, presPipe_, nullptr);
     if (presPlo_) vkDestroyPipelineLayout(dev_, presPlo_, nullptr);
     if (presSampler_) vkDestroySampler(dev_, presSampler_, nullptr);
@@ -2591,11 +2609,11 @@ VulkanRenderer::~VulkanRenderer() {
     if (presPass_) vkDestroyRenderPass(dev_, presPass_, nullptr);
     if (presView_) vkDestroyImageView(dev_, presView_, nullptr);
     if (presImg_) vkDestroyImage(dev_, presImg_, nullptr);
-    if (presMem_) vkFreeMemory(dev_, presMem_, nullptr);
+    if (presMem_) freeDeviceMemory(presMem_);
     if (presRead_) vkDestroyBuffer(dev_, presRead_, nullptr);
-    if (presReadMem_) vkFreeMemory(dev_, presReadMem_, nullptr);
+    if (presReadMem_) freeDeviceMemory(presReadMem_);
     if (upBuf_) vkDestroyBuffer(dev_, upBuf_, nullptr);
-    if (upMem_) vkFreeMemory(dev_, upMem_, nullptr);
+    if (upMem_) freeDeviceMemory(upMem_);
     if (pipeStencil_) vkDestroyPipeline(dev_, pipeStencil_, nullptr);
     if (pipeDepthReset_) vkDestroyPipeline(dev_, pipeDepthReset_, nullptr);
     for (auto& pp : pipeRefl_) if (pp) vkDestroyPipeline(dev_, pp, nullptr);

@@ -134,6 +134,57 @@ int memTagSwap(int id) {
     return prev;
 }
 
+// ---- THE GPU MEMORY (step 5) ------------------------------------------------
+namespace {
+struct GpuRes { int tag; std::uint64_t bytes; };
+struct Gpu {
+#if OMK_THREADS
+    std::mutex lock;
+#endif
+    std::unordered_map<std::uint64_t, GpuRes> res;
+    long long live[mem::kTags] = {};
+    long count[mem::kTags] = {};
+    long long total = 0;
+};
+Gpu& gpu() {                              // made on first use, never destroyed
+    static Gpu* g = new Gpu;
+    return *g;
+}
+}  // namespace
+
+void gpuAlloc(const char* tag, std::uint64_t key, std::uint64_t bytes) {
+    const int id = memTag(tag);
+    Gpu& g = gpu();
+#if OMK_THREADS
+    std::lock_guard<std::mutex> lk(g.lock);
+#endif
+    auto it = g.res.find(key);
+    if (it != g.res.end()) {              // re-specified: the old storage goes
+        g.live[it->second.tag] -= static_cast<long long>(it->second.bytes);
+        --g.count[it->second.tag];
+        g.total -= static_cast<long long>(it->second.bytes);
+        it->second = {id, bytes};
+    } else {
+        g.res.emplace(key, GpuRes{id, bytes});
+    }
+    g.live[id] += static_cast<long long>(bytes);
+    ++g.count[id];
+    g.total += static_cast<long long>(bytes);
+}
+
+void gpuFree(std::uint64_t key) {
+    Gpu& g = gpu();
+#if OMK_THREADS
+    std::lock_guard<std::mutex> lk(g.lock);
+#endif
+    auto it = g.res.find(key);
+    if (it == g.res.end()) return;
+    g.live[it->second.tag] -= static_cast<long long>(it->second.bytes);
+    --g.count[it->second.tag];
+    g.total -= static_cast<long long>(it->second.bytes);
+    g.res.erase(it);
+}
+
 MemTotals memTotals() {
     MemTotals t;
     t.live = mem::g_total;
@@ -363,6 +414,27 @@ void endFrame() {
             put32(static_cast<std::uint32_t>(i));
             put64(static_cast<std::uint64_t>(static_cast<long long>(mem::g_live[i])));
             put32(static_cast<std::uint32_t>(b));
+        }
+        endChunk(m);
+    }
+    // THE GPU MEMORY at the frame's end, as the renderers reported it
+    {
+        Gpu& g = gpu();
+#if OMK_THREADS
+        std::lock_guard<std::mutex> lk(g.lock);
+#endif
+        const int n = mem::g_count;
+        const std::size_t m = beginChunk(5);
+        put32(static_cast<std::uint32_t>(s.frame));
+        put64(static_cast<std::uint64_t>(g.total));
+        int used = 0;
+        for (int i = 0; i < n; ++i) if (g.count[i]) ++used;
+        put32(static_cast<std::uint32_t>(used));
+        for (int i = 0; i < n; ++i) {
+            if (!g.count[i]) continue;
+            put32(static_cast<std::uint32_t>(i));
+            put64(static_cast<std::uint64_t>(g.live[i]));
+            put32(static_cast<std::uint32_t>(g.count[i]));
         }
         endChunk(m);
     }

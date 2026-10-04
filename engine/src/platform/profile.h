@@ -63,16 +63,40 @@
 //                blocks, u32 categories, then per category: u32 id, u64
 //                bytes, u32 blocks
 //       4 TAG    u32 id, the category's name                (once per name)
+//
+// THE GPU MEMORY (step 5): what a renderer holds on the device - textures,
+// vertex buffers, render targets - reported BY THE RENDERER, since none of
+// it is `new`'d:
+//     OMK_GPU_ALLOC("textures", key, bytes)   a resource made (or re-specified:
+//                                             the old size is replaced)
+//     OMK_GPU_FREE(key)                       ...and released
+// `key` names the resource uniquely: `prof::gpuKey(domain, handle)` folds a
+// domain (a kind of handle - a Vulkan memory object, a GL texture name, a GL
+// buffer name...) into the handle. The categories share the memory's names.
+//       5 GPU    i32 frame, u64 live bytes, u32 categories, then per
+//                category: u32 id, u64 bytes, u32 resources
 #pragma once
 
 #include <cstdint>
 #include <string>
+#include <type_traits>
 
 #if !defined(OMK_PROFILE)
 #  define OMK_PROFILE 1
 #endif
 
 namespace omk::prof {
+
+// A GPU resource's key (step 5), in every build so a renderer's helpers
+// compile the same either way: a domain (the kind of handle) folded into it.
+enum GpuDomain : std::uint64_t { kVkMemory = 1, kGlTexture = 2, kGlBuffer = 3, kGlRenderbuffer = 4 };
+template <class H>
+std::uint64_t gpuKey(GpuDomain d, H h) {
+    std::uint64_t v;
+    if constexpr (std::is_pointer_v<H>) v = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(h));
+    else v = static_cast<std::uint64_t>(h);
+    return (static_cast<std::uint64_t>(d) << 56) ^ v;
+}
 
 #if OMK_PROFILE
 
@@ -103,6 +127,13 @@ Run control(long frame);
 // pause or a step came to rest on); `snapshot` writes it.
 bool snapshotOwed();
 void snapshot(long frame, int w, int h, const std::uint16_t* px);
+
+// The GPU memory (step 5): a renderer's own accounting.
+void gpuAlloc(const char* tag, std::uint64_t key, std::uint64_t bytes);
+void gpuFree(std::uint64_t key);
+#  define OMK_GPU_ALLOC(tag, key, bytes) \
+       ::omk::prof::gpuAlloc((tag), (key), static_cast<std::uint64_t>(bytes))
+#  define OMK_GPU_FREE(key) ::omk::prof::gpuFree(key)
 
 // The memory categories: a name (a literal, kept by pointer) -> its id.
 int memTag(const char* name);
@@ -160,6 +191,8 @@ inline void snapshot(long, int, int, const std::uint16_t*) {}
 #  define OMK_ZONE(name) do {} while (0)
 #  define OMK_SECTION(name, t0, t1) do {} while (0)
 #  define OMK_MEM_TAG(name) do {} while (0)
+#  define OMK_GPU_ALLOC(tag, key, bytes) do {} while (0)
+#  define OMK_GPU_FREE(key) do {} while (0)
 
 #endif
 

@@ -80,6 +80,7 @@
 #endif
 
 #include "o3de/depthtie.h"
+#include "platform/profile.h"
 #include "o3de/renderer.h"
 #include "o3de/shimmer.h"
 #include "ui/surface.h"
@@ -450,6 +451,39 @@ void main() {
 }
 )";
 
+}  // namespace
+
+
+// THE PROFILER'S GPU MEMORY (todo/debug-tools.md 5): each texture, buffer and
+// renderbuffer this backend specifies - by the object it just specified and
+// the size its own arguments give - and each delete. A release build keeps
+// only the plain GL calls.
+namespace {
+using omk::prof::gpuKey;
+inline void gpuTexture(const char* tag, GLuint id, long long bytes) {
+    OMK_GPU_ALLOC(tag, gpuKey(omk::prof::kGlTexture, id), bytes);
+    (void)tag; (void)id; (void)bytes;
+}
+inline void gpuBuffer(const char* tag, GLuint id, long long bytes) {
+    OMK_GPU_ALLOC(tag, gpuKey(omk::prof::kGlBuffer, id), bytes);
+    (void)tag; (void)id; (void)bytes;
+}
+inline void gpuRenderbuffer(const char* tag, GLuint id, long long bytes) {
+    OMK_GPU_ALLOC(tag, gpuKey(omk::prof::kGlRenderbuffer, id), bytes);
+    (void)tag; (void)id; (void)bytes;
+}
+inline void deleteTextures(GLsizei n, const GLuint* ids) {
+    for (GLsizei i = 0; i < n; ++i) OMK_GPU_FREE(gpuKey(omk::prof::kGlTexture, ids[i]));
+    glDeleteTextures(n, ids);
+}
+inline void deleteBuffers(GLsizei n, const GLuint* ids) {
+    for (GLsizei i = 0; i < n; ++i) OMK_GPU_FREE(gpuKey(omk::prof::kGlBuffer, ids[i]));
+    glDeleteBuffers(n, ids);
+}
+inline void deleteRenderbuffers(GLsizei n, const GLuint* ids) {
+    for (GLsizei i = 0; i < n; ++i) OMK_GPU_FREE(gpuKey(omk::prof::kGlRenderbuffer, ids[i]));
+    glDeleteRenderbuffers(n, ids);
+}
 }  // namespace
 
 namespace omk {
@@ -859,20 +893,20 @@ private:
 GlesRenderer::~GlesRenderer() {
     // first: the members destroyed below include geometries (`cpuPosed_`)
     removeGeometryListener(&GlesRenderer::geometryGone, this);
-    if (!deadBufs_.empty()) glDeleteBuffers(static_cast<GLsizei>(deadBufs_.size()), deadBufs_.data());
-    for (auto& [g, vb] : vbo_) glDeleteBuffers(1, &vb.id);
+    if (!deadBufs_.empty()) deleteBuffers(static_cast<GLsizei>(deadBufs_.size()), deadBufs_.data());
+    for (auto& [g, vb] : vbo_) deleteBuffers(1, &vb.id);
     // the pool's ids are owned by `uploaded_` (two slots may share one)
-    for (auto& [key, u] : uploaded_) if (u.id) glDeleteTextures(1, &u.id);
-    if (white_.id) glDeleteTextures(1, &white_.id);
-    if (bayer_) glDeleteTextures(1, &bayer_);
-    if (surfTex_) glDeleteTextures(1, &surfTex_);
-    if (quad_) glDeleteBuffers(1, &quad_);
-    if (colour_) glDeleteTextures(1, &colour_);
-    if (depth_) glDeleteRenderbuffers(1, &depth_);
+    for (auto& [key, u] : uploaded_) if (u.id) deleteTextures(1, &u.id);
+    if (white_.id) deleteTextures(1, &white_.id);
+    if (bayer_) deleteTextures(1, &bayer_);
+    if (surfTex_) deleteTextures(1, &surfTex_);
+    if (quad_) deleteBuffers(1, &quad_);
+    if (colour_) deleteTextures(1, &colour_);
+    if (depth_) deleteRenderbuffers(1, &depth_);
     if (fbo_) glDeleteFramebuffers(1, &fbo_);
     if (prog_) glDeleteProgram(prog_);
     if (present_) glDeleteProgram(present_);
-    for (auto& [g, pv] : poseVbo_) glDeleteBuffers(1, &pv.id);
+    for (auto& [g, pv] : poseVbo_) deleteBuffers(1, &pv.id);
     if (posed_) glDeleteProgram(posed_);
 }
 
@@ -886,8 +920,10 @@ bool GlesRenderer::init(int w, int h) {
         // a resize: only the target changes
         glBindTexture(GL_TEXTURE_2D, colour_);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+gpuTexture("render targets", colour_, 4LL * w * h);
         glBindRenderbuffer(GL_RENDERBUFFER, depth_);
         glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, w, h);
+gpuRenderbuffer("render targets", depth_, 2LL * w * h);
         return true;
     }
     prog_ = link(kSceneVert, kSceneFrag, {{kAttrPos, "aPos"}, {kAttrUV, "aUV"},
@@ -973,9 +1009,11 @@ bool GlesRenderer::init(int w, int h) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+gpuTexture("render targets", colour_, 4LL * w * h);
     glGenRenderbuffers(1, &depth_);
     glBindRenderbuffer(GL_RENDERBUFFER, depth_);
     glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, w, h);
+gpuRenderbuffer("render targets", depth_, 2LL * w * h);
     glGenFramebuffers(1, &fbo_);
     glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colour_, 0);
@@ -995,6 +1033,7 @@ bool GlesRenderer::init(int w, int h) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, wpx);
+gpuTexture("textures", white_.id, 4);
 
     // the dither matrix - `omk::kBayer4`, the one the software dither and the
     // readback use - as a texture, so the fragment stage needs no array
@@ -1009,11 +1048,13 @@ bool GlesRenderer::init(int w, int h) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 4, 4, 0, GL_RGBA, GL_UNSIGNED_BYTE, bl);
+gpuTexture("textures", bayer_, 64);
 
     const float quad[8] = {0, 0, 1, 0, 0, 1, 1, 1};
     glGenBuffers(1, &quad_);
     glBindBuffer(GL_ARRAY_BUFFER, quad_);
     glBufferData(GL_ARRAY_BUFFER, sizeof quad, quad, GL_STATIC_DRAW);
+gpuBuffer("vertex buffers", quad_, sizeof quad);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
     static const bool noTie = std::getenv("OMK_NO_TIE") != nullptr;
@@ -1065,6 +1106,7 @@ bool GlesRenderer::poseSelfTest() {
     glBindBuffer(GL_ARRAY_BUFFER, vb);
     glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(v.size() * sizeof(GpuPoseVert)),
                  v.data(), GL_STATIC_DRAW);
+gpuBuffer("posed bodies", vb, static_cast<long long>(v.size() * sizeof(GpuPoseVert)));
     glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
     glViewport(0, 0, w_, h_);
     glDisable(GL_DEPTH_TEST);
@@ -1145,7 +1187,7 @@ bool GlesRenderer::poseSelfTest() {
     }
     for (const GLuint a : {kAttrSlot, kAttrNormal}) glDisableVertexAttribArray(a);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glDeleteBuffers(1, &vb);
+    deleteBuffers(1, &vb);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     curProg_ = 0;
     const bool ok = placed[0] == kN && placed[1] == kN;
@@ -1204,6 +1246,7 @@ void GlesRenderer::setTextures(std::span<const Texture> t) {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, repeat ? GL_REPEAT : GL_CLAMP_TO_EDGE);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, s.width, s.height, 0, GL_RGBA,
                      GL_UNSIGNED_BYTE, px.data());
+gpuTexture("textures", out.id, 4LL * s.width * s.height);
         uploaded_[key] = Uploaded{out.id, s.width, s.height, s.rgb, true};
         ++fresh;
     }
@@ -1211,7 +1254,7 @@ void GlesRenderer::setTextures(std::span<const Texture> t) {
     int dropped = 0;
     for (auto it = uploaded_.begin(); it != uploaded_.end(); ) {
         if (it->second.used) { ++it; continue; }
-        glDeleteTextures(1, &it->second.id);
+        deleteTextures(1, &it->second.id);
         it = uploaded_.erase(it);
         ++dropped;
     }
@@ -1257,6 +1300,7 @@ bool GlesRenderer::streamToRing(const Geometry* g, Vbo& vb) {
         glBindBuffer(GL_ARRAY_BUFFER, ring_);
         glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(3 * kRingCorners * sizeof(GpuVert)),
                      nullptr, GL_DYNAMIC_DRAW);
+gpuBuffer("vertex buffers", ring_, 3LL * kRingCorners * sizeof(GpuVert));
     }
     std::vector<GpuVert>& v = up_;
     v.resize(n);
@@ -1447,6 +1491,7 @@ bool GlesRenderer::uploadGeometry(const Geometry* g) {
     // device must answer (`todo/vita-port.md` G3).
     glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(v.size() * sizeof(GpuVert)),
                  v.data(), GL_DYNAMIC_DRAW);
+gpuBuffer("vertex buffers", vb.id, static_cast<long long>(v.size() * sizeof(GpuVert)));
     g_glesFrame.uploadBytes += static_cast<long>(v.size() * sizeof(GpuVert));
     ++g_glesFrame.wholeUploads;
     if (glesUploadLog()) std::printf("  [upload] new buffer %p %zu corners rev %llu%s\n",
@@ -1654,7 +1699,7 @@ void GlesRenderer::begin(const View& view) {
     g_glesWindow.streamed += g_glesFrame.streamed;
     g_glesFrame = GlesFrameCounts{};
     if (!deadBufs_.empty()) {
-        glDeleteBuffers(static_cast<GLsizei>(deadBufs_.size()), deadBufs_.data());
+        deleteBuffers(static_cast<GLsizei>(deadBufs_.size()), deadBufs_.data());
         deadBufs_.clear();
     }
     ++frameNo_;
@@ -1726,6 +1771,7 @@ bool GlesRenderer::uploadPosedGeometry(const Geometry* g, PoseVbo*& out) {
     glBindBuffer(GL_ARRAY_BUFFER, pv.id);
     glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(v.size() * sizeof(GpuPoseVert)),
                  v.data(), GL_STATIC_DRAW);
+gpuBuffer("posed bodies", pv.id, static_cast<long long>(v.size() * sizeof(GpuPoseVert)));
     pv.n = v.size();
     pv.rev = g->revision;
     pv.slotOfCorner.resize(v.size());
@@ -2189,6 +2235,7 @@ bool GlesRenderer::presentSurface(const Surface& s, int winW, int winH) {
     if (s.w != surfW_ || s.h != surfH_) {
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, s.w, s.h, 0, GL_RGB,
                      GL_UNSIGNED_SHORT_5_6_5, s.px.data());
+gpuTexture("interface", surfTex_, 2LL * s.w * s.h);
         for (int y = 0; check && y < s.h; ++y) shadowRow(y);
         surfW_ = s.w; surfH_ = s.h;
         lastOverlay_.clear();
@@ -2315,6 +2362,7 @@ bool GlesRenderer::presentOverlay(const Surface& s, const unsigned char* mask, c
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         if (last.size() != static_cast<std::size_t>(s.h)) {
             glTexImage2D(GL_TEXTURE_2D, 0, fmt, s.w, s.h, 0, fmt, type, cur);
+gpuTexture("interface", tex, static_cast<long long>(bpp) * s.w * s.h);
             last.resize(static_cast<std::size_t>(s.h));
             for (int y = 0; y < s.h; ++y) last[y] = rowHash(cur + y * rowBytes, rowBytes);
             wasFlagged.assign(static_cast<std::size_t>(s.h), 1);

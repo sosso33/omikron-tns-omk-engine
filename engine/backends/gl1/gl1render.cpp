@@ -71,6 +71,7 @@
 #include "gl1host.h"
 
 #include "o3de/shimmer.h"
+#include "platform/profile.h"
 #include "ui/surface.h"
 
 #include <algorithm>
@@ -112,6 +113,18 @@ struct Current {
     }
 };
 
+// THE PROFILER'S GPU MEMORY (todo/debug-tools.md 5): what this backend
+// specifies on the card, by object and size, and what it deletes. Nothing in
+// a release build (`OMK_PROFILE=0`).
+inline void gpuNote(const char* tag, omk::prof::GpuDomain d, GLuint id, long long bytes) {
+    OMK_GPU_ALLOC(tag, omk::prof::gpuKey(d, id), bytes);
+    (void)tag; (void)d; (void)id; (void)bytes;
+}
+inline void gpuForget(omk::prof::GpuDomain d, const GLuint* ids, std::size_t n) {
+    for (std::size_t i = 0; i < n; ++i) OMK_GPU_FREE(omk::prof::gpuKey(d, ids[i]));
+    (void)d; (void)ids; (void)n;
+}
+
 unsigned nextPow2(unsigned v) {
     unsigned p = 1;
     while (p < v) p <<= 1;
@@ -128,12 +141,16 @@ public:
 #endif
         {
             Current c(ctx_);
+            if (!tex_.empty()) gpuForget(omk::prof::kGlTexture, tex_.data(), tex_.size());
             if (!tex_.empty()) glDeleteTextures(static_cast<GLsizei>(tex_.size()), tex_.data());
 #if defined(OMK_GL1_AGL)
+            if (readTex_) gpuForget(omk::prof::kGlTexture, &readTex_, 1);
             if (readTex_) glDeleteTextures(1, &readTex_);
 #else
             if (fbo_) glDeleteFramebuffersEXT(1, &fbo_);
+            if (colour_) gpuForget(omk::prof::kGlRenderbuffer, &colour_, 1);
             if (colour_) glDeleteRenderbuffersEXT(1, &colour_);
+            if (depth_) gpuForget(omk::prof::kGlRenderbuffer, &depth_, 1);
             if (depth_) glDeleteRenderbuffersEXT(1, &depth_);
 #endif
         }
@@ -159,15 +176,18 @@ public:
         glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fbo_);
         glBindRenderbufferEXT(GL_RENDERBUFFER_EXT, colour_);
         glRenderbufferStorageEXT(GL_RENDERBUFFER_EXT, GL_RGBA8, w, h);
+        gpuNote("render targets", omk::prof::kGlRenderbuffer, colour_, 4LL * w * h);
         glFramebufferRenderbufferEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT,
                                      GL_RENDERBUFFER_EXT, colour_);
         glBindRenderbufferEXT(GL_RENDERBUFFER_EXT, depth_);
         glRenderbufferStorageEXT(GL_RENDERBUFFER_EXT, GL_DEPTH_COMPONENT24, w, h);
+        gpuNote("render targets", omk::prof::kGlRenderbuffer, depth_, 4LL * w * h);
         glFramebufferRenderbufferEXT(GL_FRAMEBUFFER_EXT, GL_DEPTH_ATTACHMENT_EXT,
                                      GL_RENDERBUFFER_EXT, depth_);
         if (glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT) != GL_FRAMEBUFFER_COMPLETE_EXT) {
             // a 24-bit depth buffer is not on every card of the period
             glRenderbufferStorageEXT(GL_RENDERBUFFER_EXT, GL_DEPTH_COMPONENT16, w, h);
+            gpuNote("render targets", omk::prof::kGlRenderbuffer, depth_, 2LL * w * h);
             if (glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT) != GL_FRAMEBUFFER_COMPLETE_EXT) {
                 std::fprintf(stderr, "gl1: the framebuffer object is incomplete\n");
                 return false;
@@ -182,6 +202,7 @@ public:
 
     void setTextures(std::span<const Texture> t) override {
         Current c(ctx_);
+        if (!tex_.empty()) gpuForget(omk::prof::kGlTexture, tex_.data(), tex_.size());
         if (!tex_.empty()) glDeleteTextures(static_cast<GLsizei>(tex_.size()), tex_.data());
         tex_.assign(t.size(), 0);
         texW_.assign(t.size(), 1.0f);
@@ -216,6 +237,7 @@ public:
             // bytes in memory order: no packed type, so no byte order to get wrong
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB5_A1, static_cast<GLsizei>(pw),
                          static_cast<GLsizei>(ph), 0, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
+            gpuNote("textures", omk::prof::kGlTexture, tex_[i], 2LL * pw * ph);   // 16 bits a texel
             texW_[i] = static_cast<float>(pw);
             texH_[i] = static_cast<float>(ph);
         }
@@ -503,6 +525,7 @@ private:
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, tw, th, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+            gpuNote("readback", omk::prof::kGlTexture, readTex_, 4LL * tw * th);
             readTexW_ = tw; readTexH_ = th;
             readBig_.assign(static_cast<std::size_t>(tw) * static_cast<std::size_t>(th) * 4, 0);
         }
