@@ -137,6 +137,42 @@ converted while mixing (-2.76); `fight.scx` swapped with `aventure.scx` as
 instead of four (-5.3); the staged bodies' copies released like the crowd's
 (-2.65 max); no depth tie on the software renderer.
 
+**Tier B DONE 2026-10-05: the street 58.7 -> 51.6 MB (-7.1)**, the same
+run as tier A's (Vulkan, standing, 900 frames, M1, 64-bit); on the software
+reference 56.9 -> 50.5. Frames and logs identical to the binary before tier
+A, standing and walking, on both renderers; the one log line that moved is
+the fight library's, now printed at a fight's start.
+
+| cut | category | before | after | how |
+|---|---|---|---|---|
+| sounds kept as their files hold them | input: sounds | 2.76 | 0.30 | `omk::DeviceSound`: 16-bit at the file's rate, read at the device rate by the host mixer with `wavToDevice`'s own index rule - every sample the same float. `engine: device sounds` proves it over all 1728 shipped sounds (61 interface `.wav`, 1667 in the `.SCX`), and their looped mixes, bitwise. Only 2 of them are stereo |
+| the staged bodies' posed copies released after two idle seconds | staged skin | 1.79 | 0.07 | as the crowd's slots (`releaseIdleStaged`); 68 releases over 25 bodies in a 600-frame street run, the re-pose after one exercised |
+| the sight ray through the shot soup and a cutout byte a triangle | collision | 4.94 | 3.40 | `omk::cutoutMask`; the unmasked shot triangles ARE the sight soup in order, so the same face wins (`engine: sight mask`, 220 sets, 14080 rays) |
+| `fight.scx` and `shoot2.scx` loaded on entering their mode, released on leaving | setup: bodies | 4.02 | 3.01 | as `Game_Start` swaps them; with them their converted samples (`sfxCache` is keyed by the file's bytes). `shoot2.scx` was 4 MB kept after the first shoot phase, outside this street run |
+| no depth tie on the software renderer | - | - | - | ALREADY TRUE: the software run's sites hold none; the tie is the GPU renderers' |
+
+**What was NOT done, and why**: the plan's "one collision soup with a class
+byte instead of four" in full. Walkable and steep are disjoint subsets
+(15137 + 31141 triangles in Anekbah, 1.6 MB), each with its own grid and
+its own moving-mesh patch; folding them into one soup would renumber the
+triangles every probe, grid and patch walks, and a tie between two faces is
+decided by that order - not a cut that can be shown identical by
+construction. The tier's -5.3 was measured before tier A took the soups'
+slack. The interface sounds (`loadSlot`, the 32-slot cache) still convert
+to float: none is resident in the street.
+
+**The cost, named**: entering a fight now reads `fight.SCX` (1 MB) and a
+shoot phase `shoot2.SCX` (4 MB) on the frame the mode starts, as the
+original's `Game_Start` does - on a console card that is a pause of a
+fraction of a second where the port had none.
+
+Checked with `--only` over the 49 checks tier B could reach - the shoot and
+fight phases, the staged bodies, the audio, the three builds (`--jobs 6`,
+892 s, M1): two red. `licence headers` a census step (545 -> 547:
+`hostmix_probe.cpp` of 2026-10-04, never re-pinned, and `sound_equiv.cpp`),
+re-pinned; `engine: shoot hit`, red on purpose, its output identical to the
+same check run at `641e557` - before tier B - in a worktree.
+
 **C. Large** (~12 MB): textures kept as 8-bit indices + palette, expanded
 at upload and looked up by the software raster (-9.4; every pixel reader
 changes); ranged archive reads like `Archive_ReadChunk` (-2.4; to be timed
