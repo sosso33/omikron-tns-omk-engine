@@ -27300,6 +27300,42 @@ def c_profiler_page():
         "against it, draws the frame's tree, sections and the zone table"
 
 
+def c_engine_music_ring():
+    r"""THE MUSIC'S STREAM IS A RING (2026-10-04), as the original's is.
+
+    `Morph_Open` plays the music through a DirectSound buffer of a FIXED
+    eight seconds - bytes/s x 8.0, `dbl_4BC298`, read from the executable -
+    refilled every 15 ms. The port's `HostMixer` kept every played sample
+    until 2^20 floats had gone by: 5.4 MB for a one-second queue, which the
+    profiler's first full street capture showed doubling (`todo/debug-
+    tools.md`). `tools/hostmix_probe` drives it as the music does (a quarter
+    second queued below a second, 512-frame callbacks, 60 s at 22050 Hz
+    stereo): every sample out in order, and the ring at most 512 KB (it is
+    256 KB - the queue's 55123 floats rounded up to a power of two).
+
+    Shown to fail (2026-10-04): the head made not to wrap (red: samples out
+    of order); the ring grown on every queue (red: its size).
+    """
+    import subprocess, re
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/hostmix_probe"], cwd=eng, capture_output=True, text=True)
+    p = os.path.join(eng, "build", "hostmix_probe")
+    if b.returncode != 0 or not os.path.exists(p):
+        return ("build failed",), ("built",), (b.stdout + b.stderr)[-300:]
+    out = subprocess.run([p], capture_output=True, text=True).stdout
+    m = re.search(r"(\d+) samples played, (\d+) out of order; queued at most (\d+) floats, "
+                  r"ring at most (\d+) floats .* flush (\w+), clear leaves (\d+)", out)
+    if not m:
+        return ("unparsed", out[-200:]), ("parsed",), "the probe's line must parse"
+    played, bad, queued, ring, flush, left = m.groups()
+    print("        " + out.strip())
+    return (int(played) >= 60 * 22050 * 2, int(bad), int(ring) * 4 <= 512 * 1024, flush, int(left)), \
+           (True, 0, True, "empties", 0), \
+        "the mixer's stream driven as the music drives it for 60 s: every sample out in " \
+        "order, the ring at most 512 KB (the old stream held 5.4 MB), flush empties it and " \
+        "clear gives its memory back"
+
+
 def c_engine_profiler():
     r"""The PROFILER (`todo/debug-tools.md` step 1): `omk-play --profile`.
 
@@ -41353,6 +41389,7 @@ SLOW = [
     ("engine: frontend gateway", c_engine_frontend_gateway, "todo/classic-mac-port-1999.md step 5; PORTING A1"),
     ("engine: classic build", c_engine_classic_build, "todo/classic-mac-port-1999.md step 5; platform/datafs.h"),
     ("engine: profiler", c_engine_profiler, "todo/debug-tools.md step 1; PORTING B6"),
+    ("engine: music ring", c_engine_music_ring, "audio/hostmix.h; todo/debug-tools.md"),
     ("engine: profiler control", c_engine_profiler_control, "todo/debug-tools.md step 3"),
     ("engine: profiler gpu", c_engine_profiler_gpu, "todo/debug-tools.md step 5"),
     ("engine: release build", c_engine_release_build, "todo/debug-tools.md"),
