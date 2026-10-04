@@ -266,6 +266,7 @@ int PlayState::lodChainOf(const CharModel& mo) {
 
 const omk::NodeTracks * PlayState::lodTracksFor(const omk::NodeTracks* base, int level, int count) {
     if (!base || level == 0) return base;
+    OMK_MEM_TAG("crowd: LOD tracks");   // the profiler's category (todo/debug-tools.md)
     const auto key = std::make_pair(base, level);
     auto it = pedLodTracks.find(key);
     if (it == pedLodTracks.end()) {
@@ -277,6 +278,7 @@ const omk::NodeTracks * PlayState::lodTracksFor(const omk::NodeTracks* base, int
 }
 
 const omk::Geometry & PlayState::lodRestFor(const std::string& model, const CharModel& mo, int rootMesh) {
+    OMK_MEM_TAG("crowd: LOD rest geometry");   // the profiler's category (todo/debug-tools.md)
     auto& per = pedLodRest[model];
     auto it = per.find(rootMesh);
     if (it != per.end()) return it->second;

@@ -193,14 +193,36 @@ minus the cap's sleep (`present`'s own time).
     profiler shows the doublings: +0.34, 0.67, 1.35, 2.69 MB at frames 28,
     88, 208, 449). The queue it serves is one second long. The same mixer
     runs on the classic Mac - ~5 MB of the 64 MB budget for nothing;
-  * **the crowd's per-model caches, ~9.4 MB after 3 minutes and still
-    filling** (C: +2.3, 1.4, 1.2, 0.7, 0.4, 0.2, 0.5, 0.2 MB per 20 s) - a
-    cache, not a leak: each new walker model brings its rest geometry and
-    LOD cuts (`lodRestFor`, `pedLodTracks`...), more rarely as the pool has
-    shown them all. GPU memory follows the same curve, 23.8 -> 30.9 MB.
+  * **the crowd, ~9.4 MB after 3 minutes and still growing** (C: +2.3, 1.4,
+    1.2, 0.7, 0.4, 0.2, 0.5, 0.2 MB per 20 s). **CORRECTED the same day**: this
+    first said "the per-model caches" (`lodRestFor`, `pedLodTracks`) without
+    measuring them - tagged, they are ~1.1 MB and flat from frame 900. The
+    growth is PER-SLOT copies: each of the 200 pedestrian and 40 vehicle slots
+    keeps the posed geometry it last drew (`PedStaged::posed`,
+    `VehStaged::posed`), sized for the largest model it ever posed, and more
+    slots hold one as walkers cycle into view - over a minute standing,
+    pedestrian slots 0.11 -> 1.13 MB, vehicle slots 0.09 -> 1.68 MB, and the
+    rest of `worldCrowd` 1.12 -> 2.66 MB (not yet split). Bounded by the slot
+    count times a model, so not a leak - but per-body memory the original
+    never kept. GPU memory follows a similar curve, 23.8 -> 30.9 MB.
   After 3 minutes standing: 88 MB RAM, 31 MB GPU.
 * **For the 64 MB classic budget** (measured on 32-bit at ~82 MB standing):
-  the two cheapest cuts are now named - the music buffer (compact when the
-  played part exceeds the queue: ~5 MB back) and a bound on the crowd's
-  model caches (~9 MB of growth over a session) - before any of the 3b
-  table's structural work.
+  the two cheapest cuts are now named - the music buffer and the crowd's
+  per-slot copies - and HOW THE ORIGINAL DOES EACH:
+  * **the music** (`Music_PlayTrack` -> `sub_42BFD0` -> `sub_42BEC0` ->
+    `Morph_Open`): the compressed `.ADP` is read WHOLE into memory
+    (`Mem_Alloc(file size)`, one `fread`), and played through a DirectSound
+    ring of **8 seconds** of 16-bit PCM - `Morph_Open` sizes it bytes/s x
+    `dbl_4BC298`, which is 8.0 (read from the executable's bytes): 705,600
+    bytes at 22050 Hz stereo - refilled by a multimedia timer every 15 ms
+    (`timeSetEvent(0xF)`). A FIXED ring, never more. The port keeps less of
+    the file (a 32 KB window) and far more of the output (up to 4 MB of
+    already-played floats): the cut in the original's spirit is a bounded
+    queue - compact as soon as the played part passes what is queued.
+  * **the crowd** (`docs/STREET_LIFE.md` 2, `classic-mac-port-1999.md` 3b-i):
+    `Slider_Init` loads every model the area's masks name ONCE, at area load,
+    and `sub_453A70` splits each into its 4 LOD sub-objects then - nothing
+    is built during play; and a body is transformed each frame into ONE
+    frame scratch pool and submitted from it (`sub_4947F0`) - no posed copy
+    kept per body. The cut in its spirit: pose the crowd into a per-frame
+    pool, not into 240 slots' own geometry.

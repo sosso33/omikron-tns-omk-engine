@@ -213,7 +213,7 @@ void PlayState::worldCrowd() {
                         p.lightsBlack = lit;
                     }
                 }
-                if (!p.gpu) omk::applyPose(p.posed, rest, p.mo->meshes, pose);
+                if (!p.gpu) { OMK_MEM_TAG("crowd: posed slots"); omk::applyPose(p.posed, rest, p.mo->meshes, pose); }
                 j.tCompose += tc1 - tc0;
                 j.tApply += phaseNow() - tc1;
                 // THE HEIGHT is the engine's rule, `sub_437F80(inst, x, body.y
@@ -541,7 +541,7 @@ void PlayState::worldCrowd() {
                 ++vehDrawn;
                 continue;
             }
-            if (!doorPosed) sv.posed = sv.atRest;
+            if (!doorPosed) { OMK_MEM_TAG("crowd: vehicle slots"); sv.posed = sv.atRest; }
             for (auto& c : sv.posed.corners) {
                 const float in[3] = {c.x - sv.origin[0], c.y - sv.origin[1], c.z - sv.origin[2]};
                 float r[3];
