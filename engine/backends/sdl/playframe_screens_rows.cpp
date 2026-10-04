@@ -196,8 +196,8 @@ void PlayState::screensSneakRows() {
             if (row >= 0 && static_cast<std::size_t>(row) < carried.size()) {
                 const int idx = carried[static_cast<std::size_t>(row)];
                 if (idx >= 0 &&
-                    static_cast<std::size_t>(idx) < objectRecords.size())
-                    rec = &objectRecords[static_cast<std::size_t>(idx)];
+                    static_cast<std::size_t>(idx) < objectRecords->size())
+                    rec = &(*objectRecords)[static_cast<std::size_t>(idx)];
             }
             if (!rec) {
                 std::printf("sneak: %s with no object selected\n",
@@ -669,8 +669,8 @@ void PlayState::screensSneakRows() {
             if (row >= 0 && static_cast<std::size_t>(row) < carried.size()) {
                 const int idx = carried[static_cast<std::size_t>(row)];
                 if (idx >= 0 &&
-                    static_cast<std::size_t>(idx) < objectRecords.size()) {
-                    const auto& rec = objectRecords[static_cast<std::size_t>(idx)];
+                    static_cast<std::size_t>(idx) < objectRecords->size()) {
+                    const auto& rec = (*objectRecords)[static_cast<std::size_t>(idx)];
                     // Case 30 loads the model for whatever is SELECTED,
                     // whatever its kind, and case 40 hands the
                     // description back on every arm - so the page gets
@@ -1027,9 +1027,9 @@ void PlayState::screensShopRows() {
                 ? ids[static_cast<std::size_t>(row)] : -1;
             static int shopExamined = -1;
             if (id > 0 && id != shopExamined &&
-                static_cast<std::size_t>(id) < objectRecords.size()) {
+                static_cast<std::size_t>(id) < objectRecords->size()) {
                 shopExamined = id;
-                const auto& rec = objectRecords[static_cast<std::size_t>(id)];
+                const auto& rec = (*objectRecords)[static_cast<std::size_t>(id)];
                 const auto k = uiModels.examine(fs, 15, rec.stem);
                 std::printf("shop: Analyser - object %d '%s', model %s\n", id,
                             rec.stem.c_str(),
@@ -1623,8 +1623,8 @@ void PlayState::screensLift() {
                 ? ids[static_cast<std::size_t>(sel)] : -1;
             const std::uint32_t pa = walk->panel()->addr;
             if (pa == omk::kPanelMultiplanExamine && selId >= 0 &&
-                static_cast<std::size_t>(selId) < objectRecords.size()) {
-                const auto& rec = objectRecords[static_cast<std::size_t>(selId)];
+                static_cast<std::size_t>(selId) < objectRecords->size()) {
+                const auto& rec = (*objectRecords)[static_cast<std::size_t>(selId)];
                 static int mpExamined = -1;
                 const auto k = uiModels.examine(
                     fs, (rec.kind == 15 || rec.kind == 16) ? rec.kind : 15,

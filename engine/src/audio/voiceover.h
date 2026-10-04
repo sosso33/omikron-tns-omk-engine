@@ -143,7 +143,7 @@ public:
     // still resolves - only `isVoiceObject` degrades (see its comment).
     bool load(const DataFs& fs);
 
-    bool loaded() const { return !objects_.empty(); }
+    bool loaded() const { return objects_ && !objects_->empty(); }
 
     // The handler's rule, steps 4-9 above.
     VoiceOver resolve(const DataFs& fs, int objectId) const;
@@ -183,12 +183,13 @@ public:
     // when there is no tag file.  `isVoiceObject` is the permissive one.
     bool taggedVoice(int objectId) const;
 
-    const std::vector<ObjectRecord>& objects() const { return objects_; }
+    const std::vector<ObjectRecord>& objects() const { return *objects_; }
 
 private:
     int count(const DataFs& fs, int which) const;
 
-    std::vector<ObjectRecord> objects_;
+    // the shared table (`sharedObjects`), not a copy of it
+    const std::vector<ObjectRecord>* objects_ = &noObjects();
     std::vector<std::string>  tagNames_;   // by id; empty vector = no .TAG
 };
 

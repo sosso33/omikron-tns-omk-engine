@@ -79,6 +79,8 @@ std::string headerName(std::span<const std::byte> b, std::size_t off,
     return s;
 }
 
+}  // namespace
+
 // AN ARCHIVE, READ ONCE. `Archive_ReadChunk` (0x0040FF90) seeks to the 2048
 // byte directory group the index falls in, reads it, seeks to the chunk and
 // reads the chunk - a few KB from a file it never holds. This read the WHOLE
@@ -101,6 +103,8 @@ const std::vector<std::byte>& archiveBytes(const std::string& path) {
     return it->second;
 }
 
+namespace {
+
 std::vector<std::byte> readChunk(const std::string& iam, const char* archive, int id) {
     if (id < 0) return {};
     const auto& file = archiveBytes(iam + "/" + archive);
@@ -118,8 +122,9 @@ constexpr std::size_t kRunaway = 20000;
 std::vector<StartupRun> loadArea(const std::string& iamDir, int areaId,
                                  GameState& state, const OpcodeTable& table) {
     std::vector<StartupRun> out;
-    const auto areaFile  = readFile(iamDir + "/AREA");
-    const auto sceneFile = readFile(iamDir + "/SCENE");
+    // the kept archives (`archiveBytes`), not a fresh read of both whole
+    const auto& areaFile  = archiveBytes(iamDir + "/AREA");
+    const auto& sceneFile = archiveBytes(iamDir + "/SCENE");
     const auto areas  = IamArchive::open(areaFile);
     const auto scenes = IamArchive::open(sceneFile);
 
@@ -3355,12 +3360,7 @@ int Session::scanTakeable(const float pos[3], float /*facing*/, float* dyOut) co
 // lazily-cached table as `objectName`; -1 when the id is unknown.
 int Session::objectKind(int objectId) const {
     if (objectId < 0 || dataRoot_.empty()) return -1;
-    static std::vector<ObjectRecord> table;
-    static std::string forRoot;
-    if (forRoot != dataRoot_) {
-        forRoot = dataRoot_;
-        table = loadObjects(DataFs(dataRoot_));
-    }
+    const auto& table = sharedObjects(DataFs(dataRoot_));   // the one table (objects.h)
     for (const auto& o : table) if (o.id == objectId) return o.kind;
     return -1;
 }
@@ -3369,12 +3369,7 @@ std::string Session::objectName(int objectId) const {
     // `IAM\OBJECT` is not otherwise resident in the Session, so it is read
     // once and cached here rather than threaded through every caller.
     if (objectId < 0 || dataRoot_.empty()) return {};
-    static std::vector<ObjectRecord> table;
-    static std::string forRoot;
-    if (forRoot != dataRoot_) {
-        forRoot = dataRoot_;
-        table = loadObjects(DataFs(dataRoot_));
-    }
+    const auto& table = sharedObjects(DataFs(dataRoot_));   // the one table (objects.h)
     for (const auto& o : table) if (o.id == objectId) return o.name;
     return {};
 }
@@ -3465,9 +3460,7 @@ Session::Banked Session::bankHeldObject(int objectId) {
 
 void Session::applyObjectEffect(int objectId) {
     if (objectId < 0 || dataRoot_.empty()) return;
-    static std::vector<ObjectRecord> table;
-    static std::string forRoot;
-    if (forRoot != dataRoot_) { forRoot = dataRoot_; table = loadObjects(DataFs(dataRoot_)); }
+    const auto& table = sharedObjects(DataFs(dataRoot_));   // the one table (objects.h)
     const ObjectRecord* rec = nullptr;
     for (const auto& o : table) if (o.id == objectId) { rec = &o; break; }
     if (!rec) return;

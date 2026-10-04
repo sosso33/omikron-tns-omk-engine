@@ -104,6 +104,25 @@ MOVING meshes only, not the whole set (-7.9 - both the geometry and the
 collision readings found it); one shared `IAM\OBJECT` table (-0.45); and
 the AREA/SCENE whole-file reads that bypass the cache (a speed bug).
 
+**Tier A DONE 2026-10-04: the street 72.7 -> 58.7 MB (-14.0)**, standing
+900 frames through the Vulkan world renderer on an M1, the same run as the
+inventory. Every frame byte-identical to the binary before it: standing on
+the software reference and on Vulkan, and a 600-frame walk (1052 units, the
+motion patch running) - the dumps and the whole logs agree. By category:
+
+| cut | category | before | after |
+|---|---|---|---|
+| rest copies of the MOVING meshes only (`restXyzOfMesh`, `restSoupOfMesh`, `restSteepOfMesh`: a mesh's own corners and triangles, taken the first time it moves; the GPU path restores before it reads `mm.rest`) | input: motion | 9.17 | 1.40 |
+| the set's corners reserved exactly, and `cornerVertex` / `cornerDeclared` dropped for the decor and the sky (`dropCharacterArrays`; the face morph is a body's) | geometry | 11.99 | 8.24 |
+| the soups sized exactly (`shrink_to_fit` - the doubling slack) | collision | 7.19 | 4.94 |
+| ONE `IAM\OBJECT` table (`sharedObjects`) for the Session's three lookups, the voice-overs and the viewer | objects | 0.54 | 0.27 |
+| `SceneRunner::load` and `loadArea` read AREA / SCENE through `archiveBytes` instead of whole on every load | archives | 1.20 | 1.48 |
+
+The last is the speed fix, and it COSTS 0.29 MB: SCENE is now kept like
+AREA, as the 2026-09-30 decision kept all three archives - it had simply
+never been reached through the cache. Its cost goes with tier C's ranged
+reads.
+
 **B. Medium** (~10 MB): sounds kept 16-bit mono at their own rate and
 converted while mixing (-2.76); `fight.scx` swapped with `aventure.scx` as
 `Game_Start` does (-1.0); one collision soup with a class byte a triangle

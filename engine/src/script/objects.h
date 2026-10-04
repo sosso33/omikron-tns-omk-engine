@@ -57,6 +57,15 @@ struct ObjectRecord {
 // invented: the vector is as long as the file allows.
 std::vector<ObjectRecord> loadObjects(std::span<const std::byte> file);
 std::vector<ObjectRecord> loadObjects(const DataFs& fs);
+// THE ONE TABLE (todo/ram-vs-original.md, tier A): `IAM\OBJECT` parsed once
+// per data root and shared - five owners each held their own copy (the
+// Session's three lookups, the voice-overs, the viewer). The original reads a
+// record, keeps its 56 bytes in a list slot and frees it.
+const std::vector<ObjectRecord>& sharedObjects(const DataFs& fs);
+// An empty table for a holder that has not loaded one yet - defined in
+// objects.cpp, not as an `inline` member: a weak object with a constructor
+// gets no storage on the classic Mac (PORTING A10)
+const std::vector<ObjectRecord>& noObjects();
 
 // `Object_ApplyEffect`'s consumable map: effect -> actor property, or 0 for an
 // effect the function does not handle as a plain consumable.

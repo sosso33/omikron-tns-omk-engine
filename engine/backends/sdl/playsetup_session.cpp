@@ -367,10 +367,10 @@ int PlayState::setupSession() {
     // written, checked and never consumed by anything that runs - the sneak
     // is what the channel exists for, so this is where it is loaded.
     harnessStateWrites();
-    objectRecords = omk::loadObjects(fs);
+    objectRecords = &omk::sharedObjects(fs);
     globalFile = fs.read("IAM/GLOBAL");
     recipes = omk::globalRecipes(globalFile);
-    inv_.emplace(objectRecords, recipes);
+    inv_.emplace(*objectRecords, recipes);
     // `GLOBAL +16` - the sneak's slider destinations, 39 of them.
     destinations = omk::globalDestinations(globalFile);
     sliderTold = false;
@@ -378,7 +378,7 @@ int PlayState::setupSession() {
     // the lines the composer actually laid out - a line printed beside the
     // fill says what was intended, not what was drawn, and a mutation that
     // cut the text off from the composer passed exactly that way.
-    if (objectRecords.empty())
+    if (objectRecords->empty())
         std::printf("no IAM/OBJECT - the sneak's inventory page will be "
                     "empty\n");
     auto& session = session_.emplace(fr + "/IAM", state, opcodes);

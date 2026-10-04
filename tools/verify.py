@@ -27398,6 +27398,70 @@ def c_engine_crowd_memory():
         "over the second half - as the original keeps it"
 
 
+def c_engine_street_memory():
+    r"""THE STREET'S MEMORY AGAINST THE ORIGINAL'S, tier A (2026-10-04,
+    `todo/ram-vs-original.md`): what the port keeps in Anekbah where the
+    original keeps far less, cut with the frames byte-identical.
+
+    Standing in the street, 60 frames on the software reference with
+    `--profile`; every figure is settled by frame 30 and equals a 900-frame
+    run's. At the last frame:
+
+      * `input: motion` - the moving set meshes' REST copies - under 3 MB
+        (1.40; the whole set's corners and soups made it 9.17) and over
+        0.5, so the motion patch really ran;
+      * `geometry` under 9.5 MB (8.24; 11.99 with the corners' growth slack
+        and the decor's `cornerVertex` / `cornerDeclared`);
+      * `collision` under 6 MB (4.94; 7.19 with the soups' doubling slack);
+      * `objects` - `IAM\OBJECT` - ONE table, between 0.1 and 0.4 MB (0.27;
+        each extra holder adds 0.27);
+      * and `IAM\SCENE` read through the kept archives (`archiveBytes` says
+        so itself), with `archives` holding AREA and SCENE together: a scene
+        load had read both whole, past the cache.
+
+    Shown to fail (2026-10-05), each alone: the rest copy reserved at the
+    whole set's size (motion red), `dropCharacterArrays` taken out of
+    `rebuildWorld` (geometry red), `collisionSoup`'s `shrink_to_fit` taken
+    out (collision red), `sharedObjects` re-parsing on every call (objects
+    red), and `SceneRunner::load` reading SCENE whole again (SCENE red).
+    """
+    import subprocess, tempfile, shutil
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import omkprof
+    eng = os.path.join(ROOT, "engine")
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    tmp = tempfile.mkdtemp()
+    cap = os.path.join(tmp, "s.prof")
+    try:
+        r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                            "--save", os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "0",
+                            "--stand", "1804,0,-6890,336", "--nofmv",
+                            "--res", "320x240", "--frames", "60", "--profile", cap],
+                           capture_output=True, text=True, env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+        frames = [f for f in omkprof.read(cap)[1] if f["frame"] >= 0]
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if len(frames) < 60 or not frames[-1].get("mem"):
+        return ("capture", len(frames)), ("capture", 60), "the run must write 60 frames with memory"
+    MB = 1048576.0
+    t = {x[0]: x[1] / MB for x in frames[-1]["mem"]["tags"]}
+    kept = {m.group(1): int(m.group(2)) for m in
+            re.finditer(r"session: \S*/IAM/(\w+) kept in memory \((\d+) KB\)", r.stdout)}
+    motion, geo, coll, objs, arch = (t.get(k, 0.0) for k in
+                                     ("input: motion", "geometry", "collision", "objects", "archives"))
+    print("        motion %.2f, geometry %.2f, collision %.2f, objects %.2f, archives %.2f MB; kept %s"
+          % (motion, geo, coll, objs, arch, sorted(kept.items())))
+    both = (kept.get("AREA", 0) + kept.get("SCENE", 0)) / 1024.0
+    return ((0.5 < motion < 3.0), geo < 9.5, coll < 6.0, (0.1 < objs < 0.4),
+            "SCENE" in kept, arch >= both - 0.05), (True,) * 6, \
+        "standing in the street: the moving meshes' rest copies, the set geometry, the collision " \
+        "soups and IAM\\OBJECT each under its tier-A bound, the motion patch having run; and SCENE " \
+        "read through the kept archives, AREA and SCENE both in them"
+
+
 def c_engine_profiler():
     r"""The PROFILER (`todo/debug-tools.md` step 1): `omk-play --profile`.
 
@@ -41474,6 +41538,7 @@ SLOW = [
     ("engine: profiler", c_engine_profiler, "todo/debug-tools.md step 1; PORTING B6"),
     ("engine: music ring", c_engine_music_ring, "audio/hostmix.h; todo/debug-tools.md"),
     ("engine: crowd memory", c_engine_crowd_memory, "STREET_LIFE; todo/debug-tools.md"),
+    ("engine: street memory", c_engine_street_memory, "todo/ram-vs-original.md tier A"),
     ("engine: profiler control", c_engine_profiler_control, "todo/debug-tools.md step 3"),
     ("engine: profiler gpu", c_engine_profiler_gpu, "todo/debug-tools.md step 5"),
     ("engine: release build", c_engine_release_build, "todo/debug-tools.md"),

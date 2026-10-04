@@ -681,7 +681,17 @@ struct WorldSlot {
     // matches against the resident `.sfx` - kept, because that file can
     // arrive after the set does (the frame loop binds them)
     std::vector<omk::SceneRunner::SetEmitterMesh> emitters;
-    std::vector<omk::Corner> baseCorners;
+    // A MOVING MESH'S REST, ITS OWN (todo/ram-vs-original.md, tier A): the
+    // x y z of its corners and the 9 floats of its walkable and steep
+    // triangles AS BUILT, copied the first time it moves (until then its
+    // corners are untouched - only its own patch writes them), in
+    // `cornersOfMesh` / `soupTrisOfMesh` / `steepTrisOfMesh` order. A patch
+    // writes the rest back and places it IN PLACE (`placePoints` allows the
+    // same array), so the bits are those of placing from a whole copy. These
+    // were whole-set copies - 6.7 MB of corners and 1.6 of soups in Anekbah
+    // to re-place some 30 meshes; the original copies nothing (the probe and
+    // the sweep read the node's matrix, `Walk_ProbeGround`, `Sweep_MeshTest`).
+    std::unordered_map<int, std::vector<float>> restXyzOfMesh, restSoupOfMesh, restSteepOfMesh;
     // A MOVING MESH DRAWN AS THE ENGINE DRAWS IT (todo/optimization.md step
     // 37). `o3de_SetNodePos` (0x004370A0) writes a node's three floats and
     // `sub_494650` builds its matrix; the vertices go through it on the way
@@ -739,7 +749,7 @@ struct WorldSlot {
     std::unordered_map<int, std::array<float, 11>> appliedPatch;
     std::unordered_map<std::string, int> meshByLowerName;
     std::vector<std::vector<std::uint32_t>> cornersOfMesh, soupTrisOfMesh, steepTrisOfMesh;
-    omk::TriangleSoup baseSoup, baseSteep;
+
     // THE TWO WORLD RAYS (`actor/projectile.h`). Both walk the linked
     // set's meshes through `sub_444460`, which skips CollisionOnly
     // (0x800000) and gives a mesh with either bit of 0x41 no triangle

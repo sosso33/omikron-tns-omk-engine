@@ -368,6 +368,7 @@ int PlayState::phaseWorld() {
                             const auto d = omk::DataFs::readPath(*o);
                             sky.stem = wantSky;
                             sky.geo  = omk::buildGeometry(d, omk::DrawFilter::Engine);
+                            omk::dropCharacterArrays(sky.geo);
                             sky.base = sky.geo.corners;
                             const auto t = fs.resolve("MESHES/MISC/" + wantSky + ".3DT");
                             if (t) sky.tex = omk::textures(d, omk::DataFs::readPath(*t));

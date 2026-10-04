@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "script/objects.h"
+#include "platform/profile.h"
+#include "platform/threads.h"
+#include <map>
+#if OMK_THREADS
+#  include <mutex>
+#endif
 
 #include "platform/datafs.h"
 
@@ -53,6 +59,27 @@ std::vector<ObjectRecord> loadObjects(std::span<const std::byte> f) {
 
 std::vector<ObjectRecord> loadObjects(const DataFs& fs) {
     return loadObjects(fs.read("IAM/OBJECT"));
+}
+
+const std::vector<ObjectRecord>& noObjects() {
+    static const std::vector<ObjectRecord> none;
+    return none;
+}
+
+const std::vector<ObjectRecord>& sharedObjects(const DataFs& fs) {
+#if OMK_THREADS
+    static std::mutex lock;
+    std::lock_guard<std::mutex> lk(lock);
+#endif
+    // a map node never moves, so a reference stays good for the run
+    static std::map<std::string, std::vector<ObjectRecord>>* tables =
+        new std::map<std::string, std::vector<ObjectRecord>>;
+    auto it = tables->find(fs.root());
+    if (it == tables->end()) {
+        OMK_MEM_TAG("objects");   // the profiler's category (todo/debug-tools.md 4)
+        it = tables->emplace(fs.root(), loadObjects(fs)).first;
+    }
+    return it->second;
 }
 
 int effectProperty(int effect) {

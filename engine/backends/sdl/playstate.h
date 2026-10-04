@@ -192,7 +192,8 @@ struct PlayState {
     int textScaling{};
     char clipText[128]{};
     bool forceAdventure{};
-    std::vector<omk::ObjectRecord> objectRecords{};
+    // the shared `IAM\OBJECT` table (`omk::sharedObjects`), not a copy of it
+    const std::vector<omk::ObjectRecord>* objectRecords = &omk::noObjects();
     std::vector<std::byte> globalFile{};
     std::vector<omk::Recipe> recipes{};
     std::optional<omk::Inventory> inv_;

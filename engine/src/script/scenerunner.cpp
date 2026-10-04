@@ -2,6 +2,7 @@
 #include "script/scenerunner.h"
 
 #include "platform/datafs.h"
+#include "script/area.h"
 #include "script/scenehost.h"
 
 #include <cstring>
@@ -10,8 +11,10 @@ namespace omk {
 
 bool SceneRunner::load(const std::string& scptDataDir, const std::string& iamDir,
                        const OpcodeTable& table, ChunkKind kind, int chunk) {
-    const auto areaFile  = DataFs::readPath(iamDir + "/AREA");
-    const auto sceneFile = DataFs::readPath(iamDir + "/SCENE");
+    // the kept archives (`archiveBytes`): this read both WHOLE on every
+    // scene load, past the cache every other chunk read goes through
+    const auto& areaFile  = archiveBytes(iamDir + "/AREA");
+    const auto& sceneFile = archiveBytes(iamDir + "/SCENE");
     const DataFs fs(scptDataDir);
     name_ = resolveScx(fs, areaFile, sceneFile, table, kind, chunk);
     if (name_.empty()) return false;

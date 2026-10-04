@@ -242,4 +242,11 @@ MirrorPlane mirrorPlane(std::span<const std::byte> d);
 // runtime texture slot, handed out in material-record order (ASSETS 4b).
 Geometry buildGeometry(std::span<const std::byte> d, DrawFilter filter);
 
+// A SET's geometry gives back the two per-corner arrays only a CHARACTER
+// reads (todo/ram-vs-original.md, tier A): `cornerVertex` feeds the face
+// morph and `cornerDeclared` the seam control, neither of which a decor set
+// has. 8 bytes a corner - 1.1 MB of Anekbah. Every other reader of the two
+// guards on their size.
+void dropCharacterArrays(Geometry& g);
+
 }  // namespace omk

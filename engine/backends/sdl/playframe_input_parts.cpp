@@ -600,9 +600,39 @@ void PlayState::inputMotion() {
                 const auto seen = w.appliedPatch.find(mi);
                 if (seen != w.appliedPatch.end() && seen->second == want) continue;
                 w.appliedPatch[mi] = want;
-                if (w.baseCorners.empty()) w.baseCorners = w.geo.corners;
-                if (w.baseSoup.empty()) w.baseSoup = w.soup;
-                if (w.baseSteep.empty()) w.baseSteep = w.steep;
+                // THIS MESH's rest - x y z of its corners, 9 floats of each
+                // of its triangles - taken the first time it moves, and
+                // written back before every placement (`playtypes.h`)
+                const auto& meshCornersIdx = w.cornersOfMesh[static_cast<std::size_t>(mi)];
+                const auto& meshSoupTris = w.soupTrisOfMesh[static_cast<std::size_t>(mi)];
+                const auto& meshSteepTris = w.steepTrisOfMesh[static_cast<std::size_t>(mi)];
+                auto restXyz = w.restXyzOfMesh.find(mi);
+                if (restXyz == w.restXyzOfMesh.end()) {
+                    std::vector<float> r;
+                    r.reserve(3 * meshCornersIdx.size());
+                    for (const std::uint32_t c : meshCornersIdx) {
+                        const omk::Corner& k = w.geo.corners[c];
+                        r.push_back(k.x); r.push_back(k.y); r.push_back(k.z);
+                    }
+                    restXyz = w.restXyzOfMesh.emplace(mi, std::move(r)).first;
+                    const auto takeTris = [](const omk::TriangleSoup& soup,
+                                             const std::vector<std::uint32_t>& tris) {
+                        std::vector<float> r;
+                        r.reserve(9 * tris.size());
+                        for (const std::uint32_t t : tris)
+                            r.insert(r.end(), soup.begin() + 9 * t, soup.begin() + 9 * t + 9);
+                        return r;
+                    };
+                    w.restSoupOfMesh.emplace(mi, takeTris(w.soup, meshSoupTris));
+                    w.restSteepOfMesh.emplace(mi, takeTris(w.steep, meshSteepTris));
+                }
+                const auto restoreCorners = [&] {
+                    const std::vector<float>& r = restXyz->second;
+                    for (std::size_t k = 0; k < meshCornersIdx.size(); ++k) {
+                        omk::Corner& c = w.geo.corners[meshCornersIdx[k]];
+                        c.x = r[3 * k]; c.y = r[3 * k + 1]; c.z = r[3 * k + 2];
+                    }
+                };
                 const float* mp = w.meshes[static_cast<std::size_t>(mi)].pos;
                 // The motion's orientation: the path sample's 3x3 goes to
                 // node `+56` through `sub_437160` beside the
@@ -630,6 +660,10 @@ void PlayState::inputMotion() {
                 if (gpuMotion) {
                     auto mit = w.moving.find(mi);
                     if (mit == w.moving.end()) {
+                        // the set's own corners for it go BACK to where they
+                        // were built first, in case a CPU patch moved them
+                        // before - its own copy is made from them
+                        restoreCorners();
                         // its own geometry, batch by batch in the set's
                         // order, made once: the corners as BUILT, less the
                         // mesh's origin
@@ -639,7 +673,7 @@ void PlayState::inputMotion() {
                             const std::size_t first = mm.rest.corners.size();
                             for (std::uint32_t c = b.start; c < b.start + b.count; ++c) {
                                 if (c >= g.cornerMesh.size() || g.cornerMesh[c] != mi) continue;
-                                omk::Corner k = w.baseCorners[c];
+                                omk::Corner k = w.geo.corners[c];
                                 k.x = k.x - mp[0]; k.y = k.y - mp[1]; k.z = k.z - mp[2];
                                 mm.rest.corners.push_back(k);
                             }
@@ -658,13 +692,8 @@ void PlayState::inputMotion() {
                                     w.meshes[static_cast<std::size_t>(mi)].name,
                                     mit->second.rest.corners.size(), mit->second.rest.batches.size(),
                                     meshCorners.size());
-                        // ...and the set's own corners for it go BACK to
-                        // where they were built, in case a CPU patch moved
-                        // them before
-                        omk::PointPlace still;
-                        for (int k = 0; k < 3; ++k) { still.origin[k] = 0; still.at[k] = 0; }
-                        omk::placePoints(still, &w.baseCorners[0].x, 12, &w.geo.corners[0].x, 12,
-                                         meshCorners.data(), meshCorners.size());
+                        // (the set's own corners for it were put back at
+                        // rest above, before the copy)
                         dirty.insert(dirty.end(), meshCorners.begin(), meshCorners.end());
                         moved = true;
                     }
@@ -690,17 +719,24 @@ void PlayState::inputMotion() {
                     mm.reach = w.meshes[static_cast<std::size_t>(mi)].radius * smax;
                 } else {
                     dirty.insert(dirty.end(), meshCorners.begin(), meshCorners.end());
-                    omk::placePoints(pp, &w.baseCorners[0].x, 12, &w.geo.corners[0].x, 12,
+                    // the rest written back, then placed IN PLACE: the same
+                    // input values, so the same bits as placing from a copy
+                    restoreCorners();
+                    omk::placePoints(pp, &w.geo.corners[0].x, 12, &w.geo.corners[0].x, 12,
                                      meshCorners.data(), meshCorners.size());
                 }
                 phSpan["motion corners"] += phaseNow() - motionCorners0;
                 // the collision soups follow the mesh exactly as the
                 // render corners above (`Sweep_MeshTest` collides
                 // against the mesh's CURRENT matrix)
-                const auto patchSoup = [&](omk::TriangleSoup& soup, const omk::TriangleSoup& base,
+                const auto patchSoup = [&](omk::TriangleSoup& soup, const std::vector<float>& rest,
                                            const std::vector<std::uint32_t>& tris,
                                            std::vector<std::uint32_t>& movedOut) {
                     movedOut.insert(movedOut.end(), tris.begin(), tris.end());
+                    // the mesh's triangles back at rest, then placed in place
+                    for (std::size_t k = 0; k < tris.size(); ++k)
+                        std::copy(rest.begin() + 9 * k, rest.begin() + 9 * k + 9,
+                                  soup.begin() + 9 * tris[k]);
                     // a triangle is three packed points; a run of them
                     // is what NEON loads four at a time
                     // main thread only, so a plain static (on the Vita
@@ -711,11 +747,11 @@ void PlayState::inputMotion() {
                         pts.push_back(3 * t); pts.push_back(3 * t + 1); pts.push_back(3 * t + 2);
                     }
                     if (!pts.empty())
-                        omk::placePoints(pp, base.data(), 3, soup.data(), 3, pts.data(), pts.size());
+                        omk::placePoints(pp, soup.data(), 3, soup.data(), 3, pts.data(), pts.size());
                 };
                 const double motionSoups0 = phaseNow();
-                patchSoup(w.soup, w.baseSoup, w.soupTrisOfMesh[static_cast<std::size_t>(mi)], movedSoup[sl]);
-                patchSoup(w.steep, w.baseSteep, w.steepTrisOfMesh[static_cast<std::size_t>(mi)], movedSteep[sl]);
+                patchSoup(w.soup, w.restSoupOfMesh[mi], meshSoupTris, movedSoup[sl]);
+                patchSoup(w.steep, w.restSteepOfMesh[mi], meshSteepTris, movedSteep[sl]);
                 if (std::find(w.soupMovers.begin(), w.soupMovers.end(), mi) == w.soupMovers.end())
                     w.soupMovers.push_back(mi);
                 phSpan["motion soups"] += phaseNow() - motionSoups0;
@@ -763,19 +799,21 @@ void PlayState::inputMotion() {
                 // the DRAWN centroid and the AS-BUILT one, so the line
                 // carries the displacement itself and not a number that
                 // has to be compared against a mesh origin elsewhere.
-                // `baseCorners` is the untouched load, filled by the first
-                // patch; before any patch the two are the same buffer.
+                // the AS-BUILT one is the mesh's own rest copy, taken by its
+                // first patch; before any patch its corners ARE as built.
+                // (Summed in `cornersOfMesh` order, ascending - the order
+                // the whole-set walk took.)
                 double c[3] = {0, 0, 0}, b[3] = {0, 0, 0};
                 long n = 0;
-                const bool haveBase = w.baseCorners.size() == w.geo.corners.size();
-                const std::size_t nc = std::min(w.geo.corners.size(), w.geo.cornerMesh.size());
-                for (std::size_t k = 0; k < nc; ++k) {
-                    if (w.geo.cornerMesh[k] != mi) continue;
-                    c[0] += w.geo.corners[k].x; c[1] += w.geo.corners[k].y; c[2] += w.geo.corners[k].z;
-                    if (haveBase) {
-                        b[0] += w.baseCorners[k].x; b[1] += w.baseCorners[k].y; b[2] += w.baseCorners[k].z;
+                const auto rit = w.restXyzOfMesh.find(mi);
+                const auto& idxs = w.cornersOfMesh[static_cast<std::size_t>(mi)];
+                for (std::size_t k = 0; k < idxs.size(); ++k) {
+                    const omk::Corner& cc = w.geo.corners[idxs[k]];
+                    c[0] += cc.x; c[1] += cc.y; c[2] += cc.z;
+                    if (rit != w.restXyzOfMesh.end()) {
+                        b[0] += rit->second[3 * k]; b[1] += rit->second[3 * k + 1]; b[2] += rit->second[3 * k + 2];
                     } else {
-                        b[0] += w.geo.corners[k].x; b[1] += w.geo.corners[k].y; b[2] += w.geo.corners[k].z;
+                        b[0] += cc.x; b[1] += cc.y; b[2] += cc.z;
                     }
                     ++n;
                 }

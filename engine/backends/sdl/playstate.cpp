@@ -1281,6 +1281,7 @@ void PlayState::prepareSet(SetLoad& L) {
     w.area = L.area;
     t = clk::now();
     w.geo = omk::buildGeometry(d, omk::DrawFilter::Engine);
+    omk::dropCharacterArrays(w.geo);   // a set has no face morph and no seams
     // The runs, in submission order: batch by batch, and inside a batch
     // split wherever `cornerMesh` changes. A set whose corners carry no
     // mesh index leaves this empty, and the draw path then submits whole
@@ -1310,7 +1311,7 @@ void PlayState::prepareSet(SetLoad& L) {
     w.steep = omk::collisionSoup(d, omk::SoupKind::Steep, &w.steepMesh);
     w.shotSoup = omk::collisionSoup(d, omk::SoupKind::Shot);
     w.sightSoup = omk::collisionSoup(d, omk::SoupKind::Sight);
-    w.baseSoup.clear(); w.baseSteep.clear();
+    w.restXyzOfMesh.clear(); w.restSoupOfMesh.clear(); w.restSteepOfMesh.clear();
     L.ms[3] = since(t);
     t = clk::now();
     w.mirror = omk::mirrorPlane(d);
@@ -1434,6 +1435,10 @@ void PlayState::rebuildWorld() {
         playerSteep.insert(playerSteep.end(), w.steep.begin(), w.steep.end());
     }
     const double rebuildA = static_cast<double>(front.perfCounter());
+    // exactly their size (todo/ram-vs-original.md, tier A): `clear` keeps a
+    // larger set's capacity, and `insert` grows by doubling
+    playerSoup.shrink_to_fit();
+    playerSteep.shrink_to_fit();
     playerMovingTri.assign(playerSoup.size() / 9, 0);   // new sets: nothing has moved yet
     playerMovingIds.clear();
     rebuildFixedGrid();

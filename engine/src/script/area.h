@@ -70,6 +70,11 @@ struct StartupRun {
     std::vector<Call> calls;
 };
 
+// `IAM\AREA`, `SCENE` or `DIALOG` read once and kept for the run (the path
+// is the key). Every chunk read goes through it: a whole-file read per load
+// was most of an area change's time on a console's card.
+const std::vector<std::byte>& archiveBytes(const std::string& path);
+
 // Load `areaId` and run what the load queues, in order.
 //
 // `iamDir` is the directory holding AREA and SCENE. The scene over the area

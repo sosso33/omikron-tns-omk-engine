@@ -163,6 +163,13 @@ TriangleSoup collisionSoup(std::span<const std::byte> d, SoupKind kind,
             }
         }
     }
+    // EXACTLY its size (todo/ram-vs-original.md, tier A): the soup grew by
+    // `push_back`, and doubling left a third of it as slack - 2.35 MB of
+    // Anekbah's 7.19. The original keeps no soup at all (it tests the set's
+    // own faces in mesh space, `Walk_ProbeGround` / `Sweep_MeshTest`); this
+    // keeps one with nothing spare. The same triangles in the same order.
+    out.shrink_to_fit();
+    if (meshOf) meshOf->shrink_to_fit();
     return out;
 }
 

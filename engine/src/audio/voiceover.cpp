@@ -23,7 +23,7 @@ bool startsWith(const std::string& s, const char* p) {
 }  // namespace
 
 bool VoiceOverLibrary::load(const DataFs& fs) {
-    objects_ = loadObjects(fs);
+    objects_ = &sharedObjects(fs);
     tagNames_.clear();
 
     // `IAM\OBJECTS.TAG` - the same ini the engine narrates through
@@ -57,7 +57,7 @@ bool VoiceOverLibrary::load(const DataFs& fs) {
         }
         flush();
     }
-    return !objects_.empty();
+    return !objects_->empty();
 }
 
 bool VoiceOverLibrary::isVoiceObject(int objectId) const {
@@ -71,9 +71,9 @@ VoiceOver VoiceOverLibrary::resolve(const DataFs& fs, int objectId) const {
     VoiceOver v;
     v.object = objectId;
     // Step 3: the handler returns on -1 before it reads anything.
-    if (objectId < 0 || static_cast<std::size_t>(objectId) >= objects_.size())
+    if (objectId < 0 || static_cast<std::size_t>(objectId) >= objects_->size())
         return v;
-    const auto& r = objects_[static_cast<std::size_t>(objectId)];
+    const auto& r = (*objects_)[static_cast<std::size_t>(objectId)];
     v.stem = r.stem;
     if (!tagNames_.empty() && static_cast<std::size_t>(objectId) < tagNames_.size())
         v.objectName = tagNames_[static_cast<std::size_t>(objectId)];
@@ -125,7 +125,7 @@ bool VoiceOverLibrary::taggedVoice(int objectId) const {
 int VoiceOverLibrary::count(const DataFs& fs, int which) const {
     if (tagNames_.empty()) return -1;
     int n = 0;
-    for (std::size_t i = 0; i < objects_.size(); ++i) {
+    for (std::size_t i = 0; i < objects_->size(); ++i) {
         if (!taggedVoice(static_cast<int>(i))) continue;
         if (which == 0) { ++n; continue; }
         const auto v = resolve(fs, static_cast<int>(i));

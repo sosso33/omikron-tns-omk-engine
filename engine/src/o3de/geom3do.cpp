@@ -83,6 +83,11 @@ struct Resolved {
 
 }  // namespace
 
+void dropCharacterArrays(Geometry& g) {
+    std::vector<std::int32_t>().swap(g.cornerVertex);
+    std::vector<std::int32_t>().swap(g.cornerDeclared);
+}
+
 Geometry buildGeometry(std::span<const std::byte> d, DrawFilter filter) {
     OMK_MEM_TAG("geometry");   // the profiler's category (todo/debug-tools.md 4)
     Geometry out;
@@ -234,6 +239,21 @@ Geometry buildGeometry(std::span<const std::byte> d, DrawFilter filter) {
         }
     }
 
+    // EXACTLY the corners' count, every per-corner array (todo/ram-vs-
+    // original.md, tier A): growing by `insert` left about a third of
+    // Anekbah's 11.3 MB as slack. The original keeps the `.3DO` as loaded
+    // plus 184 bytes a mesh (`Scene_Load3DO`, `Read3DO_Init`).
+    {
+        std::size_t total = 0;
+        for (const auto& kv : groups) total += kv.second.size();
+        out.corners.reserve(total);
+        out.cornerMirror.reserve(total);
+        out.cornerCull.reserve(total);
+        out.cornerMesh.reserve(total);
+        out.cornerVertex.reserve(total);
+        out.cornerDeclared.reserve(total);
+        out.batches.reserve(groups.size());
+    }
     for (auto& [key, corners] : groups) {
         Batch b;
         b.blend    = static_cast<Blend>(std::get<0>(key));
