@@ -48,9 +48,15 @@ cut: which code allocates what, which function takes the frame.
 
 ## Steps
 
-1. The probe layer, the capture file, `OMK_PROFILE`, and the viewer's frame
-   phases and sections as zones. A check: the capture parses, the zones nest,
-   and a frame is BYTE-IDENTICAL with profiling on and off.
+1. ~~The probe layer, the capture file, `OMK_PROFILE`, and the viewer's
+   frame phases and sections as zones~~ - **DONE 2026-10-04** (`18ae78c`):
+   `src/platform/profile.*`, `omk-play --profile <file>`, `tools/omkprof.py`
+   (summary, `--frame N`, `--slowest K`), `verify.py: engine: profiler`
+   (shown to fail both ways). The viewer's marks turned out to be a
+   different thing from zones - a flat partition that CROSSES the phases -
+   so they are written as SECTIONS (kind 1) and summed beside the tree, not
+   in it. First reading, the street on an M3, software: 77 of 78 ms is the
+   `world` phase, with no zone inside it yet - step 6's first target.
 2. The external tool: frame graph and zone tree from a capture.
 3. Pause / step / resume through `omk.ctl`, and the paused frame's dump.
 4. Memory by tag: the counting `operator new` (host and classic), tags at
