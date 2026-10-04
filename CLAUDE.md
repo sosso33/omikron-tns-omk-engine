@@ -130,7 +130,7 @@ One line per directory, then the files big enough to need a warning:
 | engine/src/ui/ | | `i2d.*`, `widgets.*`, `screendraw.*`, `text.*`, `surface.*`, `options.*`, `cloud.*`, `iamtext.*` |
 | engine/src/audio/ | | `mixer.*` (voices, bank, attenuation), `voiceover.*` (media.play → VOICEOFF/*.ADP), `music.*` |
 | engine/src/input/ | | `bindings.*` the four control schemes |
-| engine/src/platform/ | | `datafs.*` (ALL data access, case-insensitive, and `safeOutputPath`), `boot.*`, `frontend.h`, `movie.*`, `json.*` |
+| engine/src/platform/ | | `datafs.*` (ALL data access, case-insensitive, and `safeOutputPath`), `boot.*`, `frontend.h`, `movie.*`, `json.*`, `profile.*` (the PROFILER's probes: `OMK_ZONE`, the capture, the pause - all compiled out by `OMK_PROFILE=0`, i.e. `make release`; `todo/debug-tools.md`) |
 | engine/backends/sdl/ | ~24k lines in 43 files | the viewer `omk-play`, split out of one `main` by `todo/play-split.md` (2026-10-02): `play.cpp` is `main` + `PlayState::run` (57 lines); `playstate.h` holds every piece of state as a member (read it to find a name's type); `playsetup_<section>.cpp` the setup in order, `playframe_<phase>.cpp` one turn of the loop and `playframe_<phase>_<part>.cpp` its parts (the largest, `playframe_world_staged.cpp`, is one 2.8k-line loop: grep, never read whole), `playstate.cpp` the former lambdas, game code reaches the host ONLY through `omk::Frontend` (`platform/frontend.h`, the gateway: no SDL header outside `sdlfront.*`, the GPU glue and `playscene.cpp` - `verify.py: engine: frontend gateway`), `playgpu_{vulkan,gles,gl1,none}.cpp` the GPU window per backend (each build links one - `gl1` only `ppc-darwin.mk`'s; game code has no backend `#if`), `playharness.cpp` the instruments (`--money`, `--fight`, `--board`, the flicker catcher...; `make play INSTRUMENTS=0` links `playharness_off.cpp`, their empty stubs, instead), `playscene.cpp` the `--scene` set viewer, `sdlfront.*` the SDL frontend, `playtypes.h` the model/staging structs, `playshared.h` the includes and constants |
 | engine/backends/vulkan/vkrender.cpp | 68 KB | the Vulkan backend; only for GPU-side work |
 | engine/backends/gl1/, engine/ppc-darwin.mk | 28 KB, small | the fixed-function OpenGL 1.x backend (the classic-Mac port's, modelled on the original's D3D path, `playgpu_gl1.cpp` its glue) and the PowerPC makefile that builds it, the tools and `omk-play` for Tiger; the shared `Makefile` builds neither. `todo/handoff-classic-mac.md` has the recipes |
@@ -147,6 +147,7 @@ One line per directory, then the files big enough to need a warning:
 | tools/omkweb.html (104 KB), omkcut.html (60), omkui.html (16), stagecheck.js (20) | large | the viewer clients; only for viewer work |
 | tools/sim/ (7 modules, ~3.8k lines) | medium | the Python simulator the engine is compared against: vm, world, scene, dialogue, actor, ui, run |
 | the rest of tools/*.py | 4–24 KB each | one reader/one job each, named for it; §2 lists the ones with findings behind them |
+| tools/omkprof.py, omkprof.html, profcheck.js | small | the PROFILER's external side: `omk-play --profile run.prof`, then `omkprof.py run.prof` (summary, `--frame N`), `--serve PORT` (the page: frame graph, call tree, pause / step / snapshot), `--ctl CMD` |
 | tools/_*.py | | one-shot scratch from earlier passes; ignore |
 
 **Snapshots and scratch — do not read**

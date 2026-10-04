@@ -27454,7 +27454,10 @@ def c_engine_release_build():
     parsed in release (`src/app/playoptions.cpp`), their code stubbed out.
 
     Shown to fail (2026-10-04): `-DOMK_PROFILE=0` dropped from the release
-    target (red: 24 profiler symbols).
+    target, the release objects deleted first (red: 24 profiler symbols).
+    Without the delete the stale objects did not link - and the first
+    version of this check read that failure as "no SDL" and passed; a build
+    failure is now a failure.
     """
     import subprocess, tempfile, shutil
     eng = os.path.join(ROOT, "engine")
@@ -27462,8 +27465,12 @@ def c_engine_release_build():
     dev = os.path.join(eng, "build", "omk-play")
     mk = subprocess.run(["make", "-s", "release"], cwd=eng, capture_output=True, text=True)
     mk2 = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
-    if mk.returncode != 0 or mk2.returncode != 0 or not os.path.exists(rel) or not os.path.exists(dev):
+    if "no SDL found" in mk.stdout + mk2.stdout:
         return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    # a build that FAILS is a failure, not a skip: the first version folded the
+    # two together and passed while the release build did not link
+    if mk.returncode != 0 or mk2.returncode != 0 or not os.path.exists(rel) or not os.path.exists(dev):
+        return ("build failed",), ("built",), (mk.stdout + mk.stderr + mk2.stderr)[-400:]
     def scan(b):
         syms = subprocess.run(["nm", "-C", b], capture_output=True, text=True).stdout
         data = open(b, "rb").read()

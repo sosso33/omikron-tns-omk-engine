@@ -67,7 +67,20 @@ cut: which code allocates what, which function takes the frame.
    format, queries the server and runs the page's own script under node
    (`tools/profcheck.js`) - which found the page doubling its frame list
    when two polls overlapped.
-3. Pause / step / resume through `omk.ctl`, and the paused frame's dump.
+3. ~~Pause / step / resume through `omk.ctl`, and the paused frame's
+   dump~~ - **DONE 2026-10-04** (`f79c425`): three files beside the capture
+   (`.ctl` the tool's command, `.state` and `.snap` the game's answer); held,
+   the game pumps its window and presents its last frame. The page's
+   buttons, the paused frame's picture, `omkprof.py --ctl CMD [N]`.
+   `engine: profiler control`. A first version wrote no snapshot while
+   paused - a held game never steps, and the snapshot was written after a
+   step. **And the release build was brought forward from step 7, at the
+   reader's word** ("make all the debugging code easily removable in release
+   builds"): `make release` (`OMK_PROFILE=0`, `INSTRUMENTS=0`, its own object
+   tree, its flags stamped) and `engine: release build` - no profiler symbol,
+   the frame byte-identical. From here every debugging addition goes inside
+   `#if OMK_PROFILE` and that check is run with it. Left in release: the
+   instruments' FLAG NAMES, parsed and stubbed (`playoptions.cpp`).
 4. Memory by tag: the counting `operator new` (host and classic), tags at
    the large owners (`classic-mac-port-1999.md` 3b's table: corners, posed
    bodies, textures, collision, audio, scripts).
@@ -75,7 +88,8 @@ cut: which code allocates what, which function takes the frame.
 6. Zones through the engine's hot paths (session tick, scripts, actors,
    pose, render submit, raster) - the "every function" the ask names, as
    deep as a measurement shows it is worth.
-7. `make RELEASE=1` and its check: no profiler symbol in the binary.
+7. ~~`make RELEASE=1` and its check~~ - done in step 3 (`make release`);
+   left: the same for the classic Mac and Vita builds.
 
 Nothing here is a reading of the original; it is this project's own
 instrument (PORTING B6), and its one obligation is to change NOTHING the

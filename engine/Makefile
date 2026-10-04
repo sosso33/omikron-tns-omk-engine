@@ -213,10 +213,17 @@ endif
 # tree and binary, so it never mixes with the development build's objects
 # (make does not track flags). `verify.py: engine: release build` holds it to
 # having none of them.
+# Its flags are STAMPED: make does not track flags, so a changed release flag
+# would otherwise link the old objects (it did, 2026-10-04) - a different
+# stamp wipes the release object tree first.
+RELEASE_FLAGS := $(CXXFLAGS) -DOMK_PROFILE=0
 .PHONY: release
 release:
+	@if [ "$$(cat build/obj-release/.flags 2>/dev/null)" != "$(RELEASE_FLAGS)" ]; then \
+	    rm -rf build/obj-release; mkdir -p build/obj-release; \
+	    echo "$(RELEASE_FLAGS)" > build/obj-release/.flags; fi
 	$(MAKE) play OBJDIR=build/obj-release PLAY_BIN=build/release/omk-play INSTRUMENTS=0 \
-	    CXXFLAGS="$(CXXFLAGS) -DOMK_PROFILE=0"
+	    CXXFLAGS="$(RELEASE_FLAGS)"
 
 .PHONY: play
 play: $(if $(SDL_PKG),$(PLAY_BIN))
