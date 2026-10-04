@@ -122,6 +122,13 @@ long long fileSize(const std::string& path);
 // build's file whole; a short read there was silent, and the buffer's tail
 // stayed the zeros it was allocated with.
 std::vector<std::byte> readWholeFile(const std::string& path);
+// `size` bytes of `path` from `offset` - fewer at the end of the file, none
+// when it cannot be opened. One seek and one read: `Archive_ReadChunk`'s
+// access, so an archive's chunk is read without the archive
+// (todo/ram-vs-original.md tier C). The same three platform paths as
+// `readWholeFile`.
+std::vector<std::byte> readFileRange(const std::string& path, std::uint64_t offset,
+                                     std::size_t size);
 
 // A whole TEXT file as a string - `readWholeFile`'s bytes, empty when it cannot
 // be read (`fileSize(path) < 0` tells absent from empty). The engine reads its

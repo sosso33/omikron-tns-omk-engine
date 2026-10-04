@@ -402,6 +402,59 @@ std::vector<std::byte> readWholeFile(const std::string& path) {
     return d;
 }
 
+std::vector<std::byte> readFileRange(const std::string& path, std::uint64_t offset,
+                                     std::size_t size) {
+    const long long fsize = fileSize(path);
+    if (fsize < 0 || offset >= static_cast<std::uint64_t>(fsize)) return {};
+    const std::uint64_t left = static_cast<std::uint64_t>(fsize) - offset;
+    std::vector<std::byte> d(static_cast<std::size_t>(std::min<std::uint64_t>(size, left)));
+    std::size_t got = 0;
+#if defined(__vita__)
+    const SceUID fd = sceIoOpen(path.c_str(), SCE_O_RDONLY, 0);
+    if (fd < 0) return {};
+    if (sceIoLseek(fd, static_cast<SceOff>(offset), SCE_SEEK_SET) < 0) { sceIoClose(fd); return {}; }
+    while (got < d.size()) {
+        const std::size_t want = std::min<std::size_t>(d.size() - got, 1u << 20);
+        const int r = sceIoRead(fd, d.data() + got, static_cast<SceSize>(want));
+        if (r <= 0) break;
+        got += static_cast<std::size_t>(r);
+    }
+    sceIoClose(fd);
+#elif defined(macintosh)
+    FSSpec spec; CInfoPBRec pb;
+    if (!catalogOf(path, spec, pb)) return {};
+    short ref = 0;
+    if (FSpOpenDF(&spec, fsRdPerm, &ref) != noErr) return {};
+    if (SetFPos(ref, fsFromStart, static_cast<long>(offset)) != noErr) { FSClose(ref); return {}; }
+    while (got < d.size()) {
+        long want = static_cast<long>(std::min<std::size_t>(d.size() - got, 1u << 20));
+        const OSErr e = FSRead(ref, &want, d.data() + got);
+        if (want <= 0) break;
+        got += static_cast<std::size_t>(want);
+        if (e != noErr) break;
+    }
+    FSClose(ref);
+#else
+    std::FILE* f = std::fopen(path.c_str(), "rb");
+    if (!f) return {};
+    // an archive is far under 2 GB (`IAM\AREA` 1.2 MB), so `long` holds it
+    if (std::fseek(f, static_cast<long>(offset), SEEK_SET) != 0) { std::fclose(f); return {}; }
+    while (got < d.size()) {
+        const std::size_t r = std::fread(d.data() + got, 1, d.size() - got, f);
+        if (r == 0) break;
+        got += r;
+    }
+    std::fclose(f);
+#endif
+    if (got < d.size()) {
+        std::printf("datafs: SHORT READ %s - %lu of %lu bytes at %llu\n", path.c_str(),
+                    static_cast<unsigned long>(got), static_cast<unsigned long>(d.size()),
+                    static_cast<unsigned long long>(offset));
+        d.resize(got);
+    }
+    return d;
+}
+
 std::string readTextFile(const std::string& path) {
     const auto d = readWholeFile(path);
     return std::string(reinterpret_cast<const char*>(d.data()), d.size());

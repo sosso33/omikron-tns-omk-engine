@@ -14,9 +14,20 @@ std::uint32_t u32(std::span<const std::byte> d, std::size_t o) {
 }  // namespace
 
 IamArchive IamArchive::open(std::span<const std::byte> data) {
+    return parse(data, data.size(), true);
+}
+
+IamArchive IamArchive::directory(std::span<const std::byte> head, std::size_t fileSize) {
+    return parse(head, fileSize, false);
+}
+
+// `bytes` is the whole file (`whole`) or its first bytes, and `n` the file's
+// size either way: every bound below is the FILE's, so a directory read from
+// the head finds exactly the entries the whole file gives.
+IamArchive IamArchive::parse(std::span<const std::byte> data, std::size_t n, bool whole) {
     IamArchive a;
-    a.data_ = data;
-    const std::size_t n = data.size();
+    if (whole) a.data_ = data;
+    const std::size_t have = data.size();
 
     // Pass one: find where the payloads start, which is what bounds the
     // directory. An entry is only evidence if it is in range - a hole is
@@ -24,6 +35,7 @@ IamArchive IamArchive::open(std::span<const std::byte> data) {
     std::size_t first = 0;
     bool haveFirst = false;
     for (std::size_t i = 0; i + 8 <= n; ++i) {
+        if (8 * i + 8 > have) { a.need_ = n; return a; }   // the head ran out: read more
         const auto off = u32(data, 8 * i);
         const auto sz  = u32(data, 8 * i + 4);
         // `off <= n && sz <= n - off`, not `off + sz <= n`: with a 32-bit
@@ -37,6 +49,7 @@ IamArchive IamArchive::open(std::span<const std::byte> data) {
         if (8 * (i + 1) + 8 > n) break;
     }
     if (!haveFirst) return a;
+    if (first > have) { a.need_ = first; return a; }
 
     a.entries_.resize(first / 8);
     for (std::size_t i = 0; i < a.entries_.size(); ++i) {

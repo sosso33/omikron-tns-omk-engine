@@ -70,10 +70,13 @@ struct StartupRun {
     std::vector<Call> calls;
 };
 
-// `IAM\AREA`, `SCENE` or `DIALOG` read once and kept for the run (the path
-// is the key). Every chunk read goes through it: a whole-file read per load
-// was most of an area change's time on a console's card.
-const std::vector<std::byte>& archiveBytes(const std::string& path);
+// Chunk `id` of the archive at `path` (`IAM\AREA`, `SCENE`, `DIALOG`), read
+// alone as `Archive_ReadChunk` does: the archive's directory is read once and
+// kept, the chunk is one seek and one read. Empty when absent.
+std::vector<std::byte> archiveChunk(const std::string& path, int id);
+// Which area each scene is played over (`sceneToArea`), built once for an
+// IAM directory and kept.
+const std::map<int, int>& sceneAreaMap(const std::string& iamDir, const OpcodeTable& table);
 
 // Load `areaId` and run what the load queues, in order.
 //

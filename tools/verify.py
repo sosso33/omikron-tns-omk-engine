@@ -27512,6 +27512,42 @@ def c_engine_indexed_textures():
         "change), and each form keeping about a third of the RGB bytes"
 
 
+def c_engine_archive_chunks():
+    r"""A CHUNK READ ALONE IS THE CHUNK (2026-10-05, `todo/ram-vs-original.md`
+    tier C). `Archive_ReadChunk` (0x0040FF90) reads an archive's directory and
+    then the one chunk asked for; the port kept `IAM\AREA`, `SCENE` and
+    `DIALOG` whole once read (2.5 MB). Now `archiveChunk` keeps each
+    archive's DIRECTORY (parsed by `IamArchive::directory` from the file's
+    head, bounded by the file's size) and reads a chunk with one seek and one
+    read (`readFileRange`, all three platform paths). The scene -> area map a
+    scene load needs is built once and kept instead of the two archives.
+
+    `engine/tools/archive_chunks`: every index of AREA (259 chunks), SCENE
+    (71) and DIALOG (420), and four past each directory, read both ways -
+    present in both or neither, byte-identical. 0 differ.
+
+    Shown to fail (2026-10-05): `archiveChunk` reading from one byte past the
+    entry's offset.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/archive_chunks"], cwd=eng, capture_output=True, text=True)
+    if b.returncode != 0:
+        return ("build failed",), ("built",), "engine/tools/archive_chunks must build"
+    r = subprocess.run([os.path.join(eng, "build", "archive_chunks"), omkpaths.data_root()],
+                       capture_output=True, text=True)
+    rows = re.findall(r"^(AREA|SCENE|DIALOG): (\d+) entries, (\d+) chunks, (\d+) differ", r.stdout, re.M)
+    for ln in r.stdout.splitlines():
+        if not ln.startswith("session:"):
+            print("        " + ln)
+    if len(rows) != 3:
+        return ("rows", len(rows)), ("rows", 3), "the probe's three archives must parse"
+    return tuple((a, int(c), int(d)) for a, _, c, d in rows), \
+        (("AREA", 259, 0), ("SCENE", 71, 0), ("DIALOG", 420, 0)), \
+        "every chunk of AREA, SCENE and DIALOG read alone (the kept directory, one ranged read) " \
+        "is byte-identical to the whole file's, and an index past the directory reads nothing"
+
+
 def c_engine_street_memory():
     r"""THE STREET'S MEMORY AGAINST THE ORIGINAL'S, tier A (2026-10-04,
     `todo/ram-vs-original.md`): what the port keeps in Anekbah where the
@@ -27530,15 +27566,20 @@ def c_engine_street_memory():
       * `collision` under 6 MB (4.94; 7.19 with the soups' doubling slack);
       * `objects` - `IAM\OBJECT` - ONE table, between 0.1 and 0.4 MB (0.27;
         each extra holder adds 0.27);
-      * and `IAM\SCENE` read through the kept archives (`archiveBytes` says
-        so itself), with `archives` holding AREA and SCENE together: a scene
-        load had read both whole, past the cache.
+      * and the archives (TIER C, 2026-10-05): AREA read through
+        `archiveChunk` - its directory kept, a chunk one read, as
+        `Archive_ReadChunk` does (`engine: archive chunks`) - so `archives`
+        holds directories only, under 64 KB. SCENE is not opened at all in
+        this street: no scene is played over AREA 0, and the scene runner no
+        longer reads it to find out. Tier A had them kept whole
+        (1.48 MB), a scene load having read both whole past any cache.
 
     Shown to fail (2026-10-05), each alone: the rest copy reserved at the
     whole set's size (motion red), `dropCharacterArrays` taken out of
     `rebuildWorld` (geometry red), `collisionSoup`'s `shrink_to_fit` taken
     out (collision red), `sharedObjects` re-parsing on every call (objects
-    red), and `SceneRunner::load` reading SCENE whole again (SCENE red).
+    red), and `SceneRunner::load` reading SCENE whole again (SCENE red - tier A's
+    form; tier C's red is `archiveChunk` keeping the whole file).
     """
     import subprocess, tempfile, shutil
     sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -27564,17 +27605,16 @@ def c_engine_street_memory():
     MB = 1048576.0
     t = {x[0]: x[1] / MB for x in frames[-1]["mem"]["tags"]}
     kept = {m.group(1): int(m.group(2)) for m in
-            re.finditer(r"session: \S*/IAM/(\w+) kept in memory \((\d+) KB\)", r.stdout)}
+            re.finditer(r"session: \S*/IAM/(\w+)'s directory kept \((\d+) entries", r.stdout)}
     motion, geo, coll, objs, arch = (t.get(k, 0.0) for k in
                                      ("input: motion", "geometry", "collision", "objects", "archives"))
     print("        motion %.2f, geometry %.2f, collision %.2f, objects %.2f, archives %.2f MB; kept %s"
           % (motion, geo, coll, objs, arch, sorted(kept.items())))
-    both = (kept.get("AREA", 0) + kept.get("SCENE", 0)) / 1024.0
     return ((0.5 < motion < 3.0), geo < 8.8, coll < 6.0, (0.1 < objs < 0.4),
-            "SCENE" in kept, arch >= both - 0.05), (True,) * 6, \
+            "AREA" in kept, arch < 64 / 1024.0), (True,) * 6, \
         "standing in the street: the moving meshes' rest copies, the set geometry, the collision " \
-        "soups and IAM\\OBJECT each under its tier-A bound, the motion patch having run; and SCENE " \
-        "read through the kept archives, AREA and SCENE both in them"
+        "soups and IAM\\OBJECT each under its tier-A bound, the motion patch having run; and AREA " \
+        "read a chunk at a time, the archives holding directories only"
 
 
 def c_engine_profiler():
@@ -41660,6 +41700,7 @@ SLOW = [
     ("engine: device sounds", c_engine_device_sounds, "todo/ram-vs-original.md tier B; audio/hostmix.h"),
     ("engine: sight mask", c_engine_sight_mask, "todo/ram-vs-original.md tier B; o3de/collision.h"),
     ("engine: indexed textures", c_engine_indexed_textures, "todo/ram-vs-original.md tier C; formats/tex3dt.h"),
+    ("engine: archive chunks", c_engine_archive_chunks, "todo/ram-vs-original.md tier C; script/area.h"),
     ("engine: profiler control", c_engine_profiler_control, "todo/debug-tools.md step 3"),
     ("engine: profiler gpu", c_engine_profiler_gpu, "todo/debug-tools.md step 5"),
     ("engine: release build", c_engine_release_build, "todo/debug-tools.md"),

@@ -34,6 +34,13 @@ public:
     // Parse `data` as an archive. Never throws: a file that is not one comes
     // back empty, because these are user-supplied files.
     static IamArchive open(std::span<const std::byte> data);
+    // The DIRECTORY alone, from the file's first bytes and its size - what
+    // `Archive_ReadChunk` reads before a chunk. The same entries `open` finds
+    // on the whole file as long as `head` reaches the first payload; `need()`
+    // says how many bytes that is (0 when `head` was enough). `chunk()` is
+    // empty on it: read the entry's bytes yourself.
+    static IamArchive directory(std::span<const std::byte> head, std::size_t fileSize);
+    std::size_t need() const { return need_; }
 
     // How many directory entries the implied directory length gives.
     std::size_t size() const { return entries_.size(); }
@@ -51,8 +58,10 @@ public:
     std::size_t populated() const;
 
 private:
+    static IamArchive parse(std::span<const std::byte> bytes, std::size_t n, bool whole);
     std::span<const std::byte> data_;
     std::vector<IamEntry>      entries_;
+    std::size_t                need_ = 0;
 };
 
 }  // namespace omk

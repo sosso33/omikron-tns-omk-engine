@@ -41,5 +41,8 @@ std::string resolveScx(const DataFs& scptdata,
                        std::span<const std::byte> areaFile,
                        std::span<const std::byte> sceneFile,
                        const OpcodeTable& table, ChunkKind kind, int chunk);
+// ...the same from the AREA chunk itself, its `.SCX` stem at +97 - what a
+// load needs once it knows the area (`resolveScx` finds the chunk first)
+std::string scxOfAreaChunk(const DataFs& scptdata, std::span<const std::byte> areaChunk);
 
 }  // namespace omk

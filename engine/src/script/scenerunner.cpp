@@ -11,12 +11,16 @@ namespace omk {
 
 bool SceneRunner::load(const std::string& scptDataDir, const std::string& iamDir,
                        const OpcodeTable& table, ChunkKind kind, int chunk) {
-    // the kept archives (`archiveBytes`): this read both WHOLE on every
-    // scene load, past the cache every other chunk read goes through
-    const auto& areaFile  = archiveBytes(iamDir + "/AREA");
-    const auto& sceneFile = archiveBytes(iamDir + "/SCENE");
+    // the area the scene is played over (`sceneAreaMap`, built once), then
+    // that area's chunk alone (`archiveChunk`) - which names the `.SCX`
     const DataFs fs(scptDataDir);
-    name_ = resolveScx(fs, areaFile, sceneFile, table, kind, chunk);
+    int area = chunk;
+    if (kind == ChunkKind::Scene) {
+        const auto& map = sceneAreaMap(iamDir, table);
+        const auto it = map.find(chunk);
+        area = it == map.end() ? -1 : it->second;
+    }
+    name_ = area < 0 ? std::string() : scxOfAreaChunk(fs, archiveChunk(iamDir + "/AREA", area));
     if (name_.empty()) return false;
     auto d = fs.read(name_);
     if (d.empty()) { name_.clear(); return false; }

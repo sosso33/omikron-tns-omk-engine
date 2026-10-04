@@ -81,24 +81,55 @@ std::string headerName(std::span<const std::byte> b, std::size_t off,
 
 }  // namespace
 
-// AN ARCHIVE, READ ONCE. `Archive_ReadChunk` (0x0040FF90) seeks to the 2048
-// byte directory group the index falls in, reads it, seeks to the chunk and
-// reads the chunk - a few KB from a file it never holds. This read the WHOLE
-// archive for every chunk: `IAM\AREA` (1.25 MB) and `IAM\SCENE` on every area
-// load, `IAM\DIALOG` (1 MB) at every conversation's start - on a console's
-// card, most of the 270 ms `game frame` an area change began with
-// (2026-09-30). The three are inputs and never written, so they are kept:
-// 2.6 MB, against a ranged read this port's file layer does not have.
-const std::vector<std::byte>& archiveBytes(const std::string& path) {
+// A CHUNK, READ ALONE - as `Archive_ReadChunk` (0x0040FF90) reads it: the
+// directory, then one seek and one read of the chunk (todo/ram-vs-original.md
+// tier C). Until 2026-10-05 the three archives were KEPT WHOLE once read
+// (`IAM\AREA` 1.2 MB, `SCENE` 0.3, `DIALOG` 1 MB) after a console's card took
+// most of a 270 ms frame re-reading them whole for every chunk (2026-09-30);
+// this reads neither whole. The directory alone is kept - 8 bytes an entry,
+// a few KB - where the engine re-reads its 2 KB group for every chunk.
+std::vector<std::byte> archiveChunk(const std::string& path, int id) {
+    if (id < 0) return {};
     OMK_MEM_TAG("archives");   // the profiler's category (todo/debug-tools.md 4)
-    static std::map<std::string, std::vector<std::byte>> kept;
-    auto it = kept.find(path);
-    if (it == kept.end()) {
-        it = kept.emplace(path, readFile(path)).first;
-        // an unreadable file is asked for again next time, as before
-        if (it->second.empty()) { kept.erase(it); static const std::vector<std::byte> none; return none; }
-        std::printf("session: %s kept in memory (%zu KB) - a chunk is no longer a read of the file\n",
-                    path.c_str(), it->second.size() / 1024);
+    // a map node never moves; main thread only, as the Session is
+    static auto* kept = new std::map<std::string, IamArchive>;
+    auto it = kept->find(path);
+    if (it == kept->end()) {
+        const long long n = fileSize(path);
+        if (n <= 0) {
+            // an unreadable file is asked for again next time, and SAID
+            std::fprintf(stderr, "session: cannot read %s\n", path.c_str());
+            std::printf("session: cannot read %s\n", path.c_str());
+            return {};
+        }
+        const auto size = static_cast<std::size_t>(n);
+        auto head = readFileRange(path, 0, std::min<std::size_t>(size, 64u << 10));
+        auto dir = IamArchive::directory(head, size);
+        if (dir.need() > head.size()) {          // a directory past 64 KB
+            head = readFileRange(path, 0, dir.need());
+            dir = IamArchive::directory(head, size);
+        }
+        it = kept->emplace(path, std::move(dir)).first;
+        std::printf("session: %s's directory kept (%zu entries, %zu chunks) - "
+                    "a chunk is one read of its own\n",
+                    path.c_str(), it->second.size(), it->second.populated());
+    }
+    const IamEntry e = it->second.entry(static_cast<std::size_t>(id));
+    if (!e.present()) return {};
+    return readFileRange(path, e.offset, e.size);
+}
+
+// THE SCENE -> AREA MAP (`sceneToArea`): which area each scene is played
+// over, found by decoding every `scene.load` in the two archives. Built ONCE
+// for an IAM directory from one read of each, and kept (a few hundred
+// entries) - not the archives.
+const std::map<int, int>& sceneAreaMap(const std::string& iamDir, const OpcodeTable& table) {
+    static auto* maps = new std::map<std::string, std::map<int, int>>;
+    auto it = maps->find(iamDir);
+    if (it == maps->end()) {
+        const auto areaFile  = readFile(iamDir + "/AREA");
+        const auto sceneFile = readFile(iamDir + "/SCENE");
+        it = maps->emplace(iamDir, sceneToArea(areaFile, sceneFile, table)).first;
     }
     return it->second;
 }
@@ -106,11 +137,7 @@ const std::vector<std::byte>& archiveBytes(const std::string& path) {
 namespace {
 
 std::vector<std::byte> readChunk(const std::string& iam, const char* archive, int id) {
-    if (id < 0) return {};
-    const auto& file = archiveBytes(iam + "/" + archive);
-    const auto arch = IamArchive::open(file);
-    const auto c = arch.chunk(static_cast<std::size_t>(id));
-    return std::vector<std::byte>(c.begin(), c.end());
+    return archiveChunk(iam + "/" + archive, id);
 }
 
 // `Script_ProcessActions`' transition watchdog: 60 s, in frames at 30 fps.
@@ -122,14 +149,11 @@ constexpr std::size_t kRunaway = 20000;
 std::vector<StartupRun> loadArea(const std::string& iamDir, int areaId,
                                  GameState& state, const OpcodeTable& table) {
     std::vector<StartupRun> out;
-    // the kept archives (`archiveBytes`), not a fresh read of both whole
-    const auto& areaFile  = archiveBytes(iamDir + "/AREA");
-    const auto& sceneFile = archiveBytes(iamDir + "/SCENE");
-    const auto areas  = IamArchive::open(areaFile);
-    const auto scenes = IamArchive::open(sceneFile);
-
-    const auto ab = areas.chunk(static_cast<std::size_t>(areaId));
+    // the two chunks, each read alone (`archiveChunk`)
+    const auto areaChunk = archiveChunk(iamDir + "/AREA", areaId);
+    const std::span<const std::byte> ab(areaChunk);
     if (ab.empty()) return out;
+    std::vector<std::byte> sceneChunk;
 
     // the AREA block first, then the SCENE the game DB says is over it
     struct Pending { bool isScene; int chunk; std::span<const std::byte> code; };
@@ -138,7 +162,8 @@ std::vector<StartupRun> loadArea(const std::string& iamDir, int areaId,
 
     const auto scene = sceneOverArea(state, areaId);
     if (scene != -1) {
-        const auto sb = scenes.chunk(static_cast<std::size_t>(scene));
+        sceneChunk = archiveChunk(iamDir + "/SCENE", scene);
+        const std::span<const std::byte> sb(sceneChunk);
         if (!sb.empty()) order.push_back({true, scene, sb});
     }
 
@@ -2238,10 +2263,7 @@ void Session::openDialog(int id) {
     // audio and no clock, and it closes the dialog itself. That is what every
     // headless run did before conversations could be played.
     if (morphDir_.empty()) return;
-    const auto& file = archiveBytes(iam_ + "/DIALOG");
-    if (file.empty()) return;
-    const auto arch = IamArchive::open(file);
-    const auto chunk = arch.chunk(static_cast<std::size_t>(id));
+    const auto chunk = archiveChunk(iam_ + "/DIALOG", id);   // read alone, then copied
     if (chunk.empty()) return;
     const auto conv = parseConversation(id, chunk);
     dialog_.open(conv, chunk, morphDir_);

@@ -80,7 +80,10 @@ std::string resolveScx(const DataFs& scptdata,
         area = it->second;
     }
     const auto ar = IamArchive::open(areaFile);
-    const auto b = ar.chunk(static_cast<std::size_t>(area));
+    return scxOfAreaChunk(scptdata, ar.chunk(static_cast<std::size_t>(area)));
+}
+
+std::string scxOfAreaChunk(const DataFs& scptdata, std::span<const std::byte> b) {
     if (b.size() < kAreaSetStem + kAreaSetStemLen) return {};
     std::string stem;
     for (std::size_t k = 0; k < kAreaSetStemLen; ++k) {
