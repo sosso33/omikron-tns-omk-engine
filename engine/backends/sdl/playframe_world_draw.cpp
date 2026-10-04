@@ -893,10 +893,10 @@ void PlayState::worldDrawLists() {
         if (!up->drawn || !up->mo) continue;
         const int base = static_cast<int>(up->mo->texBase);
         if (up->gpu) {
-            for (const auto& b : up->atRest.batches) {
+            for (const auto& b : up->atRest->batches) {
                 draws.push_back({keyOf(b.blend, b.cutout,
                                        static_cast<std::uint32_t>(b.material + base)),
-                                 &up->atRest, b.start, b.count, b.blend, b.cutout,
+                                 up->atRest, b.start, b.count, b.blend, b.cutout,
                                  litCrowd, castShadows});
                 draws.back().meshPose = up->affine.data();
                 draws.back().meshPoses = up->mo->meshes.size();

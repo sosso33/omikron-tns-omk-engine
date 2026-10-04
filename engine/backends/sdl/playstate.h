@@ -744,6 +744,13 @@ struct PlayState {
         fn();
         phSpan[name] += phaseNow() - a;
     }
+    // THE CROWD'S MEMORY, as the original keeps it (2026-10-04): a vehicle's
+    // composed sub-object once per (model, sub-object), and a slot's posed
+    // buffers given back when its body has not been drawn for a while
+    // (`playframe_world_crowd.cpp`, the end of `worldCrowd`).
+    std::map<std::pair<std::string, int>, omk::Geometry> vehAtRest;
+    const omk::Geometry& vehAtRestFor(const std::string& model, const CharModel& mo, int rootMesh);
+    void releaseIdleCrowd();
     // the profiler's view of the marks: each a SECTION from the mark before
     // it (`--profile`, todo/debug-tools.md), outside the call tree
     std::uint64_t profMarkT = 0;

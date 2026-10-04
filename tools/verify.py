@@ -27340,6 +27340,64 @@ def c_engine_music_ring():
         "clear gives its memory back"
 
 
+def c_engine_crowd_memory():
+    r"""THE CROWD'S MEMORY STAYS BOUNDED (2026-10-04), as the original's does.
+
+    The profiler's first full street capture (`todo/debug-tools.md`) had the
+    street's memory climbing for minutes: the 200 walker and 40 vehicle slots
+    each keeping the posed geometry it last drew (~9 MB after three minutes),
+    and the music stream keeping every played sample until 2^20 floats (5.4
+    MB). The original keeps neither: it poses every body each frame into ONE
+    scratch pool (`sub_4947F0`) and builds a model's LOD sub-objects once
+    (`sub_453A70`), and its music is a fixed 8-second ring (`Morph_Open`).
+    Now a slot idle for two seconds gives its buffers back, a vehicle's
+    composed sub-object is shared per (model, sub-object), and the stream is
+    a ring (`engine: music ring`).
+
+    Standing in the street, 1200 frames (40 s of game time) through the
+    Vulkan world renderer with `--profile`: the crowd's categories together
+    under 3 MB at the end and grown under 0.5 MB over the second half
+    (before: 4.8 MB and climbing). NOT the music here: a `--frames` run never
+    opens the audio device, so nothing is queued and an assertion on it
+    would pass for free - its first version did (0.00 MB). The music is
+    `engine: music ring`'s.
+
+    Shown to fail (2026-10-04): `releaseIdleCrowd` made to release nothing
+    (red: the crowd climbs).
+    """
+    import subprocess, tempfile, shutil
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import omkprof
+    eng = os.path.join(ROOT, "engine")
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    tmp = tempfile.mkdtemp()
+    cap = os.path.join(tmp, "m.prof")
+    try:
+        r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                            "--save", os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "0",
+                            "--stand", "1804,0,-6890,336", "--nofmv", "--world-vulkan",
+                            "--res", "640x480", "--frames", "1200", "--profile", cap],
+                           capture_output=True, text=True, env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+        if "through VULKAN" not in r.stdout:
+            return ("skipped",), ("skipped",), "no Vulkan device - the GPU backend is optional"
+        frames = [f for f in omkprof.read(cap)[1] if f["frame"] >= 0]
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    def crowd(f):
+        return sum(t[1] for t in f["mem"]["tags"] if t[0] == "world: crowd" or t[0].startswith("crowd: "))
+    if len(frames) < 1200 or not all(f.get("mem") for f in frames):
+        return ("capture", len(frames)), ("capture", 1200), "the run must write 1200 frames with memory"
+    end, mid = frames[-1], frames[600]
+    print("        crowd %.2f MB at frame 600, %.2f at 1199" % (
+        crowd(mid) / 1048576.0, crowd(end) / 1048576.0))
+    return (crowd(end) < 3 << 20, crowd(end) - crowd(mid) < 512 << 10), (True, True), \
+        "standing 40 s in the street: the crowd's memory under 3 MB and grown under 0.5 MB " \
+        "over the second half - as the original keeps it"
+
+
 def c_engine_profiler():
     r"""The PROFILER (`todo/debug-tools.md` step 1): `omk-play --profile`.
 
@@ -41394,6 +41452,7 @@ SLOW = [
     ("engine: classic build", c_engine_classic_build, "todo/classic-mac-port-1999.md step 5; platform/datafs.h"),
     ("engine: profiler", c_engine_profiler, "todo/debug-tools.md step 1; PORTING B6"),
     ("engine: music ring", c_engine_music_ring, "audio/hostmix.h; todo/debug-tools.md"),
+    ("engine: crowd memory", c_engine_crowd_memory, "STREET_LIFE; todo/debug-tools.md"),
     ("engine: profiler control", c_engine_profiler_control, "todo/debug-tools.md step 3"),
     ("engine: profiler gpu", c_engine_profiler_gpu, "todo/debug-tools.md step 5"),
     ("engine: release build", c_engine_release_build, "todo/debug-tools.md"),

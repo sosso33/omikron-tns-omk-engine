@@ -437,9 +437,7 @@ void PlayState::worldCrowd() {
                     std::printf("slider: the called vehicle is staged on sub-object "
                                 "'%s'%s\n", sv.mo->meshes[static_cast<std::size_t>(wantRoot)].name,
                                 swapped ? " - the COCKPIT, sub_4521E0's swap" : "");
-                const omk::Geometry& rest = lodRestFor(v.model, *sv.mo, sv.lodRoot);
-                const auto pose = omk::composePose(sv.mo->meshes, omk::NodeTracks{}, 0, false);
-                omk::applyPose(sv.atRest, rest, sv.mo->meshes, pose);
+                sv.atRest = &vehAtRestFor(v.model, *sv.mo, sv.lodRoot);
                 // The sub-objects of one model are laid out APART in
                 // model space - SLI_FN's four roots sit at x 351..550 -
                 // so each is re-centred on its own root, which is what
@@ -450,7 +448,7 @@ void PlayState::worldCrowd() {
                     for (int k = 0; k < 3; ++k)
                         sv.origin[k] = sv.mo->meshes[static_cast<std::size_t>(sv.lodRoot)].pos[k];
                 sv.radius = 0.0f;
-                for (const auto& c : sv.atRest.corners) {
+                for (const auto& c : sv.atRest->corners) {
                     const float dx = c.x - sv.origin[0], dy = c.y - sv.origin[1], dz = c.z - sv.origin[2];
                     sv.radius = std::max(sv.radius, std::sqrt(dx * dx + dy * dy + dz * dz));
                 }
@@ -524,7 +522,7 @@ void PlayState::worldCrowd() {
             float vcs, vsn;
             omk::yawSinCos(m.facing, vcs, vsn);   // once a vehicle, not a corner
             sv.gpu = !doorPosed && !cpuBodiesFlag && world.posesBodies() &&
-                     sv.atRest.cornerMesh.size() == sv.atRest.corners.size();
+                     sv.atRest->cornerMesh.size() == sv.atRest->corners.size();
             if (sv.gpu) {
                 // x' = R (x - origin) + body - lift, R the yaw as
                 // `rotateYawCS` applies it: x' = c x - s z, z' = s x + c z
@@ -541,7 +539,7 @@ void PlayState::worldCrowd() {
                 ++vehDrawn;
                 continue;
             }
-            if (!doorPosed) { OMK_MEM_TAG("crowd: vehicle slots"); sv.posed = sv.atRest; }
+            if (!doorPosed) { OMK_MEM_TAG("crowd: vehicle slots"); sv.posed = *sv.atRest; }
             for (auto& c : sv.posed.corners) {
                 const float in[3] = {c.x - sv.origin[0], c.y - sv.origin[1], c.z - sv.origin[2]};
                 float r[3];
@@ -555,6 +553,7 @@ void PlayState::worldCrowd() {
             ++vehDrawn;
         }
         phSpan["vehicles"] += phaseNow() - veh0;
+        releaseIdleCrowd();
         if (vehLive && (vehTold < 0 || n - vehTold >= 300)) {
             vehTold = n;
             int brakes = 0, bumps = 0;
@@ -1026,5 +1025,65 @@ void PlayState::worldCrowd() {
         for (int k = 0; k < 3; ++k) actorAt[k] = pp[k];
         actorAt[1] -= playerFeet;
         actorKnown = true;
+    }
+}
+
+// THE CROWD'S MEMORY, AS THE ORIGINAL KEEPS IT (2026-10-04). The engine poses
+// every body each frame into ONE frame scratch pool and submits from it
+// (`sub_4947F0`, `classic-mac-port-1999.md` 3b-i) - nothing posed is kept per
+// body - and builds a model's LOD sub-objects ONCE, at area load
+// (`Slider_Init`, `sub_453A70`). Here each of the 200 walker and 40 vehicle
+// slots poses into its own geometry (the posing runs on several threads, a
+// slot each, and the renderers cache a geometry's buffers by its address), so
+// the footprint is matched rather than the layout: a slot whose body has not
+// been drawn for two seconds GIVES BACK its posed geometry and its pose,
+// light and affine buffers - memory follows the bodies recently on screen, as
+// the original's pool does - and a vehicle's composed sub-object is one per
+// (model, sub-object), shared, as the original's are. The profiler's first
+// street capture had the slots' copies at ~9 MB after three minutes and
+// climbing (`todo/debug-tools.md`). Two seconds, not one frame: a walker on
+// the edge of the draw distance would otherwise re-allocate every frame.
+const omk::Geometry & PlayState::vehAtRestFor(const std::string& model, const CharModel& mo, int rootMesh) {
+    OMK_MEM_TAG("crowd: vehicle sub-objects");   // the profiler's category (todo/debug-tools.md)
+    auto it = vehAtRest.find({model, rootMesh});
+    if (it != vehAtRest.end()) return it->second;
+    const omk::Geometry& rest = lodRestFor(model, mo, rootMesh);
+    const auto pose = omk::composePose(mo.meshes, omk::NodeTracks{}, 0, false);
+    omk::Geometry g;
+    omk::applyPose(g, rest, mo.meshes, pose);
+    return vehAtRest.emplace(std::make_pair(model, rootMesh), std::move(g)).first->second;
+}
+
+namespace {
+// Destroyed in place and made anew at the same address: the renderers learn
+// of a geometry's end by its destruction (`addGeometryListener`), keyed by its
+// address, so this - not clearing its vectors - is what frees its GPU buffers.
+void releaseGeometry(omk::Geometry& g) {
+    g.~Geometry();
+    new (&g) omk::Geometry();
+}
+template <class T>
+void releaseVector(std::vector<T>& v) { std::vector<T>().swap(v); }
+}  // namespace
+
+void PlayState::releaseIdleCrowd() {
+    constexpr long kIdleFrames = 60;      // two seconds at 30
+    for (auto& up : pedStaged) {
+        PedStaged& p = *up;
+        if (p.drawn) { p.lastDrawn = n; continue; }
+        if (p.lastDrawn < 0 || n - p.lastDrawn <= kIdleFrames) continue;
+        releaseGeometry(p.posed);
+        releaseVector(p.pose);
+        releaseVector(p.lights);
+        releaseVector(p.affine);
+        p.lastDrawn = -1;                 // nothing held until it is drawn again
+    }
+    for (auto& up : vehStaged) {
+        VehStaged& v = *up;
+        if (v.drawn) { v.lastDrawn = n; continue; }
+        if (v.lastDrawn < 0 || n - v.lastDrawn <= kIdleFrames) continue;
+        releaseGeometry(v.posed);
+        releaseVector(v.affine);
+        v.lastDrawn = -1;
     }
 }

@@ -434,6 +434,7 @@ struct PedStaged {
     // fills it in place (todo/optimization.md step 18's leftovers) where
     // it built a fresh vector for every body every frame.
     std::vector<omk::MeshPose> pose;
+    long lastDrawn = -1;         // the last frame this slot was drawn (its buffers' release)
     // WHAT A WALKER'S MODEL AND CLIP DECIDE, cached (step 19): the
     // skeleton root its tracks name, the rest geometry cut to it, and the
     // two foot bones' mesh indices under that root - each recomputed every
@@ -463,7 +464,10 @@ struct PedStaged {
 // the geometry is composed once at rest and only transformed per frame.
 struct VehStaged {
     CharModel* mo = nullptr;
-    omk::Geometry atRest;      // the chosen sub-object, composed, in model space
+    // the chosen sub-object, composed, in model space - SHARED by every
+    // vehicle of this model and sub-object (`PlayState::vehAtRestFor`), as
+    // the original holds a model's LOD sub-objects once (`sub_453A70`)
+    const omk::Geometry* atRest = nullptr;
     omk::Geometry posed;       // ...that, placed in the world this frame
     int   lodRoot = -1;
     float origin[3] = {0, 0, 0};
@@ -475,6 +479,7 @@ struct VehStaged {
     // node matrix (`o3de_SetNodePos` and the facing) instead of every
     // corner rewritten and re-sent each frame (2026-09-30)
     bool  gpu = false;
+    long  lastDrawn = -1;        // the last frame this slot was drawn (its buffers' release)
     std::vector<float> affine;
 };
 
