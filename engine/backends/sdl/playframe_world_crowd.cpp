@@ -1087,3 +1087,19 @@ void PlayState::releaseIdleCrowd() {
         v.lastDrawn = -1;
     }
 }
+
+// The staged bodies the same way (todo/ram-vs-original.md tier B): a body
+// beyond the clip distance or outside the view is not skinned, and one the
+// renderer poses reads its rest - either way its CPU `posed` copy waits,
+// unread, for the next frame that skins it, which rebuilds it whole. The
+// original poses every body into its one per-frame pool (`sub_4947F0`).
+// Two seconds idle, as the crowd's slots.
+void PlayState::releaseIdleStaged() {
+    constexpr long kIdleFrames = 60;
+    for (auto& up : staged) {
+        Staged& s = *up;
+        if (s.lastSkinned < 0 || n - s.lastSkinned <= kIdleFrames) continue;
+        releaseGeometry(s.posed);
+        s.lastSkinned = -1;
+    }
+}

@@ -752,6 +752,7 @@ struct PlayState {
     std::map<std::pair<std::string, int>, omk::Geometry> vehAtRest;
     const omk::Geometry& vehAtRestFor(const std::string& model, const CharModel& mo, int rootMesh);
     void releaseIdleCrowd();
+    void releaseIdleStaged();
     // the profiler's view of the marks: each a SECTION from the mark before
     // it (`--profile`, todo/debug-tools.md), outside the call tree
     std::uint64_t profMarkT = 0;

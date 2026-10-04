@@ -237,6 +237,7 @@ struct Staged {
     float drawAt[3] = {0, 0, 0};   // where he was actually put, for a set piece
     bool  drawAtKnown = false;     // ...and whether a frame has put him yet
     std::vector<float> poseWas;    // OMK_BODYLOG: last frame's posed corners
+    long  lastSkinned = -1;        // the frame `posed` was last written; -1 released
     // The yaw the body was last DRAWN with, kept so a held pose is held
     // whole: a scene clip's pose already carries the clip's root rotation,
     // so the world heading must not be applied over it a second time.

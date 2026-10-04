@@ -2345,6 +2345,7 @@ void PlayState::worldStaged() {
             spanned("staged skin", [&] {
                 omk::applyPose(s.posed, restUsed, s.mo->meshes, pose, &s.mo->face, &fv);
             });
+        if (!s.gpu) s.lastSkinned = n;
         // THE ROOT MOTION: `Anim_RootDelta`'s running sum, weighted by
         // how much of the pose is the scene's, so a line stands where
         // it was staged and a fade lerps the position too.
@@ -2905,5 +2906,6 @@ void PlayState::worldStaged() {
                         n, staged.size(), stagedDrawn, stagedFar, stagedOff, stagedGpu);
         }
     }
+    releaseIdleStaged();
     mark("staged bodies");
 }
