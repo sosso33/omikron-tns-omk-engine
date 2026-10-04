@@ -1,0 +1,299 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OMK Profiler</title>
+<style>
+/* The profiler's page (todo/debug-tools.md step 2), served by
+   `tools/omkprof.py <capture> --serve PORT`. Everything is read from the
+   capture through /api/prof/*; the game is not touched. */
+:root {
+  --bg: #f6f6f4; --panel: #ffffff; --ink: #1d1d1f; --dim: #6b6b70;
+  --line: #e2e2e0; --bar: #4a7bd0; --bar2: #9db6e4; --hot: #d0543f;
+  --budget: #c79a2b; --sel: #1d1d1f;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #161618; --panel: #1f1f22; --ink: #ececee; --dim: #9a9aa2;
+    --line: #333338; --bar: #6f9be8; --bar2: #3d5682; --hot: #ee7a62;
+    --budget: #d9b04a; --sel: #ececee;
+  }
+}
+body { margin: 0; background: var(--bg); color: var(--ink);
+       font: 13px/1.4 -apple-system, "Helvetica Neue", Arial, sans-serif; }
+header { padding: 10px 16px; display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; }
+header h1 { font-size: 15px; margin: 0; }
+header .stat { color: var(--dim); }
+main { padding: 0 16px 24px; display: grid; gap: 12px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px; }
+.panel h2 { font-size: 13px; margin: 0 0 8px; }
+#graph { width: 100%; height: 150px; display: block; cursor: crosshair; }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) 90px 90px 70px; gap: 8px;
+       padding: 1px 0; align-items: center; }
+.row.head { color: var(--dim); border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: default; }
+.name .tw { display: inline-block; width: 12px; color: var(--dim); cursor: pointer; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.barcell { position: relative; height: 10px; background: transparent; }
+.barcell span { position: absolute; left: 0; top: 0; bottom: 0; background: var(--bar); border-radius: 2px; }
+.cols { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 12px; }
+@media (max-width: 800px) { .cols { grid-template-columns: 1fr; } }
+button { font: inherit; padding: 2px 8px; }
+.dim { color: var(--dim); }
+</style>
+</head>
+<body>
+<header>
+  <h1>OMK Profiler</h1>
+  <span id="file" class="stat"></span>
+  <span id="stats" class="stat"></span>
+  <label class="stat"><input type="checkbox" id="live" checked> live</label>
+  <span class="stat">click a frame, or the arrow keys</span>
+</header>
+<main>
+  <div class="panel"><h2>Frame time <span class="dim">(ms; the lines are 30 and 60 fps)</span></h2>
+    <canvas id="graph"></canvas>
+    <div id="hover" class="dim">&nbsp;</div>
+  </div>
+  <div class="cols">
+    <div class="panel"><h2 id="ftitle">Frame</h2><div id="tree"></div></div>
+    <div class="panel"><h2>Sections <span class="dim">(the viewer's marks: a flat partition of the frame)</span></h2><div id="sections"></div></div>
+  </div>
+  <div class="panel"><h2>Zones over the capture <span class="dim">(mean per frame, by self time)</span></h2><div id="zones"></div></div>
+</main>
+<script>
+"use strict";
+// THE STATE: every frame's [index, frame number, duration us, dropped],
+// grown by polling while `live` is on; the selected index.
+let frames = [];
+let sel = -1;
+let followTail = true;          // keep the newest frame selected while live
+const collapsed = new Set();    // tree paths the reader folded
+
+const $ = id => document.getElementById(id);
+const ms = us => (us / 1000).toFixed(2);
+
+async function getJson(url) {
+  const r = await fetch(url, {cache: "no-store"});
+  if (!r.ok) throw new Error(url + ": " + r.status);
+  return r.json();
+}
+
+// ONE POLL AT A TIME: two in flight both ask from the same `since` and the
+// frames would be appended twice (the first page load and the timer, or a
+// server slower than the interval).
+let polling = null;
+function poll() {
+  if (!polling) polling = pollOnce().finally(() => { polling = null; });
+  return polling;
+}
+
+async function pollOnce() {
+  try {
+    const d = await getJson("/api/prof/frames?since=" + frames.length);
+    $("file").textContent = d.file;
+    if (d.frames.length) {
+      frames = frames.concat(d.frames);
+      drawGraph();
+      stats();
+      if (sel < 0 || (followTail && $("live").checked)) select(lastPlayFrame());
+      loadZones();
+    }
+  } catch (e) {
+    $("stats").textContent = String(e);
+  }
+}
+
+function lastPlayFrame() {
+  return frames.length ? frames.length - 1 : -1;
+}
+
+function stats() {
+  const play = frames.filter(f => f[1] >= 0).map(f => f[2]).sort((a, b) => a - b);
+  if (!play.length) { $("stats").textContent = "setup only"; return; }
+  const q = p => play[Math.min(play.length - 1, Math.floor(play.length * p))];
+  const dropped = frames.reduce((a, f) => a + f[3], 0);
+  $("stats").textContent = play.length + " frames - median " + ms(q(0.5)) + " ms, 90% " +
+    ms(q(0.9)) + ", max " + ms(play[play.length - 1]) + (dropped ? " - " + dropped + " zones DROPPED" : "");
+}
+
+// THE GRAPH: one bar a frame (several frames a pixel take their max), the
+// selected one marked; the setup (frame -1) is left out of the scale.
+function drawGraph() {
+  const c = $("graph");
+  const dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth, h = c.clientHeight;
+  c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+  const g = c.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const css = getComputedStyle(document.documentElement);
+  g.clearRect(0, 0, w, h);
+  const play = frames.filter(f => f[1] >= 0);
+  if (!play.length) return;
+  const top = Math.max(40000, Math.max(...play.map(f => f[2])) * 1.05);
+  const y = us => h - (us / top) * (h - 4);
+  const per = Math.max(1, play.length / w);
+  const bw = Math.max(1, w / play.length);
+  for (let px = 0; px * per < play.length; px++) {
+    let worst = 0;
+    for (let k = Math.floor(px * per); k < Math.min(play.length, Math.floor((px + 1) * per) || 1); k++)
+      worst = Math.max(worst, play[k][2]);
+    const x = per > 1 ? px : px * bw;
+    g.fillStyle = worst > 33333 ? css.getPropertyValue("--hot") : css.getPropertyValue("--bar");
+    g.fillRect(x, y(worst), Math.max(1, bw - (bw > 3 ? 1 : 0)), h - y(worst));
+  }
+  g.strokeStyle = css.getPropertyValue("--budget");
+  g.setLineDash([4, 3]);
+  for (const b of [33333, 16667]) {
+    g.beginPath(); g.moveTo(0, y(b)); g.lineTo(w, y(b)); g.stroke();
+  }
+  g.setLineDash([]);
+  if (sel >= 0 && frames[sel] && frames[sel][1] >= 0) {
+    const k = play.indexOf(frames[sel]);
+    const x = per > 1 ? k / per : k * bw + bw / 2;
+    g.strokeStyle = css.getPropertyValue("--sel");
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke();
+  }
+}
+
+function frameAt(ev) {
+  const c = $("graph");
+  const play = frames.filter(f => f[1] >= 0);
+  if (!play.length) return -1;
+  const x = ev.offsetX / c.clientWidth;
+  const k = Math.max(0, Math.min(play.length - 1, Math.floor(x * play.length)));
+  return frames.indexOf(play[k]);
+}
+
+$("graph").addEventListener("click", ev => {
+  const i = frameAt(ev);
+  if (i >= 0) { followTail = i === lastPlayFrame(); select(i); }
+});
+$("graph").addEventListener("mousemove", ev => {
+  const i = frameAt(ev);
+  if (i >= 0) $("hover").textContent = "frame " + frames[i][1] + ": " + ms(frames[i][2]) + " ms";
+});
+document.addEventListener("keydown", ev => {
+  if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return;
+  const i = sel + (ev.key === "ArrowLeft" ? -1 : 1);
+  if (i >= 0 && i < frames.length) { followTail = i === lastPlayFrame(); select(i); }
+});
+
+async function select(i) {
+  sel = i;
+  drawGraph();
+  const d = await getJson("/api/prof/frame?i=" + i);
+  if (d.i !== sel) return;
+  $("ftitle").textContent = (d.frame < 0 ? "The setup" : "Frame " + d.frame) + " - " + ms(d.dur) + " ms" +
+    (d.dropped ? " (" + d.dropped + " zones dropped)" : "");
+  renderTree(d.tree, d.dur);
+  renderSections(d.sections, d.dur);
+}
+
+// THE TREE: each zone's total and self time, a bar of its share of the
+// frame; a zone with children folds on its triangle.
+function renderTree(root, frameUs) {
+  const box = $("tree");
+  box.textContent = "";
+  box.appendChild(headRow(["zone", "total ms", "self ms", "% frame"]));
+  if (!root) return;
+  const walk = (nd, depth, path) => {
+    const p = path + "/" + nd.name;
+    const row = document.createElement("div");
+    row.className = "row";
+    const name = document.createElement("div");
+    name.className = "name";
+    name.style.paddingLeft = (depth * 14) + "px";
+    const tw = document.createElement("span");
+    tw.className = "tw";
+    tw.textContent = nd.kids.length ? (collapsed.has(p) ? "▸" : "▾") : "";
+    tw.onclick = () => { collapsed.has(p) ? collapsed.delete(p) : collapsed.add(p); renderTree(root, frameUs); };
+    name.appendChild(tw);
+    name.appendChild(document.createTextNode(nd.name));
+    name.title = nd.name + ": " + ms(nd.dur) + " ms total, " + ms(nd.self) + " ms self";
+    row.appendChild(name);
+    row.appendChild(numCell(ms(nd.dur)));
+    row.appendChild(numCell(ms(nd.self)));
+    const bar = document.createElement("div");
+    bar.className = "barcell";
+    const s = document.createElement("span");
+    s.style.width = Math.min(100, 100 * nd.dur / Math.max(1, frameUs)) + "%";
+    bar.appendChild(s);
+    row.appendChild(bar);
+    box.appendChild(row);
+    if (!collapsed.has(p))
+      for (const k of [...nd.kids].sort((a, b) => b.dur - a.dur)) walk(k, depth + 1, p);
+  };
+  walk(root, 0, "");
+}
+
+function renderSections(secs, frameUs) {
+  const box = $("sections");
+  box.textContent = "";
+  box.appendChild(headRow(["section", "ms", "", "% frame"]));
+  for (const [name, , dur] of [...secs].sort((a, b) => b[2] - a[2])) {
+    if (dur < 10) continue;
+    const row = document.createElement("div");
+    row.className = "row";
+    const n = document.createElement("div");
+    n.className = "name"; n.textContent = name;
+    row.appendChild(n);
+    row.appendChild(numCell(ms(dur)));
+    row.appendChild(numCell(""));
+    row.appendChild(numCell((100 * dur / Math.max(1, frameUs)).toFixed(1)));
+    box.appendChild(row);
+  }
+}
+
+let zonesBusy = false;
+async function loadZones() {
+  if (zonesBusy) return;
+  zonesBusy = true;
+  try {
+    const d = await getJson("/api/prof/zones");
+    const box = $("zones");
+    box.textContent = "";
+    box.appendChild(headRow(["zone", "total ms", "self ms", "calls"]));
+    for (const [name, tot, own, calls] of d.zones.slice(0, 40)) {
+      const row = document.createElement("div");
+      row.className = "row";
+      const n = document.createElement("div");
+      n.className = "name"; n.textContent = name;
+      row.appendChild(n);
+      row.appendChild(numCell(ms(tot)));
+      row.appendChild(numCell(ms(own)));
+      row.appendChild(numCell(calls.toFixed(1)));
+      box.appendChild(row);
+    }
+  } finally {
+    zonesBusy = false;
+  }
+}
+
+function headRow(cols) {
+  const r = document.createElement("div");
+  r.className = "row head";
+  cols.forEach((t, k) => {
+    const c = document.createElement("div");
+    c.className = k ? "num" : "name";
+    c.textContent = t;
+    r.appendChild(c);
+  });
+  return r;
+}
+
+function numCell(t) {
+  const c = document.createElement("div");
+  c.className = "num";
+  c.textContent = t;
+  return c;
+}
+
+window.addEventListener("resize", drawGraph);
+poll();
+setInterval(() => { if ($("live").checked) poll(); }, 1000);
+</script>
+</body>
+</html>

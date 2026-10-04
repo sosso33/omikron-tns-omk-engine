@@ -11,31 +11,64 @@ analysis costs the game nothing.
     python3 tools/omkprof.py run.prof --frame 120   one frame's call tree, each
                                                     zone's total and SELF time
     python3 tools/omkprof.py run.prof --slowest 5   the five slowest frames' trees
+    python3 tools/omkprof.py run.prof --serve 8753  the PAGE (tools/omkprof.html):
+                                                    the frame graph, a frame's
+                                                    tree, live while the game runs
 
 Zones nest by the depth and order the recorder wrote them: a zone's parent
 is the nearest zone before it of one less depth. SECTIONS (the viewer's
 marks, `OMK_SECTION`) partition the frame flat and may cross zones, so they
 are summed beside the tree, never in it.
 """
+import os
 import struct
 import sys
 
 MAGIC = b"OMKPROF1"
 
 
+class Capture:
+    """A capture read INCREMENTALLY: `poll()` parses the whole chunks written
+    since the last call, so a live capture (the game still running) is
+    followed without re-reading it - what the page's server does each request.
+    `names` {id: name}; `frames` as `read` returns them."""
+
+    def __init__(self, path):
+        self.path, self.names, self.frames, self.offset = path, {}, [], 0
+
+    def poll(self):
+        with open(self.path, "rb") as f:
+            f.seek(self.offset)
+            data = f.read()
+        if self.offset == 0:
+            if len(data) < 12:
+                return 0
+            if data[:8] != MAGIC:
+                raise ValueError("%s: not an OMK profiler capture" % self.path)
+            version = struct.unpack_from("<I", data, 8)[0]
+            if version != 1:
+                raise ValueError("%s: capture version %d, this reader knows 1" % (self.path, version))
+            used = parseChunks(data, 12, self.names, self.frames)
+        else:
+            used = parseChunks(data, 0, self.names, self.frames)
+        before = self.offset
+        self.offset += used
+        return self.offset - before
+
+
 def read(path):
     """-> (names, frames). frames: a list of dicts with `frame`, `start` and
     `dur` (us), `dropped`, `zones` [(name, depth, start, dur)] and `sections`
-    [(name, start, dur)], in microseconds from the frame's start. A capture cut off mid-chunk (the game
-    still running, or killed) ends at the last whole chunk."""
-    data = open(path, "rb").read()
-    if data[:8] != MAGIC:
-        raise ValueError("%s: not an OMK profiler capture" % path)
-    version = struct.unpack_from("<I", data, 8)[0]
-    if version != 1:
-        raise ValueError("%s: capture version %d, this reader knows 1" % (path, version))
-    names, frames = {}, []
-    o = 12
+    [(name, start, dur)], in microseconds from the frame's start. A capture
+    cut off mid-chunk (the game still running, or killed) ends at the last
+    whole chunk."""
+    c = Capture(path)
+    c.poll()
+    return c.names, c.frames
+
+
+def parseChunks(data, o, names, frames):
+    """Parse whole chunks from `o`; -> the offset after the last whole one."""
     while o + 5 <= len(data):
         typ, n = struct.unpack_from("<BI", data, o)
         if o + 5 + n > len(data):
@@ -60,7 +93,7 @@ def read(path):
             frames.append({"frame": fr, "start": start, "dur": dur, "dropped": dropped,
                            "zones": zones, "sections": sections})
         o += 5 + n
-    return names, frames
+    return o
 
 
 def tree(frame):
@@ -138,10 +171,97 @@ def summary(frames, out=sys.stdout):
         out.write("\n%d zones DROPPED (a frame's buffer full)\n" % dropped)
 
 
+def zoneTable(frames):
+    """Every zone's mean total and self time and calls a frame, over `frames`
+    (the play frames): -> [(name, total us, self us, calls)], by self time."""
+    play = [f for f in frames if f["frame"] >= 0]
+    tot, own, cnt = {}, {}, {}
+    def walk(nd):
+        tot[nd["name"]] = tot.get(nd["name"], 0) + nd["dur"]
+        own[nd["name"]] = own.get(nd["name"], 0) + nd["self"]
+        cnt[nd["name"]] = cnt.get(nd["name"], 0) + 1
+        for k in nd["kids"]:
+            walk(k)
+    for f in play:
+        t = tree(f)
+        if t:
+            walk(t)
+    n = max(1, len(play))
+    return sorted(((k, tot[k] / n, own[k] / n, cnt[k] / n) for k in own), key=lambda r: -r[2])
+
+
+def serve(path, port):
+    """The page and its JSON, read from the capture on every request (so a
+    live run is followed) - `no-store` throughout: nothing here is worth a
+    stale answer (CLAUDE.md 5, the cache traps)."""
+    import json
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from urllib.parse import urlparse, parse_qs
+    import threading
+    cap = Capture(path)
+    lock = threading.Lock()
+    page = os.path.join(os.path.dirname(os.path.abspath(__file__)), "omkprof.html")
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def send(self, code, body, ctype):
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def js(self, obj):
+            self.send(200, json.dumps(obj).encode(), "application/json")
+
+        def do_GET(self):
+            u = urlparse(self.path)
+            q = parse_qs(u.query)
+            try:
+                with lock:
+                    cap.poll()
+                    frames = cap.frames
+                    if u.path == "/":
+                        self.send(200, open(page, "rb").read(), "text/html; charset=utf-8")
+                    elif u.path == "/api/prof/frames":
+                        since = int(q.get("since", ["0"])[0])
+                        self.js({"file": os.path.basename(path), "count": len(frames),
+                                 "frames": [[k, f["frame"], f["dur"], f["dropped"]]
+                                            for k, f in enumerate(frames[since:], since)]})
+                    elif u.path == "/api/prof/frame":
+                        k = int(q.get("i", ["0"])[0])
+                        f = frames[k]
+                        self.js({"i": k, "frame": f["frame"], "dur": f["dur"],
+                                 "dropped": f["dropped"], "tree": tree(f),
+                                 "sections": f["sections"]})
+                    elif u.path == "/api/prof/zones":
+                        lo = int(q.get("from", ["0"])[0])
+                        hi = int(q.get("to", [str(len(frames))])[0])
+                        self.js({"from": lo, "to": hi,
+                                 "zones": zoneTable(frames[lo:hi])})
+                    else:
+                        self.send(404, b"not here", "text/plain")
+            except (IndexError, ValueError) as e:
+                self.send(400, str(e).encode(), "text/plain")
+
+    srv = ThreadingHTTPServer(("127.0.0.1", port), H)
+    print("omkprof: %s on http://127.0.0.1:%d/ (Ctrl-C ends it)" % (path, port))
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
 def main(argv):
     if len(argv) < 2:
         print(__doc__)
         return 1
+    if "--serve" in argv:
+        return serve(argv[1], int(argv[argv.index("--serve") + 1]))
     _, frames = read(argv[1])
     if "--frame" in argv:
         want = int(argv[argv.index("--frame") + 1])

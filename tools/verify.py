@@ -27181,6 +27181,93 @@ def c_engine_gl1_backend():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def c_profiler_page():
+    r"""The PROFILER'S PAGE (`todo/debug-tools.md` step 2): `tools/omkprof.py
+    --serve` and `tools/omkprof.html`, with no engine in the loop.
+
+    A capture is WRITTEN HERE, by Python, to the format `profile.h` states -
+    three frames, one of them the setup, with known zones and a section -
+    so the reader is held to the documented format and not only to the
+    writer that shares its assumptions. Then the server is started on it and
+    each endpoint asked: the frame list (the setup included), one frame's
+    tree (the zone nesting, self time = total minus the children), the
+    capture's zone table. And when node is installed, the PAGE'S OWN SCRIPT
+    runs under a DOM stub (`tools/profcheck.js`) against that server: its
+    first poll, a frame selected, and the rows each panel drew - which is
+    what found the page appending every frame twice when two polls were in
+    flight (2026-10-04).
+
+    Shown to fail (2026-10-04): `tree()` given the children's time as self
+    time (red, the self figure); the poll guard removed (red, 6 frames).
+    """
+    import subprocess, tempfile, shutil, struct, socket, time, json, urllib.request
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import omkprof
+    tmp = tempfile.mkdtemp()
+    cap = os.path.join(tmp, "t.prof")
+    names = ["frame", "setup: boot", "input", "world", "submit", "a section"]
+    def chunk(t, p):
+        return struct.pack("<BI", t, len(p)) + p
+    out = b"OMKPROF1" + struct.pack("<I", 1)
+    for i, n in enumerate(names):
+        out += chunk(1, struct.pack("<I", i) + n.encode())
+    def frame(no, dur, zones, secs):
+        p = struct.pack("<iQIII", no, 0, dur, len(zones) + len(secs), 0)
+        for nid, d, s0, du in zones:
+            p += struct.pack("<IHHII", nid, d, 0, s0, du)
+        for nid, s0, du in secs:
+            p += struct.pack("<IHHII", nid, 0, 1, s0, du)
+        return chunk(2, p)
+    out += frame(-1, 5000, [(0, 0, 0, 5000), (1, 1, 0, 4000)], [])
+    for no in (0, 1):
+        out += frame(no, 20000, [(0, 0, 0, 20000), (2, 1, 0, 3000), (3, 1, 3000, 16000),
+                                 (4, 2, 4000, 10000)], [(5, 0, 19000)])
+    open(cap, "wb").write(out)
+    s0 = socket.socket(); s0.bind(("127.0.0.1", 0)); port = s0.getsockname()[1]; s0.close()
+    srv = subprocess.Popen([sys.executable, os.path.join(ROOT, "tools", "omkprof.py"), cap,
+                            "--serve", str(port)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        def get(path):
+            for _ in range(50):
+                try:
+                    return json.loads(urllib.request.urlopen("http://127.0.0.1:%d%s" % (port, path)).read())
+                except OSError:
+                    time.sleep(0.1)
+            return None
+        fl = get("/api/prof/frames?since=0")
+        fr = get("/api/prof/frame?i=1")
+        zs = get("/api/prof/zones")
+        world = next((k for k in fr["tree"]["kids"] if k["name"] == "world"), None) if fr else None
+        api = (fl and fl["count"], fl and [f[1] for f in fl["frames"]],
+               fr and [k["name"] for k in fr["tree"]["kids"]], world and (world["dur"], world["self"]),
+               fr and len(fr["sections"]),
+               zs and [(z[0], round(z[2])) for z in zs["zones"][:2]])
+        node = shutil.which("node")
+        if not node:
+            nv = sorted(glob.glob(os.path.expanduser("~/.nvm/versions/node/v*/bin/node")))
+            node = nv[-1] if nv else None
+        page = ("node absent",)
+        if node:
+            r = subprocess.run([node, os.path.join(ROOT, "tools", "profcheck.js"),
+                                os.path.join(ROOT, "tools", "omkprof.html"), str(port), "1"],
+                               capture_output=True, text=True, timeout=60)
+            try:
+                d = json.loads(r.stdout.strip().splitlines()[-1])
+            except (ValueError, IndexError):
+                d = {"error": (r.stdout + r.stderr)[-300:]}
+            page = (d.get("frames"), d.get("tree"), d.get("sections"), d.get("zones"), d.get("error"))
+    finally:
+        srv.terminate()
+        shutil.rmtree(tmp, ignore_errors=True)
+    want_api = (3, [-1, 0, 1], ["input", "world"], (16000, 6000), 1, [("world", 6000), ("submit", 10000)][::-1])
+    want_page = (3, 5, 2, 5, None) if node else ("node absent",)
+    return (api, page), (want_api, want_page), \
+        "a capture written to profile.h's format: the server lists the setup and both " \
+        "frames, nests a frame's zones (world 16 ms, 6 ms of it its own), keeps the " \
+        "section apart, ranks the zones by self time; and the page's own script, run " \
+        "against it, draws the frame's tree, sections and the zone table"
+
+
 def c_engine_profiler():
     r"""The PROFILER (`todo/debug-tools.md` step 1): `omk-play --profile`.
 
@@ -40527,6 +40614,7 @@ CHECKS = [
     ("golden: menu",       c_golden_menu,       "UI"),
     ("page templates",     c_page_templates,    "CLAUDE.md 5"),
     ("page cache busting", c_page_cachebusting, "CLAUDE.md 5"),
+    ("profiler page",      c_profiler_page, "todo/debug-tools.md step 2"),
     ("inventory ops",      c_inventory_ops,     "SCRIPT_VM"),
     ("fight & become",     c_fight_and_player,  "SCRIPT_VM"),
     ("world cameras",      c_world_cameras,     "FILE_FORMATS 5c"),
