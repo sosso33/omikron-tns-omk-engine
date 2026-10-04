@@ -16,6 +16,9 @@ analysis costs the game nothing.
                                                     tree, live while the game runs;
                                                     pause / step / resume it, and
                                                     the paused frame's picture
+    python3 tools/omkprof.py run.prof --sites [BIN] the live memory at the capture's end BY
+                                                    ALLOCATING FUNCTION (macOS: atos; BIN
+                                                    defaults to engine/build/omk-play)
     python3 tools/omkprof.py run.prof --ctl pause   one command to the game
                                                     (pause, resume, step N, snapshot)
 
@@ -40,6 +43,7 @@ class Capture:
     def __init__(self, path):
         self.path, self.names, self.frames, self.offset = path, {}, [], 0
         self.tags = {}                      # memory category id -> name
+        self.sites = None                   # the SITE table (chunk 6), at the capture's end
 
     def poll(self):
         with open(self.path, "rb") as f:
@@ -53,9 +57,9 @@ class Capture:
             version = struct.unpack_from("<I", data, 8)[0]
             if version != 1:
                 raise ValueError("%s: capture version %d, this reader knows 1" % (self.path, version))
-            used = parseChunks(data, 12, self.names, self.frames, self.tags)
+            used = parseChunks(data, 12, self.names, self.frames, self.tags, self)
         else:
-            used = parseChunks(data, 0, self.names, self.frames, self.tags)
+            used = parseChunks(data, 0, self.names, self.frames, self.tags, self)
         before = self.offset
         self.offset += used
         return self.offset - before
@@ -72,7 +76,7 @@ def read(path):
     return c.names, c.frames
 
 
-def parseChunks(data, o, names, frames, tags=None):
+def parseChunks(data, o, names, frames, tags=None, cap=None):
     """Parse whole chunks from `o`; -> the offset after the last whole one.
     A MEM chunk (step 4) belongs to the FRAME chunk before it: it becomes
     that frame's `mem` - {live, peak, blocks, tags: [(name, bytes, blocks)]}."""
@@ -115,6 +119,19 @@ def parseChunks(data, o, names, frames, tags=None):
             if frames and frames[-1]["frame"] == fr:
                 frames[-1]["mem"] = {"live": live, "peak": peak, "blocks": blocks,
                                      "tags": sorted(per, key=lambda t: -t[1])}
+        elif typ == 6:
+            # THE SITES (todo/ram-vs-original.md 1): the runtime address of
+            # omk::prof::open, then (site, live bytes, live blocks)
+            # (a CHAIN of `depth` return addresses per site, innermost first)
+            ref, n6, depth = struct.unpack_from("<QII", p, 0)
+            q, rows = 16, []
+            for _ in range(n6):
+                chain = struct.unpack_from("<%dQ" % depth, p, q)
+                by, bl = struct.unpack_from("<QI", p, q + 8 * depth)
+                rows.append((chain, by, bl))
+                q += 8 * depth + 12
+            if cap is not None:
+                cap.sites = {"ref": ref, "rows": rows}
         elif typ == 5:
             # the GPU memory (step 5): what the renderers reported holding
             fr, live, nt = struct.unpack_from("<iQI", p, 0)
@@ -295,6 +312,53 @@ def snapshotPng(path):
     return png, frame, snap
 
 
+NOISE = ("std::", "<deduplicated_symbol>", "operator new", "omk::prof::", "0x", "void* std::",
+         "_platform_", "__")
+
+
+def ownerOf(syms):
+    """The first frame of a chain that is this port's own code - not the
+    library's containers, not a folded template, not an unnamed address."""
+    for sym in syms:
+        fn = sym.split(" (in ")[0]
+        if fn and not fn.startswith(NOISE) and " std::__1::" not in fn.split("(")[0]:
+            return fn
+    return syms[0].split(" (in ")[0] if syms else "?"
+
+
+def symbolizeSites(sites, binary):
+    """The site table's chains -> {owner function: [bytes, blocks, sites,
+    {innermost frame}]}, by `atos` against `binary` (macOS). The slide comes
+    from omk::prof::open, whose runtime address the capture carries."""
+    import subprocess, tempfile
+    nm = subprocess.run(["nm", "-U", binary], capture_output=True, text=True).stdout
+    static = None
+    for line in nm.splitlines():
+        parts = line.split()
+        if len(parts) == 3 and "4prof4open" in parts[2] and "basic_string" in parts[2]:
+            static = int(parts[0], 16)
+            break
+    if static is None:
+        raise ValueError("%s: no omk::prof::open - not the binary that wrote the capture?" % binary)
+    load = 0x100000000 + sites["ref"] - static
+    addrs = sorted({a for chain, _, _ in sites["rows"] for a in chain if a})
+    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
+        f.write("\n".join("0x%x" % (a - 1) for a in addrs))     # inside the call, not after it
+        tmp = f.name
+    out = subprocess.run(["atos", "-o", binary, "-l", "0x%x" % load, "-f", tmp],
+                         capture_output=True, text=True).stdout.splitlines()
+    os.unlink(tmp)
+    name = dict(zip(addrs, out))
+    byFn = {}
+    for chain, by, bl in sites["rows"]:
+        syms = [name.get(a, "0x%x" % a) for a in chain if a]
+        owner = ownerOf(syms)
+        cur = byFn.setdefault(owner, [0, 0, 0, set()])
+        cur[0] += by; cur[1] += bl; cur[2] += 1
+        cur[3].add(syms[0].split(" (in ")[0][:60] if syms else "?")
+    return byFn
+
+
 def serve(path, port):
     """The page and its JSON, read from the capture on every request (so a
     live run is followed) - `no-store` throughout: nothing here is worth a
@@ -390,6 +454,22 @@ def main(argv):
         return 1
     if "--serve" in argv:
         return serve(argv[1], int(argv[argv.index("--serve") + 1]))
+    if "--sites" in argv:
+        k = argv.index("--sites")
+        binary = argv[k + 1] if len(argv) > k + 1 and not argv[k + 1].startswith("--") else \
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "engine", "build", "omk-play")
+        cap = Capture(argv[1])
+        cap.poll()
+        if not cap.sites:
+            print("no site table: the capture was not closed by the game (or predates it)")
+            return 1
+        byFn = symbolizeSites(cap.sites, binary)
+        total = sum(v[0] for v in byFn.values())
+        print("live at the capture's end: %.1f MB at %d sites in %d functions" % (
+            total / 1048576.0, len(cap.sites["rows"]), len(byFn)))
+        for fn, (by, bl, ns, inner) in sorted(byFn.items(), key=lambda kv: -kv[1][0])[:int(argv[argv.index("--top") + 1]) if "--top" in argv else 60]:
+            print("%9.2f MB %7d blocks  %s" % (by / 1048576.0, bl, fn[:150]))
+        return 0
     if "--ctl" in argv:
         k = argv.index("--ctl")
         cmd = argv[k + 1]

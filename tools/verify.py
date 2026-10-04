@@ -27435,6 +27435,13 @@ def c_engine_profiler():
     owners - scripted motion 9.2 MB, sounds 2.8, the crowd 1.9...). Shown to
     fail: the zone in `drawGeometry` removed (red); the zone on `inputMotion`
     removed (red: 15.4% without an owner).
+
+    **And the allocation SITES (`todo/ram-vs-original.md` 1)**: the table the
+    game writes as the capture closes - a four-frame call chain per site,
+    live bytes and blocks - has over 100 sites, and where `atos` exists the
+    owners it names put `omk::textures` and `omk::buildGeometry` among the
+    six largest (they are the two largest in the street). Shown to fail: the
+    table not written at close (red: 0 sites).
     """
     import subprocess, tempfile, shutil
     sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -27460,6 +27467,18 @@ def c_engine_profiler():
         if not os.path.exists(cap):
             return ("no capture",), ("capture",), "--profile wrote nothing"
         _, frames = omkprof.read(cap)
+        # THE SITES (todo/ram-vs-original.md 1): the table the game writes as
+        # the capture closes, named by atos where the platform has it
+        capObj = omkprof.Capture(cap)
+        capObj.poll()
+        siteRows = len(capObj.sites["rows"]) if capObj.sites else 0
+        siteOwners = ("no atos",)
+        if capObj.sites and shutil.which("atos"):
+            byFn = omkprof.symbolizeSites(capObj.sites, play)
+            top = [k for k, _ in sorted(byFn.items(), key=lambda kv: -kv[1][0])[:6]]
+            siteOwners = (any(k.startswith("omk::textures(") for k in top),
+                          any(k.startswith("omk::buildGeometry(") for k in top))
+            print("        sites: %d, the largest owners: %s" % (siteRows, "; ".join(k.split("(")[0] for k in top)))
         phases = ["input", "control", "modes", "world", "screens", "present"]
         nums = [f["frame"] for f in frames]
         rooted = ordered = nested = 0
@@ -27517,10 +27536,12 @@ def c_engine_profiler():
         got = (nums == list(range(-1, 30)), rooted == len(frames), ordered == 30,
                nested == len(frames), dropped, worldMs > 0, same,
                memAll, sums, owners, 0 <= growth < 2 << 20,
-               len(subs) >= 20 and rasterUnder == len(subs), owned)
+               len(subs) >= 20 and rasterUnder == len(subs), owned, siteRows > 100, siteOwners)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    return got, (True, True, True, True, 0, True, True, True, True, True, True, True, True), \
+    wantOwners = (True, True) if shutil.which("atos") else ("no atos",)
+    return got, (True, True, True, True, 0, True, True, True, True, True, True, True, True,
+                 True, wantOwners), \
         "the capture: the setup and frames 0..29, each rooted at `frame` with the six " \
         "phases in order, no child longer than its parent, nothing dropped, the world " \
         "phase holding real time; the frame dumped with and without --profile identical; " \

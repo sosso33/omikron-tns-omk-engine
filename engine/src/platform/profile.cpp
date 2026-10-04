@@ -66,16 +66,113 @@ inline void account(int tag, long long bytes, long blocks) {
     if (bytes > 0) { raise(g_peak, now); raise(g_framePeak, now); }
 }
 
-// The header before every block: its size and its category, 16 bytes so the
-// block keeps `malloc`'s alignment.
-struct Header { std::size_t size; std::uint32_t tag; std::uint32_t magic; };
-constexpr std::size_t kHeader = 16;
-static_assert(sizeof(Header) <= kHeader, "the header fits its 16 bytes");
+// The header before every block: its size, its category and the code that
+// allocated it (the SITE - `todo/ram-vs-original.md` 1), 32 bytes so the block
+// keeps `malloc`'s alignment.
+struct Header { std::size_t size; std::uint32_t site; std::uint32_t tag; std::uint32_t magic; };
+constexpr std::size_t kHeader = 32;
+static_assert(sizeof(Header) <= kHeader, "the header fits its 32 bytes");
+
+// THE SITES: live bytes and blocks per allocating return address, in a FIXED
+// open-addressed table - nothing here may allocate, since this runs inside
+// `operator new`. A full table files the rest under one overflow entry.
+#if defined(macintosh)
+// on classic Mac OS the table is in the image's data, inside the very
+// partition being measured: 4096 sites, 96 KB
+constexpr std::size_t kSites = 1 << 12;
+#else
+constexpr std::size_t kSites = 1 << 15;
+#endif
+// A site is a short CALL CHAIN, not one address: the code that calls `new` is
+// most often a container's own (`vector::__append`), one level below the code
+// that owns the data, and the linker folds identical template code into one
+// symbol. Four return addresses, by the frame-pointer chain where the
+// platform keeps one (macOS on arm64 and x86-64 does); one elsewhere.
+constexpr int kDepth = 4;
+struct Site { const void* at[kDepth]; long long bytes; long blocks; };
+Site g_sites[kSites] = {};
+std::size_t g_sitesUsed = 0;
+#if OMK_THREADS
+std::atomic_flag g_siteLock = ATOMIC_FLAG_INIT;
+struct SiteLock {
+    SiteLock() { while (g_siteLock.test_and_set(std::memory_order_acquire)) {} }
+    ~SiteLock() { g_siteLock.clear(std::memory_order_release); }
+};
+#else
+struct SiteLock {};
+#endif
+
+struct Chain { const void* at[kDepth]; };
+
+// -> the site's index in `g_sites` (the header keeps it, so a free finds its
+// row without the chain); the last row is the overflow
+std::uint32_t siteOf(const Chain& c) {
+    std::uintptr_t h = 0;
+    for (const void* a : c.at) h = (h ^ reinterpret_cast<std::uintptr_t>(a)) * 0x9E3779B97F4A7C15ull;
+    for (std::size_t i = 0; i < kSites - 1; ++i) {
+        const std::size_t k = (h + i) & (kSites - 2);       // the last row stays the overflow
+        Site& s = g_sites[k];
+        bool same = s.at[0] != nullptr;
+        for (int d = 0; same && d < kDepth; ++d) same = s.at[d] == c.at[d];
+        if (same) return static_cast<std::uint32_t>(k);
+        if (!s.at[0]) {
+            if (g_sitesUsed + 1 >= kSites / 2) break;      // keep probes short
+            for (int d = 0; d < kDepth; ++d) s.at[d] = c.at[d];
+            ++g_sitesUsed;
+            return static_cast<std::uint32_t>(k);
+        }
+    }
+    return static_cast<std::uint32_t>(kSites - 1);
+}
+
+std::uint32_t siteAccount(const Chain& c, long long bytes, long blocks) {
+    SiteLock lk;
+    const std::uint32_t k = siteOf(c);
+    g_sites[k].bytes += bytes;
+    g_sites[k].blocks += blocks;
+    return k;
+}
+
+void siteRelease(std::uint32_t k, long long bytes) {
+    if (k >= kSites) return;
+    SiteLock lk;
+    g_sites[k].bytes -= bytes;
+    g_sites[k].blocks -= 1;
+}
+
+// The chain: `first` is `operator new`'s own return address; the frames above
+// it by the frame pointers, checked to climb the stack, where the platform
+// keeps them.
+#if defined(__APPLE__) && (defined(__aarch64__) || defined(__x86_64__))
+__attribute__((always_inline)) inline Chain chainFrom(const void* first, void* const* fp) {
+    Chain c{};
+    c.at[0] = first;
+    // Up from `counted`'s own frame: each record is {the caller's frame, the
+    // return address into it}. Find the record whose return address is
+    // `first` - wherever it is, so a tail call from `operator new` into
+    // `counted` (no frame of its own) changes nothing - and take the ones
+    // above it.
+    void* const* f = fp;
+    bool found = false;
+    int d = 1;
+    for (int guard = 0; f && guard < 8 + kDepth && d < kDepth; ++guard) {
+        const void* ra = f[1];
+        if (found) c.at[d++] = ra;
+        else if (ra == first) found = true;
+        void* const* up = static_cast<void* const*>(f[0]);
+        if (up <= f || reinterpret_cast<std::uintptr_t>(up) - reinterpret_cast<std::uintptr_t>(f) > (1u << 24)) break;
+        f = up;
+    }
+    return c;
+}
+#else
+inline Chain chainFrom(const void* first, void* const*) { Chain c{}; c.at[0] = first; return c; }
+#endif
 constexpr std::uint32_t kMagic = 0x4F4D4B6Du;   // "OMKm"
 
 int workersTag();
 
-void* counted(std::size_t n) {
+__attribute__((noinline)) void* counted(std::size_t n, const void* site) {
     auto* p = static_cast<unsigned char*>(std::malloc(n + kHeader));
     if (!p) {
         // A REFUSED ALLOCATION SAYS ITS SIZE - the Vita's own `operator new`
@@ -96,6 +193,8 @@ void* counted(std::size_t n) {
     h->tag = static_cast<std::uint32_t>(tag);
     h->magic = kMagic;
     account(tag, static_cast<long long>(n), 1);
+    h->site = siteAccount(chainFrom(site, static_cast<void* const*>(__builtin_frame_address(0))),
+                          static_cast<long long>(n), 1);
     return p + kHeader;
 }
 
@@ -103,8 +202,10 @@ void uncounted(void* q) {
     if (!q) return;
     auto* p = static_cast<unsigned char*>(q) - kHeader;
     auto* h = reinterpret_cast<Header*>(p);
-    if (h->magic == kMagic && h->tag < static_cast<std::uint32_t>(kTags))
+    if (h->magic == kMagic && h->tag < static_cast<std::uint32_t>(kTags)) {
         account(static_cast<int>(h->tag), -static_cast<long long>(h->size), -1);
+        siteRelease(h->site, static_cast<long long>(h->size));
+    }
     h->magic = 0;
     std::free(p);
 }
@@ -114,13 +215,13 @@ void uncounted(void* q) {
 // The standard's replaceable allocation functions: defined here, they take
 // the place of the library's in every program linking the engine - a
 // PROFILING build only (`OMK_PROFILE=0` has none of this file).
-void* operator new(std::size_t n) { return omk::prof::mem::counted(n); }
-void* operator new[](std::size_t n) { return omk::prof::mem::counted(n); }
+void* operator new(std::size_t n) { return omk::prof::mem::counted(n, __builtin_return_address(0)); }
+void* operator new[](std::size_t n) { return omk::prof::mem::counted(n, __builtin_return_address(0)); }
 void* operator new(std::size_t n, const std::nothrow_t&) noexcept {
-    try { return omk::prof::mem::counted(n); } catch (...) { return nullptr; }
+    try { return omk::prof::mem::counted(n, __builtin_return_address(0)); } catch (...) { return nullptr; }
 }
 void* operator new[](std::size_t n, const std::nothrow_t&) noexcept {
-    try { return omk::prof::mem::counted(n); } catch (...) { return nullptr; }
+    try { return omk::prof::mem::counted(n, __builtin_return_address(0)); } catch (...) { return nullptr; }
 }
 void operator delete(void* p) noexcept { omk::prof::mem::uncounted(p); }
 void operator delete[](void* p) noexcept { omk::prof::mem::uncounted(p); }
@@ -347,8 +448,41 @@ bool open(const std::string& path) {
     return true;
 }
 
+namespace {
+// THE SITE TABLE (chunk 6) - live bytes per allocating return address, with
+// the runtime address of one known function (`omk::prof::open`) so the reader
+// can find the image's slide and name every site (`omkprof.py --sites`).
+void writeSites() {
+    State& s = st();
+    // reserved BEFORE the lock: growing it inside would call `operator new`,
+    // which takes the same lock
+    std::vector<mem::Site> live;
+    live.reserve(mem::kSites);
+    {
+        mem::SiteLock lk;
+        for (const mem::Site& x : mem::g_sites)
+            if (x.at[0] && x.bytes > 0) live.push_back(x);
+    }
+    const std::size_t at = beginChunk(6);
+    put64(static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(
+        reinterpret_cast<const void*>(static_cast<bool (*)(const std::string&)>(&open)))));
+    put32(static_cast<std::uint32_t>(live.size()));
+    put32(static_cast<std::uint32_t>(mem::kDepth));
+    for (const mem::Site& x : live) {
+        for (int d = 0; d < mem::kDepth; ++d)
+            put64(static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(x.at[d])));
+        put64(static_cast<std::uint64_t>(x.bytes));
+        put32(static_cast<std::uint32_t>(x.blocks));
+    }
+    endChunk(at);
+    std::fwrite(s.out.data(), 1, s.out.size(), s.file);
+    s.out.clear();
+}
+}  // namespace
+
 void close() {
     State& s = st();
+    if (s.file && g_on) writeSites();
     g_on = false;
     if (s.file) { std::fclose(s.file); s.file = nullptr; }
 }
