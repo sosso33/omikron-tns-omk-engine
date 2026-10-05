@@ -25,6 +25,31 @@ void toLocalDir(const HitMesh& h, const float v[3], float out[3]) {
 
 }  // namespace
 
+int shootBodyTouch(const HitBody& toucher, const HitBody& touched) {
+    if (toucher.root < 0 || static_cast<std::size_t>(toucher.root) >= toucher.meshes.size())
+        return -1;
+    const HitMesh& root = toucher.meshes[static_cast<std::size_t>(toucher.root)];
+    float c[3];
+    toWorld(root, root.centre, c);
+    const double r2 = double(root.radius) * root.radius;
+    for (std::size_t mi = 0; mi < touched.meshes.size(); ++mi) {
+        if (static_cast<int>(mi) == touched.root) continue;   // `if (v27[2] && ..)`
+        const HitMesh& h = touched.meshes[mi];
+        const float rel[3] = {c[0] - h.pos[0], c[1] - h.pos[1], c[2] - h.pos[2]};
+        float l[3];
+        toLocalDir(h, rel, l);
+        double d2 = 0.0;
+        for (int k = 0; k < 3; ++k) {
+            double e = 0.0;
+            if (l[k] < h.boxMin[k]) e = double(l[k]) - h.boxMin[k];
+            else if (l[k] > h.boxMax[k]) e = double(l[k]) - h.boxMax[k];
+            d2 += e * e;
+        }
+        if (d2 <= r2) return static_cast<int>(mi);
+    }
+    return -1;
+}
+
 bool shootRaySphere(const float o[3], const float dir[3], const float c[3], float r,
                     float& tIn, float& tOut) {
     // v13/v14/v7 = o - c;  v9 = dir . (o - c);

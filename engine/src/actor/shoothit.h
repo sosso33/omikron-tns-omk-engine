@@ -107,6 +107,16 @@ bool shootSweepBodies(const float a[3], const float b[3],
                       const std::vector<HitBody>& bodies, int exclude, BodyHit& out,
                       int onlyActor = 0, int onlyMesh = -1);
 
+// `sub_45BC50` (0x0045BC50) with `sub_45BB20` (0x0045BB20) - a BODY TOUCH,
+// which Gandhar's grab and strike ask (`actor/gandhar.h`): the sphere of
+// `toucher`'s ROOT mesh in the world (its `+76` centre through the node's
+// matrix, its `+88` radius) against the BOX of every node of `touched` that
+// has a parent - the walk skips the root - each taken into that node's frame
+// (`Matrix3x3_RotateVectorT` of the centre less the node's `+44..+52`) and
+// measured as the squared distance to the box, within the radius squared.
+// -> the first mesh touched, -1 for none.
+int shootBodyTouch(const HitBody& toucher, const HitBody& touched);
+
 // `sub_423E20` (0x00423E20): the dot of the bolt's horizontal heading with
 // the victim's forward - `sub_442160(0, yaw, 0)` through (0, 0, -1) - in four
 // bands, on the constants at 0x4BC274 (0.5) and 0x4BC224 (0.0):

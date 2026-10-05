@@ -40848,6 +40848,79 @@ def c_engine_astaroth_floor():
            "the floor, and 2 to 8 in the air (his leaps)"
 
 
+def c_engine_gandhar_grab():
+    r"""GANDHAR'S STRIKE AND GRAB (`todo/gandhar.md` step 4) - and messages 5-8,
+    the drift audit's S8 remainder, posted at last.
+
+    Once an attack reaches (`sub_421020`), four of his actions roll `(rand() %
+    100 <= p) + 25` - p 100 healthy, 70 wounded, 40 critical - into 26, the
+    STRIKE, or 25, the GRAB. Both ask the BODY TOUCH, `sub_45BC50`: his root
+    mesh's sphere (`+76` through the node, radius `+88`: 381 for him) against
+    the box of every non-root node of the player's skeleton (`sub_45BB20`), as
+    posed last frame. The strike tests it from its clip's half, once
+    (`+160 & 0x80`), and on contact deals his property 22 - 11, the event-44
+    struct's default - through `sub_423B10` towards the player. The grab tests
+    it when its clip ends: contact posts the message his FLOOR'S SIDE picks
+    (`gandharGrabSide`, read from the assembly: nearer x side or nearer z side,
+    x on a tie; min x 7, max x 6, min z 8, max z 5) from the player, and raises
+    `dword_657A28` - AREA 2's handlers are the four kill scenes; no contact
+    enters 27 and the script moves on.
+
+    The real route (zone 313's baton, the bridge's zone 317), his health 40
+    (`--gandhar-health`), the player put at the edge of his walkway in front
+    of him by a second `--player-at`. Asserted, for the strike: the roll, the
+    touch, the damage applied; for the grab: the roll, the touch, message 8
+    posted from the player and handled, and the kill scene's camera (383,
+    `cam south`) cutting in.
+
+    SHOWN TO FAIL: the touch never meeting (no strike, no grab), the side table
+    reordered (message 5), the roll's comparison inverted (the other action).
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+
+    def run(at, frames):
+        return subprocess.run(
+            [play, fr, os.path.join(ROOT, "tables"), "--save",
+             os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "2",
+             "--stand", "1811,-9,1216,0", "--player-at", "60:125,-9,401,0",
+             "--player-at", "1000:" + at + ",180", "--shoot-health", "50000",
+             "--gandhar-health", "40", "--frames", str(frames), "--nodelay", "--no-crowd"],
+            capture_output=True, encoding="latin-1",
+            env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    o = run("175,-9,370", 1500)
+    roll = _re.search(r"GANDHAR the attack reaches \(slot \d+\): rolled (\d+) against (\d+)", o)
+    ent = _re.search(r"GANDHAR action (2[5-7]) entered", o)
+    touch = _re.search(r"GANDHAR's TOUCH \(sub_45BC50\) MEETS the player: .* radius (\d+), .* - his (\S+)", o)
+    hit = _re.search(r"PLAYER HIT by actor 187's strike - damage (\d+)", o)
+    strike = ((int(roll.group(1)), int(roll.group(2))) if roll else None,
+              int(ent.group(1)) if ent else None,
+              (int(touch.group(1)), touch.group(2)) if touch else None,
+              int(hit.group(1)) if hit else None)
+    g = run("120,-9,375", 1600)
+    roll = _re.search(r"GANDHAR the attack reaches \(slot \d+\): rolled (\d+) against (\d+)", g)
+    ent = _re.search(r"GANDHAR action (2[5-7]) entered", g)
+    touch = _re.search(r"GANDHAR's TOUCH \(sub_45BC50\) MEETS the player: .* - his (\S+)", g)
+    msg = _re.search(r"GANDHAR posts message (\d+) from (\d+) \((\w+)\)", g)
+    cam = _re.search(r"^camera (\d+): eye .* cut$", g[g.find("GANDHAR posts message"):], _re.M) \
+        if "GANDHAR posts message" in g else None
+    grab = ((int(roll.group(1)), int(roll.group(2))) if roll else None,
+            int(ent.group(1)) if ent else None,
+            touch.group(1) if touch else None,
+            (int(msg.group(1)), int(msg.group(2)), msg.group(3)) if msg else None,
+            int(cam.group(1)) if cam else None)
+    return (strike, grab), \
+           (((0, 40), 26, (381, "UAvantd"), 11), ((95, 40), 25, "UAvantd", (8, 49, "handled"), 383)), \
+           "the STRIKE (the roll, the action, the touch's radius and the mesh met, the " \
+           "damage applied) and the GRAB (the roll, the action, the mesh met, the message, " \
+           "its sender and handling, the kill scene's camera)"
+
+
 def c_engine_head_camera():
     r"""A WORLD CAMERA ON THE PLAYER'S HEAD - subject kinds 1 and 3
     (`todo/drift-audit.md`, the follow-up to S14).
@@ -43516,6 +43589,7 @@ SLOW = [
     ("engine: astaroth restart", c_engine_astaroth_restart, "todo/astaroth.md played; backends/sdl/playframe_modes_parts.cpp"),
     ("engine: astaroth floor", c_engine_astaroth_floor, "todo/astaroth.md played 4; backends/sdl/playframe_world_staged.cpp"),
     ("engine: gandhar head", c_engine_gandhar_head, "todo/gandhar.md 3b; actor/shoothit.h"),
+    ("engine: gandhar grab", c_engine_gandhar_grab, "todo/gandhar.md 4; actor/gandhar.h"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),

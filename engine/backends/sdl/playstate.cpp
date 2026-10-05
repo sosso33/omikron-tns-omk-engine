@@ -751,31 +751,7 @@ omk::AstarothWorld PlayState::astarothWorld(Staged& s, omk::ShootRecord& rec, fl
     };
     // the SLAM: `sub_423B10(target, dmg, dir)`, the player's arm
     w.strike = [this, &s](int dmg, const float dir[3]) {
-        if (!player) return;
-        const std::size_t recAt = static_cast<std::size_t>(omk::GameState::kPlayerRecord);
-        const std::size_t recLen = static_cast<std::size_t>(omk::GameState::kPlayerRecordSize);
-        omk::StrikeIn sin;
-        sin.damage = dmg;
-        sin.victimIsPlayer = true;
-        sin.victimInShoot = player->state() == omk::ActorState::Shoot;
-        std::int32_t shield = 0;
-        omk::readActorProperty(state.raw().subspan(recAt, recLen), 17, shield);
-        sin.bodyShield = shield;
-        sin.difficulty = settings.v.shootDifficulty;
-        sin.victimYaw = player->facing();
-        sin.dir[0] = dir[0];
-        sin.dir[2] = dir[2];
-        shootWake(n, "Astaroth's slam (sub_423B10)");
-        const omk::HitOut sho = omk::shootApplyStrike(playerShootRec, sin);
-        std::printf("frame %ld: actor %d %s - ASTAROTH's SLAM (sub_423B10): damage %d at "
-                    "%.0f away\n", n, s.actor, s.model.c_str(), dmg,
-                    std::sqrt(double(dir[0]) * dir[0] + double(dir[2]) * dir[2]));
-        if (sho.refused)
-            std::printf("  PLAYER strike REFUSED (`sub_423B10` returns -1)\n");
-        else if (sho.healthWas <= 0)
-            std::printf("  the player is down already (health %d): nothing\n", sho.healthWas);
-        else
-            applyPlayerDamage(n, s.actor, "slam", dmg, int(shield), sho);
+        strikePlayer(s, dmg, dir, "ASTAROTH's SLAM", "slam");
     };
     // state 18: `sub_435020` / `sub_435770` / `sub_4353E0` on the player,
     // and `sub_4359A0(+188, his cell, the player's, 1)`
@@ -813,10 +789,99 @@ omk::AstarothWorld PlayState::astarothWorld(Staged& s, omk::ShootRecord& rec, fl
     return w;
 }
 
+// A staged body as `sub_45E9C0` and `sub_45BC50` see it (`actor/shoothit.h`):
+// each mesh at its `meshAt` in its `meshRot` as DRAWN last frame, bounded by
+// its own record's +76 centre, +88 radius and +92/+104 box. Every drawn actor
+// - the engine's list is every ATTACHED one (`Actor_Attach` -> `sub_45DFF0`).
+// `drawnNow` false: the meshes as posed last frame whatever this frame's
+// `drawn` says - for a caller inside the body's own turn, where `drawn` has
+// been cleared and not yet set again (Gandhar's brain asking for a touch)
+bool PlayState::hitBodyOf(const Staged& s, omk::HitBody& hb, bool drawnNow) const {
+    if (s.actor < 0 || !s.mo || (drawnNow && !s.drawn)) return false;
+    const std::size_t nm = s.mo->meshes.size();
+    if (s.meshAt.size() != nm * 3 || s.meshRot.size() != nm * 9) return false;
+    hb = omk::HitBody{};
+    hb.actor = s.actor;
+    hb.root = s.mo->root;
+    hb.meshes.resize(nm);
+    for (std::size_t mi = 0; mi < nm; ++mi) {
+        const omk::Mesh& me = s.mo->meshes[mi];
+        omk::HitMesh& hm = hb.meshes[mi];
+        for (int k = 0; k < 3; ++k) {
+            hm.pos[k] = s.meshAt[mi * 3 + static_cast<std::size_t>(k)];
+            hm.centre[k] = me.centre[k];
+            hm.boxMin[k] = me.boxMin[k];
+            hm.boxMax[k] = me.boxMax[k];
+        }
+        for (int k = 0; k < 9; ++k)
+            hm.m[k] = s.meshRot[mi * 9 + static_cast<std::size_t>(k)];
+        hm.radius = me.radius;
+    }
+    return true;
+}
+
+// THE PLAYER'S BODY, actor -1: his meshes as drawn last frame - the
+// first-person frame draws only a few of them, and all of them are posed
+bool PlayState::playerHitBody(omk::HitBody& hb) const {
+    if (!player || !playerMeshAtKnown ||
+        playerMeshAt.size() != playerMeshes.size() * 3 ||
+        playerMeshRot.size() != playerMeshes.size() * 9)
+        return false;
+    hb = omk::HitBody{};
+    hb.actor = -1;
+    for (std::size_t i = 0; i < playerMeshes.size(); ++i)
+        if (playerMeshes[i].parent < 0) { hb.root = static_cast<int>(i); break; }
+    hb.meshes.resize(playerMeshes.size());
+    for (std::size_t mi = 0; mi < playerMeshes.size(); ++mi) {
+        const omk::Mesh& me = playerMeshes[mi];
+        omk::HitMesh& hm = hb.meshes[mi];
+        for (int k = 0; k < 3; ++k) {
+            hm.pos[k] = playerMeshAt[mi * 3 + static_cast<std::size_t>(k)];
+            hm.centre[k] = me.centre[k];
+            hm.boxMin[k] = me.boxMin[k];
+            hm.boxMax[k] = me.boxMax[k];
+        }
+        for (int k = 0; k < 9; ++k)
+            hm.m[k] = playerMeshRot[mi * 9 + static_cast<std::size_t>(k)];
+        hm.radius = me.radius;
+    }
+    return true;
+}
+
+// `sub_423B10(player, dmg, dir)` - the DIRECT DAMAGE a boss deals the player
+// (Astaroth's slam, Gandhar's strike): the shield, the difficulty, the hurt
+void PlayState::strikePlayer(Staged& s, int dmg, const float dir[3], const char* who,
+                             const char* kind) {
+    if (!player) return;
+    const std::size_t recAt = static_cast<std::size_t>(omk::GameState::kPlayerRecord);
+    const std::size_t recLen = static_cast<std::size_t>(omk::GameState::kPlayerRecordSize);
+    omk::StrikeIn sin;
+    sin.damage = dmg;
+    sin.victimIsPlayer = true;
+    sin.victimInShoot = player->state() == omk::ActorState::Shoot;
+    std::int32_t shield = 0;
+    omk::readActorProperty(state.raw().subspan(recAt, recLen), 17, shield);
+    sin.bodyShield = shield;
+    sin.difficulty = settings.v.shootDifficulty;
+    sin.victimYaw = player->facing();
+    sin.dir[0] = dir[0];
+    sin.dir[2] = dir[2];
+    shootWake(n, "a boss's direct damage (sub_423B10)");
+    const omk::HitOut sho = omk::shootApplyStrike(playerShootRec, sin);
+    std::printf("frame %ld: actor %d %s - %s (sub_423B10): damage %d at %.0f away\n", n,
+                s.actor, s.model.c_str(), who, dmg,
+                std::sqrt(double(dir[0]) * dir[0] + double(dir[2]) * dir[2]));
+    if (sho.refused)
+        std::printf("  PLAYER strike REFUSED (`sub_423B10` returns -1)\n");
+    else if (sho.healthWas <= 0)
+        std::printf("  the player is down already (health %d): nothing\n", sho.healthWas);
+    else
+        applyPlayerDamage(n, s.actor, kind, dmg, int(shield), sho);
+}
+
 // GANDHAR's world (`actor/gandhar.h`, `todo/gandhar.md`): the clips, the
-// sight, the turn, the attack pick, the posts, his step's wall test and his
-// FIRE; the TOUCH (`sub_45BC50`) is step 4 and answers "no" until then -
-// LABELLED.
+// sight, the turn, the attack pick, the posts, his step's wall test, his fire,
+// and the TOUCH his grab and strike ask.
 omk::GandharWorld PlayState::gandharWorld(Staged& s, omk::ShootRecord& rec, float dt) {
     omk::GandharWorld w;
     const int grp = static_cast<int>(rec.type);
@@ -914,6 +979,60 @@ omk::GandharWorld PlayState::gandharWorld(Staged& s, omk::ShootRecord& rec, floa
     w.say = [this, &s](const std::string& line) {
         std::printf("frame %ld: actor %d %s - GANDHAR %s\n", n, s.actor, s.model.c_str(),
                     line.c_str());
+    };
+    // `sub_440C80(player) ; sub_45BC50(his node, the player's)`: his root
+    // mesh's sphere against the player's node boxes, both as DRAWN last frame
+    w.touch = [this, &s]() {
+        omk::HitBody him, them;
+        const bool hb1 = hitBodyOf(s, him, false), hb2 = playerHitBody(them);
+        if (!hb1 || !hb2) {
+            std::printf("frame %ld: actor %d %s - GANDHAR's TOUCH (sub_45BC50) not tested: %s%s\n",
+                        n, s.actor, s.model.c_str(), hb1 ? "" : "his body is not drawn ",
+                        hb2 ? "" : "the player's body is not posed");
+            return false;
+        }
+        const int m = omk::shootBodyTouch(him, them);
+        // ...and the geometry either way, which is what a miss needs
+        const omk::HitMesh& r = him.meshes[static_cast<std::size_t>(him.root)];
+        const float c[3] = {r.pos[0] + r.m[0] * r.centre[0] + r.m[3] * r.centre[1] + r.m[6] * r.centre[2],
+                            r.pos[1] + r.m[1] * r.centre[0] + r.m[4] * r.centre[1] + r.m[7] * r.centre[2],
+                            r.pos[2] + r.m[2] * r.centre[0] + r.m[5] * r.centre[1] + r.m[8] * r.centre[2]};
+        double best = 1e30;
+        for (const auto& hm : them.meshes) {
+            const double dx = hm.pos[0] - c[0], dy = hm.pos[1] - c[1], dz = hm.pos[2] - c[2];
+            best = std::min(best, std::sqrt(dx * dx + dy * dy + dz * dz));
+        }
+        std::printf("frame %ld: actor %d %s - GANDHAR's TOUCH (sub_45BC50) %s: his root sphere at "
+                    "%.0f %.0f %.0f radius %.0f, the player's nearest node %.0f away%s%s\n", n,
+                    s.actor, s.model.c_str(), m >= 0 ? "MEETS the player" : "misses",
+                    double(c[0]), double(c[1]), double(c[2]), double(r.radius), best,
+                    m >= 0 ? " - his " : "", m >= 0 ? playerMeshes[static_cast<std::size_t>(m)].name : "");
+        return m >= 0;
+    };
+    // the grab's message: his node against his floor's box
+    w.side = [this, &s, &rec]() {
+        const auto it = gandharActors.find(s.actor);
+        const int fl = static_cast<signed char>(rec.node & 0xFF);
+        if (it == gandharActors.end() || !shootMap.valid() || fl < 0 ||
+            fl >= static_cast<int>(shootMap.floors().size()))
+            return -1;
+        return omk::gandharGrabSide(it->second.node[0], it->second.node[2],
+                                    shootMap.floors()[static_cast<std::size_t>(fl)].bound);
+    };
+    // event 44, property 22 of HIM - the struct's value starts at 11, which
+    // stands when he has no such property
+    w.strikeDamage = [this, &s]() {
+        std::int32_t v = 11;
+        if (!session_->actorProperty(s.actor, 22, v)) v = 11;
+        return static_cast<int>(v);
+    };
+    // `sub_423B10(player, damage, (player - his node) in x / z)`
+    w.strike = [this, &s](int dmg) {
+        const auto it = gandharActors.find(s.actor);
+        if (!player || it == gandharActors.end()) return;
+        const float dir[3] = {float(player->pos()[0]) - it->second.node[0], 0.0f,
+                              float(player->pos()[2]) - it->second.node[2]};
+        strikePlayer(s, dmg, dir, "GANDHAR's STRIKE", "strike");
     };
     return w;
 }

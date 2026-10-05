@@ -108,6 +108,7 @@ struct PlayState {
     float (&aimAt)[3] = opt.aimAt;
     bool & aimAtSet = opt.aimAtSet;
     long & playerAtFrame = opt.playerAtFrame;
+    long & playerAt2Frame = opt.playerAt2Frame;
     float (&playerAt)[4] = opt.playerAt;
     long & astarothSoulsAt = opt.astarothSoulsAt;
     int & astarothHealth = opt.astarothHealth;
@@ -774,6 +775,10 @@ struct PlayState {
     // his tick's world (`actor/astaroth.h` AstarothWorld) and his FIRE (`sub_44CDF0`)
     omk::AstarothWorld astarothWorld(Staged& s, omk::ShootRecord& rec, float dt);
     omk::GandharWorld gandharWorld(Staged& s, omk::ShootRecord& rec, float dt);
+    bool hitBodyOf(const Staged& s, omk::HitBody& hb, bool drawnNow = true) const;   // a body as the bolt sweep sees it
+    bool playerHitBody(omk::HitBody& hb) const;                // the player's, actor -1
+    void strikePlayer(Staged& s, int dmg, const float dir[3], const char* who,
+                      const char* kind);   // sub_423B10
     void astarothFire(Staged& s, omk::ShootRecord& rec, int slot, const float target[3]);
     bool recordFire(Staged& s, omk::ShootRecord& rec, int slot, const float target[3],
                     const char* who, float slot1Wait);

@@ -221,6 +221,10 @@ struct PlayOptions {
     // --player-at F:X,Y,Z,YAW: HARNESS, the player put down there at frame F
     long  playerAtFrame = -1;
     float playerAt[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    // --player-at given a SECOND time: a later placement (todo/gandhar.md 4 -
+    // the cave's meeting first, then beside Gandhar)
+    long  playerAt2Frame = -1;
+    float playerAt2[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     // --astaroth-souls F: HARNESS, all six souls struck down at frame F
     long  astarothSoulsAt = -1;
     // --astaroth-health N: HARNESS, his record +92 at the setup

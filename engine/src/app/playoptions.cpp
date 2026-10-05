@@ -159,7 +159,8 @@ int PlayOptions::parse(int argc, char** argv) {
 "  --aim-at X,Y,Z   HARNESS: every shot the player fires in shoot mode is aimed\n"
 "                   from its muzzle at that world point (todo/astaroth.md)\n"
 "  --player-at F:X,Y,Z,YAW HARNESS: the player put down at that point at frame\n"
-"                   F (todo/astaroth.md 2 - no shipped address is behind him)\n"
+"                   F (todo/astaroth.md 2 - no shipped address is behind him);\n"
+"                   given twice, the second is a later placement\n"
 "  --astaroth-health N HARNESS: Astaroth's health (+92) written as N at his\n"
 "                   setup, so a check can kill him in a few hits\n"
 "  --gandhar-health N HARNESS: Gandhar's health (+92) written as N at his\n"
@@ -565,8 +566,13 @@ int PlayOptions::parse(int argc, char** argv) {
         else if (a == "--shoot-end" && i + 1 < argc) shootEndAt = std::atol(argv[++i]);
         else if (a == "--shoot-health" && i + 1 < argc) shootHealth = std::atoi(argv[++i]);
         else if (a == "--player-at" && i + 1 < argc) {
-            if (std::sscanf(argv[++i], "%ld:%f,%f,%f,%f", &playerAtFrame, &playerAt[0],
-                            &playerAt[1], &playerAt[2], &playerAt[3]) != 5)
+            // a second `--player-at` is a second, later placement
+            if (playerAtFrame >= 0) {
+                if (std::sscanf(argv[++i], "%ld:%f,%f,%f,%f", &playerAt2Frame, &playerAt2[0],
+                                &playerAt2[1], &playerAt2[2], &playerAt2[3]) != 5)
+                    playerAt2Frame = -1;
+            } else if (std::sscanf(argv[++i], "%ld:%f,%f,%f,%f", &playerAtFrame, &playerAt[0],
+                                   &playerAt[1], &playerAt[2], &playerAt[3]) != 5)
                 playerAtFrame = -1;
         }
         else if (a == "--astaroth-souls" && i + 1 < argc) astarothSoulsAt = std::atol(argv[++i]);

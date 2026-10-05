@@ -496,26 +496,8 @@ void PlayState::controlFlight() {
             // ACTOR_STATE 3. The supermarket's `V5H_FNM` stands beside
             // its gunman. (The street crowd and the vehicles are the
             // slider system's nodes, not attached actors - not here.)
-            if (!up || up->actor < 0 || !up->mo || !up->drawn) continue;
-            const std::size_t nm = up->mo->meshes.size();
-            if (up->meshAt.size() != nm * 3 || up->meshRot.size() != nm * 9) continue;
             omk::HitBody hb;
-            hb.actor = up->actor;
-            hb.root = up->mo->root;
-            hb.meshes.resize(nm);
-            for (std::size_t mi = 0; mi < nm; ++mi) {
-                const omk::Mesh& me = up->mo->meshes[mi];
-                omk::HitMesh& hm = hb.meshes[mi];
-                for (int k = 0; k < 3; ++k) {
-                    hm.pos[k] = up->meshAt[mi * 3 + static_cast<std::size_t>(k)];
-                    hm.centre[k] = me.centre[k];
-                    hm.boxMin[k] = me.boxMin[k];
-                    hm.boxMax[k] = me.boxMax[k];
-                }
-                for (int k = 0; k < 9; ++k)
-                    hm.m[k] = up->meshRot[mi * 9 + static_cast<std::size_t>(k)];
-                hm.radius = me.radius;
-            }
+            if (!up || !hitBodyOf(*up, hb)) continue;
             bodies.push_back(std::move(hb));
         }
         // THE PLAYER'S BODY (the gunmen's shots, step 2): the engine's
@@ -524,28 +506,10 @@ void PlayState::controlFlight() {
         // a bolt's owner, -1 for his. His meshes as drawn last frame,
         // like everyone's; the first-person frame draws only a few of
         // them, and all of them are posed.
-        if (shootMode && player && playerMeshAtKnown &&
-            playerMeshAt.size() == playerMeshes.size() * 3 &&
-            playerMeshRot.size() == playerMeshes.size() * 9) {
+        if (shootMode) {
             omk::HitBody hb;
-            hb.actor = -1;
-            for (std::size_t i = 0; i < playerMeshes.size(); ++i)
-                if (playerMeshes[i].parent < 0) { hb.root = static_cast<int>(i); break; }
-            hb.meshes.resize(playerMeshes.size());
-            for (std::size_t mi = 0; mi < playerMeshes.size(); ++mi) {
-                const omk::Mesh& me = playerMeshes[mi];
-                omk::HitMesh& hm = hb.meshes[mi];
-                for (int k = 0; k < 3; ++k) {
-                    hm.pos[k] = playerMeshAt[mi * 3 + static_cast<std::size_t>(k)];
-                    hm.centre[k] = me.centre[k];
-                    hm.boxMin[k] = me.boxMin[k];
-                    hm.boxMax[k] = me.boxMax[k];
-                }
-                for (int k = 0; k < 9; ++k)
-                    hm.m[k] = playerMeshRot[mi * 9 + static_cast<std::size_t>(k)];
-                hm.radius = me.radius;
-            }
-            bodies.push_back(std::move(hb));
+            if (playerHitBody(hb))
+                bodies.push_back(std::move(hb));
         }
         // what the sweep is given, once per shoot mode - the first
         // question when a bolt passes through somebody

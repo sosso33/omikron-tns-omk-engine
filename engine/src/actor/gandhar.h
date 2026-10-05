@@ -85,9 +85,10 @@ struct GandharWorld {
     std::function<bool(int arm)> fire;                      // `sub_44CDF0(him, arm, target)`
     std::function<int()> pickAttack;                        // `sub_421020`, 0 none
     std::function<bool()> touch;                            // `sub_45BC50(him, the player)`
-    std::function<int()> side;                              // the grab's message, 5..8
+    std::function<int()> side;                              // the grab's message, 5..8 (`gandharGrabSide`)
     std::function<int()> strikeDamage;                      // event 44: his property 22
-    std::function<void(int damage, const float dir[3])> strike;   // `sub_423B10(player, ..)`
+    // `sub_423B10(player, damage, the player less his node in x / z)`
+    std::function<void(int damage)> strike;
     std::function<int()> rnd;                               // the CRT's `rand()`
     // event 43: message 3 (his death) is sent from HIM, the grab's 5..8 from
     // the PLAYER (`sub_47F340`: `v17[1] = rec+96`, his target)
@@ -108,6 +109,13 @@ void gandharEnter(GandharActor& a, ShootRecord& rec, const float pos[3], int pro
 // a byte-2 wall a nudge of `+speed` along x or z). WRITES his record x / z
 // (`pos`) and returns the step for the caller to move the node by.
 void gandharStep(GandharActor& a, float speed, float dt, float out[2], const GandharWorld& w);
+
+// The GRAB's message (`sub_47F340`, read from the assembly at 0x47F3F0..):
+// from his node's (x, z) to his floor's box (`dword_907D00[floor]`: minX maxX
+// at +0/+4, minZ maxZ at +16/+20 - the `Map2d` floor's `bound[0,1,4,5]`), the
+// nearer x side and the nearer z side, then the nearer of the two - x on a
+// tie, the max side on a tie within an axis. Min x 7, max x 6, min z 8, max z 5.
+int gandharGrabSide(float x, float z, const float bound[6]);
 
 // `sub_47EBF0(him, clip, out, a4)`: the clip clock. 1 while the clip runs, 2
 // from half its frames, 0 when it ends - where the clock wraps to `1 + dt`

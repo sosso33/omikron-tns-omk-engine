@@ -163,6 +163,20 @@ void gandharStep(GandharActor& a, float speed, float dt, float out[2], const Gan
     if (!wall(0.0f, speed)) { take(0.0f, speed); return; }
 }
 
+int gandharGrabSide(float x, float z, const float bound[6]) {
+    const float a = x - bound[0], b = bound[1] - x;      // to min x, to max x
+    const float c = z - bound[4], d = bound[5] - z;      // to min z, to max z
+    int xs = 1;
+    float xd = b;
+    if (a < b) { xs = 0; xd = a; }                       // `test ah, 1` - strictly below
+    int zs = 3;
+    float zd = d;
+    if (c < d) { zs = 2; zd = c; }
+    const int side = (xd <= zd) ? xs : zs;               // `test ah, 41h` - below or equal
+    static const int kMessage[4] = {7, 6, 8, 5};
+    return kMessage[side];
+}
+
 int gandharClock(GandharActor& a, float dt, bool stopAtEnd, const GandharWorld& w) {
     if (a.clip < 0) return 1;           // nothing moves
     const float frames = static_cast<float>(a.clipFrames);
@@ -307,8 +321,7 @@ bool tickAction(GandharActor& a, ShootRecord& rec, float dt, float& facing,
             const int c = gandharClock(a, dt, true, w);
             if (c == 2 && !(rec.flags & 0x80u) && w.touch && w.touch()) {
                 const int dmg = w.strikeDamage ? w.strikeDamage() : 11;
-                const float dir[3] = {0, 0, 0};   // the frontend fills the push
-                if (w.strike) w.strike(dmg, dir);
+                if (w.strike) w.strike(dmg);
                 rec.flags |= 0x80u;
                 say(w, "the STRIKE lands: damage %d", dmg);
             }

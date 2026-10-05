@@ -379,6 +379,14 @@ void PlayState::harnessAstaroth() {
                     "%.0f %.0f facing %.0f\n", n, double(player->pos()[0]),
                     double(player->pos()[1]), double(player->pos()[2]), double(playerAt[3]));
     }
+    if (playerAt2Frame >= 0 && playerAtFrame < 0 && n >= playerAt2Frame && player) {
+        playerAt2Frame = -1;
+        player->placeAt(opt.playerAt2, opt.playerAt2[3]);
+        session.setPlayerPosition(player->pos(), opt.playerAt2[3]);
+        std::printf("frame %ld: PLAYER AT - the test harness's second --player-at puts him at "
+                    "%.0f %.0f %.0f facing %.0f\n", n, double(player->pos()[0]),
+                    double(player->pos()[1]), double(player->pos()[2]), double(opt.playerAt2[3]));
+    }
     // ...and the six souls struck down through the SAME callback a bolt's
     // world hit calls (`astarothWorldHit`, `sub_47FCF0`), three times each:
     // three of them are out of sight of the retry point, and the bolt's
