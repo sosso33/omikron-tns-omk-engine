@@ -1794,20 +1794,26 @@ int PlayState::modesQuitLoad() {
         // the PROGRAM is the start menu's own `Quitter`, a different item on
         // a different screen.
         //
-        // **The port ends the run instead, and that is a gap rather than a
-        // reading.** `omk-play`'s whole boot - the data root, the tables, the
-        // Session, the movies, the first area - is `main`'s body, not a
-        // function that can be called twice, so there is nothing here to
-        // restart into. The request, the flag and the two menu items are all
-        // the engine's; only what happens after the fade is missing, and the
-        // line below says so rather than pretending the run ended for the
-        // reader's own reason.
+        // **And so does the port, since 2026-10-05** (`todo/drift-audit.md`
+        // S3 and T1). It ended the run here, because `omk-play`'s boot was not
+        // something that could run twice; `game.restart` (op 152) needed the
+        // same restart and `Session::restart` now serves it - both pools freed,
+        // `IAM\START`, AREA 118 - while the frontend drops the old world
+        // (`Session::restarts()`). This is the SAME flag op 152 writes, so the
+        // pause screen's `Oui` and the sneak's quit tab are `requestRestart()`
+        // and the next pump does the rest.
+        //
+        // It is also the ONLY way the original loads in the middle of a
+        // session: screen 30 hides `Charger` (`Ui_BuildLoadPanel`) and the
+        // pause menu has no load, so a load mid-game is quit -> the start
+        // menu -> `Charger`, after the restart has already dropped the player.
+        // The pending load below therefore never meets a live controller -
+        // the state `todo/drift-audit.md` T1 was written about.
         if (quitRequested) {
-            std::printf("pause: `Quitter le jeu` confirmed - the engine would "
-                        "run Script_Pump(3), Game_NewGame and fade in from "
-                        "white at the START MENU; this viewer has no restart, "
-                        "so the run ends here\n");
-            break;
+            quitRequested = false;
+            session.requestRestart();
+            std::printf("frame %ld: `Quitter le jeu` confirmed - dword_4E6C9C = 1, the "
+                        "restart served at the next pump\n", n);
         }
 
         // ---- THE PENDING LOAD, served the way `sub_408410` serves it

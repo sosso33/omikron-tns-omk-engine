@@ -10737,7 +10737,7 @@ def c_engine_pause():
     mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
     play = os.path.join(eng, "build", "omk-play")
     if mk.returncode != 0 or not os.path.exists(play):
-        return static + (True,) * 6, (True,) * 16, \
+        return static + (True,) * 8, (True,) * 18, \
                "no SDL - the frontend is optional (PORTING A8)"
     env = dict(os.environ, SDL_VIDEODRIVER="dummy")
     fr, tb = omkpaths.data_root(), os.path.join(ROOT, "tables")
@@ -10764,8 +10764,12 @@ def c_engine_pause():
         "world: 140 frames drawn" in a,
         "Quitter le jeu` confirmed" not in b,     # `Non` does NOT quit
         "Quitter le jeu` confirmed" in c,         # `Oui` does
+        # ...and it RESTARTS the game, as `sub_409090`'s flag does - the
+        # port ended the run here until 2026-10-05 (todo/drift-audit.md T1)
+        bool(re.search(r"^frame \d+: game\.restart - Game_NewGame, area 118", c, re.M)),
+        "restart - the frontend dropped the player" in c,
     )
-    return static + ran, (True,) * 16, \
+    return static + ran, (True,) * 18, \
            "`Game_RunLoop`'s ESC poll - the push, the pause flag it is " \
            "guarded by, the screen id and that the call is UI_LoadScreen; " \
            "the four item callbacks' bytes, `sub_409090`'s five, and the " \
@@ -10773,7 +10777,8 @@ def c_engine_pause():
            "carrying 0x20000400 that make it decline; then the port RUN - " \
            "ESC opens it over a live street, the world keeps drawing, " \
            "`Reprendre le jeu` closes it, and of the confirm's two rows only " \
-           "`Oui` asks for the quit"
+           "`Oui` asks for the quit - which restarts the game at AREA 118 with " \
+           "the old player dropped"
 
 
 def c_engine_screen_close():
