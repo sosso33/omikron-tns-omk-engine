@@ -3635,7 +3635,11 @@ clock every tick runs is `sub_47EBF0`: `+188 += dt`, **1** while the clip runs,
 to `1 + dt` and moves nothing. 16 waits `(rand() & 0x1F) + 30` frames; 17 RISES
 (`node.y - +64 <= -150`) and 18 SINKS (`>= 250`) at `+68` a frame with no clip
 - he comes up out of the lava and goes back into it; 19/21/22/27 play their
-clip; 20 and 24 step toward the player as it plays; 23 fires once at the clip's
+clip; 16, 17, 18, 20 and 24 STEP (`sub_47E5F0`: `+68` along his facing, the
+cone test's rotated +Z negated; the wall test of one step from his record
+point cuts it to x alone, z alone or nothing, a byte-2 wall nudges `+speed`
+along x or z, and a refused own spot sends him to the nearest standable point
+on floor 1); 23 fires once at the clip's
 half, 24 on a coin flip each frame; and 19, 20, 23 and 24, once `sub_421020`
 finds an attack in range, roll `(rand() % 100 <= p) + 25` with p 100 / 70 / 40
 by band - **26 the STRIKE always when healthy**, 25 the GRAB 29% of the time

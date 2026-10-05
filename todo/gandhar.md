@@ -126,7 +126,21 @@ root delta (`Anim_SetFrame`) moves his node. **`sub_47E5F0`**: a step of
    The actions as clip players first (21, 22, 27, and 16's wait). Fix
    the headless route. Check: the action sequence of the healthy script, his
    death posting 3.
-2. **His movement**: `sub_47E5F0`'s step and the rise / sink (17, 18), on the
+2. ✔ **DONE 2026-10-05.** The rise and sink landed in step 1; this is
+   `sub_47E5F0`, transcribed whole in `gandharStep`: `+68` along his facing as
+   the cone test leaves it (`flt_90E0E4`/`flt_90E0F8` = `(-sin yaw, cos yaw)`,
+   now `AcquireOut::fwdX/fwdZ`), the wall test of one step from his RECORD
+   point (`sub_421140`, the port's `shootWallTest`) cutting it to x alone, z
+   alone or nothing, the byte-2 wall's own arm (a `+speed` nudge along x or
+   z), and - when his own spot is refused - the nearest standable point on
+   floor 1 from his NODE (`sub_4368E0`), at his entry too. He walks from
+   (202, 798) toward the player at 6 a frame, meets his floor's edge at z 573
+   (answer 1, map byte 0) and slides along x to (96, 573). `engine: gandhar`
+   extended (three mutations shown to fail). The step moves the record point
+   and the node by the same amount; the clip's own root motion moves only the
+   node, and each action's end snaps the node back onto the record
+   (`o3de_SetNodePos(+244, +60, +252)`), as the engine does.
+   Originally: **His movement**: `sub_47E5F0`'s step and the rise / sink (17, 18), on the
    floor cells. Check: the rise ends at -150, the sink at 250, the steps.
 3. **His fire**: 23 and 24 through `sub_44CDF0` (ported for Astaroth). Check:
    bolts from his marker, the coin flip of 24.
