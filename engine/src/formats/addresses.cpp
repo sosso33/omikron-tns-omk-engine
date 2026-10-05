@@ -41,6 +41,13 @@ std::vector<Address> readAddresses(std::span<const std::byte> b) {
         // way - a heading is an angle and angles wrap (CLAUDE.md 1).
         a.yaw = angle4096(i16at(b, o + 12));
         a.id  = i16at(b, o + 14);
+        for (int k = 0; k < 3; ++k) {
+            const std::int32_t raw = i32at(b, o + 4u * static_cast<std::size_t>(k));
+            a.memPos[k] = static_cast<std::int32_t>(static_cast<std::int64_t>(
+                double(100 * raw) * 0.00390625 * 0.3937007874015748 - 1.0));
+        }
+        a.memYaw = static_cast<std::int32_t>(static_cast<std::int64_t>(
+            double(i16at(b, o + 12)) * 0.087890625));
         out.push_back(a);
     }
     return out;

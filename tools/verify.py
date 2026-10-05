@@ -40402,6 +40402,52 @@ def c_engine_shoot_requests():
            "3; and his first brain line (frame, state): none before the alert"
 
 
+def c_engine_address_camera():
+    r"""A CAMERA FRAMED ON AN ADDRESS (`todo/drift-audit.md` S14).
+
+    A world camera record's `+32`/`+34` are the subject KINDS `sub_415A10`
+    switches on - 0 an actor, 9 an ADDRESS (`sub_415850`: the record's
+    in-memory integers as the base point, its integer heading as the
+    rotation) - and `camera.set.at_address` (op 126) is what hands an address
+    over, `Address_Find(field 1)` in both subject slots where `camera.set`
+    puts `Actor_Player()`. The port stored the address and never read it, so
+    the rooftops' ladder cameras - 4781..4784, the game's only kind-9
+    cameras, at all 84 shipped op-126 sites (SCENE 62) - were resolved
+    against the PLAYER, whose heading (267, facing the wall) is the
+    opposite of the foot address's (90): the climb looked away from the
+    ladder.
+
+    The rooftops' first ladder through its own zone (4288): camera 4782
+    framed on address 710 'Echelle 1 Bas' (heading 90), then 4781 on 709
+    'Echelle 1 Haut' (heading 270), each eye where the address puts it.
+
+    Shown to fail: the player's heading in place of the address's moves both
+    eyes.
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    o = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"), "--save",
+         os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "249",
+         "--scene-chunk", "62", "--zone-enable", "4288",
+         "--stand", "25428,-364,1711,267", "--shoot", "--shoot-health", "1000",
+         "--keys", "28,28,28", "--keydelay", "40", "--frames", "100", "--nodelay"],
+        capture_output=True, encoding="latin-1",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    framed = _re.findall(r"camera (\d+) framed on ADDRESS (\d+) \(subject kind 9, "
+                         r"sub_415850\) at \S+ \S+ \S+ heading (-?\d+) - eye (\S+) (\S+) (\S+)", o)
+    return framed, \
+           [("4782", "710", "90", "25436", "-433", "1707"),
+            ("4781", "709", "270", "25380", "-551", "1710")], \
+           "the ladder's two cameras: id, the address framed, its heading, and the eye " \
+           "resolved against it"
+
+
 def c_game_clock():
     r"""GAME_STATE 6: the Omikron calendar - 41 days, 13 months, year 7216.
 
@@ -42978,6 +43024,7 @@ SLOW = [
     ("engine: astaroth tick", c_engine_astaroth_tick, "todo/astaroth.md 3; actor/astaroth.h"),
     ("engine: camera shake", c_engine_camera_shake, "todo/astaroth.md 4; script/area.h"),
     ("engine: shoot requests", c_engine_shoot_requests, "todo/drift-audit.md S13; actor/shootmode.h"),
+    ("engine: address camera", c_engine_address_camera, "todo/drift-audit.md S14; o3de/worldcam.h"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),

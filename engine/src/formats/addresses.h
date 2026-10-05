@@ -44,6 +44,13 @@ struct Address {
     int   id = -1;
     float pos[3] = {0, 0, 0};
     float yaw = 0.0f;        // degrees, from the 4096-per-turn `+12`
+    // ...and the record AS `Area_Load` LEAVES IT IN MEMORY, which is what a
+    // camera subject reads (`sub_415850`, subject kind 9): every coordinate
+    // TRUNCATED to an integer (`(int64)(100 * v / 256 / 2.54 - 1)`) and the
+    // heading to integer degrees, `(int64)(raw * 0.087890625)` - truncated
+    // toward zero with NO wrap, so it can differ by a degree from `yaw`
+    std::int32_t memPos[3] = {0, 0, 0};
+    std::int32_t memYaw = 0;
     bool  valid() const { return id >= 0; }
 };
 

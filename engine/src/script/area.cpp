@@ -1535,6 +1535,13 @@ void Session::trackPlayer() {
     playerPlaced_ = true;
 }
 
+const Address* Session::findAddress(int id) const {
+    for (int s = 0; s < 2; ++s)
+        for (const auto& a : slots_[s].addresses)
+            if (a.id == id) return &a;
+    return nullptr;
+}
+
 bool Session::placeActorAt(int addressId) {
     // `Address_Find` searches the two resident chunk slots at `dword_69BC40`,
     // slot 0 first.

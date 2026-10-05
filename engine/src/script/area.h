@@ -602,6 +602,9 @@ public:
     // puts `Actor_Player()` twice. -1 = the player. Read by whoever frames a
     // camera whose points are offsets.
     int  cameraSubjectAddress() const { return camSubjectAddress_; }
+    // `Address_Find` (0x0040E5E0): the address record by id over the two
+    // resident slots, slot 0 first. -> nullptr when neither holds it.
+    const Address* findAddress(int id) const;
     // For the walker: where the player is, from outside. Nothing here moves
     // him after a teleport; E2's `Walker` does, and tells the Session so the
     // subject-relative cameras and the zone scan (T13) see it.

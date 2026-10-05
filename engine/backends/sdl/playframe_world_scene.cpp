@@ -508,8 +508,37 @@ void PlayState::worldCamera() {
         session.setCameraSubjectLift(lift);
         const float* pp0 = session.playerPos();
         const float subj[3] = {pp0[0], pp0[1] - lift, pp0[2]};
-        const omk::ResolvedCamera rc = omk::resolveCamera(
+        omk::ResolvedCamera rc = omk::resolveCamera(
             *wc, subj, session.playerYaw());
+        // A SUBJECT OF KIND 9 IS AN ADDRESS, not the player (todo/drift-
+        // audit.md S14). `+32`/`+34` are the subject KINDS `sub_415A10`
+        // switches on, and kind 9 (`sub_415850`) reads the request's subject
+        // as an ADDRESS record: the base point its in-memory integers, the
+        // rotation (0, its integer heading, 0) - no pelvis lift. Only
+        // `camera.set.at_address` (op 126) hands one over, putting
+        // `Address_Find(field 1)` in both subject slots; the four kind-9
+        // cameras in the game (4781..4784, the rooftops' ladders) are the
+        // only ones it names, at all 84 shipped sites.
+        if (wc->eyeSubject == 9 || wc->atSubject == 9) {
+            if (const omk::Address* ad = session.findAddress(session.cameraSubjectAddress())) {
+                const float base[3] = {static_cast<float>(ad->memPos[0]),
+                                       static_cast<float>(ad->memPos[1]),
+                                       static_cast<float>(ad->memPos[2])};
+                const omk::ResolvedCamera ra = omk::resolveCamera(
+                    *wc, base, static_cast<float>(ad->memYaw));
+                if (wc->eyeSubject == 9) for (int k = 0; k < 3; ++k) rc.eye[k] = ra.eye[k];
+                if (wc->atSubject == 9)  for (int k = 0; k < 3; ++k) rc.at[k] = ra.at[k];
+                static int addrTold = -1000;
+                if (addrTold != wc->id * 10000 + ad->id) {
+                    addrTold = wc->id * 10000 + ad->id;
+                    std::printf("frame %ld: camera %d framed on ADDRESS %d (subject kind 9, "
+                                "sub_415850) at %d %d %d heading %d - eye %.0f %.0f %.0f\n",
+                                n, wc->id, ad->id, ad->memPos[0], ad->memPos[1],
+                                ad->memPos[2], ad->memYaw, double(rc.eye[0]),
+                                double(rc.eye[1]), double(rc.eye[2]));
+                }
+            }
+        }
         for (int k = 0; k < 3; ++k) {
             view.cam.eye[k] = rc.eye[k];
             view.cam.at[k]  = rc.at[k];
