@@ -34,8 +34,11 @@ int PlayState::run(int argc, char** argv) {
     // WHICH BUILD THIS IS, first: a console log is the only report a run
     // leaves, and a `--profile` that printed nothing at all could not say
     // whether the release build was installed (2026-10-05)
+    // RELEASE is the profiler's absence (`make release`, `vita-release`,
+    // `classic-release`); the classic Mac's development build has no
+    // instruments by design and is still a development build
     std::printf("build: %s - the profiler %s, the instruments %s\n",
-                OMK_PROFILE && omkInstrumentsBuilt() ? "development" : "RELEASE",
+                OMK_PROFILE ? "development" : "RELEASE",
                 OMK_PROFILE ? "compiled in (--profile)" : "compiled OUT (OMK_PROFILE=0)",
                 omkInstrumentsBuilt() ? "in" : "out");
     OMK_HEAPCHECK("main");

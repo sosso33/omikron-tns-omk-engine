@@ -172,6 +172,29 @@ file off the image.
 
 ---
 
+## 3d. THE GL1 STRAIGHT PRESENT, RUN ON TIGER (2026-10-05) - and the iBook
+
+`a98ca45` (`todo/cpu-vs-original.md` tier B): the AGL build draws the world
+at its letterbox place in the window's back buffer and SWAPS it - no
+readback, no CPU composite, no `glDrawPixels` - the interface blended over it
+in fixed function on a frame that has one, the DRIVER's dither (the
+reader's choice). `--gl1-composite` in `omk.args` keeps the old path.
+Measured on the emulated Tiger (the street start, 640x480, `OMKPlay` in
+`~/omk/cplay`, logs `out-direct.txt` / `out-composite.txt` there):
+
+| present | sim+draw | readback | present | a frame |
+|---|---|---|---|---|
+| composite | ~47 ms | ~74 | ~95 | ~216 ms (4.6 fps) |
+| straight | ~43 ms | 0 | ~0.7 | ~44 ms (~23 fps) |
+
+EMULATED timing - the reader ordered an **iBook G3 500 MHz, 640 MB** (ATI
+Rage Mobility 128, 8 MB; OS 9.2 and Tiger) to measure on: its numbers
+replace these. NOT yet looked at by a person on Tiger (`screencapture` over
+SSH writes nothing, and the host may not script the emulator's window), and
+the OVERLAY half (a subtitle, a fade, the fight's gauges over the world) not
+run there at all: `--fight-supermarket` is the scene for it. Not run on OS 9
+(its emulation has no 3D card).
+
 ## 4. What is next, in the order proposed
 
 1. ~~**The filtering DEFAULT**~~ - **DONE 2026-10-03**, the reader's

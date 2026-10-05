@@ -4,6 +4,8 @@
 // (2026-10-02); see `playframe.h` for what the names below refer to.
 #include "playframe.h"
 
+bool omkInstrumentsBuilt();   // playharness.cpp / playharness_off.cpp
+
 int PlayState::phasePresent() {
     bool done = false;
     do {
@@ -33,9 +35,13 @@ int PlayState::phasePresent() {
                             phSum[1] * 1000.0 / 60.0, phSum[2] * 1000.0 / 60.0,
                             phSum[3] * 1000.0 / 60.0);
                 gpuReportTimings();   // the GLES backend's counters
-                std::printf("frame %ld present: %ld of 60 straight from the GPU; on the CPU:", n, phGpu);
-                for (const auto& [why, count] : phKept) std::printf(" %s %ld,", why.c_str(), count);
-                std::printf("\n");
+                // counted by the instruments (`playharness.cpp`): a build
+                // without them would print "0 of 60" for every frame
+                if (omkInstrumentsBuilt()) {
+                    std::printf("frame %ld present: %ld of 60 straight from the GPU; on the CPU:", n, phGpu);
+                    for (const auto& [why, count] : phKept) std::printf(" %s %ld,", why.c_str(), count);
+                    std::printf("\n");
+                }
                 phGpu = 0;
                 phKept.clear();
                 std::printf("frame %ld spans (ms, mean of 60):", n);
