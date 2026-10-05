@@ -150,6 +150,48 @@ data, script, audio and input end to end with no GPU code - with the
 interface pillarboxed as section 3 decided. Played: the start menu answers,
 the flat draws, Kay'l walks.
 
+**WRITTEN 2026-10-06, NOT YET BUILT** - devkitPro is not installed on the
+M1 this was written on, so none of it has met a compiler. In
+`engine/backends/n3ds/`:
+
+* `CMakeLists.txt` - the engine library (`OMK_THREADS 0`, exceptions and
+  RTTI on), `omk_boot` (`tools/omk.cpp`) and `omk_play` (the viewer's game
+  code: the classic build's file list, `playgpu_none.cpp` - the software
+  reference - and `playharness_off.cpp`), each a `.3dsx` with the tables in
+  its ROMFS. devkitPro's CMake helpers (`ctr_generate_smdh`,
+  `ctr_create_3dsx`) are used as I remember them; the first configure says
+  whether that memory is right;
+* `n3ds_main.cpp` - the real `main` for both: the card layout
+  (`sdmc:/omk/gamedata`, `saves/GAMES`, `omk.ini`, `args.txt`), a dated
+  `.log` / `.err` pair a run, stdout and stderr TEED to the file and to
+  libctru's console on the bottom screen, the console's model, clock and
+  memory as the first lines, `bad_alloc` said rather than an abort, a
+  1 MB main stack (`__stacksize__`; `PlayState` is on the heap), and START
+  to leave once the program returns;
+* `n3dsfront.{h,cpp}` - `omk::Frontend` on libctru: the 640x480 frame
+  halved by an exact 2x2 box filter into a pillarboxed 320x240 on the top
+  screen (RGB565 straight into the turned framebuffer), the buttons as the
+  engine's joystick (A confirm and B back BY LABEL, a choice to play-test),
+  the circle pad and the New 3DS's C-stick as the sticks, START as ESCAPE,
+  START + SELECT to quit, the HOME menu's close obeyed; `ndsp` with four
+  1/20 s buffers refilled from `HostMixer` on the main thread; the clocks
+  from the system tick;
+* `playscene_off.cpp` - the `--scene` viewer refused, as on the classic Mac.
+
+**OWED IN SHARED CODE, left alone while other sessions work there** (the
+reader, 2026-10-06: "focus on new 3ds specific code for now"):
+
+* the NAME FIELD's keyboard - `playframe_modes_parts.cpp` opens the Vita's
+  IME under `#if defined(__vita__)`; the 3DS's `swkbd` wants the same hook,
+  better as a `Frontend` call (`editText`) both consoles implement than as a
+  second `#if`. Until then a new game cannot be named on the 3DS - a SAVE
+  (`--save` in `args.txt`) or `--area` starts play;
+* the films' hardware path (`playsetup_play.cpp`, `__vita__`), step 5's;
+* whatever the first build finds in `src/` (the Vita and classic builds each
+  found headers the Mac supplied, and `platform/profile.cpp` uses
+  `std::thread` / `std::mutex`, which devkitARM's libstdc++ may or may not
+  provide with `OMK_THREADS 0`).
+
 ### Step 2b - the bottom screen: the instrument panel
 
 A 320x240 RGB565 surface the CPU composites with the engine's own text
@@ -290,6 +332,10 @@ when a screen takes the bottom. Touch to select a row is an ENHANCEMENT and
 comes with that work, not before.
 
 ## 5. Traps already known
+
+* **No sound without the DSP firmware**: `ndspInit` fails unless the
+  console's DSP firmware has been dumped to `sdmc:/3ds/dspfirm.cdc` (the
+  DSP1 homebrew, once). The frontend says so in the log and runs silent.
 
 * **A run in the emulator is not a measurement** - Vita3K played what the
   console could not (the films, the frame time). Timing and memory come from

@@ -41159,6 +41159,9 @@ def c_licence_headers():
     **545 -> 547**: `engine/tools/hostmix_probe.cpp` (2026-10-04, `engine:
     music ring` - the census was not re-run that day) and
     `engine/tools/sound_equiv.cpp` (2026-10-05, `engine: device sounds`).
+    **560 -> 564**: `backends/n3ds/n3ds_main.cpp`, `n3dsfront.{h,cpp}` and
+    `playscene_off.cpp` (2026-10-06), the Nintendo 3DS build's entry and
+    libctru frontend (`todo/3ds-port.md` steps 0-2).
     **542 -> 545**: the profiler (2026-10-04, `todo/debug-tools.md` 1-2):
     `src/platform/profile.{h,cpp}` and `tools/omkprof.py` - re-pinned at step 2,
     as step 1 had run only its own check.
@@ -41198,7 +41201,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (560, [], 1, []), \
+           (564, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
