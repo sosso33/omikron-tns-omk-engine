@@ -266,8 +266,17 @@ void particleGeometry(Geometry& g, const ParticleField& f, const float eye[3],
     });
 }
 
+namespace {
+long g_fxBuilt = 0, g_fxGated = 0;   // `particleGateCounts`
+}  // namespace
+
+void particleGateCounts(long& built, long& gated) {
+    built = g_fxBuilt; gated = g_fxGated;
+    g_fxBuilt = g_fxGated = 0;
+}
+
 void particleGeometry(Geometry& g, const ParticleField& f, const float eye[3],
-                      const float at[3], const SpriteLookup& sprites) {
+                      const float at[3], const SpriteLookup& sprites, float nearZ, float farZ) {
     g.corners.clear();
     g.batches.clear();
     g.cornerMirror.clear();
@@ -308,6 +317,11 @@ void particleGeometry(Geometry& g, const ParticleField& f, const float eye[3],
     keyOf.clear();
     keys.clear();
     for (const auto& p : f.particles()) {
+        // the original's gate, on the centre's view depth (particles.h)
+        const float depth = (p.pos[0] - eye[0]) * fwd[0] + (p.pos[1] - eye[1]) * fwd[1] +
+                            (p.pos[2] - eye[2]) * fwd[2];
+        if (!(depth > nearZ && depth < farZ)) { ++g_fxGated; continue; }
+        ++g_fxBuilt;
         const SpriteFrames* sf = sprites(p.sprite);
         // `(frames - 1) * age / life` - the sprite's quads played across the
         // particle's own lifetime, not at a fixed rate - from the age BEFORE

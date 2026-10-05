@@ -2908,6 +2908,10 @@ void PlayState::worldStaged() {
         for (const auto& up : staged) if (up->drawn) { ++stagedDrawn; stagedGpu += up->gpu; }
         if (n - farTold >= 300 && !staged.empty()) {
             farTold = n;
+            long fxBuilt = 0, fxGated = 0;
+            omk::particleGateCounts(fxBuilt, fxGated);
+            std::printf("frame %ld: particles since the last line - %ld made into quads, %ld "
+                        "left out by the depth gate\n", n, fxBuilt, fxGated);
             std::printf("frame %ld: staged bodies - %zu staged, %d skinned and drawn, "
                         "%d beyond the clip distance and %d outside the view (not "
                         "skinned), %d posed by the renderer\n",

@@ -31,10 +31,21 @@ void PlayState::worldDrawLists() {
     for (int k = 0; k < 3; ++k) spriteAnchor[k] = view.cam.at[k];
     spriteAnchorSet = true;
     const bool scriptSprites = !noScriptSprites && session.scene().loaded() && !session.scene().sprites().empty();
+    // THE PARTICLES' DEPTH GATE, the original's (`Render_SubmitSprites`,
+    // `o3de/particles.h`): near the renderer's own cut, far the clip
+    // distance. OFF while a mirror reflects (last frame's word): the engine
+    // submits the sprites once a PASS with that pass's camera, and these are
+    // built once a frame with the eye's - a particle behind the eye can be in
+    // the reflection. `OMK_NO_FX_GATE=1` draws every particle, as before.
+    static const bool noFxGate = omk::envSet("OMK_NO_FX_GATE");
+    const bool fxGated = !noFxGate && !mirrorLive;
+    const float fxNear = fxGated ? omk::kNearCut : -std::numeric_limits<float>::infinity();
+    const float fxFar = fxGated && std::isfinite(clipInches) ? static_cast<float>(clipInches)
+                                                             : std::numeric_limits<float>::infinity();
     if ((session.scene().effects().count() || !ctlSprites.empty() || !foeSprites.empty() ||
          scriptSprites) && !spriteTab.empty()) {
         omk::particleGeometry(fxGeo, session.scene().effects(),
-                              view.cam.eye, view.cam.at, spriteLookup);
+                              view.cam.eye, view.cam.at, spriteLookup, fxNear, fxFar);
         // The `.CTL` sprites, each on its bone THIS frame (flag 1,
         // "follow the bone every frame" - all shipped records here
         // carry it; the others are placed once and this moves them
@@ -77,7 +88,7 @@ void PlayState::worldDrawLists() {
                 if (fr < c.from) continue;         // not in its window yet
                 ctlField.addParticle(p);
             }
-            omk::particleGeometry(ctlGeo, ctlField, view.cam.eye, view.cam.at, spriteLookup);
+            omk::particleGeometry(ctlGeo, ctlField, view.cam.eye, view.cam.at, spriteLookup, fxNear, fxFar);
             const std::size_t base = fxGeo.corners.size();
             for (omk::Batch b : ctlGeo.batches) { b.start += base; fxGeo.batches.push_back(b); }
             fxGeo.corners.insert(fxGeo.corners.end(), ctlGeo.corners.begin(), ctlGeo.corners.end());
@@ -122,7 +133,7 @@ void PlayState::worldDrawLists() {
             }
             if (placed) {
                 foeSpritesDrawn += placed;
-                omk::particleGeometry(ctlGeo, ctlField, view.cam.eye, view.cam.at, spriteLookup);
+                omk::particleGeometry(ctlGeo, ctlField, view.cam.eye, view.cam.at, spriteLookup, fxNear, fxFar);
                 const std::size_t base = fxGeo.corners.size();
                 for (omk::Batch b : ctlGeo.batches) { b.start += base; fxGeo.batches.push_back(b); }
                 fxGeo.corners.insert(fxGeo.corners.end(), ctlGeo.corners.begin(), ctlGeo.corners.end());
@@ -167,7 +178,7 @@ void PlayState::worldDrawLists() {
                 scField.addParticle(p);
             }
             omk::Geometry scGeo;
-            omk::particleGeometry(scGeo, scField, view.cam.eye, view.cam.at, spriteLookup);
+            omk::particleGeometry(scGeo, scField, view.cam.eye, view.cam.at, spriteLookup, fxNear, fxFar);
             const std::size_t base = fxGeo.corners.size();
             for (omk::Batch b : scGeo.batches) { b.start += base; fxGeo.batches.push_back(b); }
             fxGeo.corners.insert(fxGeo.corners.end(), scGeo.corners.begin(), scGeo.corners.end());

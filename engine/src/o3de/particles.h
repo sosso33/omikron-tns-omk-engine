@@ -126,6 +126,7 @@
 #include "formats/sfx.h"
 #include "o3de/geom3do.h"
 
+#include <limits>
 #include <functional>
 #include <array>
 #include <cstdint>
@@ -278,7 +279,21 @@ void particleGeometry(Geometry& g, const ParticleField& f, const float eye[3],
 // placeholders (todo/optimization.md step 6). The vector overload above is
 // this with the old test: in range and not empty.
 using SpriteLookup = std::function<const SpriteFrames*(int)>;
+//
+// THE DEPTH GATE (todo/cpu-vs-original.md tier C), the original's own:
+// `Render_SubmitSprites` (0x004969C0) takes a particle's CENTRE into view
+// space and submits it only when `depth > near && depth < far` - the
+// camera's near plane (`flt_6A2BBC`, camera `+0x144`) and the clip distance
+// (`dword_6A2B9C`, the visible-set radius and the fog's end). No side
+// planes. Every particle used to become a quad here whatever its depth -
+// work and overdraw the original never did. `nearZ` / `farZ` default to no
+// gate.
 void particleGeometry(Geometry& g, const ParticleField& f, const float eye[3],
-                      const float at[3], const SpriteLookup& sprites);
+                      const float at[3], const SpriteLookup& sprites,
+                      float nearZ = -std::numeric_limits<float>::infinity(),
+                      float farZ = std::numeric_limits<float>::infinity());
+// What the gate did since the last call: particles made into quads, and
+// particles it left out (main thread, as every caller is).
+void particleGateCounts(long& built, long& gated);
 
 }  // namespace omk

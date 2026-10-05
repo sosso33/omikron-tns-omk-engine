@@ -27633,6 +27633,60 @@ def c_engine_raster_cost():
         "not a hash of the whole frame per call"
 
 
+def c_engine_particle_gate():
+    r"""THE PARTICLES' DEPTH GATE, the original's (2026-10-05,
+    `todo/cpu-vs-original.md` tier C). `Render_SubmitSprites` (0x004969C0)
+    submits a particle only when its CENTRE's view depth is past the near
+    plane and short of the clip distance; the port made every particle a
+    quad. A camera-facing quad has its four corners at its centre's depth, so
+    one behind the near plane was wholly clipped anyway, and one past the
+    clip distance is fogged to black - nothing for an additive or a multiply
+    particle. So the picture should not move; the work does.
+
+    Standing in the street, 310 frames on the software renderer: the
+    builder's own count (`particleGateCounts`, printed every 300 frames)
+    must show the gate leaving out MORE than it keeps (measured 2026-10-05:
+    39475 made into quads, 281999 left out - 88%), and the last frame must be
+    byte-identical to the same run with `OMK_NO_FX_GATE=1`.
+
+    Shown to fail (2026-10-05): the gate's test removed from
+    `particleGeometry` (red: 0 left out).
+    """
+    import subprocess, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    tmp = tempfile.mkdtemp()
+    try:
+        outs, dumps = [], []
+        for gate in (True, False):
+            d = os.path.join(tmp, "g%d.bin" % gate)
+            env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+            if not gate:
+                env["OMK_NO_FX_GATE"] = "1"
+            r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                                "--save", os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "0",
+                                "--stand", "1804,0,-6890,336", "--nofmv", "--res", "640x480",
+                                "--frames", "310", "--nodelay", "--dump", d],
+                               capture_output=True, text=True, errors="replace", env=env)
+            outs.append(r.stdout)
+            dumps.append(open(d, "rb").read() if os.path.exists(d) else b"")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    m = re.search(r"frame 300: particles since the last line - (\d+) made into quads, (\d+) left out", outs[0])
+    if not m or not dumps[0]:
+        return ("no count",), ("count",), "the run must print the frame-300 particle line and dump"
+    built, gated = int(m.group(1)), int(m.group(2))
+    print("        frame 300: %d made into quads, %d left out by the gate" % (built, gated))
+    return (gated > built, dumps[0] == dumps[1]), (True, True), \
+        "standing in the street the gate leaves out more particles than it keeps, and the " \
+        "picture is byte-identical to the ungated run"
+
+
 def c_engine_street_memory():
     r"""THE STREET'S MEMORY AGAINST THE ORIGINAL'S, tier A (2026-10-04,
     `todo/ram-vs-original.md`): what the port keeps in Anekbah where the
@@ -41796,6 +41850,7 @@ SLOW = [
     ("engine: archive chunks", c_engine_archive_chunks, "todo/ram-vs-original.md tier C; script/area.h"),
     ("engine: scx kept", c_engine_scx_kept, "todo/ram-vs-original.md tier C; script/program.h"),
     ("engine: raster cost", c_engine_raster_cost, "todo/cpu-vs-original.md tier A; o3de/raster.h"),
+    ("engine: particle gate", c_engine_particle_gate, "todo/cpu-vs-original.md tier C; o3de/particles.h"),
     ("engine: profiler control", c_engine_profiler_control, "todo/debug-tools.md step 3"),
     ("engine: profiler gpu", c_engine_profiler_gpu, "todo/debug-tools.md step 5"),
     ("engine: release build", c_engine_release_build, "todo/debug-tools.md"),
