@@ -14,13 +14,14 @@ A homebrew build that runs on the reader's own game data, like the Vita's.
 
 | | Old 3DS / 2DS | New 3DS / New 2DS |
 |---|---|---|
-| CPU | ARM11 MPCore, 268 MHz, VFPv2, **no NEON** | the same core at 804 MHz, 2 MB L2 |
+| CPU | ARM11 MPCore, 268 MHz, VFPv2, **no NEON** | the same core at 804 MHz, 2 MB L2 (`osSetSpeedupEnable`) |
 | app memory (FCRAM) | ~64 MB by default (more in special exheader modes) | ~124 MB, ~178 MB in the extended mode |
 | GPU | PICA200, 268 MHz: programmable VERTEX shaders, a FIXED fragment stage (6 texture-combiner stages, alpha test, blend, fog LUT, 24-bit depth + 8 stencil); 6 MB VRAM, textures and buffers may also live in the linear FCRAM heap | the same |
 | screens | top 400x240 (800x240 wide mode, not with stereo), bottom 320x240 touch | the same |
 
-**The New 3DS is THE target; the Old 3DS is a stretch** decided by step 8's
-measurement, not assumed.
+**The New 3DS is THE target** - the reader has one with custom firmware
+(2026-10-05). The Old 3DS is a stretch decided by step 8's measurement, not
+assumed.
 
 Little-endian, so `classic-mac-port-1999.md` step 3's byte-order work does not
 apply; the `loadLE` discipline (PORTING A9) makes that free either way.
@@ -48,29 +49,70 @@ apply; the `loadLE` discipline (PORTING A9) makes that free either way.
   the original's D3D path - per-vertex colour, the two blend modes, the
   cutout, linear black fog, CPU transform - which is the PICA200's model too.
   It is the template for the citro3d backend.
+* **The profiler** (`todo/debug-tools.md`): the game WRITES a capture file and
+  takes `pause` / `step N` / `resume` / `snapshot` from `omk.ctl`, read once a
+  frame - a file being the one transport every target has. Memory by owner
+  (the counting allocator, `--sites`) and GPU memory by category
+  (`OMK_GPU_ALLOC`). All of it compiled out by `OMK_PROFILE=0`.
 * **The Vita's pieces**: the bench (`bench_main.cpp`, the device factor), the
   IME for the name field (`ime.cpp`), the hardware-film fallback pattern
   (`avmovie.*`, MPEG-1 when the film is absent), the CPU interface composite
   and its row hash (`playgpu_gles.cpp`), `readFileRange` for the ranged
   archive reads.
 
-## 3. The decisions that are the reader's
+## 3. Decisions
 
-Asked at the step that needs them, not before:
+**Taken by the reader, 2026-10-05:**
 
-* **Hardware**: is there a 3DS with custom firmware (Luma3DS) to test on? The
-  emulator (Azahar, Citra's successor) is enough to boot and draw; timing and
-  memory are only real on hardware - the Vita's lesson (a uniform ~40x the M1,
-  invisible in Vita3K).
-* **The interface's place** (step 5): which of the 37 screens move to the
-  bottom screen, and whether half-scale text is readable - a judgement by eye
-  on a console.
-* **The dither** (step 3): the original's 16-bit device dithered; the PICA
-  renders RGBA8 and the display transfer writes the screen's format. Port the
-  ordered dither as the other backends do, or render 16-bit.
-* **SDL or not** (step 2): SDL has a 3DS port; a libctru frontend like
-  `carbonfront.cpp` is smaller and has no dependency to chase. The plan
-  assumes libctru.
+* **Hardware**: a New 3DS with custom firmware. Build a **`.cia`** (installed
+  through the CFW, it sets its own memory mode in the exheader and starts as
+  an ordinary title) and keep a **`.3dsx`** for quick iteration. Neither
+  runs FASTER: the CPU, the 804 MHz mode and the GPU are the same however the
+  code is started. What differs is MEMORY - a `.3dsx` started from the
+  Homebrew Launcher as an applet gets far less than an application, and only
+  title takeover gives it an application's share - and the CFW's extras:
+  Luma3DS's Rosalina carries a **GDB stub** (step 1's debugging) and its own
+  screenshots. So: the `.cia` for every measurement.
+* **The interface stays on the TOP screen** for now. What the game does when
+  a screen is up needs PER-SCREEN work (step 5), and the reader called that
+  the most important thing to check. Until then every screen is composited
+  at 640x480 as on every target, box-filtered 2:1 and pillarboxed into
+  320x240 in the middle of the top screen (4:3 onto the 4:3 part of a 5:3
+  screen); text drawn over the world (subtitles, replies, fades, the shoot
+  HUD) goes the same way.
+* **The bottom screen is the INSTRUMENT PANEL** (step 2b): stats, debugging
+  buttons and the enhancement toggles the 3DS can draw.
+* **libctru, not SDL** - the reader's rule was "libctru if it is faster or
+  needed for stereoscopic 3D, SDL otherwise", and stereo NEEDS it: the
+  slider, the second eye's framebuffer and `gfxSet3D` are libctru calls with
+  no SDL equivalent. SDL would also bring nothing for the GPU: its 3DS
+  renderer is 2D, so the 3D goes through citro3d either way. For input and
+  audio SDL is a thin layer over the same services (HID, `ndsp`), so it saves
+  little code and adds a dependency to chase. The frontend is libctru,
+  `carbonfront.cpp`'s way.
+
+**Open, with what each would buy:**
+
+* **16-bit rendering or the dither** (step 3). The original rendered into a
+  16-bit RGB565 surface with `DITHERENABLE` on, and the port's GPU backends
+  render deeper and reconstruct the ordered dither. On the PICA a **RGB565
+  colour buffer** would buy:
+  * half the colour buffer's VRAM (400x240: 188 KB against 375 KB; at 2x2
+    supersampling 750 KB against 1.5 MB) and half its write bandwidth - the
+    PICA's fill rate is the likely limit, so this is real frame time;
+  * a display transfer with no format conversion;
+  * the original's own depth - every colour the original could show, and no
+    others.
+  
+  What it costs depends on a fact not yet known here: **whether the PICA
+  dithers when it writes a 16-bit buffer.** If it does, 16-bit is the
+  original's arrangement exactly (a 16-bit device, dithered by the hardware)
+  at the lower cost - the best of both. If it does not, 16-bit BANDS (the
+  fog's ramp, the shading), and the choice is between RGBA8 output (smooth,
+  smoother than the original) and the port's ordered dither, which on a
+  fixed fragment stage is awkward (a screen-space dither texture through
+  projective coordinates, or a CPU pass after a readback). Measured first
+  thing in step 3: a gradient rendered into an RGB565 target, looked at.
 
 ## 4. The steps
 
@@ -79,12 +121,12 @@ Each ends in a commit and a report, and declares its evidence tier (PORTING B).
 ### Step 0 - the toolchain and a cross-build check
 
 devkitPro's devkitARM + libctru + citro3d (`scripts/install-deps.sh` reports
-them, never requires them - PORTING A1). `engine/backends/n3ds/` with a
-Makefile or CMake in the Vita's style; `omk-core` (the engine library) for
-`armv6k`, hard-float VFP. `verify.py: engine: 3ds build`, modelled on
-`engine: vita build` - SKIPPED, never red, when devkitARM is absent. The
-first cross build will find what the Vita and classic builds found (headers
-the Mac supplied and the cross toolchain does not, `%zu`).
+them, never requires them - PORTING A1), `makerom` for the `.cia`.
+`engine/backends/n3ds/` with a Makefile or CMake in the Vita's style; the
+engine library for `armv6k`, hard-float VFP. `verify.py: engine: 3ds build`,
+modelled on `engine: vita build` - SKIPPED, never red, when devkitARM is
+absent. The first cross build will find what the Vita and classic builds
+found (headers the Mac supplied and the cross toolchain does not, `%zu`).
 
 ### Step 1 - boot headless: the intro trace and the device factor
 
@@ -92,25 +134,69 @@ the Mac supplied and the cross toolchain does not, `%zu`).
 resolving case-insensitively there, `build/omk`'s boot to `traces/intro.log`
 **42 of 42 in order** - the same proof every port gave. Beside it the Vita's
 bench on the device: the frame's CPU against the M1's, the **32-bit memory**
-of a standing street (the profiler's counting allocator, `--sites`), and the
-SD read time of one area load. **This step decides Old 3DS vs New 3DS** for
-everything after.
+of a standing street (the counting allocator, `--sites`), and the SD read
+time of one area load. Rosalina's GDB stub for whatever crashes. **This step
+says how far the New 3DS is from 30 fps** and whether the Old 3DS is worth
+step 8.
 
 ### Step 2 - the frontend, first light on the software renderer
 
 `n3dsfront.cpp`: HID (buttons, circle pad, touch), `ndsp` audio (the mixer's
 float PCM converted to 16-bit, 22050 stereo; the music ring as is),
 `svcGetSystemTick` for the clock, `swkbd` for the name field (the Vita's IME
-pattern). `present()` blits the frame to the top screen. **First light uses
-the software reference** at 400x240 - slow, but it proves data, script, audio
-and input end to end with no GPU code - and the interface composited at
-640x480 and box-filtered 2:1 into a pillarboxed 320x240 on the top screen.
-Played: the start menu answers, the flat draws, Kay'l walks.
+pattern), `osSetSpeedupEnable(true)`. `present()` writes the top screen.
+**First light uses the software reference** at 400x240 - slow, but it proves
+data, script, audio and input end to end with no GPU code - with the
+interface pillarboxed as section 3 decided. Played: the start menu answers,
+the flat draws, Kay'l walks.
+
+### Step 2b - the bottom screen: the instrument panel
+
+A 320x240 RGB565 surface the CPU composites with the engine's own text
+renderer and fonts (`ui/text.*`), redrawn a few times a second (stats move
+slowly, so its cost stays off most frames) and written straight to the bottom
+framebuffer - no GPU work. Touch picks a button. An INSTRUMENT, not the
+game: built like `playharness.cpp`, and `INSTRUMENTS=0` / the release build
+leaves the screen with the frame rate alone.
+
+* **Stats**: fps and frame ms (mean and worst of the last second); the
+  frame split - sim, draw, present - from the profiler's zones; CPU use as
+  busy time over the 33.3 ms period; GPU time (`C3D_GetProcessingTime` /
+  `C3D_GetDrawingTime`); memory - the counting allocator's live bytes and
+  its top three owners, the linear heap and VRAM free (`linearSpaceFree`,
+  `vramSpaceFree`), the application region free (`osGetMemRegionFree`); the
+  area, the camera mode, bodies staged, crowd slots live.
+* **Debugging**: CAPTURE (a profiler `snapshot` and both the frame and the
+  640x480 interface layer dumped to `sdmc:/omk/captures/`, read on the Mac by
+  `tools/omkprof.py` and the dump tools); PAUSE / STEP / RESUME (the
+  profiler's own commands, issued in-process instead of through `omk.ctl`);
+  record a capture on / off; the log's last lines.
+* **Enhancements**, live, each OFF by default and saved under
+  `[Enhancements]` as on every target - only the rows the PICA can draw
+  (`todo/enhancements.md`'s numbers):
+  * 2 trilinear (the PICA has mipmaps; anisotropy it does not have);
+  * 9 supersampling 2x1 / 2x2 - rendered larger and averaged down by the
+    display transfer, the 3DS's own anti-aliasing (row 0's MSAA does not
+    exist on the PICA, so 9 stands in for it);
+  * 3 the interface's filtered downscale - which matters more here than
+    anywhere, everything being drawn at half;
+  * 4 unlimited draw distance, 5 fitted shadows, 10 the shoot radar, 11 60
+    fps, 12 bodies smoothed between keys - CPU-side or cheap, available as
+    they are, worth what the frame budget allows;
+  * stereoscopic 3D (step 9), the 3DS's own row;
+  * 6 mapped shadows and 7 per-pixel lighting are NOT offered at first: the
+    PICA has a shadow-texture mode and fragment lighting through lookup
+    tables, both fixed-function, and whether the engine's law fits them is a
+    reading for later.
+  
+  The dither toggle sits with them as on every target - a comparison tool,
+  not an enhancement.
 
 ### Step 3 - the citro3d backend
 
 `backends/citro3d/` modelled on `gl1render.cpp`, `playgpu_citro3d.cpp` its
-glue. Each item is a reading of the boundary, not a new design:
+glue. First the 16-bit question of section 3, then each item as a reading of
+the boundary, not a new design:
 
 * **textures** from the kept indices + palette into **RGBA5551** - a native
   format whose 1-bit alpha IS the colour key, 2 bytes a texel against
@@ -131,24 +217,32 @@ Checked as GL1 and GLES were: one set through it against the reference
 
 ### Step 4 - the memory fit
 
-The app memory mode in the exheader (a `.cia`, or the Homebrew Launcher's
-title takeover for a `.3dsx`); textures in the linear heap at 2 bytes a
-texel; render targets in VRAM. Measured on the console standing, walking and
-across an area change. If the Old 3DS is still in play, what is left over
-64 MB is a list of cuts, `ram-vs-original.md`'s deferred indexed geometry
-(-3 MB) the first of them - **the budget is a goal for the code, never raised
-to the measurement** (the classic Mac's rule).
+The `.cia`'s memory mode in the exheader; textures in the linear heap at 2
+bytes a texel; render targets in VRAM. Measured on the console standing,
+walking and across an area change - the panel shows it live. If the Old 3DS
+is still in play, what is left over 64 MB is a list of cuts,
+`ram-vs-original.md`'s deferred indexed geometry (-3 MB) the first of them -
+**the budget is a goal for the code, never raised to the measurement** (the
+classic Mac's rule).
 
-### Step 5 - the two screens
+### Step 5 - what happens when a screen is up: the per-screen survey
 
-The world on top; the interface on the bottom where it is a SCREEN (the 37
-of `UI.md` - menus, the sneak, the inventory, the shops, the save panel) at
-exactly half its 640x480, 4:3 onto 4:3. What is drawn OVER the world stays on
-top - the subtitles, the fades, the shoot HUD, the dialogue replies are to be
-classified one by one from the I2D layers, not guessed. The reader judges the
-half-scale fonts on hardware; if the small ones fail, a 2:1 filter tuned for
-the coverage ramp is the first remedy, not a re-layout. Touch to select a row
-is an ENHANCEMENT and waits for step 9.
+The reader's priority. For each of the 37 screens of `UI.md` and each thing
+drawn over the world, recorded in a table before anything moves:
+
+* whether the WORLD keeps drawing behind it, paused or live (the sneak, the
+  shops, the save panel, the start menu each differ), and what of it shows;
+* which I2D layers it uses and what text sizes - the half-scale legibility
+  judged by the reader on the console, screen by screen;
+* what input it takes (the 14-bit word, the name field's characters, a
+  pointer anywhere?);
+* the candidate placement - stay on top, move to the bottom screen, or split
+  - with the reason.
+
+Then the placements the reader picks, one screen family at a time, each
+played. The instrument panel moves aside (a button, or the release build)
+when a screen takes the bottom. Touch to select a row is an ENHANCEMENT and
+comes with that work, not before.
 
 ### Step 6 - controls, saves and the films
 
@@ -161,8 +255,8 @@ is an ENHANCEMENT and waits for step 9.
 
 ### Step 7 - performance
 
-Measured on the console with the 30 fps cap on. In the order the
-measurement points to, but expected:
+Measured on the console with the 30 fps cap on, the panel's numbers and the
+profiler's captures. In the order the measurement points to, but expected:
 
 * **bodies posed by the vertex shader** (`posesBodies`, as GLES does); the
   PICA's 96 vec4 uniforms hold about 30 3x4 bone matrices, so the bone counts
@@ -178,26 +272,27 @@ measurement points to, but expected:
 Steps 1, 4 and 7 measured on a 268 MHz console. Either a supported target
 with its settings written down, or a recorded "no" with the numbers.
 
-### Step 9 - enhancements, OFF by default
+### Step 9 - stereoscopic 3D, OFF by default
 
-* **stereoscopic 3D**: `gfxSet3D`, the slider (`osGet3DSliderState`), two
-  passes with off-axis frusta, per-eye visible set and cull, billboards and
-  2D at the screen plane, one pass at slider 0. The convergence distance per
-  camera mode is a decision made by watching;
-* touch selection on the bottom screen.
-
-`[Enhancements]` in the config, as every other.
+`gfxSet3D`, the slider (`osGet3DSliderState`), two passes with off-axis
+frusta, per-eye visible set and cull, billboards facing the centre camera,
+the 2D layers at the screen plane, one pass at slider 0. The convergence
+distance per camera mode is a decision made by watching. A toggle on the
+panel and a key under `[Enhancements]`.
 
 ### Step 10 - packaging and the handoff
 
-`.3dsx` and `.cia`, the layout on the card, a `handoff-3ds-port.md` in the
+`.cia` and `.3dsx`, the layout on the card, a `handoff-3ds-port.md` in the
 Vita handoff's form, CLAUDE.md's map row updated.
 
 ## 5. Traps already known
 
 * **A run in the emulator is not a measurement** - Vita3K played what the
   console could not (the films, the frame time). Timing and memory come from
-  hardware or are labelled as the emulator's.
+  the console or are labelled as the emulator's (Azahar, Citra's successor).
+* **`--profile` did not work on the Vita console** (`handoff-vita-port.md`
+  3b4c, unexplained on 2026-10-05). Prove the capture on the 3DS in step 2b
+  before relying on it, and read the log's own numbers until then.
 * **A file copied in ASCII mode** is a black screen - the Vita's IAM over
   FileZilla. Copy the data in binary mode, and hash one archive on the card.
 * **A positional initialiser shifts** when a boundary struct gains a field
