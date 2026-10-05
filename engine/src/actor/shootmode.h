@@ -97,6 +97,19 @@ public:
     // to this (every writer touches all of them at once).
     bool frozen() const { return frozen_; }
     void setFrozen(bool on) { frozen_ = on; }
+    // `g_PlayerBehaviourOff` (dword_4E9778), THE PLAYER'S SUSPEND
+    // (todo/drift-audit.md S7): op 116 `shoot.player.suspend` (0x4050E0 ->
+    // 0x422950) sets it with the player half of `Shoot_Leave`, op 117
+    // `.resume` (0x405130 -> 0x4229C0) clears it with the player half of
+    // `Shoot_Enter`. What it gates: `Shoot_TickNpc` skips EVERY gunman's
+    // brain callback while it is set, and `Shoot_SyncHudHealth` the gauge.
+    // 212 shipped sites - the ladders and doors a phase's scripts play as
+    // a short cutscene. The counts tell a frontend each one happened.
+    bool playerOff() const { return playerOff_; }
+    void suspendPlayer() { playerOff_ = true; ++suspends_; }
+    void resumePlayer()  { playerOff_ = false; ++resumes_; }
+    long suspends() const { return suspends_; }
+    long resumes()  const { return resumes_; }
     // ...and it RECOMPUTES the screen, because `Shoot_Enter` reads property 7
     // at its step 6 and the entry may already have run `begin`.
     void setPlayerType(int t) { type_ = t; hud_ = hudScreenFor(t); }
@@ -160,6 +173,8 @@ private:
     std::map<int, int> actorArgs_;   // the same actors' a3
     std::vector<Event> log_;
     bool frozen_ = false;              // dword_4E9760
+    bool playerOff_ = false;           // g_PlayerBehaviourOff
+    long suspends_ = 0, resumes_ = 0;
 };
 
 }  // namespace omk

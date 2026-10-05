@@ -1987,7 +1987,11 @@ void PlayState::adventureShot() {
         if (row)
             std::printf("special move: %s (tab_special_move[%d] = 0x%08x)\n",
                         row->name.c_str(), row->index, row->handler);
-        if (mv == "MDACTION" || mv == "MDADJSTP") {
+        // ...NOT in ACTOR_STATE 3: MDACTION scans (`sub_41C810`) and then
+        // `cmp [esi+194h], 3; je 0x46AFF8` - a shoot phase takes nothing,
+        // and the press goes on to the zones below (todo/drift-audit.md S7)
+        if ((mv == "MDACTION" || mv == "MDADJSTP") &&
+            !(player && player->state() == omk::ActorState::Shoot)) {
             // ---- `sub_465D30(actor, obj, fromAdjust)` ----------
             //
             // ONE function decides both stages of the take, and
@@ -2444,11 +2448,20 @@ void PlayState::adventureAction() {
     // so: the three special arms above, and the BANK the engine
     // switches to (it comes from the object, in `sub_465D30`).
     const int actorState = player ? static_cast<int>(player->state()) : -1;
+    // ACTOR_STATE 3 IS NOT A REFUSAL (corrected 2026-10-05,
+    // todo/drift-audit.md S7). The object-search arm skips the TAKE in
+    // state 3 (0x46AF3F) and the slider arm (0x46B007), and its tail does
+    // `cmp [esi+194h], 3; je 0x46B296` past the pedestrian talk
+    // (`sub_452280`) straight to `sub_467950` - `Game_RaiseEvent(6, 4)`, the
+    // ZONE PRESS. This refused state 3 outright, so no zone could be
+    // activated in a shoot phase: the ladders (SCENE 62's Echelles), the
+    // doors and every activate script a phase hangs on a press.
+    const bool shootPress = actorState == 3;
     const bool stateAllowsAction =
-        actorState != 3 &&                       // the arm's own refusal
+        actorState != 3 &&                       // the object arm's own refusal
         actorState != 4 && actorState != 11 &&   // loc_46B29F
         actorState != 13 && actorState != 14;    // the other two arms
-    if (actionFromMove && !stateAllowsAction)
+    if (actionFromMove && !stateAllowsAction && !shootPress)
         std::printf("action: refused - ACTOR_STATE %d takes another arm of "
                     "tab_special_move[3]\n", actorState);
     // ---- ONE ACTIVATION PER PRESS ----------------------
@@ -2509,7 +2522,7 @@ void PlayState::adventureAction() {
     // zone is a spent ONE-SHOT and nothing else could consume the
     // press. With the arm modelled, the line goes back to what it
     // is for: a press with nothing in front of you.
-    if (actionFromMove && stateAllowsAction && !session.dialogOpen() &&
+    if (actionFromMove && (stateAllowsAction || shootPress) && !session.dialogOpen() &&
         !actionSpent && !actionTookObject) {
         const int armed = session.zones().armedCount();
         const std::int16_t z = session.zones().armedZone();
@@ -2532,7 +2545,7 @@ void PlayState::adventureAction() {
         // nothing leaves the latch alone and the next frame tries
         // again. That is why holding the button at a door opens it
         // once, while holding it in the open street keeps looking.
-        const bool did = session.pressAction();
+        const bool did = session.pressAction(!shootPress);   // state 3: no talk, the zones only
         // THE REPEAT GUARD IS NOT PORTED, and the attempt is
         // recorded because it half-worked, which is the dangerous
         // kind. `sub_465D30` ends with

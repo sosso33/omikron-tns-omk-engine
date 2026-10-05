@@ -2889,6 +2889,19 @@ void Session::onCall(int i, const Call& call) {
         // (todo/drift-audit.md S7). The frontend owns the records.
         if (shoot_.active()) shoot_.setFrozen(call.op == 106);
         break;
+    case 116:
+        // `shoot.player.suspend` (0x4050E0, read from the image): the
+        // dry-run test, the held object dropped, then `jmp 0x422950` - the
+        // player half of `Shoot_Leave` and `g_PlayerBehaviourOff = 1`. The
+        // flag is here; the player, his bolts, his HUD and his scheme are the
+        // frontend's (todo/drift-audit.md S7).
+        shoot_.suspendPlayer();
+        break;
+    case 117:
+        // `shoot.player.resume` (0x405130 -> 0x4229C0): the player half of
+        // `Shoot_Enter` and `g_PlayerBehaviourOff = 0`.
+        shoot_.resumePlayer();
+        break;
     case 129: case 130:
         // `walk.ledges.ignore` / `.obey` (0x4059D0 / 0x4059F0, no `proc`
         // label - read from the image): the visible flag, the dry-run test,
@@ -3314,12 +3327,13 @@ bool Session::visibleOp(std::uint8_t op) {
 
 // ------------------------------------------------------------ THE ZONES
 
-bool Session::pressAction() {
+bool Session::pressAction(bool talkFirst) {
     if (dialogState_ == 3) return false;
     // the `.CTL` action state's callback runs `sub_452280` on the press: a
     // walker standing at an action point in front of the player is talked
     // to whether or not a zone is armed
-    const bool talked = sliders_.loaded() && talkToPedestrian(playerPos_, playerYaw_);
+    const bool talked = talkFirst && sliders_.loaded() &&
+                        talkToPedestrian(playerPos_, playerYaw_);
     if (zones_.armedCount() == 0) return talked;
     actionPressed_ = true;
     return true;

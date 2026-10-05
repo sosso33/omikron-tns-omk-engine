@@ -596,6 +596,38 @@ void PlayState::shootFreezeSync(long frame) {
                 fz ? "freeze_all" : "unfreeze_all", fz ? "set" : "cleared", shootBrains.size());
 }
 
+void PlayState::shootInitWeapon(int& obj, int& kind, int& type) {
+    auto& session = *session_;
+    obj = session.shootMode().weaponObject();
+    const auto& objs = voiceLib.objects();
+    const bool known = obj >= 0 && static_cast<std::size_t>(obj) < objs.size();
+    kind = known ? objs[static_cast<std::size_t>(obj)].kind : -1;
+    // The -2 exception tests the MODEL NAME on the held node, and
+    // that is `Scene_Load3DO`'s own copy of its PATH at descriptor
+    // +48: `Object_Load` builds "MESHES\OBJETS\%s" around
+    // `Object_ModelPath(stem)`, which appends ".3DO" (the five
+    // bytes at 0x4C0D1C). So the character 11 from the end is the
+    // first of a SEVEN-letter stem - and `BATPOUV`, the Baton de
+    // pouvoir, is the one weapon it catches: type -2, its own row.
+    type = omk::shootWeaponType(
+        kind, known ? "MESHES\\OBJETS\\" + objs[static_cast<std::size_t>(obj)].stem + ".3DO"
+                    : std::string());
+    playerShootRec.weapon = shootWeapons.find(type, true);
+    // `dword_90E11C`, as `Shoot_InitWeapon` leaves it (0x004220A8 /
+    // 0x004220F6 / 0x00422107): the magazine's count - property
+    // 35, slot `index - 1` - when the row has one, else -1
+    hudAmmo = -1;
+    if (const omk::ShootWeaponRow* row = playerShootRec.weapon) {
+        std::int32_t cnt = 0;
+        if (row->ammoIndex &&
+            omk::readAmmoSlot(state.raw().subspan(
+                                  static_cast<std::size_t>(omk::GameState::kPlayerRecord),
+                                  static_cast<std::size_t>(omk::GameState::kPlayerRecordSize)),
+                              row->ammoIndex - 1, cnt))
+            hudAmmo = static_cast<int>(cnt);
+    }
+}
+
 // `if (dword_4E9760 && g_ShootRecords) { every +160 &= ~0x8000; dword_4E9760 = 0; }`
 // - the head of `sub_4246E0`, `sub_4240E0`, `sub_423B10` and `sub_424470`.
 void PlayState::shootWake(long frame, const char* what) {

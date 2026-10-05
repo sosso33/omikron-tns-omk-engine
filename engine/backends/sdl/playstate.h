@@ -407,6 +407,7 @@ struct PlayState {
     bool dialogMode{};
     bool shootMode{};   // ops 80/81, `actor/shootmode.h`
     bool shootFrozenApplied{};   // the records' 0x8000, as last made equal to dword_4E9760
+    long shootSuspendsSeen{}, shootResumesSeen{};   // ShootMode::suspends()/resumes() answered
     std::map<std::string, CharModel> charModels{};
     std::map<std::string, PropModel> propModels{};
     omk::Geometry propGeo{};   // the shown props, in world space
@@ -740,6 +741,10 @@ struct PlayState {
     // Session's flag, and the WAKE the noise, a hit and a strike begin with
     void shootFreezeSync(long frame);
     void shootWake(long frame, const char* what);
+    // `Shoot_InitWeapon` (0x00421FB0) for the PLAYER: the row of the object
+    // in his hand and the magazine count - `Shoot_Enter` step 9 and
+    // `shoot.player.resume` both call it; out: the object, its kind, the type
+    void shootInitWeapon(int& obj, int& kind, int& type);
     std::vector<omk::MeshPose> playerPoseNow(omk::PlayerController* pl, bool aimLayer,
                                    const omk::NodeTracks& pt, float frame);
     std::vector<omk::MeshPose> gunmanPoseNow(int actor, int deathType, const CharModel* mo,

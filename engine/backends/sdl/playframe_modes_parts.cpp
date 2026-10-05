@@ -658,21 +658,13 @@ int PlayState::modesShoot() {
                                 omk::shootMovePitches(shootMover)
                                     ? "" : " - a Mecagarde: HE CANNOT PITCH");
                 }
-                const int obj = session.shootMode().weaponObject();
+                // `Shoot_InitWeapon`, step 9 (`PlayState::shootInitWeapon`,
+                // which `shoot.player.resume` calls too): the row and the
+                // magazine; `objs`/`known` are kept for the gun's stem below
+                int obj = -1, kind = -1, type = 0;
+                shootInitWeapon(obj, kind, type);
                 const auto& objs = voiceLib.objects();
                 const bool known = obj >= 0 && static_cast<std::size_t>(obj) < objs.size();
-                const int kind = known ? objs[static_cast<std::size_t>(obj)].kind : -1;
-                // The -2 exception tests the MODEL NAME on the held node, and
-                // that is `Scene_Load3DO`'s own copy of its PATH at descriptor
-                // +48: `Object_Load` builds "MESHES\OBJETS\%s" around
-                // `Object_ModelPath(stem)`, which appends ".3DO" (the five
-                // bytes at 0x4C0D1C). So the character 11 from the end is the
-                // first of a SEVEN-letter stem - and `BATPOUV`, the Baton de
-                // pouvoir, is the one weapon it catches: type -2, its own row.
-                const int type = omk::shootWeaponType(
-                    kind, known ? "MESHES\\OBJETS\\" + objs[static_cast<std::size_t>(obj)].stem + ".3DO"
-                                : std::string());
-                playerShootRec.weapon = shootWeapons.find(type, true);
                 // `Shoot_Enter` loads `scptdata\shoot2.sfx` and hands it to
                 // `sub_44EDF0`, whose section A is the shot sprites
                 if (!shootSfx.valid && shootSfx.shotSprites.empty())
@@ -693,19 +685,6 @@ int PlayState::modesShoot() {
                                 double(gf.tirLocal[1]), double(gf.tirLocal[2]),
                                 sp ? "found" : "none", sp ? double(sp->grow) : 0.0,
                                 sp ? double(sp->windUp) : 0.0, shootSfx.shotSprites.size());
-                }
-                // `dword_90E11C`, as `Shoot_InitWeapon` leaves it (0x004220A8 /
-                // 0x004220F6 / 0x00422107): the magazine's count - property
-                // 35, slot `index - 1` - when the row has one, else -1
-                hudAmmo = -1;
-                if (const omk::ShootWeaponRow* row = playerShootRec.weapon) {
-                    std::int32_t cnt = 0;
-                    if (row->ammoIndex &&
-                        omk::readAmmoSlot(state.raw().subspan(
-                                              static_cast<std::size_t>(omk::GameState::kPlayerRecord),
-                                              static_cast<std::size_t>(omk::GameState::kPlayerRecordSize)),
-                                          row->ammoIndex - 1, cnt))
-                        hudAmmo = static_cast<int>(cnt);
                 }
                 hudWalk = std::make_unique<omk::UiWalk>(w);
                 if (!hudWalk->open(session.shootMode().hudScreen())) hudWalk.reset();
@@ -731,6 +710,99 @@ int PlayState::modesShoot() {
                         session.shootMode().library(),
                         player ? static_cast<int>(player->state()) : -1,
                         in.group());
+        }
+
+        // ---- THE PLAYER'S SUSPEND AND RESUME (todo/drift-audit.md S7) ----
+        //
+        // `shoot.player.suspend` (op 116, 0x4050E0 -> 0x422950, read from the
+        // image), the player half of `Shoot_Leave` and no more:
+        //   the held object dropped (`ObjectSlot_Free`, `Actor_ReleaseObject`)
+        //   sub_44CDB0(0)                     the bolts in flight freed
+        //   sub_436D20(node)                  his body SHOWN again
+        //   SetPersoBankGroup(default group)  - and NOT ACTOR_STATE 1
+        //   sub_47CE70()                      the shooter cleared
+        //   dword_910358 = 1.0                (already 1.0; not modelled)
+        //   UI_CloseAllScreens()              the HUD screen closed
+        //   g_PlayerBehaviourOff = 1          every gunman's brain stops
+        //   Input_InstallScheme(0)
+        // with no camera request: the script's own cameras follow (the
+        // ladders' `camera.set.at_address`). NOT the gunmen's teardown, NOT
+        // `aventure.scx`, NOT `g_ShootMode` - the phase goes on.
+        //
+        // `shoot.player.resume` (op 117, 0x405130 -> 0x4229C0), the player
+        // half of `Shoot_Enter`: ACTOR_STATE 3 and group 200, the HUD screen
+        // by property 7 (33, or 34 with `Hud_Refresh`), his body hidden again
+        // (`sub_436CE0`), `Camera_Request(4)`, `sub_47CC70` the mover, event
+        // 48 and `Shoot_InitWeapon` (the gun back in his hand: the wrapper
+        // sets `dword_4E6C84` when the hand is empty, which suspend made it),
+        // `g_PlayerBehaviourOff = 0`, scheme 2. NOT the record zeroed, NOT
+        // the type or health re-read, NOT `shoot2.sfx`, NOT the radar or the
+        // MAP2D load, NOT `Shoot_Enter`'s closing `Shoot_TickPlayer`.
+        //
+        // Outside a phase the engine's resume writes through a null record
+        // table (`g_ShootRecords + idx * 192 + 0x54`); the port applies the
+        // flag only and does nothing to the player.
+        if (session.shootMode().suspends() != shootSuspendsSeen) {
+            shootSuspendsSeen = session.shootMode().suspends();
+            if (shootMode && player) {
+                const int bolts = projectiles.live();
+                projectiles.clear();
+                player->suspendShootMode();
+                omk::shootMoveLeave(shootMover);
+                hudWalk.reset();
+                shootCameraLive = false;              // his body drawn again
+                front.setRelativeMouse(false);
+                playerCamId = -2;                     // as `Shoot_Leave`: the next script camera applies
+                in.installScheme(0);
+                std::printf("frame %ld: shoot.player.suspend - %d bolt%s freed, the bank's "
+                            "default group, HUD closed, scheme %d, every gunman's brain OFF "
+                            "(ACTOR_STATE stays %d)\n", n, bolts, bolts == 1 ? "" : "s",
+                            in.group(), static_cast<int>(player->state()));
+            }
+        }
+        if (session.shootMode().resumes() != shootResumesSeen) {
+            shootResumesSeen = session.shootMode().resumes();
+            if (shootMode && player) {
+                player->enterShootMode();
+                hudWalk = std::make_unique<omk::UiWalk>(w);
+                if (!hudWalk->open(session.shootMode().hudScreen())) hudWalk.reset();
+                hudTold.clear();
+                if (session.shootMode().hudScreen() == 34) {   // `Hud_Refresh` on 34 only
+                    hudBar.refresh(0, 22, fb.w);
+                    hudBar.refresh(1, 22, fb.w);
+                }
+                const float eye[3] = {0.0f, 0.0f, 0.0f};
+                const float at[3]  = {0.0f, 0.0f, 787.4016f};
+                player->setCameraOffsets(eye, at, 75.0f);
+                shootCameraLive = true;
+                shootPitch = 0.0f;
+                if (const omk::WorldCamera* rc = session.cameraTarget())
+                    playerCamId = rc->id;
+                front.setRelativeMouse(true);
+                {
+                    std::int32_t speed = 0;
+                    omk::readActorProperty(
+                        state.raw().subspan(
+                            static_cast<std::size_t>(omk::GameState::kPlayerRecord),
+                            static_cast<std::size_t>(omk::GameState::kPlayerRecordSize)),
+                        3, speed);
+                    float period = 0.0f;
+                    if (const omk::NodeTracks* st =
+                            player->clipTracks(player->groupDefaultClip(200)))
+                        period = static_cast<float>(st->frames);
+                    omk::shootMoveInit(shootMover, speed, period,
+                                       session.shootMode().playerType());
+                    shootMoveFrames = 0;
+                }
+                int obj = -1, kind = -1, type = 0;
+                shootInitWeapon(obj, kind, type);
+                in.installScheme(omk::ShootMode::kInputScheme);
+                std::printf("frame %ld: shoot.player.resume - ACTOR_STATE %d, group 200, HUD "
+                            "screen %d, camera mode %d, weapon type %d (%s), scheme %d, the "
+                            "gunmen's brains ON\n", n, static_cast<int>(player->state()),
+                            session.shootMode().hudScreen(), omk::ShootMode::kCameraMode, type,
+                            playerShootRec.weapon ? "a row" : "NO ROW", in.group());
+            }
         }
 
         if (session.dialogOpen() != dialogMode) {

@@ -850,7 +850,10 @@ void PlayState::worldGuns() {
     // already unlinked `tir` (the bolt) and set 0x200000 on the node,
     // so the first-person hide spares it. Drawn here the way the held
     // prop is ("THE OBJECT IN HIS HAND"), without `tir`'s corners.
-    if (session.shootMode().active() && player && !shotGunStem.empty()) {
+    // ...not while he is SUSPENDED: `shoot.player.suspend` drops the object
+    // in his hand and `.resume`'s event 48 loads it back (todo/drift-audit S7)
+    if (session.shootMode().active() && !session.shootMode().playerOff() && player &&
+        !shotGunStem.empty()) {
         const GunFacts& gf = gunFactsFor(shotGunStem);
         PropModel* pm = propModelFor(shotGunStem);
         const omk::NodeTracks* pt = player->poseTracks();

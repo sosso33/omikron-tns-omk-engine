@@ -739,7 +739,10 @@ public:
     // A press with no prompt slot taken never reaches the pump at all. The
     // flag is cleared by the pump at the end of its slot loop, so a HELD
     // button is one press per frame. -> what case 6 returns.
-    bool pressAction();
+    // `talkFirst`: the `.CTL` action's pedestrian talk (`sub_452280`) before
+    // the zone press - which MDACTION's ACTOR_STATE 3 arm skips, going
+    // straight to `sub_467950`'s event 6 (0x46B281: `je 0x46B296`)
+    bool pressAction(bool talkFirst = true);
     // `Actor_HeldObjectSlot(Actor_Player()) != -1`: the player has something
     // in his hands, which sends pump case 2 down `Script_RunToOpcode75` and
     // the unconsumed press to `sub_41C770`. Neither is modelled (labelled in

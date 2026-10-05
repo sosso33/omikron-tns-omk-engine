@@ -328,6 +328,13 @@ public:
     // group 200's shoot stance after a phase ended, whose movement entries
     // queue the shoot mover's moves with no mover to answer them: he could
     // not walk (a reader, 2026-09-10, after the supermarket's ending).
+    // `shoot.player.suspend`'s half of `Shoot_Leave` (0x422950): the machine
+    // back on the bank's default group - and NOT `ACTOR_STATE` 1, which only
+    // `Shoot_Leave`'s actor loop writes; he stays in 3 (todo/drift-audit S7)
+    void suspendShootMode() {
+        const int g = rt_.channel().defaultGroup();
+        if (g >= 0) rt_.channel().setBankGroup(g);
+    }
     bool leaveShootMode() {
         const bool ok = rt_.shootLeave(true);
         const int g = rt_.channel().defaultGroup();

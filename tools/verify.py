@@ -39791,6 +39791,66 @@ def c_engine_shoot_freeze():
            "alerted by that same noise"
 
 
+def c_engine_shoot_suspend():
+    r"""A SHOOT PHASE'S LADDER: THE PRESS, THE SUSPEND, THE RESUME
+    (`todo/drift-audit.md` S7).
+
+    Two faults, one path. `shoot.player.suspend` / `.resume` (ops 116/117,
+    0x4050E0 -> 0x422950, 0x405130 -> 0x4229C0, read from the image) are the
+    player halves of `Shoot_Leave` / `Shoot_Enter` around `g_PlayerBehaviourOff`,
+    which stops EVERY gunman's brain (`Shoot_TickNpc`); the port had neither.
+    And the press that starts them could never arrive: MDACTION in
+    ACTOR_STATE 3 skips the take and the slider arm and goes straight to
+    `sub_467950`'s event 6 - the ZONE press - while the port refused state 3
+    outright, so no zone was ever activated in a phase.
+
+    Run 1, the supermarket (AREA 230 + SCENE 56), `--op-at 420:116,600:117`:
+    robber 77, who kills the player at 491 uninterrupted, kills him at 671 -
+    the suspension's 180 frames exactly, his brain stopped for all of them.
+    Run 2, the rooftops (AREA 249 + SCENE 62, the `--shoot` harness): ENTER in
+    'Echelle 1 Bas' (zone 4288) - the shipped script suspends him, flies two
+    cameras, `actor.goto_address 709` ('Echelle 1 Haut'), holds 40 frames and
+    resumes him: state 3, group 200, HUD 34, scheme 2.
+
+    Shown to fail: the brain gate removed, run 1 kills at 491; state 3
+    refused again, run 2 never activates the zone.
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    tb = os.path.join(ROOT, "tables")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    a = subprocess.run([play, fr, tb, "--save", save, "--area", "230", "--scene-chunk", "56",
+                        "--zone-disable", "3949", "--op-at", "420:116,600:117",
+                        "--frames", "720", "--res", "640x480", "--nofmv"],
+                       capture_output=True, env=env, encoding="latin-1").stdout
+    k = _re.search(r"^frame (\d+): PLAYER HIT .*KILLED", a, _re.M)
+    l = subprocess.run([play, fr, tb, "--save", save, "--area", "249", "--scene-chunk", "62",
+                        "--zone-enable", "4288", "--stand", "25428,-364,1711,267", "--shoot",
+                        "--shoot-health", "1000", "--keys", "28,28,28", "--keydelay", "40",
+                        "--frames", "200", "--res", "640x480", "--nofmv"],
+                       capture_output=True, env=env, encoding="latin-1").stdout
+    pressed = "action: zone 4288 activated" in l
+    susp = bool(_re.search(r"shoot\.player\.suspend - .*brain OFF", l))
+    went = _re.search(r"actor\.goto_address 709 - the player put down at (-?\d+) (-?\d+) (-?\d+)", l)
+    res = _re.search(r"shoot\.player\.resume - ACTOR_STATE (\d+), group (\d+), HUD screen (\d+), "
+                     r"camera mode (\d+), weapon type -?\d+ \(([^)]*)\), scheme (\d+)", l)
+    return (int(k.group(1)) if k else None, pressed, susp,
+            tuple(int(went.group(i)) for i in (1, 2, 3)) if went else None,
+            res.groups() if res else None), \
+           (671, True, True, (25350, -472, 1711), ("3", "200", "34", "4", "a row", "2")), \
+           "run 1: the frame robber 77 kills the player through a 180-frame " \
+           "suspension; run 2: the ladder zone pressed in a phase, the suspend, " \
+           "where the script puts him, and what the resume restores"
+
+
 def c_game_clock():
     r"""GAME_STATE 6: the Omikron calendar - 41 days, 13 months, year 7216.
 
@@ -42353,6 +42413,7 @@ SLOW = [
     ("engine: game restart", c_engine_game_restart, "todo/drift-audit.md S3; SCRIPT_VM"),
     ("engine: lift ride", c_engine_lift_ride, "todo/drift-audit.md M9; actor/walk.h"),
     ("engine: shoot freeze", c_engine_shoot_freeze, "todo/drift-audit.md S7; actor/shootmode.h"),
+    ("engine: shoot suspend", c_engine_shoot_suspend, "todo/drift-audit.md S7; actor/shootmode.h"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),

@@ -543,7 +543,13 @@ void PlayState::worldStaged() {
             // no aim layer unless the fire gate runs him this tick
             if (auto gaL = gunAims.find(s.actor); gaL != gunAims.end()) gaL->second.live = false;
             bool clipHolds = false;
-            if (act >= 0 && shootMode && !shotDead && deadIt != shootBrains.end() &&
+            // `Shoot_TickNpc` calls a gunman's brain callback - whose
+            // prologue this clip tick is, whose body is the block below and
+            // whose tail is the cell stamp after it - only `if
+            // (!g_PlayerBehaviourOff)`: while the player is suspended
+            // (op 116) no gunman thinks (todo/drift-audit.md S7)
+            const bool brainsOff = session.shootMode().playerOff();
+            if (act >= 0 && shootMode && !shotDead && !brainsOff && deadIt != shootBrains.end() &&
                 (deadIt->second.flags & 8u)) {
                 GunClip& gc = gunClips[s.actor];
                 // THE FRAME DELTA, `flt_4C30D8` - which the pause screen
@@ -578,7 +584,7 @@ void PlayState::worldStaged() {
                     s.walkMove[1] = 0.0f;
                 }
             }
-            if (act >= 0 && shootMode && !shotDead && !clipHolds) {
+            if (act >= 0 && shootMode && !shotDead && !clipHolds && !brainsOff) {
                 auto it = shootBrains.find(s.actor);
                 if (it == shootBrains.end()) {
                     omk::ShootRecord fresh;
@@ -1838,7 +1844,7 @@ void PlayState::worldStaged() {
             // the cycle that makes a moving gunman's occupancy follow
             // him instead of staying where he started)
             if (auto sb = shootBrains.find(s.actor);
-                shootMode && !shotDead && sb != shootBrains.end() && shootMap.valid() &&
+                shootMode && !shotDead && !brainsOff && sb != shootBrains.end() && shootMap.valid() &&
                 sb->second.state != 2 && !sb->second.cellStamped) {
                 omk::ShootRecord& sr = sb->second;
                 const int fl = static_cast<signed char>(sr.node & 0xFF);
