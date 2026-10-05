@@ -40237,6 +40237,80 @@ def c_engine_astaroth_tick():
            "his gauge"
 
 
+def c_engine_camera_shake():
+    r"""THE CAMERA SHAKE (`todo/astaroth.md` step 4; drift audit S11, op 136).
+
+    `Camera_SetShake(cam, duration, amp)` (0x00414DB0) stores `cam+196 =
+    duration` and `cam+204 = amp * 0.3937` and leaves the elapsed `cam+200`
+    alone; the camera tick runs `sub_418030` while `cam+196 > 0`, in every
+    mode but 13: `t = dur - elapsed`, `dy = sin(t * 80 deg) * amp * (t / dur)
+    * dt` added to the eye's AND the aim's Y, `elapsed += dt`, all three
+    zeroed once elapsed reaches the duration. Its callers are op 136
+    `camera.shake` (32 shipped sites - recorded and dropped until now) and
+    Astaroth's footstep, (30, 10) each time a walk cell ends.
+
+    The probe (`shake_probe`): a (30, 10) shake stepped at dt 1 runs 30
+    frames, -3.4095 then 1.3017, summing -0.6006 (computed independently
+    below); a second (30, 10) asked for at frame 10 still ends at 30, since
+    the clock is not reset; AREA 175's message 0 - its hurt handler, which
+    runs `camera.shake 20, 20` - shakes once for 20 frames. The viewer, the
+    Astaroth fight with the souls down: the first bolt on the player shakes
+    the view by 2.693 the next frame (20, 20 at t = 20), and his first
+    footstep, asked for while that shake still runs, starts at -2.197 -
+    t = 17, not 30: the elapsed clock carried over.
+
+    The viewer's line is told from what the VIEW holds after the shake (the
+    eye's and the aim's Y moved), not from the `dy` handed to it.
+
+    Shown to fail: the elapsed reset in `cameraShake` (renewed 40, the
+    footstep -3.410); the op 136 arm removed (script 0, and no hurt shake);
+    the view's two `+= dy` removed (0.000). The `* dt` dropped is invisible
+    at dt 1 and is NOT asserted.
+    """
+    import subprocess, re as _re, math
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s", "build/shake_probe", "play"], cwd=eng, capture_output=True)
+    probe = os.path.join(eng, "build", "shake_probe")
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(probe) or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    pv = subprocess.Popen(
+        [play, fr, os.path.join(ROOT, "tables"), "--save",
+         os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "175",
+         "--address", "526", "--zone-enable", "2936", "--zone-disable", "2935",
+         "--hide-show", "34,1,100000,0", "--frames", "100", "--nodelay",
+         "--shoot-health", "5000", "--astaroth-souls", "10"],
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, encoding="latin-1",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+    p = subprocess.run([probe, fr, os.path.join(ROOT, "tables")],
+                       capture_output=True, text=True).stdout
+    v = pv.communicate()[0]
+    direct = _re.search(r"^direct (\d+) (\S+) (\S+) (\S+)$", p, _re.M)
+    renewed = _re.search(r"^renewed (\d+)$", p, _re.M)
+    script = _re.search(r"^script (\d+) (\d+)$", p, _re.M)
+    # the arithmetic, independently
+    amp, d = 10 * 0.39370078, []
+    for k in range(30):
+        t = 30 - k
+        d.append(math.sin(math.radians(t * 80)) * amp * (t / 30))
+    want = (30, "%.4f" % d[0], "%.4f" % d[1], "%.4f" % sum(d))
+    shakes = _re.findall(r"CAMERA SHAKE \(sub_418030\) - shake (\d+), first dy (\S+) "
+                         r"\(aim (\S+)\)", v)
+    return ((int(direct.group(1)), direct.group(2), direct.group(3), direct.group(4))
+            if direct else None,
+            int(renewed.group(1)) if renewed else None,
+            (int(script.group(1)), int(script.group(2))) if script else None,
+            shakes[:3]), \
+           (want, 30, (1, 20), [("1", "2.693", "2.693"), ("2", "2.693", "2.693"),
+                                 ("3", "-2.197", "-2.197")]), \
+           "a (30, 10) shake: frames, the first two dy, their sum; renewed at frame 10: " \
+           "frames; AREA 175's message 0: shakes, frames; the viewer's first three " \
+           "applied shakes (two hurts, then his footstep mid-shake)"
+
+
 def c_game_clock():
     r"""GAME_STATE 6: the Omikron calendar - 41 days, 13 months, year 7216.
 
@@ -42809,6 +42883,7 @@ SLOW = [
     ("engine: astaroth souls", c_engine_astaroth_souls, "todo/astaroth.md 1; actor/astaroth.h"),
     ("engine: astaroth back", c_engine_astaroth_back, "todo/astaroth.md 2; actor/astaroth.h"),
     ("engine: astaroth tick", c_engine_astaroth_tick, "todo/astaroth.md 3; actor/astaroth.h"),
+    ("engine: camera shake", c_engine_camera_shake, "todo/astaroth.md 4; script/area.h"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),

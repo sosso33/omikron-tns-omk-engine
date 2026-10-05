@@ -2022,6 +2022,25 @@ bool Session::setActorProperty(int actor, int property, std::int32_t value) {
     return hooks_.setActorProperty(actor, property, value);
 }
 
+void Session::cameraShake(float duration, int amp) {
+    shakeDur_ = duration;                                   // cam+196
+    shakeAmp_ = static_cast<float>(amp) * 0.39370078f;      // cam+204, `fild; fmuls`
+    ++shakes_;
+}
+
+float Session::cameraShakeStep(float dt) {
+    if (!(shakeDur_ > 0.0f)) return 0.0f;
+    // x87 throughout; the two stores the engine makes are floats
+    const double t = double(shakeDur_) - shakeElapsed_;     // kept on the x87 stack
+    const float phase = static_cast<float>(t * 80.0);       // `fstps 0x8(%ebp)`
+    const float fade = static_cast<float>(t / shakeDur_);   // `fstps -0x4(%ebp)`
+    const float dy = static_cast<float>(std::sin(double(phase) * 0.017453292519943295) *
+                                        (double(shakeAmp_) * fade) * double(dt));
+    shakeElapsed_ = shakeElapsed_ + dt;
+    if (!(shakeElapsed_ < shakeDur_)) shakeDur_ = shakeElapsed_ = shakeAmp_ = 0.0f;
+    return dy;
+}
+
 bool Session::actorWeaponSlot(int actor, int slot, int& reload, int& speedHi, int& damage,
                               int& ammo) const {
     std::vector<std::byte> chunk;
@@ -2753,6 +2772,14 @@ void Session::onCall(int i, const Call& call) {
         break;
     }
     // 132 is the fade IN and 133 the fade OUT, whatever the table calls them
+    case 136:
+        // `camera.shake duration, amp` (0x00405B10): two int16 operands,
+        // either a variable under 0x4000 (no shipped site uses one), and
+        // `Camera_SetShake(dword_9307E4, (float)op1, op2)` unless the VM's
+        // dry run is on
+        if (call.fields.size() >= 2)
+            cameraShake(static_cast<float>(call.fields[0]), call.fields[1]);
+        break;
     case 132: startBlackFade(true);  break;
     case 133: startBlackFade(false); break;
     case 103:

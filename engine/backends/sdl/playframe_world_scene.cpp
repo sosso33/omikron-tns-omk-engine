@@ -518,6 +518,28 @@ void PlayState::worldCamera() {
         view.cam.rollDeg = wc->roll;   // already wrapped to (-180,180]
         view.cam.w = dispW; view.cam.h = dispH;
     }
+    // THE CAMERA SHAKE (`sub_418030`, `Session::cameraShakeStep`): the
+    // camera tick runs it in every mode but 13 - the camera editings,
+    // which this file draws in the `haveEdit` / `holdEditCam` arms - after
+    // the mode has placed the eye and the aim and before anything else
+    // reads them, and it moves both Ys by the same `dy`, so the view
+    // TRANSLATES. A frame in mode 13 does not advance its clock.
+    // (Whether a CONVERSATION's camera is mode 13 is not read; nothing
+    // shipped shakes during one - LABELLED.)
+    if (!(!haveDlgCam && (haveEdit || holdEditCam)) && session.cameraShaking()) {
+        const float eyeWas = view.cam.eye[1], atWas = view.cam.at[1];
+        const float dy = session.cameraShakeStep(static_cast<float>(frameSec * 30.0));
+        view.cam.eye[1] += dy;
+        view.cam.at[1] += dy;
+        // told from what the VIEW now holds, not from `dy`
+        static long shakeTold = -1;
+        if (shakeTold != session.cameraShakes()) {
+            shakeTold = session.cameraShakes();
+            std::printf("frame %ld: CAMERA SHAKE (sub_418030) - shake %ld, first dy %.3f "
+                        "(aim %.3f)\n", n, session.cameraShakes(),
+                        double(view.cam.eye[1] - eyeWas), double(view.cam.at[1] - atWas));
+        }
+    }
     // AN INSTRUMENT OVERRIDE, and nothing the engine does: `--eye`
     // and `--at` (and `--fov`) replace whatever camera the frame
     // chose, so a shot can be framed on a body the game's own camera

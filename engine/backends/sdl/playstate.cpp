@@ -805,7 +805,11 @@ omk::AstarothWorld PlayState::astarothWorld(Staged& s, omk::ShootRecord& rec, fl
         }
     };
     w.stamp = [this, &rec]() { astarothStamp(rec); };
-    w.shake = [this](float, int) { ++astarothShakes; };
+    // `Camera_SetShake(dword_9307E4, 30.0, 10)` - his footstep
+    w.shake = [this](float duration, int amp) {
+        ++astarothShakes;
+        session_->cameraShake(duration, amp);
+    };
     return w;
 }
 

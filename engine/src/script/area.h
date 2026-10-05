@@ -873,6 +873,24 @@ public:
     // state 3 over a fixed 60 frames. 133 sets state 4, the fade OUT, and only
     // from state 3: you cannot fade out without having faded in.
     void startBlackFade(bool fromBlack);
+
+    // ---- THE CAMERA SHAKE (`todo/astaroth.md` step 4, drift audit S11) --
+    //
+    // `Camera_SetShake(cam, duration, amp)` (0x00414DB0) on the CURRENT
+    // camera, `dword_9307E4`: `cam+196 = duration; cam+204 = amp * 0.3937`,
+    // and the elapsed `cam+200` is NOT reset - a shake asked for while one
+    // runs keeps its clock. Op 136 `camera.shake duration, amp` and
+    // Astaroth's footstep (30, 10) are its two callers.
+    void cameraShake(float duration, int amp);
+    // `sub_418030` (0x00418030), which the camera tick `sub_417CF0` runs
+    // when `cam+196 > 0` - in every camera mode but 13:
+    //   t = dur - elapsed;  dy = sin(t * 80 deg) * amp * (t / dur) * dt
+    //   eye.y += dy; aim.y += dy;  elapsed += dt;
+    //   if (elapsed >= dur) dur = elapsed = amp = 0;
+    // -> dy, the offset to add to both Ys this frame (0 with none running).
+    float cameraShakeStep(float dt);
+    bool  cameraShaking() const { return shakeDur_ > 0.0f; }
+    long  cameraShakes() const { return shakes_; }
     // One frame of both, in FRAMES (the engine's `flt_4C30D8`).
     void tickFades(float dt = 1.0f);
     void tickBumpCooldown();
@@ -1729,6 +1747,8 @@ private:
     void fillSlotTables(ResidentSlot& s);
 
     // ---- the world, as the shown slot describes it
+    float shakeDur_ = 0.0f, shakeElapsed_ = 0.0f, shakeAmp_ = 0.0f;   // cam+196/+200/+204
+    long  shakes_ = 0;
     float playerPos_[3] = {0, 0, 0};
     float playerYaw_ = 0.0f;
     bool  playerPlaced_ = false;
