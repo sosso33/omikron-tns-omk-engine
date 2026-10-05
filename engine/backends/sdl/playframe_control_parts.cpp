@@ -684,6 +684,18 @@ void PlayState::controlFlight() {
                         ho.band, ho.action, int(p24));
             if (ho.action >= 0)
                 session.shootModeMutable().actorAction(ev.victim, ho.action);
+            // ...and `sub_423EF0`'s tail, whether or not he reacted: MESSAGE 2,
+            // "a gunman was hit and lives", his index as the sender - which
+            // `Message_RunHandlers` maps to his CHARACTERS id, as the handlers
+            // compare it (AREA 144: sender 403, the X-Tech sentinel, retires
+            // zone 2349 'ztech sentinelle attaque'). A KILLED gunman posts
+            // nothing (todo/drift-audit.md S8). `byte_90E0B0 = 4`, the same
+            // tail's other write, has no reader found and is not modelled.
+            if (!ho.killed) {
+                const bool ran = session.postMessage(2, ev.victim);
+                std::printf("  message 2 (sub_423EF0) - actor %d hit and alive: %s\n",
+                            ev.victim, ran ? "handled" : "unsubscribed");
+            }
             if (ho.killed) {
                 vs->deathType = ho.deathType;
                 vs->deathStart = gameClock;

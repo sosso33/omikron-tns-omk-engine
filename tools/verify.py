@@ -39893,6 +39893,64 @@ def c_engine_zone_box():
            "quad 25 below them, 60 above, 40 below and 100 above"
 
 
+def c_engine_message_two():
+    r"""MESSAGE 2: A GUNMAN HIT AND ALIVE (`todo/drift-audit.md` S8).
+
+    `sub_4240E0`'s gunman arm, a hit that leaves him health, ends in
+    `sub_423EF0`: the reaction (ported in `shootApplyHit`) and then, whether
+    or not he reacted, `Game_RaiseEvent(43, {2, him})` - message 2, his index
+    as sender, which `Message_RunHandlers` maps to his CHARACTERS id. A kill
+    posts nothing. The port posted neither, so AREA 144's handler - sender
+    403, the X-Tech sentinel, retires zone 2349 'ztech sentinelle attaque' -
+    never ran.
+
+    The gallery (AREA 59, `--shoot`, 40 shots): every non-lethal hit on 237
+    and 240 posts it, the killing one does not. And `message_probe`: AREA 144,
+    message 2 from 403 retires zone 2349; from 404 it does not.
+
+    Shown to fail: without the post the gallery prints no message-2 line.
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s", "play", "build/message_probe"], cwd=eng,
+                       capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    probe = os.path.join(eng, "build", "message_probe")
+    if b.returncode != 0 or not (os.path.exists(play) and os.path.exists(probe)):
+        return ("build failed",), ("built",), "engine/ must build"
+    tb = os.path.join(ROOT, "tables")
+    out = subprocess.run(
+        [play, fr, tb, "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--area", "59", "--stand", "5000,0,-2900,215", "--shoot",
+         "--shoot-health", "1000", "--frames", "1230", "--nodelay",
+         "--keys", ",".join(["54"] * 40), "--keydelay", "30", "--res", "640x480"],
+        capture_output=True, encoding="latin-1",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    seq = []
+    for ln in out.splitlines():
+        m = _re.match(r"\s+hit: damage \d+, health (-?\d+) -> (-?\d+)", ln)
+        if m: seq.append(("hit", int(m.group(2)) > 0))
+        m = _re.match(r"\s+message 2 \(sub_423EF0\) - actor (\d+) hit and alive", ln)
+        if m: seq.append(("msg2", int(m.group(1))))
+    alive_hits = sum(1 for k, v in seq if k == "hit" and v)
+    msgs = [v for k, v in seq if k == "msg2"]
+    # each message follows an alive hit directly, none follows a kill
+    paired = all(seq[i + 1][0] == "msg2" for i, (k, v) in enumerate(seq[:-1]) if k == "hit" and v)
+    after_kill = any(seq[i + 1][0] == "msg2" for i, (k, v) in enumerate(seq[:-1]) if k == "hit" and not v)
+    p = [subprocess.run([probe, fr, tb, "144", "2", str(snd), "2349"], capture_output=True,
+                        encoding="latin-1").stdout.strip() for snd in (403, 404)]
+    return (alive_hits > 0, len(msgs) == alive_hits, paired, after_kill, sorted(set(msgs)),
+            p[0].endswith("live 1 -> 0"), p[1].endswith("live 1 -> 1")), \
+           (True, True, True, False, [237, 240], True, True), \
+           "the gallery: non-lethal hits happened, one message 2 each, right " \
+           "after it, none after a kill, from 237 and 240; AREA 144: from 403 " \
+           "zone 2349 is retired, from 404 it is not - got %d hits, %d messages, %s" % (
+               alive_hits, len(msgs), p)
+
+
 def c_game_clock():
     r"""GAME_STATE 6: the Omikron calendar - 41 days, 13 months, year 7216.
 
@@ -40219,7 +40277,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (554, [], 1, []), \
+           (555, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -42457,6 +42515,7 @@ SLOW = [
     ("engine: shoot freeze", c_engine_shoot_freeze, "todo/drift-audit.md S7; actor/shootmode.h"),
     ("engine: shoot suspend", c_engine_shoot_suspend, "todo/drift-audit.md S7; actor/shootmode.h"),
     ("engine: zone box", c_engine_zone_box, "todo/drift-audit.md S10; script/zones.cpp"),
+    ("engine: message two", c_engine_message_two, "todo/drift-audit.md S8; SCRIPT_VM"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),
