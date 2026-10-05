@@ -7106,17 +7106,48 @@ def c_engine_supersampling():
     neighbour difference low, 5.5, but the picture moves by 51.1; taking one
     sample per block instead of the mean keeps the picture, 9.0, but the
     neighbour difference stays at 15.68, 100% of 1x. Each fails one half.
+
+    THE GLES BACKEND (2026-10-05), through `gles_probe` (headless CGL, macOS
+    only, skipped elsewhere) on Aapkayl through camera 4555: the same
+    properties - 1x byte-identical to a renderer never asked, 4x moving the
+    picture by a mean under 20 of 765 while the neighbour energy falls below
+    90% - and one more, the GPU PRESENT's resolve (`kPresentSSFrag`) equal to
+    `readback`'s pixel for pixel, dithered and plain, full frame and
+    letterboxed. Measured 4x: 15.6 of 765, energy 80%, present EXACT. Shown
+    to fail (2026-10-05) with the present taking one sample a block: the
+    present is no longer EXACT.
     """
     eng = os.path.join(ROOT, "engine")
     if not os.path.isdir(eng):
         return ("skipped",), ("skipped",), "engine/ absent"
+    gles, want_gles = ("skipped",), ("skipped",)
+    import platform, re
+    model = os.path.join(omkpaths.data_root(), "MESHES", "DECORS", "Aapkayl.3DO")
+    if platform.system() == "Darwin" and os.path.exists(model):
+        mk = subprocess.run(["make", "-s", "build/gles_probe"], cwd=eng, capture_output=True, text=True)
+        gp = os.path.join(eng, "build", "gles_probe")
+        gles = want_gles = ("no gles_probe",)
+        if mk.returncode == 0 and os.path.exists(gp):
+            r = subprocess.run([gp, omkpaths.data_root(), model, "3526,1015,-905", "3412,1032,-882", "83"],
+                               capture_output=True, text=True)
+            m = re.search(r"supersample (\d)x: (\w+)\s+1x differs (\d+)\s+4x moved (\d+) \(mean ([\d.]+) "
+                          r"of 765\)\s+energy ([\d.]+) -> ([\d.]+) .*present: (\w+)", r.stdout)
+            lb = re.search(r"letterbox 640x352 at row 64 supersampled 4x .*present: (\w+)", r.stdout)
+            gles = ("supersample line not found",) if not (m and lb) else \
+                (m.group(1) == "4" and m.group(2) == "taken", int(m.group(3)), int(m.group(4)) > 5000,
+                 float(m.group(5)) < 20.0, float(m.group(7)) < 0.9 * float(m.group(6)),
+                 m.group(8) == "EXACT", lb.group(1) == "EXACT")
+            want_gles = (True, 0, True, True, True, True, True)
+            if m:
+                print(f"        gles 4x: mean {m.group(5)} of 765, energy {m.group(6)} -> {m.group(7)}, "
+                      f"present {m.group(8)}")
     src = open(os.path.join(eng, "src", "platform", "settings.h"),
                encoding="utf-8").read()
     defaultOff = "int    supersample = 1;" in src
     mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
     play = os.path.join(eng, "build", "omk-play")
     if mk.returncode != 0 or not os.path.exists(play):
-        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+        return (("skipped",), gles), (("skipped",), want_gles), "no SDL - the frontend is optional (PORTING A8)"
     env = dict(os.environ, SDL_VIDEODRIVER="dummy")
 
     def shot(extra):
@@ -7131,7 +7162,7 @@ def c_engine_supersampling():
 
     none = shot([])
     if none is None:
-        return ("skipped",), ("skipped",), "no Vulkan device - the GPU backend is optional"
+        return (("skipped",), gles), (("skipped",), want_gles), "no Vulkan device - the GPU backend is optional"
     one, four = shot(["--ssaa", "1"]), shot(["--ssaa", "4"])
     same = sum(1 for i in range(0, len(none), 2) if none[i:i+2] != one[i:i+2])
     moved = sum(1 for i in range(0, len(none), 2) if four[i:i+2] != one[i:i+2])
@@ -7153,8 +7184,8 @@ def c_engine_supersampling():
     e1, e4 = energy(p1), energy(p4)
     mad = sum(abs(a_[0] - b_[0]) + abs(a_[1] - b_[1]) + abs(a_[2] - b_[2])
               for a_, b_ in zip(p1, p4)) / len(p1)
-    return (defaultOff, same, moved > 5000, mad < 20.0, e4 < 0.9 * e1), \
-           (True, 0, True, True, True), \
+    return (defaultOff, same, moved > 5000, mad < 20.0, e4 < 0.9 * e1, gles), \
+           (True, 0, True, True, True, want_gles), \
            ("the default is 1 in the source; `--ssaa 1` differs from no flag in %d "
             "pixels; 4x moves %d; it is the same picture, a mean difference of "
             "%.2f a pixel from 1x, and smoother - neighbour difference %.2f "

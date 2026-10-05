@@ -37,8 +37,9 @@
 //     `Draw::lit`) - enhancements, off by default (`todo/enhancements.md`);
 //     `lit` is ignored and the vertex colour stands, which is what the
 //     default game draws;
-//   * MSAA, anisotropy, supersampling - enhancements; trilinear filtering IS
-//     here (a mip chain at upload), and bilinear is the default;
+//   * MSAA - an enhancement. Trilinear filtering, anisotropy (where the
+//     context has the extension) and supersampling ARE here, and bilinear is
+//     the default;
 //   * the native mirror (`drawMirrorScene`) - returns false, so
 //     `drawWithMirror` takes its CPU path through `readback()`. A stencil
 //     version is `todo/vita-port.md` step G5; GLES2 has the stencil for it.
@@ -351,6 +352,60 @@ void main() {
 }
 )";
 
+// THE PRESENT PASS OF A SUPERSAMPLED WORLD (`todo/enhancements.md` 9): the
+// target is `uSS` times the picture each way, and each picture pixel is first
+// the ROUNDED integer mean of its `uSS x uSS` block, `(sum + n/2) / n` on the
+// 8-bit values - `readback`'s resolve, and `present.frag`'s on Vulkan - and
+// only then quantised ONCE, with `kPresentFrag`'s arithmetic. A SEPARATE
+// STRING, not a branch in `kPresentFrag`: the Vita's shader cache is keyed by
+// the source, and an edit there would orphan the cached program every frame
+// presents through. `n` is 4 or 16, so every division here is exact.
+constexpr const char* kPresentSSFrag = R"(
+uniform sampler2D uPic;
+uniform sampler2D uBayer;  // 4x4, the matrix / 255, NEAREST + REPEAT
+uniform vec2  uPicSize;    // the picture's size in OUTPUT pixels
+uniform vec2  uTexSize;    // the render target's - `uSS` times the frame
+uniform float uSS;         // 2 or 4
+uniform int   uDither;
+varying vec2  vPic;
+float trunc0(float v) { return v < 0.0 ? -floor(-v) : floor(v); }
+float q(float c8, float t, float levels, float step) {
+    float d = trunc0(t * step / 16.0);
+    float v = clamp(c8 + d, 0.0, 255.0);
+    return floor((v * levels + 127.0) / 255.0);
+}
+void main() {
+    vec2 px = floor(vPic * uPicSize);
+    vec3 acc = vec3(0.0);
+    for (int sy = 0; sy < 4; ++sy) {
+        if (float(sy) >= uSS) break;
+        for (int sx = 0; sx < 4; ++sx) {
+            if (float(sx) >= uSS) break;
+            // the picture is the target's TOP rows, and GL's row 0 is the bottom
+            vec2 src = vec2(px.x * uSS + float(sx), uTexSize.y - 1.0 - (px.y * uSS + float(sy)));
+            acc += floor(texture2D(uPic, (src + 0.5) / uTexSize).rgb * 255.0 + 0.5);
+        }
+    }
+    float n = uSS * uSS;
+    vec3 m = floor((acc + floor(n / 2.0)) / n);
+    float r5, g6, b5;
+    if (uDither != 0) {
+        float t = floor(texture2D(uBayer, (mod(px, 4.0) + 0.5) / 4.0).r * 255.0 + 0.5) - 8.0;
+        r5 = q(m.r, t, 31.0, 8.0);
+        g6 = q(m.g, t, 63.0, 4.0);
+        b5 = q(m.b, t, 31.0, 8.0);
+    } else {
+        r5 = floor(m.r / 8.0);
+        g6 = floor(m.g / 4.0);
+        b5 = floor(m.b / 8.0);
+    }
+    vec3 o = vec3(r5 * 8.0 + floor(r5 / 4.0),
+                  g6 * 4.0 + floor(g6 / 16.0),
+                  b5 * 8.0 + floor(b5 / 4.0));
+    gl_FragColor = vec4(o / 255.0, 1.0);
+}
+)";
+
 GLuint compile(GLenum kind, const char* prelude, const char* body) {
     const GLuint s = glCreateShader(kind);
     const char* src[2] = {prelude, body};
@@ -635,6 +690,17 @@ public:
         return true;
     }
     int anisotropy() const { return anisoOn_; }
+    // SUPERSAMPLING (`todo/enhancements.md` 9): the world drawn `n` times
+    // larger each way and averaged down - in `readback` on the CPU and in the
+    // present pass on the GPU, by one rule. Before `init`: the target is made
+    // at that size, and a context that cannot hold it gets a smaller factor,
+    // said.
+    bool setSupersample(int n) override {
+        if (ready_) return false;   // too late: the target exists
+        ss_ = n < 2 ? 1 : n < 4 ? 2 : 4;
+        return true;
+    }
+    int supersample() const { return ss_; }
 
     // ---- presentation, the window side. `frameW x frameH` is the ENGINE's
     // frame (640x480); the window is whatever the device has (960x544 on a
@@ -746,10 +812,16 @@ private:
     // texture, into the NDC rectangle `dst`.
     void drawPresent(GLuint tex, int picW, int picH, int texW, int texH, bool flipY,
                      bool quantise, const float dst[4], int winW, int winH);
+    void drawPresentSS(int vh, const float dst[4], int winW, int winH);
 
-    int w_ = 0, h_ = 0;
+    int w_ = 0, h_ = 0;      // the OUTPUT size - what `readback()` answers with
+    int ss_ = 1;             // the supersample factor, 1 off
+    int rw_ = 0, rh_ = 0;    // ...and the RENDER size, `w_ * ss_` by `h_ * ss_`
     bool ready_ = false;
-    GLuint prog_ = 0, present_ = 0;
+    bool allocTarget();      // `colour_` and `depth_` at the render size
+    GLuint prog_ = 0, present_ = 0, presentSS_ = 0;
+    GLint sDst_ = -1, sPic_ = -1, sBayer_ = -1, sPicSize_ = -1, sTexSize_ = -1, sSS_ = -1,
+          sDither_ = -1;
     GLuint overlay_ = 0;
     GLuint maskTex_ = 0;
     // SCRATCH, kept between calls. `uploadGeometry` built a fresh vector every
@@ -931,6 +1003,7 @@ GlesRenderer::~GlesRenderer() {
     if (fbo_) glDeleteFramebuffers(1, &fbo_);
     if (prog_) glDeleteProgram(prog_);
     if (present_) glDeleteProgram(present_);
+    if (presentSS_) glDeleteProgram(presentSS_);
     for (auto& [g, pv] : poseVbo_) deleteBuffers(1, &pv.id);
     if (posed_) glDeleteProgram(posed_);
 }
@@ -940,17 +1013,28 @@ bool GlesRenderer::init(int w, int h) {
     // the environment can only turn it OFF - a probe's `setStateCache` holds
     if (std::getenv("OMK_GLES_NO_STATE_CACHE")) stateCache_ = false;
     fb_ = Surface(w, h, 0);
-    rgba_.assign(static_cast<std::size_t>(w) * h * 4, 0);
     if (ready_) {
         // a resize: only the target changes
-        glBindTexture(GL_TEXTURE_2D, colour_);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-gpuTexture("render targets", colour_, 4LL * w * h);
-        glBindRenderbuffer(GL_RENDERBUFFER, depth_);
-        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, w, h);
-gpuRenderbuffer("render targets", depth_, 2LL * w * h);
-        return true;
+        rw_ = w_ * ss_; rh_ = h_ * ss_;
+        rgba_.assign(static_cast<std::size_t>(rw_) * rh_ * 4, 0);
+        return allocTarget();
     }
+    // the supersample factor the context can hold: a target past its largest
+    // texture or renderbuffer is refused by the driver, so it is halved here
+    // until it fits, and said
+    if (ss_ > 1) {
+        GLint maxTex = 0, maxRb = 0;
+        glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTex);
+        glGetIntegerv(GL_MAX_RENDERBUFFER_SIZE, &maxRb);
+        const int lim = std::min(maxTex, maxRb);
+        const int asked = ss_;
+        while (ss_ > 1 && (w * ss_ > lim || h * ss_ > lim)) ss_ /= 2;
+        if (ss_ != asked)
+            std::printf("gles: supersampling %dx does not fit (%dx%d past the context's %d) - %dx\n",
+                        asked, w * asked, h * asked, lim, ss_);
+    }
+    rw_ = w_ * ss_; rh_ = h_ * ss_;
+    rgba_.assign(static_cast<std::size_t>(rw_) * rh_ * 4, 0);
     prog_ = link(kSceneVert, kSceneFrag, {{kAttrPos, "aPos"}, {kAttrUV, "aUV"},
                                           {kAttrCol, "aCol"}, {kAttrPhase, "aPhase"}});
     present_ = link(kPresentVert, kPresentFrag, {{0, "aPos"}});
@@ -1033,21 +1117,20 @@ gpuRenderbuffer("render targets", depth_, 2LL * w * h);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-gpuTexture("render targets", colour_, 4LL * w * h);
     glGenRenderbuffers(1, &depth_);
-    glBindRenderbuffer(GL_RENDERBUFFER, depth_);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, w, h);
-gpuRenderbuffer("render targets", depth_, 2LL * w * h);
     glGenFramebuffers(1, &fbo_);
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colour_, 0);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depth_);
-    const GLenum fbs = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    if (fbs != GL_FRAMEBUFFER_COMPLETE) {
-        std::fprintf(stderr, "gles: render target incomplete (0x%x)\n", fbs);
-        return false;
+    if (!allocTarget()) return false;
+    if (ss_ > 1) {
+        presentSS_ = link(kPresentVert, kPresentSSFrag, {{0, "aPos"}});
+        if (!presentSS_) return false;
+        sDst_     = glGetUniformLocation(presentSS_, "uDst");
+        sPic_     = glGetUniformLocation(presentSS_, "uPic");
+        sBayer_   = glGetUniformLocation(presentSS_, "uBayer");
+        sPicSize_ = glGetUniformLocation(presentSS_, "uPicSize");
+        sTexSize_ = glGetUniformLocation(presentSS_, "uTexSize");
+        sSS_      = glGetUniformLocation(presentSS_, "uSS");
+        sDither_  = glGetUniformLocation(presentSS_, "uDither");
+        std::printf("gles: supersampling %dx - the world drawn at %dx%d\n", ss_, rw_, rh_);
     }
 
     // the white 1x1 a material with no texture binds - raster.cpp leaves the
@@ -1113,6 +1196,39 @@ gpuBuffer("vertex buffers", quad_, sizeof quad);
     }
     ready_ = true;
     return true;
+}
+
+// THE RENDER TARGET's storage, at the RENDER size - the output size times the
+// supersample factor. A context that cannot allocate a supersampled target
+// (the Vita's memory, a driver's limit) gets the factor halved, said, until it
+// can; at 1x a failure is the caller's.
+bool GlesRenderer::allocTarget() {
+    for (;;) {
+        while (glGetError() != GL_NO_ERROR) {}
+        glBindTexture(GL_TEXTURE_2D, colour_);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, rw_, rh_, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+gpuTexture("render targets", colour_, 4LL * rw_ * rh_);
+        glBindRenderbuffer(GL_RENDERBUFFER, depth_);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, rw_, rh_);
+gpuRenderbuffer("render targets", depth_, 2LL * rw_ * rh_);
+        const bool oom = glGetError() == GL_OUT_OF_MEMORY;
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colour_, 0);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depth_);
+        const GLenum fbs = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        if (!oom && fbs == GL_FRAMEBUFFER_COMPLETE) return true;
+        if (ss_ <= 1) {
+            std::fprintf(stderr, "gles: render target incomplete (0x%x)%s\n", fbs,
+                         oom ? ", out of memory" : "");
+            return false;
+        }
+        std::printf("gles: supersampling %dx refused (%s at %dx%d) - %dx\n", ss_,
+                    oom ? "out of memory" : "target incomplete", rw_, rh_, ss_ / 2);
+        ss_ /= 2;
+        rw_ = w_ * ss_; rh_ = h_ * ss_;
+        rgba_.assign(static_cast<std::size_t>(rw_) * rh_ * 4, 0);
+    }
 }
 
 // THE POSING PROGRAM, CHECKED WHERE IT RUNS (2026-09-26). On the Mac a posed
@@ -1677,7 +1793,9 @@ void GlesRenderer::setView(const View& view) {
     const int vw = view.letterboxed() ? view.vw : w_;
     const int vh = view.letterboxed() ? view.vh : h_;
     cam.w = vw; cam.h = vh;
-    glViewport(0, h_ - vh, vw, vh);
+    // ...at the RENDER size: a supersampled target is the frame `ss_` times
+    // over, and the projection is the same (the aspect does not change)
+    glViewport(0, rh_ - vh * ss_, vw * ss_, vh * ss_);
 
     // THE VIEW-PROJECTION from the software rasterizer's own basis. GL's clip
     // space differs from Vulkan's in the two ways that matter: Y points UP
@@ -1762,7 +1880,7 @@ void GlesRenderer::begin(const View& view) {
     dither_ = view.dither;
 
     glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
-    glViewport(0, 0, w_, h_);
+    glViewport(0, 0, rw_, rh_);
     glDisable(GL_SCISSOR_TEST);
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);   // black, as the engine clears
     OMK_GL_CLEAR_DEPTH(1.0f);
@@ -2131,10 +2249,36 @@ const Surface& GlesRenderer::readback() {
     glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     const double t0 = glesClockMs();
-    glReadPixels(0, 0, w_, h_, GL_RGBA, GL_UNSIGNED_BYTE, rgba_.data());
+    glReadPixels(0, 0, rw_, rh_, GL_RGBA, GL_UNSIGNED_BYTE, rgba_.data());
     const double t1 = glesClockMs();
     g_glesMs[0] += t1 - t0;
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    // THE SUPERSAMPLE RESOLVE, on the 8-bit side and BEFORE the one
+    // quantisation - Vulkan's `readback` rule: the rounded mean of each
+    // `ss x ss` block, then dithered once at the output pixel.
+    if (ss_ > 1) {
+        const int n = ss_ * ss_;
+        for (int y = 0; y < h_; ++y)
+            for (int x = 0; x < w_; ++x) {
+                int acc[3] = {0, 0, 0};
+                for (int sy = 0; sy < ss_; ++sy) {
+                    const unsigned char* row = rgba_.data() +
+                        static_cast<std::size_t>(rh_ - 1 - (y * ss_ + sy)) * rw_ * 4;
+                    for (int sx = 0; sx < ss_; ++sx) {
+                        const unsigned char* p = row + static_cast<std::size_t>(x * ss_ + sx) * 4;
+                        acc[0] += p[0]; acc[1] += p[1]; acc[2] += p[2];
+                    }
+                }
+                const int ar = (acc[0] + n / 2) / n, ag = (acc[1] + n / 2) / n,
+                          ab = (acc[2] + n / 2) / n;
+                fb_.px[static_cast<std::size_t>(y) * w_ + x] =
+                    dither_ ? quantise888Dither(ar, ag, ab, x, y)
+                            : rgb565(static_cast<unsigned char>(ar), static_cast<unsigned char>(ag),
+                                     static_cast<unsigned char>(ab));
+            }
+        g_glesMs[1] += glesClockMs() - t1;
+        return fb_;
+    }
     // GL's row 0 is the BOTTOM; the Surface's is the top. The 888 -> 565 rule
     // is `quantise888DitherRow`, the one the Vulkan readback calls, so the
     // quantisation stays in one place (`PORTING` A3).
@@ -2210,8 +2354,39 @@ bool GlesRenderer::presentWorld(int vy, int vh, int frameW, int frameH, int winW
     const float rowH = frame[3] / static_cast<float>(frameH);
     const float dst[4] = {frame[0], frame[1] + frame[3] - rowH * static_cast<float>(vy + vh),
                           frame[2], rowH * static_cast<float>(vh)};
+    if (ss_ > 1) { drawPresentSS(vh, dst, winW, winH); return true; }
     drawPresent(colour_, w_, vh, w_, h_, true, true, dst, winW, winH);
     return true;
+}
+
+// The world through `kPresentSSFrag`: `drawPresent`'s state, the resolve's
+// program.
+void GlesRenderer::drawPresentSS(int vh, const float dst[4], int winW, int winH) {
+    glBindFramebuffer(GL_FRAMEBUFFER, windowFbo_);
+    glViewport(0, 0, winW, winH);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
+    glClearColor(0, 0, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glUseProgram(presentSS_);
+    curProg_ = presentSS_;
+    glUniform4fv(sDst_, 1, dst);
+    glUniform2f(sPicSize_, static_cast<float>(w_), static_cast<float>(vh));
+    glUniform2f(sTexSize_, static_cast<float>(rw_), static_cast<float>(rh_));
+    glUniform1f(sSS_, static_cast<float>(ss_));
+    glUniform1i(sDither_, dither_ ? 1 : 0);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, bayer_);
+    glUniform1i(sBayer_, 1);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, colour_);
+    glUniform1i(sPic_, 0);
+    glBindBuffer(GL_ARRAY_BUFFER, quad_);
+    for (GLuint a = 1; a <= kAttrPhase; ++a) glDisableVertexAttribArray(a);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glEnable(GL_DEPTH_TEST);
 }
 
 bool GlesRenderer::presentSurface(const Surface& s, int winW, int winH) {
@@ -2496,6 +2671,12 @@ void glesGeometryStats(Renderer* r, long out[3]) {
 int glesAnisotropy(Renderer* r) {
     auto* g = dynamic_cast<GlesRenderer*>(r);
     return g ? g->anisotropy() : 1;
+}
+
+// the supersample factor the target was made at (1: off), for a probe
+int glesSupersample(Renderer* r) {
+    auto* g = dynamic_cast<GlesRenderer*>(r);
+    return g ? g->supersample() : 1;
 }
 
 // the draw-state cache on or off, for a probe that compares the two

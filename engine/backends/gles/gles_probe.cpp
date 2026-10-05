@@ -83,6 +83,7 @@ void glesSetStateCache(Renderer*, bool);
 void glesTakeStateCalls(long out[3]);
 void glesGeometryStats(Renderer*, long out[3]);
 int glesAnisotropy(Renderer*);
+int glesSupersample(Renderer*);
 }
 
 namespace {
@@ -612,29 +613,103 @@ int main(int argc, char** argv) {
         delete bi; delete tri; delete an;
     }
 
+    // ---- SUPERSAMPLING (`todo/enhancements.md` 9), `engine: supersampling`'s
+    // properties on this backend: 1x is BYTE-IDENTICAL to a renderer never
+    // asked; 4x moves the picture by a small mean amount while its neighbour
+    // energy FALLS (a resolve, not a shift); coverage is kept; and the GPU
+    // present pass's resolve equals `readback`'s, dithered and plain - the
+    // exact check every present here makes.
+    {
+        omk::View v;
+        v.cam = cam; v.cam.w = W; v.cam.h = H;
+        v.dither = false;
+        omk::SoftwareRenderer sw;
+        const omk::Surface swF = *run(sw, v, W, H);
+        const omk::Surface base = *run(*gl, v, W, H);
+        omk::Renderer* one = omk::makeGlesRenderer();
+        one->setSupersample(1);
+        const omk::Surface f1 = *run(*one, v, W, H);
+        omk::Renderer* four = omk::makeGlesRenderer();
+        const bool took = four->setSupersample(4);
+        const omk::Surface* f4p = run(*four, v, W, H);
+        if (!f4p) { std::fprintf(stderr, "gles renderer failed to come up at 4x\n"); return 1; }
+        const omk::Surface f4 = *f4p;
+        const auto rgbOf = [](std::uint16_t x, int k) {
+            return k == 0 ? ((x >> 11) & 31) * 8 : k == 1 ? ((x >> 5) & 63) * 4 : (x & 31) * 8;
+        };
+        long same1 = 0, moved = 0;
+        double dsum = 0.0;
+        for (std::size_t i = 0; i < base.px.size(); ++i) {
+            same1 += base.px[i] != f1.px[i];
+            if (f4.px[i] == f1.px[i]) continue;
+            ++moved;
+            for (int k = 0; k < 3; ++k) dsum += std::abs(rgbOf(f4.px[i], k) - rgbOf(f1.px[i], k));
+        }
+        const auto energy = [&](const omk::Surface& s) {
+            double t = 0.0; long n = 0;
+            for (int y = 0; y + 1 < s.h; ++y)
+                for (int x = 0; x + 1 < s.w; ++x) {
+                    const std::uint16_t p = s.at(x, y), r = s.at(x + 1, y), d = s.at(x, y + 1);
+                    for (int k = 0; k < 3; ++k)
+                        t += std::abs(rgbOf(p, k) - rgbOf(r, k)) + std::abs(rgbOf(p, k) - rgbOf(d, k));
+                    ++n;
+                }
+            return n ? t / double(n) : 0.0;
+        };
+        const double e1 = energy(f1), e4 = energy(f4);
+        const Coverage c = compare(swF, f4);
+        long badP = 0;
+        for (int dither = 0; dither <= 1; ++dither) {
+            omk::View vd = v;
+            vd.dither = dither != 0;
+            const omk::Surface rb = *run(*four, vd, W, H);
+            Window win;
+            win.make(W, H);
+            omk::glesSetWindowTarget(four, win.fbo);
+            omk::glesPresentWorld(four, 0, H, W, H, W, H);
+            badP += presentMismatches(win, rb, 0);
+            omk::glesSetWindowTarget(four, 0);
+        }
+        const int got = omk::glesSupersample(four);
+        std::printf("supersample %dx: %s  1x differs %ld  4x moved %ld (mean %.1f of 765)  "
+                    "energy %.2f -> %.2f (%.0f%%)  coverage %.4f  present: %s\n", got,
+                    took ? "taken" : "REFUSED", same1, moved, moved ? dsum / double(moved) : 0.0,
+                    e1, e4, e1 > 0 ? 100.0 * e4 / e1 : 0.0, c.agree(),
+                    badP ? (std::to_string(badP) + " DIFFERENT").c_str() : "EXACT");
+        failures += !took || got != 4 || same1 != 0 || moved == 0 || e4 >= 0.9 * e1 ||
+                    c.agree() < 0.98 || badP != 0;
+        delete one; delete four;
+    }
+
     // ---- THE LETTERBOX: a 640x352 picture at row 64 of a 640x480 frame, the
     // dialogue camera mode's shape. The target is the full frame and the
     // picture its top rows, as `play.cpp` sets the view up.
-    if (W == 640 && H == 480) {
+    // ...and again SUPERSAMPLED, where the viewport and the present's rows
+    // are both scaled by the factor
+    if (W == 640 && H == 480) for (int ssk = 1; ssk <= 4; ssk *= 4) {
         const int vh = 352, vy = (480 - vh) / 2;
         omk::View v;
         v.cam = cam; v.vx = 0; v.vy = vy; v.vw = W; v.vh = vh;
-        const omk::Surface* g = run(*gl, v, W, H);
+        omk::Renderer* lr = gl;
+        if (ssk > 1) { lr = omk::makeGlesRenderer(); lr->setSupersample(ssk); }
+        const omk::Surface* g = run(*lr, v, W, H);
         Window win;
         win.make(W, H);
-        omk::glesSetWindowTarget(gl, win.fbo);
+        omk::glesSetWindowTarget(lr, win.fbo);
         // the readback is the WHOLE target; the picture is its top `vh` rows
         omk::Surface pic(W, vh, 0);
         for (int y = 0; y < vh; ++y)
             for (int x = 0; x < W; ++x) pic.set(x, y, g->at(x, y));
-        omk::glesPresentWorld(gl, vy, vh, W, H, W, H);
+        omk::glesPresentWorld(lr, vy, vh, W, H, W, H);
         const long bad = presentMismatches(win, pic, vy);
         long lit = 0;
         for (auto p : pic.px) lit += p != 0;
-        std::printf("letterbox 640x%d at row %d  picture lit %ld  present: %s\n", vh, vy, lit,
+        std::printf("letterbox 640x%d at row %d%s  picture lit %ld  present: %s\n", vh, vy,
+                    ssk > 1 ? " supersampled 4x" : "", lit,
                     bad ? (std::to_string(bad) + " DIFFERENT").c_str() : "EXACT");
         failures += bad != 0 || lit == 0;
-        omk::glesSetWindowTarget(gl, 0);
+        omk::glesSetWindowTarget(lr, 0);
+        if (lr != gl) delete lr;
     }
 
     // 5. THE DRAW-STATE CACHE (todo/optimization.md step 17): the same draws

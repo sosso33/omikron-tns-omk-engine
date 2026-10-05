@@ -58,6 +58,7 @@ void PlayState::gpuOpenWindow() {
             omk::Renderer* gr = omk::makeGlesRenderer();
             if (texFilter > 0) gr->setTextureFilter(texFilter);   // the enhancements
             if (texAniso > 1) gr->setAnisotropy(texAniso);
+            if (ssaa > 1) gr->setSupersample(ssaa);
             if (gr->init(dispW, dispH)) {
                 glRen = gr;
                 omk::sdlFrontend(front).attachWindow(glWin);   // F11 and row 2 act on it
