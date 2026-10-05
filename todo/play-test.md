@@ -274,6 +274,14 @@ T-pose report (next-tasks 6) is the one to look at again. To see the mechanism
 on Telis in the flat (needs `omk-saves/GAMES`), `--hide-show 53,260,300,0`
 with `verify.py: engine: hide show`'s command. `todo/drift-audit.md` M1.
 
+## 22. A RETRIED SHOOT PHASE GETS ITS AMMUNITION BACK (2026-10-05)
+
+Die in a shoot phase that checkpoints (AREA 2 saves on entry; its "Mort
+Joueur" handler restores): on the retry the carried items and the five guns'
+ammunition should be what you entered with, not what the failed attempt left
+- the carried list in REVERSE order, which is the engine's own. `todo/drift-
+audit.md` S4.
+
 ## What is NOT fixed, so do not report it as new
 
 * **The lift arrival is still black** and the camera is inside the lift-car
