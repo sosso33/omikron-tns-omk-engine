@@ -162,7 +162,13 @@ HitOut shootApplyHit(ShootRecord& r, const HitIn& in) {
         if (dmg == 6 && in.shooterIsPlayer && r.type != 11u) return o;
     } else {
         if (dmg != 6) return o;
-        // types 13 and 10 go through `sub_47FD90` / `sub_47DF60`, unread
+        // `if (+80 == 13) { v13 = sub_47FD90(...); if (!v13) return -1; }`
+        // - Astaroth's gate (`actor/astaroth.h`); type 10 goes through
+        // `sub_47DF60` next, unread
+        if (r.type == 13u && in.typeGate) {
+            dmg = in.typeGate(dmg);
+            if (!dmg) return o;
+        }
     }
     o.refused = false;
     o.healthWas = o.health = r.health;

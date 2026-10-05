@@ -344,6 +344,28 @@ void PlayState::harnessShootHealth(std::int32_t& hp) {
     }
 }
 
+// --aim-at: the player's shot aimed at a world point
+void PlayState::harnessAimAt(omk::RecordShot& rs) {
+    // THE HARNESS: the engine aims a shot along the player's yaw and look
+    // pitch. This turns both, at the moment of firing, toward a point from
+    // the shot's own muzzle - through `shootGunmanAim`, the inverse of the
+    // shot matrix, with no jitter - so a check can strike one mesh.
+    if (!aimAtSet) return;
+    const int k0[3] = {0, 0, 0};
+    const omk::GunmanAim a = omk::shootGunmanAim(aimAt, rs.muzzle, 0.0f, k0);
+    rs.yawDeg = a.yawDeg;
+    rs.pitchDeg = a.pitchDeg;
+    if (player) player->setFacing(a.yawDeg);
+    shootPitch = a.pitchDeg;
+    static bool told = false;
+    if (!told) {
+        told = true;
+        std::printf("frame %ld: AIM AT - the test harness --aim-at %.0f %.0f %.0f: yaw %.1f "
+                    "pitch %.1f from the muzzle\n", n, double(aimAt[0]), double(aimAt[1]),
+                    double(aimAt[2]), double(a.yawDeg), double(a.pitchDeg));
+    }
+}
+
 // --fight-foe-at: the opponent started elsewhere
 void PlayState::harnessFoeAt(const float *& foeAt) {
     // THE HARNESS, and it is one: the engine starts him where the script

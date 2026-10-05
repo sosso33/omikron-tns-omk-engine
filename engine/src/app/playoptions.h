@@ -215,6 +215,9 @@ struct PlayOptions {
     // bolts can outlive the gallery's gunmen (they kill him in ~16 frames, and
     // since the death is ported he then fights no more). -1: the save's value
     int shootHealth = -1;
+    // --aim-at X,Y,Z: HARNESS, the player's shots aimed at a world point
+    float aimAt[3] = {0.0f, 0.0f, 0.0f};
+    bool  aimAtSet = false;
     int fightHealth = -1;   // --fight-health N: a HARNESS, the player's Vie at Fight_Begin
     long shootEndAt = -1;      // --shoot-end N: `shoot.end 1` at frame N
     float standAt[4] = {0, 0, 0, 0};

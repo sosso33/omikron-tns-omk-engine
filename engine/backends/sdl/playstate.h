@@ -105,6 +105,8 @@ struct PlayState {
     bool & openSneak = opt.openSneak;
     bool & startShoot = opt.startShoot;
     int & shootHealth = opt.shootHealth;
+    float (&aimAt)[3] = opt.aimAt;
+    bool & aimAtSet = opt.aimAtSet;
     int & fightHealth = opt.fightHealth;
     long & shootEndAt = opt.shootEndAt;
     float (&standAt)[4] = opt.standAt;
@@ -463,6 +465,10 @@ struct PlayState {
     omk::ShootRecord playerShootRec{};
     omk::ShotLatch shotLatch{};
     omk::ShootAim shootAim{};
+    // ASTAROTH's fight - the engine's globals around shoot type 13
+    // (`actor/astaroth.h`, `todo/astaroth.md`)
+    omk::AstarothFight astaroth{};
+    int astarothSoulSlot[omk::kAstarothSouls] = {-1, -1, -1, -1, -1, -1};   // the worldSlots each soul is in
     omk::ShootMover shootMover{};
     std::unique_ptr<omk::UiWalk> hudWalk{};
     omk::HudBar hudBar{};   // `Hud_DrawBar` mode 0, the health gauge
@@ -741,6 +747,7 @@ struct PlayState {
     // Session's flag, and the WAKE the noise, a hit and a strike begin with
     void shootFreezeSync(long frame);
     void shootWake(long frame, const char* what);
+    void astarothWorldHit(long frame, int mesh, int slot, const float at[3]);   // sub_47FCF0
     // `Shoot_InitWeapon` (0x00421FB0) for the PLAYER: the row of the object
     // in his hand and the magazine count - `Shoot_Enter` step 9 and
     // `shoot.player.resume` both call it; out: the object, its kind, the type
@@ -833,7 +840,8 @@ struct PlayState {
     void harnessShootEnd();   // --shoot-end: shoot.end 1 at a frame
     void harnessBoard(float (&at)[3], float (&door)[3]);   // --board: put at the called slider's door and the action pressed
     void harnessFight();   // --fight: op 62's entry by hand
-    void harnessShootHealth(std::int32_t& hp);   // --shoot-health: property 1 written at shoot entry
+    void harnessShootHealth(std::int32_t& hp);
+    void harnessAimAt(omk::RecordShot& rs);      // --aim-at: the player's shot aimed at a point   // --shoot-health: property 1 written at shoot entry
     void harnessFoeAt(const float *& foeAt);   // --fight-foe-at: the opponent started elsewhere
     void harnessFightHealth(omk::FightStats& ps);   // --fight-health: the player's Vie at Fight_Begin
     void harnessScxPlay();   // --scx-play: scene objects started by handle, once

@@ -299,6 +299,7 @@ void PlayState::worldDrawLists() {
     // (`OMK_NO_SIDECULL=1` for the other side of it).
     const float clipReach = static_cast<float>(clipInches);
     std::size_t runsDrawn = 0, runsCulled = 0, movingDrawn = 0, movingCulled = 0;
+    std::size_t hiddenMeshes = 0, hiddenDrawn = 0;
     for (int slot = 0; slot < 2; ++slot) {
         const WorldSlot& w = worldSlots[static_cast<std::size_t>(slot)];
         // loaded and solid, but not in the RENDER list (state 1)
@@ -336,6 +337,10 @@ void PlayState::worldDrawLists() {
         for (const auto& kv : w.moving)
             if (kv.first >= 0 && static_cast<std::size_t>(kv.first) < vis.size())
                 vis[static_cast<std::size_t>(kv.first)] = 0;
+        // ...and a mesh whose flag 2 was set at run time (`sub_436F20` -
+        // Astaroth's souls): the drawable mask `flags & 0x800043` skips it
+        for (std::size_t mi = 0; mi < w.meshHidden.size() && mi < vis.size(); ++mi)
+            if (w.meshHidden[mi]) vis[mi] = 0;
         const auto visible = [&](std::int32_t mi) -> bool {
             if (mi < 0 || static_cast<std::size_t>(mi) >= w.meshes.size()) return true;
             std::uint8_t& v = vis[static_cast<std::size_t>(mi)];
@@ -399,9 +404,16 @@ void PlayState::worldDrawLists() {
                              &w.geo, start, count, b.blend, b.cutout});
             i = j;
         }
+        // FLAG 2, as the walk just treated it: how many meshes are hidden
+        // and how many of THOSE it drew anyway (`vis` 1) - the consumer's
+        // own figure, which a check reads (`engine: astaroth souls`)
+        for (std::size_t mi = 0; mi < w.meshHidden.size() && mi < vis.size(); ++mi)
+            if (w.meshHidden[mi]) { ++hiddenMeshes; if (vis[mi] == 1) ++hiddenDrawn; }
         // ...and the moving meshes, where they ARE: the clip distance
         // and the side planes about their placed origin
         for (const auto& kv : w.moving) {
+            if (kv.first >= 0 && static_cast<std::size_t>(kv.first) < w.meshHidden.size() &&
+                w.meshHidden[static_cast<std::size_t>(kv.first)]) continue;   // flag 2
             const WorldSlot::MovingMesh& mm = kv.second;
             const float dx = mm.at[0] - view.cam.eye[0], dy = mm.at[1] - view.cam.eye[1],
                         dz = mm.at[2] - view.cam.eye[2];
@@ -416,6 +428,15 @@ void PlayState::worldDrawLists() {
                 draws.back().meshPose = mm.affine;
                 draws.back().meshPoses = 1;
             }
+        }
+    }
+    {
+        static std::size_t hiddenTold = 0, hiddenDrawnTold = 0;
+        if (hiddenMeshes != hiddenTold || hiddenDrawn != hiddenDrawnTold) {
+            hiddenTold = hiddenMeshes;
+            hiddenDrawnTold = hiddenDrawn;
+            std::printf("frame %ld: world draw - flag 2: %zu set mesh%s hidden, %zu of them "
+                        "drawn\n", n, hiddenMeshes, hiddenMeshes == 1 ? "" : "es", hiddenDrawn);
         }
     }
     if (clipReport) {

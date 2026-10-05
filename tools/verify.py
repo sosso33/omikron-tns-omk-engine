@@ -34771,7 +34771,8 @@ def c_engine_shoot_fire():
     # they walk into the line of fire - and with one live at a time the
     # retirements pair with the shots in order only if those are counted)
     gone = re.findall(r"^frame (\d+): SHOT retired - entry \d+ (hit the world|out of range|"
-                      r"HIT ACTOR \d+) at \S+ \S+ (\S+) after ([\d.]+), (\d+) live$", o, re.M)
+                      r"HIT ACTOR \d+) at \S+ \S+ (\S+) after ([\d.]+), (\d+) live"
+                      r"(?:, mesh -?\d+ \S+)?$", o, re.M)
     got = (init.group(1) if init else None,
            latches,
            [int(s[0]) for s in shots],
@@ -39994,6 +39995,80 @@ def c_engine_hide_piece():
            "script hides; the shown count after it"
 
 
+def c_engine_astaroth_souls():
+    r"""ASTAROTH's SIX SOULS (`todo/astaroth.md` step 1).
+
+    `Shoot_ActorEnter` hands a type-13 character to `sub_47FF70`: state 29,
+    `+88 = 10`, flags `|= 0x4020`, his `AstDos` mesh found, the six set
+    meshes `PAame01..06` of `PAstarot.3DO` found and shown at three bolts
+    each, and `off_4C8444` - the world-hit callback `Projectiles_Tick` calls
+    at 0x44DDDF with the set mesh a bolt's world ray met - pointed at
+    `sub_47FCF0`, which counts the bolt, and at the third HIDES the mesh
+    (flag 2) and posts message `27 + i` from sender `i`. Before this the port
+    entered him as a generic gunman and no soul could be struck, so AREA
+    175's handlers 27..32 never ran and the end-game fight could not be won.
+
+    The fight reached the way the shipped retry reaches it (zone 2936
+    'Restart Shoot', the conversation's Astaroth - character 34 - hidden as
+    record 1 hides it), and the player's bolts aimed by the `--aim-at`
+    harness. Run A: four bolts at `PAame05` - three count it down 2, 1, 0,
+    it goes down with message 31 HANDLED (the handler's `set.hide_piece` 14
+    and 10 and `character.hide 657` follow), the visible-set walk reports
+    the mesh hidden and NOT drawn, and the fourth bolt still stops on it
+    (`sub_444460` never tests flag 2) and counts nothing. Run B: bolts at
+    Astaroth himself, refused by his gate `sub_47FD90` while no soul is down.
+
+    Shown to fail: without the callback call no soul is struck; without the
+    draw's flag-2 skip the hidden mesh is drawn; without the type gate the
+    baton's 6 passes the 0x4000 rule and hurts him.
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    def start(aim, keys, frames):
+        return subprocess.Popen(
+            [play, fr, os.path.join(ROOT, "tables"), "--save",
+             os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "175",
+             "--address", "526", "--zone-enable", "2936", "--zone-disable", "2935",
+             "--hide-show", "34,1,100000,0", "--frames", str(frames), "--nodelay",
+             "--shoot-health", "1000", "--keys", ",".join(["54"] * keys),
+             "--keydelay", "40", "--aim-at", aim],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, encoding="latin-1",
+            env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+    pa = start("32261.3,718.0,-2097.5", 5, 220)       # PAame05's pivot
+    pb = start("32222,800,-2504", 2, 100)             # Astaroth's body
+    a, bo = pa.communicate()[0], pb.communicate()[0]
+    setup = _re.search(r"ASTAROTH SETUP \(sub_47FF70\): state (\d+), \+88 (\d+), flags "
+                       r"0x([0-9a-f]+), AstDos mesh (-?\d+), (\d+) of 6 souls found and "
+                       r"shown at (\d+) hits", a)
+    left = [int(x) for x in _re.findall(r"ASTAROTH SOUL 4 \(PAame05, mesh 31\) struck at "
+                                         r"\S+ \S+ \S+ - (\d+) hits? left", a)]
+    down = _re.findall(r"ASTAROTH SOUL (\d+) DOWN - (\d+) mesh(?:es)? hidden \(sub_436F20\), "
+                       r"(\d+) of 6 down, message (\d+) from (\d+): (\w+)", a)
+    onMesh = len(_re.findall(r"SHOT retired - entry \d+ hit the world at .* mesh 31 PAame05$",
+                             a, _re.M))
+    drawn = _re.findall(r"world draw - flag 2: (\d+) set mesh(?:es)? hidden, (\d+) of them "
+                        r"drawn", a)
+    after = (sorted(_re.findall(r"set\.hide_piece (\d+) - the row hidden", a)),
+             "hid actor 657 TUY5_FN" in a)
+    gate = _re.findall(r"ASTAROTH's gate \(sub_47FD90\): (\d+) of 6 souls down - (\w+)", bo)
+    hurt = len(_re.findall(r"^  hit: damage", bo, _re.M))
+    return ((setup.groups() if setup else None), left, down, onMesh, drawn[-1:] if drawn else [],
+            after, gate[:1], len(gate) >= 1, hurt), \
+           (("29", "10", "4060", "11", "6", "3"), [2, 1, 0],
+            [("4", "1", "1", "31", "4", "handled")], 4, [("1", "0")],
+            (["10", "14"], True), [("0", "refused")], True, 0), \
+           "the setup (state, +88, flags, AstDos, souls found, hits); PAame05's " \
+           "hits left; its fall; the bolts that stopped on it; the draw's flag-2 " \
+           "count; its handler's effects; Astaroth's gate; hits that hurt him"
+
+
 def c_game_clock():
     r"""GAME_STATE 6: the Omikron calendar - 41 days, 13 months, year 7216.
 
@@ -42560,6 +42635,7 @@ SLOW = [
     ("engine: zone box", c_engine_zone_box, "todo/drift-audit.md S10; script/zones.cpp"),
     ("engine: message two", c_engine_message_two, "todo/drift-audit.md S8; SCRIPT_VM"),
     ("engine: hide piece", c_engine_hide_piece, "todo/drift-audit.md S11; o3de/setpiece.h"),
+    ("engine: astaroth souls", c_engine_astaroth_souls, "todo/astaroth.md 1; actor/astaroth.h"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),

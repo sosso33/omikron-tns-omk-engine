@@ -46,6 +46,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 namespace omk {
@@ -122,6 +123,12 @@ struct HitIn {
     int   reactAt = 0;             // property 24 - read for a gunman only
     float victimYaw = 0.0f;
     float boltVel[3] = {0, 0, 0};
+    // A TYPE-13 victim's own gate, `sub_47FD90` (Astaroth, `actor/astaroth.h`):
+    // called with the damage once the 0x4000 rules have passed it, exactly
+    // where `sub_4240E0` calls it, and answering the damage to apply or 0 to
+    // refuse. It has side effects either way, so it is called at most once.
+    // Empty: the damage passes, as it did before the gate was ported.
+    std::function<int(int)> typeGate;
 };
 struct HitOut {
     bool refused = true;           // `return -1`: nothing done - the bolt still stops

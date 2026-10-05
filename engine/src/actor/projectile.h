@@ -93,6 +93,10 @@ struct FlightEvent {
     int   damage = 0;          // the entry's +56
     float vel[3] = {0, 0, 0};  // its velocity, for the hit's direction
     int   impactEffect = 0;    // the entry's row's +8 (Why::World / Why::Actor)
+    // Why::World: the SET MESH the ray met (its `.3DO` index, -1 when the ray
+    // cannot say) - what `Projectiles_Tick` hands `off_4C8444` at 0x44DDDF,
+    // the world-hit callback Astaroth's setup installs (`todo/astaroth.md`)
+    int   mesh = -1;
 };
 // The ACTOR sweep (`sub_45E9C0`, `actor/shoothit.h`): the segment a..b
 // against every body but the shooter's. true, the hit point and the victim's
@@ -104,8 +108,11 @@ using ActorSweep = std::function<bool(const float a[3], const float b[3], int ow
 // set's meshes through `sub_444460`, which skips those flagged 0x800000 and
 // gives a mesh with either bit of 0x41 no triangle test (`SoupKind::Shot`).
 // The engage's sight `sub_4449E0` is the same walk with the 0x800 cutouts
-// skipped too (`SoupKind::Sight`). true and the hit point when it meets one.
-using WorldRay = std::function<bool(const float a[3], const float b[3], float hit[3])>;
+// skipped too (`SoupKind::Sight`). true and the hit point when it meets one,
+// and in `mesh` the set mesh it met (`sub_4449E0`'s sixth argument: the node
+// `sub_444BB0` was visiting when the nearest triangle was found), or -1.
+using WorldRay = std::function<bool(const float a[3], const float b[3], float hit[3],
+                                    int& mesh)>;
 
 // The range, `if (v3[3] > 1968.5039 || v0)`: 50 metres in the engine's inch.
 inline constexpr float kProjectileRange = 1968.5039f;

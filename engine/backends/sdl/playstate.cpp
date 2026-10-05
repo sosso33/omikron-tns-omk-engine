@@ -630,6 +630,58 @@ void PlayState::shootInitWeapon(int& obj, int& kind, int& type) {
 
 // `if (dword_4E9760 && g_ShootRecords) { every +160 &= ~0x8000; dword_4E9760 = 0; }`
 // - the head of `sub_4246E0`, `sub_4240E0`, `sub_423B10` and `sub_424470`.
+// `sub_47FCF0`, Astaroth's world-hit callback (`actor/astaroth.h`), as
+// `Projectiles_Tick` calls it at 0x44DDDF: `mesh` is the set mesh the bolt's
+// world ray met in world slot `slot`. The souls all lie in one set, so a mesh
+// of another set is none of them - but the call is still made, since its
+// `dword_657AFC == 6` test runs on every call.
+void PlayState::astarothWorldHit(long frame, int mesh, int slot, const float at[3]) {
+    auto& session = *session_;
+    int soulSlot = -1;
+    for (const int k : astarothSoulSlot)
+        if (k >= 0) { soulSlot = k; break; }
+    const int m = slot >= 0 && slot == soulSlot ? mesh : -1;
+    const omk::SoulHit h = omk::astarothSoulHit(astaroth, m);
+    if (h.soul >= 0)
+        std::printf("frame %ld: ASTAROTH SOUL %d (%s, mesh %d) struck at %.0f %.0f %.0f - "
+                    "%d hit%s left (sub_47FCF0)\n", frame, h.soul,
+                    omk::kAstarothSoulNames[h.soul], mesh, double(at[0]), double(at[1]),
+                    double(at[2]), h.hitsLeft, h.hitsLeft == 1 ? "" : "s");
+    if (h.destroyed && slot >= 0 && static_cast<std::size_t>(slot) < worldSlots.size()) {
+        // `sub_436F20`: mesh flag 2 over the node's SUBTREE - the drawable
+        // mask then skips it, and nothing else reads it
+        WorldSlot& w = worldSlots[static_cast<std::size_t>(slot)];
+        if (w.meshHidden.size() != w.meshes.size()) w.meshHidden.assign(w.meshes.size(), 0);
+        int hidden = 0;
+        if (mesh >= 0 && static_cast<std::size_t>(mesh) < w.meshes.size()) {
+            w.meshHidden[static_cast<std::size_t>(mesh)] = 1;
+            ++hidden;
+            for (bool grew = true; grew;) {
+                grew = false;
+                for (std::size_t i = 0; i < w.meshes.size(); ++i) {
+                    const int p = w.meshes[i].parent;
+                    if (!w.meshHidden[i] && p >= 0 &&
+                        static_cast<std::size_t>(p) < w.meshes.size() &&
+                        w.meshHidden[static_cast<std::size_t>(p)]) {
+                        w.meshHidden[i] = 1;
+                        ++hidden;
+                        grew = true;
+                    }
+                }
+            }
+        }
+        // `Game_RaiseEvent(43, {27 + i, i})` - the sender the raw index
+        const bool ran = session.postMessage(h.message, h.soul);
+        std::printf("frame %ld: ASTAROTH SOUL %d DOWN - %d mesh%s hidden (sub_436F20), "
+                    "%d of %d down, message %d from %d: %s\n", frame, h.soul, hidden,
+                    hidden == 1 ? "" : "es", astaroth.destroyed, omk::kAstarothSouls,
+                    h.message, h.soul, ran ? "handled" : "unsubscribed");
+    }
+    if (h.disarmed)
+        std::printf("frame %ld: ASTAROTH - all six souls down: the world-hit callback "
+                    "cleared (sub_44CD90(0))\n", frame);
+}
+
 void PlayState::shootWake(long frame, const char* what) {
     auto& session = *session_;
     if (!session.shootMode().frozen() || !session.shootMode().active()) return;
@@ -1410,6 +1462,15 @@ void PlayState::prepareSet(SetLoad& L) {
         std::vector<int> shotMesh;
         w.shotSoup = omk::collisionSoup(d, omk::SoupKind::Shot, &shotMesh);
         w.shotCutout = omk::cutoutMask(d, shotMesh);
+        // ...and which MESH each triangle is, as runs (a set emits its
+        // meshes whole, so a few hundred runs where a triangle each would
+        // be ~1 MB): the bolts' world ray names the mesh it met
+        // (`off_4C8444`, Astaroth's souls - `todo/astaroth.md`)
+        w.shotMeshRuns.clear();
+        for (std::size_t t = 0; t < shotMesh.size(); ++t)
+            if (w.shotMeshRuns.empty() || w.shotMeshRuns.back().second != shotMesh[t])
+                w.shotMeshRuns.push_back({static_cast<std::uint32_t>(t), shotMesh[t]});
+        w.shotMeshRuns.shrink_to_fit();
     }
     w.restXyzOfMesh.clear(); w.restSoupOfMesh.clear(); w.restSteepOfMesh.clear();
     L.ms[3] = since(t);
@@ -1418,6 +1479,7 @@ void PlayState::prepareSet(SetLoad& L) {
     if (const auto mh = omk::readHeader(d)) {
         w.lights = omk::readLights(d, *mh);
         w.meshes = omk::readMeshes(d, *mh);
+        w.meshHidden.clear();        // a fresh set: flag 2 as shipped
     }
     // THE SET'S OWN EMITTERS - `Sfx_BindAmbientEffects`, the environment
     // family. Every mesh flagged 0x40000000 whose first four name bytes

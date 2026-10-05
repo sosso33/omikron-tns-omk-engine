@@ -128,6 +128,11 @@ struct GroundHit {
 struct SweepHit {
     double t = 0.0;              // fraction of the move at first contact
     double n[3] = {0, 0, 0};     // the face normal, facing the sphere
+    // the TRIANGLE met, its index in the soup (`9 * tri` floats in): the
+    // bolts' world ray hands its MESH to `off_4C8444` (Astaroth's souls,
+    // `todo/astaroth.md`). 64 bits so the struct has no padding - two
+    // callers compare results with `memcmp`.
+    std::int64_t tri = -1;
 };
 std::optional<SweepHit> sweepSphere(const TriangleSoup& tris, const double p0[3],
                                     const double d[3], double radius);

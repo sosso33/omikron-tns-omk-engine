@@ -515,6 +515,9 @@ int PlayState::modesShoot() {
             // `Shoot_InitWeapon` the object in his hand: event 46 property 3
             // is its KIND, and the kind is the key into the PLAYER's table.
             if (shootMode) {
+                // `sub_44CD90(0)` at 0x4222F6: the world-hit callback back to
+                // the null one - an Astaroth setup is what installs it
+                astaroth.callbackArmed = false;
                 playerShootRec = omk::ShootRecord{};
                 playerShootRec.node = -1;
                 playerShootRec.flags |= 2u;

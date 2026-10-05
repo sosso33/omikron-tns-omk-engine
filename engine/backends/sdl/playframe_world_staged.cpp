@@ -628,6 +628,71 @@ void PlayState::worldStaged() {
                     // the engine's +420 IS that node's heading - so the
                     // brain starts there rather than at the placement's
                     if (s.restYawKnown) s.facing = s.restYaw;
+                    // ---- ASTAROTH: `sub_47DFD0`'s type-13 arm -----------
+                    // `Shoot_ActorEnter` runs NO action: it hands the type
+                    // to `sub_47DFD0`, whose arm for 13 is `sub_47FF70`
+                    // (`actor/astaroth.h`) - state 29, +88 = 10, 0x4020, the
+                    // world-hit callback, his `AstDos` mesh and the six
+                    // souls found by name in the scene and SHOWN
+                    // (`sub_436F50`). `o3de_FindNodeByName` walks the world
+                    // root, i.e. the LINKED sets, so the shown slots are
+                    // searched, the active one first.
+                    const bool astarothHere = fresh.type == static_cast<std::uint32_t>(omk::kAstarothType);
+                    if (astarothHere) {
+                        int backMesh = -1;
+                        if (s.mo)
+                            for (std::size_t mi = 0; mi < s.mo->meshes.size(); ++mi)
+                                if (std::strcmp(s.mo->meshes[mi].name, "AstDos") == 0) {
+                                    backMesh = static_cast<int>(mi);
+                                    break;
+                                }
+                        int soulSlot[omk::kAstarothSouls];
+                        const auto findSoul = [&](const char* name) {
+                            for (int pass = 0; pass < 2; ++pass)
+                                for (int k = 0; k < 2; ++k) {
+                                    const WorldSlot& w = worldSlots[static_cast<std::size_t>(k)];
+                                    if (!w.shown || (pass == 0) != (w.stem == worldSet)) continue;
+                                    for (std::size_t mi = 0; mi < w.meshes.size(); ++mi)
+                                        if (std::strcmp(w.meshes[mi].name, name) == 0) {
+                                            for (int i = 0; i < omk::kAstarothSouls; ++i)
+                                                if (std::strcmp(omk::kAstarothSoulNames[i], name) == 0)
+                                                    soulSlot[i] = k;
+                                            return static_cast<int>(mi);
+                                        }
+                                }
+                            return -1;
+                        };
+                        for (int& k : soulSlot) k = -1;
+                        omk::astarothSetup(astaroth, fresh, findSoul, backMesh,
+                                           settings.v.shootDifficulty);
+                        int shown = 0;
+                        for (int i = 0; i < omk::kAstarothSouls; ++i) {
+                            astarothSoulSlot[i] = soulSlot[i];
+                            if (astaroth.soulMesh[i] < 0 || soulSlot[i] < 0) continue;
+                            WorldSlot& w = worldSlots[static_cast<std::size_t>(soulSlot[i])];
+                            const auto mi = static_cast<std::size_t>(astaroth.soulMesh[i]);
+                            if (mi < w.meshHidden.size()) w.meshHidden[mi] = 0;   // sub_436F50
+                            ++shown;
+                        }
+                        // `sub_4B2E90`: the STAND grid, clip id 13 - its
+                        // aim blend and its tick are step 3; until then he
+                        // holds the CENTRE cell (4 * L + 1, L = 50), which
+                        // is the grid aimed straight ahead. LABELLED.
+                        const int grpS13 = static_cast<int>(fresh.type);
+                        if (const omk::PedClip* st = shootClipBySlot(grpS13, 13)) {
+                            gunCurSlot[s.actor] = 13;
+                            GunAnim& ga = gunAnims[s.actor];
+                            ga.clip = st;
+                            ga.frame = static_cast<float>(4 * ((st->frames + 1) / 9) + 1);
+                        }
+                        std::printf("frame %ld: actor %d %s - ASTAROTH SETUP (sub_47FF70): state "
+                                    "%d, +88 %d, flags 0x%x, AstDos mesh %d, %d of %d souls found "
+                                    "and shown at %d hits, difficulty %.1f, the world-hit "
+                                    "callback armed\n", n, s.actor, s.model.c_str(), fresh.state,
+                                    fresh.actionCounter, fresh.flags, backMesh, shown,
+                                    omk::kAstarothSouls, omk::kAstarothSoulHits,
+                                    double(astaroth.difficulty));
+                    }
                     // `Shoot_Think` FIRST, exactly as `Shoot_ActorEnter`
                     // runs it (05_sys.c 3741) before the scene action:
                     // his floor at +188 and his cell at +136/+140. The
@@ -649,7 +714,7 @@ void PlayState::worldStaged() {
                     // (`todo/shoot-patrol.md` 4b) - so the action WAITS for
                     // the first tick he lands on the grid. One frame, and
                     // the alternative is a patrol with a null route.
-                    if (!onGridAtEntry && shootMap.valid()) {
+                    if (!onGridAtEntry && shootMap.valid() && !astarothHere) {
                         gunEntryPending.insert(s.actor);
                         std::printf("frame %ld: actor %d %s - entry action %d HELD: he is "
                                     "not on the grid yet (Shoot_ActorEnter thinks first)\n",
@@ -660,7 +725,7 @@ void PlayState::worldStaged() {
                     // clip, and +168 = 30 * property 31 frames of advance
                     // (LABELLED: `Shoot_ActorEnter`'s own call is not re-read;
                     // this passes the action with a3 = 0)
-                    if (onGridAtEntry || !shootMap.valid())
+                    if ((onGridAtEntry || !shootMap.valid()) && !astarothHere)
                         applyAction(it->second, act, session.shootActionArg(s.actor),
                                     "his scene action, at entry");
                     std::printf("frame %ld: actor %d %s - shoot brain: "
@@ -781,6 +846,16 @@ void PlayState::worldStaged() {
                                     "only at his entry)\n", n, s.actor, s.model.c_str(),
                                     double(at[0]), double(at[1]), double(at[2]));
                 }
+                // ---- ASTAROTH's tick is his own (`sub_4800C0`, step 3 of
+                // `todo/astaroth.md`), not `sub_424DE0`: the generic brain
+                // below is NOT his. Until his is ported he stands where his
+                // setup put him and does nothing. LABELLED.
+                if (rec.type == static_cast<std::uint32_t>(omk::kAstarothType)) {
+                    static std::set<int> astTold;
+                    if (astTold.insert(s.actor).second)
+                        std::printf("frame %ld: actor %d %s - his tick is sub_4800C0 (not "
+                                    "ported: he stands)\n", n, s.actor, s.model.c_str());
+                } else {
                 const int before = rec.state;
                 omk::ShootFrameIn fin;
                 // ...and the brain thinks from the SAME point (see above)
@@ -1831,6 +1906,7 @@ void PlayState::worldStaged() {
                         if (s.facing >= 360.0f) s.facing -= 360.0f;
                     }
                 }
+                }   // the generic brain (`sub_424DE0`) - not Astaroth's
             }
             // ...and after his tick his cell is STAMPED 0x80 (`sub_420B80`,
             // and `sub_421770`'s tail while a picked clip plays): every

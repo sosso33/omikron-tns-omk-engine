@@ -727,7 +727,7 @@ namespace {
 // this, so they run the same arithmetic on the same face (step 11).
 inline void sweepOne(const float* a, const float* b, const float* c, const double p0[3],
                      const double d[3], double radius, const double lo[3], const double hi[3],
-                     std::optional<SweepHit>& best) {
+                     std::optional<SweepHit>& best, std::int64_t tri) {
     // the broad phase: the face's own box against the swept box
     for (int k = 0; k < 3; ++k) {
         const double mn = std::min({a[k], b[k], c[k]}), mx = std::max({a[k], b[k], c[k]});
@@ -752,7 +752,7 @@ inline void sweepOne(const float* a, const float* b, const float* c, const doubl
                                    p0[2] + t * d[2] - n[2] * radius};
             if (insideTri(a, b, c, n, hit)) {
                 if (!best || t < best->t) {
-                    SweepHit h; h.t = t;
+                    SweepHit h; h.t = t; h.tri = tri;
                     for (int k = 0; k < 3; ++k) h.n[k] = n[k];
                     best = h;
                 }
@@ -846,7 +846,7 @@ inline void sweepOne(const float* a, const float* b, const float* c, const doubl
         take(t, q);
     }
     if (found) {
-        SweepHit h; h.t = bestT;
+        SweepHit h; h.t = bestT; h.tri = tri;
         for (int k = 0; k < 3; ++k) h.n[k] = bestN[k];
         best = h;
     }
@@ -867,7 +867,8 @@ std::optional<SweepHit> sweepSphere(const TriangleSoup& tris, const double p0[3]
     double lo[3], hi[3];
     sweptBox(p0, d, radius, lo, hi);
     for (std::size_t i = 0; i + 9 <= tris.size(); i += 9)
-        sweepOne(&tris[i], &tris[i + 3], &tris[i + 6], p0, d, radius, lo, hi, best);
+        sweepOne(&tris[i], &tris[i + 3], &tris[i + 6], p0, d, radius, lo, hi, best,
+                 static_cast<std::int64_t>(i / 9));
     return best;
 }
 
@@ -879,7 +880,8 @@ std::optional<SweepHit> sweepSphere(const TriangleSoup& tris,
     sweptBox(p0, d, radius, lo, hi);
     for (std::size_t i = 0, t = 0; i + 9 <= tris.size(); i += 9, ++t)
         if (t >= skip.size() || !skip[t])
-            sweepOne(&tris[i], &tris[i + 3], &tris[i + 6], p0, d, radius, lo, hi, best);
+            sweepOne(&tris[i], &tris[i + 3], &tris[i + 6], p0, d, radius, lo, hi, best,
+                     static_cast<std::int64_t>(t));
     return best;
 }
 
@@ -919,7 +921,8 @@ std::optional<SweepHit> sweepSphere(const TriangleSoup& tris, const SplitSoupGri
     std::optional<SweepHit> best;
     for (const std::uint32_t tri : ids) {
         const std::size_t i = 9 * static_cast<std::size_t>(tri);
-        sweepOne(&tris[i], &tris[i + 3], &tris[i + 6], p0, d, radius, lo, hi, best);
+        sweepOne(&tris[i], &tris[i + 3], &tris[i + 6], p0, d, radius, lo, hi, best,
+                 static_cast<std::int64_t>(tri));
     }
     return best;
 }

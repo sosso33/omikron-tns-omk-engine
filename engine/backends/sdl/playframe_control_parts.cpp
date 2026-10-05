@@ -459,9 +459,18 @@ void PlayState::controlFlight() {
     }
     if (projectiles.live()) {
         const omk::TriangleSoup* shotSoup = nullptr;
-        for (const auto& ws : worldSlots)
-            if (!ws.stem.empty() && ws.stem == worldSet) shotSoup = &ws.shotSoup;
-        const auto ray = [&](const float a[3], const float b[3], float hit[3]) {
+        const WorldSlot* shotSlot = nullptr;
+        int shotSlotIdx = -1;
+        for (std::size_t k = 0; k < worldSlots.size(); ++k) {
+            const auto& ws = worldSlots[k];
+            if (!ws.stem.empty() && ws.stem == worldSet) {
+                shotSoup = &ws.shotSoup;
+                shotSlot = &ws;
+                shotSlotIdx = static_cast<int>(k);
+            }
+        }
+        const auto ray = [&](const float a[3], const float b[3], float hit[3], int& mesh) {
+            mesh = -1;
             if (!shotSoup) return false;
             const double p0[3] = {a[0], a[1], a[2]};
             const double d[3] = {double(b[0]) - a[0], double(b[1]) - a[1],
@@ -469,6 +478,7 @@ void PlayState::controlFlight() {
             const auto h = omk::sweepSphere(*shotSoup, p0, d, 0.0);
             if (!h) return false;
             for (int k = 0; k < 3; ++k) hit[k] = static_cast<float>(p0[k] + h->t * d[k]);
+            mesh = shotSlot->shotMeshOf(h->tri);    // the node `sub_444BB0` was visiting
             return true;
         };
         // THE BODIES (`actor/shoothit.h`): every staged actor as he was
@@ -584,12 +594,22 @@ void PlayState::controlFlight() {
                 : "GUNMAN BOLT (actor " + std::to_string(ev.owner) + ")";
             const int boltLive = hisBolt ? projectiles.liveOf(-1) : projectiles.live();
             if (ev.why != omk::FlightEvent::Why::Actor) {
+                // ...and WHICH set mesh (`sub_4449E0`'s sixth argument)
+                const char* meshName = ev.why == omk::FlightEvent::Why::World && shotSlot &&
+                        ev.mesh >= 0 && static_cast<std::size_t>(ev.mesh) < shotSlot->meshes.size()
+                    ? shotSlot->meshes[static_cast<std::size_t>(ev.mesh)].name : "-";
                 std::printf("frame %ld: %s retired - entry %d %s at %.1f %.1f %.1f "
-                            "after %.1f, %d live\n", n, boltWho.c_str(), ev.entry,
+                            "after %.1f, %d live, mesh %d %s\n", n, boltWho.c_str(), ev.entry,
                             ev.why == omk::FlightEvent::Why::World ? "hit the world"
                                                                  : "out of range",
                             double(ev.at[0]), double(ev.at[1]), double(ev.at[2]),
-                            double(ev.travelled), boltLive);
+                            double(ev.travelled), boltLive, ev.mesh, meshName);
+                // `off_4C8444(meshNode)` at 0x44DDDF, BEFORE the impact
+                // effect: the world-hit callback, which only Astaroth's
+                // setup installs (`sub_47FCF0`, `actor/astaroth.h`) - any
+                // bolt, any owner, any damage
+                if (ev.why == omk::FlightEvent::Why::World && astaroth.callbackArmed)
+                    astarothWorldHit(n, ev.mesh, shotSlotIdx, ev.at);
                 // `sub_44F0D0`: the IMPACT effect where the world
                 // stopped it - the range running out calls nothing
                 if (ev.why == omk::FlightEvent::Why::World) {
@@ -673,6 +693,19 @@ void PlayState::controlFlight() {
             hin.reactAt = p24;
             hin.victimYaw = vs->facing;
             for (int k = 0; k < 3; ++k) hin.boltVel[k] = ev.vel[k];
+            // ASTAROTH's gate, `sub_47FD90` (`actor/astaroth.h`): nothing
+            // reaches his body while one of the six souls stands - the
+            // test `(state < 17 || state > 19) && dword_657AFC >= 6` fails
+            // and it returns 0 with no other effect. Once all six are down
+            // the back test decides, and that is step 2 of
+            // `todo/astaroth.md`: until then he refuses then too. LABELLED.
+            if (bit->second.type == static_cast<std::uint32_t>(omk::kAstarothType))
+                hin.typeGate = [&](int) {
+                    std::printf("  ASTAROTH's gate (sub_47FD90): %d of 6 souls down - %s\n",
+                                astaroth.destroyed, astaroth.destroyed < omk::kAstarothSouls
+                                    ? "refused" : "refused (the back test is not ported)");
+                    return 0;
+                };
             const omk::HitOut ho = omk::shootApplyHit(bit->second, hin);
             if (ho.refused) {
                 std::printf("  hit REFUSED (`sub_4240E0` returns -1) - the bolt stops "

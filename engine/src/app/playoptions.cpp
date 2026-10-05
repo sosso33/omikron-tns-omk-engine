@@ -156,6 +156,8 @@ int PlayOptions::parse(int argc, char** argv) {
 "  --shoot          HARNESS: enter shoot mode at the hand-over, as a script's\n"
 "                   `shoot.begin -1` would (the Gun Waver) - to stand in an\n"
 "                   arena and look at the mode, the way --ride does a slider\n"
+"  --aim-at X,Y,Z   HARNESS: every shot the player fires in shoot mode is aimed\n"
+"                   from its muzzle at that world point (todo/astaroth.md)\n"
 "  --shoot-health N HARNESS: the player's health (actor property 1) written as\n"
 "                   N when shoot mode starts, so the record, the gauge and the\n"
 "                   property agree as a save carrying N would make them\n"
@@ -547,6 +549,8 @@ int PlayOptions::parse(int argc, char** argv) {
         else if (a == "--shoot") startShoot = true;
         else if (a == "--shoot-end" && i + 1 < argc) shootEndAt = std::atol(argv[++i]);
         else if (a == "--shoot-health" && i + 1 < argc) shootHealth = std::atoi(argv[++i]);
+        else if (a == "--aim-at" && i + 1 < argc)
+            aimAtSet = std::sscanf(argv[++i], "%f,%f,%f", &aimAt[0], &aimAt[1], &aimAt[2]) == 3;
         else if (a == "--fight-health" && i + 1 < argc) fightHealth = std::atoi(argv[++i]);
         else if (a == "--sneak") openSneak = true;
         else if (a == "--stand" && i + 1 < argc)

@@ -1803,6 +1803,7 @@ void PlayState::adventureShot() {
                 }
             rs.yawDeg = yaw;
             rs.pitchDeg = shootPitch;
+            harnessAimAt(rs);       // --aim-at (an instrument)
             // THE MAGAZINE: property 35, slot `index - 1`, on the
             // DB player record. A row with index 0 has none.
             std::int32_t count = 0;

@@ -682,6 +682,25 @@ struct WorldSlot {
     // the corners as BUILT, so a motion patches the original rather than
     // accumulating on the last frame's patch.
     std::vector<omk::Mesh>   meshes;
+    // MESH FLAG 2 AT RUN TIME, one byte a mesh: `sub_436F20` / `sub_436F50`
+    // set and clear it over a node's subtree, and the drawable mask
+    // (`flags & 0x800043`) then skips the mesh. The render honours it; the
+    // bolts' world ray does not (`sub_444460` never tests it). Astaroth's
+    // souls are the one writer (`todo/astaroth.md`). Empty = none hidden.
+    std::vector<std::uint8_t> meshHidden;
+    // the shot soup's triangle -> mesh, as runs {first triangle, mesh}
+    std::vector<std::pair<std::uint32_t, int>> shotMeshRuns;
+    int shotMeshOf(std::int64_t tri) const {
+        if (tri < 0 || shotMeshRuns.empty()) return -1;
+        std::size_t lo = 0, hi = shotMeshRuns.size();
+        while (hi - lo > 1) {
+            const std::size_t mid = (lo + hi) / 2;
+            if (static_cast<std::int64_t>(shotMeshRuns[mid].first) <= tri) lo = mid;
+            else hi = mid;
+        }
+        return static_cast<std::int64_t>(shotMeshRuns[lo].first) <= tri
+                   ? shotMeshRuns[lo].second : -1;
+    }
     // THE SET'S LIGHTS (`todo/mesh-lights.md`). A decor `.3DO` supplies
     // them and the street's moving population receives them - the static
     // set is shaded by a colour baked into every vertex and needs none.

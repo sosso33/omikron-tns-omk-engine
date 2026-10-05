@@ -201,7 +201,8 @@ int main(int argc, char** argv) {
                                         1000.0f, -1000.0f, -499.5f,
                                         0.0f, 1000.0f, -499.5f};
         const auto rayOn = [](const omk::TriangleSoup& soup) {
-            return [&soup](const float a[3], const float b[3], float hit[3]) {
+            return [&soup](const float a[3], const float b[3], float hit[3], int& mesh) {
+                mesh = -1;
                 const double p0[3] = {a[0], a[1], a[2]};
                 const double d[3] = {double(b[0]) - a[0], double(b[1]) - a[1],
                                      double(b[2]) - a[2]};

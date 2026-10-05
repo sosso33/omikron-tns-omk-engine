@@ -138,9 +138,9 @@ int ProjectilePool::fly(float dt, const WorldRay& world, std::vector<FlightEvent
         e.travelled = static_cast<float>(double(e.speed) * dt + e.travelled);
         float at[3] = {e.pos[0], e.pos[1], e.pos[2]};
         // the BODIES first (`sub_45E9C0`); the world only if none was met
-        int victim = -1;
+        int victim = -1, mesh = -1;
         const bool body = actors && actors(a, b, e.owner, at, victim);
-        const bool hit = body || (world && world(a, b, at));
+        const bool hit = body || (world && world(a, b, at, mesh));
         if (e.travelled > kProjectileRange || hit) {
             if (out) {
                 FlightEvent ev;
@@ -154,6 +154,7 @@ int ProjectilePool::fly(float dt, const WorldRay& world, std::vector<FlightEvent
                 ev.damage = e.kind;
                 for (int k = 0; k < 3; ++k) ev.vel[k] = e.vel[k];
                 ev.impactEffect = e.impactEffect;
+                ev.mesh = body ? -1 : mesh;
                 out->push_back(ev);
             }
             // `o3de_UnlinkObject; ...; sub_437890(node); *v3 = 0`
