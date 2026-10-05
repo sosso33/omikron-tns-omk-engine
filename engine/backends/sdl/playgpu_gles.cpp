@@ -40,8 +40,12 @@ void PlayState::gpuOpenWindow() {
             // presents (`OMK_NO_GPU_PRESENT`) has no use for it being seen,
             // and on 2026-09-25 a batch of such runs put windows - one of them
             // playing the boot films - in front of the reader (CLAUDE.md 5).
+            // `OMK_HIDDEN_WINDOW=1` hides it WITHOUT turning the GPU present
+            // off: what a profile of the path a player takes needs
+            // (todo/cpu-vs-original.md) - the readback path is not that path.
             const Uint32 glWinFlags = SDL_WINDOW_OPENGL |
-                (omk::envSet("OMK_NO_GPU_PRESENT") ? SDL_WINDOW_HIDDEN : omk::sdlFrontend(front).windowFlags());
+                (omk::envSet("OMK_NO_GPU_PRESENT") || omk::envSet("OMK_HIDDEN_WINDOW")
+                     ? SDL_WINDOW_HIDDEN : omk::sdlFrontend(front).windowFlags());
 #if defined(OMK_SDL3)
             glWin = SDL_CreateWindow("OMK Engine (gles)", dispW, dispH, glWinFlags);
 #else

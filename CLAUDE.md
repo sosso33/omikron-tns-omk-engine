@@ -101,6 +101,7 @@ that only for a file you are about to actually open.
 | todo/fight-mode.md | ~7k | MELEE (next-tasks 17): why it can never have a trace oracle, op 62 read from the assembly (the third field is the AI LEVEL; its `dword_6A05E0` test is the VM's DRY RUN, which this file first mis-read as a fight guard and §8 records), the ADAPTIVE difficulty behind `Niveau Combat`, the per-frame chain, the KO replay, what the port has and has not, seven steps and where the 108 fights are |
 | todo/handoff-classic-mac.md | ~4k | **read FIRST to pick up the PowerPC Mac work**: where it stands (OMK on Tiger at 6-10 fps through the fixed-function OpenGL backend, big-endian done, one Carbon binary on OS 9 and Tiger), the tools volume and how to mount it, the build / VM / launch recipes, what is next in order (the filtering default is the reader's decision), and the traps (the locally patched emulator, Tiger needing a drawable, `scp` not `tar`) |
 | todo/classic-mac-port-1999.md | ~10k | the WHAT-IF 1999 CLASSIC Mac port (OS 8.6/9 on a G3, OS X PPC beside it - NOT a modern macOS port): the period target and how Eidos's porters would have done it (OpenGL, QuickTime for the MPEG-1 films, byte order swapped at load), the endianness audit (12 sites), how bodies pose, the toolchain (Retro68, MacPorts GCC 14), the test rigs and eight steps: 3 (byte order) and 4 (the GL 1.x backend) done, 5 begun (one Carbon binary on OS 9 and Tiger; OMK itself on Tiger through SDL) |
+| todo/drift-audit.md | ~5k | the DRIFT AUDIT of 2026-10-05 (read-only, at `1ff56d2`): where the port can behave differently from the original - scripts whose effect is dropped (the clock never ticks, conversation actions run hookless, ops 148/149/152/129/130/116/117 unconsumed), bodies reset by hide/show (the likeliest owner of next-tasks 6's T-pose), the in-game load, low-fps timing - each with file:line, exposure and a suggested order |
 | todo/sixty-fps.md | ~3k | 60 FPS as an enhancement (rows 11/12): what the original does (variable step, NO frame cap, poses TRUNCATED to a key by `_ftol`), the port's frame-locked sites, and five steps |
 | todo/next-tasks.md | ~4k | the reader's list of what to do next, 19 items triaged: size, how much evidence the tree already holds, and a suggested order. Read it to pick up work |
 | todo/pending/*.md (E1, E2, T1..T17) | ~2–8k each | a specific past task's deliverable; each starts with an "Integrated" line — read only the one you need |
@@ -1132,6 +1133,10 @@ as the game does, so a check that depends on a size or a setting must say so
 context): set `OMK_NO_GPU_PRESENT=1` for a measurement run and its window is
 created HIDDEN (2026-09-25, after a batch of runs put the boot films in front
 of the reader - one of them because a zsh `$VAR` of flags was not split).
+**But it also turns the GPU present OFF** - every frame then reads back,
+dithers and re-uploads, a path no player takes - so a PROFILE of the GPU
+paths sets `OMK_HIDDEN_WINDOW=1` instead (both GPU builds), which only
+hides the window (`todo/cpu-vs-original.md`, 2026-10-05).
 
 **Catching a fault too short to screenshot**: `--flicker <dir>` watches the
 viewer's own output and, when a frame is far darker than the median of the last

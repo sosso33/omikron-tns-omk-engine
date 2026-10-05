@@ -18,7 +18,11 @@ void PlayState::gpuOpenWindow() {
         if (SDL_Init(SDL_INIT_VIDEO) == 0) {
             vkWin = SDL_CreateWindow("OMK Engine (vulkan)",
                                      SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                     dispW, dispH, SDL_WINDOW_VULKAN | omk::sdlFrontend(front).windowFlags());
+                                     dispW, dispH, SDL_WINDOW_VULKAN |
+                                     // hidden for a profile of the direct present
+                                     // (`OMK_HIDDEN_WINDOW`, playgpu_gles.cpp)
+                                     (omk::envSet("OMK_HIDDEN_WINDOW") ? SDL_WINDOW_HIDDEN
+                                                                       : omk::sdlFrontend(front).windowFlags()));
         }
         if (vkWin) {
             unsigned nx = 0;
