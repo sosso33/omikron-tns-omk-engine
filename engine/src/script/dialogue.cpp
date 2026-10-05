@@ -450,8 +450,12 @@ void DialogPlayer::choose(int branch) {
     // `Game_HandleEvent` event 59: EXECUTE the chosen branch's action in a
     // throwaway context.
     if (n.ptr[4 + branch]) {
-        Interpreter act(*state_, *table_);
-        act.run(chunk_, n.ptr[4 + branch]);
+        if (runner_) {
+            runner_(runnerSelf_, chunk_, static_cast<std::size_t>(n.ptr[4 + branch]));
+        } else {
+            Interpreter act(*state_, *table_);
+            act.run(chunk_, n.ptr[4 + branch]);
+        }
     }
     if (n.param[branch] < 0 || !enter(n.param[branch]))
         phase_ = DialogPhase::Finished;

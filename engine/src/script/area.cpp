@@ -2266,9 +2266,48 @@ void Session::openDialog(int id) {
     const auto chunk = archiveChunk(iam_ + "/DIALOG", id);   // read alone, then copied
     if (chunk.empty()) return;
     const auto conv = parseConversation(id, chunk);
+    // a reply's action runs as one of OUR contexts (event 59, below)
+    dialog_.setActionRunner([](void* self, std::span<const std::byte> code, std::size_t pc) {
+        static_cast<Session*>(self)->runReplyAction(code, pc);
+    }, this);
     dialog_.open(conv, chunk, morphDir_);
 
     speakerModel_ = modelOfActor(conv.speaker);
+}
+
+// A REPLY'S ACTION - `Game_HandleEvent` case 59 (`todo/drift-audit.md` S2):
+//
+//     v99 = Dialog_GetBranchAction(id, branch);   if (!v99) return 1;
+//     v96 = Script_NewContext(dword_69BC60, 0, 0, 0);   // the ACTIVE slot
+//     u32i(v96, 3) = v99;  u16i(v96, 11) = 1;          // pc, status 1
+//     Script_Execute(v96);
+//     dword_4E61E8[v96[30]] = 0;  Mem_Free(...);       // freed at once
+//
+// One `Script_Execute` through the SAME handlers a world script reaches, so
+// `zone.enable`/`disable` re-register the live zones, `object.show` reaches
+// its prop, `media.play` is heard. Until 2026-10-05 the port ran it in a bare
+// `Interpreter` with no hooks and dropped everything but the DB writes: a
+// conversation that retired its own zone could be started again from where
+// the player stood. Anything that would PARK (a wait, a screen) just stops,
+// because the context is freed after the one call - as in the engine.
+//
+// A FULL table is the one difference: `Script_NewContext` then returns the
+// block unlisted and the engine runs it anyway; the port has no entry to run
+// it from and says so.
+void Session::runReplyAction(std::span<const std::byte> code, std::size_t pc) {
+    const std::int32_t none[3] = {0, 0, 0};
+    const int idx = newContext(active_, code, none, -1, slots_[active_].area);
+    if (idx < 0) {
+        std::printf("frame %ld: a reply's action at %zu NOT RUN - the context table is full\n",
+                    frameNo_, pc);
+        return;
+    }
+    Ctx* c = ctxs_[static_cast<std::size_t>(idx)].get();
+    c->pc = pc;
+    c->status = 1;
+    ++replyActions_;
+    execute(idx);
+    freeContext(idx);
 }
 
 // `sub_40B190`: the 276-byte actor records at AREA +56 (count +80) and

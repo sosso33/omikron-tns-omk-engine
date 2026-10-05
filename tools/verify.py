@@ -39434,6 +39434,58 @@ def c_engine_script_timer():
                [":".join(x[:3]) for x in reads],)
 
 
+def c_engine_reply_action():
+    r"""A REPLY'S ACTION RUNS AS A CONTEXT (`todo/drift-audit.md` S2).
+
+    `Game_HandleEvent` case 59: `Script_NewContext(dword_69BC60, 0, 0, 0)` -
+    the ACTIVE slot - pc = the action, status 1, one `Script_Execute` through
+    every handler, then the context freed. Until 2026-10-05 `DialogPlayer::
+    choose` ran it in a bare `Interpreter` with no hooks and threw the result
+    away: the DB bit of a `zone.disable` was written, but `Zones_RegisterAll`
+    never ran, so the zone stayed in the LIVE list and the conversation that
+    retired it could be started again from where the player stood; a zone it
+    enabled stayed dead, and `object.show` did nothing at all.
+
+    `engine/tools/reply_action_probe.cpp` plays dialog 197 'Namtar/Base1/2'
+    from its own zone, 990 in SCENE 19 over AREA 47, taking reply 0 - whose
+    action is `zone.disable 990`, `zone.enable 991`: afterwards both bits
+    moved AND the live list followed them.
+
+    Shown to fail: without the Session installing its runner (the bare
+    interpreter) the bits still move - 0 and 1 - and the live list does not:
+    990 stays live, 991 stays out, and no reply action is counted.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s", "build/reply_action_probe"], cwd=eng,
+                       capture_output=True)
+    probe = os.path.join(eng, "build", "reply_action_probe")
+    if b.returncode != 0 or not os.path.exists(probe):
+        return ("build failed",), ("built",), "engine/ must build"
+    out = subprocess.run([probe, fr, os.path.join(ROOT, "tables")],
+                         capture_output=True, encoding="latin-1").stdout
+    def line(key):
+        for ln in out.splitlines():
+            if ln.startswith(key + " "):
+                return dict(zip(ln.split()[1::2], ln.split()[2::2]))
+        return {}
+    su, dg, zn = line("setup"), line("dialog"), line("zones")
+    if not (su and dg and zn):
+        return ("probe printed", bool(su), bool(dg), bool(zn)), \
+               ("probe printed", True, True, True), \
+               "reply_action_probe must print its three lines"
+    return (int(su["area"]), int(su["live990"]), int(su["live991"]),
+            int(dg["opened"]), int(dg["reply_actions"]),
+            int(zn["bit990"]), int(zn["bit991"]), int(zn["live990"]), int(zn["live991"])), \
+           (47, 1, 0, 197, 2, 0, 1, 0, 1), \
+           "SCENE 19's area; 990 live and 991 not before; the conversation " \
+           "zone 990 opened; the reply actions the Session ran as contexts; " \
+           "then the two save bits and whether each zone is in the live list"
+
+
 def c_game_clock():
     r"""GAME_STATE 6: the Omikron calendar - 41 days, 13 months, year 7216.
 
@@ -39760,7 +39812,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (551, [], 1, []), \
+           (552, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -41989,6 +42041,7 @@ SLOW = [
     ("engine: fall reaction", c_engine_fall_reaction, "todo/falls.md 1"),
     ("engine: run over", c_engine_run_over, "todo/falls.md 4"),
     ("engine: script timer", c_engine_script_timer, "todo/drift-audit.md S1; GAME_STATE"),
+    ("engine: reply action", c_engine_reply_action, "todo/drift-audit.md S2; SCRIPT_VM"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),

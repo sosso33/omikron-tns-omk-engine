@@ -288,6 +288,9 @@ public:
     void clearDialogLineChanged() { dialog_.clearLineChanged(); }
     void dialogNext()          { dialog_.next(); }
     void dialogChoose(int k)   { dialog_.choose(k); }
+    // event 59: a reply's action as a throwaway context (area.cpp)
+    void runReplyAction(std::span<const std::byte> code, std::size_t pc);
+    long replyActionsRun() const { return replyActions_; }
     // Seconds per frame for the dialogue clock. Everything else in the engine
     // counts thirtieths (docs/BOOT.md 4); a voice is counted in seconds
     // because it is audio, and 1/30 is what `Game_Frame` gives at 30 fps.
@@ -1714,6 +1717,7 @@ private:
     double       camElapsed_ = 0.0;
     unsigned long camRequests_ = 0;   // every resolved `Camera_Request`
     long         frameNo_ = 0;
+    long         replyActions_ = 0;    // reply actions run as contexts
     mutable DialogPlayer dialog_{state_, table_};
     std::string  morphDir_;              // "" = conversations end at once
     std::string  speakerModel_;

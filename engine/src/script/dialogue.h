@@ -302,6 +302,16 @@ public:
     // frame, which the frontend converts itself, as before.
     using ToDevice = std::vector<float> (*)(const std::vector<std::int16_t>& pcm, int channels);
     void setToDevice(ToDevice f) { toDevice_ = f; }
+    // WHO RUNS A REPLY'S ACTION (event 59). `Game_HandleEvent` case 59 runs
+    // it as a REAL context - `Script_NewContext` in the active slot, one
+    // `Script_Execute` through every handler, then freed - so a world that
+    // owns contexts (the Session) installs itself here. Without a runner the
+    // action runs in a bare `Interpreter` on the DB alone, which is all a
+    // standalone player (`tools/play_dialog`) has; `todo/drift-audit.md` S2
+    // is what that loses in the game.
+    using ActionRunner = void (*)(void* self, std::span<const std::byte> chunk,
+                                  std::size_t pc);
+    void setActionRunner(ActionRunner f, void* self) { runner_ = f; runnerSelf_ = self; }
     std::vector<float> takeDevicePcm() { return std::move(devPcm_); }
     // what the line's start cost here, in ms: the file read and the voice's
     // decode - a console's wait on a line (2026-09-23) is apportioned by these
@@ -380,6 +390,8 @@ private:
     std::shared_ptr<const std::vector<std::byte>> morph_;
     std::vector<float> devPcm_;
     ToDevice toDevice_ = nullptr;
+    ActionRunner runner_ = nullptr;
+    void* runnerSelf_ = nullptr;
     double loadMs_[3] = {0.0, 0.0, 0.0};
     bool loadPrefetched_ = false;
     // THE LINES THAT CAN COME NEXT, READ AHEAD (2026-09-23): the `.3DM` of
