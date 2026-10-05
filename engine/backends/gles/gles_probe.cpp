@@ -84,6 +84,7 @@ void glesTakeStateCalls(long out[3]);
 void glesGeometryStats(Renderer*, long out[3]);
 int glesAnisotropy(Renderer*);
 int glesSupersample(Renderer*);
+void glesSamples(Renderer*, int* got, int* most);
 }
 
 namespace {
@@ -679,6 +680,43 @@ int main(int argc, char** argv) {
         failures += !took || got != 4 || same1 != 0 || moved == 0 || e4 >= 0.9 * e1 ||
                     c.agree() < 0.98 || badP != 0;
         delete one; delete four;
+    }
+
+    // ---- MSAA (`todo/enhancements.md` 0), `engine: anti-aliasing`'s
+    // properties on this backend: the 4x frame differs from 1x in a small
+    // fraction of the picture, every changed pixel on an EDGE of the 1x frame
+    // (MSAA resolves geometry edges and leaves texture interiors alone), and
+    // coverage is kept. `msaa: N of M`, M the context's limit, so a context
+    // that cannot is told from a backend that did not.
+    {
+        omk::View v;
+        v.cam = cam; v.cam.w = W; v.cam.h = H;
+        v.dither = false;
+        omk::SoftwareRenderer sw;
+        const omk::Surface swF = *run(sw, v, W, H);
+        const omk::Surface a = *run(*gl, v, W, H);
+        omk::Renderer* ms = omk::makeGlesRenderer();
+        ms->setMultisample(4);
+        const omk::Surface b = *run(*ms, v, W, H);
+        int got = 0, most = 0;
+        omk::glesSamples(ms, &got, &most);
+        long changed = 0, edge = 0;
+        for (int y = 0; y < H; ++y)
+            for (int x = 0; x < W; ++x) {
+                const std::uint16_t c = a.at(x, y);
+                if (c == b.at(x, y)) continue;
+                ++changed;
+                edge += (x > 0 && a.at(x - 1, y) != c) || (x < W - 1 && a.at(x + 1, y) != c) ||
+                        (y > 0 && a.at(x, y - 1) != c) || (y < H - 1 && a.at(x, y + 1) != c);
+            }
+        const Coverage c = compare(swF, b);
+        std::printf("msaa: %d of %d  changed %ld (%.2f%%)  on an edge %.4f  coverage %.4f\n", got, most,
+                    changed, 100.0 * double(changed) / double(W * H),
+                    changed ? double(edge) / double(changed) : 0.0, c.agree());
+        if (most >= 4)
+            failures += got != 4 || changed == 0 || double(edge) / double(changed) < 0.99 ||
+                        c.agree() < 0.99;
+        delete ms;
     }
 
     // ---- THE LETTERBOX: a 640x352 picture at row 64 of a 640x480 frame, the

@@ -27018,6 +27018,16 @@ def c_engine_anti_aliasing():
     `msaa: N of M`, M being the device's colour/depth/stencil limit, and only
     M < 4 skips. Shown to fail (2026-09-08) with that mutation in place: the
     achieved count reads 1 of 4 and the check goes red.
+
+    THE GLES BACKEND (2026-10-05), through `gles_probe` on the same camera
+    (headless CGL, macOS only, skipped elsewhere): a multisampled target
+    resolved by a blit at `end()`, with the same three properties - and the
+    same skip arm, keyed on the CONTEXT's `GL_MAX_SAMPLES`. Measured: 4 of 4,
+    2.77% changed, 99.63% on an edge, coverage 0.9949 - Vulkan's 2.7%. Built
+    only where the GL can multisample a render target: vitaGL cannot (its
+    MSAA is the display's, fixed at `vglInit`), so the Vita refuses it at
+    start-up and says so. Shown to fail (2026-10-05) with the resolve blit
+    removed: the frame comes back black and coverage collapses.
     """
     import subprocess, tempfile, shutil, re
     eng = os.path.join(ROOT, "engine")
@@ -27090,7 +27100,28 @@ def c_engine_anti_aliasing():
             shutil.rmtree(tmp, ignore_errors=True)
 
     want_gpu = gpu if gpu[0] in ("no vulkan", "no 4x") else (1, 4, True, True, True)
-    return (src_ok, gpu), ((True, True, True), want_gpu), \
+    gles = ("skipped",)
+    import platform
+    if platform.system() == "Darwin":
+        mk = subprocess.run(["make", "-s", "build/gles_probe"], cwd=eng, capture_output=True, text=True)
+        gp = os.path.join(eng, "build", "gles_probe")
+        gles = ("no gles_probe",)
+        if mk.returncode == 0 and os.path.exists(gp):
+            r = subprocess.run([gp, fr, model, "3526,1015,-905", "3412,1032,-882", "83", "640x352"],
+                               capture_output=True, text=True)
+            m = re.search(r"msaa: (\d+) of (\d+)\s+changed \d+ \(([\d.]+)%\)\s+on an edge ([\d.]+)"
+                          r"\s+coverage ([\d.]+)", r.stdout)
+            if not m:
+                gles = ("msaa line not found",)
+            elif int(m.group(2)) < 4:
+                gles = ("no 4x", int(m.group(2)))
+            else:
+                gles = (int(m.group(1)), 0.5 <= float(m.group(3)) <= 8.0,
+                        float(m.group(4)) >= 0.99, float(m.group(5)) >= 0.99)
+                print(f"        gles msaa: {m.group(1)}x, {m.group(3)}% changed, "
+                      f"{m.group(4)} on an edge, coverage {m.group(5)}")
+    want_gles = gles if gles[0] in ("skipped", "no 4x") or len(gles) == 1 else (4, True, True, True)
+    return (src_ok, gpu, gles), ((True, True, True), want_gpu, want_gles), \
            "the source first: `Settings::antiAliasing` defaults to 0, the ini key " \
            "is read from a section named `enhancements`, and every " \
            "`setMultisample` call in omk-play is guarded by `> 1`; then the GPU " \

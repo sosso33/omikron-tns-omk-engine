@@ -37,9 +37,10 @@
 //     `Draw::lit`) - enhancements, off by default (`todo/enhancements.md`);
 //     `lit` is ignored and the vertex colour stands, which is what the
 //     default game draws;
-//   * MSAA - an enhancement. Trilinear filtering, anisotropy (where the
-//     context has the extension) and supersampling ARE here, and bilinear is
-//     the default;
+//   * trilinear filtering, anisotropy (where the context has the extension),
+//     supersampling and MSAA (where the GL can multisample a render target -
+//     desktop GL; not GLES2, not vitaGL) are the enhancements here; bilinear
+//     is the default;
 //   * the native mirror (`drawMirrorScene`) - returns false, so
 //     `drawWithMirror` takes its CPU path through `readback()`. A stencil
 //     version is `todo/vita-port.md` step G5; GLES2 has the stencil for it.
@@ -71,6 +72,19 @@
 #  include <OpenGL/glext.h>
 #else
 #  include <GLES2/gl2.h>
+#endif
+
+// MULTISAMPLED RENDER TARGETS (`todo/enhancements.md` 0) need
+// `glRenderbufferStorageMultisample` and `glBlitFramebuffer`: desktop GL has
+// them (ARB_framebuffer_object), GLES2 does not, and vitaGL multisamples only
+// the DISPLAY - a mode fixed at `vglInit` for every surface, not a render
+// target this backend can resolve. So MSAA is built where the calls exist and
+// refused, and said, everywhere else; supersampling is the anti-aliasing a
+// Vita has.
+#if defined(__APPLE__)
+#  define OMK_GLES_MSAA 1
+#else
+#  define OMK_GLES_MSAA 0
 #endif
 
 // The one call whose NAME differs: GLES has only the float form, desktop GL
@@ -701,6 +715,19 @@ public:
         return true;
     }
     int supersample() const { return ss_; }
+    // MULTISAMPLING (`todo/enhancements.md` 0): the world rasterised into a
+    // multisampled target and resolved into `colour_` by a blit at `end()`, so
+    // every consumer - the readback, the present, the supersample resolve -
+    // reads a single-sample picture as before. Before `init`; the context's
+    // `GL_MAX_SAMPLES` gets the last word, as the device's limits do on
+    // Vulkan.
+    bool setMultisample(int samples) override {
+        if (ready_) return false;   // too late: the target exists
+        wantSamples_ = samples < 2 ? 1 : samples < 4 ? 2 : samples < 8 ? 4 : 8;
+        return true;
+    }
+    int samples() const { return samples_; }
+    int maxSamples() const { return maxSamples_; }
 
     // ---- presentation, the window side. `frameW x frameH` is the ENGINE's
     // frame (640x480); the window is whatever the device has (960x544 on a
@@ -819,6 +846,11 @@ private:
     int rw_ = 0, rh_ = 0;    // ...and the RENDER size, `w_ * ss_` by `h_ * ss_`
     bool ready_ = false;
     bool allocTarget();      // `colour_` and `depth_` at the render size
+    bool allocMultisample(); // ...and the multisampled pair, when asked
+    int wantSamples_ = 1, samples_ = 1, maxSamples_ = 1;
+    GLuint msFbo_ = 0, msColour_ = 0, msDepth_ = 0;
+    // where the scene is RASTERISED: the multisampled target, else the target
+    GLuint drawFbo() const { return msFbo_ ? msFbo_ : fbo_; }
     GLuint prog_ = 0, present_ = 0, presentSS_ = 0;
     GLint sDst_ = -1, sPic_ = -1, sBayer_ = -1, sPicSize_ = -1, sTexSize_ = -1, sSS_ = -1,
           sDither_ = -1;
@@ -1000,6 +1032,9 @@ GlesRenderer::~GlesRenderer() {
     if (quad_) deleteBuffers(1, &quad_);
     if (colour_) deleteTextures(1, &colour_);
     if (depth_) deleteRenderbuffers(1, &depth_);
+    if (msColour_) deleteRenderbuffers(1, &msColour_);
+    if (msDepth_) deleteRenderbuffers(1, &msDepth_);
+    if (msFbo_) glDeleteFramebuffers(1, &msFbo_);
     if (fbo_) glDeleteFramebuffers(1, &fbo_);
     if (prog_) glDeleteProgram(prog_);
     if (present_) glDeleteProgram(present_);
@@ -1017,7 +1052,7 @@ bool GlesRenderer::init(int w, int h) {
         // a resize: only the target changes
         rw_ = w_ * ss_; rh_ = h_ * ss_;
         rgba_.assign(static_cast<std::size_t>(rw_) * rh_ * 4, 0);
-        return allocTarget();
+        return allocTarget() && (!msFbo_ || allocMultisample());
     }
     // the supersample factor the context can hold: a target past its largest
     // texture or renderbuffer is refused by the driver, so it is halved here
@@ -1120,6 +1155,36 @@ bool GlesRenderer::init(int w, int h) {
     glGenRenderbuffers(1, &depth_);
     glGenFramebuffers(1, &fbo_);
     if (!allocTarget()) return false;
+    if (wantSamples_ > 1) {
+#if OMK_GLES_MSAA
+        GLint most = 1;
+        glGetIntegerv(GL_MAX_SAMPLES, &most);
+        maxSamples_ = most;
+        int n = wantSamples_;
+        while (n > 1 && n > most) n >>= 1;
+        if (n > 1) {
+            samples_ = n;
+            glGenFramebuffers(1, &msFbo_);
+            glGenRenderbuffers(1, &msColour_);
+            glGenRenderbuffers(1, &msDepth_);
+            if (!allocMultisample()) {
+                deleteRenderbuffers(1, &msColour_);
+                deleteRenderbuffers(1, &msDepth_);
+                glDeleteFramebuffers(1, &msFbo_);
+                msFbo_ = msColour_ = msDepth_ = 0;
+                samples_ = 1;
+            }
+        }
+        if (samples_ != wantSamples_)
+            std::printf("gles: %dx MSAA is not available here (the context allows %d) - using %dx\n",
+                        wantSamples_, most, samples_);
+#else
+        std::printf("gles: %dx MSAA refused - this GL has no multisampled render target "
+                    "(vitaGL multisamples only the display); supersampling is the anti-aliasing here\n",
+                    wantSamples_);
+#endif
+        if (samples_ > 1) std::printf("gles: %dx MSAA\n", samples_);
+    }
     if (ss_ > 1) {
         presentSS_ = link(kPresentVert, kPresentSSFrag, {{0, "aPos"}});
         if (!presentSS_) return false;
@@ -1229,6 +1294,35 @@ gpuRenderbuffer("render targets", depth_, 2LL * rw_ * rh_);
         rw_ = w_ * ss_; rh_ = h_ * ss_;
         rgba_.assign(static_cast<std::size_t>(rw_) * rh_ * 4, 0);
     }
+}
+
+// THE MULTISAMPLED PAIR, at the render size: colour and depth renderbuffers
+// the scene rasterises into, resolved into `colour_` at `end()`. Depth 16-bit
+// as the single-sample target's, 24 where a driver will not multisample 16.
+bool GlesRenderer::allocMultisample() {
+#if OMK_GLES_MSAA
+    while (glGetError() != GL_NO_ERROR) {}
+    glBindRenderbuffer(GL_RENDERBUFFER, msColour_);
+    glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples_, GL_RGBA8, rw_, rh_);
+gpuRenderbuffer("render targets", msColour_, 4LL * samples_ * rw_ * rh_);
+    glBindFramebuffer(GL_FRAMEBUFFER, msFbo_);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, msColour_);
+    GLenum fbs = GL_FRAMEBUFFER_UNSUPPORTED;
+    for (const GLenum df : {GLenum(GL_DEPTH_COMPONENT16), GLenum(GL_DEPTH_COMPONENT24)}) {
+        glBindRenderbuffer(GL_RENDERBUFFER, msDepth_);
+        glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples_, df, rw_, rh_);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, msDepth_);
+        fbs = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+        if (fbs == GL_FRAMEBUFFER_COMPLETE) {
+gpuRenderbuffer("render targets", msDepth_, (df == GL_DEPTH_COMPONENT16 ? 2LL : 4LL) * samples_ * rw_ * rh_);
+            break;
+        }
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    if (fbs == GL_FRAMEBUFFER_COMPLETE && glGetError() == GL_NO_ERROR) return true;
+    std::printf("gles: %dx MSAA target refused (0x%x)\n", samples_, fbs);
+#endif
+    return false;
 }
 
 // THE POSING PROGRAM, CHECKED WHERE IT RUNS (2026-09-26). On the Mac a posed
@@ -1879,7 +1973,7 @@ void GlesRenderer::begin(const View& view) {
     for (int i = 0; i < 3; ++i) fogColour_[i] = static_cast<float>(view.fogColour[i]) / 255.0f;
     dither_ = view.dither;
 
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
+    glBindFramebuffer(GL_FRAMEBUFFER, drawFbo());
     glViewport(0, 0, rw_, rh_);
     glDisable(GL_SCISSOR_TEST);
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);   // black, as the engine clears
@@ -2219,6 +2313,15 @@ void GlesRenderer::end() {
     ds_.cull = 0;
     glDisable(GL_BLEND);
     glDepthMask(GL_TRUE);
+#if OMK_GLES_MSAA
+    // THE MSAA RESOLVE: the samples averaged into `colour_`, which every
+    // consumer reads
+    if (msFbo_) {
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, msFbo_);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo_);
+        glBlitFramebuffer(0, 0, rw_, rh_, 0, 0, rw_, rh_, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    }
+#endif
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     dirty_ = true;
     // Per geometry, once, as the Vulkan backend reports it.
@@ -2677,6 +2780,13 @@ int glesAnisotropy(Renderer* r) {
 int glesSupersample(Renderer* r) {
     auto* g = dynamic_cast<GlesRenderer*>(r);
     return g ? g->supersample() : 1;
+}
+
+// the MSAA count the target was made with, and the context's limit
+void glesSamples(Renderer* r, int* got, int* most) {
+    auto* g = dynamic_cast<GlesRenderer*>(r);
+    *got = g ? g->samples() : 1;
+    *most = g ? g->maxSamples() : 1;
 }
 
 // the draw-state cache on or off, for a probe that compares the two

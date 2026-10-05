@@ -56,7 +56,8 @@ void PlayState::gpuOpenWindow() {
         if (glWin && SDL_GL_CreateContext(glWin)) {
             SDL_GL_SetSwapInterval(1);
             omk::Renderer* gr = omk::makeGlesRenderer();
-            if (texFilter > 0) gr->setTextureFilter(texFilter);   // the enhancements
+            if (aaSamples > 1) gr->setMultisample(aaSamples);     // the enhancements
+            if (texFilter > 0) gr->setTextureFilter(texFilter);
             if (texAniso > 1) gr->setAnisotropy(texAniso);
             if (ssaa > 1) gr->setSupersample(ssaa);
             if (gr->init(dispW, dispH)) {
