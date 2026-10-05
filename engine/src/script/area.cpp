@@ -2811,6 +2811,48 @@ void Session::onCall(int i, const Call& call) {
         // 67 - and an `off` at `shoot.end` (`ui/radar.h`).
         radarOn_ = call.op == 146;
         break;
+    case 148: {
+        // `inventory.save` (0x405F40, no `proc` label - read from the image;
+        // todo/drift-audit.md S4). The shoot phases' checkpoint: AREA 2 saves
+        // on entry and its "Mort Joueur" handlers restore.
+        //
+        //     for (i = 0; i < ObjectList_Count(0); ++i)
+        //         ids[i] = sub_409F30(0, i);          // list 0's id at i
+        //     for (; i < 18; ++i) ids[i] = -1;
+        //     for (k = 0; k < 5; ++k)
+        //         ammo[k] = i16(g_PlayerRecord + 0x104 + 2k);
+        //
+        // `g_PlayerRecord` is DB +60, so +0x104 is the record's +260..+268:
+        // the ammunition of weapon slots 5..9, the five guns (GAME_STATE).
+        // The id loop has no bound in the engine; 23 is the two arrays.
+        int i = 0;
+        for (; i < state_.listCount(0) && i < 23; ++i) invCheckpoint_[i] = state_.listAt(0, i);
+        for (; i < 18; ++i) invCheckpoint_[i] = -1;
+        for (int k = 0; k < 5; ++k) invCheckpoint_[18 + k] = state_.playerI16(260 + 2 * k);
+        std::printf("frame %ld: inventory.save - %d carried, ammo %d %d %d %d %d\n",
+                    frameNo_, state_.listCount(0), invCheckpoint_[18], invCheckpoint_[19],
+                    invCheckpoint_[20], invCheckpoint_[21], invCheckpoint_[22]);
+        break;
+    }
+    case 149: {
+        // `inventory.restore` (0x405FC0): empty list 0 from the front
+        // (`ObjectList_RemoveAt(0, 0)` while it counts), re-insert each saved
+        // id at the FRONT (`ObjectList_InsertFront(0, id, 0, 0)` - so the list
+        // comes back REVERSED, and with no record handed in each slot's cache
+        // is re-read from IAM\OBJECT, which is all the port keeps of it), up
+        // to the first -1 over NINETEEN entries - `cmp esi, 0x4E6708; jg` -
+        // the nineteenth being the first ammunition word; then the five
+        // ammunition words back into the record (`mov word`).
+        while (state_.listCount(0) > 0) state_.listRemove(0, state_.listAt(0, 0));
+        for (int i = 0; i <= 18 && invCheckpoint_[i] != -1; ++i)
+            state_.listAdd(0, invCheckpoint_[i]);
+        for (int k = 0; k < 5; ++k)
+            state_.setPlayerI16(260 + 2 * k, static_cast<std::int16_t>(invCheckpoint_[18 + k]));
+        std::printf("frame %ld: inventory.restore - %d carried, ammo %d %d %d %d %d\n",
+                    frameNo_, state_.listCount(0), state_.playerI16(260), state_.playerI16(262),
+                    state_.playerI16(264), state_.playerI16(266), state_.playerI16(268));
+        break;
+    }
     case 129: case 130:
         // `walk.ledges.ignore` / `.obey` (0x4059D0 / 0x4059F0, no `proc`
         // label - read from the image): the visible flag, the dry-run test,

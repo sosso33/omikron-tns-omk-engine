@@ -39594,6 +39594,49 @@ def c_engine_ledges_flag():
            "ledge test off and back on"
 
 
+def c_engine_inventory_checkpoint():
+    r"""THE SHOOT PHASE'S CHECKPOINT (`todo/drift-audit.md` S4).
+
+    Ops 148 `inventory.save` / 149 `inventory.restore` (0x405F40 / 0x405FC0,
+    no `proc` label - read from the image) had no handler in the port: a
+    retried shoot phase kept what the failed attempt had spent. The save
+    copies list 0's ids (18, padded with -1) and the five guns' ammunition
+    (`g_PlayerRecord + 0x104`, the record's +260..+268); the restore empties
+    list 0 from the front, re-inserts each id AT THE FRONT - so the list comes
+    back REVERSED - up to the first -1, and writes the ammunition back.
+
+    `engine/tools/checkpoint_probe.cpp` runs both as Session contexts around a
+    change: list 30,20,10 and ammunition 5..9 saved; 20 lost, 40 gained and
+    the ammunition spent; restored to 10,20,30 and 5..9.
+
+    Shown to fail: without the 148 / 149 arms the list stays 40,30,10 and the
+    ammunition 0.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s", "build/checkpoint_probe"], cwd=eng,
+                       capture_output=True)
+    probe = os.path.join(eng, "build", "checkpoint_probe")
+    if b.returncode != 0 or not os.path.exists(probe):
+        return ("build failed",), ("built",), "engine/ must build"
+    out = subprocess.run([probe, fr, os.path.join(ROOT, "tables")],
+                         capture_output=True, encoding="latin-1").stdout
+    rows = {}
+    for ln in out.splitlines():
+        p = ln.split()
+        if len(p) == 5 and p[0] in ("before", "spent", "after"):
+            rows[p[0]] = (p[2], p[4])
+    return (rows.get("before"), rows.get("spent"), rows.get("after")), \
+           (("30,20,10", "5,6,7,8,9"), ("40,30,10", "0,0,0,0,0"),
+            ("10,20,30", "5,6,7,8,9")), \
+           "list 0 and the guns' ammunition when saved, after the run spent " \
+           "them, and after the restore - the ids back in REVERSE, the " \
+           "ammunition back"
+
+
 def c_game_clock():
     r"""GAME_STATE 6: the Omikron calendar - 41 days, 13 months, year 7216.
 
@@ -39920,7 +39963,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (552, [], 1, []), \
+           (553, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -42152,6 +42195,7 @@ SLOW = [
     ("engine: reply action", c_engine_reply_action, "todo/drift-audit.md S2; SCRIPT_VM"),
     ("engine: hide show", c_engine_hide_show, "todo/drift-audit.md M1; SCRIPT_VM"),
     ("engine: ledges flag", c_engine_ledges_flag, "todo/drift-audit.md S5; SCRIPT_VM"),
+    ("engine: inventory checkpoint", c_engine_inventory_checkpoint, "todo/drift-audit.md S4; SCRIPT_VM"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),

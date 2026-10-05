@@ -368,6 +368,10 @@ public:
     // (`rep movsd` into `dword_69BC6C`, area.cpp) - rather than a field the
     // setters above name. Bounds are the caller's to respect.
     std::span<std::byte> rawMutable() { return {raw_.data(), raw_.size()}; }
+    // An int16 of the PLAYER RECORD (DB +60, `g_PlayerRecord`) at `+off` -
+    // e.g. the guns' ammunition at +260..+268 that ops 148 / 149 checkpoint
+    std::int16_t playerI16(int off) const;
+    void setPlayerI16(int off, std::int16_t v);
 
 private:
     std::vector<std::byte> raw_;

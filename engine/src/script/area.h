@@ -1741,6 +1741,10 @@ private:
     long         frameNo_ = 0;
     long         replyActions_ = 0;    // reply actions run as contexts
     bool         ignoreLedges_ = false;  // g_IgnoreLedges (ops 129/130)
+    // `inventory.save`'s two arrays, back to back as in the image: the
+    // carried list's ids at 0x4E66C0 (18) and the guns' ammunition at
+    // 0x4E6708 (5). Zero, as BSS, until a save fills them.
+    int          invCheckpoint_[23] = {};
     mutable DialogPlayer dialog_{state_, table_};
     std::string  morphDir_;              // "" = conversations end at once
     std::string  speakerModel_;

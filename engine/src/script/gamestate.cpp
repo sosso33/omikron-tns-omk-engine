@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "script/gamestate.h"
+#include "formats/le.h"
 #include "platform/datafs.h"
 
 #include <cmath>
@@ -398,6 +399,17 @@ void GameState::put32(std::size_t o, std::int32_t v) {
     const auto u = static_cast<std::uint32_t>(v);
     for (int k = 0; k < 4; ++k) raw_[o + static_cast<std::size_t>(k)] =
         static_cast<std::byte>((u >> (8 * k)) & 0xFF);
+}
+
+std::int16_t GameState::playerI16(int off) const {
+    const std::size_t o = static_cast<std::size_t>(kPlayerRecord + off);
+    if (off < 0 || o + 2 > raw_.size()) return 0;
+    return loadLE<std::int16_t>(raw_.data() + o);
+}
+
+void GameState::setPlayerI16(int off, std::int16_t v) {
+    if (off < 0) return;
+    put16(static_cast<std::size_t>(kPlayerRecord + off), v);
 }
 
 void GameState::put16(std::size_t o, std::int16_t v) {
