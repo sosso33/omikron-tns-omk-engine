@@ -107,6 +107,9 @@ struct PlayState {
     int & shootHealth = opt.shootHealth;
     float (&aimAt)[3] = opt.aimAt;
     bool & aimAtSet = opt.aimAtSet;
+    long & playerAtFrame = opt.playerAtFrame;
+    float (&playerAt)[4] = opt.playerAt;
+    long & astarothSoulsAt = opt.astarothSoulsAt;
     int & fightHealth = opt.fightHealth;
     long & shootEndAt = opt.shootEndAt;
     float (&standAt)[4] = opt.standAt;
@@ -841,7 +844,8 @@ struct PlayState {
     void harnessBoard(float (&at)[3], float (&door)[3]);   // --board: put at the called slider's door and the action pressed
     void harnessFight();   // --fight: op 62's entry by hand
     void harnessShootHealth(std::int32_t& hp);
-    void harnessAimAt(omk::RecordShot& rs);      // --aim-at: the player's shot aimed at a point   // --shoot-health: property 1 written at shoot entry
+    void harnessAimAt(omk::RecordShot& rs);
+    void harnessAstaroth();                      // --player-at, --astaroth-souls      // --aim-at: the player's shot aimed at a point   // --shoot-health: property 1 written at shoot entry
     void harnessFoeAt(const float *& foeAt);   // --fight-foe-at: the opponent started elsewhere
     void harnessFightHealth(omk::FightStats& ps);   // --fight-health: the player's Vie at Fight_Begin
     void harnessScxPlay();   // --scx-play: scene objects started by handle, once

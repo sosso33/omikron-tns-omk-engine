@@ -366,6 +366,40 @@ void PlayState::harnessAimAt(omk::RecordShot& rs) {
     }
 }
 
+// --player-at, --astaroth-souls: Astaroth's fight reached headless
+void PlayState::harnessAstaroth() {
+    auto& session = *session_;
+    // THE HARNESS: no shipped address stands the player BEHIND Astaroth -
+    // in the game he walks round him - so this puts him down there.
+    if (playerAtFrame >= 0 && n >= playerAtFrame && player) {
+        playerAtFrame = -1;
+        player->placeAt(playerAt, playerAt[3]);
+        session.setPlayerPosition(player->pos(), playerAt[3]);
+        std::printf("frame %ld: PLAYER AT - the test harness --player-at puts him at %.0f "
+                    "%.0f %.0f facing %.0f\n", n, double(player->pos()[0]),
+                    double(player->pos()[1]), double(player->pos()[2]), double(playerAt[3]));
+    }
+    // ...and the six souls struck down through the SAME callback a bolt's
+    // world hit calls (`astarothWorldHit`, `sub_47FCF0`), three times each:
+    // three of them are out of sight of the retry point, and the bolt's
+    // path to them is `engine: astaroth souls`'s
+    if (astarothSoulsAt >= 0 && n >= astarothSoulsAt && astaroth.callbackArmed) {
+        astarothSoulsAt = -1;
+        std::printf("frame %ld: ASTAROTH SOULS - the test harness --astaroth-souls strikes "
+                    "all six\n", n);
+        for (int i = 0; i < omk::kAstarothSouls; ++i) {
+            const int mesh = astaroth.soulMesh[i], slot = astarothSoulSlot[i];
+            if (mesh < 0 || slot < 0) continue;
+            const WorldSlot& w = worldSlots[static_cast<std::size_t>(slot)];
+            const float* at = static_cast<std::size_t>(mesh) < w.meshes.size()
+                                  ? w.meshes[static_cast<std::size_t>(mesh)].pos : nullptr;
+            const float zero[3] = {0.0f, 0.0f, 0.0f};
+            for (int k = 0; k < omk::kAstarothSoulHits && astaroth.callbackArmed; ++k)
+                astarothWorldHit(n, mesh, slot, at ? at : zero);
+        }
+    }
+}
+
 // --fight-foe-at: the opponent started elsewhere
 void PlayState::harnessFoeAt(const float *& foeAt) {
     // THE HARNESS, and it is one: the engine starts him where the script

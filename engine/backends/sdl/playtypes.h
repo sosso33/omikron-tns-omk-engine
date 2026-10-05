@@ -493,7 +493,9 @@ struct VehStaged {
 // ...and the clip his brain PICKED and is playing (the record's `+8` and
 // `+184`, the actor's frame `+188`): its type, length, the frame, and the
 // turn it makes each frame. Type -1: none.
-struct GunClip { int type = -1; int frames = 0; float frame = 0.0f, turn = 0.0f; };
+// `slot` >= 0: the clip was asked for by its +4 ID (`sub_434630`), not by
+// type - Astaroth's flinch, id 14, shares type 0 with five others
+struct GunClip { int type = -1; int frames = 0; float frame = 0.0f, turn = 0.0f; int slot = -1; };
 
 // ...and his CURRENT clip, the one his action asked for (the record's `+8`,
 // `Shoot_ActorAction` -> `sub_421A20`), with the actor's frame `+188` that

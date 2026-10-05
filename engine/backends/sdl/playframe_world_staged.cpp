@@ -430,7 +430,12 @@ void PlayState::worldStaged() {
             // clip is one such clip, and a gunman on a TURN clip carries
             // it alive.
             const auto deadIt = shootBrains.find(s.actor);
-            const bool shotDead = deadIt != shootBrains.end() &&
+            const bool astarothRec = deadIt != shootBrains.end() &&
+                deadIt->second.type == static_cast<std::uint32_t>(omk::kAstarothType);
+            // (Astaroth is never "shot dead" here: he has no death clip, and
+            // his own prologue plays the killing hit's clip out and reports
+            // it - `astarothClipOver`)
+            const bool shotDead = deadIt != shootBrains.end() && !astarothRec &&
                                   (deadIt->second.flags & 8u) && deadIt->second.health <= 0;
             // THE OCCUPANCY, put back (`sub_424DE0`'s prologue, 05_sys.c
             // 5456): the byte his 0x80 stamp covered returns to his cell
@@ -549,6 +554,13 @@ void PlayState::worldStaged() {
             // (!g_PlayerBehaviourOff)`: while the player is suspended
             // (op 116) no gunman thinks (todo/drift-audit.md S7)
             const bool brainsOff = session.shootMode().playerOff();
+            // ASTAROTH's head (`sub_4800C0` 0x480150..): the health bands set
+            // his ANIMATION RATE, `flt_6A062C`, before anything advances -
+            // the picked clip below included (`sub_421770(.., flt_6A062C)`)
+            omk::AstarothBand astBand;
+            if (astarothRec && act >= 0 && shootMode && !brainsOff)
+                astBand = omk::astarothBand(astaroth, deadIt->second.health,
+                                            static_cast<float>(frameSec * 30.0));
             if (act >= 0 && shootMode && !shotDead && !brainsOff && deadIt != shootBrains.end() &&
                 (deadIt->second.flags & 8u)) {
                 GunClip& gc = gunClips[s.actor];
@@ -557,13 +569,50 @@ void PlayState::worldStaged() {
                 // This was a literal 1.0, so a turn clip went on playing
                 // and turning behind the pause menu (a reader, 2026-09-12:
                 // "the ennemies continue moving in the pause menu").
-                const float gunDt = static_cast<float>(frameSec * 30.0);
+                const float gunDt = astarothRec ? astBand.rate
+                                                : static_cast<float>(frameSec * 30.0);
                 gc.frame += gunDt;
                 s.facing += gc.turn * gunDt;
                 if (s.facing < 0.0f) s.facing += 360.0f;
                 if (s.facing > 360.0f) s.facing -= 360.0f;
                 if (gc.type >= 0 && gc.frame < static_cast<float>(gc.frames)) {
                     clipHolds = true;
+                } else if (astarothRec) {
+                    // ---- `sub_4800C0` 0x4801FC.., his clip played out ----
+                    omk::ShootRecord& ar = deadIt->second;
+                    ar.flags &= ~8u;                    // `sub_421770` cleared it
+                    const omk::AstarothClipOver co = omk::astarothClipOver(ar);
+                    if (co == omk::AstarothClipOver::Replay) {
+                        gc.frame = 1.0f;                // `+188 = 1.0; +192 = 0`
+                        clipHolds = true;
+                    } else if (co == omk::AstarothClipOver::Dead) {
+                        // `Game_RaiseEvent(43, {3, idx})` and return - the
+                        // sender mapped to his CHARACTERS id (message < 13)
+                        const bool ran = session.postMessage(3, s.actor);
+                        std::printf("frame %ld: actor %d %s - ASTAROTH DEAD (sub_4800C0 "
+                                    "0x480245): health %d, his clip played out - message 3 "
+                                    "%s\n", n, s.actor, s.model.c_str(), ar.health,
+                                    ran ? "handled" : "unsubscribed");
+                        gc = GunClip{};
+                        clipHolds = true;
+                    } else {
+                        // ...his state's own clip back - 16 the walk grid,
+                        // 17 / 21 their clips, 29 the stand grid (step 3).
+                        // Until his tick is ported every state stands on the
+                        // stand grid's centre cell. LABELLED.
+                        gc = GunClip{};
+                        if (const omk::PedClip* st = shootClipBySlot(
+                                static_cast<int>(ar.type), 13)) {
+                            gunCurSlot[s.actor] = 13;
+                            GunAnim& ga = gunAnims[s.actor];
+                            ga.clip = st;
+                            ga.frame = static_cast<float>(4 * ((st->frames + 1) / 9) + 1);
+                        }
+                        std::printf("frame %ld: actor %d %s - his picked clip over (sub_4800C0): "
+                                    "state %d resumes, health %d\n", n, s.actor,
+                                    s.model.c_str(), ar.state, ar.health);
+                    }
+                    s.walkMove[1] = 0.0f;
                 } else {
                     deadIt->second.flags &= ~8u;
                     std::printf("frame %ld: actor %d %s - picked clip over (sub_421770): "
@@ -851,6 +900,11 @@ void PlayState::worldStaged() {
                 // below is NOT his. Until his is ported he stands where his
                 // setup put him and does nothing. LABELLED.
                 if (rec.type == static_cast<std::uint32_t>(omk::kAstarothType)) {
+                    // 0x480303..0x48031D, every tick the prologue lets
+                    // through: `+100 = 0; +16 = 0; +160 &= ~0x800` - the
+                    // back hit's immunity ends here
+                    rec.repeats = 0;
+                    rec.flags &= ~0x800u;
                     static std::set<int> astTold;
                     if (astTold.insert(s.actor).second)
                         std::printf("frame %ld: actor %d %s - his tick is sub_4800C0 (not "
@@ -1951,7 +2005,9 @@ void PlayState::worldStaged() {
                 const bool onTurn = gcIt != gunClips.end() && gcIt->second.type >= 0 &&
                                     s.deathType < 0 && grp >= 0 && grp < 64;
                 if (onTurn)
-                    if (const omk::PedClip* tc = shootClipExact(grp, gcIt->second.type)) c = tc;
+                    if (const omk::PedClip* tc = gcIt->second.slot >= 0
+                            ? shootClipBySlot(grp, gcIt->second.slot)
+                            : shootClipExact(grp, gcIt->second.type)) c = tc;
                 if (c) shootTracks = pedTracksFor(grp, *c, s.mo->meshes);
                 if (onTurn && shootTracks && shootTracks->frames > 0)
                     shootFrame = std::min(static_cast<int>(gcIt->second.frame),

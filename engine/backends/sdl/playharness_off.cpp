@@ -9,7 +9,7 @@ void PlayState::harnessStateWrites() {
     if (moneyArg >= 0 || ringsArg >= 0 || !giveList.empty() || !varList.empty() || newWorld ||
         !zoneEnable.empty() || !zoneDisable.empty() || !sceneLoads.empty() || bankReject ||
         rideArg || saveSlotArg >= 0 || boardArg || fightArg >= 0 || callDialog >= 0 ||
-        animHoldHarness || shootEndAt >= 0 || shootHealth >= 0 || aimAtSet || fightHealth >= 0 || foeAtSet ||
+        animHoldHarness || shootEndAt >= 0 || shootHealth >= 0 || aimAtSet || playerAtFrame >= 0 || astarothSoulsAt >= 0 || fightHealth >= 0 || foeAtSet ||
         !scxPlay.empty() || hideShow[0] >= 0 || gameRestartAt >= 0 || !opAt.empty() ||
         !flickerDir.empty() ||
         !snapsDir.empty())
@@ -27,6 +27,7 @@ void PlayState::harnessBoard(float (&)[3], float (&)[3]) {}
 void PlayState::harnessFight() {}
 void PlayState::harnessShootHealth(std::int32_t&) {}
 void PlayState::harnessAimAt(omk::RecordShot&) {}
+void PlayState::harnessAstaroth() {}
 void PlayState::harnessFoeAt(const float *&) {}
 void PlayState::harnessFightHealth(omk::FightStats&) {}
 void PlayState::harnessScxPlay() {}

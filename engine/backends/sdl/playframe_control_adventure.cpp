@@ -1686,6 +1686,7 @@ void PlayState::adventureTake() {
         std::printf("--shoot: shoot.begin -1\n");
     }
     harnessShootEnd();
+    harnessAstaroth();      // --player-at, --astaroth-souls (instruments)
     if (openSneak && !walk && playerScreen < 0) {
         openSneak = false;
         inv.openList(0);

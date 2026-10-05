@@ -694,17 +694,73 @@ void PlayState::controlFlight() {
             hin.victimYaw = vs->facing;
             for (int k = 0; k < 3; ++k) hin.boltVel[k] = ev.vel[k];
             // ASTAROTH's gate, `sub_47FD90` (`actor/astaroth.h`): nothing
-            // reaches his body while one of the six souls stands - the
-            // test `(state < 17 || state > 19) && dword_657AFC >= 6` fails
-            // and it returns 0 with no other effect. Once all six are down
-            // the back test decides, and that is step 2 of
-            // `todo/astaroth.md`: until then he refuses then too. LABELLED.
+            // reaches his body while one of the six souls stands; then a
+            // bolt travelling WITH his facing whose segment meets his
+            // `AstDos` (the sweep over every body but the PLAYER's, that
+            // one mesh only) goes through and he reacts; any other hit
+            // runs down his `+88` towards the flinch.
             if (bit->second.type == static_cast<std::uint32_t>(omk::kAstarothType))
-                hin.typeGate = [&](int) {
-                    std::printf("  ASTAROTH's gate (sub_47FD90): %d of 6 souls down - %s\n",
-                                astaroth.destroyed, astaroth.destroyed < omk::kAstarothSouls
-                                    ? "refused" : "refused (the back test is not ported)");
-                    return 0;
+                hin.typeGate = [&](int dmg) {
+                    omk::ShootRecord& ar = bit->second;
+                    const int stateWas = ar.state;
+                    omk::BodyHit bh;
+                    const auto backSweep = [&]() {
+                        return omk::shootSweepBodies(ev.seg, ev.seg + 3, bodies, -1, bh,
+                                                     ev.victim, astaroth.backMesh);
+                    };
+                    const omk::AstarothGate g = omk::astarothGate(astaroth, ar, dmg, vs->facing,
+                                                                  ev.seg, backSweep);
+                    using R = omk::AstarothGate::Reaction;
+                    // where his AstDos is drawn, for the reader of a miss
+                    float back[3] = {0.0f, 0.0f, 0.0f};
+                    for (const auto& hb : bodies)
+                        if (hb.actor == ev.victim && astaroth.backMesh >= 0 &&
+                            static_cast<std::size_t>(astaroth.backMesh) < hb.meshes.size())
+                            for (int k = 0; k < 3; ++k)
+                                back[k] = hb.meshes[static_cast<std::size_t>(astaroth.backMesh)].pos[k];
+                    std::printf("  ASTAROTH's gate (sub_47FD90): %d of 6 souls down, state %d, "
+                                "%s, %s - +88 %d (AstDos at %.0f %.0f %.0f)\n",
+                                astaroth.destroyed, stateWas,
+                                g.fromBehind ? "from behind" : "from in front",
+                                g.reaction == R::Back ? "IN THE BACK (AstDos)"
+                                : g.reaction == R::Flinch ? "refused, he FLINCHES"
+                                : "refused", ar.actionCounter, double(back[0]),
+                                double(back[1]), double(back[2]));
+                    if (g.reaction != R::None) {
+                        // `sub_44DEB0`: his bolts still waiting at the muzzle
+                        const int gone = projectiles.cancelWaiting(ev.victim);
+                        // the reaction: a random TYPE-4 clip, or clip ID 14
+                        // (`List_PickRandomByType` is `rand()`; this port's
+                        // pick is the fixed one, as for every gunman)
+                        const int grpR = static_cast<int>(ar.type);
+                        const omk::PedClip* rc = g.reaction == R::Back
+                            ? shootClipExact(grpR, 4) : shootClipBySlot(grpR, 14);
+                        GunClip& gc = gunClips[ev.victim];
+                        gc = GunClip{};
+                        if (rc) {
+                            gc.type = rc->type;
+                            gc.slot = rc->slot;
+                            gc.frames = rc->frames;
+                            gc.frame = 1.0f;          // `sub_421A20`
+                        }
+                        gc.turn = 0.0f;               // `+184 = 0`
+                        vs->walkMove[1] = 0.0f;
+                        std::printf("  ASTAROTH reacts - clip id %d (type %d, %d frames), "
+                                    "played %d time%s, %d waiting bolt%s cancelled "
+                                    "(sub_44DEB0)\n", rc ? rc->slot : -1, rc ? rc->type : -1,
+                                    rc ? rc->frames : 0, ar.repeats > 0 ? ar.repeats : 1,
+                                    ar.repeats > 1 ? "s" : "", gone, gone == 1 ? "" : "s");
+                        // `sub_44EF00(20, the AstDos node, 0, 1)`
+                        if (g.reaction == R::Back && bh.body >= 0 &&
+                            static_cast<std::size_t>(bh.body) < bodies.size()) {
+                            const omk::HitBody& hb = bodies[static_cast<std::size_t>(bh.body)];
+                            if (bh.mesh >= 0 && static_cast<std::size_t>(bh.mesh) < hb.meshes.size())
+                                shotSound(n, 20, hb.meshes[static_cast<std::size_t>(bh.mesh)].pos,
+                                          player ? player->pos() : nullptr,
+                                          "Astaroth hit in the back (sub_44EF00 20)");
+                        }
+                    }
+                    return g.damage;
                 };
             const omk::HitOut ho = omk::shootApplyHit(bit->second, hin);
             if (ho.refused) {
@@ -729,7 +785,13 @@ void PlayState::controlFlight() {
                 std::printf("  message 2 (sub_423EF0) - actor %d hit and alive: %s\n",
                             ev.victim, ran ? "handled" : "unsubscribed");
             }
-            if (ho.killed) {
+            if (ho.killed && bit->second.type == static_cast<std::uint32_t>(omk::kAstarothType)) {
+                // no type 5..8 clip in his group, so `sub_4240E0`'s kill arm
+                // starts nothing: the back-hit clip plays on, and his own
+                // prologue reports the death when it ends (message 3)
+                std::printf("  KILLED - Astaroth has no death clip: the back hit's clip plays "
+                            "out first%s\n", ho.enemyCountDrop ? ", the enemy count drops" : "");
+            } else if (ho.killed) {
                 vs->deathType = ho.deathType;
                 vs->deathStart = gameClock;
                 vs->walkMove[1] = 0.0f;   // `sub_421A20` sets the height

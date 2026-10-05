@@ -97,8 +97,14 @@ struct BodyHit {
 
 // `sub_45E9C0` with `sub_45ECA0`: the segment a..b against every body but
 // `exclude` (an actor id). true and the nearest hit when one is met.
+//
+// `onlyMesh` is the sweep's fifth argument, `dword_53AA9C`: when given,
+// `sub_45ECA0` tests that ONE mesh and no other (`if (!filter || filter ==
+// mesh)`) - a mesh pointer, so of one body, `onlyActor`'s. The node sphere
+// test before it still runs. Astaroth's gate sweeps his `AstDos` this way.
 bool shootSweepBodies(const float a[3], const float b[3],
-                      const std::vector<HitBody>& bodies, int exclude, BodyHit& out);
+                      const std::vector<HitBody>& bodies, int exclude, BodyHit& out,
+                      int onlyActor = 0, int onlyMesh = -1);
 
 // `sub_423E20` (0x00423E20): the dot of the bolt's horizontal heading with
 // the victim's forward - `sub_442160(0, yaw, 0)` through (0, 0, -1) - in four

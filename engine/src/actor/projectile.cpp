@@ -155,6 +155,7 @@ int ProjectilePool::fly(float dt, const WorldRay& world, std::vector<FlightEvent
                 for (int k = 0; k < 3; ++k) ev.vel[k] = e.vel[k];
                 ev.impactEffect = e.impactEffect;
                 ev.mesh = body ? -1 : mesh;
+                for (int k = 0; k < 3; ++k) { ev.seg[k] = a[k]; ev.seg[3 + k] = b[k]; }
                 out->push_back(ev);
             }
             // `o3de_UnlinkObject; ...; sub_437890(node); *v3 = 0`
@@ -163,6 +164,13 @@ int ProjectilePool::fly(float dt, const WorldRay& world, std::vector<FlightEvent
         }
     }
     return retired;
+}
+
+int ProjectilePool::cancelWaiting(int owner) {
+    int n = 0;
+    for (auto& e : pool_)
+        if (e.node && e.owner == owner && e.windUp > 0.0f) { e.node = 0; ++n; }
+    return n;
 }
 
 }  // namespace omk

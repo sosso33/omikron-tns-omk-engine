@@ -92,6 +92,9 @@ struct FlightEvent {
     int   owner = -1;          // the entry's +44
     int   damage = 0;          // the entry's +56
     float vel[3] = {0, 0, 0};  // its velocity, for the hit's direction
+    // the step's SEGMENT, `sub_4240E0`'s fourth argument: a (the back of the
+    // bolt before the move) then b (its front after it)
+    float seg[6] = {0, 0, 0, 0, 0, 0};
     int   impactEffect = 0;    // the entry's row's +8 (Why::World / Why::Actor)
     // Why::World: the SET MESH the ray met (its `.3DO` index, -1 when the ray
     // cannot say) - what `Projectiles_Tick` hands `off_4C8444` at 0x44DDDF,
@@ -228,6 +231,10 @@ public:
 
     const std::array<Projectile, kProjectileSlots>& entries() const { return pool_; }
     void clear() { pool_ = {}; }
+    // `sub_44DEB0(actor)`: every live entry of that owner still WAITING at
+    // the muzzle (`+52 > 0`) unlinked and freed - Astaroth's bolts, when a
+    // hit makes him react (`sub_47FD90`). -> how many.
+    int cancelWaiting(int owner);
 
 private:
     std::array<Projectile, kProjectileSlots> pool_{};

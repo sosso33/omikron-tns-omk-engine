@@ -91,4 +91,68 @@ struct SoulHit {
 };
 SoulHit astarothSoulHit(AstarothFight& fight, int mesh);
 
+// `sub_4800C0`'s head (0x480150..0x4801D7): the health bands on `<`, and
+// what they set - his ANIMATION RATE, `flt_6A062C = flt_657AF8 * band * dt`,
+// which every one of his clip advances uses, and the frames slot 1's bolt
+// WAITS at the muzzle, `band wait / flt_657AF8` (written into the shot-sprite
+// row each tick, step 3):
+//
+//     health >= 100    1.0  and 60
+//     health <  100    1.5  and 40
+//     health <  50     2.0  and 30
+struct AstarothBand { float rate = 1.0f; float wait = 60.0f; };
+AstarothBand astarothBand(AstarothFight& fight, int health, float dt);
+
+// `sub_47FD90` (0x0047FD90), his gate in `sub_4240E0`, reached only by a
+// damage-6 bolt on a 0x4000 victim (`shootApplyHit`'s `typeGate`):
+//
+//   if ((state < 17 || state > 19) && dword_657AFC >= 6) {
+//       y = actor+420 in radians;  dx = seg[3]-seg[0];  dz = seg[5]-seg[2];
+//       if (sin(y)*dx - cos(y)*dz > 0              the bolt travels WITH his
+//                                                  facing - it comes from BEHIND
+//           && sub_45E9C0(seg, the PLAYER's node, .., dword_657AF4)) {
+//                                                  the body sweep, every body but
+//                                                  the player's, ONLY his AstDos
+//           sub_44DEB0(him);                       his bolts still WAITING go
+//           sub_44EF00(20, the AstDos node's world position, 0, 1);
+//           +184 = 0; +160 |= 8; a random TYPE-4 clip (`sub_421A20`);
+//           +160 |= 0x800;                         immune until his tick body
+//           +156 = 16; +100 = 0; +88 = 10;
+//           return damage;                         the 6 goes through
+//       }
+//       if (!(+160 & 8)) --+88;                    a hit anywhere else, not reacting
+//       if (+156 != 21 && +88 <= 0) {
+//           sub_44DEB0(him); +184 = 0; +160 |= 8;
+//           clip id 14 (`sub_434630`) - the FLINCH; +156 = 16;
+//           +100 = 10 (played ten times over); +88 = 10;
+//       }
+//   }
+//   return 0;                                      refused - the bolt stops anyway
+//
+// `backSweep` is the sweep, called only when the direction test passes (the
+// engine's `&&`); it has no side effects. The record is written here; the
+// clip, the cancel and the effect are the caller's.
+struct AstarothGate {
+    enum class Reaction { None, Back, Flinch };
+    int      damage = 0;          // what `sub_4240E0` goes on with; 0 refuses
+    Reaction reaction = Reaction::None;
+    bool     fromBehind = false;  // the direction test passed
+};
+AstarothGate astarothGate(const AstarothFight& fight, ShootRecord& rec, int damage,
+                          float yawDeg, const float seg[6],
+                          const std::function<bool()>& backSweep);
+
+// The tick's prologue when his picked clip has played out (`sub_421770`
+// returned 0 and cleared flag 8), 0x4801FC..0x480252:
+//
+//   if (--+100 > 0) { +188 = 1.0; +192 = 0; +160 |= 8; return; }   REPLAY it
+//   sub_420C10(rec);                                               his cell back
+//   if (+92 <= 0) { Game_RaiseEvent(43, {3, idx}); return; }       MESSAGE 3 - dead
+//   ...resume his state's own clip and fall through into the body
+//
+// He has no death clip (no type 5..8 in his group), so this - after the
+// killing hit's back-hit clip - is the ONLY place his death is reported.
+enum class AstarothClipOver { Replay, Dead, Resume };
+AstarothClipOver astarothClipOver(ShootRecord& rec);
+
 }  // namespace omk

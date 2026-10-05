@@ -218,6 +218,11 @@ struct PlayOptions {
     // --aim-at X,Y,Z: HARNESS, the player's shots aimed at a world point
     float aimAt[3] = {0.0f, 0.0f, 0.0f};
     bool  aimAtSet = false;
+    // --player-at F:X,Y,Z,YAW: HARNESS, the player put down there at frame F
+    long  playerAtFrame = -1;
+    float playerAt[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    // --astaroth-souls F: HARNESS, all six souls struck down at frame F
+    long  astarothSoulsAt = -1;
     int fightHealth = -1;   // --fight-health N: a HARNESS, the player's Vie at Fight_Begin
     long shootEndAt = -1;      // --shoot-end N: `shoot.end 1` at frame N
     float standAt[4] = {0, 0, 0, 0};

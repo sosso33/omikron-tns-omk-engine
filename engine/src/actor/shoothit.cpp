@@ -76,7 +76,8 @@ bool shootRayBox(const float lo[3], const float hi[3], const float o[3],
 }
 
 bool shootSweepBodies(const float a[3], const float b[3],
-                      const std::vector<HitBody>& bodies, int exclude, BodyHit& out) {
+                      const std::vector<HitBody>& bodies, int exclude, BodyHit& out,
+                      int onlyActor, int onlyMesh) {
     float d[3] = {b[0] - a[0], b[1] - a[1], b[2] - a[2]};
     const float len = static_cast<float>(std::sqrt(double(d[0]) * d[0] + double(d[1]) * d[1] +
                                                    double(d[2]) * d[2]));
@@ -93,6 +94,8 @@ bool shootSweepBodies(const float a[3], const float b[3],
         if (!shootRaySphere(a, d, root.pos, root.radius, tIn, tOut)) continue;
         if (!(tIn <= len && tOut >= 0.0f)) continue;
         for (std::size_t mi = 0; mi < body.meshes.size(); ++mi) {
+            if (onlyMesh >= 0 && (body.actor != onlyActor || static_cast<int>(mi) != onlyMesh))
+                continue;                 // `dword_53AA9C`
             const HitMesh& h = body.meshes[mi];
             float wc[3];
             toWorld(h, h.centre, wc);

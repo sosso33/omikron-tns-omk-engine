@@ -40069,6 +40069,88 @@ def c_engine_astaroth_souls():
            "count; its handler's effects; Astaroth's gate; hits that hurt him"
 
 
+def c_engine_astaroth_back():
+    r"""ASTAROTH IS HURT FROM BEHIND, AND DIES (`todo/astaroth.md` step 2).
+
+    `sub_4240E0` hands a type-13 victim's damage-6 hit to `sub_47FD90`. Once
+    all six souls are down and he is not in states 17..19, a bolt travelling
+    WITH his facing (`sin(y)*dx - cos(y)*dz > 0`) whose segment meets his
+    `AstDos` - the body sweep over every body but the player's, that ONE mesh
+    (`dword_53AA9C`) - goes through: his waiting bolts are cancelled, effect
+    20, a type-4 clip under flags `8 | 0x800`, state 16, `+88 = 10`. Any other
+    hit counts `+88` down while no clip plays, and at 0 he FLINCHES: clip id
+    14, played ten times. He has no death clip, so the killing hit's clip
+    plays out and his tick's prologue posts message 3 - AREA 175's handler
+    then ends the phase (`shoot.end 1`) and runs the ending.
+
+    Three runs, the souls struck down by the `--astaroth-souls` harness
+    (through `sub_47FCF0`, as `engine: astaroth souls` shows a bolt does) and
+    character 34 hidden as record 1 hides him. KILL: the player put BEHIND
+    him (`--player-at`; no address is) and shooting his `AstDos` - 34 back
+    hits of 6 from 200, the last killing, message 3 handled once, shoot
+    mode left the next frame. FRONT: from the retry point, every hit refused
+    and `+88` running 9..1 to the flinch. LEGS: from behind but low - the
+    direction passes and the one-mesh sweep refuses.
+
+    Shown to fail: the direction test's sign flipped; the sweep's one-mesh
+    filter dropped; the prologue's death arm (message 3) removed.
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    def start(extra, aim, keys, delay, frames):
+        return subprocess.Popen(
+            [play, fr, os.path.join(ROOT, "tables"), "--save",
+             os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "175",
+             "--address", "526", "--zone-enable", "2936", "--zone-disable", "2935",
+             "--hide-show", "34,1,100000,0", "--frames", str(frames), "--nodelay",
+             "--shoot-health", "1000", "--astaroth-souls", "10",
+             "--keys", ",".join(["54"] * keys), "--keydelay", str(delay),
+             "--aim-at", aim] + extra,
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, encoding="latin-1",
+            env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+    behind = ["--player-at", "12:31950,1052,-2504,90"]
+    pk = start(behind, "32206,668,-2507", 45, 20, 1000)     # his AstDos
+    pf = start([], "32206,668,-2507", 13, 40, 560)
+    pl = start(behind, "32222,860,-2504", 3, 40, 140)       # his legs
+    k, f, l = pk.communicate()[0], pf.communicate()[0], pl.communicate()[0]
+    gate = r"ASTAROTH's gate \(sub_47FD90\): 6 of 6 souls down, state \d+, (from \w+(?: \w+)?), ([^-]+) - \+88 (\d+)"
+    back = _re.findall(gate, k)
+    clipK = _re.search(r"ASTAROTH reacts - clip id \d+ \(type (\d+), (\d+) frames\)", k)
+    hp = [int(x) for x in _re.findall(r"^  hit: damage 6, health -?\d+ -> (-?\d+)", k, _re.M)]
+    dead = _re.findall(r"^frame (\d+): actor 609 AST_FNM - ASTAROTH DEAD .* message 3 (\w+)",
+                       k, _re.M)
+    leave = _re.search(r"^frame (\d+): SHOOT MODE LEAVE", k, _re.M)
+    kill = (sum(1 for x in back if x[1].startswith("IN THE BACK")),
+            clipK.groups() if clipK else None, len(hp), hp[-1:] if hp else [],
+            "KILLED - Astaroth has no death clip" in k,
+            [d[1] for d in dead],
+            (int(leave.group(1)) - int(dead[0][0])) if (leave and dead) else None)
+    fr_ = _re.findall(gate, f)
+    clipF = _re.search(r"ASTAROTH reacts - clip id (\d+) \(type \d+, \d+ frames\), played "
+                       r"(\d+) times", f)
+    front = ([int(x[2]) for x in fr_[:10]], fr_[9][1].strip() if len(fr_) > 9 else None,
+             clipF.groups() if clipF else None,
+             len(_re.findall(r"^  hit: damage", f, _re.M)))
+    lg = _re.findall(gate, l)
+    legs = ([(x[0], x[1].strip(), int(x[2])) for x in lg[:2]],
+            len(_re.findall(r"^  hit: damage", l, _re.M)))
+    return (kill, front, legs), \
+           ((34, ("4", "16"), 34, [-4], True, ["handled"], 1),
+            ([9, 8, 7, 6, 5, 4, 3, 2, 1, 10], "refused, he FLINCHES", ("14", "10"), 0),
+            ([("from behind", "refused", 9), ("from behind", "refused", 8)], 0)), \
+           "KILL: back hits, the reaction clip (type, frames), hits that hurt, his last " \
+           "health, the kill, message 3, frames to the phase's end; FRONT: +88 down to " \
+           "the flinch, its clip id and plays, hits that hurt; LEGS: the gate's verdicts, " \
+           "hits that hurt"
+
+
 def c_game_clock():
     r"""GAME_STATE 6: the Omikron calendar - 41 days, 13 months, year 7216.
 
@@ -42639,6 +42721,7 @@ SLOW = [
     ("engine: message two", c_engine_message_two, "todo/drift-audit.md S8; SCRIPT_VM"),
     ("engine: hide piece", c_engine_hide_piece, "todo/drift-audit.md S11; o3de/setpiece.h"),
     ("engine: astaroth souls", c_engine_astaroth_souls, "todo/astaroth.md 1; actor/astaroth.h"),
+    ("engine: astaroth back", c_engine_astaroth_back, "todo/astaroth.md 2; actor/astaroth.h"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),

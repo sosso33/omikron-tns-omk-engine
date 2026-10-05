@@ -158,6 +158,10 @@ int PlayOptions::parse(int argc, char** argv) {
 "                   arena and look at the mode, the way --ride does a slider\n"
 "  --aim-at X,Y,Z   HARNESS: every shot the player fires in shoot mode is aimed\n"
 "                   from its muzzle at that world point (todo/astaroth.md)\n"
+"  --player-at F:X,Y,Z,YAW HARNESS: the player put down at that point at frame\n"
+"                   F (todo/astaroth.md 2 - no shipped address is behind him)\n"
+"  --astaroth-souls F HARNESS: at frame F each of Astaroth's six souls is struck\n"
+"                   three times through sub_47FCF0, as a bolt's world hit would\n"
 "  --shoot-health N HARNESS: the player's health (actor property 1) written as\n"
 "                   N when shoot mode starts, so the record, the gauge and the\n"
 "                   property agree as a save carrying N would make them\n"
@@ -556,6 +560,12 @@ int PlayOptions::parse(int argc, char** argv) {
         else if (a == "--shoot") startShoot = true;
         else if (a == "--shoot-end" && i + 1 < argc) shootEndAt = std::atol(argv[++i]);
         else if (a == "--shoot-health" && i + 1 < argc) shootHealth = std::atoi(argv[++i]);
+        else if (a == "--player-at" && i + 1 < argc) {
+            if (std::sscanf(argv[++i], "%ld:%f,%f,%f,%f", &playerAtFrame, &playerAt[0],
+                            &playerAt[1], &playerAt[2], &playerAt[3]) != 5)
+                playerAtFrame = -1;
+        }
+        else if (a == "--astaroth-souls" && i + 1 < argc) astarothSoulsAt = std::atol(argv[++i]);
         else if (a == "--aim-at" && i + 1 < argc)
             aimAtSet = std::sscanf(argv[++i], "%f,%f,%f", &aimAt[0], &aimAt[1], &aimAt[2]) == 3;
         else if (a == "--fight-health" && i + 1 < argc) fightHealth = std::atoi(argv[++i]);
