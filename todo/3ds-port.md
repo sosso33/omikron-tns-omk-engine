@@ -162,6 +162,23 @@ time of one area load. Rosalina's GDB stub for whatever crashes. **This step
 says how far the New 3DS is from 30 fps** and whether the Old 3DS is worth
 step 7.
 
+**RUN IN AZAHAR, 2026-10-06 - 42 OF 42.** `omk_boot.3dsx` in the Azahar
+emulator (2126.1.2, macOS arm64, installed by the reader's go) on its
+emulated NEW 3DS - 804 MHz mode, 96 MB of application memory, a 92 MB heap
+and a 32 MB linear heap as libctru's start-up split them - with the
+emulated card's `omk/gamedata` a symlink to the data tree. The boot's
+`--dump` (through `sdmc:/omk/args.txt`), parsed by `engine: boot`'s own
+code: the header **(3, 0, 1, 20, 53, 1, 29, 19, 118, 1, 1, 1)**, exactly
+what that check asserts on the host, and **42 decisions announced, 42 of
+them matching `traces/intro.log` in order** - the original engine's own
+capture. The log is the host's line for line but for its load times. Two
+faults on the way, both this port's: the tables root `romfs:/` made
+`romfs://vm_opcodes.json`, which libctru refuses ("no VM opcode table") -
+now `romfs:`; and `osGetMemRegionFree` read 4 GB (libctru takes the whole
+region for its heaps) - the log now reports the heaps' sizes and
+`mallinfo`. **An emulator's run, not the console's** (section 5's first
+trap): it proves the code, not the timing or the memory on hardware.
+
 ### Step 2 - the frontend, first light on the software renderer
 
 `n3dsfront.cpp`: HID (buttons, circle pad, touch), `ndsp` audio (the mixer's

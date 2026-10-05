@@ -12,7 +12,11 @@
 //                            (MESHES/, IAM/, MORPH/, ... directly inside) -
 //                            IN BINARY MODE: the Vita's IAM copied by an FTP
 //                            client in ASCII mode was a black screen
-//   romfs:/                  the tables (`tables/*.json`), in the .3dsx
+//   romfs:                   the tables (`tables/*.json`), in the .3dsx - named
+//                            WITHOUT the slash, because the engine joins
+//                            "<tables>/vm_opcodes.json" and libctru's romfs
+//                            refuses the "romfs://..." a trailing slash makes
+//                            ("no VM opcode table", Azahar, 2026-10-06)
 //   sdmc:/omk/saves/GAMES    where saves go (never into the data tree -
 //                            CLAUDE.md 1)
 //   sdmc:/omk/omk.ini        the game's own config file, when present
@@ -30,6 +34,8 @@
 #include <3ds.h>
 #include <sys/iosupport.h>
 #include <sys/stat.h>
+
+#include <malloc.h>
 
 #include <cstdio>
 #include <ctime>
@@ -49,13 +55,17 @@ int OMK_3DS_ENTRY(int argc, char** argv);
 // than trusted.
 extern "C" {
 u32 __stacksize__ = 1024 * 1024;
+// what libctru's start-up gave the two heaps (the newlib heap `new` draws
+// from, and the linear heap the GPU and the DSP read)
+extern u32 __ctru_heap_size;
+extern u32 __ctru_linear_heap_size;
 }
 
 namespace {
 
 constexpr const char* kHome   = "sdmc:/omk";
 constexpr const char* kRoot   = "sdmc:/omk/gamedata";
-constexpr const char* kTables = "romfs:/";
+constexpr const char* kTables = "romfs:";
 constexpr const char* kSaves  = "sdmc:/omk/saves/GAMES";
 constexpr const char* kIni    = "sdmc:/omk/omk.ini";
 constexpr const char* kExtra  = "sdmc:/omk/args.txt";
@@ -117,11 +127,15 @@ std::string stamp() {
 void reportConsole() {
     bool n3ds = false;
     APT_CheckNew3DS(&n3ds);
-    std::printf("console: %s 3DS, the CPU %s; application memory %u KB, "
-                "%u KB free at main; linear heap %u KB free\n",
+    // NOT `osGetMemRegionFree`: libctru's start-up takes the whole region
+    // for its two heaps, and the call read 4 GB in Azahar - a wrapped value
+    std::printf("console: %s 3DS, the CPU %s; application memory %u KB: the heap %u KB "
+                "(%u KB in use at main), the linear heap %u KB (%u KB free)\n",
                 n3ds ? "NEW" : "OLD", n3ds ? "at 804 MHz with the L2 (osSetSpeedupEnable)" : "at 268 MHz",
                 static_cast<unsigned>(osGetMemRegionSize(MEMREGION_APPLICATION) / 1024),
-                static_cast<unsigned>(osGetMemRegionFree(MEMREGION_APPLICATION) / 1024),
+                static_cast<unsigned>(__ctru_heap_size / 1024),
+                static_cast<unsigned>(mallinfo().uordblks / 1024),
+                static_cast<unsigned>(__ctru_linear_heap_size / 1024),
                 static_cast<unsigned>(linearSpaceFree() / 1024));
 }
 
@@ -193,8 +207,9 @@ int main(int, char**) {
     try {
         rc = OMK_3DS_ENTRY(static_cast<int>(args.size()), argv.data());
     } catch (const std::bad_alloc&) {
-        std::printf("FATAL: out of memory (std::bad_alloc) - %u KB of application memory free\n",
-                    static_cast<unsigned>(osGetMemRegionFree(MEMREGION_APPLICATION) / 1024));
+        std::printf("FATAL: out of memory (std::bad_alloc) - %u KB in use of the %u KB heap\n",
+                    static_cast<unsigned>(mallinfo().uordblks / 1024),
+                    static_cast<unsigned>(__ctru_heap_size / 1024));
     } catch (const std::exception& e) {
         std::printf("uncaught exception: %s\n", e.what());
     } catch (...) {
