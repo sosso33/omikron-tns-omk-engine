@@ -39553,6 +39553,47 @@ def c_engine_hide_show():
            "at its facing - got %s / %s" % (a0, a1)
 
 
+def c_engine_ledges_flag():
+    r"""`walk.ledges.ignore` / `.obey` REACH THE WALKER (`todo/drift-audit.md` S5).
+
+    Ops 129 / 130 (0x4059D0 / 0x4059F0, no `proc` label - read from the image)
+    are `sub_41C260(1 / 0)`: `g_IgnoreLedges = a1`, one process-wide byte the
+    walker's two ledge tests read (21_d3d.c 2554 / 2734). The port's walker
+    had the flag and nothing set it: 28 / 29 shipped sites, bracketing the
+    lift and platform rides. AREA 50's 'Elevateur Bas' (zone 1040, var 321 =
+    1): `player.move.wait 58`, ignore, two lift programs, obey - the walker
+    IGNORES from frame 45 and obeys again from 180, each line printed from the
+    walker's own value.
+
+    What this does NOT assert: the ride itself. With the flag or without it
+    the player ends on the shaft floor, +5.26, while the platform goes up
+    (`todo/drift-audit.md` M9) - a separate fault, recorded there.
+
+    Shown to fail: without the 129 / 130 arm in `Session::onCall` neither line
+    is printed.
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    r = subprocess.run([play, fr, os.path.join(ROOT, "tables"), "--save",
+                        os.path.join(ROOT, "traces", "save-appart.bin"),
+                        "--area", "50", "--var", "321=1", "--zone-enable", "1040",
+                        "--stand", "57,-20,1200,44", "--hold", "0*10,k28*2,0*300",
+                        "--frames", "200", "--res", "640x480", "--nofmv", "--no-crowd"],
+                       capture_output=True, env=env, encoding="latin-1")
+    got = _re.findall(r"^frame (\d+): the walker (IGNORES|obeys) ledges", r.stdout, _re.M)
+    return [(int(f), w) for f, w in got], [(45, "IGNORES"), (180, "obeys")], \
+           "the frames at which AREA 50's lift script turned the walker's " \
+           "ledge test off and back on"
+
+
 def c_game_clock():
     r"""GAME_STATE 6: the Omikron calendar - 41 days, 13 months, year 7216.
 
@@ -42110,6 +42151,7 @@ SLOW = [
     ("engine: script timer", c_engine_script_timer, "todo/drift-audit.md S1; GAME_STATE"),
     ("engine: reply action", c_engine_reply_action, "todo/drift-audit.md S2; SCRIPT_VM"),
     ("engine: hide show", c_engine_hide_show, "todo/drift-audit.md M1; SCRIPT_VM"),
+    ("engine: ledges flag", c_engine_ledges_flag, "todo/drift-audit.md S5; SCRIPT_VM"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),

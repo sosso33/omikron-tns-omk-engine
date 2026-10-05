@@ -382,6 +382,14 @@ void PlayState::inputTick() {
     }
     mark("session");
     spanned("session", [&] { session.frame(); });
+    // `g_IgnoreLedges` as this frame's scripts left it, for the walker that
+    // `Actors_TickAll` steps after the pump (todo/drift-audit.md S5)
+    if (player && player->walker().ignoreLedges != session.ignoreLedges()) {
+        player->setIgnoreLedges(session.ignoreLedges());
+        std::printf("frame %ld: the walker %s ledges (walk.ledges.%s)\n", n,
+                    player->walker().ignoreLedges ? "IGNORES" : "obeys",
+                    player->walker().ignoreLedges ? "ignore" : "obey");
+    }
 
     mark("game frame");
 }

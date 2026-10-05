@@ -651,6 +651,8 @@ public:
     }
 
     const Walker& walker() const { return walker_; }
+    // `g_IgnoreLedges` (ops 129 / 130): the walker takes any drop while set
+    void setIgnoreLedges(bool on) { walker_.ignoreLedges = on; }
     long ticks() const { return ticks_; }
     // How far the position has moved from the start, in the ground plane.
     double distanceWalked() const;

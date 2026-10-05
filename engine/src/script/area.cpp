@@ -2811,6 +2811,16 @@ void Session::onCall(int i, const Call& call) {
         // 67 - and an `off` at `shoot.end` (`ui/radar.h`).
         radarOn_ = call.op == 146;
         break;
+    case 129: case 130:
+        // `walk.ledges.ignore` / `.obey` (0x4059D0 / 0x4059F0, no `proc`
+        // label - read from the image): the visible flag, the dry-run test,
+        // then `sub_41C260(1 / 0)`, which is `g_IgnoreLedges = a1` and
+        // nothing else. One process-wide byte, written nowhere else and never
+        // reset, read by the walker's two ledge tests (21_d3d.c 2554, 2734).
+        // They bracket the lift and platform rides (28 / 29 sites;
+        // todo/drift-audit.md S5).
+        ignoreLedges_ = call.op == 129;
+        break;
     case 138: case 139: {
         // `character.look_at_player` / `character.look_away`: the actor's
         // look-at slot (+400) written with the player's index / -1. The head

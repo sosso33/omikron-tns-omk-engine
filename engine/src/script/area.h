@@ -405,6 +405,8 @@ public:
     // re-places the body at its record (todo/drift-audit.md M1).
     void characterShow(int actor, int field1);
     void characterHide(int actor);
+    // `g_IgnoreLedges`, as ops 129 / 130 last wrote it - for the walker
+    bool ignoreLedges() const { return ignoreLedges_; }
     // ...and its mirror, the op-65 arm's two lines: the save bit cleared and
     // the zones re-registered. A HARNESS for what a script the start skipped
     // would have done - AREA 231's record 1 disables 3949 on the way in.
@@ -1738,6 +1740,7 @@ private:
     unsigned long camRequests_ = 0;   // every resolved `Camera_Request`
     long         frameNo_ = 0;
     long         replyActions_ = 0;    // reply actions run as contexts
+    bool         ignoreLedges_ = false;  // g_IgnoreLedges (ops 129/130)
     mutable DialogPlayer dialog_{state_, table_};
     std::string  morphDir_;              // "" = conversations end at once
     std::string  speakerModel_;
