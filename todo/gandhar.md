@@ -187,7 +187,23 @@ root delta (`Anim_SetFrame`) moves his node. **`sub_47E5F0`**: a step of
    zombies) then the bridge, zone 317 - `--stand 1811,-9,1216,0 --player-at
    60:125,-9,401,0`; the `--shoot` harness equips the WAVER and is wrong for
    him. `engine: gandhar head` (new, three mutations shown to fail).
-4. **The strike and the grab**: the touch test (`sub_45BC50`/`sub_45BB20`),
+4. ✔ **DONE 2026-10-06.** The BODY TOUCH (`omk::shootBodyTouch`,
+   `actor/shoothit.h`): his root mesh's sphere (`+76` through the node, `+88`
+   = 381 for him) against the box of every non-root node of the player,
+   both as posed last frame (inside his own turn `drawn` is cleared, so the
+   viewer asks for last frame's meshes explicitly). The STRIKE tests it from
+   its clip's half once and deals his property 22 (11, the event-44 struct's
+   own default when he has none) through `sub_423B10` - shared with
+   Astaroth's slam now (`PlayState::strikePlayer`). The GRAB tests it at its
+   clip's end; contact posts the side's message from the PLAYER (`gandharGrabSide`,
+   read from the assembly at 0x47F3F0..: the nearer x side or the nearer z
+   side of his floor's box, x on a tie; min x 7, max x 6, min z 8, max z 5)
+   and AREA 2 runs the kill scene (message 8: `cam south`, camera 383, a ring
+   spent, the restart). Contact is real only from the EDGE of the player's
+   walkway (z ~379; his floor starts at 414) - both clips lunge him forward
+   ~70. `--player-at` takes a second, later placement (the instrument for
+   it). `engine: gandhar grab` (new, three mutations shown to fail).
+   Originally: **The strike and the grab**: the touch test (`sub_45BC50`/`sub_45BB20`),
    the roll, 26's damage and push, 25's side -> messages 5-8 and the
    `dword_657A28` restart. Check: each side's message, the kill scene runs.
 5. **The play-through**: from zone 317 to message 3 headlessly, renders, the

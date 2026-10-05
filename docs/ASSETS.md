@@ -3647,7 +3647,14 @@ on floor 1); 23 fires once at the clip's
 half, 24 on a coin flip each frame; and 19, 20, 23 and 24, once `sub_421020`
 finds an attack in range, roll `(rand() % 100 <= p) + 25` with p 100 / 70 / 40
 by band - **26 the STRIKE always when healthy**, 25 the GRAB 29% of the time
-wounded and 59% critical. **Hurting him** takes three gates in `sub_4240E0`, in order: `+160 & 0x800`
+wounded and 59% critical. **The strike and the grab** ask the BODY TOUCH `sub_45BC50`: his root mesh's
+sphere (`+76` centre, `+88` radius - 381) against the box of every non-root
+node of the player (`sub_45BB20`, the centre taken into the node's frame and
+measured to its box). The strike (26) tests it from its clip's half, once, and
+deals his property 22 through `sub_423B10`; the grab (25) tests it when its
+clip ends and posts message 7 / 6 / 8 / 5 by the side of his floor's box his
+node is nearest (min x / max x / min z / max z; x wins a tie) - AREA 2's four
+kill scenes. **Hurting him** takes three gates in `sub_4240E0`, in order: `+160 & 0x800`
 refuses every hit, and nine of his twelve actions set it - only his walks (20,
 24) clear it; `0x4000` (his entry sets 0x4020) refuses any bolt but the
 BATON's (the reader's testimony, *"a Waver does nothing"*); and `sub_47DF60`
