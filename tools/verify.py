@@ -40716,17 +40716,25 @@ def c_engine_gandhar_head():
     meets = sum(1 for g in gates if g[0] == "MEETS")
     misses = len(gates) - meets
     ys = [int(float(g[1])) for g in gates]
-    first = _re.findall(r"hit: damage 6, health (2\d\d) -> (\d+)", o)[:3]
+    # what the hit code APPLIED to him - not the gate's own line, which says
+    # "misses" from the sweep whether or not the damage is then refused (a
+    # first version counted that and passed a gate that refused nothing).
+    # His health starts at 250, a zombie's at 30.
+    applied = [(int(a), int(b2)) for a, b2 in
+               _re.findall(r"hit: damage 6, health (\d+) -> (\d+)", o) if int(a) > 30]
+    first = [(str(a), str(b2)) for a, b2 in applied[:3]]
     w = run("--stand", "125,-9,401,0", "--shoot")
     weapon = "Waver" in w and "weapon 'Waver'" in w
     wh = len(_re.findall(r"HIT ACTOR 187 ", w))
     wgate = len(_re.findall(r"GANDHAR's gate", w))
-    return (hits - len(gates), meets, misses, first, (min(ys), max(ys)) if ys else None,
-            weapon, wh, wgate), \
-           (4, 7, 6, [("250", "244"), ("244", "238"), ("238", "232")], (-200, -126),
+    return (hits - len(gates), meets, misses, len(applied),
+            applied[-1][1] if applied else None, first,
+            (min(ys), max(ys)) if ys else None, weapon, wh, wgate), \
+           (4, 7, 6, 7, 208, [("250", "244"), ("244", "238"), ("238", "232")], (-200, -126),
             True, 20, 0), \
            "the baton: hits refused before the gate (0x800), bolts meeting his head and " \
-           "missing it, his health after the first three, the head's drawn height band; " \
+           "missing it, the hits APPLIED to him and his health after them, the first " \
+           "three, the head's drawn height band; " \
            "the Waver: equipped, hits on him, and how many reached the gate"
 
 
