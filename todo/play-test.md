@@ -340,6 +340,14 @@ turns look natural, the leap's height, whether his bolts look right (the port
 draws them with the shot sprite rows `AstMain` / `AstBust`). Before this no
 soul could be struck at all.
 
+## 28. THE CAMERA SHAKE (2026-10-05)
+
+`camera.shake` now moves the view: a short vertical judder that fades. Where
+to see it: being hurt in a shoot phase or a fight when the scene has no hurt
+handler of its own (GLOBAL's shakes 15/40 or 20/20), bumping into passers-by
+in a city (a small 5/5 with their voice line), Astaroth's footsteps, and his
+death (a long 100/100). Before this nothing shook. `todo/astaroth.md` 4.
+
 ## What is NOT fixed, so do not report it as new
 
 * **The lift arrival is still black** and the camera is inside the lift-car

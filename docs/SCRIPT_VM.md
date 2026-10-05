@@ -1593,7 +1593,12 @@ walker had the flag and no writer until 2026-10-05 (`todo/drift-audit.md` S5,
 
 **Presentation** — 54 `camera.follow_player` (mode-0 request), 136
 `camera.shake` (`Camera_SetShake`: a decaying vertical sine on eye and aim;
-duration, then amplitude ÷ 2.54), 94 `image.show` (`IMAGES\%06lx.BMP` — all
+duration, then amplitude ÷ 2.54 - **ported 2026-10-05**, `todo/astaroth.md`
+4: the camera tick's `sub_418030` runs it in every mode but 13, `dy =
+sin(t * 80°) * amp * (t / dur) * dt` with `t = dur - elapsed`, and a new
+shake does NOT reset the elapsed clock; 32 sites over AREA 0, 1, 2, 61, 64,
+101, 141, 175, SCENE 56, 62 and five in GLOBAL - the hurt and run-over
+handlers and the passer-by voices - `verify.py: engine: camera shake`), 94 `image.show` (`IMAGES\%06lx.BMP` — all
 four shipped operands name a file that exists), 146/147 `ambience.on` / `.off`
 (the flag the `.WRE` ambience updater runs under — `SOUKT.WRE`,
 `SMARKET1.WRE`), 144 `morph.play` (a `%06x.3dm` talking head on a named

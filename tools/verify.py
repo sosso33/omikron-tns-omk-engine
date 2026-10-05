@@ -40590,6 +40590,8 @@ def c_licence_headers():
     playscene_off.cpp,printf_c99.cpp,classic_printf.h,xcoff_weak_storage.cpp}`
     and `src/ui/overlay.cpp` (2026-10-03), the Carbon frontend and the
     Retro68 workarounds (3d-iv).
+    **557 -> 558**: `engine/tools/shake_probe.cpp` (2026-10-05,
+    `engine: camera shake`).
     **555 -> 557**: `engine/src/actor/astaroth.{h,cpp}` (2026-10-05,
     `todo/astaroth.md` 1, `engine: astaroth souls`). (550 -> 555 were the
     drift audit's probes the same day, not recorded here.)
@@ -40640,7 +40642,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (557, [], 1, []), \
+           (558, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
