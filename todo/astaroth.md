@@ -74,6 +74,19 @@ a bolt that meets one first stops there in both; and the world ray does not
 test the hidden flag 2, so a soul that went down still stops bolts - read,
 not changed.
 
+## PLAYED again by the reader, 2026-10-06 (the real entry, zone 2935)
+
+Five souls went down after a death and a restart - the S16 fix works in play.
+Two new faults, open until closed below:
+
+4. **Astaroth FLOATS** above the ground (screenshot: his feet clear of the
+   floor by a body's width).
+5. **Walking back through an area-entry zone replayed a CUTSCENE mid-fight**
+   (the third-person shot of Kay'l in the corridor), so the second phase was
+   never reached. The reader's reading: the route again - the zone's script
+   would have run once on the way in and switched itself off, and the
+   `--stand` start skipped it.
+
 ## Steps
 
 **Step 3's facts beyond the reading** (`/private/tmp` agent notes folded in):
