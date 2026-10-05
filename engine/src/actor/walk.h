@@ -163,10 +163,19 @@ public:
     // stops producing a root delta. It is cheap and a no-op on the ground.
     // Without it he hangs in the air until he asks to move again, which is
     // what `step`'s own `dt` is a floor under rather than a substitute for.
+    //
+    // ...and NOT a no-op on the ground (corrected 2026-10-05,
+    // todo/drift-audit.md M9): `Walk_GroundResponse` answers the floor every
+    // frame, so a grounded actor who does not move is still put on it -
+    // snapped UP onto a floor that rose, absorbed DOWN onto one that sank.
+    // That is what keeps the player on a lift; see `settle`.
     StepResult tick(double dt);
 
     // A TELEPORT: `actor.goto_address` writes the actor's position outright
     // (`sub_41BF50`), and the fall accounting starts over from the new floor.
+    // `tick`'s GROUNDED half: `Walk_GroundResponse` on a frame with no move.
+    StepResult settle();
+
     void moveTo(double x, double y, double z) {
         pos_[0] = x; pos_[1] = y; pos_[2] = z;
         fall_ = 0.0; vy_ = 0.0; vx_ = 0.0; vz_ = 0.0;

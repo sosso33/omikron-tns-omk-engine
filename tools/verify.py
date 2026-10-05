@@ -16075,7 +16075,10 @@ def c_engine_ground_grid():
     with `OMK_VERIFY_GROUND=1`: every grid answer is also computed the linear
     way and compared bit for bit; and the last frame against the same walk with
     `OMK_NO_GROUND_GRID=1`. By frame 120, 233 walker probes and 121 decor
-    probes, 0 mismatched; frames identical.
+    probes, 0 mismatched; frames identical. 240 walker probes since
+    2026-10-05: a grounded walker now answers the floor on the frames its clip
+    gives no root delta too (`Walker::settle`, todo/drift-audit.md M9) - seven
+    such frames in this walk, one probe each, nothing drawn differently.
 
     SHOWN TO FAIL, 2026-09-14 (todo/optimization.md step 9): the walker's grid
     probe with x and z swapped, 237 of 237 probes mismatched and 460091 pixels
@@ -16137,7 +16140,7 @@ def c_engine_ground_grid():
     differ = sum(1 for i in range(0, len(frame), 2) if frame[i:i+2] != frame0[i:i+2])
     return (tool, tuple(int(x) for x in lines[0]), differ), \
         ((("Anekbah+AImpasse", 21785, 153, 0), ("Anekbah+Anekbah", 21785, 0, 0),
-          ("Anekbah+AImpasse-noarea", 0, 153, 0)), (233, 0, 121, 0), 0), \
+          ("Anekbah+AImpasse-noarea", 0, 153, 0)), (240, 0, 121, 0), 0), \
         "decorUnder through a merged grid over two decors (pair, answers naming the first " \
         "and the second decor, mismatches against the loop; the same set twice, where " \
         "every floor ties; a decor with no area); then by frame 120 of a walk: walker " \
@@ -39565,9 +39568,9 @@ def c_engine_ledges_flag():
     IGNORES from frame 45 and obeys again from 180, each line printed from the
     walker's own value.
 
-    What this does NOT assert: the ride itself. With the flag or without it
-    the player ends on the shaft floor, +5.26, while the platform goes up
-    (`todo/drift-audit.md` M9) - a separate fault, recorded there.
+    What this does NOT assert: the ride itself - `engine: lift ride` does.
+    The ride's own fault (M9) was the grounded walker never answering the
+    floor on a frame with no root delta, not this flag.
 
     Shown to fail: without the 129 / 130 arm in `Session::onCall` neither line
     is printed.
@@ -39689,6 +39692,53 @@ def c_engine_game_restart():
            "the area the restart booted; the start menu asking after it; the " \
            "resident .SCX; the frontend dropping the old world; and how many " \
            "of the old area's meshes moved as the OUTGOING pool afterwards"
+
+
+def c_engine_lift_ride():
+    r"""A LIFT CARRIES THE PLAYER, UP AND DOWN (`todo/drift-audit.md` M9).
+
+    `Actor_ApplyMotion` (0x004672D0) runs `Walk_ProbeGround` and
+    `Walk_GroundResponse` (0x00465460) on EVERY frame, after `Actor_Move` and
+    whatever it was handed. The port's `Walker::tick` returned at once for a
+    grounded actor, so the floor was answered only on frames whose clip gave a
+    root delta - and `H_STAND` gives none on the two frames where it loops. On
+    AREA 50's 'Elevateur Bas' the platform (`SA_asens`, `AscUp`) rose 4.2 a
+    frame, went 8.4 past a player who did not follow it on those two frames,
+    the next probe passed under it, and he was put on the shaft floor (+5.26)
+    while the lift went up without him and the script enabled the upper zone.
+
+    The round trip, with the real scripts: zone 1040 (var 321 'Asc Réparé'
+    = 1) rides UP between `walk.ledges.ignore` and `.obey`; the upper zone 1042
+    the first ride enables rides DOWN (`AscDown`). The ground under him at
+    frame 240 (at the top, the ride over) and at the end (at the bottom).
+
+    Shown to fail: with `Walker::tick` returning at once for a grounded actor
+    again, frame 240 reads the shaft floor, +5.26 - the second ride never
+    starts, since he is nowhere near its zone.
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_PLY="10")
+    out = subprocess.run([play, fr, os.path.join(ROOT, "tables"), "--save",
+                          os.path.join(ROOT, "traces", "save-appart.bin"),
+                          "--area", "50", "--var", "321=1", "--zone-enable", "1040",
+                          "--stand", "57,-20,1200,44",
+                          "--hold", "0*10,k28*2,0*220,k28*2,0*400",
+                          "--frames", "480", "--res", "640x480", "--nofmv", "--no-crowd"],
+                         capture_output=True, env=env, encoding="latin-1").stdout
+    g = {int(f): round(float(y)) for f, y in
+         _re.findall(r"DBG ply f(\d+) \S+\s+pf\s+\d+\s+ground\s+(\S+)", out)}
+    rides = _re.findall(r"action: zone (1040|1042) activated", out)
+    return (g.get(240), g.get(470), rides), (-158, 0, ["1040", "1042"]), \
+           "the floor under him at frame 240, after the ride up; at frame 470, " \
+           "after the ride down; and the two lift zones he pressed in"
 
 
 def c_game_clock():
@@ -42251,6 +42301,7 @@ SLOW = [
     ("engine: ledges flag", c_engine_ledges_flag, "todo/drift-audit.md S5; SCRIPT_VM"),
     ("engine: inventory checkpoint", c_engine_inventory_checkpoint, "todo/drift-audit.md S4; SCRIPT_VM"),
     ("engine: game restart", c_engine_game_restart, "todo/drift-audit.md S3; SCRIPT_VM"),
+    ("engine: lift ride", c_engine_lift_ride, "todo/drift-audit.md M9; actor/walk.h"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),

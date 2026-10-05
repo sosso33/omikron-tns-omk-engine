@@ -232,7 +232,9 @@ StepResult Walker::step(double dx, double dz, double dt) {
     }
 
     const double rise = y - *g;                  // Y grows downward
-    if (rise > kStepUp) return StepResult::Blocked;
+    // `!g_IgnoreLedges && -v58 > dword_910340` (21_d3d.c 2554): the scripts'
+    // `walk.ledges.ignore` waives the rise limit as it waives the drop one
+    if (rise > kStepUp && !ignoreLedges) return StepResult::Blocked;
 
     const double drop = *g - y;
     // The stand-in for the unported swept sphere - see kMaxUnsweptDrop.
@@ -362,8 +364,62 @@ void Walker::slide(double& dx, double& dz, double push[2]) {
     dx = total[0] + dx; dz = total[1] + dz;
 }
 
+// THE GROUND ANSWERS A STANDING ACTOR TOO (todo/drift-audit.md M9).
+// `Actor_ApplyMotion` (0x004672D0) runs `Walk_ProbeGround` and
+// `Walk_GroundResponse` (0x00465460) on EVERY frame, after `Actor_Move` and
+// whatever it was handed - a zero move included. This returned at once for a
+// grounded actor, so the floor was answered only on frames whose clip gave a
+// root delta. On AREA 50's lift that is every frame but the two where `H_STAND`
+// loops back to its first key (a zero delta): the platform rose 8.4 units past
+// a player who did not follow it, the next probe passed under it, and he was
+// put on the shaft floor while the lift went up without him.
+//
+// The two branches, as `step` already answers them (the same probe, the same
+// water rule, the same limits):
+//   * the floor AT OR ABOVE the feet - the grounded branch snaps him onto it,
+//     refused only `!g_IgnoreLedges && rise > dword_910340` (2554). The
+//     refusal restores the last safe position, which for a frame with no move
+//     is where he stands;
+//   * the floor BELOW them - the airborne branch absorbs a drop under 7.874,
+//     or ANY drop while `g_IgnoreLedges` is set (2734), and otherwise he is
+//     falling. `kMaxUnsweptDrop` is NOT applied: it stands in for the
+//     horizontal sweep, and nothing moved horizontally;
+//   * no floor at all - `Walk_ProbeGround` found nothing and
+//     `Actor_ApplyMotion` puts him back at the last safe position: here.
+// The gravity `Actor_ApplyMotion` adds first (12.86 / 30 a frame) is snapped
+// straight back by either branch on a floor, so it is not modelled here.
+StepResult Walker::settle() {
+    const double y = pos_[1];
+    auto g = ground(pos_[0], y, pos_[2]);
+    std::uint32_t floorFl = 0u;
+    if (g && floorFlags_ && grid_ && floorFlags_->size() * 9 == soup_.size()) {
+        std::uint32_t tri = 0;
+        if (floorUnder(soup_, *grid_, pos_[0], y - kStepUp - 1.0, pos_[2], tri).has_value() &&
+            tri < floorFlags_->size())
+            floorFl = (*floorFlags_)[tri];
+    }
+    if (g && (floorFl & 0x20000000u)) {           // a water surface: look through it, as `step`
+        g = floorThroughWater(pos_[0], y - kStepUp - 1.0, pos_[2]);
+        floorFl = 0u;
+    }
+    if (!g) return StepResult::Moved;
+    const double rise = y - *g;                  // Y grows downward
+    if (rise > kStepUp && !ignoreLedges) return StepResult::Blocked;
+    if (rise >= 0.0 || -rise <= kSnapDrop || ignoreLedges) {
+        if (*g != y) {
+            land(*g);
+            standFlags_ = floorFl;
+        }
+        return StepResult::Moved;
+    }
+    apex_ = y;                                   // off the edge of a floor that went
+    airborne_ = true;
+    sliding_  = false;
+    return StepResult::Fell;
+}
+
 StepResult Walker::tick(double dt) {
-    if (!airborne_ && !sliding_) return StepResult::Moved;
+    if (!airborne_ && !sliding_) return settle();
 
     // Actor_ApplyMotion: the vertical speed accelerates and is clamped, and
     // the frame's descent is that speed over 30. A slide does not accelerate -
