@@ -120,6 +120,7 @@ struct PlayState {
     bool & noDelay = opt.noDelay;
     double & speed = opt.speed;
     bool & forceSoftware = opt.forceSoftware;
+    bool & gl1Composite = opt.gl1Composite;
     bool & showFps = opt.showFps;
     bool & worldVulkan = opt.worldVulkan;
     omk::Game game{};

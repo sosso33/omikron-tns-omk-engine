@@ -247,6 +247,10 @@ int PlayOptions::parse(int argc, char** argv) {
 "                   fraction; the original truncates to one. Seen above 30 fps;\n"
 "                   [Enhancements] animation=smooth\n"
 "  --software       force the software rasteriser\n"
+"  --profile F      write a profiler capture to F (tools/omkprof.py reads it;\n"
+"                   todo/debug-tools.md - absent from `make release`)\n"
+"  --gl1-composite  the classic Mac's GL1: compose the frame on the CPU, not\n"
+"                   the straight present (OMK_GL1_COMPOSITE=1)\n"
 "  --letterbox      the 1.818:1 camera-mode bars, for laying a shot beside\n"
 "                   a capture; --full is the old spelling of the opposite\n"
 "\n"
@@ -308,6 +312,7 @@ int PlayOptions::parse(int argc, char** argv) {
         // The game uses Vulkan when the machine has it; this forces the
         // software reference, which is what every check is written against.
         else if (a == "--software") forceSoftware = true;
+        else if (a == "--gl1-composite") gl1Composite = true;
         else if (a == "--world-vulkan") worldVulkan = true;
         // The frame rate, reported once a second on stdout. Off by default:
         // it is a diagnostic, and a game that prints every second when nobody

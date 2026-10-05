@@ -262,8 +262,15 @@ public:
         glDepthMask(GL_TRUE);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         // the picture in the TOP-LEFT cam.w x cam.h, as the reference draws it;
-        // GL's window origin is bottom-left
-        glViewport(0, h_ - cam.h, cam.w, cam.h);
+        // GL's window origin is bottom-left. On classic Mac OS (AGL) it is
+        // drawn at its LETTERBOX place in the window's back buffer instead -
+        // `view.vy` rows down, where the composed frame puts it - so a frame
+        // nothing is drawn over is presented as it stands (`presentWorld`,
+        // todo/cpu-vs-original.md tier B); `readback` takes it from there.
+#if defined(OMK_GL1_AGL)
+        vy_ = v.letterboxed() ? std::max(0, std::min(v.vy, h_ - cam.h)) : 0;
+#endif
+        glViewport(0, h_ - vy_ - cam.h, cam.w, cam.h);
 
         // THE CAMERA is applied HERE, on the CPU, as the original did: it
         // transformed every vertex itself and handed D3D screen positions
@@ -466,8 +473,13 @@ public:
 #endif
         // bottom-up rows into the top-down RGB565 frame, with the dither the
         // reference applies (`DITHERENABLE` 1 on both device arms)
+        // (the world `vy_` rows down - 0 but on AGL - read back to the top)
         for (int y = 0; y < h_; ++y) {
-            const unsigned char* row = rgba_.data() + static_cast<std::size_t>(h_ - 1 - y) * w_ * 4;
+            if (y + vy_ >= h_) {                 // below the picture: the clear
+                for (int x = 0; x < w_; ++x) fb_.set(x, y, 0);
+                continue;
+            }
+            const unsigned char* row = rgba_.data() + static_cast<std::size_t>(h_ - 1 - y - vy_) * w_ * 4;
             for (int x = 0; x < w_; ++x) {
                 const unsigned char* p = row + static_cast<std::size_t>(x) * 4;
                 fb_.set(x, y, view_.dither ? quantise888Dither(p[0], p[1], p[2], x, y)
@@ -487,6 +499,110 @@ public:
         }
         return fb_;
     }
+
+#if defined(OMK_GL1_AGL)
+    // ---- THE WORLD PRESENTED STRAIGHT (todo/cpu-vs-original.md tier B) ----
+    //
+    // The world is in the window's back buffer at its letterbox place, the
+    // bands cleared black: a frame nothing is drawn over needs no readback,
+    // no composite and no `glDrawPixels` - it is swapped as it stands, at the
+    // drawable's own depth with the DRIVER's dither (GL_DITHER, on by
+    // default), as the original's 16-bit D3D device dithered (`DITHERENABLE`,
+    // ASSETS 4) - the reader's choice of 2026-10-05. ~5 -> 17 fps on emulated
+    // Tiger (`handoff-classic-mac.md`). Only where the window is the frame's
+    // own size; anything else stays on the composite.
+    bool presentWorld(int ww, int wh) {
+        if (ww != w_ || wh != h_) return false;
+        Current c(ctx_);
+        aglSwapBuffers(ctx_);
+        return true;
+    }
+    // ...and a frame with the interface over it: the composed frame `fb`,
+    // whose world rows are the KEY (0xF81F), and `mask` - how much of the
+    // world shows through a pixel - drawn OVER the world as the GLES
+    // overlay does: `C + world * M`, then the colour fade (`fade` rgb + its
+    // weight). Fixed function: the CPU folds key, mask and fade into one RGBA
+    // texture, a quad blends it with (GL_ONE, GL_SRC_ALPHA). Only the band of
+    // rows the overlay touches is uploaded and drawn.
+    bool presentOverlay(const Surface& fb, const std::uint8_t* mask, const float fade[4],
+                        int ww, int wh) {
+        if (ww != w_ || wh != h_ || fb.w != w_ || fb.h != h_) return false;
+        int lo = fb.h, hi = -1;
+        const bool fading = fade[3] > 0.0f;
+        for (int y = 0; y < fb.h; ++y) {
+            const std::uint16_t* row = fb.px.data() + static_cast<std::size_t>(y) * fb.w;
+            bool any = fading;
+            for (int x = 0; x < fb.w && !any; ++x) any = row[x] != 0xF81F;
+            if (any) { if (lo > y) lo = y; hi = y; }
+        }
+        Current c(ctx_);
+        if (hi >= lo) {
+            const int bh = hi - lo + 1;
+            const GLsizei tw = static_cast<GLsizei>(nextPow2(static_cast<unsigned>(fb.w)));
+            const GLsizei th = static_cast<GLsizei>(nextPow2(static_cast<unsigned>(fb.h)));
+            if (!ovTex_ || ovTexW_ != tw || ovTexH_ != th) {
+                if (!ovTex_) glGenTextures(1, &ovTex_);
+                glBindTexture(GL_TEXTURE_2D, ovTex_);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, tw, th, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+                gpuNote("overlay", omk::prof::kGlTexture, ovTex_, 4LL * tw * th);
+                ovTexW_ = tw; ovTexH_ = th;
+            }
+            ovRgba_.resize(static_cast<std::size_t>(fb.w) * bh * 4);
+            const float f = fade[3], g = 1.0f - f;
+            const float fr = fade[0] * 255.0f * f, fg = fade[1] * 255.0f * f, fbl = fade[2] * 255.0f * f;
+            for (int y = lo; y <= hi; ++y)
+                for (int x = 0; x < fb.w; ++x) {
+                    const std::size_t i = static_cast<std::size_t>(y) * fb.w + x;
+                    unsigned char* o = &ovRgba_[(static_cast<std::size_t>(y - lo) * fb.w + x) * 4];
+                    const std::uint16_t p = fb.px[i];
+                    float r = 0, gg = 0, b = 0, a = 255;           // the KEY: the world as it is
+                    if (p != 0xF81F) {
+                        const unsigned r5 = (p >> 11) & 31, g6 = (p >> 5) & 63, b5 = p & 31;
+                        r = static_cast<float>(r5 << 3 | r5 >> 2);
+                        gg = static_cast<float>(g6 << 2 | g6 >> 4);
+                        b = static_cast<float>(b5 << 3 | b5 >> 2);
+                        a = mask ? mask[i] : 0;
+                    }
+                    o[0] = static_cast<unsigned char>(r * g + fr + 0.5f);
+                    o[1] = static_cast<unsigned char>(gg * g + fg + 0.5f);
+                    o[2] = static_cast<unsigned char>(b * g + fbl + 0.5f);
+                    o[3] = static_cast<unsigned char>(a * g + 0.5f);
+                }
+            glBindTexture(GL_TEXTURE_2D, ovTex_);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, fb.w, bh, GL_RGBA, GL_UNSIGNED_BYTE, ovRgba_.data());
+            // the 2D state for one quad; `begin` sets all of its own again
+            glViewport(0, 0, ww, wh);
+            glMatrixMode(GL_PROJECTION); glLoadIdentity(); glOrtho(0, ww, 0, wh, -1, 1);
+            glMatrixMode(GL_MODELVIEW); glLoadIdentity();
+            glMatrixMode(GL_TEXTURE); glLoadIdentity(); glMatrixMode(GL_MODELVIEW);
+            glDisable(GL_DEPTH_TEST); glDisable(GL_FOG); glDisable(GL_CULL_FACE);
+            glDisable(GL_ALPHA_TEST); glDisable(GL_SCISSOR_TEST); glDisable(GL_LIGHTING);
+            glEnable(GL_TEXTURE_2D);
+            glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_ONE, GL_SRC_ALPHA);
+            glColor4f(1, 1, 1, 1);
+            // the band: fb rows lo..hi, top-down, onto window rows wh-lo..wh-hi-1
+            const float t1 = static_cast<float>(bh) / th, s1 = static_cast<float>(fb.w) / tw;
+            const float yTop = static_cast<float>(wh - lo), yBot = static_cast<float>(wh - hi - 1);
+            glBegin(GL_QUADS);
+            glTexCoord2f(0, 0);   glVertex2f(0, yTop);
+            glTexCoord2f(s1, 0);  glVertex2f(static_cast<float>(ww), yTop);
+            glTexCoord2f(s1, t1); glVertex2f(static_cast<float>(ww), yBot);
+            glTexCoord2f(0, t1);  glVertex2f(0, yBot);
+            glEnd();
+            glDisable(GL_BLEND);
+            stateValid_ = false;             // the draw state the cache assumed is gone
+            boundTex_ = ~0u;
+        }
+        aglSwapBuffers(ctx_);
+        return true;
+    }
+#endif
 
     RasterStats stats() const override { return st_; }   // only `triangles` is known
     const char* name() const override { return "OpenGL 1.x fixed-function"; }
@@ -545,6 +661,9 @@ private:
     GLuint readTex_ = 0;
     GLsizei readTexW_ = 0, readTexH_ = 0;
     std::vector<unsigned char> readBig_;
+    GLuint ovTex_ = 0;                   // the overlay (`presentOverlay`)
+    GLsizei ovTexW_ = 0, ovTexH_ = 0;
+    std::vector<unsigned char> ovRgba_;
 #endif
 
     // Where the world is drawn and read from: the framebuffer object, or on
@@ -701,6 +820,7 @@ private:
 #endif
     GLuint fbo_ = 0, colour_ = 0, depth_ = 0;
     int w_ = 0, h_ = 0;
+    int vy_ = 0;             // the picture's first row in the target (AGL: its letterbox place)
     std::vector<GLuint> tex_;
     std::vector<float> texW_, texH_;
     View view_;
@@ -729,5 +849,16 @@ private:
 }  // namespace
 
 Renderer* makeGl1Renderer() { return new Gl1Renderer(); }
+
+#if defined(OMK_GL1_AGL)
+// `r` is the renderer `makeGl1Renderer` made (the glue holds no other)
+bool gl1PresentWorld(Renderer* r, int ww, int wh) {
+    return r && static_cast<Gl1Renderer*>(r)->presentWorld(ww, wh);
+}
+bool gl1PresentOverlay(Renderer* r, const Surface& fb, const std::uint8_t* mask,
+                       const float fade[4], int ww, int wh) {
+    return r && static_cast<Gl1Renderer*>(r)->presentOverlay(fb, mask, fade, ww, wh);
+}
+#endif
 
 }  // namespace omk

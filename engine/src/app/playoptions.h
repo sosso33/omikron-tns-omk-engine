@@ -234,6 +234,10 @@ struct PlayOptions {
     bool haveEye = false, haveAt = false, letterbox = false, startVulkan = false, noDelay = false;
     double speed = 1.0;                 // --speed: the frame delta's multiplier
     bool forceSoftware = false, showFps = false;
+    // the classic Mac's GL1: the composited present, not the straight one
+    // (todo/cpu-vs-original.md tier B) - a flag, as classic Mac OS has no
+    // environment to set `OMK_GL1_COMPOSITE` in
+    bool gl1Composite = false;
     // A HARNESS flag, not a mode: draw the 3D world through a SURFACELESS
     // Vulkan renderer while the frame is still presented (or dumped) the
     // ordinary way. `--vulkan` needs a real window and therefore a real

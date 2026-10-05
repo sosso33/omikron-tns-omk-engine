@@ -15,4 +15,7 @@ namespace omk {
 // -> the frontend's AGLContext, made on the first call and current, or
 // nullptr when there is no window yet or no OpenGL renderer to be had.
 void* gl1AglContext();
+// The window's size in pixels (its port bounds) - what the straight present
+// needs to be 1:1 with the frame; 0 x 0 without a window.
+void gl1AglWindowSize(int& w, int& h);
 }  // namespace omk

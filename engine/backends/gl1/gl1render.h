@@ -21,4 +21,13 @@ namespace omk {
 // -> nullptr is never returned; `init()` is what fails when there is no
 // accelerated OpenGL to be had.
 Renderer* makeGl1Renderer();
+#if defined(OMK_GL1_AGL)
+// The world presented straight from the window's back buffer, and the same
+// with the composed interface over it (`gl1render.cpp`, tier B of
+// todo/cpu-vs-original.md). -> false where the window is not the frame's
+// size, and the caller presents the composed frame as before.
+bool gl1PresentWorld(Renderer* r, int ww, int wh);
+bool gl1PresentOverlay(Renderer* r, const Surface& fb, const std::uint8_t* mask,
+                       const float fade[4], int ww, int wh);
+#endif
 }  // namespace omk

@@ -501,6 +501,15 @@ void CarbonFrontend::presentGL(const Surface& fb) {
 
 void* gl1AglContext() { return g_carbon ? g_carbon->glContext() : nullptr; }
 
+void gl1AglWindowSize(int& w, int& h) {
+    w = h = 0;
+    if (!g_carbon || !g_carbon->windowId()) return;
+    ::Rect b;
+    GetPortBounds(GetWindowPort(static_cast<WindowRef>(const_cast<void*>(g_carbon->windowId()))), &b);
+    w = b.right - b.left;
+    h = b.bottom - b.top;
+}
+
 std::unique_ptr<Frontend> makeHostFrontend() {
     auto f = std::make_unique<CarbonFrontend>();
     g_carbon = f.get();
