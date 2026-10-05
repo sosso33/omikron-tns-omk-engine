@@ -544,9 +544,10 @@ int PlayState::phaseWorld() {
                     // and the four differ in WHERE on the actor they anchor:
                     //
                     //   0  the actor record's +244/+248/+252
-                    //   1  the `Tete` node (actor+16), `Actor_LoadModel`'s cache
+                    //   1  the `Tete` node (actor+16), `Actor_LoadModel`'s cache,
+                    //      as POSED (node +44..+52)
                     //   2  the body node's world origin
-                    //   3  the head node's world origin
+                    //   3  the head's REST point, `*(Tete)+36` (below)
                     //
                     // while `dialog_issue_camera` picks the actor: 0/1 the
                     // first speaker, 2/3 the second, 6 both. Applying kind 2's

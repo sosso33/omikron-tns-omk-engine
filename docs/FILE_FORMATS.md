@@ -2242,7 +2242,23 @@ comes from the REQUEST: `camera.set` (95/96) puts `Actor_Player()` in both
 slots, `camera.set.at_address` (126) `Address_Find(field 1)`. The shipped
 kinds: -1/-1 3941, 0/-1 959, 0/0 406, 1/1 38, 1/-1 32, 9/9 4 (cameras
 4781..4784, the rooftops' ladders, the only cameras op 126 names - all 84
-sites, SCENE 62), 3/3 1. Kinds 1 and 3 are not read.
+sites, SCENE 62), 3/3 1.
+
+**Kinds 1 and 3 are the subject's HEAD** (read 2026-10-05, the follow-up to
+S14). `sub_415050` (kind 1) runs `sub_440C80` on the body and reads the
+`Tete` node's (actor `+16`) POSED world position, node `+44..+52` -
+`sub_4942A0` writes it as `parent.world + parent.worldMatrix * local` - and
+turns by the actor's Euler (`+416..+424`) PLUS his head look (`+432..+440`,
+`Actor_SetHeadLook`'s eased angles). `sub_415320` (kind 3) reads
+`*(Tete)+36` instead, which the same pass accumulates as
+`parent.header+36 + local` with NO rotation: the root's world point plus the
+head's REST offset, untouched by the clip and the facing; it turns by the
+body node's heading, `atan2` of its forward + 90, like kind 2. For a world
+camera the subject is the request's, the player: 70 kind-1 cameras and one
+kind-3 (SCENE 57's 14), among them GLOBAL's 11 `CAM GLOBAL BUSTE J` and the
+areas' 69 `CAM GLOBAL PM J` / 13 `CAM GLOBAL GP J` - the medium shot and the
+close-up of the player - at about 140 script sites. The port anchored them
+all at the pelvis; `engine: head camera`.
 
 **A quarter of the table is not two absolute points**, and this was found by
 rendering it. `Camera_LoadParams` (0x004146C0) unpacks the request block and
@@ -2367,7 +2383,7 @@ then read that code:
 | 0 | first speaker | `sub_414F30` | the actor record's `+244/+248/+252`, euler `+416..+424` |
 | 1 | first speaker | `sub_415050` | the **`Tete` node** — `actor+16` — falling back to the node origin |
 | 2 | second speaker | `sub_4151E0` | the body node's world origin, heading `atan2` of its forward `+ 90` |
-| 3 | second speaker | `sub_415320` | the **head node's** world origin |
+| 3 | second speaker | `sub_415320` | the head's **REST** point: `*(Tete)+36`, the root's world point plus the parent chain's locals UNROTATED (corrected 2026-10-05 - it was read as the posed head, which is kind 1's; a standing speaker differs by about a unit, a seated or bowing one by more) |
 | 6 | both | `sub_415540` | the two-shot; `field36..40` carry its parameters |
 
 `actor+16` is the head because `Actor_LoadModel` fills it from the name

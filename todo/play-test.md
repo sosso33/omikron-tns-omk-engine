@@ -357,6 +357,20 @@ stands idle until something moves him. The Shooting gallery is the place to
 see it: its third gunman (240) used to wait; now he turns and fires as soon as
 the first shot is fired. `todo/drift-audit.md` S13.
 
+## 30. CLOSE-UPS ON THE PLAYER'S HEAD (2026-10-05)
+
+The game's medium shot and close-up of the player (`CAM GLOBAL PM J` 69,
+`CAM GLOBAL GP J` 13, `CAM GLOBAL BUSTE J` 11) frame his FACE now, not his
+chest, and the travel from one to the other stays on the face. Where to see
+it: the Mayerem tombs (AREA 141), activating tomb 9 after the shoot phase -
+headless, `--area 141 --stand 40955,1116,-3021,90 --var 471=1 --shoot --keys
+28,28,28`, where frame 45 is the medium shot and frame 80 the close-up. Also
+any street conversation (the pharmacist, AREA 39): her bust shot is
+`sub_415320`'s rest point now, which on a standing speaker moves the frame by
+about a unit - a SEATED speaker is where the two readings part. Rendered
+headlessly and looked at: both shots read as their names say.
+`todo/drift-audit.md` S14b.
+
 ## HEADLESS PASS over 19-29 (2026-10-05)
 
 Each item driven through the viewer with its check's own command, frames
