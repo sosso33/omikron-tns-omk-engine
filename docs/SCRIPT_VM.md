@@ -1601,7 +1601,13 @@ morphs that do not exist**: live opcode, cut content).
 `Var_Get(field)` objects between two lists, records included), 148/149
 `inventory.save` / `.restore` (stash list 0's 18 ids in `g_InventoryStash`
 plus five character-sheet int16s; restore re-reads each from `IAM\OBJECT` —
-they bracket the sub-games), 142 `ui.highscore` (insert `Var_Get(field1)`
+they bracket the sub-games. **Corrected 2026-10-05 from the image** (no `proc`
+label): the five int16s are `g_PlayerRecord + 0x104`, the record's +260..+268
+- the five GUNS' ammunition (GAME_STATE), not character-sheet fields; the
+restore re-inserts at the FRONT, so list 0 comes back REVERSED, and walks
+NINETEEN entries to the first -1, the nineteenth being the first ammunition
+word. Ported then - `todo/drift-audit.md` S4, `verify.py: engine: inventory
+checkpoint`), 142 `ui.highscore` (insert `Var_Get(field1)`
 under the character's name, open screen 36 `HIGH-SCORE` — the shooting
 gallery's exit), 106/107 `shoot.freeze_all` / `.unfreeze_all` (bit 15 of every
 combat record's flag word at once).
