@@ -155,6 +155,18 @@ enhancements had left the CROWD UNLIT and EVERY BODY SHADOWLESS on GLES,
 which cannot draw per-pixel light or a shadow map: now refused at start-up
 (`lighting: per pixel REFUSED`, `shadows: mapped REFUSED ... fitted`).
 
+## 3b4b. 2026-10-05: the GLES backend DRAWS the enhancements now
+
+What the paragraph above calls refused is no longer: GLES draws trilinear,
+supersampling, per-pixel lighting and mapped shadows (`todo/enhancements.md`,
+"On the GLES backend"), so the console's `omk.ini` - every enhancement at its
+top - now COSTS on the Vita, supersampling 4 above all (a 3840x2176 world).
+MSAA and anisotropy are refused by vitaGL and say so. **Owed, on a console**:
+a run with the shipped `omk.ini` to see what holds (start from
+`supersampling = 1`), and the shader cache re-made with the enhancements on
+(`scripts/vita-shader-cache.sh`) - the five new programs are not in it, and
+without `libshacccg.suprx` each enhancement needing one is refused.
+
 ## 3b5. WHERE THE OPTIMIZATION STANDS (2026-09-30) - start here
 
 The port-vs-original audit is `todo/optimization.md` step 28 (the table, then

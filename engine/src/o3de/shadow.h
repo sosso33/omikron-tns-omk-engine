@@ -239,7 +239,7 @@ inline constexpr float kShadowFootLift = 2.0f;
 // on the surface under IT.
 //
 // **This one is not backend-gated, and that is a departure from the file's
-// "only the Vulkan backend draws them" line.** The change is to the geometry
+// "only the GPU backends draw them" line.** The change is to the geometry
 // the port generates, not to how a backend rasterises it, and making the two
 // backends build different geometry would destroy the property the whole
 // renderer boundary rests on - that they draw the same picture from the same

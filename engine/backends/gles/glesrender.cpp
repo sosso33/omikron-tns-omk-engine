@@ -1540,9 +1540,17 @@ gpuRenderbuffer("render targets", shDepth_, 2LL * kShadowSide * kShadowSide);
 #endif
         if (samples_ > 1) std::printf("gles: %dx MSAA\n", samples_);
     }
+    if (ss_ > 1) presentSS_ = link(kPresentVert, kPresentSSFrag, {{0, "aPos"}});
+    if (ss_ > 1 && !presentSS_) {
+        // a console with neither the runtime shader compiler nor this program
+        // in its cache: the enhancement is refused, not the renderer
+        std::printf("gles: the supersample present did not build - supersampling refused\n");
+        ss_ = 1;
+        rw_ = w_; rh_ = h_;
+        rgba_.assign(static_cast<std::size_t>(rw_) * rh_ * 4, 0);
+        if (!allocTarget()) return false;
+    }
     if (ss_ > 1) {
-        presentSS_ = link(kPresentVert, kPresentSSFrag, {{0, "aPos"}});
-        if (!presentSS_) return false;
         sDst_     = glGetUniformLocation(presentSS_, "uDst");
         sPic_     = glGetUniformLocation(presentSS_, "uPic");
         sBayer_   = glGetUniformLocation(presentSS_, "uBayer");

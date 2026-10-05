@@ -3642,6 +3642,20 @@ atlases sampled point) and CUTOUT, whose silhouette is a colour key INSIDE a
 triangle where MSAA never looks. `--ssaa 1` is bit-identical to no flag, which
 is what protects every other frame check. Check: `engine: supersampling`.
 
+**And 2026-10-05, THE ENHANCEMENTS ON GLES** - the backend the Vita draws
+with, which had none of them and refused two at start-up. Trilinear (a mip
+chain by `glGenerateMipmap`), anisotropy (the extension, where granted),
+supersampling (the target N times larger, resolved by Vulkan's rule in
+`readback` and in a present program of its own, exact against each other),
+MSAA (a multisampled target and a resolve blit, desktop GL only), per-pixel
+lighting and mapped shadows (enhanced copies of the scene and posing programs,
+linked only when asked; the shadow depth PACKED into RGBA8 since GLES2 promises
+no depth texture). Each measured by the Vulkan check's own criteria through
+`gles_probe` and each shown to fail; the figures agree with Vulkan's to the
+decimal where the two can be compared. vitaGL refuses MSAA (its multisampling
+is the display's) and anisotropy (1x), and says so. `todo/enhancements.md`,
+"On the GLES backend".
+
 **And 2026-09-09, THE SHIMMER - a defect, not an enhancement.** Mesh flag
 `0x8000000` oscillates the vertex colour of 233 set meshes, the far skyline of
 every city and 132 of them in Lahoreh. The port had decoded the phase into

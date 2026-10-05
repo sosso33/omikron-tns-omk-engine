@@ -4,8 +4,10 @@ The reader's rule (2026-09-08): anything the 1999 game did not draw stays
 optional, behind a launch flag on `omk-play` or a key in the config file's
 `[Enhancements]` section - a category of its own, beside the engine's
 `[Preferences]` and this port's `[Options]` stand-ins for real menu rows.
-Only the Vulkan backend draws them; the software reference stands where D3D
-stood and draws what `sub_4638C0` told D3D to (`docs/ASSETS.md` 4).
+The GPU backends draw them - Vulkan, and since 2026-10-05 GLES too (the
+section below, with what the Vita's vitaGL cannot do); the software reference
+stands where D3D stood and draws what `sub_4638C0` told D3D to
+(`docs/ASSETS.md` 4).
 Each one gets a `verify.py` check that pins the default OFF in the source and
 measures the enhancement's own property on the GPU, shown to fail.
 
@@ -26,6 +28,35 @@ measures the enhancement's own property on the GPU, shown to fail.
 | 11 | **60 fps**: the viewer's 30 Hz pacer lifted. The ORIGINAL has no cap at all - a vsynced `Flip`, a delta of `30 / fps` - so this is what the 1999 game did on a fast machine; it is listed here because the port's default stays 30. The frame-locked sites it exposes are fixed first, at every rate (`todo/sixty-fps.md`) | `framerate = N` / `--framerate N` (`--fps` already SHOWS the rate) | **done 2026-10-01**; `engine: frame rate` |
 | 12 | **bodies smoothed between keys**: a pose slerped from key `k` to `k+1` by the frame's fraction. The engine TRUNCATES (`Anim_ApplyNodeFrame`'s `_ftol`), so at 60 its bodies glide on fractional root motion while the pose steps at 30 - this is the part the original never had | `animation = smooth` / `--smooth-anim` | **done 2026-10-01** for the player, the scene bodies and the crowd (`todo/sixty-fps.md` 4); `engine: frame rate` |
 | 13 | **text scaling**: the glyphs scaled with the layout. The original scales the interface's COORDINATES (`I2D_ScaleX/Y`) and draws every glyph at its native size, so text shrinks as the display grows - at 4K a sixth of its 640x480 size. `fit` scales every metric `TextLayout` hands out (advance, kerning, line height) and every glyph it draws by the smaller of width/640 and height/480, so the wrap, the alignment and every caller move together; filtered (the COVERAGE interpolated before the ramp) when `uiscaling = linear`, and that coverage then SHARPENED - pushed through a curve `scale` times steeper about one half and smoothstepped, so the interpolated contour keeps its shape and the edge narrows from four or five screen pixels at 4.5x to about one (a reader, 2026-10-02: "a little blurry"; what distance-field fonts do, the coverage standing in for the field). A scaled glyph's EDGE is blended over what is behind it (`(colour*c + behind*(31-c))/31`) rather than darkened by the engine's ramp, whose one-pixel dark rim becomes a visible outline at 4.5x (a reader, 2026-10-02); over pure black that is the ramp's value to the bit, and the native path is untouched. Both backends. In `all = max` | `textscaling = fit` / `--text-scaling fit` | **done 2026-10-02**; `engine: text scaling` (the INKED width, exactly 2x at 1280x960 - the composer's advance reads the layout's intention and could not fail) |
+
+## On the GLES backend (2026-10-05) - and what the Vita can take
+
+`backends/gles/glesrender.cpp` draws every GPU row, each measured by the same
+check as Vulkan's through `gles_probe` (headless CGL on the Mac; skipped
+elsewhere) and each shown to fail:
+
+| row | how, on GLES2 | measured | Vita (vitaGL) |
+|---|---|---|---|
+| 0 MSAA | a multisampled colour+depth target resolved into the world target by a blit at `end()` | 4 of 4, 2.77% changed, 99.63% on an edge (Vulkan 2.7%); `engine: anti-aliasing` | **refused, said at start-up**: GLES2 has no multisampled renderbuffer, and vitaGL's MSAA is the DISPLAY's, a mode fixed at `vglInit` for every surface - not a target this backend can resolve. Supersampling is the Vita's anti-aliasing |
+| 2 trilinear | `glGenerateMipmap` at upload, power-of-two textures (every one the engine repeats) | gradient 4.258 < 5.054 < 5.693 - Vulkan's to the second decimal; `engine: mipmaps` | yes |
+| 2 anisotropy | `EXT_texture_filter_anisotropic`, with trilinear only | 16x on an M1 | **refused**: vitaGL answers a maximum of 1x |
+| 6 mapped shadows | a depth pass from the light PACKED into RGBA8 (GLES2 promises no depth texture), plain and GPU-posed casters, Vulkan's slab and 3x3 PCF | 1026 shadowed at 159.5, tilted 187.5 / 131.5, both ways; `engine: mapped shadows` | yes, untested on a console |
+| 7 per-pixel lighting | `scene.frag`'s law in `kSceneFragX`; a lit plain draw's normals in a buffer of their own (never streamed), a posed body's from its rest buffer | centre 51 = the law, spread 11 against 0, plain and posed; `engine: per-pixel lighting` | yes, untested on a console |
+| 9 supersampling | the world target N times larger (halved, said, when the context cannot hold it), resolved by Vulkan's rule in `readback` AND in a present program of its own | 1x identical, 4x mean 15.6 of 765, energy 80%, present EXACT full-frame and letterboxed; `engine: supersampling` | yes - at 4x a 3840x2176 target, which the console's GPU and memory may not carry; a refused allocation halves the factor |
+
+Rows 6 and 7 live in ENHANCED copies of the scene and posing programs
+(`kSceneVertX`, `kPosedVertX`, `kSceneFragX`), linked IN PLACE of the default
+two only when either is asked for (`glesSetEnhancedLighting`, before `init`),
+so a default run builds, compiles and caches exactly what it did before; at
+rest they draw the default picture byte for byte (`gles_probe`'s "enhanced
+programs at rest", asserted by `engine: gles backend`'s failure count).
+
+**The Vita's shader cache** (`scripts/vita-shader-cache.sh`) is keyed by each
+shader's source, so the five new programs - the two enhanced ones, the
+shadow pass's two and the supersample present - are NOT in the cached set. A
+console with `libshacccg.suprx` compiles them at start-up; one without it
+refuses the enhancement (never the renderer) and says so. A run with the
+enhancements on, where the compiler is, then the script, carries them.
 
 ## Row 4 - what lifting the clip is actually worth
 

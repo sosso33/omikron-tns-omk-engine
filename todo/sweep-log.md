@@ -39,7 +39,7 @@ adds **one**. Counting commits ran this number to 13 when about nine tasks had
 been finished, which would have called for a half-hour sweep long before the
 rule intends one.
 
-**tasks since the last full sweep: 8** (reset by the `--slow --jobs 6` run of 2026-10-03 below, at `2205413`.)
+**tasks since the last full sweep: 9** (reset by the `--slow --jobs 6` run of 2026-10-03 below, at `2205413`.) (2026-10-05: THE ENHANCEMENTS ON GLES - four steps, one task; verified with `--only` over `engine: mipmaps`, `anti-aliasing`, `supersampling`, `per-pixel lighting`, `mapped shadows`, `gles backend`, `gles pose`, `gles state cache`, `texture filter`, and `make vita`.)
 
 (2026-10-05: CPU AGAINST THE ORIGINAL, `todo/cpu-vs-original.md` steps 1-2 and tier A (1 task so far) - `--only` over the 39 checks it could reach, one red re-pinned (`engine: profiler`, the palette textures), `engine: raster cost` new.)
 
