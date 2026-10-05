@@ -28,7 +28,16 @@
 #include "playframe.h"
 
 
+bool omkInstrumentsBuilt();   // playharness.cpp / playharness_off.cpp
+
 int PlayState::run(int argc, char** argv) {
+    // WHICH BUILD THIS IS, first: a console log is the only report a run
+    // leaves, and a `--profile` that printed nothing at all could not say
+    // whether the release build was installed (2026-10-05)
+    std::printf("build: %s - the profiler %s, the instruments %s\n",
+                OMK_PROFILE && omkInstrumentsBuilt() ? "development" : "RELEASE",
+                OMK_PROFILE ? "compiled in (--profile)" : "compiled OUT (OMK_PROFILE=0)",
+                omkInstrumentsBuilt() ? "in" : "out");
     OMK_HEAPCHECK("main");
     // THE SETUP, in order (`playsetup_<section>.cpp`, todo/play-split.md)
     int r = -1;

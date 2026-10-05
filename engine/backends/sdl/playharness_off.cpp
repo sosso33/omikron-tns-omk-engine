@@ -36,3 +36,6 @@ void PlayState::harnessGameRestart() {}
 void PlayState::harnessFlickerNote(std::size_t&, std::size_t&, std::size_t&) {}
 void PlayState::harnessSnaps() {}
 void PlayState::screensFlicker() {}
+
+// which of the two files this build linked - the run's first `build:` line
+bool omkInstrumentsBuilt() { return false; }

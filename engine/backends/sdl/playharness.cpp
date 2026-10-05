@@ -582,3 +582,6 @@ void PlayState::screensFlicker() {
         if (gpuFrame) ++phGpu; else ++phKept[gpuKeep];
     }
 }
+
+// which of the two files this build linked - the run's first `build:` line
+bool omkInstrumentsBuilt() { return true; }
