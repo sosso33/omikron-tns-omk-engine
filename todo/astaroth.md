@@ -36,6 +36,22 @@ the three wrong labels below, used only by `engine/tools/run_shoot_ai.cpp`.
 original runs none at `shoot.actor.enter`): recorded in
 `todo/drift-audit.md`, not part of this task.
 
+## PLAYED by the reader, 2026-10-05 (the Vulkan viewer, the restart zone's route)
+
+Three faults, reported at once and open until each is closed below:
+
+1. **The MUSIC is not the game's** - the reader suspects the route: this
+   recipe enters through zone 2936 'Restart Shoot', not the real path (zone
+   2935 'Astaroth', dialog 335 in front).
+2. **Astaroth shows his TWO FORMS AT ONCE** - the screenshot has the winged
+   demon (`AST_FNM`, the souls' green glow around him) and a second,
+   humanoid body standing inside it.
+3. **Shooting the green/blue SOULS does nothing** - in the game destroying
+   them is what starts his second phase (crossing the arena, shot in the
+   back). The headless checks struck them through the `--astaroth-souls`
+   HARNESS, straight into `sub_47FCF0`; a real bolt reaching that callback
+   was never shown.
+
 ## Steps
 
 **Step 3's facts beyond the reading** (`/private/tmp` agent notes folded in):
