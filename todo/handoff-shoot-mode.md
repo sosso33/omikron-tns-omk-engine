@@ -97,6 +97,7 @@ startup scripts.
 | **THE HURT REACTION** `sub_47D1F0`: the flat sound, the band, the four-frame shove, the WHOLE-Euler camera rotation that makes it visible | done 2026-09-12, not yet played |
 | **THE PATROL**, `shoot.actor.action 1` - the commonest shoot action, 116 of 319 sites ([`shoot-patrol.md`](shoot-patrol.md)) | done 2026-09-12, **WATCHED** |
 | **THE NAV EDGE** - the links, `sub_436BB0`, the engage's cross-floor arm, states 1 and 2, the floor change ([`shoot-navedge.md`](shoot-navedge.md)) | done 2026-09-12, proved at unit level, NOT watched |
+| **THE FREEZE, THE SUSPEND, AND THE ZONE PRESS IN A PHASE** (`todo/drift-audit.md` S7, 2026-10-05): ops 106/107 (`dword_4E9760`, bit 0x8000, the wakes), ops 116/117 (the player halves of `Shoot_Leave`/`Shoot_Enter`, `g_PlayerBehaviourOff` stopping every brain) - and MDACTION in state 3 is the ZONE PRESS, which the port refused, so no ladder or door in a phase could be used. `omk-play --op-at F:OP` drives the ops | done (`5764d57`, `48c0e08`), `engine: shoot freeze`, `engine: shoot suspend`, NOT played |
 
 **The checks**: `python3 tools/verify.py --only "engine: shoot" "shoot fire"
 "crowd push"` - 17, all green (run in two or three groups: see §5 trap 13).

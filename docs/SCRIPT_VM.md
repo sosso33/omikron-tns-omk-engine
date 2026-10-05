@@ -1096,8 +1096,8 @@ named from the engine's own word rather than from what the code looks like.
 | 81 | 74 | `shoot.end` — release what the player holds, clear `g_ShootMode`; a non-zero operand also forgets `g_WeaponSlot` |
 | 82 | 311 | `shoot.actor.enter` — put `CHARACTERS[field0]` in state 3 and install its behaviour function, picked by the character record's own type field (`+176`) |
 | 84 | 319 | `shoot.actor.action` — issue action `field1` with parameter `field2`; the action selects an animation type out of that actor's `.ani` list (0 idle, 1 a move along a path, 2/3 attacks, 4 a hit) |
-| 116 | 108 | `shoot.player.suspend` — `g_PlayerBehaviourOff = 1`, input profile 0, and drop whatever the player is holding |
-| 117 | 104 | `shoot.player.resume` — `g_PlayerBehaviourOff = 0`, input profile 2, player state back to 3 |
+| 116 | 108 | `shoot.player.suspend` — `g_PlayerBehaviourOff = 1`, input profile 0, and drop whatever the player is holding. Read whole from the image 2026-10-05 (`jmp 0x422950`): the PLAYER half of `Shoot_Leave` - bolts freed, body shown, the bank's default group (NOT state 1), shooter cleared, `UI_CloseAllScreens` - and `g_PlayerBehaviourOff` stops EVERY gunman's brain (`Shoot_TickNpc`), not just the player. The ladders and doors of a phase. Ported, `todo/drift-audit.md` S7 |
+| 117 | 104 | `shoot.player.resume` — `g_PlayerBehaviourOff = 0`, input profile 2, player state back to 3. Read whole (`jmp 0x4229C0`): `Shoot_Enter`'s player tail - group 200, the HUD by property 7, body hidden, camera mode 4, the mover, event 48 and `Shoot_InitWeapon` - without the record reset, the health read or `shoot2.sfx` |
 
 Two things confirm the grouping, and neither is a range check.
 
@@ -1610,7 +1610,11 @@ word. Ported then - `todo/drift-audit.md` S4, `verify.py: engine: inventory
 checkpoint`), 142 `ui.highscore` (insert `Var_Get(field1)`
 under the character's name, open screen 36 `HIGH-SCORE` — the shooting
 gallery's exit), 106/107 `shoot.freeze_all` / `.unfreeze_all` (bit 15 of every
-combat record's flag word at once).
+combat record's flag word at once - and `dword_4E9760`, which a record made
+under it inherits and which the noise, a bolt's hit, a strike and an explosion
+clear on every record before they act: a freeze holds until something
+happens. Outside a phase both are no-ops. Ported 2026-10-05,
+`todo/drift-audit.md` S7, `verify.py: engine: shoot freeze`).
 
 **And 152 — `game.restart`.** The handler sets `g_RestartRequest`; the game
 loop answers by resetting the session, calling **`Game_NewGame`** and fading

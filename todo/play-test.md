@@ -302,6 +302,19 @@ while it goes on without you. ENTER again up there to ride back down. And
 anywhere: a character standing still on any moving floor should stay on it.
 `todo/drift-audit.md` M9.
 
+## 25. A LADDER IN A SHOOT PHASE - the rooftops (2026-10-05)
+
+```
+build/omk-play ~/Documents/omk/fr ../tables --save ../traces/save-appart.bin \
+    --area 249 --scene-chunk 62 --zone-enable 4288 --stand 25428,-364,1711,267 --shoot
+```
+ENTER at the foot of the ladder: the HUD should close, the camera fly, you
+appear at the top, and after a moment the first-person view, the gun and the
+HUD come back. While it plays NO gunman moves or fires. Before 2026-10-05 the
+press did nothing at all in a shoot phase. And in the Tetra raids
+(`shoot.freeze_all`), gunmen should stand still until a shot or a hit wakes
+them. `todo/drift-audit.md` S7.
+
 ## What is NOT fixed, so do not report it as new
 
 * **The lift arrival is still black** and the camera is inside the lift-car
