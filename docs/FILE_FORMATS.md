@@ -1136,8 +1136,13 @@ counted sections:
 
 ```
 u32 A + A x 40   (14 shipped)  the SHOT SPRITES, read 2026-09-10: +12 char[8]
-                 the held gun's ROOT mesh name (`sub_44EEB0` compares two
-                 dwords), +20 frames the bolt grows, +24 frames it waits at
+                 the held gun's ROOT mesh name - and `sub_44EEB0` decides on
+                 the FIRST FOUR BYTES only: its "second dword" test compares
+                 `*i + 1` with the key's first dword + 1 (0x44EED5..DB), so
+                 `AstBuste`/`AstMaing` (Astaroth's marker parents, 8 chars)
+                 find `AstBust`/`AstMain`; corrected 2026-10-05 from "compares
+                 two dwords" - no two shipped rows share four bytes, so no
+                 exact match changes row - +20 frames the bolt grows, +24 frames it waits at
                  the muzzle, +28..36 the per-frame scale step. `Shoot_Enter`
                  loads shoot2.sfx for them (`sub_44EDF0`; todo/shoot-mode 7i)
 u32 B + B x 44   the cin-sfx definitions (64) - Sfx_LoadFile keeps the ones

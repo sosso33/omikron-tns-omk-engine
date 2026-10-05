@@ -330,9 +330,15 @@ and then vanish, and its TUY creature with it. Bolts on Astaroth himself do
 nothing while a soul remains. Once all six are down, bolts in his BACK
 (from behind) hurt him - he jerks forward each time - and bolts from the front
 do nothing, except that every tenth makes him flinch for a few seconds. 34 back
-hits kill him and the ending cutscene runs. He does not move or fight back yet
-- his own tick is `todo/astaroth.md` step 3 - so for now the player has to
-walk round him. Before this no soul could be struck at all.
+hits kill him and the ending cutscene runs. He now FIGHTS: while
+a soul stands he stays put, aims at you (his torso bending to follow) and
+shoots from his left hand about every 1.4 s; with the souls down he walks at
+you, and close in he winds up, rises, and LEAPS onto where you stood - stay
+under him and the landing kills. Then he fires a slow bolt from his chest and
+walks again. His gauge is on the right edge. Things to watch: his walk and
+turns look natural, the leap's height, whether his bolts look right (the port
+draws them with the shot sprite rows `AstMain` / `AstBust`). Before this no
+soul could be struck at all.
 
 ## What is NOT fixed, so do not report it as new
 

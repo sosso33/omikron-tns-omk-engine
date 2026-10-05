@@ -38,6 +38,21 @@ original runs none at `shoot.actor.enter`): recorded in
 
 ## Steps
 
+**Step 3's facts beyond the reading** (`/private/tmp` agent notes folded in):
+his weapon slots are `Actor_LoadModel`'s `sub_436DD0(node, actor+84, "Tire")` -
+the model's own `Tire*` markers, first four bytes, in `o3de_Traverse`
+pre-order (first child +52, next sibling +56) - so `Tire000001` (under
+`AstMaing`) is slot 0 and `Tire000000` (under `AstBuste`) slot 1. Actor 609's
+property 34 per slot: reload 0 / 0, speed 20 / 10 (78 / 39 a frame), damage
+15 / 25; property 35 ammo 9998 / 9999, and `Actor_SetProperty` case 0x23
+writes the slot named by the value's HIGH word, so every shot spends slot 0's.
+The shot-sprite row is keyed on the marker's PARENT bone (`AstMain`, effects
+13/14/15; `AstBust`, 16/17/18), both grow 0 and wait 0 as shipped.
+`Camera_SetShake(cam, dur, amp)` stores `cam+196 = dur`, `cam+204 = amp *
+0.3937`; its consumer is `sub_418030` from the camera tick `sub_417CF0`:
+`dy = sin(80 deg * t) * amp * (t / dur) * dt` on both the eye and the aim Y,
+deterministic, Y only (step 4 to confirm and port).
+
 **Reaching his back**: `--astaroth-souls 10 --player-at
 12:31950,1052,-2504,90 --aim-at 32206,668,-2507` - his `AstDos` is drawn at
 (32206, 668, -2507) while he stands on the retry's stand; 200 health is 34
@@ -56,7 +71,7 @@ frames.
 |---|---|---|
 | 1 | **The setup and the souls.** `Shoot_ActorEnter`'s type-13 arm (`sub_47FF70`): state 29, `+88 = 10`, flags `|= 0x4020`, the six `PAame0N` set meshes found and shown at 3 hits each, `AstDos` found, the difficulty factor. The bolts' world ray reports the struck SET MESH and calls the registered callback where `Projectiles_Tick` does (0x44DDDF, only when no body was met); `sub_47FCF0` counts the hit, HIDES the mesh's subtree (`sub_436F20`, flag 2 - the render drops it, the ray does not) and posts message `27+i` with sender `i`. The generic brain no longer runs for him (his own tick is step 3) | **DONE 2026-10-05** (`dce6ca0`): `actor/astaroth.*`; `SweepHit::tri` and `WorldRay`'s mesh; `WorldSlot::meshHidden` honoured by the visible-set walk (and the moving meshes); `shootApplyHit`'s `typeGate`; the `--aim-at` harness. `engine: astaroth souls` (3 mutations shown to fail). Limits, labelled: he HOLDS the stand grid's centre cell and does nothing (step 3); once all six are down his gate still refuses (step 2) |
 | 2 | **His body and his death.** `sub_4240E0`'s type-13 gate `sub_47FD90`: only once all six are down, not in 17..19, a bolt travelling WITH his facing, whose segment meets the `AstDos` mesh (the body sweep with a one-mesh filter, the player excluded); the back-hit reaction (a type-4 clip, flags `8 | 0x800`, state 16, `+88 = 10`), his waiting bolts cancelled, effect 20; the `+88` flinch counter on any other hit. The tick's prologue: the picked clip, its `+100` replays, and **message 3** when `+92 <= 0` | **DONE 2026-10-05** (`7431c08`): `astarothGate` / `astarothBand` / `astarothClipOver`; `shootSweepBodies`' one-mesh filter; `ProjectilePool::cancelWaiting`; `FlightEvent::seg`; `GunClip::slot` (clip 14 shares type 0 with five); his picked clip advanced at `flt_6A062C`; a kill takes no generic death path. `engine: astaroth back` (3 mutations). Played headless to the end: 34 back hits, message 3, `shoot.end 1`, the ending runs. Harnesses `--player-at`, `--astaroth-souls`. Limits, labelled: the picked clip is the fixed pick, not `rand()`; effect 20 is its SOUND only (as every shot effect here); every resumed state stands on the stand grid's centre cell (step 3) |
-| 3 | **His tick** `sub_4800C0`: the health bands (animation rate, slot-1 wait), the 9-cell stand / walk grids aimed at the player (`sub_4B2F30`, `sub_4B30A0`/`sub_4B3260`, `sub_4B33C0`), slot 0's fire once a cell, the walk's turn; 17 / 18 / 19 the wind-up, the crouch and the LEAP, the SLAM's damage through `sub_423B10`; 21 the big shot, slot 1 at frame 2; the default arm's re-setup. His weapon slots' objects are UNVERIFIED and are read first | |
+| 3 | **His tick** `sub_4800C0`: the health bands (animation rate, slot-1 wait), the 9-cell stand / walk grids aimed at the player (`sub_4B2F30`, `sub_4B30A0`/`sub_4B3260`, `sub_4B33C0`), slot 0's fire once a cell, the walk's turn; 17 / 18 / 19 the wind-up, the crouch and the LEAP, the SLAM's damage through `sub_423B10`; 21 the big shot, slot 1 at frame 2; the default arm's re-setup. His weapon slots' objects are UNVERIFIED and are read first | **DONE 2026-10-05** (`8eabd72`, `+1`): `astarothTick` and its helpers, `AstarothActor` (record and node kept apart), `AstarothWorld` (the viewer's queries); his weapon slots are his own `Tire` markers in pre-order (`Tire000001` slot 0, `Tire000000` slot 1, `astarothTireSlots`), fired by `PlayState::astarothFire` with property 34/35's raw fields (`Session::actorWeaponSlot`; ammo spent from slot 0 whichever fires, the engine's high-word quirk); the grid pose `astarothPoseNow`; the picked clip's root motion through the wall test; his gauge on HUD side 1; `SfxFile::shotSprite` compares FOUR bytes (`sub_44EEB0`, a port fault every gunman shared). `engine: astaroth tick` (3 mutations), `engine: astaroth back` retimed (he moves now; `--astaroth-health`). Looked at in renders: he walks at the player, rises through the wind-up, lands on him. Limits, labelled: state 20 (no writer) and the default arm's `sub_4B2DF0` walk are not ported; the clip-start transition blend (`actor+460`) and `+164`/`+172` are not modelled; `Camera_SetShake` is counted, not applied (step 4) |
 | 4 | **`camera.shake` / `Camera_SetShake`** (0x414DB0): his footstep (30, 10) and the script's 100/100 and 20/20 (drift audit S11, 32 sites). Read the CONSUMER of `cam+196` / `+204` first - unread | |
 | 5 | `ShootAi::tickAstaroth`'s labels replaced; the play-test entry; the drift-audit row | |
 
