@@ -108,6 +108,25 @@ by the door. **The faithful start is the door itself**: `--area 175 --stand
 frame 3, `Arrivée J 2` at 175), then walk to Astaroth (zone 2935, ~1300 west)
 and through dialog 335.
 
+## The reader's two questions, 2026-10-06, answered from the code
+
+* **A death in the second phase with a ring left restarts from the
+  BEGINNING.** AREA 175's message-1 handler (the player's death) spends a ring,
+  `shoot.end 0`, re-arms zone 2936, sets Astaroth's `Vie` back to 200 and puts
+  the player at address 526 inside it; the zone replays the soul actors and
+  `shoot.actor.enter 609`, and `sub_47FF70` sets the destroyed count to 0, each
+  soul back to 3 hits and SHOWS all six (`sub_436F50`). With no ring left the
+  handler goes to `Game Over` (address 520; zone 2934 plays music 134). The port
+  does the same since S16 (checked: six down at frame 20, a death at 107, the
+  restart's setup at 169 showing all six).
+* **His SLAM kills in one hit, his bolts do not.** `sub_4800C0` state 19: within
+  273 of where he lands, damage 3700 (< 78), 2300 (< 156) or 1200. `sub_423B10`
+  scales it by the shoot difficulty (`word_90E1A8`: 0 -> x0.75, 1 -> x1, 2 ->
+  x1.25) and takes the Body Shield's percentage off (property 17, capped at
+  100, at least 1 left). Against 200 health that kills unless the shield is
+  above ~83%; the reader's 1200 with shield 30 was 840. His bolts deal 15 and
+  25 before the shield.
+
 ## Steps
 
 **Step 3's facts beyond the reading** (`/private/tmp` agent notes folded in):
