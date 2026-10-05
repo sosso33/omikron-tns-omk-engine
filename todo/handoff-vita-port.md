@@ -180,6 +180,13 @@ short read. **The overlay is the next cost**: under the opening credits
 is 6.2 ms against ~2 straight - with 76 rows re-sent in 60 frames, so it is
 not the upload but the per-frame row hash of the whole composed frame
 (`GlesRenderer::presentOverlay`'s `sync`), INFERRED until a profile says.
+**Done blind, the reader's choice (2026-10-05)**: the hash runs four chains
+side by side instead of one - 0.5-0.6 -> 0.1-0.2 ms an overlay frame on the
+M1 (the console runs ~10x), the window's picture identical; and the overlay
+is checked at last (`engine: gles overlay`: the fight's last frame through it
+against the CPU composite, 0 of 307200 differ in 565; a stale-row mutation
+6391). **For the reader**: the `gles (ms, mean of 60)` line's `texture
+upload` under the credits or a subtitle - 6.2 before.
 
 **`--profile` DOES NOT WORK ON THE CONSOLE - the reader, twice, 2026-10-05.**
 `args.txt` held `--profile` and `ux0:data/omk/street.prof` (one a line); the
