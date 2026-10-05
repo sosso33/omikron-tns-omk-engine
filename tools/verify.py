@@ -40738,6 +40738,54 @@ def c_engine_gandhar_head():
            "the Waver: equipped, hits on him, and how many reached the gate"
 
 
+def c_engine_astaroth_restart():
+    r"""A SHOOT PHASE RESTARTED AFTER THE PLAYER'S DEATH STARTS FROM ZERO - and
+    Astaroth's souls can be shot again (a reader's play, 2026-10-05:
+    *"when I shot on them, nothing happened"*).
+
+    `Shoot_Enter` zeroes the 100 shoot records and puts the world-hit callback
+    back to the null one (`sub_44CD90(0)`); the script's `shoot.actor.enter`
+    then builds each record afresh, and Astaroth's (`sub_47FF70`) arms the
+    callback again. The viewer did the second and never the first: its records
+    outlived the phase, so after the player died and the death handler ran the
+    phase again his setup never re-ran, the callback stayed disarmed, and every
+    bolt on a soul was a plain world hit. The save's player has 10 health, so
+    Astaroth kills him at frame 32 - exactly how the reader met it.
+
+    Asserted: the two shoot entries and the two setups (each entry followed by
+    one), and soul `PAame02` struck three times and DOWN after the restart -
+    message 28. SHOWN TO FAIL: the records not cleared at `Shoot_Enter` (one
+    setup, the soul never struck).
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    o = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"), "--save",
+         os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "175",
+         "--address", "526", "--zone-enable", "2936", "--zone-disable", "2935",
+         "--hold", "0*150,k54*1,0*19,k54*1,0*19,k54*1,0*19,k54*1,0*60",
+         "--aim-at", "32370,275,-1475", "--frames", "260", "--nodelay"],
+        capture_output=True, encoding="latin-1",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    enters = [int(f) for f in _re.findall(r"frame (\d+): SHOOT MODE ENTER", o)]
+    setups = [int(f) for f in _re.findall(r"frame (\d+): actor 609 \S+ - ASTAROTH SETUP", o)]
+    killed = bool(_re.search(r"frame \d+: PLAYER HIT by actor 609's bolt .* KILLED", o))
+    struck = [int(x) for x in _re.findall(r"ASTAROTH SOUL 1 \(PAame02, mesh 28\) struck at "
+                                          r"\S+ \S+ \S+ - (\d+) hits? left", o)]
+    down = _re.search(r"ASTAROTH SOUL 1 DOWN - 1 mesh hidden \(sub_436F20\), 1 of 6 down, "
+                      r"message (\d+) from 1: (\w+)", o)
+    return (len(enters), len(setups), killed, struck,
+            (int(down.group(1)), down.group(2)) if down else None), \
+           (2, 2, True, [2, 1, 0], (28, "handled")), \
+           "shoot entries, Astaroth setups, the player killed first, the soul's hits " \
+           "after the restart, and its message"
+
+
 def c_engine_head_camera():
     r"""A WORLD CAMERA ON THE PLAYER'S HEAD - subject kinds 1 and 3
     (`todo/drift-audit.md`, the follow-up to S14).
@@ -43398,6 +43446,7 @@ SLOW = [
     ("engine: address camera", c_engine_address_camera, "todo/drift-audit.md S14; o3de/worldcam.h"),
     ("engine: head camera", c_engine_head_camera, "todo/drift-audit.md; o3de/worldcam.h"),
     ("engine: gandhar", c_engine_gandhar, "todo/gandhar.md 1; actor/gandhar.h"),
+    ("engine: astaroth restart", c_engine_astaroth_restart, "todo/astaroth.md played; backends/sdl/playframe_modes_parts.cpp"),
     ("engine: gandhar head", c_engine_gandhar_head, "todo/gandhar.md 3b; actor/shoothit.h"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),

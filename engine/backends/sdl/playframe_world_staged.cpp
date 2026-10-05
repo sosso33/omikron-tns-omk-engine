@@ -730,6 +730,16 @@ void PlayState::worldStaged() {
             if (inShoot && shootMode && !shotDead && !clipHolds && !brainsOff) {
                 auto it = shootBrains.find(s.actor);
                 if (it == shootBrains.end()) {
+                    // a FRESH record: whatever an earlier attempt left on his
+                    // body - a death clip, its fall - is gone with the old one
+                    s.deathType = -1;
+                    s.deathClip = nullptr;
+                    s.deathPosted = false;
+                    s.deathFallTold = false;
+                    s.deathFloorTold = false;
+                    s.deathEl = 0;
+                    s.deathWalls = 0;
+                    for (float& d : s.deathMove) d = 0.0f;
                     omk::ShootRecord fresh;
                     std::int32_t props[6] = {0, 0, 0, 0, 0, 0};
                     omk::ShootProperties sp;

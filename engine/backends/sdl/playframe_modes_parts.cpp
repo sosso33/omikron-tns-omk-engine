@@ -518,6 +518,25 @@ int PlayState::modesShoot() {
                 // `sub_44CD90(0)` at 0x4222F6: the world-hit callback back to
                 // the null one - an Astaroth setup is what installs it
                 astaroth.callbackArmed = false;
+                // ...and THE 100 RECORDS ZEROED (`Shoot_Enter`): every gunman's
+                // record goes, so the script's `shoot.actor.enter` builds each
+                // afresh - his entry, his action, a boss's setup. The viewer
+                // kept them until 2026-10-06, so a shoot phase RESTARTED after
+                // the player's death ran on the old records: Astaroth was never
+                // set up again, his souls' callback stayed disarmed by the line
+                // above, and shooting them did nothing (a reader's play of
+                // 2026-10-05). The actor-side clip state goes with them.
+                shootBrains.clear();
+                astarothActors.clear();
+                gandharActors.clear();
+                gunClips.clear();
+                gunAnims.clear();
+                gunCurType.clear();
+                gunCurSlot.clear();
+                gunActSerialSeen.clear();
+                gunEntryPending.clear();
+                gunStandDown.clear();
+                gunCellSeeded.clear();
                 playerShootRec = omk::ShootRecord{};
                 playerShootRec.node = -1;
                 playerShootRec.flags |= 2u;
