@@ -28541,6 +28541,16 @@ def c_engine_mipmaps():
 
     Shown to fail (2026-09-08) with `upload` generating one level whatever
     the mode: trilinear then equals bilinear and the order breaks.
+
+    THE GLES BACKEND (2026-10-05), through `gles_probe` on the same camera
+    (headless CGL, macOS only, skipped elsewhere): the chain `glGenerateMipmap`
+    builds at upload and EXT_texture_filter_anisotropic, with the same order
+    asserted - trilinear < anisotropic < bilinear - and coverage >= 0.98.
+    Measured: 4.258 < 5.054 < 5.693 at 16x, Vulkan's figures to the second
+    decimal. Anisotropy is the context's: vitaGL grants 1x, so on the Vita it
+    is refused at start-up and only the trilinear half applies. Shown to fail
+    (2026-10-05) with the upload building no chain: trilinear then equals
+    bilinear and the order breaks.
     """
     import subprocess, tempfile, shutil, re
     eng = os.path.join(ROOT, "engine")
@@ -28616,7 +28626,28 @@ def c_engine_mipmaps():
         want_gpu = gpu
     else:
         want_gpu = (True, True, gpu[2] if isinstance(gpu[2], str) else True, True)
-    return (src_ok, gpu), ((True, True, True, True), want_gpu), \
+    gles = ("skipped",)
+    import platform
+    if platform.system() == "Darwin":
+        mk = subprocess.run(["make", "-s", "build/gles_probe"], cwd=eng, capture_output=True, text=True)
+        gp = os.path.join(eng, "build", "gles_probe")
+        gles = ("no gles_probe",)
+        if mk.returncode == 0 and os.path.exists(gp):
+            r = subprocess.run([gp, fr, model, "3526,1015,-905", "3412,1032,-882", "83", "640x352"],
+                               capture_output=True, text=True)
+            m = re.search(r"filter trilinear: (\w+)\s+gradient bilinear ([\d.]+)\s+trilinear ([\d.]+)"
+                          r"\s+aniso ([\d.]+) \((\d+)x\)\s+coverage ([\d.]+)", r.stdout)
+            if not m:
+                gles = ("trilinear line not found",)
+            else:
+                gb, gt, ga = (float(m.group(k)) for k in (2, 3, 4))
+                gles = (m.group(1) == "taken", gt < gb,
+                        (gt < ga < gb) if int(m.group(5)) > 1 else "no anisotropy in this context",
+                        float(m.group(6)) >= 0.98)
+                print(f"        gles gradient: trilinear {gt} < aniso {ga} ({m.group(5)}x) < bilinear {gb}")
+    want_gles = gles if len(gles) == 1 else \
+        (True, True, gles[2] if isinstance(gles[2], str) else True, True)
+    return (src_ok, gpu, gles), ((True, True, True, True), want_gpu, want_gles), \
            "the source: anisotropy defaults to 1, the keys are read, every " \
            "`setAnisotropy` call in omk-play is guarded, and the device feature " \
            "and the LINEAR mipmap mode exist only behind the request; the GPU " \

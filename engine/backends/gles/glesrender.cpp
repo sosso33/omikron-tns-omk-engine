@@ -37,7 +37,8 @@
 //     `Draw::lit`) - enhancements, off by default (`todo/enhancements.md`);
 //     `lit` is ignored and the vertex colour stands, which is what the
 //     default game draws;
-//   * MSAA, texture filtering, anisotropy, supersampling - enhancements;
+//   * MSAA, anisotropy, supersampling - enhancements; trilinear filtering IS
+//     here (a mip chain at upload), and bilinear is the default;
 //   * the native mirror (`drawMirrorScene`) - returns false, so
 //     `drawWithMirror` takes its CPU path through `readback()`. A stencil
 //     version is `todo/vita-port.md` step G5; GLES2 has the stencil for it.
@@ -494,6 +495,10 @@ namespace omk {
 // face and the room turns inside out.
 constexpr bool kGlesCullBack = true;
 
+// EXT_texture_filter_anisotropic's two enums, spelled out: GLES2's own header
+// does not carry the extension's names
+constexpr GLenum kGlTextureMaxAnisotropy = 0x84FE, kGlMaxAnisotropy = 0x84FF;
+
 // THE GL CALLS' OWN TIME, for the frame-phase line (`play.cpp`, 2026-09-18:
 // a Vita menu frame cost ~760 ms and nothing said where). Milliseconds summed
 // since the last `glesTakeTimings`: glReadPixels, the 888 -> 565 conversion,
@@ -610,16 +615,26 @@ public:
     const char* name() const override { return "gles2"; }
     // TEXTURE FILTERING (renderer.h): 0 nearest, 1 bilinear - what the
     // original's HARDWARE device drew, MAG/MIN LINEAR with MIP NONE
-    // (`docs/ASSETS.md` 4). There is no mip chain here, so trilinear is drawn
-    // as bilinear, and said. Before `setTextures`: an upload keeps the filter
-    // it was made with. The colour key survives it as on Vulkan - the key is
-    // in alpha and the fragment shader un-premultiplies a filtered sample.
+    // (`docs/ASSETS.md` 4) - and 2 TRILINEAR, the enhancement
+    // (`todo/enhancements.md` 2): a mip chain `glGenerateMipmap` builds at
+    // upload, sampled LINEAR_MIPMAP_LINEAR. Before `setTextures`: an upload
+    // keeps the filter it was made with. The colour key survives all three as
+    // on Vulkan - the key is in alpha, the chain averages the (0,0,0,0) key
+    // texels so every level stays premultiplied, and the fragment shader
+    // un-premultiplies a filtered sample.
     bool setTextureFilter(int mode) override {
-        filter_ = mode >= 1 ? 1 : 0;
-        if (mode >= 2)
-            std::printf("gles: trilinear asked - no mip chain in this backend, drawn bilinear\n");
-        return mode <= 1;
+        filter_ = mode < 1 ? 0 : mode < 2 ? 1 : 2;
+        return true;
     }
+    // ANISOTROPY (`todo/enhancements.md` 2): EXT_texture_filter_anisotropic,
+    // with trilinear only, as on Vulkan. Recorded here and RESOLVED in `init`,
+    // where the context can say whether it has the extension - vitaGL answers
+    // a maximum of 1, so on the Vita it is refused there, and said.
+    bool setAnisotropy(int n) override {
+        aniso_ = n < 1 ? 1 : n > 16 ? 16 : n;
+        return true;
+    }
+    int anisotropy() const { return anisoOn_; }
 
     // ---- presentation, the window side. `frameW x frameH` is the ENGINE's
     // frame (640x480); the window is whatever the device has (960x544 on a
@@ -885,7 +900,9 @@ private:
     std::unordered_map<const Geometry*, Vbo> vbo_;
     std::unordered_map<const Geometry*, DepthTie> tie_;
     bool tieOn_ = true;
-    int  filter_ = 0;        // 0 nearest (the software devices), 1 bilinear (a 3D card)
+    int  filter_ = 0;        // 0 nearest (the software devices), 1 bilinear (a 3D card), 2 trilinear
+    int  aniso_ = 1;         // asked; 1 is off
+    int  anisoOn_ = 1;       // what `init` found the context grants (1: none)
     GLuint windowFbo_ = 0;
 
     View view_;
@@ -1065,6 +1082,24 @@ gpuTexture("textures", bayer_, 64);
 gpuBuffer("vertex buffers", quad_, sizeof quad);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
+    // THE ANISOTROPY the context grants: the extension named, and its own
+    // maximum. Only behind trilinear, as Vulkan asks for the device feature
+    // only then; a refusal is SAID, the way `vulkan: anisotropy ignored` is.
+    anisoOn_ = 1;
+    if (aniso_ > 1) {
+        const char* ext = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
+        GLfloat most = 1.0f;
+        const bool have = ext && std::strstr(ext, "GL_EXT_texture_filter_anisotropic");
+        if (have) glGetFloatv(kGlMaxAnisotropy, &most);
+        if (filter_ < 2)
+            std::printf("gles: anisotropy %d ignored - it needs trilinear filtering (a mip chain)\n", aniso_);
+        else if (!have || most < 2.0f)
+            std::printf("gles: anisotropy %d ignored - the context has no anisotropic filtering%s\n",
+                        aniso_, have ? " beyond 1x" : "");
+        else
+            anisoOn_ = std::min(aniso_, static_cast<int>(most));
+        if (anisoOn_ > 1) std::printf("gles: anisotropy %dx\n", anisoOn_);
+    }
     static const bool noTie = std::getenv("OMK_NO_TIE") != nullptr;
     if (noTie) tieOn_ = false;
 #if defined(__vita__)
@@ -1246,14 +1281,21 @@ void GlesRenderer::setTextures(std::span<const Texture> t) {
                          s.name.c_str(), s.width, s.height);
         glGenTextures(1, &out.id);
         glBindTexture(GL_TEXTURE_2D, out.id);
+        // THE MIP CHAIN (trilinear): GLES2 builds one only for a power-of-two
+        // texture, which is every one the engine repeats - a clamped one keeps
+        // bilinear, as said above for its addressing
+        const bool mips = filter_ >= 2 && repeat;
         const GLint f = filter_ ? GL_LINEAR : GL_NEAREST;
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, f);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, mips ? GL_LINEAR_MIPMAP_LINEAR : f);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, f);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, repeat ? GL_REPEAT : GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, repeat ? GL_REPEAT : GL_CLAMP_TO_EDGE);
+        if (mips && anisoOn_ > 1)
+            glTexParameterf(GL_TEXTURE_2D, kGlTextureMaxAnisotropy, static_cast<GLfloat>(anisoOn_));
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, s.width, s.height, 0, GL_RGBA,
                      GL_UNSIGNED_BYTE, px.data());
-gpuTexture("textures", out.id, 4LL * s.width * s.height);
+        if (mips) glGenerateMipmap(GL_TEXTURE_2D);
+gpuTexture("textures", out.id, (mips ? 16LL : 12LL) * s.width * s.height / 3);
         uploaded_[key] = Uploaded{out.id, s.width, s.height, s.idx, true};
         ++fresh;
     }
@@ -2448,6 +2490,12 @@ long glesTakeOverlayRows(Renderer* r) { return static_cast<GlesRenderer*>(r)->ta
 void glesGeometryStats(Renderer* r, long out[3]) {
     out[0] = out[1] = out[2] = 0;
     if (auto* g = dynamic_cast<GlesRenderer*>(r)) g->geometryStats(out);
+}
+
+// the anisotropy the context granted (1: none), for a probe
+int glesAnisotropy(Renderer* r) {
+    auto* g = dynamic_cast<GlesRenderer*>(r);
+    return g ? g->anisotropy() : 1;
 }
 
 // the draw-state cache on or off, for a probe that compares the two

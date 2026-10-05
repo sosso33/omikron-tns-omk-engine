@@ -82,6 +82,7 @@ void glesSetDepthTie(Renderer*, bool);
 void glesSetStateCache(Renderer*, bool);
 void glesTakeStateCalls(long out[3]);
 void glesGeometryStats(Renderer*, long out[3]);
+int glesAnisotropy(Renderer*);
 }
 
 namespace {
@@ -564,6 +565,51 @@ int main(int argc, char** argv) {
                     changed ? tot / double(changed) : 0.0, c.agree());
         failures += !took || changed == 0 || c.agree() < 0.98;
         delete bl;
+
+        // ---- TRILINEAR and ANISOTROPY (`todo/enhancements.md` 2), the
+        // property `engine: mipmaps` asserts on Vulkan: a mip chain removes the
+        // frequencies a minified surface cannot hold, so the frame's mean
+        // NEIGHBOUR GRADIENT over lit pixels orders trilinear < anisotropic <
+        // bilinear (anisotropy samples along the footprint instead of blurring
+        // across it). The order is judged, not the values - they are the
+        // driver's. Nearest must still equal the default renderer's frame.
+        const auto grad = [](const omk::Surface& s) {
+            double t = 0.0; long n = 0;
+            const auto ch = [](std::uint16_t v, int k) {
+                return k == 0 ? ((v >> 11) & 31) * 8 : k == 1 ? ((v >> 5) & 63) * 4 : (v & 31) * 8;
+            };
+            for (int y = 0; y < s.h; ++y)
+                for (int x = 0; x < s.w; ++x) {
+                    const std::uint16_t p = s.at(x, y);
+                    if (!p) continue;
+                    for (int dir = 0; dir < 2; ++dir) {
+                        const int nx = x + (dir == 0), ny = y + (dir == 1);
+                        if (nx >= s.w || ny >= s.h) continue;
+                        const std::uint16_t q = s.at(nx, ny);
+                        if (!q) continue;
+                        for (int k = 0; k < 3; ++k) t += std::abs(ch(p, k) - ch(q, k));
+                        n += 3;
+                    }
+                }
+            return n ? t / double(n) : 0.0;
+        };
+        omk::Renderer* bi = omk::makeGlesRenderer();
+        bi->setTextureFilter(1);
+        const omk::Surface fb1 = *run(*bi, v, W, H);
+        omk::Renderer* tri = omk::makeGlesRenderer();
+        const bool tTook = tri->setTextureFilter(2);
+        const omk::Surface ft = *run(*tri, v, W, H);
+        omk::Renderer* an = omk::makeGlesRenderer();
+        an->setTextureFilter(2);
+        an->setAnisotropy(16);
+        const omk::Surface fa = *run(*an, v, W, H);
+        const int anGot = omk::glesAnisotropy(an);
+        const double gb = grad(fb1), gt = grad(ft), ga = grad(fa);
+        const Coverage ct = compare(swF, ft);
+        std::printf("filter trilinear: %s  gradient bilinear %.3f  trilinear %.3f  aniso %.3f (%dx)  "
+                    "coverage %.4f\n", tTook ? "taken" : "REFUSED", gb, gt, ga, anGot, ct.agree());
+        failures += !tTook || !(gt < gb) || (anGot > 1 && !(gt < ga && ga < gb)) || ct.agree() < 0.98;
+        delete bi; delete tri; delete an;
     }
 
     // ---- THE LETTERBOX: a 640x352 picture at row 64 of a 640x480 frame, the
