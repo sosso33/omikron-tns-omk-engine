@@ -327,9 +327,12 @@ same from the sneak's quit tab. `todo/drift-audit.md` T1.
 The end-game fight (AREA 175, after dialog 335): with the baton, shoot the six
 glowing souls (`PAame01..06`) around the arena. Each should take THREE bolts
 and then vanish, and its TUY creature with it. Bolts on Astaroth himself do
-nothing while a soul remains. He does not move or fight back yet - his own
-tick is `todo/astaroth.md` step 3 - and once all six are down he still cannot
-be hurt (step 2). Before this no soul could be struck at all.
+nothing while a soul remains. Once all six are down, bolts in his BACK
+(from behind) hurt him - he jerks forward each time - and bolts from the front
+do nothing, except that every tenth makes him flinch for a few seconds. 34 back
+hits kill him and the ending cutscene runs. He does not move or fight back yet
+- his own tick is `todo/astaroth.md` step 3 - so for now the player has to
+walk round him. Before this no soul could be struck at all.
 
 ## What is NOT fixed, so do not report it as new
 

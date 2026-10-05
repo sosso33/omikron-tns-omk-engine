@@ -38,6 +38,11 @@ original runs none at `shoot.actor.enter`): recorded in
 
 ## Steps
 
+**Reaching his back**: `--astaroth-souls 10 --player-at
+12:31950,1052,-2504,90 --aim-at 32206,668,-2507` - his `AstDos` is drawn at
+(32206, 668, -2507) while he stands on the retry's stand; 200 health is 34
+bolts of 6, 45 presses at `--keydelay 20` in 1000 frames.
+
 **Reaching the souls**: from the restart point (address 526) `PAame02`,
 `PAame04` and `PAame05` are in line of sight; `PAame01`, `03` and `06` are
 behind `PAcylind01`, `PAentrext` and `PAroche01` - the player must move. A
@@ -50,7 +55,7 @@ frames.
 | # | step | state |
 |---|---|---|
 | 1 | **The setup and the souls.** `Shoot_ActorEnter`'s type-13 arm (`sub_47FF70`): state 29, `+88 = 10`, flags `|= 0x4020`, the six `PAame0N` set meshes found and shown at 3 hits each, `AstDos` found, the difficulty factor. The bolts' world ray reports the struck SET MESH and calls the registered callback where `Projectiles_Tick` does (0x44DDDF, only when no body was met); `sub_47FCF0` counts the hit, HIDES the mesh's subtree (`sub_436F20`, flag 2 - the render drops it, the ray does not) and posts message `27+i` with sender `i`. The generic brain no longer runs for him (his own tick is step 3) | **DONE 2026-10-05** (`dce6ca0`): `actor/astaroth.*`; `SweepHit::tri` and `WorldRay`'s mesh; `WorldSlot::meshHidden` honoured by the visible-set walk (and the moving meshes); `shootApplyHit`'s `typeGate`; the `--aim-at` harness. `engine: astaroth souls` (3 mutations shown to fail). Limits, labelled: he HOLDS the stand grid's centre cell and does nothing (step 3); once all six are down his gate still refuses (step 2) |
-| 2 | **His body and his death.** `sub_4240E0`'s type-13 gate `sub_47FD90`: only once all six are down, not in 17..19, a bolt travelling WITH his facing, whose segment meets the `AstDos` mesh (the body sweep with a one-mesh filter, the player excluded); the back-hit reaction (a type-4 clip, flags `8 | 0x800`, state 16, `+88 = 10`), his waiting bolts cancelled, effect 20; the `+88` flinch counter on any other hit. The tick's prologue: the picked clip, its `+100` replays, and **message 3** when `+92 <= 0` | |
+| 2 | **His body and his death.** `sub_4240E0`'s type-13 gate `sub_47FD90`: only once all six are down, not in 17..19, a bolt travelling WITH his facing, whose segment meets the `AstDos` mesh (the body sweep with a one-mesh filter, the player excluded); the back-hit reaction (a type-4 clip, flags `8 | 0x800`, state 16, `+88 = 10`), his waiting bolts cancelled, effect 20; the `+88` flinch counter on any other hit. The tick's prologue: the picked clip, its `+100` replays, and **message 3** when `+92 <= 0` | **DONE 2026-10-05** (`7431c08`): `astarothGate` / `astarothBand` / `astarothClipOver`; `shootSweepBodies`' one-mesh filter; `ProjectilePool::cancelWaiting`; `FlightEvent::seg`; `GunClip::slot` (clip 14 shares type 0 with five); his picked clip advanced at `flt_6A062C`; a kill takes no generic death path. `engine: astaroth back` (3 mutations). Played headless to the end: 34 back hits, message 3, `shoot.end 1`, the ending runs. Harnesses `--player-at`, `--astaroth-souls`. Limits, labelled: the picked clip is the fixed pick, not `rand()`; effect 20 is its SOUND only (as every shot effect here); every resumed state stands on the stand grid's centre cell (step 3) |
 | 3 | **His tick** `sub_4800C0`: the health bands (animation rate, slot-1 wait), the 9-cell stand / walk grids aimed at the player (`sub_4B2F30`, `sub_4B30A0`/`sub_4B3260`, `sub_4B33C0`), slot 0's fire once a cell, the walk's turn; 17 / 18 / 19 the wind-up, the crouch and the LEAP, the SLAM's damage through `sub_423B10`; 21 the big shot, slot 1 at frame 2; the default arm's re-setup. His weapon slots' objects are UNVERIFIED and are read first | |
 | 4 | **`camera.shake` / `Camera_SetShake`** (0x414DB0): his footstep (30, 10) and the script's 100/100 and 20/20 (drift audit S11, 32 sites). Read the CONSUMER of `cam+196` / `+204` first - unread | |
 | 5 | `ShootAi::tickAstaroth`'s labels replaced; the play-test entry; the drift-audit row | |
