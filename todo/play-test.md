@@ -322,6 +322,15 @@ WHITE on the start menu - before this the viewer simply closed. Then
 `Charger une partie` and a slot should load it like a fresh boot does. The
 same from the sneak's quit tab. `todo/drift-audit.md` T1.
 
+## 27. ASTAROTH'S SOULS (2026-10-05)
+
+The end-game fight (AREA 175, after dialog 335): with the baton, shoot the six
+glowing souls (`PAame01..06`) around the arena. Each should take THREE bolts
+and then vanish, and its TUY creature with it. Bolts on Astaroth himself do
+nothing while a soul remains. He does not move or fight back yet - his own
+tick is `todo/astaroth.md` step 3 - and once all six are down he still cannot
+be hurt (step 2). Before this no soul could be struck at all.
+
 ## What is NOT fixed, so do not report it as new
 
 * **The lift arrival is still black** and the camera is inside the lift-car
