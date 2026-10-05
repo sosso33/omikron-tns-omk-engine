@@ -40956,6 +40956,59 @@ def c_engine_gandhar_grab():
            "its sender and handling, the kill scene's camera)"
 
 
+def c_engine_gandhar_play():
+    r"""THE GANDHAR FIGHT PLAYED THROUGH (`todo/gandhar.md` step 5): from the
+    cave's own start to the cave's end, the script driving every step.
+
+    Zone 313 begins the shoot with the BATON; the bridge (zone 317) plays the
+    meeting and enters him; the player's baton bolts, aimed at where his head is
+    drawn, meet his `D3Tete` while he walks and take him down - from 12 health,
+    two hits (`--gandhar-health`, so that a fixed aim point can do it; the gate
+    itself is `engine: gandhar head`'s); his brain posts message 3 from him;
+    AREA 2's handler ends the shoot, plays his death clip `DEAD.3DA` on the path
+    `D3BassinD1` - he sinks into the lava - then the collapse (camera 365, the
+    set pieces hidden) and `area.goto 43`, the cave's antechamber.
+
+    Asserted in that order, from the viewer's own lines. SHOWN TO FAIL: his
+    brain never posting message 3 (nothing after the last hit).
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    o = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"), "--save",
+         os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "2",
+         "--stand", "1811,-9,1216,0", "--player-at", "60:125,-9,401,0",
+         "--shoot-health", "50000", "--gandhar-health", "12",
+         "--keys", ",".join(["54"] * 60), "--keydelay", "25", "--aim-at", "90,-150,545",
+         "--frames", "1450", "--nodelay", "--no-crowd"],
+        capture_output=True, encoding="latin-1",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    steps = []
+    for label, pat in (
+            ("baton", r"SHOOT MODE ENTER \(Shoot_Enter\) - weapon slot \d+ \(object 40\)"),
+            ("enters", r"GANDHAR ENTERS \(sub_47DFD0\)"),
+            ("head 1", r"hit: damage 6, health 12 -> 6"),
+            ("head 2", r"hit: damage 6, health 6 -> 0"),
+            ("message 3", r"GANDHAR posts message 3 from 187 \(handled\)"),
+            ("shoot ends", r"SHOOT MODE LEAVE"),
+            ("death clip", r"clip \d+ 'DEAD\.3DA' \(\d+ frames\) on path \d+ 'D3BassinD1'"),
+            ("collapse", r"^camera 365: "),
+            ("antechamber", r"area\.goto 43 ")):
+        m = _re.search(pat, o, _re.M)
+        steps.append((label, m.start() if m else -1))
+    found = [l for l, at in steps if at >= 0]
+    ordered = [l for l, _ in sorted((x for x in steps if x[1] >= 0), key=lambda x: x[1])]
+    return (found, ordered == found), ([l for l, _ in steps], True), \
+           "the fight's beats found, and found in this order: the baton, his entry, two " \
+           "head hits, message 3, the shoot's end, his death clip, the collapse, the " \
+           "antechamber"
+
+
 def c_engine_head_camera():
     r"""A WORLD CAMERA ON THE PLAYER'S HEAD - subject kinds 1 and 3
     (`todo/drift-audit.md`, the follow-up to S14).
@@ -43625,6 +43678,7 @@ SLOW = [
     ("engine: astaroth floor", c_engine_astaroth_floor, "todo/astaroth.md played 4; backends/sdl/playframe_world_staged.cpp"),
     ("engine: gandhar head", c_engine_gandhar_head, "todo/gandhar.md 3b; actor/shoothit.h"),
     ("engine: gandhar grab", c_engine_gandhar_grab, "todo/gandhar.md 4; actor/gandhar.h"),
+    ("engine: gandhar play", c_engine_gandhar_play, "todo/gandhar.md 5; actor/gandhar.h"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),
