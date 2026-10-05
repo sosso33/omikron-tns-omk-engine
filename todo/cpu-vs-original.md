@@ -215,3 +215,30 @@ re-pinned at 4 with the reason.
   and it needs a conservative-interval proof to stay exact;
 * **the set's vertices transformed once** - the corner -> vertex index for
   the decor, which `ram-vs-original.md` deferred with its risk.
+
+## Tier C, 2026-10-05 - the particles' depth gate, DONE (the reader's pick, for the Vita)
+
+`Render_SubmitSprites` (0x004969C0) takes a particle's CENTRE into view
+space and submits it only when `depth > flt_6A2BBC` (the camera's near
+plane, `+0x144`) and `depth < dword_6A2B9C` (the clip distance - the
+visible-set radius and the fog's end); no side planes. The port made every
+particle a quad. Now `particleGeometry` gates it the same way - near the
+renderer's own cut (`kNearCut`), far the clip distance in inches - except
+on a frame after a mirror reflected (the engine submits the sprites once a
+PASS, with that pass's camera; the port builds them once a frame).
+
+Measured standing in the street: **88% of the particles left out** (~970 a
+frame, 131 kept), the draw-list zone 0.09 -> 0.04 ms on the M1 - and the
+PICTURE UNCHANGED, as it must be: a camera-facing quad has its four corners
+at its centre's depth, so one behind the near plane was wholly clipped, and
+one past the clip distance is fogged to black, which an additive or a
+multiply particle draws as nothing. On the Vita that is seven times fewer
+quads built on its CPU and filled on its GPU. `engine: particle gate` (the
+builder's own counts, and the frame byte-identical with `OMK_NO_FX_GATE=1`);
+16 particle, effect, mirror and GPU checks green.
+
+The rest of tier C stays as proposed: the span rasterizer and the per-pixel
+divides are the software renderer's alone; the per-face far reject is done
+per mesh already and by the GPU per face; collision in mesh space is the
+Vita's other candidate (the `input: motion` zone), to be chosen from a
+console profile.
