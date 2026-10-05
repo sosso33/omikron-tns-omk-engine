@@ -87,6 +87,27 @@ Two new faults, open until closed below:
    would have run once on the way in and switched itself off, and the
    `--stand` start skipped it.
 
+**Closed 2026-10-06.** (4) was the PORT's: the viewer seats a body a
+placement record puts down by its LOWEST POSED CORNER, latched from the first
+pose of a source, while Astaroth's node is his PELVIS (the root mesh's world
+point, at `+60` plus his clips' root motion). Measured with the new
+`OMK_FEETLOG=<actor>` instrument, he hung ~150 units above the floor for the
+whole fight; drawn pelvis-on-node (as Gandhar, `todo/gandhar.md` 3b) he
+stands within 10 of it, and leaves it only in his LEAP (the engine's root
+motion, 400-700 up for a few frames). His shoulder and back moved down with
+him: `engine: astaroth tick`'s pitch weight 235 -> 155, `engine: astaroth
+back`'s aim 668 -> 824 (his `AstDos`), `engine: astaroth restart` now hides
+actor 34, who stood in his new line of fire on the shortcut route. `engine:
+astaroth floor` (new, shown to fail). (5) is THE ROUTE, as the reader said:
+zone 2937 'Porte Arrivée' is the arrival door - its script switches itself
+off, then plays `Arrivée J` - and the game's transition from AREA 152 (`area.goto
+175, 1, 3`) keeps the player's world point, so he crosses it on the way in.
+The `--stand` start at zone 2935 skipped it, and it fired when he walked back
+by the door. **The faithful start is the door itself**: `--area 175 --stand
+33728,1044,-2488,102` - the arrival plays once (checked: `Arrivée J` at
+frame 3, `Arrivée J 2` at 175), then walk to Astaroth (zone 2935, ~1300 west)
+and through dialog 335.
+
 ## Steps
 
 **Step 3's facts beyond the reading** (`/private/tmp` agent notes folded in):

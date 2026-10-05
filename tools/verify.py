@@ -40230,7 +40230,10 @@ def c_engine_astaroth_back():
     # THE TIMING: his stand cell wraps at frame 44 and 29 -> 16 happens only
     # at a wrap, so souls struck at 46 leave him standing, facing away, past
     # the first bolt (fired 47, landing 50)
-    pk = start(behind + ["--astaroth-health", "6"], "32206,668,-2507", 3, 40, 140, 46)
+    # (aimed at y 668 until 2026-10-06, his back while he FLOATED ~150 up; he
+    # is drawn pelvis-on-node now and his `AstDos` sits at 824 - `engine:
+    # astaroth floor`)
+    pk = start(behind + ["--astaroth-health", "6"], "32206,824,-2510", 3, 40, 140, 46)
     pf = start([], "32206,668,-2507", 16, 8, 120)
     pl = start(behind, "32222,860,-2504", 2, 40, 60, 46)      # his legs
     k, f, l = pk.communicate()[0], pf.communicate()[0], pl.communicate()[0]
@@ -40292,6 +40295,11 @@ def c_engine_astaroth_tick():
     Shown to fail: the aim's pitch sign flipped (the weights move); the 195
     reach to 0 (he never winds up); the shot-sprite lookup back to an exact
     compare (no row for `AstMaing`).
+
+    **2026-10-06: the pitch weight 235 -> 155.** He is drawn pelvis-on-node
+    now (`engine: astaroth floor`; a reader saw him float ~150 up), so his
+    left shoulder - where the aim is measured from - is ~130 lower and the
+    pitch to the player smaller. A consequence of the height, not of the aim.
     """
     import subprocess, re as _re
     eng = os.path.join(ROOT, "engine")
@@ -40328,7 +40336,7 @@ def c_engine_astaroth_tick():
             first.get("0"), first.get("1"), states,
             (slam.group(1), int(slam.group(2)) < 78) if slam else None,
             (landing.groups() if landing else None), (gauge.group(1) if gauge else None)), \
-           (("449", "50", "45", "235", "200", "350", "400", "250"),
+           (("449", "50", "45", "155", "200", "350", "400", "250"),
             ("Tire000001", "Tire000000"),
             ("Tire000001", "78.0", "15", "0.0", "AstMaing", "AstMain"),
             ("Tire000000", "39.0", "25", "50.0", "AstBuste", "AstBust"),
@@ -40750,7 +40758,10 @@ def c_engine_astaroth_restart():
     outlived the phase, so after the player died and the death handler ran the
     phase again his setup never re-ran, the callback stayed disarmed, and every
     bolt on a soul was a plain world hit. The save's player has 10 health, so
-    Astaroth kills him at frame 32 - exactly how the reader met it.
+    Astaroth kills him early - exactly how the reader met it. Actor 34 (the
+    cutscene's Astaroth, whom the real entry hides) is hidden by the
+    `--hide-show` instrument: since Astaroth is drawn pelvis-on-node his
+    muzzle is ~130 lower, and on this shortcut route 34 stands in its way.
 
     Asserted: the two shoot entries and the two setups (each entry followed by
     one), and soul `PAame02` struck three times and DOWN after the restart -
@@ -40768,6 +40779,7 @@ def c_engine_astaroth_restart():
         [play, fr, os.path.join(ROOT, "tables"), "--save",
          os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "175",
          "--address", "526", "--zone-enable", "2936", "--zone-disable", "2935",
+         "--hide-show", "34,1,100000,0",
          "--hold", "0*150,k54*1,0*19,k54*1,0*19,k54*1,0*19,k54*1,0*60",
          "--aim-at", "32370,275,-1475", "--frames", "260", "--nodelay"],
         capture_output=True, encoding="latin-1",
@@ -40829,8 +40841,9 @@ def c_engine_astaroth_floor():
                "OMK_FEETLOG must report his lowest corner"
     ground = [g for g in gaps if g < 100.0]
     air = len(gaps) - len(ground)
-    worst = max(abs(g) for g in ground)
-    return (len(ground) >= 35, worst < 10.0, 2 <= air <= 8), (True, True, True), \
+    worst = max(abs(g) for g in ground) if ground else None
+    return (len(ground) >= 35, worst is not None and worst < 10.0, 2 <= air <= 8), \
+           (True, True, True), \
            "at least 35 of his 43 samples on the ground, none of them more than 10 off " \
            "the floor, and 2 to 8 in the air (his leaps)"
 
