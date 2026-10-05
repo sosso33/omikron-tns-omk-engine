@@ -181,7 +181,8 @@ public:
         kTimerStopped   = 0x01,   // set = halted; `Timer_Elapsed` reads 0 when
                                   //   the flags are EXACTLY 1
         kTimerCountdown = 0x04,   // `Timer_Format` shows value - elapsed
-        kTimerVisible   = 0x08,   // `sub_41E480` draws the HH:MM:SS readout
+        kTimerVisible   = 0x08,   // `sub_41E480` draws the readout - MINUTES,
+                                  //   seconds, HUNDREDTHS, not HH:MM:SS
         kTimerExpired   = 0x10,   // frozen at the value; set by the expiry
     };
 

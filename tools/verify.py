@@ -21258,7 +21258,11 @@ def c_engine_save_round_trip():
     * **the file is a save file** - 8402344 bytes with the settings over its
       head, created from nothing by `sub_4092A0`'s create arm;
     * **the slot reads back** with the name, day, time, area and scene the
-      writing run had;
+      writing run had - and the time is the CLOCK'S, which runs: 14:14:20,
+      three in-game seconds past the fixture's 14:14:17, because one
+      `Clock_Tick` step (166 units of a 3600000-unit day, ~4 game seconds)
+      lands before the harness writes. It read 14:14:17 until 2026-10-05,
+      when the clock had no caller (`todo/drift-audit.md` S1);
     * **the position round-trips MINUS ONE PER AXIS.**  `State_Apply`
       subtracts a whole world unit that `State_Save` never adds (GAME_STATE
       5), so a save and a reload move the player by exactly (-1, -1, -1) and
@@ -21322,7 +21326,7 @@ def c_engine_save_round_trip():
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return (size, back, drift, faceSame, shot), \
-           (8402344, ("RoundTrip", "12 Nadim 7216 14:14:17", 237, 57),
+           (8402344, ("RoundTrip", "12 Nadim 7216 14:14:20", 237, 57),
             (-1, -1, -1), True, (12288, True, True, 0)), \
            "the size of a save file the port created from nothing; the slot " \
            "read back - name, date and time, area and the scene over it; how " \
@@ -39370,9 +39374,12 @@ def c_engine_script_timer():
     laid out - `%2d:%02d:%02d` of minutes, seconds and hundredths, one line,
     counting DOWN from 14:59 a second per 30 frames.
 
-    Shown to fail: without `tickClock()` at the end of `Session::frame` the
-    clock steps 0, the timer never expires and the readout stands at 15:00;
-    without the readout block the viewer prints no readout at all.
+    Shown to fail (2026-10-05): without `tickClock()` at the end of
+    `Session::frame` the clock steps 0, nothing expires (message -1, flags
+    12) and the readout never leaves 15:00, so neither the first-at-14:59 nor
+    the one-a-second row holds; with the `layOutBlock` call removed the
+    readout lines still print but report nothing laid out, and only the last
+    element goes red - the line is the CONSUMER'S count, not the intention.
     """
     import subprocess, re as _re
     eng = os.path.join(ROOT, "engine")
@@ -39753,7 +39760,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (550, [], 1, []), \
+           (551, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \

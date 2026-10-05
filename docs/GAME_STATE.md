@@ -528,7 +528,8 @@ Sites: 13 of 111, 15 of 112, 12 each of 113 and 114 (always `900` and `12`),
 **The flags**, from `Timer_Format` (0x0041E300) and the HUD tick
 (`sub_41E480`): bit 0 halted; bit 2 count **down** (the display shows
 `value - elapsed`, and `Timer_Elapsed` does **not** apply it); bit 3 draw the
-`HH:MM:SS` readout; bit 4 expired — set when the clock passes `start + value`,
+readout - `%2d:%02d:%02d` of **minutes, seconds and hundredths** (`v2 % 1000 /
+10`), not `HH:MM:SS` as this said until 2026-10-05; bit 4 expired — set when the clock passes `start + value`,
 which also **posts message 18** (`Game_RaiseEvent(43, {18})`, so a subscribed
 script is what a running-out timer actually does) and freezes the reading at
 the value. Mode 12 is `countdown | visible`, and with the `| 1` the setter adds
@@ -541,6 +542,34 @@ Ported 2026-09-02: ops 110–115 execute on `GameState`'s timer (111 → `timerS
 112 → `timerStart`), and `var.set.timer` stores `Timer_Elapsed`'s three-way read.
 Op 110 has **one** shipped site over the 5958-slot corpus (AREA 59: reset, mode 12,
 set 900, end).
+
+**And RUN, 2026-10-05** (`todo/drift-audit.md` S1): until then nothing called
+the clock or the expiry, so the clock stood where the save left it, op 115 read
+0 and no countdown ever ran out. `Game_Tick` (0x004200F0) ends
+`sub_41E480(); sub_41E7A0(); Clock_Tick();` with no gate before them - every
+frame, under a conversation, a screen or the pause (whose delta is 0) - and
+`Session::tickClock` does the same at the end of the Session's frame.
+`sub_41E480`'s HEAD is the readout: `Text_DrawBlock(0, 20, width, 50, text,
+{0x28, ..., 67})` - `TEXTP_SLOT2 | TEXTP_ALIGN_8`, face 67 `'C'`, centred, the
+default white; expired, it shows the value whatever the countdown bit says.
+The viewer draws it after the breath gauge.
+
+Two things the run showed:
+
+* **`Clock_Tick` takes ONE 166-unit step a call** and carries the rest of the
+  delta in its accumulator, so a frame above 5 leaves a debt that keeps
+  stepping the clock through later frames - through a pause too. The engine's
+  own delta is capped at 3 (BOOT 4), where the carry stays under 8 and a pause
+  moves the clock one step at most; only a delta the engine cannot produce
+  shows it.
+* **The Tetra countdown's message 18 is the TIME-OUT.** In AREA 77 (Jaunpur
+  Tetra 2) zone 1532 'bombe 1', pressed, places the first bomb and starts
+  `timer.mode 12`, `timer.set 900` - fifteen minutes; when they run out the
+  AREA's own handler at 16901 fades to black, `timer.stop`s, sets
+  `Restart Total Tetra`, ends the shoot phase, hides the raid's people and
+  sends the player back to AREA 61, the first Tetra area.
+
+`engine/tools/timer_probe.cpp`, `verify.py: engine: script timer`.
 
 ## 7. The new game — what `IAM\START` actually says
 

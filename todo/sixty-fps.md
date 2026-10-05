@@ -83,9 +83,10 @@ CHECKED against the original before it is touched:
 | the UI cloud (`sub_4B1B00`), driven by `n` | per frame or per ms? |
 | `input/bindings.h` auto-repeat, the dialogue scroll | UI-only; per frame in the engine? |
 
-And outside this task: `GameState::clockTick` has NO caller in `engine/`, so
-the calendar never advances; and `Sliders_Tick`'s `++dword_539938` has no
-reader found.
+And outside this task: `GameState::clockTick` had NO caller in `engine/`, so
+the calendar never advanced - FIXED 2026-10-05 (`todo/drift-audit.md` S1,
+`Session::tickClock`, by the frame delta); and `Sliders_Tick`'s
+`++dword_539938` has no reader found.
 
 ## 3. Steps
 

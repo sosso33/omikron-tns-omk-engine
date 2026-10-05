@@ -237,6 +237,22 @@ shared atlas and may show a thin line of their neighbour at the edge (a known
 limit, never clamped); and anything that now looks blurry where the original
 looked sharp.
 
+## 19. THE TETRA COUNTDOWN - the clock and the script timer (2026-10-05)
+
+```
+build/omk-play ~/Documents/omk/fr ../tables --save ../traces/save-appart.bin \
+    --area 77 --zone-enable 1532 --stand 11969,3899,9852,358
+```
+ENTER in the zone places the first bomb. **A countdown should appear centred
+at the top, `14:59:..`**, the last pair HUNDREDTHS (the engine's format is
+minutes, seconds, hundredths), losing a second each real second. Let it run
+out - fifteen minutes - and the AREA's time-out should fade to black and send
+you back to AREA 61. The `--stand` point is the zone's CENTRE and is on the
+edge of the floor: step back before pressing, or he walks off it - that is
+the harness, not the timer. Also worth a look: the sneak's date and time now
+MOVE (an in-game day is one real hour), and a save made after playing a while
+carries the later time. `todo/drift-audit.md` S1.
+
 ## What is NOT fixed, so do not report it as new
 
 * **The lift arrival is still black** and the camera is inside the lift-car
