@@ -833,7 +833,23 @@ void PlayState::inputMotion() {
                 double c[3] = {0, 0, 0}, b[3] = {0, 0, 0};
                 long n = 0;
                 const auto rit = w.restXyzOfMesh.find(mi);
-                const auto& idxs = w.cornersOfMesh[static_cast<std::size_t>(mi)];
+                // THE INDEX IS BUILT BY THE FIRST PLACEMENT (`patchIndexReady`,
+                // above): before it - frame 0 of a scene, or a set nothing has
+                // moved - the mesh's corners are found by `cornerMesh`, in the
+                // same ascending order. Reading the unbuilt index crashed every
+                // run with this instrument on from `f9fad39` (`engine: slot pool`).
+                static std::vector<std::uint32_t> scan;
+                const std::vector<std::uint32_t>* idxp = nullptr;
+                if (static_cast<std::size_t>(mi) < w.cornersOfMesh.size()) {
+                    idxp = &w.cornersOfMesh[static_cast<std::size_t>(mi)];
+                } else {
+                    scan.clear();
+                    const std::size_t nc = std::min(w.geo.corners.size(), w.geo.cornerMesh.size());
+                    for (std::size_t c = 0; c < nc; ++c)
+                        if (w.geo.cornerMesh[c] == mi) scan.push_back(static_cast<std::uint32_t>(c));
+                    idxp = &scan;
+                }
+                const auto& idxs = *idxp;
                 for (std::size_t k = 0; k < idxs.size(); ++k) {
                     const omk::Corner& cc = w.geo.corners[idxs[k]];
                     c[0] += cc.x; c[1] += cc.y; c[2] += cc.z;
