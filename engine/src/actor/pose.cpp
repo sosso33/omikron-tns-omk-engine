@@ -619,6 +619,27 @@ void applyPose(Geometry& g, const Geometry& rest,
         faceVerts->size() == 3u * static_cast<std::size_t>(face->count) &&
         rest.cornerVertex.size() == rest.corners.size();
 
+    // ONCE A VERTEX, NOT ONCE A CORNER (todo/cpu-vs-original.md tier B): a
+    // vertex's corners - three to six, one a face that meets it - were each
+    // rotated, position and normal, though their inputs are the same. The
+    // original transforms each VERTEX once into its pool (`sub_4947F0`).
+    // `firstOf[v]` is the corner that posed vertex v; a later corner of v
+    // takes its position and normal - but only when its own mesh, rest
+    // position and rest normal are bitwise that corner's, so the answer is
+    // exactly the one it would have computed whatever the data holds.
+    const bool byVertex = rest.cornerVertex.size() == rest.corners.size();
+    std::int32_t vmax = -1;
+    if (byVertex)
+        for (const std::int32_t v : rest.cornerVertex) vmax = std::max(vmax, v);
+    small_buf<std::int32_t, 2048> firstOf(static_cast<std::size_t>(vmax + 1), -1);
+    const auto sameInputs = [&](std::size_t a, std::size_t b) {
+        const Corner& x = rest.corners[a];
+        const Corner& y = rest.corners[b];
+        return rest.cornerMesh[a] == rest.cornerMesh[b] &&
+               std::memcmp(&x.x, &y.x, 3 * sizeof(float)) == 0 &&
+               std::memcmp(&x.nx, &y.nx, 3 * sizeof(float)) == 0;
+    };
+
     for (std::size_t i = 0; i < g.corners.size(); ++i) {
         const Corner& rc = rest.corners[i];
         const std::int32_t mi = rest.cornerMesh[i];
@@ -632,6 +653,20 @@ void applyPose(Geometry& g, const Geometry& rest,
             gc.u = rc.u; gc.v = rc.v;
             gc.r = rc.r; gc.g = rc.g; gc.b = rc.b;
             gc.phase = rc.phase;
+        }
+        if (byVertex) {
+            const std::int32_t v = rest.cornerVertex[i];
+            if (v >= 0) {
+                const std::int32_t f = firstOf[static_cast<std::size_t>(v)];
+                if (f >= 0 && sameInputs(static_cast<std::size_t>(f), i)) {
+                    Corner& gc = g.corners[i];
+                    const Corner& fc = g.corners[static_cast<std::size_t>(f)];
+                    gc.x = fc.x; gc.y = fc.y; gc.z = fc.z;
+                    gc.nx = fc.nx; gc.ny = fc.ny; gc.nz = fc.nz;
+                    continue;
+                }
+                if (f < 0) firstOf[static_cast<std::size_t>(v)] = static_cast<std::int32_t>(i);
+            }
         }
         const Mesh& m = meshes[static_cast<std::size_t>(mi)];
         const MeshPose& mp = pose[static_cast<std::size_t>(mi)];
