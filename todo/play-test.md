@@ -357,6 +357,25 @@ stands idle until something moves him. The Shooting gallery is the place to
 see it: its third gunman (240) used to wait; now he turns and fires as soon as
 the first shot is fired. `todo/drift-audit.md` S13.
 
+## HEADLESS PASS over 19-29 (2026-10-05)
+
+Each item driven through the viewer with its check's own command, frames
+rendered at the moments it names and read by eye (not the same as playing):
+
+| item | verdict |
+|---|---|
+| 19 Tetra countdown | readout centred at the top, counting down ~1 s per 30 frames; the scene behind could not be judged - the `--stand` point drops him off the floor's edge, as the item warns |
+| 20 Namtar | PASSES: after the conversation ENTER gives "Je n'ai rien de nouveau a dire a Namtar" (zone 992), never the conversation again |
+| 21 hide / show | PASSES: Telis by the wall at 250, gone at 280, back in the same spot and pose at 310 (seen through `--eye`/`--at`) |
+| 22 checkpoint | not visual; `engine: inventory checkpoint` only |
+| 23 game restart | PASSES: the street at 58, the start menu fading in from white at 66, whole at 120 |
+| 24 lift | PASSES: up 158 units, still there at 230/260, down again by 480; the frame at 230 shows him on the upper floor |
+| 25 ladder | the suspend / put-down / resume sequence is right (41 / 83 / 104), but **the climb's camera is wrong** - sky from 60 to 102, Kay'l never in shot: `todo/drift-audit.md` S14 |
+| 26 quit to menu | **FAILS: the screen stays WHITE after the quit** (the menu opens behind it): `todo/drift-audit.md` S15 |
+| 27 Astaroth | PASSES as far as rendered: soul 5 glowing at 130, gone in a green burst at 140; his walk and leap were looked at earlier the same day |
+| 28 camera shake | not visual at 640x480 (a few units of Y); `engine: camera shake` reads it from the view |
+| 29 gunmen react | the log shows 240 alerted at 43 and firing; the gunmen are behind the player's view in the gallery run |
+
 ## What is NOT fixed, so do not report it as new
 
 * **The lift arrival is still black** and the camera is inside the lift-car
