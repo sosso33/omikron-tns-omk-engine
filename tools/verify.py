@@ -10737,16 +10737,17 @@ def c_engine_pause():
     mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
     play = os.path.join(eng, "build", "omk-play")
     if mk.returncode != 0 or not os.path.exists(play):
-        return static + (True,) * 8, (True,) * 18, \
+        return static + (True,) * 9, (True,) * 19, \
                "no SDL - the frontend is optional (PORTING A8)"
     env = dict(os.environ, SDL_VIDEODRIVER="dummy")
     fr, tb = omkpaths.data_root(), os.path.join(ROOT, "tables")
-    def run(hold, frames="140"):
+    def run(hold, frames="140", dump=None):
         return subprocess.run(
             [play, fr, tb, "--software", "--res", "640x480", "--nofmv",
              "--no-crowd", "--save", save, "--area", "0",
              "--stand", "1804,0,-6890,336", "--frames", frames,
-             "--hold", hold], capture_output=True, text=True, env=env).stdout
+             "--hold", hold] + (["--dump", dump] if dump else []),
+            capture_output=True, text=True, env=env).stdout
     # ESC, then ENTER on the row the screen opens on - `Reprendre le jeu`
     a = run("0*40,k1*4,0*10,k28*2,0*60")
     # ESC, DOWN to `Quitter le jeu`, ENTER, then ENTER again on the confirm's
@@ -10754,7 +10755,19 @@ def c_engine_pause():
     # ENTER lands on `Reprendre` and closes
     b = run("0*40,k1*4,0*10,k208*2,0*8,k28*2,0*10,k28*2,0*10,k28*2,0*40")
     # ...and the same but UP onto `Oui`
-    c = run("0*40,k1*4,0*10,k208*2,0*8,k28*2,0*10,k200*2,0*8,k28*2,0*40")
+    import tempfile
+    cdump = os.path.join(tempfile.mkdtemp(prefix="omk-pause-"), "quit.bin")
+    c = run("0*40,k1*4,0*10,k208*2,0*8,k28*2,0*10,k200*2,0*8,k28*2,0*40", dump=cdump)
+    # ...and the START MENU IS DRAWN after it, 50 frames on: the restart's
+    # fade from white has to ADVANCE, which a `--frames` run's frame delta
+    # stuck at the pause's 0 never let it do (todo/drift-audit.md S15) - the
+    # last frame was pure white, 0xFFFF in every pixel
+    try:
+        cb = open(cdump, "rb").read()
+        white = sum(1 for i in range(0, len(cb), 2) if cb[i] == 0xFF and cb[i + 1] == 0xFF)
+        menuDrawn = len(cb) > 0 and white * 2 < len(cb) // 2
+    except OSError:
+        menuDrawn = False
     ran = (
         "ESC -> screen 31 PAUSE GAME" in a,
         "screen 31 opened by the player" in a,
@@ -10768,8 +10781,9 @@ def c_engine_pause():
         # port ended the run here until 2026-10-05 (todo/drift-audit.md T1)
         bool(re.search(r"^frame \d+: game\.restart - Game_NewGame, area 118", c, re.M)),
         "restart - the frontend dropped the player" in c,
+        menuDrawn,
     )
-    return static + ran, (True,) * 18, \
+    return static + ran, (True,) * 19, \
            "`Game_RunLoop`'s ESC poll - the push, the pause flag it is " \
            "guarded by, the screen id and that the call is UI_LoadScreen; " \
            "the four item callbacks' bytes, `sub_409090`'s five, and the " \
@@ -10778,7 +10792,8 @@ def c_engine_pause():
            "ESC opens it over a live street, the world keeps drawing, " \
            "`Reprendre le jeu` closes it, and of the confirm's two rows only " \
            "`Oui` asks for the quit - which restarts the game at AREA 118 with " \
-           "the old player dropped"
+           "the old player dropped, and the start menu is DRAWN after it - " \
+           "not the white the fade began on"
 
 
 def c_engine_screen_close():

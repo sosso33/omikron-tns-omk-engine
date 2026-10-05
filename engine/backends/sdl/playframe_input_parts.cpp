@@ -311,10 +311,14 @@ void PlayState::inputPause() {
         dt *= speed;                     // --speed, the engine's own trick
         session.setFrameSeconds(dt);
         frameSec = dt;
-    } else if (speed != 1.0) {
+    } else {
         // A frame-bounded run keeps the fixed 1/30 so the headless checks
-        // stay deterministic; asking for a speed scales that too, and at
-        // the default 1.0 nothing moves.
+        // stay deterministic; asking for a speed scales that too. Set EVERY
+        // frame: the pause below writes 0 and only this puts it back - it
+        // was set only for a speed other than 1, so after any pause a
+        // `--frames` run stayed at a delta of 0 for good, and a quit to the
+        // start menu stayed WHITE, its fade never advancing
+        // (todo/drift-audit.md S15 - a harness fault, never a player's)
         frameSec = speed / 30.0;
         session.setFrameSeconds(frameSec);
     }
