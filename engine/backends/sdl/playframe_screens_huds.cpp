@@ -330,6 +330,45 @@ void PlayState::screensHuds() {
                         "right edge %d, %d quads %d blits\n", br.percent,
                         int(player->breathLeftMs()), br.top, br.quads, br.blits);
     }
+    // ---- THE SCRIPT TIMER'S READOUT (`todo/drift-audit.md` S1) --------
+    //
+    // `sub_41E480`'s head, every `Game_Tick`: nothing while the timer is
+    // halted (bit 0); under bit 3 the time, through `Text_DrawBlock(0, 20,
+    // width, 50, text, {0x28, -1, 67})` - TEXTP_SLOT2 | TEXTP_ALIGN_8, so
+    // face 67 `'C'`, CENTRED, the default white, and below 640x480 the size
+    // step to 76 `'L'` that `Text_DrawBlock` makes over any face. The text
+    // is `%2d:%02d:%02d` of MINUTES, SECONDS and HUNDREDTHS (`v2 % 1000 /
+    // 10`), not hours. Expired (bit 4) it shows the VALUE itself, whatever
+    // the countdown bit says; otherwise `clock - start`, and `value -` that
+    // under bit 2 - the Tetra raids' mode 12. The `flags == 1` arm inside is
+    // unreachable behind the bit-0 return and is left out.
+    {
+        using GS = omk::GameState;
+        const int f = state.timerFlags();
+        if (!(f & GS::kTimerStopped) && (f & GS::kTimerVisible) && !omk::envSet("OMK_NOUI")) {
+            int v = 0;
+            if (f & GS::kTimerExpired) {
+                v = state.timerValue();
+            } else {
+                v = state.clock() - state.timerBase();
+                if (f & GS::kTimerCountdown) v = state.timerValue() - v;
+            }
+            char text[48];
+            std::snprintf(text, sizeof text, "%2d:%02d:%02d",
+                          v / 1000 / 60 % 60, v / 1000 % 60, v % 1000 / 10);
+            omk::TextBlock blk;
+            blk.left = 0;  blk.top = 20;
+            blk.right = fb.w;  blk.bottom = 50;
+            blk.font = (fb.w < 640 || fb.h < 480) ? 'L' : 'C';
+            blk.style = 8;
+            blk.screenW = fb.w;  blk.screenH = fb.h;
+            omk::BlockResult res;
+            lay.layOutBlock(&fb, text, blk, &res);
+            if (n % 30 == 0)
+                std::printf("    script timer readout \"%s\": %d line(s), advance %d\n",
+                            text, res.lines, res.advance);
+        }
+    }
     // ---- THE SHOOT HUD, screen 34 (`todo/shoot-mode.md` 8.3) --------
     //
     // `Shoot_Enter` opens it and it runs under the mode as any screen

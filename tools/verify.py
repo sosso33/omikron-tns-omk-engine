@@ -39349,6 +39349,84 @@ def c_object_lists():
            "three stored lists"
 
 
+def c_engine_script_timer():
+    r"""THE CLOCK AND THE SCRIPT TIMER RUN (`todo/drift-audit.md` S1).
+
+    `Game_Tick` (0x004200F0) ends `sub_41E480(); sub_41E7A0(); Clock_Tick();`
+    with no gate, and until 2026-10-05 the port had `GameState::clockTick` and
+    `timerCheckExpiry` with no caller: the clock never moved, `var.set.timer`
+    read 0, and the twelve Tetra-bomb countdowns never ran out.
+
+    `engine/tools/timer_probe.cpp`, on the shipped scripts: 300 frames at
+    delta 1 step the clock 59 x 166 (the accumulator passes 5 STRICTLY);
+    AREA 77's zone 1532 'bombe 1', pressed, starts `timer.mode 12`, `timer.set
+    900` (flags 12, 900000 ms); at the engine's largest delta, 3, the expiry
+    fires the first time `clock - start` passes 900000, and message 18 is
+    answered by the AREA's handler at 16901 - the time-out, which stops the
+    timer (flags 29) - and its context runs; a pause, delta 0, moves nothing.
+
+    And the READOUT, `sub_41E480`'s head under flag 8, in the viewer: the same
+    zone pressed through `--hold`, the line printed from what `layOutBlock`
+    laid out - `%2d:%02d:%02d` of minutes, seconds and hundredths, one line,
+    counting DOWN from 14:59 a second per 30 frames.
+
+    Shown to fail: without `tickClock()` at the end of `Session::frame` the
+    clock steps 0, the timer never expires and the readout stands at 15:00;
+    without the readout block the viewer prints no readout at all.
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    tb = os.path.join(ROOT, "tables")
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s", "build/timer_probe", "play"], cwd=eng,
+                       capture_output=True)
+    probe = os.path.join(eng, "build", "timer_probe")
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not (os.path.exists(probe) and os.path.exists(play)):
+        return ("build failed",), ("built",), "engine/ must build"
+    out = subprocess.run([probe, fr, tb], capture_output=True,
+                         encoding="latin-1").stdout
+    def line(key):
+        for ln in out.splitlines():
+            if ln.startswith(key + " "):
+                return dict(zip(ln.split()[1::2], ln.split()[2::2]))
+        return {}
+    ck, st, ex, pa = line("clock"), line("start"), line("expiry"), line("pause")
+    if not (ck and st and ex and pa):
+        return ("probe printed", bool(ck), bool(st), bool(ex), bool(pa)), \
+               ("probe printed", True, True, True, True), \
+               "timer_probe must print its four lines"
+    elapsed = int(ex.get("elapsed", -1))
+
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    r = subprocess.run([play, fr, tb, "--save",
+                        os.path.join(ROOT, "traces", "save-appart.bin"),
+                        "--area", "77", "--zone-enable", "1532",
+                        "--stand", "11969,3899,9852,358", "--nofmv", "--nodelay",
+                        "--no-crowd", "--hold", "0*10,k28*2,0*200",
+                        "--frames", "100", "--res", "640x480"],
+                       capture_output=True, env=env, encoding="latin-1")
+    reads = _re.findall(r'script timer readout "\s*(\d+):(\d+):(\d+)": (\d+) line\(s\), '
+                        r'advance (\d+)', r.stdout)
+    secs = [int(m) * 60 + int(s) for m, s, _h, _l, _a in reads]
+    return (int(ck["step"]), int(st["flags"]), int(st["value"]),
+            900000 < elapsed <= 900000 + 166, int(ex["message"]), ex["table"],
+            int(ex["offset"]), int(ex["ran"]), int(ex["flags"]), int(pa["clock_moved"]),
+            len(reads) >= 2, bool(secs) and secs[0] == 899,
+            all(b2 == a2 - 1 for a2, b2 in zip(secs, secs[1:])),
+            all(l == "1" and int(a) > 0 for _m, _s, _h, l, a in reads)), \
+           (9794, 12, 900000, True, 18, "area", 16901, 1, 29, 0,
+            True, True, True, True), \
+           "the clock's step over 300 frames; the timer the zone started " \
+           "(flags, value); expiry just past 900 s, message 18, its table and " \
+           "handler, the handler run, the flags after it, a pause's clock move; " \
+           "and the viewer's readouts: at least two, the first at 14:59, each " \
+           "a second below the last, each one laid-out line - got %s" % (
+               [":".join(x[:3]) for x in reads],)
+
+
 def c_game_clock():
     r"""GAME_STATE 6: the Omikron calendar - 41 days, 13 months, year 7216.
 
@@ -41903,6 +41981,7 @@ SLOW = [
     ("engine: fight loser pose", c_engine_fight_loser_pose, "todo/fight-mode 15.16"),
     ("engine: fall reaction", c_engine_fall_reaction, "todo/falls.md 1"),
     ("engine: run over", c_engine_run_over, "todo/falls.md 4"),
+    ("engine: script timer", c_engine_script_timer, "todo/drift-audit.md S1; GAME_STATE"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),

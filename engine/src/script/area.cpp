@@ -2396,6 +2396,8 @@ void Session::frame() {
         // gate - so touches and arms keep landing in the prompt slots during
         // a conversation, and the pump reads them once it closes.
         scanZonesNow();
+        // ...and the clock, which `Game_Tick` ends with whatever is up
+        tickClock();
         // With no morph directory attached there is no conversation to play,
         // and the CALLER owns closing it - which is the contract every headless
         // run has had since before this existed ("closeDialogs is the one thing
@@ -2476,6 +2478,32 @@ void Session::frame() {
     // is the whole of the one-shot latch (case 7 writes 4, pump case 4
     // writes 5).
     scanZonesNow();
+
+    // ...and `Game_Tick`'s tail: the timer, then the clock.
+    tickClock();
+}
+
+// THE CLOCK AND THE SCRIPT TIMER (`todo/drift-audit.md` S1). `Game_Tick`
+// (0x004200F0) ends `sub_41E480(); sub_41E7A0(); Clock_Tick();` with no gate
+// before them, so both run every frame - under a conversation, under a
+// screen, and under the pause, where the delta is 0. Until this the port
+// had both halves (`GameState::timerCheckExpiry` / `clockTick`) and no
+// caller: the clock stood where the save left it, `var.set.timer` read 0
+// and the twelve Tetra-bomb countdowns never ran out.
+//
+// `sub_41E480`'s expiry: once the clock passes start + value it raises
+// `Game_RaiseEvent(43, v15)` with `v15[0] = 18` and nothing written to
+// `v15[1]`, so the sender is stack garbage; -1 stands for it, as for
+// message 26. The handler's context runs from the next frame's pump.
+// Its other half, the readout under flag 8, is the viewer's
+// (`PlayState::screensHuds`).
+void Session::tickClock() {
+    if (state_.timerCheckExpiry()) {
+        const bool handled = postMessage(18, -1);
+        std::printf("frame %ld: script timer expired at clock %d - message 18 %s\n",
+                    frameNo_, state_.clock(), handled ? "handled" : "unsubscribed");
+    }
+    state_.clockTick(static_cast<float>(frameDelta()));
 }
 
 void Session::runContext(int i) {

@@ -845,6 +845,10 @@ public:
     // One frame of both, in FRAMES (the engine's `flt_4C30D8`).
     void tickFades(float dt = 1.0f);
     void tickBumpCooldown();
+    // `Game_Tick`'s last calls: `sub_41E480` (the script timer's expiry,
+    // which raises message 18) then `Clock_Tick` (0x0041E600), by the frame
+    // delta. Every frame, a conversation's included; 0 under the pause.
+    void tickClock();
     // `dword_4E6C7C`: the boot AREA's startup context (`Game_NewGame` stores
     // the active slot's block +0 after `State_Apply`), cleared by `end` when
     // ANY context ends action 1 and by event 5 when that context answers a
