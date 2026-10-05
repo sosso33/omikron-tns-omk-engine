@@ -143,3 +143,37 @@ geometry item `ram-vs-original.md` deferred).
 original's method, and a new reference picture); dropping the per-pixel
 divides; the per-face far reject and the particles' depth gate (both
 TOWARD the original); collision in mesh space as the original does it.
+
+## Tier A DONE 2026-10-05 - the software renderer 7x, frames identical
+
+| cut | measured |
+|---|---|
+| the frame hash out of `drawGeometry` (`surfaceHash()`, asked for once) | 300 uncapped street frames **23.0 -> 3.2 s**; capped, the software renderer HOLDS 30 fps (median 33.1 ms, raster 11.0 of it, where it ran at 13.7 fps) - `engine: raster cost` (0.125 ms a call; 1.013 with the hash put back) |
+| the profiler's `.state` written on a change, the frame counter once a second | the 0.37 ms a captured frame `tellState` cost (sampled in step 1) - the instrument's own, so release builds never had it |
+| Vulkan: the readback copy recorded only when a frame is read back | a 640x480x4 GPU copy a frame off the GPU path; within noise on the M1 |
+| GLES: the six clock reads a draw compile out of release builds | ~1500 reads a frame on the Vita's release build; not measurable here |
+| the shadows' log-only corner scan behind `OMK_SHADOWLOG`, the draw list's capacity kept, a staged body's idle pose composed once (keyed on the model and its name), the sampler's wrap by mask | small; frames identical |
+
+Frames identical against the build before the work (software, Vulkan, a
+walk). 39 checks green but one: `engine: profiler`, whose "textures over 5
+MB" predated the palette textures (`ram-vs-original.md` tier C, 4.77 MB) -
+re-pinned at 4 with the reason.
+
+**Taken OUT of tier A, and why** (each was proposed there):
+* **the Vulkan waits moved to the point of reuse and one submit a frame** -
+  seven one-shot submits end in `vkQueueWaitIdle` (uploads, the present
+  pass, the shadow pass), so the CPU/GPU overlap needs every one audited:
+  not small. And Vulkan runs only on modern hosts (here 85% idle); the
+  constrained targets are GLES (the Vita) and GL1 (the G3). -> tier B;
+* **the per-row bound on the triangle scan** - exact only with a
+  conservative interval proven against the float edge tests; the software
+  renderer is no target's -> tier B;
+* **the staged bodies composing only the drawn skeleton** - NOT exact: a
+  staged body's shadows find their bones by the LAST name match
+  (`shadowBonesFor`), which in a four-skeleton crowd model can be an
+  undrawn skeleton's bone, so the mask could move a shadow;
+* **`applyPose`'s per-corner arrays copied only when the rest changes** - the
+  dirty lists in them are rewritten by the GLES upload, so skipping the copy
+  needs a validity rule for each: a modest gain for a stale-data risk;
+* the parent table cached a model, and the motion gather's strings - tens
+  of microseconds.
