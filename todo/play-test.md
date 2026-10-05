@@ -379,7 +379,7 @@ animations, then sinking into the lava, waiting, rising again - turning to
 face you, with the boss health bar on the right. Killing him ends the shoot
 and runs the collapse. Since step 2 he WALKS toward you at 6 units a frame
 during his walking actions and stops at his floor's edge (sliding along it).
-NOT YET: he does not fire, strike or grab (steps 3-4). To check by eye: is he drawn at the right HEIGHT over the
+Since step 3 he FIRES: a slow bolt from his tail once in each of his tail-attack animations (damage 20) and a rapid stream from his head (damage 10). NOT YET: he does not strike or grab (step 4), and he can still be hurt anywhere (the head-only gate, step 3b). To check by eye: is he drawn at the right HEIGHT over the
 lava (the engine puts him at y -147, high above his floor), and do the
 sink/rise look right? Headless: `--area 2 --stand 125,-9,401,0 --shoot`.
 

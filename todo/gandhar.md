@@ -142,8 +142,30 @@ root delta (`Anim_SetFrame`) moves his node. **`sub_47E5F0`**: a step of
    (`o3de_SetNodePos(+244, +60, +252)`), as the engine does.
    Originally: **His movement**: `sub_47E5F0`'s step and the rise / sink (17, 18), on the
    floor cells. Check: the rise ends at -150, the sink at 250, the steps.
-3. **His fire**: 23 and 24 through `sub_44CDF0` (ported for Astaroth). Check:
-   bolts from his marker, the coin flip of 24.
+3. ✔ **DONE 2026-10-05.** `sub_44CDF0` is now the viewer's `recordFire`,
+   shared with Astaroth (whose `astarothFire` wraps it with his slot-1 wait).
+   Action 23 fires SLOT 1 once at its clip's half from `Tire000000` on his
+   TAIL (speed 23, damage 20); 24 fires SLOT 0 on its coin flip from
+   `Tire000001` at his HEAD (speed 58, damage 10) as often as the reload
+   lets it - 19 shots in his first 24. **And the reload was never counted
+   down**: `Actors_TickAll` (the loop at 0x468221) takes the frame delta off
+   every actor's four slot timers (`actor+148..+160`) each frame; the viewer
+   set them and never decreased them, which Astaroth survived only because
+   his reload reads 0. His tail bolt kills the save's player (10 health) at
+   frame 977. `engine: gandhar` extended (three mutations shown to fail).
+   His model, read on the way: `DE3_FN` is a scorpion-like demon - `D3Tete`
+   above the pelvis, eight `Pate` legs, a `Queue` (tail) reaching 280 BELOW
+   it - so his node at -147 puts the tail's tip just over his floor (198):
+   the engine's height fits his shape.
+3b. **THE DAMAGE GATE, found in step 3** (not in the first plan): in
+   `sub_4240E0` a hit on type 10 with the record's `0x4000` bit (his entry
+   sets 0x4020) and source kind 6 goes through `sub_47DF60(him, victim,
+   damage, the hit)`: `sub_45E9C0` tests the hit against the PLAYER's body
+   with `dword_657A24` - his `D3Tete` node, found by `sub_41E210` at his
+   entry - and refuses the damage when it misses; a pass spawns effect 19
+   at the meeting point. So he can be hurt only through his HEAD (as
+   Astaroth only through his back). The port still damages him anywhere.
+   Read `sub_45E9C0` before porting it.
 4. **The strike and the grab**: the touch test (`sub_45BC50`/`sub_45BB20`),
    the roll, 26's damage and push, 25's side -> messages 5-8 and the
    `dword_657A28` restart. Check: each side's message, the kill scene runs.

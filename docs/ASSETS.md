@@ -3635,7 +3635,11 @@ clock every tick runs is `sub_47EBF0`: `+188 += dt`, **1** while the clip runs,
 to `1 + dt` and moves nothing. 16 waits `(rand() & 0x1F) + 30` frames; 17 RISES
 (`node.y - +64 <= -150`) and 18 SINKS (`>= 250`) at `+68` a frame with no clip
 - he comes up out of the lava and goes back into it; 19/21/22/27 play their
-clip; 16, 17, 18, 20 and 24 STEP (`sub_47E5F0`: `+68` along his facing, the
+clip; 23 fires weapon SLOT 1 once at its clip's half (`Tire000000`, his tail)
+and 24 slot 0 on a coin flip each frame (`Tire000001`, his head), each slot
+held back by its reload timer at `actor+148 + 4 * slot`, which `Actors_TickAll`
+counts down for every actor every frame (the loop at 0x468221); 16, 17, 18,
+20 and 24 STEP (`sub_47E5F0`: `+68` along his facing, the
 cone test's rotated +Z negated; the wall test of one step from his record
 point cuts it to x alone, z alone or nothing, a byte-2 wall nudges `+speed`
 along x or z, and a refused own spot sends him to the nearest standable point

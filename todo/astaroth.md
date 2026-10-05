@@ -101,6 +101,11 @@ say today, each from the assembly:
   crouched wait, a homing LEAP onto the player's position, and a ground SLAM**
   whose damage falls off with distance. The clip names are all `NULL` in
   `astaroth.ani`, so these are functional names, not the game's.
+* (2026-10-05, found in `todo/gandhar.md` step 3) his weapon slots' RELOAD
+  timers (`actor+148..+160`, `sub_44CDF0` refuses above 0) are counted down by
+  `Actors_TickAll` every frame for every actor; the port never did. Harmless
+  for him - his reload reads 0, the 40-frame rhythm is his tick's wait - and
+  now ported for every actor (`actorSlotTimer`, `recordFire`).
 
 ## Astaroth's clip group (ANIMS\astaroth.ani, group 13)
 
