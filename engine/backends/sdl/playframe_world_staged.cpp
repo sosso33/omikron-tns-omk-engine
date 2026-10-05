@@ -2140,7 +2140,12 @@ void PlayState::worldStaged() {
             pose = s.lastPose;
             src = "the fight's last pose (ACTOR_STATE 0 after sub_445AC0 - no tick)";
         } else if (s.idle.valid()) {
-            omk::composePose(s.mo->meshes, s.idle, 0, false, pose);
+            if (s.idlePoseFor != s.mo || s.idlePoseModel != s.model) {
+                omk::composePose(s.mo->meshes, s.idle, 0, false, s.idlePose);
+                s.idlePoseFor = s.mo;
+                s.idlePoseModel = s.model;
+            }
+            pose = s.idlePose;   // a copy: the head look below bends `pose`
             src = "the bank's default entry, frame 0";
         } else if (!s.lastPose.empty()) {
             pose = s.lastPose;

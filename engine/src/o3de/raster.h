@@ -148,8 +148,14 @@ struct RasterStats {
     long pixels = 0;         // texels written
     long depthRejects = 0;   // failed the z test
     long culled = 0;         // a single-sided face seen from behind (kTwoSided)
-    std::uint32_t hash = 0;  // FNV of the framebuffer
 };
+
+// FNV-1a over a surface's pixels, low byte first - what a probe compares a
+// frame by. NOT taken by `drawGeometry` any more: it hashed the whole frame
+// at the end of every call, ~67 calls a street frame, and the renderer kept
+// only the last - 20 of the software frame's 23 ms (todo/cpu-vs-original.md
+// tier A). A caller that wants it asks once.
+std::uint32_t surfaceHash(const Surface& fb);
 
 // Draw one `.3DO`'s geometry. `textures` is indexed by the batch's material,
 // which is how the shipped data links the two; a material with no texture

@@ -27581,6 +27581,58 @@ def c_engine_scx_kept():
         "runtime that keeps only them, identical to the file's"
 
 
+def c_engine_raster_cost():
+    r"""THE SOFTWARE FRAME IS THE RASTERIZING (2026-10-05,
+    `todo/cpu-vs-original.md` tier A). `drawGeometry` hashed the WHOLE
+    framebuffer at the end of every call - ~67 a street frame, the renderer
+    keeping the last - which was ~86% of the software frame: 300 street
+    frames took 23.0 s, 3.2 without (M1, frames identical). The hash is
+    `surfaceHash()` now, asked for once by the probe that wants it.
+
+    A 30-frame street start on the software renderer with `--profile`: the
+    mean `raster: drawGeometry` call under 0.5 ms (0.12 on the M1; 1.07 with
+    the per-call hash), and the probe's frame identical with and without the
+    profile. A TIMING bound, so a generous one: a much slower host could
+    cross it without a regression - the per-call hash is ~9x the call.
+
+    Shown to fail (2026-10-05): the hash loop put back at the end of
+    `drawGeometry` (red: ~1 ms a call).
+    """
+    import subprocess, tempfile, shutil
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import omkprof
+    eng = os.path.join(ROOT, "engine")
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    tmp = tempfile.mkdtemp()
+    cap = os.path.join(tmp, "r.prof")
+    try:
+        subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                        "--save", os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "0",
+                        "--stand", "1804,0,-6890,336", "--nofmv", "--res", "640x480",
+                        "--frames", "30", "--profile", cap],
+                       capture_output=True, text=True, env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+        frames = [f for f in omkprof.read(cap)[1] if f["frame"] >= 5]
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    us = calls = 0
+    for f in frames:                     # one zone a call, its `dur` in us
+        for name, _, _, dur in f["zones"]:
+            if name == "raster: drawGeometry":
+                us += dur; calls += 1
+    if not calls:
+        return ("no calls",), ("calls",), "the capture must hold drawGeometry zones"
+    per = us / calls / 1000.0
+    print("        %d frames, %d drawGeometry calls, %.3f ms a call" % (len(frames), calls, per))
+    return (per < 0.5,), (True,), \
+        "a street frame's drawGeometry calls average under 0.5 ms each - the rasterizing, " \
+        "not a hash of the whole frame per call"
+
+
 def c_engine_street_memory():
     r"""THE STREET'S MEMORY AGAINST THE ORIGINAL'S, tier A (2026-10-04,
     `todo/ram-vs-original.md`): what the port keeps in Anekbah where the
@@ -27668,7 +27720,7 @@ def c_engine_profiler():
     **And the memory (step 4)**: every frame carries its categories, which sum
     EXACTLY to the live total in bytes and in blocks; the frame's peak is
     never under its live; the two largest tagged owners, `textures` and
-    `geometry`, hold over 5 MB each in the street; and the street at rest
+    `geometry`, hold over 4 MB each in the street (5 until the palette textures, 2026-10-05); and the street at rest
     grows by less than 2 MB over frames 15..29.
 
     Shown to fail (2026-10-04): `leave()` made to record no end - every zone
@@ -27758,7 +27810,10 @@ def c_engine_profiler():
                               m["peak"] >= m["live"] for m in mems)
         last = mems[-1] if memAll else {"tags": [], "live": 0}
         byTag = {t[0]: t[1] for t in last["tags"]}
-        owners = byTag.get("textures", 0) > 5 << 20 and byTag.get("geometry", 0) > 5 << 20
+        # 4 MB, not 5 (2026-10-05): the textures are now kept as palette
+        # indices (`todo/ram-vs-original.md` tier C, `engine: indexed
+        # textures`) - 4.77 MB in the street where the RGB form was 14.1
+        owners = byTag.get("textures", 0) > 4 << 20 and byTag.get("geometry", 0) > 4 << 20
         growth = (mems[-1]["live"] - mems[15]["live"]) if memAll else -1
         # STEP 6: the hot path is zoned - the software renderer's submits, each
         # with its `drawGeometry`, inside the world phase - and the street's
@@ -27798,7 +27853,7 @@ def c_engine_profiler():
         "phases in order, no child longer than its parent, nothing dropped, the world " \
         "phase holding real time; the frame dumped with and without --profile identical; " \
         "the memory: in every frame, its categories summing to the live total, " \
-        "textures and geometry over 5 MB each, and no growth over the street at rest; and " \
+        "textures and geometry over 4 MB each, and no growth over the street at rest; and " \
         "step 6's depth - the world phase's submits each holding drawGeometry, and under " \
         "5% of the memory without an owner"
 
@@ -41740,6 +41795,7 @@ SLOW = [
     ("engine: indexed textures", c_engine_indexed_textures, "todo/ram-vs-original.md tier C; formats/tex3dt.h"),
     ("engine: archive chunks", c_engine_archive_chunks, "todo/ram-vs-original.md tier C; script/area.h"),
     ("engine: scx kept", c_engine_scx_kept, "todo/ram-vs-original.md tier C; script/program.h"),
+    ("engine: raster cost", c_engine_raster_cost, "todo/cpu-vs-original.md tier A; o3de/raster.h"),
     ("engine: profiler control", c_engine_profiler_control, "todo/debug-tools.md step 3"),
     ("engine: profiler gpu", c_engine_profiler_gpu, "todo/debug-tools.md step 5"),
     ("engine: release build", c_engine_release_build, "todo/debug-tools.md"),

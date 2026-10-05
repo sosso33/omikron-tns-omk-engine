@@ -349,6 +349,9 @@ struct State {
     bool snapOwed = false;
     long snaps = 0;
     std::string told;                   // the last state written
+    bool toldPaused = false;            // ...what it said, apart from the frame
+    long toldSnaps = -1;
+    long toldFrame = -1000000;
     int tagsWritten = 0;                // TAG chunks already in the capture
 };
 
@@ -607,11 +610,19 @@ void endFrame() {
 
 namespace {
 
+// The game's state for the page. It carries the frame number, so it changed
+// EVERY frame and was opened, written and closed every frame - 0.37 ms of each
+// captured frame (todo/cpu-vs-original.md tier A). Now at once when anything
+// but the frame changes (a pause, a resume, a step, a snapshot) and while
+// paused, and while running only once a second for the page's frame counter.
 void tellState(long frame) {
     State& s = st();
     char line[96];
     std::snprintf(line, sizeof line, "%s %ld %ld\n", s.paused ? "paused" : "running", frame, s.snaps);
     if (s.told == line) return;
+    const bool sameState = s.toldPaused == s.paused && s.toldSnaps == s.snaps;
+    if (sameState && !s.paused && frame - s.toldFrame < 30) return;
+    s.toldPaused = s.paused; s.toldSnaps = s.snaps; s.toldFrame = frame;
     s.told = line;
     if (std::FILE* f = std::fopen(hostPath(s.base + ".state").c_str(), "w")) {
         std::fputs(line, f);

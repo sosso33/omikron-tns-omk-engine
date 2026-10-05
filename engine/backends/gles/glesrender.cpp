@@ -528,9 +528,17 @@ bool glesUploadLog() {
     static const bool on = std::getenv("OMK_UPLOAD_LOG") != nullptr;
     return on;
 }
+// The renderer's own timings (the `gles` line, a slow frame's report): six
+// reads a DRAW, ~1500 a street frame. A development build's diagnostics, so
+// a release build (`OMK_PROFILE=0`) reads no clock at all and the inlined 0
+// folds the arithmetic away (todo/cpu-vs-original.md tier A).
 double glesClockMs() {
+#if OMK_PROFILE
     return std::chrono::duration<double, std::milli>(
                std::chrono::steady_clock::now().time_since_epoch()).count();
+#else
+    return 0.0;
+#endif
 }
 }  // namespace
 long glesTakeOverlayRows(Renderer* r);

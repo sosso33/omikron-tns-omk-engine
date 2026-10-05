@@ -151,10 +151,19 @@ namespace {
 // tile across a wall.
 inline void sample(const Texture& t, float u, float v,
                    int& r, int& g, int& b) {
-    int x = static_cast<int>(u) % t.width;
-    int y = static_cast<int>(v) % t.height;
-    if (x < 0) x += t.width;
-    if (y < 0) y += t.height;
+    // a power-of-two side (all 2534 shipped textures) wraps with a mask - the
+    // same texel as `%` plus the negative fix-up, without two divisions a
+    // pixel (todo/cpu-vs-original.md tier A)
+    int x, y;
+    if (!(t.width & (t.width - 1)) && !(t.height & (t.height - 1))) {
+        x = static_cast<int>(u) & (t.width - 1);
+        y = static_cast<int>(v) & (t.height - 1);
+    } else {
+        x = static_cast<int>(u) % t.width;
+        y = static_cast<int>(v) % t.height;
+        if (x < 0) x += t.width;
+        if (y < 0) y += t.height;
+    }
     // the palette form (`Texture::idx`/`pal`): the index, then its colour -
     // the original's software path samples its 8-bit pages the same way
     t.texel(static_cast<std::size_t>(y) * t.width + x, r, g, b);
@@ -436,13 +445,16 @@ RasterStats drawGeometry(Surface& fb, std::vector<float>& depth,
             }   // the clip fan
         }
     }
+    return st;
+}
+
+std::uint32_t surfaceHash(const Surface& fb) {
     std::uint32_t h = 2166136261u;
     for (auto px : fb.px) {
         h = (h ^ (px & 0xFF)) * 16777619u;
         h = (h ^ (px >> 8)) * 16777619u;
     }
-    st.hash = h;
-    return st;
+    return h;
 }
 
 }  // namespace omk

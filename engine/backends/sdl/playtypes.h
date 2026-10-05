@@ -234,6 +234,11 @@ struct Staged {
     omk::NodeTracks sceneTracks;
     omk::NodeTracks idle;         // the bank's default clip, frame 0
     bool  idleBuilt = false;
+    // ...and its POSE, composed once: frame 0 of a fixed clip on a fixed
+    // model is the same every frame (todo/cpu-vs-original.md tier A)
+    std::vector<omk::MeshPose> idlePose;
+    const CharModel* idlePoseFor = nullptr;   // ...for this model (an evicted one's
+    std::string idlePoseModel;                // address can be reused: the name too)
     float drawAt[3] = {0, 0, 0};   // where he was actually put, for a set piece
     bool  drawAtKnown = false;     // ...and whether a frame has put him yet
     std::vector<float> poseWas;    // OMK_BODYLOG: last frame's posed corners

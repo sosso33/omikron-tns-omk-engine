@@ -92,7 +92,6 @@ void SoftwareRenderer::submit(const Draw& d) {
     st_.pixels += s.pixels;
     st_.depthRejects += s.depthRejects;
     st_.culled += s.culled;
-    st_.hash = s.hash;   // the last one wins; the frame's hash is the final image
 }
 
 namespace {

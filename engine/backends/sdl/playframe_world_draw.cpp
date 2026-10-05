@@ -192,7 +192,7 @@ void PlayState::worldDrawLists() {
     // are the mesh path's own (render.h: 0x2100 additive, 0x2200
     // multiply, 0x400 cutout); the per-face depth bits 0x80/0x1000
     // are not modelled here, as they are not for the set.
-    draws = std::vector<omk::Draw>{};
+    draws.clear();   // its capacity kept from frame to frame (tier A)
     const auto keyOf = [](omk::Blend bl, bool cutout, std::uint32_t slot) {
         std::uint32_t state = 0;
         if (bl == omk::Blend::Add)      state = 0x2100;
@@ -677,8 +677,12 @@ void PlayState::worldDrawLists() {
                                            : omk::findMeshContaining(meshes, bn, root);
             };
             if (at.empty()) return;
+            // the body's centre feeds ONE number, `shadowFootOffMax`, which
+            // only `OMK_SHADOWLOG` prints - so the pass over every posed
+            // corner runs only then (todo/cpu-vs-original.md tier A)
+            static const bool footLog = std::getenv("OMK_SHADOWLOG") != nullptr;
             float rx = 0.0f, rz = 0.0f;
-            if (ref && !ref->corners.empty()) {
+            if (footLog && ref && !ref->corners.empty()) {
                 float lo[2] = {1e30f, 1e30f}, hi[2] = {-1e30f, -1e30f};
                 for (const auto& c : ref->corners) {
                     lo[0] = std::min(lo[0], c.x); hi[0] = std::max(hi[0], c.x);
@@ -714,7 +718,7 @@ void PlayState::worldDrawLists() {
                 const int mi = boneMesh(sb.bone);
                 if (mi < 0 || static_cast<std::size_t>(mi) * 3 + 2 >= at.size()) continue;
                 const float* p3 = &at[static_cast<std::size_t>(mi) * 3];
-                if (ref && !ref->corners.empty()) {
+                if (footLog && ref && !ref->corners.empty()) {
                     const float dx = p3[0] - rx, dz = p3[2] - rz;
                     const float d = std::sqrt(dx * dx + dz * dz);
                     if (d > shadowFootOffMax) shadowFootOffMax = d;

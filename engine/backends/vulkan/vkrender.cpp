@@ -411,6 +411,7 @@ private:
     omk::Surface     fb_{1, 1, 0};
     bool             recording_ = false;
     bool             dirty_ = false;    // a new frame is waiting in readBuf_
+    bool             copyOwed_ = false; // ...still to be copied there (`readback`)
     VkPipeline       forcePipeline_ = VK_NULL_HANDLE;  // the mirror pass's override
     bool             flipX_ = false;   // the current view's screen-X flip (mirror pass)
     bool             reflStencil_ = false;             // draw through pipeRefl_
@@ -2461,12 +2462,12 @@ void VulkanRenderer::end() {
     if (!recording_) return;
     vkCmdEndRenderPass(cb_);
     // The colour attachment ends in TRANSFER_SRC_OPTIMAL (the render pass says
-    // so), so the readback copy needs no further barrier.
-    VkBufferImageCopy cp{};
-    cp.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-    cp.imageExtent = {static_cast<uint32_t>(rw_), static_cast<uint32_t>(rh_), 1};
-    vkCmdCopyImageToBuffer(cb_, colour_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                           readBuf_, 1, &cp);
+    // so). The READBACK COPY is no longer recorded here: a frame the GPU
+    // presents (`presentWorld`) never reads it, and it was copied every frame
+    // (todo/cpu-vs-original.md tier A). `readback()` records it when a frame
+    // is read - the image is in TRANSFER_SRC_OPTIMAL then too, the present
+    // pass handing it back so.
+    copyOwed_ = true;
     srcW_ = rw_; srcH_ = rh_;   // the whole render target is live
     vkEndCommandBuffer(cb_);
 
@@ -2491,6 +2492,16 @@ const omk::Surface& VulkanRenderer::readback() {
     // is converted once, when `end()` says there is a new one.
     if (!dirty_) return fb_;
     dirty_ = false;
+    if (copyOwed_) {                 // the copy `end()` no longer records
+        copyOwed_ = false;
+        VkCommandBuffer cb = oneShotBegin();
+        VkBufferImageCopy cp{};
+        cp.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        cp.imageExtent = {static_cast<uint32_t>(rw_), static_cast<uint32_t>(rh_), 1};
+        vkCmdCopyImageToBuffer(cb, colour_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                               readBuf_, 1, &cp);
+        oneShotEnd(cb);              // submitted and waited: the bytes are there
+    }
     void* p = nullptr;
     vkMapMemory(dev_, readMem_, 0, VK_WHOLE_SIZE, 0, &p);
     const auto* src = static_cast<const unsigned char*>(p);

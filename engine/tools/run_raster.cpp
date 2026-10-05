@@ -90,6 +90,7 @@ int main(int argc, char** argv) {
     std::vector<float> depth;
     omk::clearDepth(depth, fb.w, fb.h);
     const auto st = omk::drawGeometry(fb, depth, cam, geo, tex);
+    const std::uint32_t fbHash = omk::surfaceHash(fb);   // the frame, asked for once
 
     // ...and the reflected reading, which must not agree.
     omk::RCamera mir = cam; mir.mirror = true;
@@ -126,7 +127,7 @@ int main(int argc, char** argv) {
         static_cast<std::int32_t>(st.triangles), static_cast<std::int32_t>(st.drawn),
         static_cast<std::int32_t>(st.behind),    static_cast<std::int32_t>(st.offscreen),
         static_cast<std::int32_t>(st.pixels),    static_cast<std::int32_t>(st.depthRejects),
-        static_cast<std::int32_t>(st.hash),      static_cast<std::int32_t>(differ),
+        static_cast<std::int32_t>(fbHash),       static_cast<std::int32_t>(differ),
         static_cast<std::int32_t>(clipDiffer),  static_cast<std::int32_t>(holeClip),
         static_cast<std::int32_t>(holeNoClip),  static_cast<std::int32_t>(stNc.drawn),
     };
