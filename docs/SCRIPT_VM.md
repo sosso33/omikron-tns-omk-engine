@@ -1582,7 +1582,11 @@ position), 127 `player.pos.sync` (reset the collision walker's position pair to
 the node transform and invalidate the ground cache), 129/130
 `walk.ledges.ignore` / `.obey` (the walker refuses a step down of more than
 11.81 units — 30 raw — unless `g_IgnoreLedges` is set; scripts bracket staged
-moves with the pair).
+moves with the pair). Both handlers are `sub_41C260(1 / 0)`, which is
+`g_IgnoreLedges = a1` and nothing else - the only writer of that byte, never
+reset - read from the image since neither has a `proc` label; the port's
+walker had the flag and no writer until 2026-10-05 (`todo/drift-audit.md` S5,
+`verify.py: engine: ledges flag`).
 
 **Presentation** — 54 `camera.follow_player` (mode-0 request), 136
 `camera.shake` (`Camera_SetShake`: a decaying vertical sine on eye and aim;
