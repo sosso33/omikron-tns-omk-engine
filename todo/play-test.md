@@ -371,7 +371,7 @@ rendered at the moments it names and read by eye (not the same as playing):
 | 23 game restart | PASSES: the street at 58, the start menu fading in from white at 66, whole at 120 |
 | 24 lift | PASSES: up 158 units, still there at 230/260, down again by 480; the frame at 230 shows him on the upper floor |
 | 25 ladder | the suspend / put-down / resume sequence is right (41 / 83 / 104), but **the climb's camera is wrong** - sky from 60 to 102, Kay'l never in shot: `todo/drift-audit.md` S14 |
-| 26 quit to menu | **FAILS: the screen stays WHITE after the quit** (the menu opens behind it): `todo/drift-audit.md` S15 |
+| 26 quit to menu | the screen stayed WHITE after the quit - FIXED the same day: a fault of headless (`--frames`) runs only, the pause's frame delta of 0 never put back; the menu now draws (`todo/drift-audit.md` S15) |
 | 27 Astaroth | PASSES as far as rendered: soul 5 glowing at 130, gone in a green burst at 140; his walk and leap were looked at earlier the same day |
 | 28 camera shake | not visual at 640x480 (a few units of Y); `engine: camera shake` reads it from the view |
 | 29 gunmen react | the log shows 240 alerted at 43 and firing; the gunmen are behind the player's view in the gallery run |
