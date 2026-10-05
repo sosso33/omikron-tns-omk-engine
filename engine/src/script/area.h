@@ -388,6 +388,8 @@ public:
     // -> the last `shoot.actor.action` asked of him, or -1 if he is not in
     // shoot mode at all. One store, `ShootMode`'s.
     int shootAction(int actor) const { return shoot_.actorAction(actor); }
+    bool shootIn(int actor) const { return shoot_.actorIn(actor); }
+    int shootActionSerial(int actor) const { return shoot_.actorActionSerial(actor); }
     // ...and its third operand, the patrol's ROUTE
     int shootActionArg(int actor) const { return shoot_.actorActionArg(actor); }
 

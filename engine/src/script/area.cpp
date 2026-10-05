@@ -2838,7 +2838,7 @@ void Session::onCall(int i, const Call& call) {
         // characters. LABELLED as that, not as the shoot AI running.
         if (call.fields.empty()) break;
         const int who = call.fields[0];
-        if (call.op == 82) shoot_.actorEnter(who);     // the enter's own default
+        if (call.op == 82) shoot_.actorEnter(who);     // no action (`kEnteredOnly`)
         // op 84 is SIX bytes, three int16 operands: the actor, the action and
         // `a3` - which for the patrol names the route (`todo/shoot-patrol.md`).
         else if (call.fields.size() >= 2)

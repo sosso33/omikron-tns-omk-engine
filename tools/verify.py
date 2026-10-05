@@ -35579,8 +35579,11 @@ def c_engine_shoot_noise():
             # pattern now takes whatever state he leaves 6 for; in the gallery
             # 237 closes before he fires, at 43, and 238 fires at 44, so the
             # first two lines 240 hears are those two shots)
-            [("43", "a gunman's shot", "0", "240", "heard it from another floor", "50", "-1", "-1"),
-             ("44", "a gunman's shot", "0", "240", "heard it from another floor", "50", "-1", "-1")])
+            # (2026-10-05, S13: 240 enters with no action and so is not HELD off
+            # the grid - Shoot_Think finds his floor 0 at 33 - and 237's shot at
+            # 43 reaches him on his own floor: ALERTED, action 2, applied now;
+            # 238's at 44 finds him already alerted)
+            [("43", "a gunman's shot", "0", "240", "ALERTED", "50", "0", "2")])
     return got, want, (
         "the supermarket's MAP2D grid; no alert on the route, robber 77 - latched by his "
         "entry action and engaging by sight at 441 - found alerted by the shot at 430; in the "
@@ -35740,9 +35743,13 @@ def c_engine_shoot_gunfire():
             # player inside it. In the supermarket 77 RUSHES (6 -> 8), so his
             # second shot at 470 and its hit at 471 - from the FRONT, band 2,
             # the tip of the view - fall inside the 500 frames)
+            # (2026-10-05, S13: and 240 - entered with no action, ALERTED by
+            # 237's shot at 43, the hub's outcome 1 at once - arms his HEXAGUN
+            # at 43 and fires at 43 and 47)
             [("43", "237", "766", "DBWAVER", "2", "2", "10.0", "7"),
+             ("43", "240", "772", "HEXAGUN", "3", "3", "4.0", "5"),
              ("44", "238", "769", "DECAGUN", "4", "4", "4.0", "7")],
-            {"237": (43,), "240": ()},
+            {"237": (43,), "240": (43, 47)},
             # (with 6A the hand holding the gun ANIMATES, so the tir node rides
             # the clip's frame: -0.110 / 6.3 on its first frame held still)
             # (the gunmen's AIM LAYER, 2026-09-11: the gate's target arm now
@@ -35780,7 +35787,9 @@ def c_engine_shoot_gunfire():
             # (and with the stall gone: two of 237's bolts reach the player in
             # the window, and 238 - engaging rather than standing on his
             # entrance's heading - ends facing 320)
-            False, 0, 1, "344",
+            # (2026-10-05, S13: and ONE on another gunman - 240, alerted at 43,
+            # fires too, and his first bolt meets 237 on its way)
+            False, 1, 1, "344",
             # (from the 336.9 his ENTRANCE PROGRAM left him at - his brain's
             # heading is seeded from how he is drawn, and he is drawn at it)
             ("394", "32", "25", "-7.20", "336.9"), ("418", "164.1"),
@@ -35815,16 +35824,21 @@ def c_engine_shoot_gunfire():
             # (and since the entry hold stopped stalling them: 237 and 238 loop
             # action 3's walking clip, type 10, at 26 - and 240 his patrol walk,
             # type 9, at 29, until record 15's delayed action 3 reaches him)
+            # (2026-10-05, S13: 240's entry is NO action - `sub_47DFD0`'s default
+            # arm, a type-11 clip and state 0 - so he loops that, type 11, at
+            # 32, where the port gave him the patrol's walk)
             [("26", "237", "10", "3", "19", "2.0"), ("26", "238", "10", "3", "19", "2.0"),
-             ("29", "240", "9", "2", "27", "2.0")],
+             ("32", "240", "11", "1", "30", "2.0")],
             # (77's walk never runs a whole loop now - each turn restarts it)
             # (and since the grid sight it does: he walks instead of turning back
             # behind the counter, and the clip loops at 435)
             ("435", "10", "3", "19"),
             # (237 at 33, not 4: `sub_426E00` refuses a gunman whose `+188` is
             # -1, and the gallery's bodies reach the grid at frame 32)
-            [("43", "237", "-0.156", "0.005"), ("44", "238", "0.607", "-0.010"),
-             ("441", "77", "0.757", "-0.070")],
+            # (2026-10-05, S13: 240 aims at 43 too, and 238's angle at 44 moves
+            # with the player shoved by 240's hit)
+            [("43", "237", "-0.156", "0.005"), ("43", "240", "0.200", "-0.011"),
+             ("44", "238", "0.599", "-0.000"), ("441", "77", "0.757", "-0.070")],
             [("237", "766", "DBWAVER"), ("238", "769", "DECAGUN"), ("240", "772", "HEXAGUN"),
              ("77", "49", "WAVER")],
             # (and 238's second barrel is 44 degrees off the line: still turning
@@ -35833,7 +35847,8 @@ def c_engine_shoot_gunfire():
             # down when the player died)
             # (none since THE STRIKE: the barrel line is his SECOND shot's, and
             # he strikes instead of firing it)
-            [])
+            # (2026-10-05, S13: 240's second shot, at 47, a tenth of a degree off)
+            [("47", "240", "-0.1")])
     # THE HEIGHT AT EVERY CLIP START (2026-09-11, a reader's robber climbing to
     # the ceiling): `sub_421A20` sets the node to (x, rec+60 + d(0->1).y, z) on
     # every clip it starts, so 77's walk - restarted by a turn clip every ~16
@@ -35931,12 +35946,16 @@ def c_engine_shoot_restart():
     modes = re.findall(r"^frame (\d+): SHOOT MODE (ENTER|LEAVE) \(Shoot_\w+\) - .*ACTOR_STATE (\d+)", o, re.M)
     stat = re.findall(r"^frame (\d+): SHOOT STAT \(sub_423A40\) - the player's health -> (-?\d+)", o, re.M)
     got = (kills, back, emptied, modes, stat[:1])
-    want = ([("51", "238")], [("112", "195")], [("112", "1")],
-            [("1", "ENTER", "3"), ("112", "LEAVE", "1"), ("113", "ENTER", "3")], [("113", "100")])
-    return got, want, ("the gallery harness with Level 3 set: one kill at 51, the restart putting "
-                       "the player at Début Level 3 (address 195) at 112, the projectile pool "
-                       "emptied as the mode ends - its one bolt in flight - the mode left into "
-                       "ACTOR_STATE 1 and re-entered at 113 with health 100")
+    # (2026-10-05, S13: 240 enters with NO action, idles, and is ALERTED by
+    # 237's shot at 43 - a noise's request is applied now - so he fires too:
+    # the kill comes at 48 where it was 51, three frames earlier for all the
+    # rest, and two bolts are in flight when the pool empties)
+    want = ([("48", "238")], [("109", "195")], [("109", "2")],
+            [("1", "ENTER", "3"), ("109", "LEAVE", "1"), ("110", "ENTER", "3")], [("110", "100")])
+    return got, want, ("the gallery harness with Level 3 set: one kill at 48, the restart putting "
+                       "the player at Début Level 3 (address 195) at 109, the projectile pool "
+                       "emptied as the mode ends - two bolts in flight - the mode left into "
+                       "ACTOR_STATE 1 and re-entered at 110 with health 100")
 
 
 def c_engine_shoot_death():
@@ -36159,7 +36178,13 @@ def c_engine_shoot_brain():
             # 43. The player lives until 51, long enough for 238 to clear the
             # row-29 gap at 44 and reach outcome 1 from 447; 240's late action
             # 3 now comes after the death)
-            ((238, 1, 447),))
+            # (2026-10-05, S13 - `todo/drift-audit.md`: 240 is entered with NO
+            # action and stands in state 0 on his type-11 clip, which has no
+            # engage; at 43 he hears 237's shot from the grid's floor 0 and the
+            # noise's request - action 2, dropped until now - puts him in the
+            # hub, where he reaches outcome 1 at once, from 495. Record 15's
+            # action 3 still arrives after the scx wait, at 48)
+            ((238, 1, 447), (240, 1, 495)))
     return got, want, ("the gunmen whose brain was built, the first one's "
                        "record as CONVERTED from his own authored properties "
                        "(50 m acquire, 15 m engage, 18 m disengage, a 90 "
@@ -39943,11 +39968,13 @@ def c_engine_message_two():
     after_kill = any(seq[i + 1][0] == "msg2" for i, (k, v) in enumerate(seq[:-1]) if k == "hit" and not v)
     p = [subprocess.run([probe, fr, tb, "144", "2", str(snd), "2349"], capture_output=True,
                         encoding="latin-1").stdout.strip() for snd in (403, 404)]
+    # (2026-10-05, S13: 240, alerted at 43 and walking his hub clip, is no
+    # longer where the forty bolts go - only 237 is hit and lives)
     return (alive_hits > 0, len(msgs) == alive_hits, paired, after_kill, sorted(set(msgs)),
             p[0].endswith("live 1 -> 0"), p[1].endswith("live 1 -> 1")), \
-           (True, True, True, False, [237, 240], True, True), \
+           (True, True, True, False, [237], True, True), \
            "the gallery: non-lethal hits happened, one message 2 each, right " \
-           "after it, none after a kill, from 237 and 240; AREA 144: from 403 " \
+           "after it, none after a kill, from 237; AREA 144: from 403 " \
            "zone 2349 is retired, from 404 it is not - got %d hits, %d messages, %s" % (
                alive_hits, len(msgs), p)
 
@@ -40309,6 +40336,55 @@ def c_engine_camera_shake():
            "a (30, 10) shake: frames, the first two dy, their sum; renewed at frame 10: " \
            "frames; AREA 175's message 0: shakes, frames; the viewer's first three " \
            "applied shakes (two hurts, then his footstep mid-shake)"
+
+
+def c_engine_shoot_requests():
+    r"""A GUNMAN'S ENTRY AND THE REQUESTS AFTER IT (`todo/drift-audit.md` S13).
+
+    `Shoot_ActorEnter` (0x00422C10) runs NO action: it hands the type to
+    `sub_47DFD0`, whose default arm starts a RANDOM type-11 clip and leaves
+    `+156` at 0 - and `sub_424DE0` has no arm for state 0: its `default:`
+    goes to the tail (outcome 0, fire-if-ready) with no engage. Everything
+    that moves him afterwards is `Shoot_ActorAction` called AT ONCE: a later
+    op 84, a hit's reaction (`sub_423EF0`), a noise heard (`sub_4246E0`).
+    The port gave every entering gunman action 1, the patrol, and applied an
+    action only at his entry, so a later op 84 (8 shipped sites, 4 behind a
+    wait in the entering script), every hit reaction and every noise alert
+    were recorded and dropped.
+
+    The Shooting gallery's record 15 enters 237, 238 and 240 and gives 240
+    his `shoot.actor.action 240, 3` only after `scx.play.wait obj 9`. So 240
+    enters with no action (type 11, state 0), stands without engaging, is
+    ALERTED by 237's first shot at 43 - the noise's action 2, applied - and
+    gets record 15's action 3 when its wait ends, at 48.
+
+    Shown to fail: `actorEnter` recording action 1 again (no entry with no
+    action); the request block removed (no action 2 or 3 for 240); the
+    state-0 engage gate removed (240 engages from state 0 at 33).
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    o = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"), "--save",
+         os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "59",
+         "--stand", "5000,0,-2900,180", "--shoot", "--frames", "60", "--nodelay"],
+        capture_output=True, encoding="latin-1",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    entered = _re.findall(r"^frame (\d+): actor (\d+) \S+ - ENTERED WITH NO ACTION "
+                          r"\(sub_47DFD0's default arm\): clip type (\d+), state (\d+)", o, _re.M)
+    late = _re.findall(r"^frame (\d+): actor 240 \S+ - ACTION (\d+) \(Shoot_ActorAction, a "
+                       r"request after his entry", o, _re.M)
+    first = _re.search(r"^frame (\d+): actor 240 \S+ - brain (\d+) -> ", o, _re.M)
+    return (entered, late, (first.group(1), first.group(2)) if first else None), \
+           ([("3", "240", "11", "0")], [("43", "2"), ("48", "3")], ("43", "6")), \
+           "the gunmen entered with no action (frame, actor, clip type, state); 240's " \
+           "requests after his entry (frame, action) - the noise's 2 and record 15's " \
+           "3; and his first brain line (frame, state): none before the alert"
 
 
 def c_game_clock():
@@ -42886,6 +42962,7 @@ SLOW = [
     ("engine: astaroth back", c_engine_astaroth_back, "todo/astaroth.md 2; actor/astaroth.h"),
     ("engine: astaroth tick", c_engine_astaroth_tick, "todo/astaroth.md 3; actor/astaroth.h"),
     ("engine: camera shake", c_engine_camera_shake, "todo/astaroth.md 4; script/area.h"),
+    ("engine: shoot requests", c_engine_shoot_requests, "todo/drift-audit.md S13; actor/shootmode.h"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),

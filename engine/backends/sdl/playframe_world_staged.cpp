@@ -407,6 +407,10 @@ void PlayState::worldStaged() {
         const omk::AstarothActor* astGrid = nullptr;   // Astaroth on a 9-cell grid
         {
             const int act = session.shootAction(s.actor);
+            // IN SHOOT MODE, whatever his action - an enter with none yet is
+            // `kEnteredOnly` (-2), which `act >= 0` used to read as "not in"
+            // (todo/drift-audit.md S13)
+            const bool inShoot = session.shootIn(s.actor);
             // ---- THE GENERIC BRAIN, ticked (todo/shoot-mode.md 7d)
             //
             // `Shoot_TickNpc` calls the arm `Shoot_ActorEnter` chose;
@@ -528,6 +532,25 @@ void PlayState::worldStaged() {
                                 double(ar.timer));
                 }
             };
+            // A REQUEST AFTER HIS ENTRY (todo/drift-audit.md S13): op 84 run
+            // by a later script, a hit's reaction (`sub_423EF0`) or a noise
+            // heard (`sub_4246E0`) - each `Shoot_ActorAction` called AT ONCE in
+            // the engine, here on his next tick, before his brain, through the
+            // same `applyAction` (which PARKS it under flag 8). Until
+            // 2026-10-05 only the action standing at his entry was ever
+            // applied: a later op 84 (8 shipped sites, 4 of them after a wait
+            // in the entering script), every hit reaction and every noise
+            // alert were recorded and dropped. Not Astaroth's: his record is
+            // driven by his own tick, and nothing shipped asks him for one.
+            if (deadIt != shootBrains.end() && !astarothRec && inShoot && act >= 0) {
+                const int ser = session.shootActionSerial(s.actor);
+                auto seen = gunActSerialSeen.find(s.actor);
+                if (seen != gunActSerialSeen.end() && seen->second != ser) {
+                    seen->second = ser;
+                    applyAction(deadIt->second, act, session.shootActionArg(s.actor),
+                                "a request after his entry (op 84, a hit or a noise)");
+                }
+            }
             // THE STAND-DOWN (`sub_423FC0`, the player's death): action 0 -
             // or, on script step 8, his 0x20 latch cleared - told in the
             // hit and applied here, on his own tick
@@ -560,7 +583,7 @@ void PlayState::worldStaged() {
             // the picked clip below included (`sub_421770(.., flt_6A062C)`)
             omk::AstarothBand astBand;
             const float astDt = static_cast<float>(frameSec * 30.0);
-            const bool astTicks = astarothRec && act >= 0 && shootMode && !brainsOff;
+            const bool astTicks = astarothRec && inShoot && shootMode && !brainsOff;
             // the node his functions moved, handed to the draw as `walkMove`
             // (the draw seats his pelvis at `at + walkMove`; `at[1]` is +60)
             const auto astPlace = [&](const omk::AstarothActor& aa) {
@@ -578,7 +601,7 @@ void PlayState::worldStaged() {
                 if (aa.started) aa.pos[1] = aa.node[1];
                 astBand = omk::astarothBand(astaroth, ar.health, astDt);
             }
-            if (act >= 0 && shootMode && !shotDead && !brainsOff && deadIt != shootBrains.end() &&
+            if (inShoot && shootMode && !shotDead && !brainsOff && deadIt != shootBrains.end() &&
                 (deadIt->second.flags & 8u)) {
                 GunClip& gc = gunClips[s.actor];
                 // THE FRAME DELTA, `flt_4C30D8` - which the pause screen
@@ -675,7 +698,7 @@ void PlayState::worldStaged() {
                     s.walkMove[1] = 0.0f;
                 }
             }
-            if (act >= 0 && shootMode && !shotDead && !clipHolds && !brainsOff) {
+            if (inShoot && shootMode && !shotDead && !clipHolds && !brainsOff) {
                 auto it = shootBrains.find(s.actor);
                 if (it == shootBrains.end()) {
                     omk::ShootRecord fresh;
@@ -813,7 +836,8 @@ void PlayState::worldStaged() {
                     // (`todo/shoot-patrol.md` 4b) - so the action WAITS for
                     // the first tick he lands on the grid. One frame, and
                     // the alternative is a patrol with a null route.
-                    if (!onGridAtEntry && shootMap.valid() && !astarothHere) {
+                    if (!onGridAtEntry && shootMap.valid() && !astarothHere &&
+                        act != omk::ShootMode::kEnteredOnly) {
                         gunEntryPending.insert(s.actor);
                         std::printf("frame %ld: actor %d %s - entry action %d HELD: he is "
                                     "not on the grid yet (Shoot_ActorEnter thinks first)\n",
@@ -824,7 +848,24 @@ void PlayState::worldStaged() {
                     // clip, and +168 = 30 * property 31 frames of advance
                     // (LABELLED: `Shoot_ActorEnter`'s own call is not re-read;
                     // this passes the action with a3 = 0)
-                    if ((onGridAtEntry || !shootMap.valid()) && !astarothHere)
+                    // the requests made so far are what the entry applies
+                    gunActSerialSeen[s.actor] = session.shootActionSerial(s.actor);
+                    if (act == omk::ShootMode::kEnteredOnly && !astarothHere) {
+                        // `sub_47DFD0`'s DEFAULT ARM: `List_PickRandomByType(+20,
+                        // 11)` into `+8` and `sub_421A20` - his type-11 clip -
+                        // with `+156` left at the enter's 0. No action: the
+                        // generic brain has no arm for state 0, so he stands in
+                        // that clip until a request moves him (the fixed pick,
+                        // as every gunman's here)
+                        it->second.state = 0;
+                        gunCurType[s.actor] = 11;
+                        gunCurSlot.erase(s.actor);
+                        gunAnims[s.actor].clip = nullptr;
+                        gunEntryPending.erase(s.actor);
+                        std::printf("frame %ld: actor %d %s - ENTERED WITH NO ACTION "
+                                    "(sub_47DFD0's default arm): clip type 11, state 0\n",
+                                    n, s.actor, s.model.c_str());
+                    } else if ((onGridAtEntry || !shootMap.valid()) && !astarothHere)
                         applyAction(it->second, act, session.shootActionArg(s.actor),
                                     "his scene action, at entry");
                     std::printf("frame %ld: actor %d %s - shoot brain: "
@@ -1035,7 +1076,7 @@ void PlayState::worldStaged() {
                 // `uiPause` above). A literal 1.0 here kept every brain,
                 // clip and walk step running behind the menu.
                 fin.dt = static_cast<float>(frameSec * 30.0);
-                fin.defaultClipType = act;
+                fin.defaultClipType = act < 0 ? 0 : act;   // (no action yet: 0)
                 // THE STEERING (`sub_421CD0`, read 2026-09-11): the hub's
                 // middle arm turns him down the path field toward the
                 // player. The heading, and the CRT draws the brain makes
@@ -1293,8 +1334,13 @@ void PlayState::worldStaged() {
                 // (and never from STATE 10: `sub_424DE0` has no engage call
                 // in that arm, and one here would rewrite a striking gunman's
                 // state mid-clip)
+                // (...nor from STATE 0, a gunman `Shoot_ActorEnter` left with
+                // no action: `sub_424DE0`'s switch has no arm for it - its
+                // `default:` goes straight to the tail, outcome 0, fire-if-
+                // ready - so nothing engages him until a request moves him
+                // (todo/drift-audit.md S13))
                 const int eng = (((spectreArm || watchArm) && !engineCalls) ||
-                                 rec.state == 10)
+                                 rec.state == 10 || rec.state == 0)
                                     ? 0 : omk::shootEngage(rec, ao, cone, ein);
                 // THE ENGAGE IS CALLED INSIDE AN ARM in the engine, so a
                 // gunman it sends to the 10/11 pair (`goPair`) does not run
@@ -2093,7 +2139,7 @@ void PlayState::worldStaged() {
                     sr.cellStamped = true;
                 }
             }
-            if (act >= 0) {
+            if (inShoot) {
                 const int grp = static_cast<int>(session.typeOfActor(s.actor));
                 // the clip his last ACTION started, as the clock above uses
                 const auto ctP = gunCurType.find(s.actor);

@@ -135,7 +135,24 @@ public:
     static constexpr int kRecordBytes   = 192;
 
     // `shoot.actor.enter` / `.action`, kept as the Session already kept them.
-    void actorEnter(int actor) { actors_[actor] = 1; actorArgs_[actor] = 0; }
+    //
+    // `Shoot_ActorEnter` (0x00422C10) runs NO action: it hands the type to
+    // `sub_47DFD0`, whose default arm starts a type-11 clip and leaves `+156`
+    // at 0 (todo/drift-audit.md S13). Until 2026-10-05 the enter recorded
+    // action 1, the patrol, which no shipped enter asks for. An entered actor
+    // with no action yet now reads `kEnteredOnly`; `actorIn` is "in shoot
+    // mode" whatever the action.
+    static constexpr int kEnteredOnly = -2;
+    void actorEnter(int actor) { actors_[actor] = kEnteredOnly; actorArgs_[actor] = 0; }
+    bool actorIn(int actor) const { return actors_.count(actor) != 0; }
+    // Every REQUEST after the enter - op 84, a hit's reaction (`sub_423EF0`),
+    // a noise heard (`sub_4246E0`) - is `Shoot_ActorAction` called at once in
+    // the engine. The serial counts them so a frontend that applies them on
+    // the actor's own tick can tell a new one from the last one.
+    int  actorActionSerial(int actor) const {
+        const auto it = serial_.find(actor);
+        return it == serial_.end() ? 0 : it->second;
+    }
     // `a3`, the opcode's THIRD operand, is kept beside the action: for the
     // patrol (action 1) it names the ROUTE, and dropping it - which this did
     // until 2026-09-12 - sent every patrolling gunman to the nearest free one
@@ -143,6 +160,7 @@ public:
     void actorAction(int actor, int action, int a3 = 0) {
         actors_[actor] = action;
         actorArgs_[actor] = a3;
+        ++serial_[actor];
     }
     int  actorAction(int actor) const {
         const auto it = actors_.find(actor);
@@ -170,6 +188,7 @@ private:
     int  type_   = -1;                 // the player's character type
     std::vector<std::int16_t> table_;  // GLOBAL +42
     std::map<int, int> actors_;
+    std::map<int, int> serial_;     // requests made, per actor
     std::map<int, int> actorArgs_;   // the same actors' a3
     std::vector<Event> log_;
     bool frozen_ = false;              // dword_4E9760

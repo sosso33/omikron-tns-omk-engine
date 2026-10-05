@@ -566,7 +566,7 @@ void PlayState::controlFlight() {
                 }
                 std::printf("\n");
                 for (const auto& up : staged)
-                    if (up && session.shootAction(up->actor) >= 0 &&
+                    if (up && session.shootIn(up->actor) &&
                         (!up->drawn || up->meshRot.empty()))
                         std::printf("  actor %d left out: drawn %d, meshAt %zu, meshRot %zu\n",
                                     up->actor, int(up->drawn), up->meshAt.size(),
@@ -687,7 +687,7 @@ void PlayState::controlFlight() {
             hin.damage = ev.damage;
             hin.shooterIsPlayer = ev.owner == -1;
             hin.victimIsPlayer = false;
-            hin.victimInShoot = session.shootAction(ev.victim) >= 0;
+            hin.victimInShoot = session.shootIn(ev.victim);
             std::int32_t p24 = 0;
             session.actorProperty(ev.victim, 24, p24);
             hin.reactAt = p24;

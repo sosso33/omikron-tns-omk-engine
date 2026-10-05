@@ -932,7 +932,7 @@ void PlayState::worldGuns() {
         const auto& objs = voiceLib.objects();
         for (const auto& up : staged) {
             if (!up || up->actor < 0 || !up->mo || !up->drawn) continue;
-            if (session.shootAction(up->actor) < 0) continue;
+            if (!session.shootIn(up->actor)) continue;
             const int hs = session.heldSlotOf(up->actor);
             const int obj = hs >= 0 ? session.objectSlotId(hs) : -1;
             if (obj < 0 || static_cast<std::size_t>(obj) >= objs.size()) continue;

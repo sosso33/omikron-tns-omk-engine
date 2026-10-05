@@ -457,6 +457,7 @@ struct PlayState {
     std::map<int, GunAnim> gunAnims{};
     std::map<int, int> gunCurType{};   // the clip TYPE his last action started
     std::map<int, int> gunCurSlot{};
+    std::map<int, int> gunActSerialSeen{};   // the shoot requests applied, per actor (S13)
     float playerDeathCountdown{};
     std::set<int> gunStandDown{};
     std::set<int> gunLooped{};   // who has said his clip looped
