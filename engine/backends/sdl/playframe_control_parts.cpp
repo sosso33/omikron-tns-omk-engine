@@ -721,7 +721,10 @@ void PlayState::controlFlight() {
                     std::printf("  ASTAROTH's gate (sub_47FD90): %d of 6 souls down, state %d, "
                                 "%s, %s - +88 %d (AstDos at %.0f %.0f %.0f)\n",
                                 astaroth.destroyed, stateWas,
-                                g.fromBehind ? "from behind" : "from in front",
+                                !((stateWas < 17 || stateWas > 19) &&
+                                  astaroth.destroyed >= omk::kAstarothSouls)
+                                    ? "direction untested"
+                                    : g.fromBehind ? "from behind" : "from in front",
                                 g.reaction == R::Back ? "IN THE BACK (AstDos)"
                                 : g.reaction == R::Flinch ? "refused, he FLINCHES"
                                 : "refused", ar.actionCounter, double(back[0]),

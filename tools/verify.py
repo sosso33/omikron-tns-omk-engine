@@ -40057,7 +40057,8 @@ def c_engine_astaroth_souls():
                         r"drawn", a)
     after = (sorted(_re.findall(r"set\.hide_piece (\d+) - the row hidden", a)),
              "hid actor 657 TUY5_FN" in a)
-    gate = _re.findall(r"ASTAROTH's gate \(sub_47FD90\): (\d+) of 6 souls down - (\w+)", bo)
+    gate = _re.findall(r"ASTAROTH's gate \(sub_47FD90\): (\d+) of 6 souls down, state \d+, "
+                       r"direction untested, (\w+)", bo)
     hurt = len(_re.findall(r"^  hit: damage", bo, _re.M))
     return ((setup.groups() if setup else None), left, down, onMesh, drawn[-1:] if drawn else [],
             after, gate[:1], len(gate) >= 1, hurt), \
