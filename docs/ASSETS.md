@@ -3632,11 +3632,24 @@ the action lasts. Action **16 is the only one with no animation**: it waits
 `(rand() & 0x1F) + 30` frames, one to two seconds at 30 Hz.
 
 **Astaroth** has no table — he is a hand-written machine on `+156` with states
-16..21, 27 and 29, closing to **195** units to grapple, throwing inside
-**273** with an impulse of 3700 / 2300 / 1200 by the **78** and **156** unit
-bands, and timers of **150** and **60** frames. His speed and turn rate step
-with health too, but on `<` where Gandhar's bands use `≤`: **1.0 / 1.5 / 2.0**
-and **60° / 40° / 30°**.
+16..21, 27 and 29 (`todo/astaroth.md` carries the whole reading). It was
+recorded here as a grapple and a throw with an "impulse" and a "turn rate";
+**corrected 2026-10-05 from the assembly**, three labels were wrong. State 29
+STANDS and fires while his six weak points (`PAame01..06`, set meshes of
+`PAstarot.3DO`, three bolts each) remain; 16 WALKS at the player on a 9-cell
+aim grid; inside **195** units he winds up (17), crouches (18) and LEAPS onto
+the player's position (19), and on landing a SLAM inside **273** units does
+**3700 / 2300 / 1200** of DAMAGE by the **78** / **156** bands - through
+`sub_423B10`, the direct-damage call, not a push; then 21 is a big shot. The
+**1.0 / 1.5 / 2.0** stepping with health on `<` (Gandhar's bands use `≤`) is
+his ANIMATION RATE `flt_6A062C`, times `flt_657AF8` (1.0 / 1.2 / 1.4 by shoot
+difficulty), and the **60 / 40 / 30** is the frames a slot-1 bolt WAITS at the
+muzzle (shot-sprite row `+24`, `sub_44F020` at 0x4802FB), divided by the same
+factor. The timers **150** and **60** are written but read only by state 20,
+which nothing of his writes. A bolt reaches the weak points only through a
+world-hit callback (`sub_44CD90` → `off_4C8444`, called by `Projectiles_Tick`
+at 0x44DDDF with the struck set mesh), and his body only from BEHIND, on the
+`AstDos` mesh, once all six are down (`sub_47FD90`).
 
 **What the shipped data says about all four**, which is what decides how much
 each is worth reading:
