@@ -3235,11 +3235,26 @@ bool GlesRenderer::presentOverlay(const Surface& s, const unsigned char* mask, c
     // against the last frame's (comparing against a kept copy read 3 MB a
     // frame, 18 ms on a console with nothing changed). The mask is looked at
     // only on the rows `maskRows` flags - it is zero everywhere else.
+    // FOUR LANES, not one (todo/cpu-vs-original.md, the overlay): one FNV
+    // chain over a row is a multiply that waits on the last, 320 a row of
+    // the colour plane, 480 rows an overlay frame - the console's "texture
+    // upload" was 6.2 ms an overlay frame for 76 rows actually sent in 60
+    // frames. Four chains over interleaved words run side by side; the value
+    // only ever meets its own last frame's, so the function is free to change.
     const auto rowHash = [](const unsigned char* p, std::size_t n) {
-        std::uint32_t h = 2166136261u;
+        std::uint32_t h0 = 2166136261u, h1 = 0x811C9DC5u ^ 0x9E3779B9u,
+                      h2 = 0x811C9DC5u ^ 0x7F4A7C15u, h3 = 0x811C9DC5u ^ 0x94D049BBu;
         const std::uint32_t* q = reinterpret_cast<const std::uint32_t*>(p);
-        for (std::size_t i = 0; i < n / 4; ++i) h = (h ^ q[i]) * 16777619u;
-        return h;
+        const std::size_t words = n / 4;
+        std::size_t i = 0;
+        for (; i + 4 <= words; i += 4) {
+            h0 = (h0 ^ q[i])     * 16777619u;
+            h1 = (h1 ^ q[i + 1]) * 16777619u;
+            h2 = (h2 ^ q[i + 2]) * 16777619u;
+            h3 = (h3 ^ q[i + 3]) * 16777619u;
+        }
+        for (; i < words; ++i) h0 = (h0 ^ q[i]) * 16777619u;
+        return h0 ^ (h1 * 3u) ^ (h2 * 5u) ^ (h3 * 7u);
     };
     const auto sync = [&](GLuint tex, const unsigned char* cur, std::vector<std::uint32_t>& last,
                           int bpp, GLenum fmt, GLenum type, const unsigned char* rows,

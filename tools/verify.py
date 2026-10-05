@@ -27908,6 +27908,64 @@ def c_engine_lazy_collision():
         "log are those of the eager placement"
 
 
+def c_engine_gles_overlay():
+    r"""THE GLES OVERLAY DRAWS WHAT THE CPU COMPOSITE DRAWS (2026-10-05).
+    A frame with something over the world - a fade, a subtitle, the fight's
+    gauges - is presented on the GLES window by blending the composed
+    interface over the world the GPU already drew (`presentOverlay`,
+    `todo/vita-port.md` G6 step 2), sending only the rows that changed since
+    the last overlay frame, found by a hash a row. Nothing checked it until
+    now; and the row hash was made four-lane on 2026-10-05
+    (`todo/cpu-vs-original.md`: the console's overlay step was 6.2 ms a
+    frame), which a stale row would betray.
+
+    The supermarket fight (`--fight-supermarket`, 660 frames: the fight, its
+    fades, then a media line - every frame from ~460 on an overlay frame) on
+    the GLES window, hidden: the window's last frame (`OMK_GLES_WINDUMP`)
+    against the same run's CPU-composed frame with the overlay off
+    (`OMK_NO_OVERLAY=1`, `--dump`), compared in 565 as `gpuPresentVerify`
+    does - 0 of 307200 differ.
+
+    Shown to fail (2026-10-05): the row hash returning a constant, so no row
+    is re-sent after the first overlay frame (red: thousands differ).
+    """
+    import subprocess, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    mk = subprocess.run(["make", "-s", "play-gles"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play-gles")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no GLES build here (SDL2 + GL) - the backend is optional"
+    tmp = tempfile.mkdtemp()
+    try:
+        win, cpu = os.path.join(tmp, "win.bin"), os.path.join(tmp, "cpu.bin")
+        args = [play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                "--save", os.path.join(ROOT, "traces", "save-appart.bin"), "--fight-supermarket",
+                "--nofmv", "--res", "640x480", "--frames", "660"]
+        base = dict(os.environ, OMK_HIDDEN_WINDOW="1")
+        subprocess.run(args, capture_output=True, text=True, errors="replace",
+                       env=dict(base, OMK_GLES_WINDUMP=win))
+        subprocess.run(args + ["--dump", cpu], capture_output=True, text=True, errors="replace",
+                       env=dict(base, OMK_NO_OVERLAY="1"))
+        a = open(win, "rb").read() if os.path.exists(win) else b""
+        b = open(cpu, "rb").read() if os.path.exists(cpu) else b""
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    n = 640 * 480
+    if len(a) != 4 * n or len(b) != 2 * n:
+        return ("dumps", len(a), len(b)), ("dumps", 4 * n, 2 * n), \
+            "both runs must leave a 640x480 frame (no GL window here, or the run failed)"
+    px = struct.unpack("<%dH" % n, b)
+    diff = 0
+    for i in range(n):
+        r, g, bl = a[4 * i], a[4 * i + 1], a[4 * i + 2]
+        v = (((r * 31 + 127) // 255) << 11) | (((g * 63 + 127) // 255) << 5) | ((bl * 31 + 127) // 255)
+        diff += v != px[i]
+    print("        the overlay window against the CPU composite: %d of %d pixels differ" % (diff, n))
+    return (diff,), (0,), \
+        "the fight's last frame presented through the GLES overlay is the CPU composite, " \
+        "pixel for pixel in 565"
+
+
 def c_engine_street_memory():
     r"""THE STREET'S MEMORY AGAINST THE ORIGINAL'S, tier A (2026-10-04,
     `todo/ram-vs-original.md`): what the port keeps in Anekbah where the
@@ -43199,6 +43257,7 @@ SLOW = [
     ("engine: raster cost", c_engine_raster_cost, "todo/cpu-vs-original.md tier A; o3de/raster.h"),
     ("engine: particle gate", c_engine_particle_gate, "todo/cpu-vs-original.md tier C; o3de/particles.h"),
     ("engine: lazy collision", c_engine_lazy_collision, "todo/cpu-vs-original.md tier C; o3de/collision.h"),
+    ("engine: gles overlay", c_engine_gles_overlay, "todo/vita-port.md G6; backends/gles/glesrender.cpp"),
     ("engine: profiler control", c_engine_profiler_control, "todo/debug-tools.md step 3"),
     ("engine: profiler gpu", c_engine_profiler_gpu, "todo/debug-tools.md step 5"),
     ("engine: release build", c_engine_release_build, "todo/debug-tools.md"),
