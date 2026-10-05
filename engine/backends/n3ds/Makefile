@@ -40,6 +40,8 @@ TOOLBIN  := $(DEVKITPRO)/tools/bin
 CXX      := $(DEVKITARM)/bin/arm-none-eabi-g++
 CC       := $(DEVKITARM)/bin/arm-none-eabi-gcc
 SMDHTOOL := $(TOOLBIN)/smdhtool
+PICASSO  := $(TOOLBIN)/picasso
+BIN2S    := $(TOOLBIN)/bin2s
 3DSXTOOL := $(TOOLBIN)/3dsxtool
 
 ENGINE   := ../..
@@ -59,22 +61,24 @@ CXXFLAGS := -std=gnu++20 -O2 -g $(ARCH) -mword-relocations -ffunction-sections -
             -MMD -MP
 LDFLAGS  := -specs=3dsx.specs -g $(ARCH) -Wl,--gc-sections
 LIBS     := -L$(CTRULIB)/lib -lctru -lm
+PLAY_LIBS := -L$(CTRULIB)/lib -lcitro3d -lctru -lm
 
 # ---- the engine: every ported source, exactly the Makefile's glob
 ENGINE_SRC := $(wildcard $(ENGINE)/src/*/*.cpp)
 ENGINE_OBJ := $(patsubst $(ENGINE)/src/%.cpp,$(OUT)/obj/engine/%.o,$(ENGINE_SRC))
 
 # ---- omk_play: every `backends/sdl/` source but the SDL side of the gateway
-# (`platform/frontend.h`) - the SDL frontend, the GPU glue, the `--scene` set
+# (`platform/frontend.h`) - the SDL frontend, the GPU glue (the 3DS has its
+# own, `playgpu_citro3d.cpp`), the `--scene` set
 # viewer and the instruments (`playharness.cpp`; the glob already brings
 # `playharness_off.cpp`, their empty stubs): the classic Mac build's list.
 PLAY_ALL := $(wildcard $(ENGINE)/backends/sdl/*.cpp)
 PLAY_SRC := $(filter-out $(addprefix $(ENGINE)/backends/sdl/,sdlfront.cpp playscene.cpp playharness.cpp) \
-                         $(wildcard $(ENGINE)/backends/sdl/playgpu_*.cpp),$(PLAY_ALL)) \
-            $(ENGINE)/backends/sdl/playgpu_none.cpp
+                         $(wildcard $(ENGINE)/backends/sdl/playgpu_*.cpp),$(PLAY_ALL))
 PLAY_OBJ := $(patsubst $(ENGINE)/backends/sdl/%.cpp,$(OUT)/obj/play/%.o,$(PLAY_SRC)) \
             $(OUT)/obj/play/n3ds_main.o $(OUT)/obj/play/n3dsfront.o $(OUT)/obj/play/playscene_off.o \
-            $(OUT)/obj/play/n3dshost.o $(OUT)/obj/play/n3dspanel.o
+            $(OUT)/obj/play/n3dshost.o $(OUT)/obj/play/n3dspanel.o \
+            $(OUT)/obj/play/c3drender.o $(OUT)/obj/play/playgpu_citro3d.o $(OUT)/obj/play/scene_shbin.o
 BOOT_OBJ := $(OUT)/obj/boot/omk.o $(OUT)/obj/boot/n3ds_main.o $(OUT)/obj/boot/n3dshost.o
 
 ICON     := $(CTRULIB)/default_icon.png
@@ -112,6 +116,16 @@ $(OUT)/obj/play/%.o: $(ENGINE)/backends/sdl/%.cpp
 $(OUT)/obj/play/n3ds_main.o: n3ds_main.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(PLAY_FLAGS) -DOMK_3DS_ENTRY=omk_play_main -c $< -o $@
+# the scene's vertex shader (`scene.v.pica`): assembled by picasso, embedded
+# by bin2s - run in the output directory, as it names its symbols after the
+# file (`scene_shbin`, `scene_shbin_size`)
+$(OUT)/scene.shbin: scene.v.pica
+	@mkdir -p $(dir $@)
+	$(PICASSO) -o $@ $<
+$(OUT)/obj/play/scene_shbin.o: $(OUT)/scene.shbin
+	@mkdir -p $(dir $@)
+	cd $(OUT) && $(BIN2S) -a 4 scene.shbin > scene_shbin.s
+	$(CC) -x assembler-with-cpp $(ARCH) -c $(OUT)/scene_shbin.s -o $@
 $(OUT)/obj/play/%.o: %.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(PLAY_FLAGS) -c $< -o $@
@@ -119,7 +133,7 @@ $(OUT)/obj/play/%.o: %.cpp
 $(OUT)/omk_boot.elf: $(BOOT_OBJ) $(OUT)/libomk.a
 	$(CXX) $(LDFLAGS) -Wl,-Map,$(OUT)/omk_boot.map $(BOOT_OBJ) $(OUT)/libomk.a $(LIBS) -o $@
 $(OUT)/omk_play.elf: $(PLAY_OBJ) $(OUT)/libomk.a
-	$(CXX) $(LDFLAGS) -Wl,-Map,$(OUT)/omk_play.map $(PLAY_OBJ) $(OUT)/libomk.a $(LIBS) -o $@
+	$(CXX) $(LDFLAGS) -Wl,-Map,$(OUT)/omk_play.map $(PLAY_OBJ) $(OUT)/libomk.a $(PLAY_LIBS) -o $@
 
 $(OUT)/omk_boot.smdh:
 	@mkdir -p $(dir $@)

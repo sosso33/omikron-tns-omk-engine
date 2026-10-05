@@ -1,0 +1,27 @@
+; SPDX-License-Identifier: GPL-3.0-or-later
+; THE 3DS SCENE VERTEX SHADER (`c3drender.cpp`, `todo/3ds-port.md` step 3).
+;
+; A PASS-THROUGH, on purpose: the vertices arrive already transformed,
+; near-clipped, culled and screen-clipped on the CPU, as CLIP-SPACE positions
+; - the original's own `D3DTLVERTEX` path, handed to the device already
+; projected, and the GL1 backend's (`backends/gl1/gl1render.cpp`), which this
+; renderer mirrors. The only work here is the colour: it arrives as four
+; unsigned bytes, which the PICA200 converts to 0..255 floats WITHOUT
+; normalising, so it is scaled back to 0..1.
+
+.constf k(0.0039215686, 0.0039215686, 0.0039215686, 0.0039215686)
+
+.out outpos position
+.out outclr color
+.out outtc0 texcoord0
+
+.alias inpos v0
+.alias inclr v1
+.alias intc  v2
+
+.proc main
+	mov outpos, inpos
+	mul outclr, k, inclr
+	mov outtc0, intc
+	end
+.end

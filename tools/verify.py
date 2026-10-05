@@ -41434,6 +41434,8 @@ def c_licence_headers():
     `engine/tools/sound_equiv.cpp` (2026-10-05, `engine: device sounds`).
     **565 -> 569**: `backends/n3ds/n3dshost.{h,cpp}` and `n3dspanel.{h,cpp}`
     (2026-10-06), the 3DS instrument panel (`todo/3ds-port.md` step 2b).
+    **569 -> 572**: `backends/n3ds/c3drender.{h,cpp}` and `playgpu_citro3d.cpp`
+    (2026-10-06), the 3DS citro3d backend (`todo/3ds-port.md` step 3).
     **564 -> 565**: `scripts/3ds-toolchain.sh` (2026-10-06), the 3DS
     toolchain built from source without pacman.
     **560 -> 564**: `backends/n3ds/n3ds_main.cpp`, `n3dsfront.{h,cpp}` and
@@ -41478,7 +41480,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (569, [], 1, []), \
+           (572, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \

@@ -317,6 +317,29 @@ leaves the screen with the frame rate alone.
 
 ### Step 3 - the citro3d backend
 
+**FIRST LIGHT 2026-10-06, IN AZAHAR** - `backends/n3ds/c3drender.{h,cpp}`
+(not `backends/citro3d/`: it is the 3DS build's alone), `scene.v.pica` (a
+pass-through vertex shader: the vertices arrive in clip space), the glue
+`playgpu_citro3d.cpp` in the world slot, drawn OFFSCREEN at 640x480 and read
+back to the RGB565 frame - the SDL GL1 path's shape. **The textures were
+measured first: 2534 of 2534 are 256x256 (2324) or 64x64 (210), all inside
+the PICA's power-of-two 8..1024.** Compared with the desktop software
+reference on the same arguments: **Anekbah's street, 99.9% of pixels within
+24 levels per channel, mean difference 3.6** (the same picture - the set,
+the crowd, Kay'l and his shadow, the fire's additive blend, the sky); **the
+Impasse's opening (`--area 222 --scene-chunk 55`), the letterbox's 128 black
+rows exactly the reference's and 97.1% within 24 levels**. Two conventions
+settled by those runs: the display transfer hands the rows TOP-DOWN (read
+bottom-up, the first frame was upside down and otherwise right), and the
+viewport's origin is the bottom-left (the letterbox lands where the
+reference puts it). The first street frame: 31879 triangles, 15609 drawn,
+47400 vertices; 31 textures, 3968 KB as RGBA5551; 3744 KB of VRAM left with
+the target and its depth. (The panel's "VRAM 0.0 free" before this was the
+pool not yet made: libctru makes it on the first `vramAlloc`.) Not yet:
+presenting straight to the top screen, the depth tie baked, bodies posed by
+the vertex shader, the 16-bit question (needs the console's own dither), and
+any timing - the emulator's says nothing about the console's.
+
 `backends/citro3d/` modelled on `gl1render.cpp`, `playgpu_citro3d.cpp` its
 glue. First the 16-bit question of section 3, then each item as a reading of
 the boundary, not a new design:
