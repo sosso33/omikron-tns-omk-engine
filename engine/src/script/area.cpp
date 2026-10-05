@@ -2304,6 +2304,13 @@ void Session::showCharacter(int actor, bool place) {
         sh.model = modelOfActor(actor);
         sh.bank  = bankOfActor(actor);
         scriptShown_.push_back(sh);
+        // A PATH THE ENGINE NEVER TAKES (todo/drift-audit.md T4): 78's
+        // handler dereferences `sub_40D6A0`'s answer unchecked, so an id no
+        // resident table places would FAULT there - and no shipped site
+        // names one (`verify.py: character shows resolve`). Kept as the
+        // port's tolerance, and said aloud whenever it is used.
+        std::printf("SIDE-SHOWN actor %d (%s): no resident table places him - a path the "
+                    "engine would fault on\n", actor, sh.model.c_str());
     }
     rebuildShown();
 }

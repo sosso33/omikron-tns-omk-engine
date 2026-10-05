@@ -41009,6 +41009,56 @@ def c_engine_gandhar_play():
            "antechamber"
 
 
+def c_character_shows_resolve():
+    r"""EVERY `character.show` NAMES A BODY A TABLE PLACES (`todo/drift-audit.md`
+    T4, checked 2026-10-06).
+
+    Op 78's handler (0x403CB0) resolves the id through `sub_40D6A0` - the
+    20-byte records of the script's own slot, its AREA's table (+40, count
+    +72) then the SCENE's over it (+8, count +40) - and DEREFERENCES the
+    answer without a check: an id no resident table places would fault. The
+    port keeps such an id in a side list (`scriptShown_`) that nothing ever
+    clears, which is what T4 filed - so the question is whether shipped data
+    can reach it. Over the whole corpus: every site's id is in its own chunk's
+    table but 20, all in SCENE scripts, and each of those 20 is in an AREA's
+    table (SCENE 62's in the rooftops' 249, 57's in 230, ...) - none names an
+    id no table places. The side list is a tolerance the game never needs;
+    `omk-play` says `SIDE-SHOWN` aloud if it is ever used.
+    """
+    import struct, re as _re, io, contextlib
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import script_dump as sd
+
+    def table(b, kind):
+        if kind == "AREA":
+            ptr, cnt = struct.unpack_from("<i", b, 40)[0], struct.unpack_from("<h", b, 72)[0]
+        else:
+            ptr, cnt = struct.unpack_from("<i", b, 8)[0], struct.unpack_from("<h", b, 40)[0]
+        return {struct.unpack_from("<h", b, ptr + 20 * i + 2)[0] for i in range(max(cnt, 0))
+                if 0 <= ptr + 20 * i and ptr + 20 * i + 20 <= len(b)}
+    tables, sites = {}, []
+    for kind, rng in (("AREA", range(0, 260)), ("SCENE", range(0, 80))):
+        for c in rng:
+            try:
+                b, scripts = sd.scripts_of(kind, c)
+            except Exception:
+                continue
+            tables[(kind, c)] = table(b, kind)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                for lab, off in scripts:
+                    print(sd.listing(b, off, lab))
+            for m in _re.finditer(r"character\.show +(-?\d+), (\d+)", buf.getvalue()):
+                sites.append((kind, c, int(m.group(1))))
+    own = [x for x in sites if x[2] != -1 and x[2] not in tables[(x[0], x[1])]]
+    anyArea = set().union(*(t for (k, _), t in tables.items() if k == "AREA"))
+    nowhere = [x for x in own if x[2] not in anyArea]
+    return (len(sites), len(own), sorted({x[0] for x in own}), len(nowhere)), \
+           (1256, 20, ["SCENE"], 0), \
+           "character.show sites; those whose id is not in their own chunk's table, and " \
+           "their kind; those whose id no area's table places at all"
+
+
 def c_engine_head_camera():
     r"""A WORLD CAMERA ON THE PLAYER'S HEAD - subject kinds 1 and 3
     (`todo/drift-audit.md`, the follow-up to S14).
@@ -43679,6 +43729,7 @@ SLOW = [
     ("engine: gandhar head", c_engine_gandhar_head, "todo/gandhar.md 3b; actor/shoothit.h"),
     ("engine: gandhar grab", c_engine_gandhar_grab, "todo/gandhar.md 4; actor/gandhar.h"),
     ("engine: gandhar play", c_engine_gandhar_play, "todo/gandhar.md 5; actor/gandhar.h"),
+    ("character shows resolve", c_character_shows_resolve, "todo/drift-audit.md T4; script/area.cpp"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),
