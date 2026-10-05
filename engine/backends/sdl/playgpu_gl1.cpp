@@ -46,8 +46,9 @@ void PlayState::gpuOpenWorldHarness() {
     if (r->init(dispW, dispH)) {
         worldVk = r;
 #if defined(OMK_GL1_AGL)
-        std::printf("renderer: the world through %s (the window's back buffer, read back; "
-                    "the composited frame drawn over it and swapped)\n", r->name());
+        std::printf("renderer: the world through %s (the window's back buffer, presented "
+                    "STRAIGHT - the interface blended over it on the GPU; --gl1-composite "
+                    "reads it back and composes on the CPU)\n", r->name());
 #else
         std::printf("renderer: the world through %s (offscreen; the frame is presented on the CPU)\n",
                     r->name());

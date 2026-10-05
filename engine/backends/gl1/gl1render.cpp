@@ -548,32 +548,62 @@ public:
                 glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, tw, th, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
                 gpuNote("overlay", omk::prof::kGlTexture, ovTex_, 4LL * tw * th);
                 ovTexW_ = tw; ovTexH_ = th;
+                ovRowKey_.assign(static_cast<std::size_t>(th), 0);   // nothing sent yet
             }
-            ovRgba_.resize(static_cast<std::size_t>(fb.w) * bh * 4);
+            // ONLY THE ROWS THAT CHANGED (2026-10-05, run on Tiger): a row
+            // keeps its place in the texture, and is converted and sent only
+            // when its source - the 565 row, its mask row, the fade - differs
+            // from what was last sent there. A subtitle is the same rows for
+            // hundreds of frames; re-sending the band every frame cost the
+            // emulated Tiger ~45 ms an overlay frame. The key a row is
+            // compared by is a hash, as the GLES overlay's (four chains).
+            glBindTexture(GL_TEXTURE_2D, ovTex_);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+            ovRgba_.resize(static_cast<std::size_t>(fb.w) * 4);
             const float f = fade[3], g = 1.0f - f;
             const float fr = fade[0] * 255.0f * f, fg = fade[1] * 255.0f * f, fbl = fade[2] * 255.0f * f;
-            for (int y = lo; y <= hi; ++y)
-                for (int x = 0; x < fb.w; ++x) {
-                    const std::size_t i = static_cast<std::size_t>(y) * fb.w + x;
-                    unsigned char* o = &ovRgba_[(static_cast<std::size_t>(y - lo) * fb.w + x) * 4];
-                    const std::uint16_t p = fb.px[i];
+            std::uint32_t fadeKey = 2166136261u;
+            for (int q = 0; q < 4; ++q) {
+                std::uint32_t bits;
+                std::memcpy(&bits, &fade[q], 4);
+                fadeKey = (fadeKey ^ bits) * 16777619u;
+            }
+            for (int y = lo; y <= hi; ++y) {
+                const std::uint16_t* src = fb.px.data() + static_cast<std::size_t>(y) * fb.w;
+                const std::uint8_t* msk = mask ? mask + static_cast<std::size_t>(y) * fb.w : nullptr;
+                std::uint32_t h0 = fadeKey, h1 = 0x9E3779B9u, h2 = 0x7F4A7C15u, h3 = 0x94D049BBu;
+                int x = 0;
+                for (; x + 4 <= fb.w; x += 4) {
+                    h0 = (h0 ^ src[x])     * 16777619u;
+                    h1 = (h1 ^ src[x + 1]) * 16777619u;
+                    h2 = (h2 ^ src[x + 2]) * 16777619u;
+                    h3 = (h3 ^ src[x + 3]) * 16777619u;
+                }
+                for (; x < fb.w; ++x) h0 = (h0 ^ src[x]) * 16777619u;
+                if (msk)
+                    for (int m = 0; m < fb.w; ++m) h1 = (h1 ^ msk[m]) * 16777619u;
+                const std::uint32_t key = (h0 ^ (h1 * 3u) ^ (h2 * 5u) ^ (h3 * 7u)) | 1u;   // 0 = never sent
+                if (ovRowKey_[static_cast<std::size_t>(y)] == key) continue;
+                ovRowKey_[static_cast<std::size_t>(y)] = key;
+                for (int xx = 0; xx < fb.w; ++xx) {
+                    unsigned char* o = &ovRgba_[static_cast<std::size_t>(xx) * 4];
+                    const std::uint16_t p = src[xx];
                     float r = 0, gg = 0, b = 0, a = 255;           // the KEY: the world as it is
                     if (p != 0xF81F) {
                         const unsigned r5 = (p >> 11) & 31, g6 = (p >> 5) & 63, b5 = p & 31;
                         r = static_cast<float>(r5 << 3 | r5 >> 2);
                         gg = static_cast<float>(g6 << 2 | g6 >> 4);
                         b = static_cast<float>(b5 << 3 | b5 >> 2);
-                        a = mask ? mask[i] : 0;
+                        a = msk ? msk[xx] : 0;
                     }
                     o[0] = static_cast<unsigned char>(r * g + fr + 0.5f);
                     o[1] = static_cast<unsigned char>(gg * g + fg + 0.5f);
                     o[2] = static_cast<unsigned char>(b * g + fbl + 0.5f);
                     o[3] = static_cast<unsigned char>(a * g + 0.5f);
                 }
-            glBindTexture(GL_TEXTURE_2D, ovTex_);
-            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-            glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, fb.w, bh, GL_RGBA, GL_UNSIGNED_BYTE, ovRgba_.data());
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, y, fb.w, 1, GL_RGBA, GL_UNSIGNED_BYTE, ovRgba_.data());
+            }
             // the 2D state for one quad; `begin` sets all of its own again
             glViewport(0, 0, ww, wh);
             glMatrixMode(GL_PROJECTION); glLoadIdentity(); glOrtho(0, ww, 0, wh, -1, 1);
@@ -587,11 +617,13 @@ public:
             glBlendFunc(GL_ONE, GL_SRC_ALPHA);
             glColor4f(1, 1, 1, 1);
             // the band: fb rows lo..hi, top-down, onto window rows wh-lo..wh-hi-1
-            const float t1 = static_cast<float>(bh) / th, s1 = static_cast<float>(fb.w) / tw;
+            const float t0 = static_cast<float>(lo) / th, t1 = static_cast<float>(hi + 1) / th,
+                        s1 = static_cast<float>(fb.w) / tw;
+            (void)bh;
             const float yTop = static_cast<float>(wh - lo), yBot = static_cast<float>(wh - hi - 1);
             glBegin(GL_QUADS);
-            glTexCoord2f(0, 0);   glVertex2f(0, yTop);
-            glTexCoord2f(s1, 0);  glVertex2f(static_cast<float>(ww), yTop);
+            glTexCoord2f(0, t0);  glVertex2f(0, yTop);
+            glTexCoord2f(s1, t0); glVertex2f(static_cast<float>(ww), yTop);
             glTexCoord2f(s1, t1); glVertex2f(static_cast<float>(ww), yBot);
             glTexCoord2f(0, t1);  glVertex2f(0, yBot);
             glEnd();
@@ -663,7 +695,8 @@ private:
     std::vector<unsigned char> readBig_;
     GLuint ovTex_ = 0;                   // the overlay (`presentOverlay`)
     GLsizei ovTexW_ = 0, ovTexH_ = 0;
-    std::vector<unsigned char> ovRgba_;
+    std::vector<unsigned char> ovRgba_;  // one row, converted
+    std::vector<std::uint32_t> ovRowKey_;   // what each texture row was last sent from
 #endif
 
     // Where the world is drawn and read from: the framebuffer object, or on

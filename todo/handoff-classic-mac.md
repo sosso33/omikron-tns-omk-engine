@@ -189,11 +189,20 @@ Measured on the emulated Tiger (the street start, 640x480, `OMKPlay` in
 
 EMULATED timing - the reader ordered an **iBook G3 500 MHz, 640 MB** (ATI
 Rage Mobility 128, 8 MB; OS 9.2 and Tiger) to measure on: its numbers
-replace these. NOT yet looked at by a person on Tiger (`screencapture` over
-SSH writes nothing, and the host may not script the emulator's window), and
-the OVERLAY half (a subtitle, a fade, the fight's gauges over the world) not
-run there at all: `--fight-supermarket` is the scene for it. Not run on OS 9
-(its emulation has no 3D card).
+replace these. (`screencapture` over SSH writes nothing, and the host may
+not script the emulator's window - a person looks.)
+
+**The OVERLAY, watched by the reader on Tiger (2026-10-05)**: the supermarket
+fight (`--fight-supermarket`) - *"The UI was showing correctly"*. (Kay'l dies
+at once there: `save-appart.bin` gives him Vie 10 and the harness presses
+nothing; `--fight-health` for a longer fight.) Its first version re-sent the
+whole band of interface rows every frame - `present` 41-58 ms an overlay frame
+on the emulated Tiger; now a row keeps its place in the texture and is sent
+only when its 565 row, mask row or fade changed (a hash a row, the GLES
+overlay's): the subtitle's frames **45-52 -> 2.7-4.6 ms**, the gauges ~42 ->
+26. A FADE still re-sends every row (it changes them all) - 26-31 ms; the
+fade done in GL instead (a second blended quad) is the next cut there.
+Not run on OS 9 (its emulation has no 3D card).
 
 ## 4. What is next, in the order proposed
 
