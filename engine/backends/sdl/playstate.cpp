@@ -577,8 +577,41 @@ const omk::NodeTracks * PlayState::pedTracksFor(int sex, const omk::PedClip& c, 
 // `Shoot_ActorAction` is RECORDED on the Session, as the hit's is - its own
 // arms are not ported, and an action of -1 (whose arm is case 0) is not
 // recorded at all.
+// THE FREEZE (todo/drift-audit.md S7). Every writer of bit 0x8000 touches
+// all 100 records at once - `shoot.freeze_all` / `.unfreeze_all` and the four
+// wakes - and `sub_422540` gives a record made under the flag the bit too, so
+// a live record's bit always equals `dword_4E9760`. The flag is the
+// Session's (the ops write it); the records are here.
+void PlayState::shootFreezeSync(long frame) {
+    auto& session = *session_;
+    const bool fz = session.shootMode().frozen();
+    if (fz == shootFrozenApplied) return;
+    shootFrozenApplied = fz;
+    for (auto& [id, r] : shootBrains) {
+        (void)id;
+        if (fz) r.flags |= 0x8000u; else r.flags &= ~0x8000u;
+    }
+    if (fz) playerShootRec.flags |= 0x8000u; else playerShootRec.flags &= ~0x8000u;
+    std::printf("frame %ld: shoot.%s - bit 0x8000 %s on %zu gunmen's records\n", frame,
+                fz ? "freeze_all" : "unfreeze_all", fz ? "set" : "cleared", shootBrains.size());
+}
+
+// `if (dword_4E9760 && g_ShootRecords) { every +160 &= ~0x8000; dword_4E9760 = 0; }`
+// - the head of `sub_4246E0`, `sub_4240E0`, `sub_423B10` and `sub_424470`.
+void PlayState::shootWake(long frame, const char* what) {
+    auto& session = *session_;
+    if (!session.shootMode().frozen() || !session.shootMode().active()) return;
+    session.shootModeMutable().setFrozen(false);
+    shootFrozenApplied = false;
+    for (auto& [id, r] : shootBrains) { (void)id; r.flags &= ~0x8000u; }
+    playerShootRec.flags &= ~0x8000u;
+    std::printf("frame %ld: the freeze is WOKEN by %s - bit 0x8000 cleared on %zu gunmen's "
+                "records\n", frame, what, shootBrains.size());
+}
+
 void PlayState::shootNoise(long frame, int from, const float at[3], const char* what) {
     auto& session = *session_;
+    shootWake(frame, "a noise (sub_4246E0)");      // before anything, map or none
     if (!shootMap.valid()) return;
     const int nf = shootMap.floorAt(at[0], at[1], at[2], -1);
     // one line per noise, so a silence says WHY: how many records were

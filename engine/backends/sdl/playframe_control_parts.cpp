@@ -624,6 +624,7 @@ void PlayState::controlFlight() {
             //   40, and its heal comes back through `shootStatSet`).
             // NOT PORTED, labelled: the death and the shove.
             if (ev.victim == -1) {
+                shootWake(n, "a bolt's hit on the player (sub_4240E0)");
                 const std::size_t recAt = static_cast<std::size_t>(omk::GameState::kPlayerRecord);
                 const std::size_t recLen = static_cast<std::size_t>(omk::GameState::kPlayerRecordSize);
                 omk::HitIn hin;
@@ -652,6 +653,7 @@ void PlayState::controlFlight() {
                 continue;
             }
             // ---- `sub_4240E0`, the damage, on his shoot record ----
+            shootWake(n, "a bolt's hit (sub_4240E0)");
             Staged* vs = nullptr;
             for (auto& up : staged)
                 if (up && up->actor == ev.victim) { vs = up.get(); break; }

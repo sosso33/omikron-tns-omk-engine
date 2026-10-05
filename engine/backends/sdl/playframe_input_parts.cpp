@@ -383,6 +383,9 @@ void PlayState::inputTick() {
     }
     mark("session");
     spanned("session", [&] { session.frame(); });
+    // `dword_4E9760` as this frame's scripts left it, onto the records the
+    // brains read below (todo/drift-audit.md S7)
+    shootFreezeSync(n);
     // `g_IgnoreLedges` as this frame's scripts left it, for the walker that
     // `Actors_TickAll` steps after the pump (todo/drift-audit.md S5)
     if (player && player->walker().ignoreLedges != session.ignoreLedges()) {

@@ -10,7 +10,8 @@ void PlayState::harnessStateWrites() {
         !zoneEnable.empty() || !zoneDisable.empty() || !sceneLoads.empty() || bankReject ||
         rideArg || saveSlotArg >= 0 || boardArg || fightArg >= 0 || callDialog >= 0 ||
         animHoldHarness || shootEndAt >= 0 || shootHealth >= 0 || fightHealth >= 0 || foeAtSet ||
-        !scxPlay.empty() || hideShow[0] >= 0 || gameRestartAt >= 0 || !flickerDir.empty() ||
+        !scxPlay.empty() || hideShow[0] >= 0 || gameRestartAt >= 0 || !opAt.empty() ||
+        !flickerDir.empty() ||
         !snapsDir.empty())
         std::printf("instruments: not built (INSTRUMENTS=0) - the harness flags given are "
                     "parsed and ignored\n");

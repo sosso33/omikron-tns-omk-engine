@@ -676,7 +676,7 @@ const std::vector<ShootEdge>& genericEdges()  { return kGenericEdges; }
 // (`property.hi * 3.9`) use. The ranges are therefore authored in METRES and
 // the cone in DEGREES, per character - and NOT in the weapon table, whose two
 // floats are the fire rate and one nothing reads.
-void initShootRecord(ShootRecord& r, const ShootProperties& p) {
+void initShootRecord(ShootRecord& r, const ShootProperties& p, bool frozen) {
     r.health = p.health ? p.health : 10;          // the engine's own default
     r.rangeAcquire = static_cast<float>(39 * p.rangeAcquireM);
     r.rangeInner   = static_cast<float>(39 * p.rangeInnerM);
@@ -685,6 +685,7 @@ void initShootRecord(ShootRecord& r, const ShootProperties& p) {
     // property 37's five bits, fanned into `+160` exactly as the engine fans
     // them - the values are not a contiguous field and the order is its own.
     r.flags = 64;                                  // `u32(rec,160) = 64`
+    if (frozen) r.flags = 32832;                   // ...= 0x8040 under `dword_4E9760`
     if (p.behaviourBits & 0x10) r.flags |= 0x4000000u;
     if (p.behaviourBits & 0x04) r.flags |= 0x0800000u;
     if (p.behaviourBits & 0x08) r.flags |= 0x2000000u;

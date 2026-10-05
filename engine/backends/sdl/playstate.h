@@ -101,6 +101,7 @@ struct PlayState {
     std::vector<int> & scxPlay = opt.scxPlay;
     int (&hideShow)[4] = opt.hideShow;
     long & gameRestartAt = opt.gameRestartAt;
+    std::vector<std::pair<long, int>> & opAt = opt.opAt;
     bool & openSneak = opt.openSneak;
     bool & startShoot = opt.startShoot;
     int & shootHealth = opt.shootHealth;
@@ -405,6 +406,7 @@ struct PlayState {
     int speakerConv{};
     bool dialogMode{};
     bool shootMode{};   // ops 80/81, `actor/shootmode.h`
+    bool shootFrozenApplied{};   // the records' 0x8000, as last made equal to dword_4E9760
     std::map<std::string, CharModel> charModels{};
     std::map<std::string, PropModel> propModels{};
     omk::Geometry propGeo{};   // the shown props, in world space
@@ -734,6 +736,10 @@ struct PlayState {
     const omk::PedClip * shootClipBySlot(int group, int slot);
     const omk::NodeTracks * pedTracksFor(int sex, const omk::PedClip& c, const std::vector<omk::Mesh>& meshes);
     void shootNoise(long frame, int from, const float at[3], const char* what);
+    // the freeze (`dword_4E9760`): its bit on every record made equal to the
+    // Session's flag, and the WAKE the noise, a hit and a strike begin with
+    void shootFreezeSync(long frame);
+    void shootWake(long frame, const char* what);
     std::vector<omk::MeshPose> playerPoseNow(omk::PlayerController* pl, bool aimLayer,
                                    const omk::NodeTracks& pt, float frame);
     std::vector<omk::MeshPose> gunmanPoseNow(int actor, int deathType, const CharModel* mo,

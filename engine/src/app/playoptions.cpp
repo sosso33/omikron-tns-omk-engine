@@ -523,6 +523,24 @@ int PlayOptions::parse(int argc, char** argv) {
         // A HARNESS FLAG: `--game-restart N` - op 152 run as a context at
         // frame N, its arm and the pump's answer (todo/drift-audit.md S3).
         else if (a == "--game-restart" && i + 1 < argc) gameRestartAt = std::atol(argv[++i]);
+        // A HARNESS FLAG: `--op-at F:OP,...` - an opcode that takes NO
+        // operand bytes (106/107 the freeze, 116/117 the player's suspend,
+        // 152 the restart), run as a context at frame F through the arm a
+        // script reaches (todo/drift-audit.md S7). Anything else is refused.
+        else if (a == "--op-at" && i + 1 < argc) {
+            std::string t = argv[++i], cur;
+            for (char c : t + ",") {
+                if (c != ',') { cur.push_back(c); continue; }
+                long f = -1; int op = -1;
+                if (std::sscanf(cur.c_str(), "%ld:%d", &f, &op) == 2 &&
+                    (op == 106 || op == 107 || op == 116 || op == 117 || op == 152))
+                    opAt.emplace_back(f, op);
+                else if (!cur.empty())
+                    std::fprintf(stderr, "--op-at: '%s' refused (F:OP, OP one of "
+                                 "106 107 116 117 152)\n", cur.c_str());
+                cur.clear();
+            }
+        }
         else if (a == "--hide-show" && i + 1 < argc)
             std::sscanf(argv[++i], "%d,%d,%d,%d", &hideShow[0], &hideShow[1],
                         &hideShow[2], &hideShow[3]);

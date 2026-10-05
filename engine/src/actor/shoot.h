@@ -203,7 +203,8 @@ struct ShootProperties {
 
 // `sub_422540` (0x00422540). The inch-per-metre factor is the engine's own
 // 39 - the same one the pedestrian spawn and the projectile speed use.
-void initShootRecord(ShootRecord& r, const ShootProperties& p);
+// `frozen` is `dword_4E9760` at the time: `u32(rec,160) = frozen ? 32832 : 64`
+void initShootRecord(ShootRecord& r, const ShootProperties& p, bool frozen = false);
 
 class Map2d;   // formats/map2d.h
 
@@ -686,7 +687,9 @@ const std::vector<ShootEdge>& genericEdges();
 // This is ONE record's test; the maker, the player and the floor -1 exit are
 // the caller's. (The first call of a phase also clears 0x8000 on every record
 // when `dword_4E9760` is set, a bit `sub_422540` gives records made while it
-// is; nothing in this port sets that flag, so that is not modelled.)
+// is. Modelled since 2026-10-05 by the frontend: `PlayState::shootWake` at the
+// head of the noise, the hit and the strike, `ShootMode::frozen` the flag -
+// todo/drift-audit.md S7.)
 struct NoiseHearing {
     bool heard   = false;   // in range and able to hear
     bool alerted = false;   // ...and on the noise's floor: +160 |= 0x20

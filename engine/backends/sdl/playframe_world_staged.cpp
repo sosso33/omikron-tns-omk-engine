@@ -592,7 +592,7 @@ void PlayState::worldStaged() {
                         sp.coneDegrees   = props[4];
                         sp.behaviourBits = props[5];
                     }
-                    omk::initShootRecord(fresh, sp);
+                    omk::initShootRecord(fresh, sp, session.shootMode().frozen());
                     // +80, the character type - the hit's gates test it
                     // (type 11 takes the baton, 12 never reacts)
                     fresh.type = session.typeOfActor(s.actor);
@@ -1526,6 +1526,9 @@ void PlayState::worldStaged() {
                         sin.victimYaw = player->facing();
                         sin.dir[0] = static_cast<float>(sdx);
                         sin.dir[2] = static_cast<float>(sdz);
+                        // `sub_423B10` wakes a freeze first - unreachable here,
+                        // since a frozen gunman never strikes (`0x8000` above)
+                        shootWake(n, "a strike (sub_423B10)");
                         const omk::HitOut sho = omk::shootApplyStrike(playerShootRec, sin);
                         std::printf("frame %ld: actor %d %s - STRIKE (outcome 3, sub_423B10): "
                                     "attack slot %d, range %d m (%d), %.1f away, damage %d, "

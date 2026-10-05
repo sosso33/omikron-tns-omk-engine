@@ -84,6 +84,19 @@ public:
     // (event 44 property 7). Type 5 is the Mecagarde.
     static int hudScreenFor(int characterType) { return characterType == 5 ? 33 : 34; }
     int hudScreen() const { return hud_; }
+    // `dword_4E9760`, THE FREEZE (todo/drift-audit.md S7): ops 106 / 107
+    // (`shoot.freeze_all` / `.unfreeze_all`, bare jumps to 0x422B90 /
+    // 0x422BD0) set or clear bit 0x8000 of `+160` on all 100 records and
+    // write this - and do NOTHING while `g_ShootRecords` is null, i.e.
+    // outside a phase. A record `sub_422540` makes while it is set starts
+    // with the bit; the noise, a bolt's hit, a strike and an explosion
+    // (`sub_4246E0`, `sub_4240E0`, `sub_423B10`, `sub_424470`) clear it on
+    // every record before they act - a freeze holds until something happens.
+    // `Shoot_Enter` / `Shoot_Leave` never write it, so it outlives a phase.
+    // The records are the frontend's, so a frontend keeps their bit equal
+    // to this (every writer touches all of them at once).
+    bool frozen() const { return frozen_; }
+    void setFrozen(bool on) { frozen_ = on; }
     // ...and it RECOMPUTES the screen, because `Shoot_Enter` reads property 7
     // at its step 6 and the entry may already have run `begin`.
     void setPlayerType(int t) { type_ = t; hud_ = hudScreenFor(t); }
@@ -146,6 +159,7 @@ private:
     std::map<int, int> actors_;
     std::map<int, int> actorArgs_;   // the same actors' a3
     std::vector<Event> log_;
+    bool frozen_ = false;              // dword_4E9760
 };
 
 }  // namespace omk

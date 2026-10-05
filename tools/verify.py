@@ -39741,6 +39741,56 @@ def c_engine_lift_ride():
            "after the ride down; and the two lift zones he pressed in"
 
 
+def c_engine_shoot_freeze():
+    r"""`shoot.freeze_all` HOLDS THE GUNMEN UNTIL SOMETHING HAPPENS
+    (`todo/drift-audit.md` S7).
+
+    Ops 106 / 107 (bare `jmp`s to 0x422B90 / 0x422BD0, read from the image)
+    set or clear bit 0x8000 of `+160` on all 100 records and `dword_4E9760`,
+    only while the records exist. A record `sub_422540` makes under the flag
+    starts with the bit, and the noise, a bolt's hit, a strike and an
+    explosion clear it everywhere before they act. The port's brain already
+    obeyed the bit (`sub_424DE0`'s five tests); nothing set it.
+
+    The supermarket phase on its usual path (AREA 230 + SCENE 56): left
+    alone, robber 77 kills the player at frame 491 (`engine: shoot death`).
+    Frozen at 400 (`--op-at 400:106`) he stands - his brain asks for action 0
+    at 418 - and nobody kills the player by 700. Frozen at 400 with the player
+    firing (`--keys 54`, every 70 frames), the first shot after the freeze
+    makes a noise, the noise WAKES the freeze before anything else, and 77 is
+    alerted by it.
+
+    Shown to fail: with the two arms in `Session::onCall` gone, the freeze
+    line never prints and 77 kills the player at 491 in the first run.
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    base = [play, fr, os.path.join(ROOT, "tables"), "--save",
+            os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "230",
+            "--scene-chunk", "56", "--zone-disable", "3949", "--op-at", "400:106",
+            "--frames", "700", "--res", "640x480", "--nofmv"]
+    a = subprocess.run(base, capture_output=True, env=env, encoding="latin-1").stdout
+    w = subprocess.run(base + ["--keys", "54,54,54,54,54,54,54", "--keydelay", "70"],
+                       capture_output=True, env=env, encoding="latin-1").stdout
+    frozeA = bool(_re.search(r"^frame 400: shoot\.freeze_all - bit 0x8000 set", a, _re.M))
+    killedA = bool(_re.search(r"KILLED \(sub_423FC0\)", a))
+    wake = _re.search(r"^frame (\d+): the freeze is WOKEN by a noise", w, _re.M)
+    alerted = bool(wake) and bool(_re.search(
+        r"^frame %s: NOISE \(sub_4246E0\) - a shot .* actor 77 ALERTED" % wake.group(1), w, _re.M))
+    return (frozeA, killedA, bool(wake), alerted), (True, False, True, True), \
+           "frozen at 400: the freeze applied, and the player NOT killed by 700 " \
+           "(491 unfrozen); with the player firing: a noise wakes it and 77 is " \
+           "alerted by that same noise"
+
+
 def c_game_clock():
     r"""GAME_STATE 6: the Omikron calendar - 41 days, 13 months, year 7216.
 
@@ -42302,6 +42352,7 @@ SLOW = [
     ("engine: inventory checkpoint", c_engine_inventory_checkpoint, "todo/drift-audit.md S4; SCRIPT_VM"),
     ("engine: game restart", c_engine_game_restart, "todo/drift-audit.md S3; SCRIPT_VM"),
     ("engine: lift ride", c_engine_lift_ride, "todo/drift-audit.md M9; actor/walk.h"),
+    ("engine: shoot freeze", c_engine_shoot_freeze, "todo/drift-audit.md S7; actor/shootmode.h"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),

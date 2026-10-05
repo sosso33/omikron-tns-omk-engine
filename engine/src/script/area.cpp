@@ -2881,6 +2881,14 @@ void Session::onCall(int i, const Call& call) {
         // todo/drift-audit.md S3.
         requestRestart();
         break;
+    case 106: case 107:
+        // `shoot.freeze_all` / `.unfreeze_all` (0x405300 / 0x405310, bare
+        // `jmp`s to 0x422B90 / 0x422BD0, read from the image): bit 0x8000 of
+        // every record's `+160` and `dword_4E9760` - only when the records
+        // exist (`if (!g_ShootRecords) return`), i.e. in a phase
+        // (todo/drift-audit.md S7). The frontend owns the records.
+        if (shoot_.active()) shoot_.setFrozen(call.op == 106);
+        break;
     case 129: case 130:
         // `walk.ledges.ignore` / `.obey` (0x4059D0 / 0x4059F0, no `proc`
         // label - read from the image): the visible flag, the dry-run test,
