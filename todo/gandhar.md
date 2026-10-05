@@ -206,7 +206,18 @@ root delta (`Anim_SetFrame`) moves his node. **`sub_47E5F0`**: a step of
    Originally: **The strike and the grab**: the touch test (`sub_45BC50`/`sub_45BB20`),
    the roll, 26's damage and push, 25's side -> messages 5-8 and the
    `dword_657A28` restart. Check: each side's message, the kill scene runs.
-5. **The play-through**: from zone 317 to message 3 headlessly, renders, the
+5. ✔ **DONE 2026-10-06 - and the task with it.** From the cave's own start
+   (zone 313's baton, the bridge's zone 317) to the cave's end: the player's
+   baton bolts meet his head while he walks and take him down (from 12
+   health, two hits - `--gandhar-health`, so that a fixed `--aim-at` can do
+   it; the gate itself is `engine: gandhar head`'s); his brain posts message
+   3; AREA 2 ends the shoot, plays `DEAD.3DA` on the path `D3BassinD1` (he
+   sinks into the lava - rendered and looked at), the collapse (camera 365,
+   the set pieces hidden), and `area.goto 43`. `engine: gandhar play` (new,
+   shown to fail). **What is left, and none of it in this plan**: the reader's
+   eye on his height, reach and kill scenes in play (`todo/play-test.md` 31),
+   and an aim harness that follows a node, for a full-health play-through.
+   Originally: **The play-through**: from zone 317 to message 3 headlessly, renders, the
    play-test entry, the drift-audit row closed.
 
 Not in scope: the twelve zombies (the generic arm, already run).
