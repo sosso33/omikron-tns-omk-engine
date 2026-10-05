@@ -15887,6 +15887,10 @@ def c_engine_3ds_build():
     a minute on a fresh build directory, incremental after.
     The first build (2026-10-06) compiled every source unchanged with 0
     warnings; its one fault was the Makefile's own (a stub linked twice).
+    SHOWN TO FAIL, 2026-10-06: an `#error` appended to `n3dsfront.cpp` turns
+    it red as (2, 1, (True, True)) - exit 2, one compiler error, the previous
+    `.3dsx` still on disk, which is why the exit status and the error count
+    are asserted and not the files alone; removed, touched, green.
     """
     import subprocess
     eng = os.path.join(ROOT, "engine")

@@ -173,9 +173,15 @@ data, script, audio and input end to end with no GPU code - with the
 interface pillarboxed as section 3 decided. Played: the start menu answers,
 the flat draws, Kay'l walks.
 
-**WRITTEN 2026-10-06, NOT YET BUILT** - devkitPro is not installed on the
-M1 this was written on, so none of it has met a compiler. In
-`engine/backends/n3ds/`:
+**BUILT 2026-10-06, NOT YET RUN** - on the M1, with the toolchain
+`scripts/3ds-toolchain.sh` built (298 MB in `~/devkitpro`, six fixes to get
+devkitPro's buildscripts through on macOS, each commented in the script).
+**Every engine source compiled for the ARM11 unchanged, with 0 warnings**;
+the one fault was this Makefile's. `omk_boot.3dsx` 1.4 MB and
+`omk_play.3dsx` 3.0 MB, the tables in each ROMFS. `verify.py: engine: 3ds
+build` holds it (shown to fail). Neither program has run - on a console or
+in an emulator - so everything below about BEHAVIOUR is still a reading of
+the code. In `engine/backends/n3ds/`:
 
 * `Makefile` (replacing the first `CMakeLists.txt`, step 0 says why) - the
   engine library (`OMK_THREADS 0`, exceptions and RTTI on), `omk_boot`
@@ -209,10 +215,10 @@ reader, 2026-10-06: "focus on new 3ds specific code for now"):
   second `#if`. Until then a new game cannot be named on the 3DS - a SAVE
   (`--save` in `args.txt`) or `--area` starts play;
 * the films' hardware path (`playsetup_play.cpp`, `__vita__`), step 5's;
-* whatever the first build finds in `src/` (the Vita and classic builds each
-  found headers the Mac supplied, and `platform/profile.cpp` uses
-  `std::thread` / `std::mutex`, which devkitARM's libstdc++ may or may not
-  provide with `OMK_THREADS 0`).
+* ~~whatever the first build finds in `src/`~~ - nothing: devkitARM's
+  libstdc++ has `std::thread` / `std::mutex` / `std::filesystem` (devkitPro
+  builds GCC with `--enable-threads` over libctru), so `platform/profile.cpp`
+  and `datafs.cpp` compiled as they are.
 
 ### Step 2b - the bottom screen: the instrument panel
 
