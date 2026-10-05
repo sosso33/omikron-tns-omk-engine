@@ -12670,6 +12670,11 @@ def c_engine_fight_letterbox():
     frame draws (the back-face cull, the 2.0 near plane, the path rotations'
     sense). Not bisected, by the reader's rule on drift; the training-partner
     fix of that day was ruled out (it reads 594 with that fix taken out too).
+    **2026-10-05: 594 -> 596**, two pixels, found by the `--slow --jobs 6`
+    sweep after the Astaroth fight and drift-audit fixes S13-S15 (the shoot
+    actions, the address cameras, the `--frames` delta restore, the walker
+    settle). No camera shake fires in this run. Not bisected, same rule; the
+    frame was rendered and looked at (the robber's throw, the player down).
 
     SHOWN TO FAIL: drop `if (holdEditCam && fightRun.active)` from the
     clear-list and frame 500 reads 0 lit on both edge rows.
@@ -12726,7 +12731,7 @@ def c_engine_fight_letterbox():
         return ("no render",), ("3 frames",), "all three frames must render"
     return (rows[300][0], rows[300][2], rows[500][0], rows[500][1], rows[500][2],
             rows[530][0], rows[530][2]), \
-           (0, 0, 600, 594, 600, 0, 0), \
+           (0, 0, 600, 596, 600, 0, 0), \
            ("the approach cutscene keeps its bars and the FIGHT does not - "
             "the middle row is quoted so a black frame cannot pass by "
             "having no bars either. 625 of 640 until " + "the melee AI's dice are the CRT's generator since 2026-09-24 (not the host's std::rand()), and on them the robber's first move is a throw that ends the fight at +30")
