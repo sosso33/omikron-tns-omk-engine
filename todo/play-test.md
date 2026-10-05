@@ -253,6 +253,17 @@ the harness, not the timer. Also worth a look: the sneak's date and time now
 MOVE (an in-game day is one real hour), and a save made after playing a while
 carries the later time. `todo/drift-audit.md` S1.
 
+## 20. A REPLY THAT RETIRES ITS OWN ZONE - Namtar (2026-10-05)
+
+```
+build/omk-play ~/Documents/omk/fr ../tables --save ../traces/save-appart.bin \
+    --area 47 --scene-chunk 19 --zone-enable 990 --stand -90,-10,-1040,0
+```
+ENTER to talk to Namtar (dialog 197), take the FIRST reply. When it ends,
+pressing ENTER where you stand should NOT start the same conversation again:
+the reply retired zone 990 and opened 991. Before this, the zone stayed live.
+`todo/drift-audit.md` S2.
+
 ## What is NOT fixed, so do not report it as new
 
 * **The lift arrival is still black** and the camera is inside the lift-car

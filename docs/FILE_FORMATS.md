@@ -3092,6 +3092,13 @@ extraction and says so. `--no-audio` turns it off.
   through `Dialog_EvalBranchCondition`; event 59 (fired when a reply is
   chosen) *executes* `ptr[4..7]` in a throwaway context through
   `Dialog_GetBranchAction`. Conditions gate, actions run.
+  **"Throwaway" is about its LIFETIME, not its reach** (2026-10-05): case 59
+  is `Script_NewContext(dword_69BC60, 0, 0, 0)` - a real context in the
+  ACTIVE slot - pc = the action, status 1, ONE `Script_Execute` through every
+  handler, then freed at once. So an action reaches the world exactly as a
+  zone script does: `zone.enable`/`disable` re-register the live zones,
+  `object.show` reaches its prop. The port ran it in a bare interpreter on the
+  DB alone until `todo/drift-audit.md` S2; `verify.py: engine: reply action`.
 * How the engine reaches the 106 conversations that no script launches. Every
   route in the shipped data has been checked and none of them reaches these -
   see section 5e. Either the mechanism is outside the data files entirely, or

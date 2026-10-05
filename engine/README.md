@@ -604,7 +604,10 @@ that exists.
 
 The node's nine pointers split into conditions (`ptr[0..3]`, event 55, while
 Dialog_TickUI builds the menu) and actions (`ptr[4..7]`, event 59, when a reply
-is chosen). That split was proven by tracing, not guessed. Which reply a person
+is chosen). That split was proven by tracing, not guessed. In the game an
+action runs as a Session context (`Session::runReplyAction`, event 59's one
+`Script_Execute` in the active slot - `todo/drift-audit.md` S2); a
+standalone player without a runner falls back to the bare interpreter. Which reply a person
 picks is player input and is not in the data, so the walk takes the first
 available branch — the least interesting policy that still exercises every
 condition on the path.
