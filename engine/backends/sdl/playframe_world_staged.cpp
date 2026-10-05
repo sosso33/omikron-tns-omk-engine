@@ -969,10 +969,11 @@ void PlayState::worldStaged() {
                             astPlace(aa);
                             std::printf("frame %ld: actor %d %s - ASTAROTH STANDS (sub_4B2E90): "
                                         "the stand grid, %d frames, cell %d, aim %.1f / %.1f, "
-                                        "weights %d / %d\n", n, s.actor, s.model.c_str(),
-                                        aa.clipFrames, (aa.clipFrames + 1) / 9,
+                                        "weights %d / %d, keys +%d +%d +%d +%d\n", n, s.actor,
+                                        s.model.c_str(), aa.clipFrames, (aa.clipFrames + 1) / 9,
                                         double(aa.aimYaw), double(aa.aimPitch),
-                                        aa.blend.wYaw, aa.blend.wPitch);
+                                        aa.blend.wYaw, aa.blend.wPitch, aa.blend.off8,
+                                        aa.blend.off10, aa.blend.off12, aa.blend.off14);
                         }
                     } else {
                         const int stateWas = rec.state;

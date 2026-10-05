@@ -40206,7 +40206,8 @@ def c_engine_astaroth_tick():
         capture_output=True, encoding="latin-1",
         env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
     stands = _re.search(r"ASTAROTH STANDS \(sub_4B2E90\): the stand grid, (\d+) frames, cell "
-                        r"(\d+), aim \S+ / \S+, weights (\d+) / (\d+)", o)
+                        r"(\d+), aim \S+ / \S+, weights (\d+) / (\d+), keys \+(\d+) \+(\d+) "
+                        r"\+(\d+) \+(\d+)", o)
     slots = _re.search(r"weapon slots \(sub_436DD0 \"Tire\"\): (\S+), (\S+)", o)
     fires = _re.findall(r"ASTAROTH FIRES slot (\d) \(sub_44CDF0\): (\S+) from .*?, speed "
                         r"(\S+), damage (\d+), wait (\S+), row '(\S+)' -> '(\S+)'", o)
@@ -40222,12 +40223,15 @@ def c_engine_astaroth_tick():
             first.get("0"), first.get("1"), states,
             (slam.group(1), int(slam.group(2)) < 78) if slam else None,
             (landing.groups() if landing else None), (gauge.group(1) if gauge else None)), \
-           (("449", "50", "45", "235"), ("Tire000001", "Tire000000"),
+           (("449", "50", "45", "235", "200", "350", "400", "250"),
+            ("Tire000001", "Tire000000"),
             ("Tire000001", "78.0", "15", "0.0", "AstMaing", "AstMain"),
             ("Tire000000", "39.0", "25", "50.0", "AstBuste", "AstBust"),
             [(29, 16), (16, 17), (17, 18), (18, 19), (19, 21), (21, 16)],
             ("3700", True), ("6", "69"), "200"), \
-           "the stand grid (frames, cell, yaw/pitch weights); the weapon slots; slot 0's " \
+           "the stand grid (frames, cell, yaw/pitch weights, the four key offsets - " \
+           "row 6 for a negative pitch, column 2 for a positive yaw); the weapon slots; " \
+           "slot 0's " \
            "and slot 1's first shot (marker, speed, damage, wait, parent -> row); the " \
            "first six state changes; the slam (damage, inside 78); the landing clip; " \
            "his gauge"
