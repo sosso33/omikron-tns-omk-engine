@@ -264,6 +264,16 @@ pressing ENTER where you stand should NOT start the same conversation again:
 the reply retired zone 990 and opened 991. Before this, the zone stayed live.
 `todo/drift-audit.md` S2.
 
+## 21. A HIDDEN CHARACTER COMES BACK WHERE HE WAS (2026-10-05)
+
+No single command reaches it - it is every `character.hide` ... `character.show
+X, 0` pair in the game (801 shows). What to watch for anywhere: a character
+who disappears for a beat and comes back should come back WHERE HE WAS and in
+the POSE he was in, not at some other spot, and never in a T-pose. The street
+T-pose report (next-tasks 6) is the one to look at again. To see the mechanism
+on Telis in the flat (needs `omk-saves/GAMES`), `--hide-show 53,260,300,0`
+with `verify.py: engine: hide show`'s command. `todo/drift-audit.md` M1.
+
 ## What is NOT fixed, so do not report it as new
 
 * **The lift arrival is still black** and the camera is inside the lift-car

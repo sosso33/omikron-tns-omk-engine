@@ -550,7 +550,7 @@ from the same `NAME` and `LEN_FIX` the disassembler uses
 | 73 | `actor.goto_address` | operand logged as `ADDRESSES`, resolved by `Address_Find`, result handed to `sub_41BF50` with the actor |
 | 92 | `media.play` | handler builds `%s.ADP`, `IMAGES\%s`, `{C}%s` on the `OBJECTS` index it logs |
 | 95 | `camera.set` | field 0 traced into `edi`, which is what the handler logs as `CAMERAS`; issues `Camera_Request` mode 12 |
-| 78 | `character.show` | resolves its `CHARACTERS` operand via `Scene_FindObjectRecord`, calls `Actor_Attach`, sets the record's state bit to **1**; places the actor at the record's own position when field 1 is non-zero |
+| 78 | `character.show` | resolves its `CHARACTERS` operand via `Scene_FindObjectRecord`, calls `Actor_Attach`, sets the record's state bit to **1**; places the actor at the record's own position when field 1 is non-zero - with 0 the node is re-linked where and as `Actor_Detach` (79) left it, transform and pose untouched (801 of the 1256 sites; the port dropped a hidden body and ignored the field until 2026-10-05, `todo/drift-audit.md` M1, `verify.py: engine: hide show`) |
 | 79 | `character.hide` | same resolution, calls `Actor_Detach`, clears the state bit to **0** |
 
 | 50 | `inventory.add` | reads the record from `IAM\OBJECT` and calls `Inventory_Insert`; skips the add when lists 2 or 3 already hold the id |

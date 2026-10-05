@@ -363,6 +363,12 @@ answer changes the fix entirely.
   frames at Anekbah 1804,0,-6890 and Jaunpur address 40 no crowd-model extra
   reached its program's end, and no body drew "the rest pose (no bank clip)".
   Needs WHERE the reader saw it.
+* **2026-10-05: the mechanism above is CLOSED** (`todo/drift-audit.md` M1,
+  `953e6e0`): a hidden body is now parked whole while its actor holds a slot
+  and comes back where and as it was left, and `character.show`'s second
+  field is honoured. Measured on Telis, whose re-show used to draw her
+  unposed at her record. The street report itself is still unreproduced, so
+  this item stays open until a reader says whether it is gone.
 * **The reader's theory, "when they finish their pattern", tested 2026-09-13 in
   Anekbah - no fault found.** `ped_probe 0 9000 3 --programs` loads the
   area's `.SCX` the way omk-play's street start does and logs every actor

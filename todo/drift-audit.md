@@ -50,7 +50,7 @@ as in `Game_Tick`, and running through a conversation.
 
 | # | the drift | what the player meets | exposure |
 |---|---|---|---|
-| M1 ✔ | **Hide then show RESETS a body.** `character.show` (`engine/src/script/area.cpp:2722-2736`) calls `showCharacter(id)` and never reads field 1; the viewer ERASES a body that drops out of `shown()` with its `Staged` record - position, `lastPose`, `progRan`, `progYaw` (`engine/backends/sdl/playframe_world.cpp:258-264`) - and rebuilds it at its placement record, re-seated every frame while nothing drives it (`:147-160`). The audit's reading of `0x403CB0`: the record's position and facing are applied ONLY when field 1 is non-zero; with 0, `Actor_Attach` re-links the same node where it last stood, as it last stood | a body a program moved snaps back to its chunk spot; a body with no `.CTL` (896 of 1032 actor records) comes back in the REST POSE - a T-pose. With field 1 = 1 a moved body is NOT re-placed, because `progRan` blocks it. **The likeliest owner of `todo/next-tasks.md` item 6** ("street NPCs stop and T-pose"), whose own unreproduced hypothesis this is | 1256 shows (801 field 0, 455 field 1), 1980 hides |
+| M1 ✔ **DONE 2026-10-05** (`953e6e0`) | **Hide then show RESET a body.** `character.show` (`engine/src/script/area.cpp:2722-2736`) calls `showCharacter(id)` and never reads field 1; the viewer ERASES a body that drops out of `shown()` with its `Staged` record - position, `lastPose`, `progRan`, `progYaw` (`engine/backends/sdl/playframe_world.cpp:258-264`) - and rebuilds it at its placement record, re-seated every frame while nothing drives it (`:147-160`). The audit's reading of `0x403CB0`: the record's position and facing are applied ONLY when field 1 is non-zero; with 0, `Actor_Attach` re-links the same node where it last stood, as it last stood | a body a program moved snaps back to its chunk spot; a body with no `.CTL` (896 of 1032 actor records) comes back in the REST POSE - a T-pose. With field 1 = 1 a moved body is NOT re-placed, because `progRan` blocks it. **The likeliest owner of `todo/next-tasks.md` item 6** ("street NPCs stop and T-pose"), whose own unreproduced hypothesis this is | 1256 shows (801 field 0, 455 field 1), 1980 hides |
 | M2 | **An undriven NPC with a bank stands on ONE frame.** `idleTracksFor` (`engine/backends/sdl/playstate.cpp:1203-1235`) builds `t.frames = 1` from the default entry's key 1, posed at frame 0 (`playframe_world_staged.cpp:2142-2144`); the comment at `:2115-2118` says the original drives such a body by its channel (`Cef_TickChannel`) | NPCs frozen mid-idle instead of breathing / shifting | 70 records on H1AVNT/F1AVNT, 65 on MECA, 1 on SHAM |
 | M3 | **The speaker is matched by MODEL** when his actor id is not staged: `isSpeaker = ... (!convOwned && s.model == speakerModel)` (`playframe_world_staged.cpp` ~384-392) is true for every staged body wearing that model; `playframe_world.cpp:162-170` re-uses the first stranger with the model as the speaker's body, which is then `placed`, so the camera-solve placement never applies | every extra in the speaker's model mouths the line and takes his yaw; the speaker stands where the stranger stood. The crowd models (PSH, FSH...) are shared widely | not measured |
 | M4 | **One actor id in both resident chunks.** `rebuildShown` (`area.cpp:2148-2170`) pushes both slots' entries, bodies are keyed by actor id (`playframe_world.cpp:91`), so one body takes both records and slot 1's wins; `showCharacter` attaches the first slot's. The original has one runtime slot per record (`word_69BC80`) and resolves through the context (`sub_40D6A0(id, ctx+0x1F)`) | across a transition between two such areas the NPC jumps, or one copy is missing | 95 ids placed by more than one AREA chunk (actor 11 in 35/39/40/87/219/248); 0 name different models; which pairs are ever CO-RESIDENT is not measured |
@@ -116,9 +116,21 @@ fail, play the scene it names.
    says so and runs nothing. What an `object.show` there then DRAWS is M5's
    question. `engine/tools/reply_action_probe.cpp`, `verify.py: engine:
    reply action`. Not yet PLAYED - `todo/play-test.md`.
-3. **M1, hide / show** - read `0x403CB0` / `0x403DD0`, honour field 1, keep a
-   hidden body's `Staged` record while its actor slot lives. Then re-test
-   next-tasks item 6.
+3. ~~**M1, hide / show**~~ - **DONE 2026-10-05** (`953e6e0`). Read:
+   0x403CB0 is `Actor_Attach`, the bit, and `sub_41BDF0(record)` ONLY under
+   `test ebx, ebx` (field 1); `Actor_Detach` (0x41CDD0) unlinks and parks the
+   node with its transform and pose. Now `Session::actorHeld` keeps a hidden
+   body PARKED in the viewer while its slot lives, `placeSeq` counts the
+   field-1 re-places, and a re-seat also writes the held heading. Telis in
+   the flat, hidden and re-shown while nothing drives her: field 0 brings her
+   back on the floor in her last pose (before: at her record 240 units up,
+   UNPOSED), field 1 at her record and facing. `omk-play --hide-show`,
+   `verify.py: engine: hide show`. Two things left as found: hiding a
+   conversation's SPEAKER while the conversation is open does not hide her
+   in the viewer (the speaker path stages her regardless of `shown()`); and
+   T4's script-shown list is unchanged. Next-tasks item 6 is still not
+   reproduced - this closes the mechanism its own hypothesis named, not the
+   report. Not yet PLAYED - `todo/play-test.md`.
 4. **S3-S5, S7** - restart, the inventory checkpoint, the ledges, the shoot
    freezes: four small handlers with named sites.
 5. **T1** - reachability of "Charger" in game first; then the reset.
