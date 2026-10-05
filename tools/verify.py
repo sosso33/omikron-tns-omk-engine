@@ -15872,6 +15872,37 @@ def c_engine_vita_build():
         "- the GAME (play.cpp on GLES + SDL2/vitaGL), the bench and the smoke test"
 
 
+def c_engine_3ds_build():
+    r"""The engine still COMPILES FOR THE NINTENDO 3DS (todo/3ds-port.md
+    step 0). Like the Vita's (`engine: vita build`): a cross toolchain's
+    headers and C++ library are not the host's, so a change can build here
+    and fail there with nothing saying so. This runs the 3DS Makefile
+    (`engine/backends/n3ds/Makefile`: devkitARM + libctru, the whole of
+    `src/` for the ARM11, `omk_boot` - the engine headless - and `omk_play` -
+    THE GAME through `n3ds_main.cpp` and the libctru frontend - linked into
+    `.3dsx` with the tables in their ROMFS) and asserts it succeeded with no
+    compiler error and both programs present. SKIPPED without a devkitARM
+    (`$DEVKITARM`, or `$DEVKITPRO`/devkitARM, or ~/devkitpro/devkitARM -
+    `scripts/3ds-toolchain.sh` builds one), like every optional target. About
+    a minute on a fresh build directory, incremental after.
+    The first build (2026-10-06) compiled every source unchanged with 0
+    warnings; its one fault was the Makefile's own (a stub linked twice).
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    dkp = os.environ.get("DEVKITPRO") or os.path.expanduser("~/devkitpro")
+    dka = os.environ.get("DEVKITARM") or os.path.join(dkp, "devkitARM")
+    if not os.path.exists(os.path.join(dka, "bin", "arm-none-eabi-g++")):
+        return ("skipped",), ("skipped",), "no devkitARM ($DEVKITARM, $DEVKITPRO or ~/devkitpro)"
+    env = dict(os.environ, DEVKITPRO=dkp, DEVKITARM=dka)
+    r = subprocess.run(["make", "-s", "-C", os.path.join(eng, "backends", "n3ds")],
+                       capture_output=True, text=True, env=env)
+    out = os.path.join(eng, "build", "n3ds")
+    progs = tuple(os.path.exists(os.path.join(out, p)) for p in ("omk_boot.3dsx", "omk_play.3dsx"))
+    errors = len(re.findall(r"error:", r.stdout + r.stderr))
+    return (r.returncode, errors, progs), (0, 0, (True, True)), \
+        "the 3DS Makefile's exit status, compiler errors, and the two .3dsx present " \
+        "- omk_boot (the engine headless) and omk_play (the game, libctru frontend)"
 def c_engine_tie_memory():
     r"""The depth tie's memory is almost all ONE group - the claimed keys - and
 
@@ -43661,6 +43692,7 @@ SLOW = [
     ("engine: geometry release", c_engine_geometry_release, "todo/optimization.md 26; o3de/geom3do.h"),
     ("engine: gles pose", c_engine_gles_pose, "todo/gpu-skinning.md 1; backends/gles/glesrender.cpp"),
     ("engine: vita build", c_engine_vita_build, "todo/vita-port.md B1; backends/vita/CMakeLists.txt"),
+    ("engine: 3ds build", c_engine_3ds_build, "todo/3ds-port.md step 0; backends/n3ds/Makefile"),
     ("engine: vita printf", c_engine_vita_printf, "todo/vita-port.md; backends/vita/c99format.h"),
     ("engine: sweep grid", c_engine_sweep_grid, "todo/optimization.md 11; o3de/collision.h"),
     ("engine: props", c_engine_props, "todo/omk-play"),

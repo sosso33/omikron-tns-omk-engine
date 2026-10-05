@@ -66,11 +66,12 @@ ENGINE_OBJ := $(patsubst $(ENGINE)/src/%.cpp,$(OUT)/obj/engine/%.o,$(ENGINE_SRC)
 
 # ---- omk_play: every `backends/sdl/` source but the SDL side of the gateway
 # (`platform/frontend.h`) - the SDL frontend, the GPU glue, the `--scene` set
-# viewer and the instruments' SDL half: the classic Mac build's list.
+# viewer and the instruments (`playharness.cpp`; the glob already brings
+# `playharness_off.cpp`, their empty stubs): the classic Mac build's list.
 PLAY_ALL := $(wildcard $(ENGINE)/backends/sdl/*.cpp)
 PLAY_SRC := $(filter-out $(addprefix $(ENGINE)/backends/sdl/,sdlfront.cpp playscene.cpp playharness.cpp) \
                          $(wildcard $(ENGINE)/backends/sdl/playgpu_*.cpp),$(PLAY_ALL)) \
-            $(ENGINE)/backends/sdl/playgpu_none.cpp $(ENGINE)/backends/sdl/playharness_off.cpp
+            $(ENGINE)/backends/sdl/playgpu_none.cpp
 PLAY_OBJ := $(patsubst $(ENGINE)/backends/sdl/%.cpp,$(OUT)/obj/play/%.o,$(PLAY_SRC)) \
             $(OUT)/obj/play/n3ds_main.o $(OUT)/obj/play/n3dsfront.o $(OUT)/obj/play/playscene_off.o
 BOOT_OBJ := $(OUT)/obj/boot/omk.o $(OUT)/obj/boot/n3ds_main.o
