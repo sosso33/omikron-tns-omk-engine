@@ -434,6 +434,13 @@ void PlayState::worldStaged() {
             // it, `sub_421770` drops it at the clip's end); the death
             // clip is one such clip, and a gunman on a TURN clip carries
             // it alive.
+            // THE WEAPON SLOT TIMERS (`actor+148..+160`, what `sub_44CDF0`
+            // refuses a shot on while above 0): `Actors_TickAll` (0x4681C0,
+            // the loop at 0x468221) takes the frame delta off all four for
+            // every actor it ticks, every frame. Not counted down here until
+            // 2026-10-05 - harmless for Astaroth, whose reload reads 0
+            if (auto st = actorSlotTimer.find(s.actor); st != actorSlotTimer.end())
+                for (float& t : st->second) t -= static_cast<float>(frameSec * 30.0);
             const auto deadIt = shootBrains.find(s.actor);
             const bool astarothRec = deadIt != shootBrains.end() &&
                 deadIt->second.type == static_cast<std::uint32_t>(omk::kAstarothType);
@@ -822,7 +829,7 @@ void PlayState::worldStaged() {
                             std::printf("frame %ld: ASTAROTH HEALTH - the test harness "
                                         "--astaroth-health writes +92 = %d\n", n, astarothHealth);
                         }
-                        astarothSlotTimer[s.actor] = {0.0f, 0.0f, 0.0f, 0.0f};
+                        actorSlotTimer[s.actor] = {0.0f, 0.0f, 0.0f, 0.0f};
                         if (s.mo) {
                             int tire[4];
                             omk::astarothTireSlots(s.mo->meshes, tire);

@@ -814,9 +814,9 @@ omk::AstarothWorld PlayState::astarothWorld(Staged& s, omk::ShootRecord& rec, fl
 }
 
 // GANDHAR's world (`actor/gandhar.h`, `todo/gandhar.md`): the clips, the
-// sight, the turn, the attack pick, the posts and his step's wall test; the
-// FIRE (`sub_44CDF0`) and the TOUCH (`sub_45BC50`) are steps 3-4 and answer
-// "nothing" until then - LABELLED.
+// sight, the turn, the attack pick, the posts, his step's wall test and his
+// FIRE; the TOUCH (`sub_45BC50`) is step 4 and answers "no" until then -
+// LABELLED.
 omk::GandharWorld PlayState::gandharWorld(Staged& s, omk::ShootRecord& rec, float dt) {
     omk::GandharWorld w;
     const int grp = static_cast<int>(rec.type);
@@ -878,6 +878,14 @@ omk::GandharWorld PlayState::gandharWorld(Staged& s, omk::ShootRecord& rec, floa
     w.standable = [this](float& x, float& z) {
         if (!shootMap.valid()) return false;
         return shootMap.snapToStandable(1, x, 0.0f, z);
+    };
+    // `sub_44CDF0(him, slot, the player)`: his `Tire` marker's weapon slot -
+    // slot 1 from action 23, slot 0 from 24
+    w.fire = [this, &s, &rec](int slot) {
+        if (!player) return false;
+        const float target[3] = {float(player->pos()[0]), float(player->pos()[1]),
+                                 float(player->pos()[2])};
+        return recordFire(s, rec, slot, target, "GANDHAR", -1.0f);
     };
     w.forward = [this](float& fx, float& fz) {
         fx = gandharAcquire.fwdX;
@@ -969,18 +977,23 @@ void PlayState::astarothStamp(omk::ShootRecord& rec) {
 // HIGH word, so every shot spends SLOT 0's - and the bolt flies from the
 // marker's drawn position straight at the target, no jitter, at
 // `(int16)hi * 39 / 10` with damage `(int16)lo`.
-void PlayState::astarothFire(Staged& s, omk::ShootRecord& rec, int slot, const float target[3]) {
+// `sub_44CDF0` (0x0044CDF0), an actor's weapon slot fired from his `Tire`
+// marker - Astaroth's and Gandhar's alike. `slot1Wait` >= 0 is Astaroth's
+// `dword_657AF0` override of slot 1's muzzle wait. -> whether a shot left.
+bool PlayState::recordFire(Staged& s, omk::ShootRecord& rec, int slot, const float target[3],
+                           const char* who, float slot1Wait) {
     auto& session = *session_;
-    if (!s.mo || slot < 0 || slot > 3) return;
+    (void)rec;
+    if (!s.mo || slot < 0 || slot > 3) return false;
     int slots[4];
     omk::astarothTireSlots(s.mo->meshes, slots);
     const int w = slots[slot];
-    if (w < 0) return;                                   // `if (!w) return 0`
-    auto& timer = astarothSlotTimer[s.actor][static_cast<std::size_t>(slot)];
-    if (timer > 0.0f) return;                            // the slot timer
+    if (w < 0) return false;                             // `if (!w) return 0`
+    auto& timer = actorSlotTimer[s.actor][static_cast<std::size_t>(slot)];
+    if (timer > 0.0f) return false;                      // the slot timer
     int reload = 0, speedHi = 0, damage = 0, ammo = 0;
-    if (!session.actorWeaponSlot(s.actor, slot, reload, speedHi, damage, ammo)) return;
-    if (ammo < 0) return;                                // -1 refuses; 0 still fires
+    if (!session.actorWeaponSlot(s.actor, slot, reload, speedHi, damage, ammo)) return false;
+    if (ammo < 0) return false;                          // -1 refuses; 0 still fires
     session.setActorProperty(s.actor, 35, ammo - 1);     // the HIGH word 0: slot 0's
     timer = static_cast<float>(static_cast<std::int16_t>(reload));
     omk::ShootWeaponRow row;
@@ -1011,20 +1024,25 @@ void PlayState::astarothFire(Staged& s, omk::ShootRecord& rec, int slot, const f
         rs.impactEffect = sp->impactEffect;
         rs.sprite = true;
         // slot 1's WAIT is the one his tick rewrites (`dword_657AF0`)
-        rs.windUp = (slot == 1 && astarothSlot1Wait >= 0.0f) ? astarothSlot1Wait : sp->windUp;
+        rs.windUp = (slot == 1 && slot1Wait >= 0.0f) ? slot1Wait : sp->windUp;
         rs.grow = sp->grow;
         for (int k = 0; k < 3; ++k) rs.growStep[k] = sp->growStep[k];
     }
     const omk::RecordShotOut out = projectiles.fireFromRecord(s.actor, row, rs);
-    std::printf("frame %ld: actor %d %s - ASTAROTH FIRES slot %d (sub_44CDF0): %s from %.0f %.0f "
+    std::printf("frame %ld: actor %d %s - %s FIRES slot %d (sub_44CDF0): %s from %.0f %.0f "
                 "%.0f, speed %.1f, damage %d, wait %.1f, row '%s' -> '%s', ammo %d -> %d, entry %d\n",
-                n, s.actor, s.model.c_str(), slot, wm.name, double(rs.muzzle[0]),
+                n, s.actor, s.model.c_str(), who, slot, wm.name, double(rs.muzzle[0]),
                 double(rs.muzzle[1]), double(rs.muzzle[2]), double(row.speed), row.damage,
                 double(rs.windUp), parentName.c_str(), rowName.c_str(), ammo, ammo - 1, out.entry);
     if (out.entry >= 0) {
-        shotSound(n, muzzleFx, rs.muzzle, player ? player->pos() : nullptr, "Astaroth's fire");
-        shootNoise(n, s.actor, rs.muzzle, "Astaroth's shot");
+        shotSound(n, muzzleFx, rs.muzzle, player ? player->pos() : nullptr, who);
+        shootNoise(n, s.actor, rs.muzzle, who);
     }
+    return out.entry >= 0;
+}
+
+void PlayState::astarothFire(Staged& s, omk::ShootRecord& rec, int slot, const float target[3]) {
+    recordFire(s, rec, slot, target, "ASTAROTH", astarothSlot1Wait);
 }
 
 void PlayState::shootWake(long frame, const char* what) {

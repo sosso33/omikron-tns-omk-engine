@@ -40566,10 +40566,28 @@ def c_engine_gandhar():
     wall test of one step from his record point (`sub_421140`), cut to x
     alone, z alone or nothing. Asserted: his first step, free, from his entry
     point (202, 798) at length 6 (`39 * property 3 = 5 / 30`); the wall
-    answering 1 (map byte 0, his floor's edge) at z 573; and where he stands
+    answering 1 (map byte 0, his floor's edge) at z 572; and where he stands
     when action 24 hands over to 20, after sliding along x to the corner.
+    (Read 573 / 166 until step 3: his fire now hits the player at frame 977,
+    whose hurt shove moves him, and Gandhar's facing - his walk's axis -
+    follows the player.)
     SHOWN TO FAIL: the forward axis negated (he walks AWAY), the x-alone
     fallback removed (he stops at 166), the speed's /30 made /10.
+
+    **His FIRE** (step 3, `sub_44CDF0` - the port's `recordFire`, shared with
+    Astaroth): action 23 fires SLOT 1 once, at its clip's half
+    (`sub_47EBF0 == 2`), from `Tire000000` on his tail - speed 23, damage 20;
+    action 24 fires SLOT 0 on a coin flip each frame from `Tire000001` at his
+    head - speed 58, damage 10 - as often as the slot's reload lets it, and
+    the reload is the slot timer `Actors_TickAll` counts down every frame for
+    every actor (`actor+148..+160`), which the viewer did not until this step.
+    The main run gives the player 1000 health (`--shoot-health`) so his death
+    does not move the fight; at the save's 10 a tail bolt kills him at frame
+    977. Asserted: the first shot of each slot (frame, slot, marker, speed,
+    damage), how many slot-0 shots his first action 24 makes (19 in its 118
+    frames), and the first bolt to hit the player (frame, damage).
+    SHOWN TO FAIL: action 23 firing slot 0, the half test dropped (it fires on
+    the clip's first frame), the slot timers not counted down (one shot).
     """
     import subprocess, re as _re, json as _json
     eng = os.path.join(ROOT, "engine")
@@ -40592,7 +40610,7 @@ def c_engine_gandhar():
              "--no-crowd"] + list(extra),
             capture_output=True, encoding="latin-1",
             env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
-    o = run(2100)
+    o = run(2100, "--shoot-health", "1000")
     seq = [int(x) for x in _re.findall(r"GANDHAR action (\d+) entered", o)]
     done = {}
     for c, y in _re.findall(r"GANDHAR action (\d+) DONE, node y (-?\d+)", o):
@@ -40604,6 +40622,15 @@ def c_engine_gandhar():
     m24 = _re.search(r"GANDHAR action 24 -> 20 \(clip [-0-9]+, \d+ frames\), health \d+, "
                      r"band \d, step [-0-9/]+, node (-?\d+) -?\d+ (-?\d+)", o)
     at20 = (int(m24.group(1)), int(m24.group(2))) if m24 else None
+    fires = [(int(f), int(sl), mk, float(sp), int(dm)) for f, sl, mk, sp, dm in _re.findall(
+        r"frame (\d+): actor 187 \S+ - GANDHAR FIRES slot (\d) \(sub_44CDF0\): (\S+) from "
+        r"\S+ \S+ \S+, speed (\S+), damage (\d+)", o)]
+    first = {}
+    for fz in fires:
+        first.setdefault(fz[1], fz)
+    burst = sum(1 for fz in fires if fz[1] == 0 and 1015 <= fz[0] < 1133)
+    mh = _re.search(r"frame (\d+): PLAYER HIT by actor 187's bolt - damage (\d+)", o)
+    hit = (int(mh.group(1)), int(mh.group(2))) if mh else None
     o0 = run(880, "--gandhar-health", "0")
     dead = ("GANDHAR posts message 3 from 187 (handled)" in o0,
             "SHOOT MODE LEAVE" in o0)
@@ -40611,13 +40638,17 @@ def c_engine_gandhar():
     m = _re.search(r"GANDHAR action 23 -> (\d+) \(clip [-0-9]+, \d+ frames\), health 40, band (\d)",
                    o40)
     crit = (int(m.group(1)), int(m.group(2))) if m else None
-    return (seq[:len(want)], done.get(18), done.get(17), crit, dead, steps, at20), \
+    return (seq[:len(want)], done.get(18), done.get(17), crit, dead, steps, at20,
+            first.get(1), first.get(0), burst, hit), \
            (want, 255, -153, (scripts["critical"][0]["action"], 2), (True, True),
-            [("free", 0, 202, 798, 6), ("CUT", 1, 166, 573, 6)], (96, 573)), \
+            [("free", 0, 202, 798, 6), ("CUT", 1, 169, 572, 6)], (96, 572),
+            (897, 1, "Tire000000", 23.0, 20), (1016, 0, "Tire000001", 58.0, 10), 19,
+            (977, 20)), \
            "the actions entered (the healthy script by its repeats, then its rewind), " \
            "where the sink and the rise end, the critical band's first action, and the " \
            "death posting message 3 and ending the shoot; his first step and the wall's " \
-           "cut (state, answer, where, its length); where he stands after the walk"
+           "cut (state, answer, where, its length); where he stands after the walk; the " \
+           "first shot of each slot, slot 0's burst in his first action 24, the first hit"
 
 
 def c_engine_head_camera():

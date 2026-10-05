@@ -478,7 +478,7 @@ struct PlayState {
     omk::AstarothFight astaroth{};
     int astarothSoulSlot[omk::kAstarothSouls] = {-1, -1, -1, -1, -1, -1};   // the worldSlots each soul is in
     std::map<int, omk::AstarothActor> astarothActors{};   // his actor-side fields, by actor id
-    std::map<int, std::array<float, 4>> astarothSlotTimer{};   // actor+148+4*slot
+    std::map<int, std::array<float, 4>> actorSlotTimer{};   // actor+148+4*slot, any actor that fires (`sub_44CDF0`)
     omk::AcquireOut astarothAcquire{};    // what `sub_420C70` left for `sub_420EB0`
     float astarothSlot1Wait = -1.0f;      // slot 1's sprite-row WAIT, rewritten each tick
     // `Hud_DrawBar(+92, 200, 1, 0)` this frame, -1 none: the BOSS bar, which
@@ -775,6 +775,8 @@ struct PlayState {
     omk::AstarothWorld astarothWorld(Staged& s, omk::ShootRecord& rec, float dt);
     omk::GandharWorld gandharWorld(Staged& s, omk::ShootRecord& rec, float dt);
     void astarothFire(Staged& s, omk::ShootRecord& rec, int slot, const float target[3]);
+    bool recordFire(Staged& s, omk::ShootRecord& rec, int slot, const float target[3],
+                    const char* who, float slot1Wait);
     void astarothStamp(omk::ShootRecord& rec);
     // `sub_4725B0`'s pose: four keys of the grid clip, two k/256 slerps
     std::vector<omk::MeshPose> astarothPoseNow(const CharModel* mo, const omk::NodeTracks& pt,
