@@ -1615,7 +1615,10 @@ combat record's flag word at once).
 **And 152 — `game.restart`.** The handler sets `g_RestartRequest`; the game
 loop answers by resetting the session, calling **`Game_NewGame`** and fading
 from **white**. Three sites: Lahoreh, Tetra 1, and `Ix Astaroth 2` — where
-Astaroth captures the player's soul, which in Omikron restarts the game. This
+Astaroth captures the player's soul, which in Omikron restarts the game - back
+to `IAM\START`'s AREA 118, whose startup script opens the start menu. Ported
+2026-10-05 (`todo/drift-audit.md` S3, `verify.py: engine: game restart`): the
+pump's answer was there and nothing wrote the flag. This
 is also the opcode whose handler block was the session's original extraction
 trap: the block "with 6072 lines" is the interpreter that happens to follow
 it; the real handler is seven instructions.

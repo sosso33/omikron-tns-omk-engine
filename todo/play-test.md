@@ -282,6 +282,14 @@ ammunition should be what you entered with, not what the failed attempt left
 - the carried list in REVERSE order, which is the engine's own. `todo/drift-
 audit.md` S4.
 
+## 23. A SOUL CAPTURED RESTARTS THE GAME (2026-10-05)
+
+The three `game.restart` sites (Lahoreh / AREA 61, AREA 64, Ix Astaroth 2):
+when Astaroth takes the player's soul the screen should fade in from WHITE on
+the start menu, with nothing of the old area still moving or sounding behind
+it. `omk-play ... --game-restart N` does the same from anywhere.
+`todo/drift-audit.md` S3.
+
 ## What is NOT fixed, so do not report it as new
 
 * **The lift arrival is still black** and the camera is inside the lift-car

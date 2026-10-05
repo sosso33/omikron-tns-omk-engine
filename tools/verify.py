@@ -39654,8 +39654,11 @@ def c_engine_game_restart():
     - `Session::restart` kept the outgoing pool alive until this check found
     it, the old area's programs running under the new game's menu.
 
-    Shown to fail: without the 152 arm nothing restarts; without the pool
-    reset Anekbah's meshes go on moving as the OUTGOING pool.
+    Shown to fail (2026-10-05): without the 152 arm nothing restarts (every
+    element empty); without the four-line pool reset 33 of Anekbah's meshes
+    move as the OUTGOING pool after it. Clearing only the outgoing pool is NOT
+    the bug and passes: the leak is `reloadScene` moving the old ACTIVE pool
+    into the outgoing one, so `scene_` must go too.
     """
     import subprocess, re as _re
     eng = os.path.join(ROOT, "engine")
