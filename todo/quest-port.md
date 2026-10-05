@@ -22,7 +22,12 @@ the record of what was decided and why, so the work can start from it.
 * **The seams are already there.** Quest is Android/ARM with GLES and Vulkan,
   and both backends exist; the Vita port proves the code on far weaker ARM.
   `renderer.h` is decision-level, so stereo is the same submitted list drawn
-  per eye (or once with Vulkan multiview). Game code reaches the host only
+  per eye, or once with MULTIVIEW - which GLES has too (`GL_OVR_multiview2`,
+  what Meta's Unity single-pass uses on GLES; this file first said
+  Vulkan-only, and the reader corrected it). The catch is ours:
+  `glesrender.cpp` is GLES 2.0 with `#version 100` shaders (for the Vita and
+  WebGL), and multiview needs a GLES 3 context and `#version 300 es` - a
+  mechanical third shader prelude (`in`/`out`, `texture`, a declared output). Game code reaches the host only
   through `omk::Frontend`, so OpenXR is one more frontend beside `sdlfront`
   and `carbonfront`.
 * What Unity would buy (the Meta XR SDK's hand tracking, passthrough, store
@@ -117,7 +122,48 @@ in one day (2026-09-18).
   once.
 
 **Not in the first version:** controller pointing in menus, comfort options
-(vignette, teleport), anything past the controllers as a gamepad.
+(vignette, teleport). (It also said "anything past the controllers as a
+gamepad" until §3b: shoot mode's aim is now the controller's pose.)
+
+## 3b. The reader's answers, 2026-10-06
+
+1. **Quest 2 is the minimum.** Budgets are set by the XR2 Gen 1.
+2. **GLES first**, two passes (one per eye) to bring it up; multiview on GLES
+   3 is the first optimisation after, not Vulkan.
+3. **The data is SIDELOADED**, the player's own copy pushed with `adb` into
+   the app's own folder - never in the APK. A sideloaded test build, which is
+   also what a public GPL repo can carry.
+4. **Seated first**, with the reference space behind ONE seam (the eye height
+   and the floor origin chosen in one place), so a standing option is a
+   setting later and not a rewrite.
+5. **What lies outside the authored frame** (set edges, empty rooms, the
+   T-posed actors parked below the floor until their scene) is SHOWN in the
+   prototype; playing it decides whether to black it out.
+6. **Typing a name uses the system keyboard.** To confirm on the device first:
+   in an immersive native app the Android IME does not appear by itself - the
+   ways are the `oculus.software.overlay_keyboard` manifest feature (what
+   Unity's "Requires System Keyboard" adds) or `XR_META_virtual_keyboard`,
+   whose model the app has to draw. Not yet read which one a NativeActivity
+   gets for free.
+7. **Movement is relative to where the player LOOKS** (the head's yaw), not
+   the body's facing.
+8. **Shoot mode aims with the CONTROLLER**, not the head ("aiming with the
+   head will lead to headache in two minutes"). The aim ray is the
+   controller's pose; shoot mode's own first-person aim
+   (`engine/src/actor/player.h`, "FIRST-PERSON AIM", the body turned by the
+   mouse) is where it plugs in - not yet read how far aim and view can part.
+9. **Fights cannot be first person as they are.** The base is the port's
+   flat-screen fight camera as the headset's origin, WITHOUT its zoom in and
+   out, and with its moves slowed.
+
+Also agreed: the sound listener follows the headset; mirrors (a whole second
+scene pass, so four with two eyes) are measured in the one room that has one;
+the near plane needs nothing (`kNearCut` = 2 inches, ~5 cm, `raster.h`).
+
+**And the iteration loop**: macOS has no OpenXR runtime, so a desktop FAKE
+HEADSET in `omk-play` - two eyes side by side, the head on the mouse - lets
+the camera rule, the stereo and the interface panel be built on the Mac and
+checked headless by `verify.py`; the device is then for what only it shows.
 
 ## 4. The preload mode - interiors prepared ahead, on a thread
 
