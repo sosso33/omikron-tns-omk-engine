@@ -166,9 +166,10 @@ HitOut shootApplyHit(ShootRecord& r, const HitIn& in) {
     } else {
         if (dmg != 6) return o;
         // `if (+80 == 13) { v13 = sub_47FD90(...); if (!v13) return -1; }`
-        // - Astaroth's gate (`actor/astaroth.h`); type 10 goes through
-        // `sub_47DF60` next, unread
-        if (r.type == 13u && in.typeGate) {
+        // - Astaroth's gate (`actor/astaroth.h`) - and then `if (+80 == 10)`
+        // the same with `sub_47DF60`, GANDHAR's: the bolt must meet his
+        // `D3Tete` (`todo/gandhar.md` 3b; the frontend's sweep)
+        if ((r.type == 13u || r.type == 10u) && in.typeGate) {
             dmg = in.typeGate(dmg);
             if (!dmg) return o;
         }

@@ -38,8 +38,9 @@
 // A refused hit still STOPS the bolt: `Projectiles_Tick` retires the entry
 // on any body it met, and the refusal only withholds the impact sprite.
 //
-// NOT modelled, and labelled: `sub_47FD90` / `sub_47DF60`, the two unread
-// functions that types 13 and 10 put a 0x4000 victim's damage through; the
+// The two gates types 13 and 10 put a 0x4000 victim's damage through -
+// `sub_47FD90` (Astaroth's back) and `sub_47DF60` (Gandhar's head) - are
+// `HitIn::typeGate`, the frontend's. NOT modelled, and labelled: the
 // explosion a damage over 10 sets off (`sub_424470`); the global
 // `dword_90E0FC` that refuses every hit; and the player's own hurt and death
 // (`sub_47D1F0`, `sub_423FC0`), which are the frontend's.
@@ -129,7 +130,8 @@ struct HitIn {
     int   reactAt = 0;             // property 24 - read for a gunman only
     float victimYaw = 0.0f;
     float boltVel[3] = {0, 0, 0};
-    // A TYPE-13 victim's own gate, `sub_47FD90` (Astaroth, `actor/astaroth.h`):
+    // A TYPE-13 or TYPE-10 victim's own gate - `sub_47FD90` (Astaroth,
+    // `actor/astaroth.h`) or `sub_47DF60` (Gandhar, his head):
     // called with the damage once the 0x4000 rules have passed it, exactly
     // where `sub_4240E0` calls it, and answering the damage to apply or 0 to
     // refuse. It has side effects either way, so it is called at most once.

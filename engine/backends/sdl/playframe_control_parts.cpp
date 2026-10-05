@@ -765,6 +765,50 @@ void PlayState::controlFlight() {
                     }
                     return g.damage;
                 };
+            // GANDHAR's gate, `sub_47DF60` (`todo/gandhar.md` 3b): once the
+            // 0x4000 rule has let the BATON's bolt through, `sub_45E9C0`
+            // sweeps its segment again over every body but the player's,
+            // accepting his `D3Tete` mesh alone (`dword_657A24`, found by
+            // name at his entry) - a miss refuses the damage, a hit plays
+            // effect 19 at `*(D3Tete)+36` (his node plus the head's rest
+            // offset) and passes it. He is hurt only through his HEAD.
+            if (bit->second.type == static_cast<std::uint32_t>(omk::kGandharType))
+                hin.typeGate = [&](int dmg) {
+                    int head = -1;
+                    if (vs->mo)
+                        for (std::size_t mi = 0; mi < vs->mo->meshes.size(); ++mi)
+                            if (std::strcmp(vs->mo->meshes[mi].name, "D3Tete") == 0) {
+                                head = static_cast<int>(mi);
+                                break;
+                            }
+                    omk::BodyHit bh;
+                    const bool inHead = head >= 0 &&
+                        omk::shootSweepBodies(ev.seg, ev.seg + 3, bodies, -1, bh, ev.victim, head);
+                    float at[3] = {0.0f, 0.0f, 0.0f};
+                    if (const auto ga = gandharActors.find(ev.victim); ga != gandharActors.end()) {
+                        float rest[3] = {0.0f, 0.0f, 0.0f};
+                        if (vs->mo) omk::headRestOffset(vs->mo->meshes, rest);
+                        for (int k = 0; k < 3; ++k) at[k] = ga->second.node[k] + rest[k];
+                    }
+                    // where his D3Tete is DRAWN, for the reader of a miss
+                    float hd[3] = {0.0f, 0.0f, 0.0f};
+                    for (const auto& hb : bodies)
+                        if (hb.actor == ev.victim && head >= 0 &&
+                            static_cast<std::size_t>(head) < hb.meshes.size())
+                            for (int k = 0; k < 3; ++k)
+                                hd[k] = hb.meshes[static_cast<std::size_t>(head)].pos[k];
+                    std::printf("  GANDHAR's gate (sub_47DF60): the bolt %s his D3Tete (mesh %d, "
+                                "drawn at %.0f %.0f %.0f; the bolt %.0f %.0f %.0f -> %.0f %.0f "
+                                "%.0f) - damage %d %s\n", inHead ? "MEETS" : "misses", head,
+                                double(hd[0]), double(hd[1]), double(hd[2]), double(ev.seg[0]),
+                                double(ev.seg[1]), double(ev.seg[2]), double(ev.seg[3]),
+                                double(ev.seg[4]), double(ev.seg[5]), dmg,
+                                inHead ? "passes" : "refused");
+                    if (!inHead) return 0;
+                    shotSound(n, 19, at, player ? player->pos() : nullptr,
+                              "Gandhar hit in the head (sub_44EF00 19)");
+                    return dmg;
+                };
             const omk::HitOut ho = omk::shootApplyHit(bit->second, hin);
             if (ho.refused) {
                 std::printf("  hit REFUSED (`sub_4240E0` returns -1) - the bolt stops "

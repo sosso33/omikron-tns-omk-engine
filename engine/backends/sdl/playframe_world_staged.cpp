@@ -890,6 +890,14 @@ void PlayState::worldStaged() {
                             gandharWorld(s, it->second, static_cast<float>(frameSec * 30.0));
                         omk::gandharEnter(ga, it->second, pos, p3, gw);
                         for (int k = 0; k < 3; ++k) s.walkMove[k] = ga.node[k] - s.at[k];
+                        // HIS NODE IS HIS PELVIS - the root mesh's world point
+                        // - so he is drawn pelvis-on-node, as a body an authored
+                        // path places is. Seated by his FEET, as a placement
+                        // record's body is, his lowest point - the tip of a
+                        // tail 280 below the pelvis - took the floor's height
+                        // and the node's offset went on top: his head drew
+                        // above the cave's ceiling, out of every bolt's reach
+                        s.pelvis = true;
                         std::printf("frame %ld: actor %d %s - GANDHAR ENTERS (sub_47DFD0): node y "
                                     "%.0f (+60 %.0f, +64 %.1f), speed %.1f (property 3 = %d), "
                                     "state %d, clip %d, health %d, scripts %zu/%zu/%zu\n", n,

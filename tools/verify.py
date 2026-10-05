@@ -40570,7 +40570,11 @@ def c_engine_gandhar():
     when action 24 hands over to 20, after sliding along x to the corner.
     (Read 573 / 166 until step 3: his fire now hits the player at frame 977,
     whose hurt shove moves him, and Gandhar's facing - his walk's axis -
-    follows the player.)
+    follows the player. **2026-10-05, step 3b: (176, 536) and (175, 536)**,
+    and the first hit at 921 rather than 977 - he is drawn pelvis-on-node
+    now, so his tail's muzzle is ~280 lower and his first bolt reaches the
+    player sooner; and the rolled actions are left out of the sequence, since
+    the closer fight now brings an attack into reach - a 26, the strike.)
     SHOWN TO FAIL: the forward axis negated (he walks AWAY), the x-alone
     fallback removed (he stops at 166), the speed's /30 made /10.
 
@@ -40611,7 +40615,10 @@ def c_engine_gandhar():
             capture_output=True, encoding="latin-1",
             env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
     o = run(2100, "--shoot-health", "1000")
-    seq = [int(x) for x in _re.findall(r"GANDHAR action (\d+) entered", o)]
+    # the ROLLED actions (25 the grab, 26 the strike, 27 a missed grab's
+    # recovery) interject when an attack reaches; the script resumes after
+    seq = [int(x) for x in _re.findall(r"GANDHAR action (\d+) entered", o)
+           if int(x) not in (25, 26, 27)]
     done = {}
     for c, y in _re.findall(r"GANDHAR action (\d+) DONE, node y (-?\d+)", o):
         done.setdefault(int(c), int(y))
@@ -40641,14 +40648,86 @@ def c_engine_gandhar():
     return (seq[:len(want)], done.get(18), done.get(17), crit, dead, steps, at20,
             first.get(1), first.get(0), burst, hit), \
            (want, 255, -153, (scripts["critical"][0]["action"], 2), (True, True),
-            [("free", 0, 202, 798, 6), ("CUT", 1, 169, 572, 6)], (96, 572),
+            [("free", 0, 202, 798, 6), ("CUT", 1, 176, 536, 6)], (175, 536),
             (897, 1, "Tire000000", 23.0, 20), (1016, 0, "Tire000001", 58.0, 10), 19,
-            (977, 20)), \
+            (921, 20)), \
            "the actions entered (the healthy script by its repeats, then its rewind), " \
            "where the sink and the rise end, the critical band's first action, and the " \
            "death posting message 3 and ending the shoot; his first step and the wall's " \
            "cut (state, answer, where, its length); where he stands after the walk; the " \
            "first shot of each slot, slot 0's burst in his first action 24, the first hit"
+
+
+def c_engine_gandhar_head():
+    r"""GANDHAR IS HURT ONLY BY THE BATON, ONLY THROUGH HIS HEAD, ONLY WHILE HE
+    WALKS (`todo/gandhar.md` 3b).
+
+    A reader, from playing the original: *against demons a special weapon is
+    needed, the "baton de pouvoir" - a Waver does nothing.* `sub_4240E0` says
+    the same three ways, in order:
+
+    * his record's `+160 & 0x800` refuses every hit - and nine of his twelve
+      actions set it; 20 and 24 (his walks) clear it;
+    * `0x4000` (his entry sets 0x4020) refuses any bolt but the BATON's
+      (damage 6; the Waver's is 5);
+    * type 10 then goes through `sub_47DF60`: `sub_45E9C0` sweeps the bolt's
+      segment again over every body but the player's, accepting his `D3Tete`
+      alone (`dword_657A24`) - a miss refuses, a hit plays effect 19 there.
+
+    And it needed a DRAWING fix to be reachable at all: his node is his PELVIS
+    (the root mesh's world point), and the viewer seated him by his FEET - the
+    tip of a tail 280 below - so his head drew ~330 above the node, above the
+    cave's ceiling (`GGplaf05`, y -257), where every bolt hit the ceiling. He
+    is drawn pelvis-on-node now.
+
+    The real route: zone 313 (`Départ Shoot Grotte`, `shoot.begin 40` - the
+    Bâton de pouvoir), then the bridge, zone 317, with `--aim-at` on where
+    his head is drawn while he stands at the edge of his floor. Asserted:
+    hits on him refused before the gate, bolts that MEET his head, bolts that
+    miss it, his health after the first meets, and the band his head is drawn
+    in; and the Waver (the `--shoot` harness's weapon) at the same point: all
+    hits on him refused, none reaching the gate.
+
+    SHOWN TO FAIL: the gate passing every bolt (no misses), the pelvis seat
+    taken out (no meets - the head is above the ceiling), the type-10 call in
+    `shootApplyHit` removed (no gate at all).
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+
+    def run(*extra):
+        return subprocess.run(
+            [play, fr, os.path.join(ROOT, "tables"), "--save",
+             os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "2",
+             "--shoot-health", "5000", "--keys", ",".join(["54"] * 60), "--keydelay", "25",
+             "--aim-at", "90,-150,545", "--frames", "1400", "--nodelay", "--no-crowd"]
+            + list(extra),
+            capture_output=True, encoding="latin-1",
+            env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    o = run("--stand", "1811,-9,1216,0", "--player-at", "60:125,-9,401,0")
+    hits = len(_re.findall(r"HIT ACTOR 187 ", o))
+    gates = _re.findall(r"GANDHAR's gate \(sub_47DF60\): the bolt (MEETS|misses) his D3Tete "
+                        r"\(mesh \d+, drawn at \S+ (\S+) \S+;", o)
+    meets = sum(1 for g in gates if g[0] == "MEETS")
+    misses = len(gates) - meets
+    ys = [int(float(g[1])) for g in gates]
+    first = _re.findall(r"hit: damage 6, health (2\d\d) -> (\d+)", o)[:3]
+    w = run("--stand", "125,-9,401,0", "--shoot")
+    weapon = "Waver" in w and "weapon 'Waver'" in w
+    wh = len(_re.findall(r"HIT ACTOR 187 ", w))
+    wgate = len(_re.findall(r"GANDHAR's gate", w))
+    return (hits - len(gates), meets, misses, first, (min(ys), max(ys)) if ys else None,
+            weapon, wh, wgate), \
+           (4, 7, 6, [("250", "244"), ("244", "238"), ("238", "232")], (-200, -126),
+            True, 20, 0), \
+           "the baton: hits refused before the gate (0x800), bolts meeting his head and " \
+           "missing it, his health after the first three, the head's drawn height band; " \
+           "the Waver: equipped, hits on him, and how many reached the gate"
 
 
 def c_engine_head_camera():
@@ -43311,6 +43390,7 @@ SLOW = [
     ("engine: address camera", c_engine_address_camera, "todo/drift-audit.md S14; o3de/worldcam.h"),
     ("engine: head camera", c_engine_head_camera, "todo/drift-audit.md; o3de/worldcam.h"),
     ("engine: gandhar", c_engine_gandhar, "todo/gandhar.md 1; actor/gandhar.h"),
+    ("engine: gandhar head", c_engine_gandhar_head, "todo/gandhar.md 3b; actor/shoothit.h"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),
