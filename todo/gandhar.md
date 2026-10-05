@@ -25,6 +25,22 @@ The rest of the chunk around him: twelve ZOH_FN (172..183, type Zombie, the
 generic arm) entered by the cave's other zones; the `Bras Lave` zones kill a
 player at 5 hp or less (camera 69, `todo/drift-audit.md` S14b).
 
+## His two forms (the reader, 2026-10-06, from playing the original)
+
+*"Gandhar has two forms: one we see in cutscene or in the background (he does
+nothing at this point) then after a cutscene, he jumps in the lava and goes out
+in a giant snake-shaped form."*
+
+The data agrees: `Grotte.SCX`'s objects animate two models. The `GD` model
+(`GDBassin`: `1_Gandhar`, `1_GandharStand`, `2_K+G_Dial`, `3_K+G_dsLave`) is
+the first form; the `D3` model (`D3Bassin`, `D3Tete` - character 187, the one
+`shoot.actor.enter 187` makes type 10) is the snake. Between `character.show
+187, 1` and the shoot entry the zone waits on `scx.play.wait obj 0x0014` =
+object HANDLE 20, `4_D+Pont2`, which animates `D3Bassin` - the snake coming out
+by the bridge. The port starts that object but binds no body to a plain
+`scx.play`, so for those ~200 frames the snake stands in a default frame:
+`todo/drift-audit.md` M2b.
+
 ## What the engine does (read 2026-10-05, `readable/src/24_sys.c` 6100-7450)
 
 **The brain `sub_47F6F0`** (type 10's callback, `tables/shoot_ai.json`):
