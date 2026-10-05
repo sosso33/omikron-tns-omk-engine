@@ -47,11 +47,12 @@
 //   * **Gandhar is ported exactly** - he is table-driven, and the tables are
 //     lifted and self-checking. Running him is running the shipped script;
 //   * **X-Tech is ported exactly** - it does nothing;
-//   * **Astaroth is ported as his state graph** with the constants his own
-//     code carries (the 195 / 273 / 156 / 78 unit distances, the 3700 / 2300 /
-//     1200 impulses, the 1.0 / 1.5 / 2.0 speed and 60 / 40 / 30 degree turn
-//     bands). The per-state geometry calls out to helpers this tree has no
-//     equivalent for and they are named, not reimplemented;
+//   * **Astaroth is HERE only as his state graph**, for `run_shoot_ai`'s
+//     census. His real tick is `actor/astaroth.h` (`astarothTick`, step 3 of
+//     `todo/astaroth.md`), which the viewer runs; the labels below were
+//     corrected from it on 2026-10-05 - the 3700 / 2300 / 1200 are DAMAGE
+//     (the slam, `sub_423B10`), the 1.0 / 1.5 / 2.0 his ANIMATION RATE and
+//     the 60 / 40 / 30 slot 1's muzzle WAIT, not a speed and a turn;
 //   * **the generic shooter is ported as its state graph** - 16 states and the
 //     five-way sub-switch inside state 6 - and NOT as its 1500 lines of
 //     per-state geometry. What it decides is here; how it aims is not.

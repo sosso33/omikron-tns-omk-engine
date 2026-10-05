@@ -20,23 +20,25 @@ const char* const kTypeNames[kCharTypeCount] = {
     "Gandhar", "Zombie", "Spectre", "Astaroth",
 };
 
-// Astaroth's state graph, read from `sub_4800C0`'s switch on `+156`.
+// Astaroth's state graph, read from `sub_4800C0`'s switch on `+156` - the
+// census's view of him; his tick is `actor/astaroth.h`.
 //
 // The distances are his own literals, in world units (1 unit ~ 2.54 cm):
-// 195 is where he closes to grapple, 273 the range of the throw in state 19,
-// and 78 / 156 the two bands that pick its impulse. The two timers are float
-// literals stored as bit patterns in the decompilation - 0x43160000 is 150.0
-// and 0x42700000 is 60.0, five seconds and two at 30 Hz.
+// 195 is where the WALK turns into the wind-up, 273 the reach of the SLAM
+// on landing, and 78 / 156 the bands that pick its DAMAGE. The two timers
+// are float literals stored as bit patterns - 0x43160000 is 150.0 and
+// 0x42700000 is 60.0 - and only state 20, which nothing of his writes,
+// reads them (corrected 2026-10-05, `todo/astaroth.md`).
 const std::vector<ShootEdge> kAstarothEdges = {
-    {16, 17, "closed to within 195 units of the target"},
-    {17, 18, "the grapple animation landed"},
-    {18, 19, "the hold landed"},
-    {19, 21, "the throw landed - and inside 273 units it also pushes the "
-             "target by 3700 (<78), 2300 (<156) or 1200 units"},
-    {20, 21, "recovered"},
-    {20, 16, "the 150-frame timer ran out first"},
-    {21, 16, "the recovery animation finished; the timer resets to 60 frames"},
-    {29, 16, "and only when the global counter has reached 6"},
+    {16, 17, "walked to within 195 units of the target: the wind-up"},
+    {17, 18, "the wind-up (clip 4) played out: crouched"},
+    {18, 19, "the target's cell in sight and not refused: the LEAP"},
+    {19, 21, "the leap landed - inside 273 units the SLAM deals 3700 (<78), "
+             "2300 (<156) or 1200 damage - then the big shot"},
+    {20, 21, "aimed (unreachable: no writer)"},
+    {20, 16, "the 150-frame timer ran out first (unreachable: no writer)"},
+    {21, 16, "the big shot (clip 11) played out; the timer is set to 60 frames"},
+    {29, 16, "a stand cell ended with all six souls down (dword_657AFC >= 6)"},
 };
 const std::vector<int> kAstarothStates = {16, 17, 18, 19, 20, 21, 27, 29};
 
@@ -520,10 +522,11 @@ ShootAi::ShootAi(const Tables& t, std::uint32_t characterType) : t_(&t) {
     rec_.type  = characterType;
     rec_.brain = shootBrainFor(characterType);
     // Every arm starts where its own entry leaves it: Gandhar on the first
-    // step of his script, Astaroth in 16, the generic shooter in 1.
+    // step of his script, Astaroth in 29 (`sub_47FF70`), the generic shooter
+    // in 1.
     switch (rec_.brain) {
         case ShootBrain::Gandhar:  rec_.state = 0;  break;
-        case ShootBrain::Astaroth: rec_.state = 16; break;
+        case ShootBrain::Astaroth: rec_.state = 29; break;
         case ShootBrain::Generic:  rec_.state = 1;  break;
         default: break;
     }
@@ -585,12 +588,8 @@ void ShootAi::tickGandhar(float dt) {
 
 void ShootAi::tickAstaroth(float dt) {
     rec_.timer -= dt;
-    // the health bands, which scale his speed and his turn rate. `<`, not
-    // `<=` - see scriptForHealth.
-    float speed = 1.0f, turn = 60.0f;
-    if (rec_.health < 100) { speed = 1.5f; turn = 40.0f; }
-    if (rec_.health < 50)  { speed = 2.0f; turn = 30.0f; }
-    (void)speed; (void)turn;
+    // the health bands - his animation rate and slot 1's muzzle wait - are
+    // `astarothBand` (actor/astaroth.h); this graph walk does not use them
 
     if (rec_.health <= 0) {
         log_.push_back({Decision::Kind::Died, rec_.state, rec_.state, -1, 0.0f,
@@ -604,16 +603,16 @@ void ShootAi::tickAstaroth(float dt) {
     int to = from;
     const char* why = "";
     switch (from) {
-        case 16: to = 17; why = "closed to within 195 units"; break;
-        case 17: to = 18; why = "the grapple landed";         break;
-        case 18: to = 19; why = "the hold landed";            break;
-        case 19: to = 21; why = "the throw landed";
+        case 16: to = 17; why = "walked to within 195 units"; break;
+        case 17: to = 18; why = "the wind-up played out";     break;
+        case 18: to = 19; why = "the leap";                   break;
+        case 19: to = 21; why = "landed - the slam";
                  rec_.timer = 150.0f;                          break;
         case 20: if (rec_.timer <= 0.0f) { to = 16; why = "the 150-frame timer ran out"; }
                  else { to = 21; why = "recovered"; }          break;
-        case 21: to = 16; why = "recovery finished"; rec_.timer = 60.0f; break;
+        case 21: to = 16; why = "the big shot played out"; rec_.timer = 60.0f; break;
         case 27: why = "a terminal state - the arm does nothing"; break;
-        case 29: to = 16; why = "the global counter reached 6";  break;
+        case 29: to = 16; why = "all six souls down";            break;
         default: to = 16; why = "the default arm resets him";     break;
     }
     rec_.state = to;
