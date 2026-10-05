@@ -167,6 +167,34 @@ a run with the shipped `omk.ini` to see what holds (start from
 (`scripts/vita-shader-cache.sh`) - the five new programs are not in it, and
 without `libshacccg.suprx` each enhancement needing one is refused.
 
+## 3b4c. The reader, 2026-10-05: the street at ~25 ms - and `--profile` DOES NOT WORK on the console
+
+**Measured on the console** (`omk-play-20261005-083701.log`, a development
+build, `--enhance-all --no-tie`, 960x544, a new game through the Impasse, the
+passage, Anekbah, a hall and the apartment): Anekbah's `sim+draw` 22-25 ms a
+frame, present 2-7 - ~27-31 ms, inside 30 fps, where 3b5 recorded 40-50.
+The sections: world submit 8-9.5, staged bodies 3.1-3.9, pedestrians and
+traffic 2.5-4.6, game frame ~3, screens/hud ~2.3, motion ~1.4. No error, no
+short read. **The overlay is the next cost**: under the opening credits
+(media.play 744, every frame from 6839) an overlay frame's `texture upload`
+is 6.2 ms against ~2 straight - with 76 rows re-sent in 60 frames, so it is
+not the upload but the per-frame row hash of the whole composed frame
+(`GlesRenderer::presentOverlay`'s `sync`), INFERRED until a profile says.
+
+**`--profile` DOES NOT WORK ON THE CONSOLE - the reader, twice, 2026-10-05.**
+`args.txt` held `--profile` and `ux0:data/omk/street.prof` (one a line); the
+log's command line shows them, byte-clean (no `\r`); and NO `profile:` line
+was printed at all - neither `profile: writing ...` (the development build)
+nor `profile: this is a RELEASE build ...` (the release one), both of which
+the code prints whenever the flag is given. On the Mac the SAME flags with the
+console's own `omk.ini` print `profile: writing` every time, so the parse and
+the `#if OMK_PROFILE` block are right; what ran on the console was not what
+this tree builds, or the console loses that one line - UNEXPLAINED. Since
+`e75b874` every run opens with `build: development|RELEASE - the profiler
+compiled in|OUT, the instruments in|out`: the first thing to read in the
+next console log. Until it works, the console's numbers are the log's own
+section and span lines.
+
 ## 3b5. WHERE THE OPTIMIZATION STANDS (2026-09-30) - start here
 
 The port-vs-original audit is `todo/optimization.md` step 28 (the table, then
