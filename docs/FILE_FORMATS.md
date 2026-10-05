@@ -2222,8 +2222,8 @@ back to `GLOBAL +20` (count `+30`) — which is what `GLOBAL`'s "record array,
 +26  int16     mode         12 in 5342 of 5381; 20 in 38; 4 in one
 +28  int16     roll         4096ths of a turn
 +30  int16     fov          4096ths of a turn — the FULL HORIZONTAL angle
-+32  int16     target subject   -1 = an absolute point
-+34  int16     eye subject      -1 = an absolute point
++32  int16     target subject KIND   -1 = an absolute point
++34  int16     eye subject KIND      -1 = an absolute point
 +36  int16[3]  three further fields mode 12 carries, unread
 ```
 
@@ -2231,6 +2231,18 @@ The consumer that fixes the layout is VM opcode 126 `camera.set.at_address`
 ([SCRIPT_VM](SCRIPT_VM.md)): it converts the six int32s to floats for the
 camera request block and re-aims the camera at an `ADDRESSES` entry. All 84 of
 its camera operands resolve in this table.
+
+**The subject fields are KINDS, not actors** (corrected 2026-10-05,
+`todo/drift-audit.md` S14). `Camera_LoadParams` puts them in `cam+88` /
+`cam+140`, which `sub_415A10` SWITCHES on: kind 0 (`sub_414F30`) takes the
+request's subject as an ACTOR index, kind 9 (`sub_415850`) as a pointer to an
+ADDRESS record - its in-memory integers (truncated by `Area_Load`) as the base
+point and `(0, its integer heading, 0)` as the rotation. The subject itself
+comes from the REQUEST: `camera.set` (95/96) puts `Actor_Player()` in both
+slots, `camera.set.at_address` (126) `Address_Find(field 1)`. The shipped
+kinds: -1/-1 3941, 0/-1 959, 0/0 406, 1/1 38, 1/-1 32, 9/9 4 (cameras
+4781..4784, the rooftops' ladders, the only cameras op 126 names - all 84
+sites, SCENE 62), 3/3 1. Kinds 1 and 3 are not read.
 
 **A quarter of the table is not two absolute points**, and this was found by
 rendering it. `Camera_LoadParams` (0x004146C0) unpacks the request block and

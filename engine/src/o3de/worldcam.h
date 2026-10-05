@@ -39,8 +39,11 @@
 //     +30  int16     fov      4096ths of a turn -> degrees; 853 (= 75.0) in
 //                             4543 of them, which is the third-person preset's
 //                             own fov (docs/ASSETS 1963)
-//     +32  int16     the TARGET's subject actor, -1 for an absolute point
-//     +34  int16     the EYE's subject actor, -1 for an absolute point
+//     +32  int16     the TARGET's subject KIND, -1 for an absolute point
+//     +34  int16     the EYE's subject KIND, -1 for an absolute point
+//                    (0 an actor, 9 an ADDRESS - `sub_415A10`'s switch; the
+//                    subject itself is the request's. Corrected 2026-10-05,
+//                    `todo/drift-audit.md` S14)
 //     +36  int16[3]  three further fields mode 12 carries, unread here
 //
 // **A quarter of the table is not absolute at all**, and reading it as if it

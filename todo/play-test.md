@@ -370,7 +370,7 @@ rendered at the moments it names and read by eye (not the same as playing):
 | 22 checkpoint | not visual; `engine: inventory checkpoint` only |
 | 23 game restart | PASSES: the street at 58, the start menu fading in from white at 66, whole at 120 |
 | 24 lift | PASSES: up 158 units, still there at 230/260, down again by 480; the frame at 230 shows him on the upper floor |
-| 25 ladder | the suspend / put-down / resume sequence is right (41 / 83 / 104), but **the climb's camera is wrong** - sky from 60 to 102, Kay'l never in shot: `todo/drift-audit.md` S14 |
+| 25 ladder | the suspend / put-down / resume sequence is right (41 / 83 / 104). The climb's cameras were framed on the PLAYER and looked away from the ladder - FIXED the same day (`todo/drift-audit.md` S14); the move now looks at the wall from the foot and up past the roof at the top, as the data frames it, and Kay'l is hidden through it by the script itself. Worth a look in play: whether the original's climb looks the same |
 | 26 quit to menu | the screen stayed WHITE after the quit - FIXED the same day: a fault of headless (`--frames`) runs only, the pause's frame delta of 0 never put back; the menu now draws (`todo/drift-audit.md` S15) |
 | 27 Astaroth | PASSES as far as rendered: soul 5 glowing at 130, gone in a green burst at 140; his walk and leap were looked at earlier the same day |
 | 28 camera shake | not visual at 640x480 (a few units of Y); `engine: camera shake` reads it from the view |
