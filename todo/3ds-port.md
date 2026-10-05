@@ -20,7 +20,7 @@ A homebrew build that runs on the reader's own game data, like the Vita's.
 | screens | top 400x240 (800x240 wide mode, not with stereo), bottom 320x240 touch | the same |
 
 **The New 3DS is THE target** - the reader has one with custom firmware
-(2026-10-05). The Old 3DS is a stretch decided by step 8's measurement, not
+(2026-10-05). The Old 3DS is a stretch decided by step 7's measurement, not
 assumed.
 
 Little-endian, so `classic-mac-port-1999.md` step 3's byte-order work does not
@@ -74,7 +74,7 @@ apply; the `loadLE` discipline (PORTING A9) makes that free either way.
   Luma3DS's Rosalina carries a **GDB stub** (step 1's debugging) and its own
   screenshots. So: the `.cia` for every measurement.
 * **The interface stays on the TOP screen** for now. What the game does when
-  a screen is up needs PER-SCREEN work (step 5), and the reader called that
+  a screen is up needs PER-SCREEN work (step 10), and the reader called that
   the most important thing to check. Until then every screen is composited
   at 640x480 as on every target, box-filtered 2:1 and pillarboxed into
   320x240 in the middle of the top screen (4:3 onto the 4:3 part of a 5:3
@@ -137,7 +137,7 @@ bench on the device: the frame's CPU against the M1's, the **32-bit memory**
 of a standing street (the counting allocator, `--sites`), and the SD read
 time of one area load. Rosalina's GDB stub for whatever crashes. **This step
 says how far the New 3DS is from 30 fps** and whether the Old 3DS is worth
-step 8.
+step 7.
 
 ### Step 2 - the frontend, first light on the software renderer
 
@@ -183,7 +183,7 @@ leaves the screen with the frame rate alone.
   * 4 unlimited draw distance, 5 fitted shadows, 10 the shoot radar, 11 60
     fps, 12 bodies smoothed between keys - CPU-side or cheap, available as
     they are, worth what the frame budget allows;
-  * stereoscopic 3D (step 9), the 3DS's own row;
+  * stereoscopic 3D (step 8), the 3DS's own row;
   * 6 mapped shadows and 7 per-pixel lighting are NOT offered at first: the
     PICA has a shadow-texture mode and fragment lighting through lookup
     tables, both fixed-function, and whether the engine's law fits them is a
@@ -225,7 +225,52 @@ is still in play, what is left over 64 MB is a list of cuts,
 **the budget is a goal for the code, never raised to the measurement** (the
 classic Mac's rule).
 
-### Step 5 - what happens when a screen is up: the per-screen survey
+### Step 5 - controls, saves and the films
+
+* the four control schemes' joystick column on the buttons and circle pad,
+  rebindable as on the PC (`input/bindings.*`);
+* saves in `sdmc:/omk/` (the settings header read at every boot, as now);
+* the **films**: MPEG-1 through `pl_mpeg` on the New 3DS's CPU first; the
+  New 3DS's hardware decoder (H.264) as the optional path, exactly the
+  Vita's `avmovie` pattern - a film absent in that form falls back.
+
+### Step 6 - performance
+
+Measured on the console with the 30 fps cap on, the panel's numbers and the
+profiler's captures. In the order the measurement points to, but expected:
+
+* **bodies posed by the vertex shader** (`posesBodies`, as GLES does); the
+  PICA's 96 vec4 uniforms hold about 30 3x4 bone matrices, so the bone counts
+  of the 181 character models are measured first and a model over the limit
+  splits its draw;
+* the **second core** (`OMK_THREADS`): on the New 3DS a whole core is the
+  app's; on the Old one the system core's share is capped;
+* the crowd's density default for the device (options row 6, the original's
+  own knob).
+
+### Step 7 - the Old 3DS, decided
+
+Steps 1, 4 and 6 measured on a 268 MHz console. Either a supported target
+with its settings written down, or a recorded "no" with the numbers.
+
+### Step 8 - stereoscopic 3D, OFF by default
+
+`gfxSet3D`, the slider (`osGet3DSliderState`), two passes with off-axis
+frusta, per-eye visible set and cull, billboards facing the centre camera,
+the 2D layers at the screen plane, one pass at slider 0. The convergence
+distance per camera mode is a decision made by watching. A toggle on the
+panel and a key under `[Enhancements]`.
+
+### Step 9 - packaging and the handoff
+
+`.cia` and `.3dsx`, the layout on the card, a `handoff-3ds-port.md` in the
+Vita handoff's form, CLAUDE.md's map row updated.
+
+### Step 10 - EXTRA: what happens when a screen is up, the per-screen survey
+
+**An extra step, taken when everything above works, 3D included** (the reader,
+2026-10-06). Until then the interface stays on the top screen as section 3
+says.
 
 The reader's priority. For each of the 37 screens of `UI.md` and each thing
 drawn over the world, recorded in a table before anything moves:
@@ -243,47 +288,6 @@ Then the placements the reader picks, one screen family at a time, each
 played. The instrument panel moves aside (a button, or the release build)
 when a screen takes the bottom. Touch to select a row is an ENHANCEMENT and
 comes with that work, not before.
-
-### Step 6 - controls, saves and the films
-
-* the four control schemes' joystick column on the buttons and circle pad,
-  rebindable as on the PC (`input/bindings.*`);
-* saves in `sdmc:/omk/` (the settings header read at every boot, as now);
-* the **films**: MPEG-1 through `pl_mpeg` on the New 3DS's CPU first; the
-  New 3DS's hardware decoder (H.264) as the optional path, exactly the
-  Vita's `avmovie` pattern - a film absent in that form falls back.
-
-### Step 7 - performance
-
-Measured on the console with the 30 fps cap on, the panel's numbers and the
-profiler's captures. In the order the measurement points to, but expected:
-
-* **bodies posed by the vertex shader** (`posesBodies`, as GLES does); the
-  PICA's 96 vec4 uniforms hold about 30 3x4 bone matrices, so the bone counts
-  of the 181 character models are measured first and a model over the limit
-  splits its draw;
-* the **second core** (`OMK_THREADS`): on the New 3DS a whole core is the
-  app's; on the Old one the system core's share is capped;
-* the crowd's density default for the device (options row 6, the original's
-  own knob).
-
-### Step 8 - the Old 3DS, decided
-
-Steps 1, 4 and 7 measured on a 268 MHz console. Either a supported target
-with its settings written down, or a recorded "no" with the numbers.
-
-### Step 9 - stereoscopic 3D, OFF by default
-
-`gfxSet3D`, the slider (`osGet3DSliderState`), two passes with off-axis
-frusta, per-eye visible set and cull, billboards facing the centre camera,
-the 2D layers at the screen plane, one pass at slider 0. The convergence
-distance per camera mode is a decision made by watching. A toggle on the
-panel and a key under `[Enhancements]`.
-
-### Step 10 - packaging and the handoff
-
-`.cia` and `.3dsx`, the layout on the card, a `handoff-3ds-port.md` in the
-Vita handoff's form, CLAUDE.md's map row updated.
 
 ## 5. Traps already known
 

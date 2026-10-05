@@ -52,6 +52,28 @@ Three faults, reported at once and open until each is closed below:
    HARNESS, straight into `sub_47FCF0`; a real bolt reaching that callback
    was never shown.
 
+**Closed 2026-10-06.** (1) and (2) are THE ROUTE, as the reader suspected:
+the real entry - zone 2935 at (32423, 1044, -2523), `--stand
+32423,1044,-2523,252`, ENTER through dialog 335 - hides actor 34 (the
+cutscene's Astaroth, the same `AST_FNM` model as the shoot's 609) at the
+shoot's start and plays music 151; the restart zone 2936 is the retry after a
+death and does neither, because by then the game has already done both. (3)
+was the PORT's: the save's player has 10 health, Astaroth killed him at frame
+32 of the reader's run, and the death handler ran the phase again - `Shoot_Leave`
+then `Shoot_Enter`, which disarms the world-hit callback (`sub_44CD90(0)`).
+The engine's `Shoot_Enter` also ZEROES the 100 shoot records, so the script's
+`shoot.actor.enter 609` sets him up afresh and re-arms it; the viewer never
+cleared its records, so his setup never re-ran and every later bolt on a soul
+was a plain world hit (`PAame02` struck again and again from frame 566).
+`Shoot_Enter` clears them now, with the actor-side clip state, and a body
+entered afresh loses an earlier attempt's death. `engine: astaroth restart`
+(new, shown to fail as the reader met it). Two notes from the reading: the
+six TUY actors (653..658, the green glow around the souls) are in the bolts'
+body list in the engine too (`Actor_Attach` registers every shown actor), so
+a bolt that meets one first stops there in both; and the world ray does not
+test the hidden flag 2, so a soul that went down still stops bolts - read,
+not changed.
+
 ## Steps
 
 **Step 3's facts beyond the reading** (`/private/tmp` agent notes folded in):
