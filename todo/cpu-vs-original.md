@@ -177,3 +177,41 @@ re-pinned at 4 with the reason.
   needs a validity rule for each: a modest gain for a stale-data risk;
 * the parent table cached a model, and the motion gather's strings - tens
   of microseconds.
+
+## Tier B, 2026-10-05 - what was done, what waits, what was deferred
+
+**DONE, exact, measured here:**
+* **a body posed once a VERTEX, not once a corner** (`752099a`): a corner
+  takes the posed position and normal of the first corner of its vertex,
+  only when its mesh, rest position and rest normal are bitwise that
+  corner's. Kay'l: 1626 corners on 272 vertices, 83% of the rotations gone;
+  `engine: pose equivalence` green, frames identical. Unmeasurable on the M1
+  (posing is ~0.1 ms of the crowd's zone); aimed at the G3, which poses every
+  body on its one CPU.
+
+**DONE, NOT YET RUN where it matters:**
+* **the classic Mac's GL1 presents the world straight** (`a98ca45`): drawn at
+  its letterbox place in the window's back buffer; a frame nothing covers is
+  swapped as it stands, with the driver's dither (`GL_DITHER`) at the
+  drawable's depth - **the reader's choice of 2026-10-05**, as the original's
+  16-bit D3D device dithered; a frame with the interface over it blends it
+  there (`C + world * M`, then the fade - the GLES overlay's law, the CPU
+  folding key, mask and fade into one RGBA band, one quad with `(GL_ONE,
+  GL_SRC_ALPHA)`). Only for a window the frame's size; `--gl1-composite`
+  keeps the old path. The SDL host's GL1 is unchanged (`engine: gl1 backend`
+  green). **Waiting on the tools disk** (`omk-devtools` on the external
+  Crucial X8, not attached 2026-10-05) for the classic build and a Tiger run:
+  the frame rate against `--gl1-composite`, the street, a subtitle or a
+  screen over it (the overlay), and a fade.
+
+**DEFERRED, and why** (each in the tier as proposed):
+* **GL1 posing moving meshes through its own transform** - GL1 already
+  transforms every vertex on the CPU, so the saving is one pass over ~8000
+  corners, well under a millisecond on a G3, and folding the affine into its
+  camera transform changes the rounding;
+* **Vulkan: the waits at the point of reuse, one submit a frame, and the
+  overlay path** - real, but only modern hosts run Vulkan, here 85% idle;
+* **the per-row bound on the triangle scan** - the software reference only,
+  and it needs a conservative-interval proof to stay exact;
+* **the set's vertices transformed once** - the corner -> vertex index for
+  the decor, which `ram-vs-original.md` deferred with its risk.
