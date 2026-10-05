@@ -1074,6 +1074,9 @@ public:
     // block; phase 2 is `Game_NewGame`. VM opcode 152 sets the request; the
     // menu's "new game" is this.
     void requestRestart() { restart_ = true; }
+    // how many times `Script_Pump`'s restart arm has run - a frontend that
+    // sees it move drops everything it holds for the old world
+    long restarts() const { return restarts_; }
     void restart();
 
     // ------------------------------------------- scene.load / scene.unload
@@ -1567,6 +1570,7 @@ private:
     int  asyncMode_ = 0;                     // dword_4E91C0: 0 read now, 1 a slice a frame
     bool leaveFromZones_ = false;
     bool restart_ = false;                   // g_RestartRequest
+    long restarts_ = 0;
     std::function<void()>    onZonesRegister_;
     std::function<bool(int)> zoneResolves_;
 

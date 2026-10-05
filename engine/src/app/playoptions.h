@@ -198,6 +198,8 @@ struct PlayOptions {
     // --hide-show A,H,S,F: opcode 79 on actor A at frame H, then opcode 78
     // with second field F at frame S - a hidden body's return, on demand
     int hideShow[4] = {-1, -1, -1, 0};
+    // --game-restart N: op 152 run as a context at frame N
+    long gameRestartAt = -1;
     // `--sneak` opens the device as soon as the player is on his feet,
     // through the SAME path TAB takes - `MDSNEAK0`'s handler, event 25 and
     // screen 9 - rather than a second way in. A testing convenience for a

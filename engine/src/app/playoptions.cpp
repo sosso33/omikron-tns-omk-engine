@@ -520,6 +520,9 @@ int PlayOptions::parse(int argc, char** argv) {
         // frame H and `character.show A, F` at frame S, through the
         // Session's own 78/79, so a body's return can be watched without the
         // script that would hide it (todo/drift-audit.md M1).
+        // A HARNESS FLAG: `--game-restart N` - op 152 run as a context at
+        // frame N, its arm and the pump's answer (todo/drift-audit.md S3).
+        else if (a == "--game-restart" && i + 1 < argc) gameRestartAt = std::atol(argv[++i]);
         else if (a == "--hide-show" && i + 1 < argc)
             std::sscanf(argv[++i], "%d,%d,%d,%d", &hideShow[0], &hideShow[1],
                         &hideShow[2], &hideShow[3]);

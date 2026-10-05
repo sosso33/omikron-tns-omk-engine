@@ -1259,6 +1259,16 @@ void Session::restart() {
     speakerModel_.clear();
     // both slots' contexts and scenes freed, the blocks released
     for (int s = 0; s < 2; ++s) if (slots_[s].area != -1) evictSlot(s);
+    // ...and BOTH object pools with them: the engine's pools are the slots'
+    // (`slot+8`), so freeing the slots frees the `.SCX` each held. The port
+    // keeps the outgoing pool beside the active one until the next change
+    // evicts it, and a restart is not a change - the old area's programs
+    // went on running, ticked as OUTGOING, over the new game's start menu
+    // (found by `--game-restart`, todo/drift-audit.md S3).
+    scene_ = SceneRunner{};
+    sceneArea_ = -1;
+    sceneOut_ = SceneRunner{};
+    sceneOutArea_ = -1;
     // the transition block
     tr_ = Transition{};
     tr_.startedFrame = frameNo_;
@@ -2486,7 +2496,17 @@ void Session::frame() {
 
     // `Script_Pump` phase 1 opens with the restart request: phase 3, then
     // phase 2, and the boot contexts it queues run in THIS frame's loop.
-    if (restart_) { restart_ = false; restart(); }
+    //
+    // ...and its tail, `Screen_FadeFromColor(0xFFFFFF, 15, 0)`: a new game
+    // fades in from WHITE over 15 frames (todo/drift-audit.md S3).
+    if (restart_) {
+        restart_ = false;
+        restart();
+        startColourFade(2, 0xFFFFFFu, 15.0f);
+        ++restarts_;
+        std::printf("frame %ld: game.restart - Game_NewGame, area %d, from white\n",
+                    frameNo_, currentArea());
+    }
 
     // `Script_Pump(1)` steps 1 and 2: the 16 prompt slots on the states the
     // PREVIOUS frame's scan left, and the unconsumed press. A zone context
@@ -2853,6 +2873,14 @@ void Session::onCall(int i, const Call& call) {
                     state_.playerI16(264), state_.playerI16(266), state_.playerI16(268));
         break;
     }
+    case 152:
+        // `game.restart` (0x406090, read from the image): the dry-run test,
+        // then `g_RestartRequest = 1` and nothing else. `Script_Pump(1)`
+        // serves it at the top of the NEXT pump (`frame`, above). Three
+        // sites - the soul captures (AREA 61, AREA 64, Ix Astaroth 2);
+        // todo/drift-audit.md S3.
+        requestRestart();
+        break;
     case 129: case 130:
         // `walk.ledges.ignore` / `.obey` (0x4059D0 / 0x4059F0, no `proc`
         // label - read from the image): the visible flag, the dry-run test,

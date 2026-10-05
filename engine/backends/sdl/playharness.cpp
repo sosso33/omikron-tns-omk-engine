@@ -399,6 +399,21 @@ void PlayState::harnessHideShow() {
     }
 }
 
+// --game-restart: op 152 itself, run as a context in the active slot at a
+// frame - `[end] game.restart end` from offset 1, through the same arm a
+// script reaches, so the opcode and the pump's answer are both exercised
+void PlayState::harnessGameRestart() {
+    if (gameRestartAt < 0 || n != gameRestartAt) return;
+    auto& session = *session_;
+    const std::vector<std::byte> code = {std::byte{3}, std::byte{152}, std::byte{3}};
+    const std::int32_t scripts[3] = {1, 0, 0};
+    const int idx = session.newContext(session.activeSlot(), code, scripts, -1,
+                                       session.currentArea());
+    if (idx >= 0) session.queueAction(idx, 1);
+    std::printf("--game-restart: frame %ld  op 152 queued as context %d (a harness call)\n",
+                n, idx);
+}
+
 // the frame's facts for the flicker catcher
 void PlayState::harnessFlickerNote(std::size_t& runsDrawn, std::size_t& runsCulled, std::size_t& litBodies) {
     auto& session = *session_;

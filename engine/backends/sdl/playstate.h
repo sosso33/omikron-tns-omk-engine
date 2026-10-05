@@ -100,6 +100,7 @@ struct PlayState {
     bool & noScriptSprites = opt.noScriptSprites;
     std::vector<int> & scxPlay = opt.scxPlay;
     int (&hideShow)[4] = opt.hideShow;
+    long & gameRestartAt = opt.gameRestartAt;
     bool & openSneak = opt.openSneak;
     bool & startShoot = opt.startShoot;
     int & shootHealth = opt.shootHealth;
@@ -210,6 +211,7 @@ struct PlayState {
     int openScreen{};
     int conversations{};
     int lastArea{};
+    long restartsSeen{};   // `Session::restarts()` last answered
     omk::LoadPanel loadPanelState{};   // rebuilt each time a screen opens
     int pendingLoadSlot{};   // `dword_4C09B4`
     bool quitRequested{};   // `dword_4E6C9C`, the pause screen's Oui
@@ -825,6 +827,7 @@ struct PlayState {
     void harnessFightHealth(omk::FightStats& ps);   // --fight-health: the player's Vie at Fight_Begin
     void harnessScxPlay();   // --scx-play: scene objects started by handle, once
     void harnessHideShow();  // --hide-show: opcodes 79 then 78 on one actor
+    void harnessGameRestart();   // --game-restart: op 152's write at a frame
     void harnessFlickerNote(std::size_t& runsDrawn, std::size_t& runsCulled, std::size_t& litBodies);   // the frame's facts for the flicker catcher
     void harnessSnaps();   // --snaps: the framebuffer every N frames from the hand-over
 

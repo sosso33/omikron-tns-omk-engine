@@ -39637,6 +39637,57 @@ def c_engine_inventory_checkpoint():
            "ammunition back"
 
 
+def c_engine_game_restart():
+    r"""`game.restart` RESTARTS THE GAME (`todo/drift-audit.md` S3).
+
+    Op 152 (0x406090, read from the image) is `g_RestartRequest = 1`, and
+    `Script_Pump(1)` answers it at the top of the next pump: `Script_Pump(3)`
+    (both slots freed), `Script_Pump(2)` (`Game_NewGame`: `IAM\START`, day 52,
+    the boot area) and `Screen_FadeFromColor(0xFFFFFF, 15, 0)`. The port had
+    the pump's half and no writer, so the three soul captures (AREA 61, AREA
+    64, Ix Astaroth 2) ended their script and play went on.
+
+    `omk-play --game-restart 60` runs op 152 as a context on Anekbah's street:
+    the restart lands in AREA 118, whose startup script opens the start menu
+    (screen 29); the resident `.SCX` is `Grid.SCX`; the frontend drops the old
+    world's player and bodies; and NOTHING of Anekbah's pool ticks afterwards
+    - `Session::restart` kept the outgoing pool alive until this check found
+    it, the old area's programs running under the new game's menu.
+
+    Shown to fail: without the 152 arm nothing restarts; without the pool
+    reset Anekbah's meshes go on moving as the OUTGOING pool.
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    out = subprocess.run([play, fr, os.path.join(ROOT, "tables"), "--save",
+                          os.path.join(ROOT, "traces", "save-appart.bin"),
+                          "--area", "0", "--stand", "1804,0,-6890,336",
+                          "--game-restart", "60", "--frames", "120",
+                          "--res", "640x480", "--nofmv"],
+                         capture_output=True, env=env, encoding="latin-1").stdout
+    m = _re.search(r"^frame \d+: game\.restart - Game_NewGame, area (\d+), from white$",
+                   out, _re.M)
+    after = out[m.end():] if m else ""
+    menu = bool(_re.search(r"screen 29 is asking", after))
+    scx = _re.findall(r"resident scene is now (\S+)", after)
+    dropped = "restart - the frontend dropped the player" in after
+    outgoing = after.count("OUTGOING pool")
+    return (int(m.group(1)) if m else None, menu, scx[-1] if scx else None,
+            dropped, outgoing), \
+           (118, True, "Grid.SCX", True, 0), \
+           "the area the restart booted; the start menu asking after it; the " \
+           "resident .SCX; the frontend dropping the old world; and how many " \
+           "of the old area's meshes moved as the OUTGOING pool afterwards"
+
+
 def c_game_clock():
     r"""GAME_STATE 6: the Omikron calendar - 41 days, 13 months, year 7216.
 
@@ -42196,6 +42247,7 @@ SLOW = [
     ("engine: hide show", c_engine_hide_show, "todo/drift-audit.md M1; SCRIPT_VM"),
     ("engine: ledges flag", c_engine_ledges_flag, "todo/drift-audit.md S5; SCRIPT_VM"),
     ("engine: inventory checkpoint", c_engine_inventory_checkpoint, "todo/drift-audit.md S4; SCRIPT_VM"),
+    ("engine: game restart", c_engine_game_restart, "todo/drift-audit.md S3; SCRIPT_VM"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),

@@ -1800,6 +1800,33 @@ int PlayState::modesQuitLoad() {
             }
         }
 
+        // A NEW GAME UNDER US - `game.restart` (op 152) served by the pump:
+        // the Session has freed both slots and booted `IAM\START` again, so
+        // nothing this frontend holds for the old world stands. The player
+        // controller, every staged and parked body, a fight, a ride and a
+        // parked move go; the hand-over rebuilds the player when the new
+        // world gives one, as at boot (todo/drift-audit.md S3).
+        if (session.restarts() != restartsSeen) {
+            restartsSeen = session.restarts();
+            if (fightRun.active) {
+                fightRun.active = false;
+                dropLibrary(fightRt);
+                fightRun.fight.reset();
+                fightRun.foeChannel.reset();
+            }
+            fightRun.body = nullptr;
+            ride.reset();
+            player.reset();
+            playerReady = false; adventure = false; forceAdventure = false;
+            staged.clear();
+            parked.clear();
+            moveWaitCtx = -1; moveWaitGroup = -1;
+            in_->installScheme(0);
+            ++poolComposition;
+            std::printf("frame %ld: restart - the frontend dropped the player, the "
+                        "bodies and any mode; area %d boots\n", n, session.currentArea());
+        }
+
         if (session.areasEntered() != lastArea) {
             lastArea = session.areasEntered();
             if (lastArea > 0) std::printf("area transition %d\n", lastArea);
