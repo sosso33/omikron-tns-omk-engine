@@ -120,13 +120,36 @@ Each ends in a commit and a report, and declares its evidence tier (PORTING B).
 
 ### Step 0 - the toolchain and a cross-build check
 
-devkitPro's devkitARM + libctru + citro3d (`scripts/install-deps.sh` reports
-them, never requires them - PORTING A1), `makerom` for the `.cia`.
-`engine/backends/n3ds/` with a Makefile or CMake in the Vita's style; the
-engine library for `armv6k`, hard-float VFP. `verify.py: engine: 3ds build`,
-modelled on `engine: vita build` - SKIPPED, never red, when devkitARM is
-absent. The first cross build will find what the Vita and classic builds
-found (headers the Mac supplied and the cross toolchain does not, `%zu`).
+devkitARM + libctru + citro3d, with the host tools (`3dsxtool`, `smdhtool`,
+`bin2s`, `picasso`). Two ways in, and `engine/backends/n3ds/Makefile` takes
+either through `$DEVKITPRO` / `$DEVKITARM`:
+
+* devkitPro's pacman (`sudo dkp-pacman -S 3ds-dev`, into /opt/devkitpro) -
+  what devkitPro asks for where it can be used;
+* **`scripts/3ds-toolchain.sh`** (2026-10-06, the reader's ask: "not
+  possible without pacman?") - no pacman, no sudo, into `~/devkitpro`:
+  devkitARM by devkitPro's OWN buildscripts at a pinned tag, the tools and
+  libraries from their GitHub tags, every version pinned in the script,
+  resumable by stamps, `--check` to report. A toolchain built so is "for
+  personal use only" by devkitPro's terms, so nothing it builds is ever
+  committed or shipped.
+
+**devkitPro's download hosts refuse this machine** (2026-10-06: Cloudflare
+answers 403 from `pkg.devkitpro.org` and from `downloads.devkitpro.org`,
+which redirects there - curl, wget, the buildscripts' own user agent, IPv4
+and IPv6). The script does not try to get past that: the buildscripts skip
+any archive already in their source directory, so it puts the same archives
+there first from where they are published - binutils and GCC from GNU,
+newlib from sourceware, devkitPro's rules and crt0s from its GitHub -
+reading the versions out of the pinned tag's own scripts. It also means a
+pacman install may meet the same wall here.
+
+A plain Makefile, not CMake: devkitPro's CMake toolchain files are not
+published as source, so the from-source toolchain has none. Then
+`verify.py: engine: 3ds build`, modelled on `engine: vita build` - SKIPPED,
+never red, when devkitARM is absent. The first cross build will find what
+the Vita and classic builds found (headers the Mac supplied and the cross
+toolchain does not, `%zu`).
 
 ### Step 1 - boot headless: the intro trace and the device factor
 
@@ -154,13 +177,12 @@ the flat draws, Kay'l walks.
 M1 this was written on, so none of it has met a compiler. In
 `engine/backends/n3ds/`:
 
-* `CMakeLists.txt` - the engine library (`OMK_THREADS 0`, exceptions and
-  RTTI on), `omk_boot` (`tools/omk.cpp`) and `omk_play` (the viewer's game
-  code: the classic build's file list, `playgpu_none.cpp` - the software
-  reference - and `playharness_off.cpp`), each a `.3dsx` with the tables in
-  its ROMFS. devkitPro's CMake helpers (`ctr_generate_smdh`,
-  `ctr_create_3dsx`) are used as I remember them; the first configure says
-  whether that memory is right;
+* `Makefile` (replacing the first `CMakeLists.txt`, step 0 says why) - the
+  engine library (`OMK_THREADS 0`, exceptions and RTTI on), `omk_boot`
+  (`tools/omk.cpp`) and `omk_play` (the viewer's game code: the classic
+  build's file list, `playgpu_none.cpp` - the software reference - and
+  `playharness_off.cpp`), each a `.3dsx` with the tables in its ROMFS, into
+  `engine/build/n3ds/`;
 * `n3ds_main.cpp` - the real `main` for both: the card layout
   (`sdmc:/omk/gamedata`, `saves/GAMES`, `omk.ini`, `args.txt`), a dated
   `.log` / `.err` pair a run, stdout and stderr TEED to the file and to

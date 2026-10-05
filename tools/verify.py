@@ -41208,6 +41208,8 @@ def c_licence_headers():
     **545 -> 547**: `engine/tools/hostmix_probe.cpp` (2026-10-04, `engine:
     music ring` - the census was not re-run that day) and
     `engine/tools/sound_equiv.cpp` (2026-10-05, `engine: device sounds`).
+    **564 -> 565**: `scripts/3ds-toolchain.sh` (2026-10-06), the 3DS
+    toolchain built from source without pacman.
     **560 -> 564**: `backends/n3ds/n3ds_main.cpp`, `n3dsfront.{h,cpp}` and
     `playscene_off.cpp` (2026-10-06), the Nintendo 3DS build's entry and
     libctru frontend (`todo/3ds-port.md` steps 0-2).
@@ -41250,7 +41252,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (564, [], 1, []), \
+           (565, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
