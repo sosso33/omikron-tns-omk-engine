@@ -2,6 +2,7 @@
 #include "actor/shoot.h"
 
 #include "formats/map2d.h"
+#include "platform/json.h"
 
 #include <cmath>
 #include <cstring>
@@ -491,6 +492,39 @@ const char* shootBrainName(ShootBrain b) {
         case ShootBrain::Astaroth: return "sub_4800C0";
         default:                   return "sub_424DE0";
     }
+}
+
+bool ShootAi::Tables::loadJson(const std::string& path) {
+    const auto doc = Json::parseFile(path);
+    const auto& rows = doc["rows"];
+    actions.clear(); healthy.clear(); wounded.clear(); critical.clear();
+    const auto& acts = rows["actions"];
+    for (std::size_t i = 0; i < acts.size(); ++i) {
+        ShootAction r;
+        r.code = static_cast<int>(acts[i]["code"].i64());
+        r.row  = static_cast<int>(acts[i]["row"].i64());
+        const auto& ctp = acts[i]["clip_type"];
+        r.clipType = ctp.isNull() ? -1 : static_cast<int>(ctp.i64());
+        r.setsFlag = acts[i]["sets_flag_0x800"].boolean();
+        actions.push_back(r);
+    }
+    const auto& sc = rows["behaviour_scripts"];
+    for (std::size_t i = 0; i < sc.size(); ++i) {
+        const auto nm = sc[i]["name"].str();
+        auto* into = nm == "healthy"  ? &healthy
+                   : nm == "wounded"  ? &wounded
+                   : nm == "critical" ? &critical : nullptr;
+        if (!into) continue;
+        const auto& es = sc[i]["entries"];
+        for (std::size_t k = 0; k < es.size(); ++k) {
+            ShootScriptStep st;
+            st.action  = static_cast<int>(es[k]["action"].i64());
+            st.repeats = static_cast<int>(es[k]["repeats"].i64());
+            st.rewind  = es[k]["end"].boolean();
+            into->push_back(st);
+        }
+    }
+    return !healthy.empty() && !wounded.empty() && !critical.empty();
 }
 
 const ShootAction* ShootAi::Tables::byCode(int code) const {

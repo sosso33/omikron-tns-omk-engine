@@ -225,6 +225,8 @@ struct PlayOptions {
     long  astarothSoulsAt = -1;
     // --astaroth-health N: HARNESS, his record +92 at the setup
     int   astarothHealth = -1;
+    // --gandhar-health N: HARNESS, his record +92 at his entry
+    int   gandharHealth = -1;
     int fightHealth = -1;   // --fight-health N: a HARNESS, the player's Vie at Fight_Begin
     long shootEndAt = -1;      // --shoot-end N: `shoot.end 1` at frame N
     float standAt[4] = {0, 0, 0, 0};

@@ -20,6 +20,7 @@
 #include "input/bindings.h"
 #include "actor/fight.h"
 #include "actor/astaroth.h"
+#include "actor/gandhar.h"
 #include "actor/shoot.h"
 #include "actor/shootfire.h"
 #include "actor/shoothit.h"

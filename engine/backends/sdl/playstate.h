@@ -111,6 +111,7 @@ struct PlayState {
     float (&playerAt)[4] = opt.playerAt;
     long & astarothSoulsAt = opt.astarothSoulsAt;
     int & astarothHealth = opt.astarothHealth;
+    int & gandharHealth = opt.gandharHealth;
     int & fightHealth = opt.fightHealth;
     long & shootEndAt = opt.shootEndAt;
     float (&standAt)[4] = opt.standAt;
@@ -480,7 +481,15 @@ struct PlayState {
     std::map<int, std::array<float, 4>> astarothSlotTimer{};   // actor+148+4*slot
     omk::AcquireOut astarothAcquire{};    // what `sub_420C70` left for `sub_420EB0`
     float astarothSlot1Wait = -1.0f;      // slot 1's sprite-row WAIT, rewritten each tick
-    int   astarothBar = -1;               // `Hud_DrawBar(+92, 200, 1, 0)` this frame, -1 none
+    // `Hud_DrawBar(+92, 200, 1, 0)` this frame, -1 none: the BOSS bar, which
+    // both Astaroth's brain (`sub_4800C0`) and Gandhar's (`sub_47F6F0`) draw
+    int   astarothBar = -1;
+    // GANDHAR (`todo/gandhar.md`): his actor-side fields by actor id, what his
+    // cone test left for his turn, and his behaviour scripts
+    std::map<int, omk::GandharActor> gandharActors{};
+    omk::AcquireOut gandharAcquire{};
+    omk::ShootAi::Tables shootTables{};
+    bool shootTablesLoaded = false;
     long  astarothShakes = 0;             // `Camera_SetShake` calls (step 4 ports the shake)
     omk::ShootMover shootMover{};
     std::unique_ptr<omk::UiWalk> hudWalk{};
@@ -764,6 +773,7 @@ struct PlayState {
     void astarothWorldHit(long frame, int mesh, int slot, const float at[3]);   // sub_47FCF0
     // his tick's world (`actor/astaroth.h` AstarothWorld) and his FIRE (`sub_44CDF0`)
     omk::AstarothWorld astarothWorld(Staged& s, omk::ShootRecord& rec, float dt);
+    omk::GandharWorld gandharWorld(Staged& s, omk::ShootRecord& rec, float dt);
     void astarothFire(Staged& s, omk::ShootRecord& rec, int slot, const float target[3]);
     void astarothStamp(omk::ShootRecord& rec);
     // `sub_4725B0`'s pose: four keys of the grid clip, two k/256 slerps

@@ -437,10 +437,15 @@ void PlayState::worldStaged() {
             const auto deadIt = shootBrains.find(s.actor);
             const bool astarothRec = deadIt != shootBrains.end() &&
                 deadIt->second.type == static_cast<std::uint32_t>(omk::kAstarothType);
+            // GANDHAR's brain is his own too (`sub_47F6F0`, `todo/gandhar.md`):
+            // he is never "shot dead" by the generic arm - his brain posts
+            // message 3 itself - and no request moves his record
+            const bool gandharRec = deadIt != shootBrains.end() &&
+                deadIt->second.type == static_cast<std::uint32_t>(omk::kGandharType);
             // (Astaroth is never "shot dead" here: he has no death clip, and
             // his own prologue plays the killing hit's clip out and reports
             // it - `astarothClipOver`)
-            const bool shotDead = deadIt != shootBrains.end() && !astarothRec &&
+            const bool shotDead = deadIt != shootBrains.end() && !astarothRec && !gandharRec &&
                                   (deadIt->second.flags & 8u) && deadIt->second.health <= 0;
             // THE OCCUPANCY, put back (`sub_424DE0`'s prologue, 05_sys.c
             // 5456): the byte his 0x80 stamp covered returns to his cell
@@ -542,7 +547,7 @@ void PlayState::worldStaged() {
             // in the entering script), every hit reaction and every noise
             // alert were recorded and dropped. Not Astaroth's: his record is
             // driven by his own tick, and nothing shipped asks him for one.
-            if (deadIt != shootBrains.end() && !astarothRec && inShoot && act >= 0) {
+            if (deadIt != shootBrains.end() && !astarothRec && !gandharRec && inShoot && act >= 0) {
                 const int ser = session.shootActionSerial(s.actor);
                 auto seen = gunActSerialSeen.find(s.actor);
                 if (seen != gunActSerialSeen.end() && seen->second != ser) {
@@ -678,6 +683,23 @@ void PlayState::worldStaged() {
                                     "state %d resumes with clip %d, health %d\n", n, s.actor,
                                     s.model.c_str(), ar.state, aa.clip, ar.health);
                     }
+                } else if (gandharRec && gandharActors.count(s.actor)) {
+                    // `sub_47F6F0`'s prologue, the picked clip played out:
+                    // `sub_421A20(+12, 0)` - his action's clip again from 1.0 -
+                    // and `o3de_SetNodePos(+244, +60, +252)`; the brain goes on
+                    // the same tick
+                    deadIt->second.flags &= ~8u;
+                    gc = GunClip{};
+                    omk::GandharActor& ga = gandharActors[s.actor];
+                    ga.frame = 1.0f;
+                    ga.prev = 0.0f;
+                    ga.node[0] = ga.pos[0];
+                    ga.node[1] = deadIt->second.groundY;
+                    ga.node[2] = ga.pos[2];
+                    for (int k = 0; k < 3; ++k) s.walkMove[k] = ga.node[k] - s.at[k];
+                    std::printf("frame %ld: actor %d %s - GANDHAR's picked clip over "
+                                "(sub_47F6F0): action %d's clip %d again\n", n, s.actor,
+                                s.model.c_str(), deadIt->second.state, ga.clip);
                 } else {
                     deadIt->second.flags &= ~8u;
                     std::printf("frame %ld: actor %d %s - picked clip over (sub_421770): "
@@ -752,6 +774,8 @@ void PlayState::worldStaged() {
                     // root, i.e. the LINKED sets, so the shown slots are
                     // searched, the active one first.
                     const bool astarothHere = fresh.type == static_cast<std::uint32_t>(omk::kAstarothType);
+                    const bool gandharHere = fresh.type == static_cast<std::uint32_t>(omk::kGandharType);
+                    const bool bossHere = astarothHere || gandharHere;
                     if (astarothHere) {
                         int backMesh = -1;
                         if (s.mo)
@@ -828,6 +852,47 @@ void PlayState::worldStaged() {
                                                         static_cast<int>(fresh.type), -1);
                     }
                     it = shootBrains.emplace(s.actor, fresh).first;
+                    // ---- GANDHAR: `sub_47DFD0`'s type-10 arm (`todo/gandhar.md`)
+                    // - his node to y -147, +68 = 39 * property 3 / 30, and
+                    // action 23 entered at once; no scene action, no default arm.
+                    // (`sub_421140` on his spot and `sub_4368E0`'s nearest free
+                    // cell when it is blocked: not run - LABELLED, step 2)
+                    if (gandharHere) {
+                        if (!shootTablesLoaded) {
+                            shootTablesLoaded = true;
+                            if (!shootTables.loadJson(tb + "/shoot_ai.json"))
+                                std::printf("frame %ld: GANDHAR - tables/shoot_ai.json did not "
+                                            "load: his scripts are empty\n", n);
+                        }
+                        omk::GandharActor& ga = gandharActors[s.actor];
+                        ga = omk::GandharActor{};
+                        // (the TEST HARNESS `--gandhar-health N`, an instrument)
+                        if (gandharHealth >= 0) {
+                            it->second.health = gandharHealth;
+                            std::printf("frame %ld: GANDHAR HEALTH - the test harness "
+                                        "--gandhar-health writes +92 = %d\n", n, gandharHealth);
+                        }
+                        std::int32_t p3 = 0;
+                        session.actorProperty(s.actor, 3, p3);
+                        // `+64` FIRST, as `Shoot_ActorEnter` computes it for
+                        // every type before `sub_47DFD0` overrides `+60`: his
+                        // RISE and SINK end on `node.y - +64`
+                        it->second.height = session.modelFeetDrop(s.model);
+                        const float pos[3] = {s.at[0], s.at[1], s.at[2]};
+                        const omk::GandharWorld gw =
+                            gandharWorld(s, it->second, static_cast<float>(frameSec * 30.0));
+                        omk::gandharEnter(ga, it->second, pos, p3, gw);
+                        for (int k = 0; k < 3; ++k) s.walkMove[k] = ga.node[k] - s.at[k];
+                        std::printf("frame %ld: actor %d %s - GANDHAR ENTERS (sub_47DFD0): node y "
+                                    "%.0f (+60 %.0f, +64 %.1f), speed %.1f (property 3 = %d), "
+                                    "state %d, clip %d, health %d, scripts %zu/%zu/%zu\n", n,
+                                    s.actor, s.model.c_str(), double(ga.node[1]),
+                                    double(it->second.groundY), double(it->second.height),
+                                    double(ga.speed),
+                                    int(p3), it->second.state, ga.clip, it->second.health,
+                                    shootTables.healthy.size(), shootTables.wounded.size(),
+                                    shootTables.critical.size());
+                    }
                     // `Shoot_ActorEnter` thinks FIRST and acts second, and
                     // the order is load-bearing for the patrol: the route
                     // lookup takes his floor and cell. This port cannot
@@ -836,7 +901,7 @@ void PlayState::worldStaged() {
                     // (`todo/shoot-patrol.md` 4b) - so the action WAITS for
                     // the first tick he lands on the grid. One frame, and
                     // the alternative is a patrol with a null route.
-                    if (!onGridAtEntry && shootMap.valid() && !astarothHere &&
+                    if (!onGridAtEntry && shootMap.valid() && !bossHere &&
                         act != omk::ShootMode::kEnteredOnly) {
                         gunEntryPending.insert(s.actor);
                         std::printf("frame %ld: actor %d %s - entry action %d HELD: he is "
@@ -850,7 +915,7 @@ void PlayState::worldStaged() {
                     // this passes the action with a3 = 0)
                     // the requests made so far are what the entry applies
                     gunActSerialSeen[s.actor] = session.shootActionSerial(s.actor);
-                    if (act == omk::ShootMode::kEnteredOnly && !astarothHere) {
+                    if (act == omk::ShootMode::kEnteredOnly && !bossHere) {
                         // `sub_47DFD0`'s DEFAULT ARM: `List_PickRandomByType(+20,
                         // 11)` into `+8` and `sub_421A20` - his type-11 clip -
                         // with `+156` left at the enter's 0. No action: the
@@ -865,7 +930,7 @@ void PlayState::worldStaged() {
                         std::printf("frame %ld: actor %d %s - ENTERED WITH NO ACTION "
                                     "(sub_47DFD0's default arm): clip type 11, state 0\n",
                                     n, s.actor, s.model.c_str());
-                    } else if ((onGridAtEntry || !shootMap.valid()) && !astarothHere)
+                    } else if ((onGridAtEntry || !shootMap.valid()) && !bossHere)
                         applyAction(it->second, act, session.shootActionArg(s.actor),
                                     "his scene action, at entry");
                     std::printf("frame %ld: actor %d %s - shoot brain: "
@@ -1058,6 +1123,26 @@ void PlayState::worldStaged() {
                                         double(aa.node[0]), double(aa.node[1]),
                                         double(aa.node[2]), double(s.facing));
                     }
+                } else if (rec.type == static_cast<std::uint32_t>(omk::kGandharType) &&
+                           gandharActors.count(s.actor)) {
+                    // ---- GANDHAR's brain, `sub_47F6F0` (`actor/gandhar.h`) -
+                    // the boss bar out of 200, then his action's tick and,
+                    // when it is done, the next action of his script. The
+                    // floor cell either side is the generic arm's, as the
+                    // engine's `sub_420C10` / `sub_420B80` are.
+                    omk::GandharActor& ga = gandharActors[s.actor];
+                    astarothBar = rec.health;
+                    const omk::GandharWorld gw = gandharWorld(s, rec, astDt);
+                    const int stateWas = rec.state;
+                    omk::gandharTick(ga, rec, shootTables, astDt, s.facing, gw);
+                    for (int k = 0; k < 3; ++k) s.walkMove[k] = ga.node[k] - s.at[k];
+                    if (rec.state != stateWas)
+                        std::printf("frame %ld: actor %d %s - GANDHAR action %d -> %d (clip %d, "
+                                    "%d frames), health %d, band %d, step %d/%d, node %.0f %.0f "
+                                    "%.0f facing %.1f\n", n, s.actor, s.model.c_str(), stateWas,
+                                    rec.state, ga.clip, ga.clipFrames, rec.health, rec.band,
+                                    rec.scriptStep, rec.repeats, double(ga.node[0]),
+                                    double(ga.node[1]), double(ga.node[2]), double(s.facing));
                 } else {
                 const int before = rec.state;
                 omk::ShootFrameIn fin;
@@ -2172,7 +2257,19 @@ void PlayState::worldStaged() {
                                     !onTurn && s.deathType < 0;
                 if (astOwn)
                     if (const omk::PedClip* ac = shootClipBySlot(grp, astIt->second.clip)) c = ac;
+                // ...and GANDHAR's (`GandharActor`, `todo/gandhar.md`) the same
+                // way: his action's clip by slot at key `(int)+188`. An action
+                // with no clip of its own (16, 17, 18) holds the last one.
+                const auto gdIt = grp == omk::kGandharType ? gandharActors.find(s.actor)
+                                                           : gandharActors.end();
+                const bool gaOwn = gdIt != gandharActors.end() && gdIt->second.started &&
+                                   gdIt->second.clip >= 0 && !onTurn && s.deathType < 0;
+                if (gaOwn)
+                    if (const omk::PedClip* gcl = shootClipBySlot(grp, gdIt->second.clip)) c = gcl;
                 if (c) shootTracks = pedTracksFor(grp, *c, s.mo->meshes);
+                if (gaOwn && shootTracks && shootTracks->frames > 0)
+                    shootFrame = std::clamp(static_cast<int>(gdIt->second.frame) - 1, 0,
+                                            shootTracks->frames - 1);
                 if (astOwn && shootTracks && shootTracks->frames > 0) {
                     shootFrame = std::clamp(static_cast<int>(astIt->second.frame) - 1, 0,
                                             shootTracks->frames - 1);
@@ -2185,7 +2282,7 @@ void PlayState::worldStaged() {
                 // `sub_421370` has advanced it to (above) - the same clip
                 // `shootClipFor` just gave `c`, since both ask it alike
                 const auto gaIt = gunAnims.find(s.actor);
-                if (!astOwn && !onTurn && s.deathType < 0 && gaIt != gunAnims.end() &&
+                if (!astOwn && !gaOwn && !onTurn && s.deathType < 0 && gaIt != gunAnims.end() &&
                     gaIt->second.clip == c && shootTracks && shootTracks->frames > 0)
                     shootFrame = std::min(static_cast<int>(gaIt->second.frame),
                                           static_cast<int>(shootTracks->frames) - 1);
@@ -2210,8 +2307,9 @@ void PlayState::worldStaged() {
                 // `sub_421770` clears flag 8 as it returns 0, so the next
                 // tick takes the other dead arm instead - the tidy one
                 // that puts him in ACTOR_STATE 0 - and posts nothing.
+                // (not GANDHAR's: his own brain posts it, `sub_47F6F0`)
                 if (s.deathType >= 0 && !s.deathPosted && shootTracks &&
-                    shootTracks->frames > 0 &&
+                    grp != omk::kGandharType && shootTracks->frames > 0 &&
                     static_cast<long>(gameClock - s.deathStart) >=
                         static_cast<long>(shootTracks->frames) - 1) {
                     s.deathPosted = true;

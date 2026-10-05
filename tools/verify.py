@@ -40532,6 +40532,74 @@ def c_engine_address_camera():
            "over the two travels into them - their own step, no jump at the hand-over"
 
 
+def c_engine_gandhar():
+    r"""GANDHAR'S BRAIN (`todo/gandhar.md` step 1, `engine/src/actor/gandhar.h`).
+
+    Character 187 in AREA 2's lava cave is shoot type 10, and his arm of the
+    shoot AI is `sub_47F6F0` - which the port had only as a census, so in the
+    viewer he fought as the generic gunman. His entry is `sub_47DFD0`'s
+    type-10 arm (node y -147, `+68 = 39 * property 3 / 30`, action 23 at
+    once); his brain runs the current action's TICK (`0x004CFBC8`) and, when it
+    returns done, puts him on `+60` and ENTERS the next action of the script
+    for his health (`sub_47FB40`; <= 100 wounded, <= 50 critical).
+
+    The route is the cave's own: zone 317 (`Pont 2 Dial Gandhar`) plays the
+    meeting and `shoot.actor.enter 187`. Asserted from his own lines:
+
+    * the actions entered, in order, over his first 1200 frames: the healthy
+      script expanded by its repeats - read from `tables/shoot_ai.json`, not
+      typed here - and its rewind to the start;
+    * the SINK (18) ends at y 255 (`node.y - +64 >= 250`, 6 a frame) and the
+      RISE (17) at -153 (`<= -150`): he goes down into the lava and comes up;
+    * at health 40 his first action is the CRITICAL script's first, band 2;
+    * at health 0 (`--gandhar-health`, an instrument) his brain posts message
+      3 from him on its first tick, AREA 2's handler takes it, and the shoot
+      ends (`Mort Gandhar`, `shoot.end 1`).
+
+    SHOWN TO FAIL: the band thresholds swapped (the critical run reads the
+    wounded script), the sink's limit moved, the death post removed, the
+    script walk not advancing its step.
+    """
+    import subprocess, re as _re, json as _json
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    scripts = {sc["name"]: sc["entries"] for sc in
+               _json.load(open(os.path.join(ROOT, "tables", "shoot_ai.json")))["rows"]["behaviour_scripts"]}
+    healthy = [e["action"] for e in scripts["healthy"] if not e.get("end")
+               for _ in range(e["repeats"])]
+    want = healthy + healthy[:2]
+
+    def run(frames, *extra):
+        return subprocess.run(
+            [play, fr, os.path.join(ROOT, "tables"), "--save",
+             os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "2",
+             "--stand", "125,-9,401,0", "--shoot", "--frames", str(frames), "--nodelay",
+             "--no-crowd"] + list(extra),
+            capture_output=True, encoding="latin-1",
+            env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    o = run(2100)
+    seq = [int(x) for x in _re.findall(r"GANDHAR action (\d+) entered", o)]
+    done = {}
+    for c, y in _re.findall(r"GANDHAR action (\d+) DONE, node y (-?\d+)", o):
+        done.setdefault(int(c), int(y))
+    o0 = run(880, "--gandhar-health", "0")
+    dead = ("GANDHAR posts message 3 from 187 (handled)" in o0,
+            "SHOOT MODE LEAVE" in o0)
+    o40 = run(930, "--gandhar-health", "40")
+    m = _re.search(r"GANDHAR action 23 -> (\d+) \(clip [-0-9]+, \d+ frames\), health 40, band (\d)",
+                   o40)
+    crit = (int(m.group(1)), int(m.group(2))) if m else None
+    return (seq[:len(want)], done.get(18), done.get(17), crit, dead), \
+           (want, 255, -153, (scripts["critical"][0]["action"], 2), (True, True)), \
+           "the actions entered (the healthy script by its repeats, then its rewind), " \
+           "where the sink and the rise end, the critical band's first action, and the " \
+           "death posting message 3 and ending the shoot"
+
+
 def c_engine_head_camera():
     r"""A WORLD CAMERA ON THE PLAYER'S HEAD - subject kinds 1 and 3
     (`todo/drift-audit.md`, the follow-up to S14).
@@ -43189,6 +43257,7 @@ SLOW = [
     ("engine: shoot requests", c_engine_shoot_requests, "todo/drift-audit.md S13; actor/shootmode.h"),
     ("engine: address camera", c_engine_address_camera, "todo/drift-audit.md S14; o3de/worldcam.h"),
     ("engine: head camera", c_engine_head_camera, "todo/drift-audit.md; o3de/worldcam.h"),
+    ("engine: gandhar", c_engine_gandhar, "todo/gandhar.md 1; actor/gandhar.h"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),

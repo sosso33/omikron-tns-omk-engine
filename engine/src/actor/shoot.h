@@ -610,6 +610,9 @@ public:
         std::vector<ShootScriptStep> healthy, wounded, critical;
         std::vector<ShootAction> actions;   // 12, indexed by code - see byCode
         const ShootAction* byCode(int code) const;
+        // `tables/shoot_ai.json`'s `rows`: the actions and the three scripts.
+        // False when the file does not parse or carries no scripts.
+        bool loadJson(const std::string& path);
     };
 
     ShootAi(const Tables& t, std::uint32_t characterType);
@@ -618,13 +621,13 @@ public:
     // of the arm that ran, so a caller can see the dispatch happen.
     const char* tick(float dt);
 
-    // `dword_657A28`, the pulse that says the current action has finished.
-    // It is set OUTSIDE the callback - the animation reaching its end - and
-    // Gandhar's arm consumes it to step his script. It is a parameter here
-    // for the same reason the channel takes its input word as one: modelling
-    // the machine means modelling what it does with the signal, and inventing
-    // a duration for an action whose real length comes from a clip this tree
-    // cannot play would be putting a guess where a fact belongs.
+    // A pulse that steps Gandhar's script, for this CENSUS. It was read as
+    // `dword_657A28`, "the current action has finished"; that is wrong - the
+    // engine steps his script when an action's TICK returns non-zero, and
+    // `dword_657A28` is the GRAB's restart (`sub_47F340` raises it on a
+    // touch). The real machine is `actor/gandhar.h` (2026-10-05,
+    // `todo/gandhar.md`); this walk stays the script census `run_shoot_ai`
+    // asserts.
     void signalActionComplete() { actionDone_ = true; }
 
     ShootRecord& rec() { return rec_; }

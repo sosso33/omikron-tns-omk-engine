@@ -813,6 +813,85 @@ omk::AstarothWorld PlayState::astarothWorld(Staged& s, omk::ShootRecord& rec, fl
     return w;
 }
 
+// GANDHAR's world (`actor/gandhar.h`, `todo/gandhar.md`). Step 1 wires the
+// clips, the sight, the turn, the attack pick and the posts; the STEP toward
+// the player (`sub_47E5F0`), the FIRE (`sub_44CDF0`) and the TOUCH
+// (`sub_45BC50`) are steps 2-4 and answer "nothing" until then - LABELLED.
+omk::GandharWorld PlayState::gandharWorld(Staged& s, omk::ShootRecord& rec, float dt) {
+    omk::GandharWorld w;
+    const int grp = static_cast<int>(rec.type);
+    auto crt = [this]() {
+        gunRandSeed = gunRandSeed * 214013u + 2531011u;
+        return static_cast<int>((gunRandSeed >> 16) & 0x7FFFu);
+    };
+    w.rnd = crt;
+    // `List_PickRandomByType(+20, type)`: `rand() % count` over the clips of
+    // that type, in list order
+    w.pickType = [this, grp, crt](int type) {
+        if (pedAni.empty() || grp < 0 || grp >= 64) return -1;
+        std::vector<int> slots;
+        for (const auto& c : omk::animGroupClips(pedAni, grp))
+            if (c.type == type) slots.push_back(c.slot);
+        if (slots.empty()) return -1;
+        return slots[static_cast<std::size_t>(crt() % static_cast<int>(slots.size()))];
+    };
+    // `sub_434630(+20, id)`: the clip whose id is `id`
+    w.pickId = [this, grp](int id) {
+        return shootClipBySlot(grp, id) ? id : -1;
+    };
+    w.clipFrames = [this, grp](int slot) {
+        const omk::PedClip* c = shootClipBySlot(grp, slot);
+        return c ? c->frames : 0;
+    };
+    // `Anim_SetFrame`'s root, turned into the world by his facing
+    w.rootDelta = [this, grp, &s](int slot, float t0, float t1, float out[3]) {
+        out[0] = out[1] = out[2] = 0.0f;
+        const omk::PedClip* c = shootClipBySlot(grp, slot);
+        if (!c || c->root.size() < 3) return;
+        float d[3] = {0, 0, 0};
+        omk::pedRootDelta(*c, t0, t1, nullptr, d);
+        omk::rotateYaw(s.facing, d, out);
+    };
+    // `sub_420C70(rec, his node, the player)` - and what it leaves behind
+    w.sight = [this, &s, &rec]() {
+        const auto it = gandharActors.find(s.actor);
+        if (it == gandharActors.end() || !player) return false;
+        const float self[4] = {it->second.node[0], it->second.node[1], it->second.node[2],
+                               s.facing};
+        const float target[3] = {float(player->pos()[0]), float(player->pos()[1]),
+                                 float(player->pos()[2])};
+        return omk::shootAcquires(rec, self, target, gandharAcquire, false);
+    };
+    w.turn = [this, dt](float& facing) {
+        omk::shootTurnToward(facing, gandharAcquire, false, dt);
+    };
+    // `sub_421020`: the attack whose property-21 range still reaches
+    w.pickAttack = [this, &s, &rec, crt]() {
+        auto& session = *session_;
+        return omk::shootPickAttack(
+            rec, gandharAcquire.dist2d2,
+            [&](int slot) {
+                std::int32_t rm = 2, dm = 1;
+                session.actorAttack(s.actor, slot, rm, dm);
+                return static_cast<int>(rm);
+            },
+            crt);
+    };
+    // event 43 {message, sender}: Gandhar for his death, the player for a grab
+    w.post = [this, &s](int message, bool fromPlayer) {
+        auto& session = *session_;
+        const int sender = fromPlayer ? session.playerActor() : s.actor;
+        const bool ran = session.postMessage(message, sender);
+        std::printf("frame %ld: actor %d %s - GANDHAR posts message %d from %d (%s)\n", n,
+                    s.actor, s.model.c_str(), message, sender, ran ? "handled" : "unsubscribed");
+    };
+    w.say = [this, &s](const std::string& line) {
+        std::printf("frame %ld: actor %d %s - GANDHAR %s\n", n, s.actor, s.model.c_str(),
+                    line.c_str());
+    };
+    return w;
+}
+
 // `sub_4725B0` (0x004725B0): for every node, the key `(int)frame` at four
 // offsets -
 //     A = slerp(key + off8,  key + off10, wPitch)
