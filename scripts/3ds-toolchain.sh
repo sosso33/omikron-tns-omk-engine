@@ -17,7 +17,8 @@
 #   tools/bin/        3dsxtool and smdhtool (3dstools), bin2s (general-tools),
 #                     picasso (the PICA200 shader assembler, for step 3)
 #   libctru/          the system library
-#   citro3d/          the GPU library (step 3)
+#                     ...and citro3d, the GPU library (step 3), installed
+#                     beside it as devkitPro's own package does
 #
 # **What devkitPro asks, and this keeps to it.** devkitPro maintains these
 # toolchains and asks users to install them with its pacman where possible
@@ -68,7 +69,7 @@ check() {
         have "$PREFIX/tools/bin/$t" && report "$t" "$PREFIX/tools/bin/$t" || report "$t" "MISSING"
     done
     have "$PREFIX/libctru/lib/libctru.a"    && report libctru "$PREFIX/libctru" || report libctru "MISSING"
-    have "$PREFIX/citro3d/lib/libcitro3d.a" && report citro3d "$PREFIX/citro3d" || report citro3d "MISSING"
+    have "$PREFIX/libctru/lib/libcitro3d.a" && report citro3d "$PREFIX/libctru (beside libctru)" || report citro3d "MISSING"
 }
 
 if [ "${1:-}" = "--check" ]; then
@@ -115,7 +116,8 @@ if ! stamp_done "devkitarm-$DKA_TAG"; then
 BUILD_DKPRO_PACKAGE=1
 BUILD_DKPRO_AUTOMATED=1
 BUILD_DKPRO_SRCDIR="$WORK/archives"
-export MAKEFLAGS="\$MAKEFLAGS -j$JOBS"
+BUILD_DKPRO_SKIP_CRTLS=1
+export MAKEFLAGS="\$MAKEFLAGS -j$JOBS MAKEINFO=true"
 EOF
     # The install directory is not a setting - the script writes
     # /opt/devkitpro, which needs root - so it is rewritten here, and the
@@ -158,10 +160,110 @@ EOF
           "$A/devkitarm-rules-$RULES_VER.tar.gz"
     fetch "https://github.com/devkitPro/devkitarm-crtls/archive/refs/tags/v$CRTLS_VER.tar.gz" \
           "$A/devkitarm-crtls-$CRTLS_VER.tar.gz"
-    # no Texinfo is needed: the manuals are not built
+    # GCC'S OWN PREREQUISITES - GMP, MPFR, MPC and isl. This tag's scripts
+    # expect them installed on the host (only a cross build passes
+    # `--with-gmp`); GCC's supported alternative is `contrib/
+    # download_prerequisites`, which fetches their sources from gcc.gnu.org,
+    # checks them against GCC's own SHA-512 list, and links them into the
+    # source tree so they are built with it - no host package needed. So the
+    # GCC tree is unpacked HERE, where the scripts would unpack it (their
+    # build directory is `.devkitARM`, their stamp `extracted-gcc-<ver>`, and
+    # they skip an unpacked tree), and the prerequisites are put in it.
+    BD="$src/.devkitARM"
+    mkdir -p "$BD"
+    if [ ! -f "$BD/extracted-gcc-$GCC_VER" ]; then
+        echo "extracting gcc-$GCC_VER (for its prerequisites)"
+        tar -xf "$A/gcc-$GCC_VER.tar.xz" -C "$BD"
+        touch "$BD/extracted-gcc-$GCC_VER"
+    fi
+    if [ ! -e "$BD/gcc-$GCC_VER/gmp" ]; then
+        (cd "$BD/gcc-$GCC_VER" && ./contrib/download_prerequisites)
+    fi
+    [ -e "$BD/gcc-$GCC_VER/gmp" ] && [ -e "$BD/gcc-$GCC_VER/mpfr" ] && [ -e "$BD/gcc-$GCC_VER/mpc" ] || {
+        echo "3ds-toolchain: GCC's prerequisites are not in its tree" >&2; exit 1; }
+    # THE BUILD MACHINE'S NAME. The scripts configure with `--build=` from
+    # their own `config.guess`, which is old enough to call an Apple-silicon
+    # Mac `arm-apple-darwin` - and GCC's host table matches `aarch64*-*-darwin*`,
+    # so it then builds no `host-aarch64-darwin.o` and stage 1 fails to link
+    # with `host_hooks` undefined (2026-10-06, an M1). GCC's own `config.guess`
+    # is current; it replaces theirs.
+    cp "$BD/gcc-$GCC_VER/config.guess" ./config.guess
+    echo "build machine: $(./config.guess)"
+    if [ "$(uname -m)" = arm64 ] && ! ./config.guess | grep -q '^aarch64-'; then
+        echo "3ds-toolchain: config.guess does not name this Mac aarch64" >&2; exit 1
+    fi
+    # A MACOS HOST: binutils (and GCC) bundle an old zlib whose `zutil.h`
+    # defines `fdopen` as NULL under `TARGET_OS_MAC`, which today's SDK
+    # headers set - and the macro then breaks the SDK's own `stdio.h`
+    # declaration of it (binutils 2.45.1 on SDK 26.5, 2026-10-06). zlib only
+    # defines it `#ifndef fdopen`, so naming it as itself leaves the real
+    # function alone. The configure lines take `$CPPFLAGS` from the
+    # environment.
+    if [ "$(uname -s)" = Darwin ]; then
+        export CPPFLAGS="${CPPFLAGS:-} -Dfdopen=fdopen"
+    fi
+    # THE PATCHES ARE GIT DIFFS, and macOS's `patch` (Apple's 2.0) does not
+    # create the EMPTY file newlib's adds (`libgloss/libsysbase/dummy.c`, a
+    # git "new file" with no hunk): the build then stops on "no rule to make
+    # target libsysbase/dummy.c" (2026-10-06). The scripts take `$PATCH` from
+    # the environment and call it as `-p1 -d <dir> -i <patch>`; this hands
+    # them `git apply` behind that interface, which reads a git diff whole -
+    # and refuses one that does not apply, rather than half-applying it.
+    mkdir -p "$WORK/bin"
+    cat > "$WORK/bin/git-patch" <<'GITPATCH'
+#!/bin/sh
+# `patch -p1 -d DIR -i FILE` as `git apply` (scripts/3ds-toolchain.sh)
+strip=-p1 dir=. file=
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -p*) strip=$1 ;;
+        -d) dir=$2; shift ;;
+        -i) file=$2; shift ;;
+        *) echo "git-patch: unsupported argument $1" >&2; exit 2 ;;
+    esac
+    shift
+done
+case "$file" in /*) ;; *) file="$PWD/$file" ;; esac
+cd "$dir" && exec git apply "$strip" --whitespace=nowarn "$file"
+GITPATCH
+    chmod +x "$WORK/bin/git-patch"
+    export PATCH="$WORK/bin/git-patch"
+    # no Texinfo is needed: the manuals are not built (MAKEINFO=true is also
+    # in MAKEFLAGS above, where it overrides the Makefiles' own variable)
     MAKEINFO=true ./build-devkit.omk.sh
     have "$DEVKITARM/bin/arm-none-eabi-g++" || { echo "3ds-toolchain: devkitARM did not install" >&2; exit 1; }
+    # stamped at once: the scripts DELETE their build directory when they
+    # finish, so a later step that failed would otherwise rebuild GCC
     stamp "devkitarm-$DKA_TAG"
+fi
+
+# ---- 1b. the rules and the crt0s ---------------------------------------------
+# Their Makefiles install to a FIXED `$(DESTDIR)/opt/devkitpro/devkitARM` -
+# root again - so the scripts' own step is skipped (BUILD_DKPRO_SKIP_CRTLS
+# above) and done here the same way, `make install`, into a staging DESTDIR
+# whose `opt/devkitpro` is then copied into the prefix. The rules first: the
+# crt0s' Makefile includes `$DEVKITARM/base_rules`. The versions are the
+# pinned tag's, read again from its scripts.
+if ! stamp_done "devkitarm-rules-$DKA_TAG"; then
+    src="$(github_src buildscripts "$DKA_TAG")"
+    RULES_VER="$(sed -n 's/^DKARM_RULES_VER=//p' "$src/build-devkit.sh")"
+    CRTLS_VER="$(sed -n 's/^DKARM_CRTLS_VER=//p' "$src/build-devkit.sh")"
+    [ -n "$RULES_VER" ] && [ -n "$CRTLS_VER" ] || {
+        echo "3ds-toolchain: could not read the rules / crtls versions" >&2; exit 1; }
+    for pkg in "devkitarm-rules-$RULES_VER" "devkitarm-crtls-$CRTLS_VER"; do
+        stage="$WORK/stage/$pkg"
+        rm -rf "$stage" "$WORK/src/$pkg"
+        tar -xzf "$WORK/archives/$pkg.tar.gz" -C "$WORK/src"
+        # DEPSDIR: `base_rules` writes each dependency file to `$(DEPSDIR)/`,
+        # which devkitPro's project templates set and this Makefile does
+        # not - empty, the crt0s' land in `/` and the build stops there
+        make -C "$WORK/src/$pkg" install DESTDIR="$stage" DEPSDIR="$WORK/src/$pkg"
+        [ -d "$stage/opt/devkitpro" ] || { echo "3ds-toolchain: $pkg installed nothing under opt/devkitpro" >&2; exit 1; }
+        cp -R "$stage/opt/devkitpro/." "$PREFIX/"
+    done
+    have "$DEVKITARM/3ds_rules" && have "$DEVKITARM/arm-none-eabi/lib/3dsx.specs" || {
+        echo "3ds-toolchain: the rules or the 3DS crt0 did not install" >&2; exit 1; }
+    stamp "devkitarm-rules-$DKA_TAG"
 fi
 
 # ---- 2. the host tools (autotools packages) --------------------------------
@@ -189,7 +291,7 @@ fi
 if ! stamp_done "citro3d-$CITRO3D"; then
     src="$(github_src citro3d "$CITRO3D")"
     make -C "$src" -j"$JOBS" install
-    have "$PREFIX/citro3d/lib/libcitro3d.a" || { echo "3ds-toolchain: citro3d did not install" >&2; exit 1; }
+    have "$PREFIX/libctru/lib/libcitro3d.a" || { echo "3ds-toolchain: citro3d did not install" >&2; exit 1; }
     stamp "citro3d-$CITRO3D"
 fi
 
