@@ -1077,6 +1077,17 @@ to message 3 has nothing to learn from the number 3. See
 shipped data carries **154 subscriptions, 138 with a script** (16 registered
 ids with a null script), message ids 0..32 — `verify.py: message tables`.
 
+**Who posts four of the rarer ones** (read 2026-10-05, `todo/drift-audit.md`
+S8): **2** is `sub_423EF0`'s tail - a gunman hit by a bolt, a strike or an
+explosion who LIVES, sender him; a kill posts nothing (AREA 144: sender 403,
+the X-Tech sentinel, retires zone 2349). **5-8** come from `sub_47F340`, the
+tick of shoot ACTION 25: when the gunman reaches the player, the side of his
+floor's box he is nearest picks the number (min x 7, max x 6, min z 8, max z 5;
+AREA 2's four death scenes, one camera each). **18** is the script timer's
+expiry. **27-32** are `sub_47FCF0`'s - Astaroth's six weak points
+(`sub_47FF70` registers it, a table at `0x4CFCF0` holds 27..32), each posted
+as its hit count runs out; AREA 175's handlers hide the piece that fell.
+
 ## 5b4. The interface text files — `IAM\<Screen>` and `IAM\FRENCH\`
 
 **surveyed.** The lowercase IAM entries are per-screen NUL-separated string
