@@ -2929,6 +2929,16 @@ by writing the facing Euler directly.
   (corrected 2026-09-17): the decompiler's comment says "ladder", but group
   300 is `H_HFL-IN`, dropping in, and in Jaunpur `0x8000000` is the canal's
   bed and banks. See "The water" below.
+* **It runs on EVERY frame, standing still included** (2026-10-05,
+  `todo/drift-audit.md` M9): `Actor_ApplyMotion` (0x004672D0) calls
+  `Walk_ProbeGround` and the response after `Actor_Move` whatever the move
+  was, a zero one included. That is what carries a player on a lift - the
+  platform is just a moving floor, snapped onto every frame - and the port,
+  which answered the floor only on frames with a root delta, dropped him off
+  AREA 50's lift on the two frames `H_STAND` loops (`Walker::settle`,
+  `verify.py: engine: lift ride`). `g_IgnoreLedges` waives the 30 cm limit in
+  BOTH directions: the rise refusal (`!g_IgnoreLedges && rise > 30 cm`, 2554)
+  as well as the drop (2734).
 * `Walk_GroundResponse` (0x00465460) carries the rest of the walking rules:
   a rise is clamped so the head keeps **50 cm** (19.685 in) of ceiling
   clearance (an upward ray against the world); a step down larger than the

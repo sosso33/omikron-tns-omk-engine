@@ -290,6 +290,18 @@ the start menu, with nothing of the old area still moving or sounding behind
 it. `omk-play ... --game-restart N` does the same from anywhere.
 `todo/drift-audit.md` S3.
 
+## 24. RIDE A LIFT - AREA 50, Jaunpur's library (2026-10-05)
+
+```
+build/omk-play ~/Documents/omk/fr ../tables --save ../traces/save-appart.bin \
+    --area 50 --var 321=1 --zone-enable 1040 --stand 57,-20,1200,44
+```
+ENTER on the platform: the barrier closes and the lift should carry you up
+to the upper floor and LEAVE YOU THERE - not drop you back to the bottom
+while it goes on without you. ENTER again up there to ride back down. And
+anywhere: a character standing still on any moving floor should stay on it.
+`todo/drift-audit.md` M9.
+
 ## What is NOT fixed, so do not report it as new
 
 * **The lift arrival is still black** and the camera is inside the lift-car
