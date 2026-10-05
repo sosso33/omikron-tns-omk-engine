@@ -237,6 +237,22 @@ reader, 2026-10-06: "focus on new 3ds specific code for now"):
   builds GCC with `--enable-threads` over libctru), so `platform/profile.cpp`
   and `datafs.cpp` compiled as they are.
 
+**FIRST LIGHT IN AZAHAR, 2026-10-06 - FRAME 300 BYTE-IDENTICAL.**
+`omk_play.3dsx` boots on the emulated New 3DS: the films (software MPEG-1,
+three quarters of the frames dropped to keep pace - the EMULATOR's speed, not
+the console's), area 118, GRID, the start menu. With `--nofmv --frames 300
+--dump sdmc:/omk/frame.bin` in `args.txt`, the framebuffer of frame 300 is
+**byte for byte** the desktop `omk-play`'s with the same arguments (the
+start menu: title, four items, the tile map) - the whole software path, the
+interface's compositing included, deciding the same pixels on the ARM11 as
+on the M1. A first run differed in 102119 pixels because the READER was
+pressing keys in the emulator's window (it had opened the load panel, which
+the engine did correctly); the frontend now logs every change of the pad
+(`pad: pump N buttons ...`), and the run with no `pad:` line is the
+identical one. ndsp fails in Azahar for want of a DSP firmware file on the
+emulated card - the console's case before DSP1 - and is now tried once
+rather than once a film.
+
 ### Step 2b - the bottom screen: the instrument panel
 
 A 320x240 RGB565 surface the CPU composites with the engine's own text
@@ -377,6 +393,12 @@ when a screen takes the bottom. Touch to select a row is an ENHANCEMENT and
 comes with that work, not before.
 
 ## 5. Traps already known
+
+* **The emulator's window takes the keyboard** - Azahar maps keys to the
+  3DS buttons, so a person typing while it is in front drives the run (it
+  opened the load panel in one, 2026-10-06, and the frame was then evidence
+  about the keys). Read the log's `pad:` lines before comparing a frame: a
+  run with none had no input.
 
 * **No sound without the DSP firmware**: `ndspInit` fails unless the
   console's DSP firmware has been dumped to `sdmc:/3ds/dspfirm.cdc` (the

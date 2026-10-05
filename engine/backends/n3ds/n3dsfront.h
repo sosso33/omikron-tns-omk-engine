@@ -74,6 +74,7 @@ private:
     void closeAudio();
     HostMixer mix_;
     bool dsp_ = false;           // ndspInit succeeded
+    bool dspFailed_ = false;     // ...or failed, and is not retried (once said is enough)
     bool chan_ = false;          // channel 0 set up, buffers allocated
     int arate_ = 0, achan_ = 2;
     // A buffer is 1/20 s, so the ring holds 0.2 s ahead: enough for a frame
@@ -88,6 +89,11 @@ private:
     std::string lastError_;
     bool quit_ = false;
     bool opened_ = false;
+    // the pad as last reported, so a CHANGE is logged (what a play report
+    // needs, and how a press nobody made is found)
+    std::uint32_t lastButtons_ = 0;
+    int lastLx_ = 0, lastLy_ = 0, lastRx_ = 0, lastRy_ = 0;
+    long pumps_ = 0;
 };
 
 }  // namespace omk

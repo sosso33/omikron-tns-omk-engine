@@ -21,6 +21,7 @@ struct N3dsFrontend::Wave {
 
 bool N3dsFrontend::openAudio(int rate, int channels) {
     if (rate <= 0 || (channels != 1 && channels != 2)) return false;
+    if (dspFailed_) return false;
     if (!dsp_) {
         // ndsp needs the DSP's firmware, which a console only has once it has
         // been DUMPED to the card (`sdmc:/3ds/dspfirm.cdc`, by the DSP1
@@ -30,6 +31,7 @@ bool N3dsFrontend::openAudio(int rate, int channels) {
             lastError_ = "ndspInit failed - no DSP firmware at sdmc:/3ds/dspfirm.cdc "
                          "(dump it with DSP1); the game runs without sound";
             std::printf("audio: %s\n", lastError_.c_str());
+            dspFailed_ = true;
             return false;
         }
         dsp_ = true;
@@ -202,6 +204,20 @@ bool N3dsFrontend::pump(HostInput& out) {
     out.pad.ry = -stick(cs.dy);
     // START is the menu key, read straight from `held` (`pad::kEscape`)
     if (out.pad.buttons & pad::Start) out.held.insert(pad::kEscape);
+    // Every change of the pad, logged with the pump it came on: the sticks
+    // only past the dead zone's edge (`pad::kDeadZone`), so a stick's jitter
+    // at rest says nothing.
+    auto zone = [](int v) { return v > pad::kDeadZone ? 1 : (v < -pad::kDeadZone ? -1 : 0); };
+    if (out.pad.buttons != lastButtons_ || zone(out.pad.lx) != zone(lastLx_) ||
+        zone(out.pad.ly) != zone(lastLy_) || zone(out.pad.rx) != zone(lastRx_) ||
+        zone(out.pad.ry) != zone(lastRy_)) {
+        std::printf("pad: pump %ld buttons 0x%04X (keys 0x%08lX) left %d,%d right %d,%d\n",
+                    pumps_, static_cast<unsigned>(out.pad.buttons), static_cast<unsigned long>(held),
+                    out.pad.lx, out.pad.ly, out.pad.rx, out.pad.ry);
+        lastButtons_ = out.pad.buttons;
+        lastLx_ = out.pad.lx; lastLy_ = out.pad.ly; lastRx_ = out.pad.rx; lastRy_ = out.pad.ry;
+    }
+    ++pumps_;
     return !out.quit;
 }
 
