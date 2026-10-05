@@ -40786,6 +40786,55 @@ def c_engine_astaroth_restart():
            "after the restart, and its message"
 
 
+def c_engine_astaroth_floor():
+    r"""ASTAROTH STANDS ON THE FLOOR (a reader's play, 2026-10-06: *"Astaroth is
+    floating"*, `todo/astaroth.md` 4).
+
+    His node is his PELVIS - the root mesh's world point, at `+60` (his floor's
+    edge less his lowest sphere) plus his clips' root motion - and the viewer
+    seated him the way it seats a body a placement record puts down: by its
+    LOWEST POSED CORNER, latched from the first pose of the source. Latched in
+    his stand grid and carried into his moving clips, it left him ~150 units
+    in the air for the whole fight once the souls started going down. He is
+    drawn pelvis-on-node now, as Gandhar is (`todo/gandhar.md` 3b).
+
+    Measured with the viewer's own instrument `OMK_FEETLOG=609` (every 30
+    frames, his lowest corner AS DRAWN against the floor under him), the
+    souls struck at frame 40 (`--astaroth-souls`) so that he moves: the
+    samples on the ground, the worst gap among them, and the samples in the
+    air - his LEAP, the engine's own root motion (state 17 -> 18), 400-700
+    units up for a few frames, which is not a float.
+
+    SHOWN TO FAIL: the pelvis seat taken out (every ground sample ~150 up).
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    o = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"), "--save",
+         os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "175",
+         "--address", "526", "--zone-enable", "2936", "--zone-disable", "2935",
+         "--shoot-health", "50000", "--astaroth-souls", "40", "--frames", "1300",
+         "--nodelay"],
+        capture_output=True, encoding="latin-1",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_FEETLOG="609")).stdout
+    gaps = [float(g) for g in _re.findall(r"^FEET \d+ actor 609: lowest drawn \S+, floor under "
+                                          r"\S+, gap (\S+) \(", o, _re.M)]
+    if len(gaps) < 40:
+        return ("instrument", len(gaps)), ("instrument", ">= 40 samples"), \
+               "OMK_FEETLOG must report his lowest corner"
+    ground = [g for g in gaps if g < 100.0]
+    air = len(gaps) - len(ground)
+    worst = max(abs(g) for g in ground)
+    return (len(ground) >= 35, worst < 10.0, 2 <= air <= 8), (True, True, True), \
+           "at least 35 of his 43 samples on the ground, none of them more than 10 off " \
+           "the floor, and 2 to 8 in the air (his leaps)"
+
+
 def c_engine_head_camera():
     r"""A WORLD CAMERA ON THE PLAYER'S HEAD - subject kinds 1 and 3
     (`todo/drift-audit.md`, the follow-up to S14).
@@ -43450,6 +43499,7 @@ SLOW = [
     ("engine: head camera", c_engine_head_camera, "todo/drift-audit.md; o3de/worldcam.h"),
     ("engine: gandhar", c_engine_gandhar, "todo/gandhar.md 1; actor/gandhar.h"),
     ("engine: astaroth restart", c_engine_astaroth_restart, "todo/astaroth.md played; backends/sdl/playframe_modes_parts.cpp"),
+    ("engine: astaroth floor", c_engine_astaroth_floor, "todo/astaroth.md played 4; backends/sdl/playframe_world_staged.cpp"),
     ("engine: gandhar head", c_engine_gandhar_head, "todo/gandhar.md 3b; actor/shoothit.h"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),

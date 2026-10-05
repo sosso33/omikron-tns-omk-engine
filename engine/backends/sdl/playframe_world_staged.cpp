@@ -833,6 +833,11 @@ void PlayState::worldStaged() {
                         // tick on the grid, which is when this port knows his
                         // `+60` (the generic entry's action waits the same way)
                         astarothActors[s.actor] = omk::AstarothActor{};
+                        // HIS NODE IS HIS PELVIS (the root mesh's world point),
+                        // as Gandhar's is (`todo/gandhar.md` 3b): drawn
+                        // pelvis-on-node, not seated by his lowest posed corner
+                        // - a reader saw him FLOAT (`todo/astaroth.md` 4)
+                        s.pelvis = true;
                         // (the TEST HARNESS `--astaroth-health N`, an instrument)
                         if (astarothHealth >= 0) {
                             fresh.health = astarothHealth;
@@ -2958,6 +2963,25 @@ void PlayState::worldStaged() {
         // where the pelvis is DRAWN - `pelvis + off` - for next frame's
         // head look, which backs its target out into the pose's space
         for (int k = 0; k < 3; ++k) s.pelvisDrawnAt[k] = pelvis[k] + off[k];
+        // `OMK_FEETLOG=<actor>`: an INSTRUMENT - every 30 frames, that body's
+        // lowest posed corner as DRAWN against the floor under him, to tell
+        // a float from a sink without a screenshot (todo/astaroth.md 4)
+        static const int feetLog = [] { const char* e = std::getenv("OMK_FEETLOG");
+                                         return e ? std::atoi(e) : -1; }();
+        if (feetLog == s.actor && n % 30 == 0) {
+            float low = -1e9f;
+            if (!s.gpu) for (const auto& c : s.posed.corners) if (c.y > low) low = c.y;
+            float under = s.at[1];
+            if (!playerSoup.empty())
+                if (const auto g = omk::floorUnder(playerSoup, playerGrid,
+                                                   pelvis[0] + off[0], pelvis[1] + off[1],
+                                                   pelvis[2] + off[2]))
+                    under = static_cast<float>(*g);
+            std::printf("FEET %ld actor %d: lowest drawn %.1f, floor under %.1f, gap %.1f "
+                        "(pelvis %.1f, %s)\n", n, s.actor, double(low + off[1]),
+                        double(under), double(under - (low + off[1])),
+                        double(pelvis[1] + off[1]), s.pelvis ? "pelvis seat" : "feet seat");
+        }
         s.pelvisDrawnKnown = true;
         // ...and WHERE THE FALL LEFT HIM: his pelvis over the floor under
         // his placement, once the death clip has played out (a standing
