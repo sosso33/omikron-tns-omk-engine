@@ -255,6 +255,11 @@ carries a clip.
 
 ### `engine: shoot hit` IS STILL RED, and it must NOT be baselined as it stands
 
+(2026-10-05, `todo/drift-audit.md` S13: with the requests applied, only 237
+dies now - three hits, as the check expects - where 240 died too; what still
+differs is the roots' positions, 237's fall and the push. Still red for the
+reasons below.)
+
 `engine: shoot fire`, `engine: shoot gunfire` and `engine: shoot patrol` are
 re-baselined green. **`engine: shoot hit` is not, and the reason matters more
 than the red.**

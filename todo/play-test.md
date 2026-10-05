@@ -348,6 +348,15 @@ handler of its own (GLOBAL's shakes 15/40 or 20/20), bumping into passers-by
 in a city (a small 5/5 with their voice line), Astaroth's footsteps, and his
 death (a long 100/100). Before this nothing shook. `todo/astaroth.md` 4.
 
+## 29. GUNMEN REACT AND HEAR (2026-10-05)
+
+In any gunfight: a gunman you hit (above his reaction threshold) should now
+REACT, and gunmen should be ALERTED by shots and bolts nearby - before this
+both were computed and thrown away. A gunman a script enters with no action
+stands idle until something moves him. The Shooting gallery is the place to
+see it: its third gunman (240) used to wait; now he turns and fires as soon as
+the first shot is fired. `todo/drift-audit.md` S13.
+
 ## What is NOT fixed, so do not report it as new
 
 * **The lift arrival is still black** and the camera is inside the lift-car
