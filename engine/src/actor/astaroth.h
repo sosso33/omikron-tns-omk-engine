@@ -20,6 +20,9 @@
 #pragma once
 
 #include "actor/shoot.h"
+#include "formats/mesh3do.h"
+
+#include <vector>
 
 #include <functional>
 
@@ -154,5 +157,99 @@ AstarothGate astarothGate(const AstarothFight& fight, ShootRecord& rec, int dama
 // killing hit's back-hit clip - is the ONLY place his death is reported.
 enum class AstarothClipOver { Replay, Dead, Resume };
 AstarothClipOver astarothClipOver(ShootRecord& rec);
+
+
+// ======================================================== HIS TICK (step 3)
+//
+// The actor-side fields his functions keep (`sub_4B2F30` .. `sub_4B3E10`,
+// 29_win32.c). The engine's node and the actor record's position are TWO
+// things here and the port keeps both: `sub_421A20` and the grid's wrap SET
+// the node to the record's x/z, while the leap moves the record by
+// `step * flt_6A062C` and the node by `step * flt_4C30D8` - so at a factor
+// other than 1.0 they part until the next clip start re-seats him.
+struct AstarothGrid {               // actor +1272, `sub_4B3260`
+    int wPitch = 0, wYaw = 0;       // +0, +4: 0..256
+    int off8 = 0, off10 = 0;        // +8, +10: key offsets (frames)
+    int off12 = 0, off14 = 0;       // +12, +14
+};
+struct AstarothActor {
+    int   clip = -1;                // rec+8, as its clip ID (`sub_434630`)
+    int   clipFrames = 0;           // `Anim_Frames(rec+8)`
+    bool  grid = false;             // ids 1 and 13 are 9-cell aim grids (`sub_4725B0`)
+    int   prevClip = -1;            // rec+12
+    int   queued = -1;              // rec+16 by ID: the tail plays it PICKED
+    int   queuedTurnType = -1;      // ...or a turn clip by TYPE (`sub_421C00`)
+    float queuedTurn = 0.0f;        // its +184, degrees a frame
+    float frame = 1.0f;             // actor+188
+    float prev  = 0.0f;             // actor+192
+    float pos[3] = {0, 0, 0};       // actor+244..252, the record's
+    float node[3] = {0, 0, 0};      // the node's (what is drawn)
+    float aimYaw = 0.0f, aimPitch = 0.0f;   // +452, +456
+    AstarothGrid blend;             // +1272
+    float leap[2] = {0.0f, 0.0f};   // dword_69A75C / dword_69A758
+    bool  started = false;          // the setup's stand grid has begun
+};
+
+// What his tick asks of the world. Every position is the engine's world
+// (y down). `rootDelta` is `Anim_RootDelta` of clip `id` between two frames
+// in the CLIP's frame - the caller turns nothing; `astarothTick` turns it by
+// his facing, as the node's matrix does (`node+156`).
+struct AstarothWorld {
+    std::function<int(int id)> clipFrames;                       // -1: no such clip
+    std::function<void(int id, float t0, float t1, float out[3])> rootDelta;
+    std::function<void(float out[3])> player;                    // his target's node
+    std::function<void(float out[3])> shoulder;                  // his `Epauleg` (actor+24)
+    std::function<void(int slot, const float target[3])> fire;   // `sub_44CDF0`
+    std::function<void(float wait)> slot1Wait;                   // `sub_44F020(dword_657AF0, w)`
+    // `sub_421CD0(him, rec, 1)`: the grid-field turn; true when it QUEUED a
+    // turn clip (by type, with its +184) in place of turning him itself
+    std::function<bool(float& facing, int& clipType, float& perFrame)> fieldTurn;
+    // `sub_420C70(rec, pos, target)` and the `0.8 * sqrt(flt_90E118)` test;
+    // false -> `sub_420EB0(him, 0)` turns him (state 21)
+    std::function<bool(const float pos[3], const float target[3])> aimed;
+    std::function<void(float& facing)> turnToTarget;             // `sub_420EB0(him, 0)`
+    std::function<void(int damage, const float dir[3])> strike;  // `sub_423B10(target, ..)`
+    // state 18: `sub_4359A0` from his cell to the target's, and `sub_4353E0`
+    // on the target's floor and cell (the AI refuses it)
+    std::function<void(bool& sight, bool& refused)> leapCheck;
+    std::function<void(const float pos[3])> cell;                // `sub_435770` -> +136/+140
+    std::function<void()> stamp;                                 // `sub_420B80`
+    std::function<void(float duration, int cm)> shake;           // `Camera_SetShake`
+};
+
+// `sub_4B2F30` via `sub_4B2E90` (id 13, the STAND grid) / `sub_4B2EE0` (id 1,
+// the WALK grid): the clip started at 1.0 with the blend zeroed, the record
+// moved by cell 0's frame 0->1 root delta and the node SET there with
+// `rec+60 + dy`; then the aim and the blend for frame 1.
+void astarothStartGrid(AstarothActor& a, ShootRecord& rec, int id, float facing,
+                       const AstarothWorld& w);
+// `sub_421A20(him, rec, clip, 0)` for a PLAIN clip by ID: frame 1.0, the
+// node SET to the record's x/z and `rec+60 + dy` of frame 0->1.
+void astarothStartClip(AstarothActor& a, ShootRecord& rec, int id, float facing,
+                       const AstarothWorld& w);
+// `sub_4B30A0` + `sub_4B3260`: the aim from his shoulder at the player's node,
+// yaw against his -Z clamped +-45, pitch `asin(-dy / d)` clamped +-33, into
+// the four key offsets and two k/256 weights.
+void astarothAim(AstarothActor& a, float facing, const AstarothWorld& w);
+// The prologue's RESUME arm (0x480261..): his state's own clip back -
+// 16 the walk grid, 17 id 4, 21 id 11, 29 the stand grid, anything else
+// `sub_421A20(+12)` - and the target reset (`sub_4239D0`).
+void astarothResume(AstarothActor& a, ShootRecord& rec, float facing, const AstarothWorld& w);
+// `sub_4800C0`'s BODY (0x4802ED..0x48065D), after the prologue let it through:
+// slot 1's wait, `+100 = +16 = 0`, `+160 &= ~0x800`, the state switch, and
+// the tail that starts a queued clip. `band` is this tick's
+// (`astarothBand`). -> the queued clip, if any, is in `a.queued` /
+// `a.queuedTurnType` for the caller to start PICKED (flag 8, `+100 = 0`).
+// `Actor_LoadModel`'s `sub_436DD0(node, actor+84, "Tire")`: the WEAPON
+// SLOTS are the model's own marker meshes whose name begins `Tire` (the
+// callback `sub_436E10` compares the first four bytes), in `o3de_Traverse`'s
+// PRE-ORDER - first child (`+52`), then next sibling (`+56`) - up to four.
+// For AST_FNM that is `Tire000001` (under `AstMaing`, slot 0) then
+// `Tire000000` (under `AstBuste`, slot 1). -> mesh INDICES, -1 for none.
+void astarothTireSlots(const std::vector<Mesh>& meshes, int out[4]);
+
+void astarothTick(AstarothFight& fight, AstarothActor& a, ShootRecord& rec,
+                  const AstarothBand& band, float dt, float& facing,
+                  const AstarothWorld& w);
 
 }  // namespace omk

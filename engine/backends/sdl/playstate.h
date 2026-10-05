@@ -110,6 +110,7 @@ struct PlayState {
     long & playerAtFrame = opt.playerAtFrame;
     float (&playerAt)[4] = opt.playerAt;
     long & astarothSoulsAt = opt.astarothSoulsAt;
+    int & astarothHealth = opt.astarothHealth;
     int & fightHealth = opt.fightHealth;
     long & shootEndAt = opt.shootEndAt;
     float (&standAt)[4] = opt.standAt;
@@ -472,6 +473,12 @@ struct PlayState {
     // (`actor/astaroth.h`, `todo/astaroth.md`)
     omk::AstarothFight astaroth{};
     int astarothSoulSlot[omk::kAstarothSouls] = {-1, -1, -1, -1, -1, -1};   // the worldSlots each soul is in
+    std::map<int, omk::AstarothActor> astarothActors{};   // his actor-side fields, by actor id
+    std::map<int, std::array<float, 4>> astarothSlotTimer{};   // actor+148+4*slot
+    omk::AcquireOut astarothAcquire{};    // what `sub_420C70` left for `sub_420EB0`
+    float astarothSlot1Wait = -1.0f;      // slot 1's sprite-row WAIT, rewritten each tick
+    int   astarothBar = -1;               // `Hud_DrawBar(+92, 200, 1, 0)` this frame, -1 none
+    long  astarothShakes = 0;             // `Camera_SetShake` calls (step 4 ports the shake)
     omk::ShootMover shootMover{};
     std::unique_ptr<omk::UiWalk> hudWalk{};
     omk::HudBar hudBar{};   // `Hud_DrawBar` mode 0, the health gauge
@@ -751,6 +758,13 @@ struct PlayState {
     void shootFreezeSync(long frame);
     void shootWake(long frame, const char* what);
     void astarothWorldHit(long frame, int mesh, int slot, const float at[3]);   // sub_47FCF0
+    // his tick's world (`actor/astaroth.h` AstarothWorld) and his FIRE (`sub_44CDF0`)
+    omk::AstarothWorld astarothWorld(Staged& s, omk::ShootRecord& rec, float dt);
+    void astarothFire(Staged& s, omk::ShootRecord& rec, int slot, const float target[3]);
+    void astarothStamp(omk::ShootRecord& rec);
+    // `sub_4725B0`'s pose: four keys of the grid clip, two k/256 slerps
+    std::vector<omk::MeshPose> astarothPoseNow(const CharModel* mo, const omk::NodeTracks& pt,
+                                               const omk::AstarothActor& a);   // `sub_420B80` / `sub_421770`'s tail
     // `Shoot_InitWeapon` (0x00421FB0) for the PLAYER: the row of the object
     // in his hand and the magazine count - `Shoot_Enter` step 9 and
     // `shoot.player.resume` both call it; out: the object, its kind, the type

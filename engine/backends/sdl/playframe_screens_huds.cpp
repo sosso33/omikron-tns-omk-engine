@@ -456,6 +456,19 @@ void PlayState::screensHuds() {
         // (`dword_90E100`, `hudHealth` - not +92 itself, which a killing
         // hit takes below 0 while the gauge keeps its last value)
         const omk::HudBarFrame bar = hudBar.draw(fb, hudHealth, 200, 0, 0);
+        // ...and ASTAROTH's, which his own tick draws every frame it runs:
+        // `Hud_DrawBar(+92, 200, 1, 0)` (0x480147) - side 1, the gauge melee
+        // gives the opponent (`todo/astaroth.md` 3)
+        if (astarothBar != -1) {
+            const omk::HudBarFrame ab = hudBar.draw(fb, astarothBar, 200, 1, 0);
+            static int astBarTold = -2;
+            if (astBarTold != ab.percent) {
+                astBarTold = ab.percent;
+                std::printf("frame %ld: Astaroth's gauge (Hud_DrawBar side 1): %d/200 = %d%%, "
+                            "top %d\n", n, astarothBar, ab.percent, ab.top);
+            }
+            astarothBar = -1;
+        }
         // THE RADAR: item 0x4C4388's own callback 0x42F000 (`ui/radar.h`),
         // in the box its HUD's open callback set, through the shoot camera's fov
         // (preset row 4's 75). The gunmen go in with the position their

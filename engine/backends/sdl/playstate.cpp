@@ -682,6 +682,250 @@ void PlayState::astarothWorldHit(long frame, int mesh, int slot, const float at[
                     "cleared (sub_44CD90(0))\n", frame);
 }
 
+// ---- ASTAROTH's TICK, its world (`actor/astaroth.h`, `todo/astaroth.md` 3)
+omk::AstarothWorld PlayState::astarothWorld(Staged& s, omk::ShootRecord& rec, float dt) {
+    omk::AstarothWorld w;
+    const int grp = static_cast<int>(rec.type);
+    w.clipFrames = [this, grp](int id) {
+        const omk::PedClip* c = shootClipBySlot(grp, id);
+        return c ? c->frames : -1;
+    };
+    w.rootDelta = [this, grp](int id, float t0, float t1, float out[3]) {
+        out[0] = out[1] = out[2] = 0.0f;
+        if (const omk::PedClip* c = shootClipBySlot(grp, id))
+            if (c->root.size() >= 3) omk::pedRootDelta(*c, t0, t1, nullptr, out);
+    };
+    // `Actor_GetPosAndFacing(rec+96)` - the player's node
+    w.player = [this](float out[3]) {
+        for (int k = 0; k < 3; ++k) out[k] = player ? float(player->pos()[k]) : 0.0f;
+    };
+    // `**(actor+24)` - `Epauleg`, the LAST strstr match as `o3de_FindMeshByName`
+    // keeps it - where he was drawn last frame (the engine's node matrices
+    // are last pose's too until `sub_440C80` composes them)
+    w.shoulder = [&s](float out[3]) {
+        for (int k = 0; k < 3; ++k) out[k] = s.drawAt[k];
+        if (!s.mo) return;
+        int sh = -1;
+        for (std::size_t i = 0; i < s.mo->meshes.size(); ++i)
+            if (std::strstr(s.mo->meshes[i].name, "Epauleg")) sh = static_cast<int>(i);
+        if (sh >= 0 && s.meshAt.size() >= static_cast<std::size_t>(sh) * 3 + 3)
+            for (int k = 0; k < 3; ++k)
+                out[k] = s.meshAt[static_cast<std::size_t>(sh) * 3 + static_cast<std::size_t>(k)];
+    };
+    w.fire = [this, &s, &rec](int slot, const float target[3]) {
+        astarothFire(s, rec, slot, target);
+    };
+    w.slot1Wait = [this](float wait) { astarothSlot1Wait = wait; };
+    // `sub_421CD0(him, rec, 1)` - the path field's heading, then `sub_421C00`
+    w.fieldTurn = [this, &s, &rec, dt](float& facing, int& clipType, float& perFrame) {
+        if (!shootMap.valid()) return false;
+        auto crt = [this]() {
+            gunRandSeed = gunRandSeed * 214013u + 2531011u;
+            return static_cast<int>((gunRandSeed >> 16) & 0x7FFFu);
+        };
+        const int h = shootField.heading(shootMap, static_cast<signed char>(rec.node & 0xFF),
+                                         rec.destX, rec.destZ, crt);
+        omk::ShootStep st;
+        if (!omk::shootGridTurn(rec, h, facing, dt, crt, st)) return false;
+        if (st.turnClip < 0) return false;
+        const omk::PedClip* tc = shootClipExact(static_cast<int>(rec.type), st.turnClip);
+        if (tc && tc->frames > 0) {
+            clipType = st.turnClip;
+            perFrame = st.turnTotal / static_cast<float>(tc->frames);
+            return true;
+        }
+        facing += st.turnRate * dt;              // `sub_421C00`: no clip
+        if (facing < 0.0f) facing += 360.0f;
+        if (facing >= 360.0f) facing -= 360.0f;
+        (void)s;
+        return false;
+    };
+    w.aimed = [this, &s, &rec](const float pos[3], const float target[3]) {
+        const float self[4] = {pos[0], pos[1], pos[2], s.facing};
+        const bool in = omk::shootAcquires(rec, self, target, astarothAcquire, false);
+        return in && !(double(astarothAcquire.dotFlat) <
+                       std::sqrt(double(astarothAcquire.dist2d2)) * double(0.80000001f));
+    };
+    w.turnToTarget = [this, dt](float& facing) {
+        omk::shootTurnToward(facing, astarothAcquire, false, dt);
+    };
+    // the SLAM: `sub_423B10(target, dmg, dir)`, the player's arm
+    w.strike = [this, &s](int dmg, const float dir[3]) {
+        if (!player) return;
+        const std::size_t recAt = static_cast<std::size_t>(omk::GameState::kPlayerRecord);
+        const std::size_t recLen = static_cast<std::size_t>(omk::GameState::kPlayerRecordSize);
+        omk::StrikeIn sin;
+        sin.damage = dmg;
+        sin.victimIsPlayer = true;
+        sin.victimInShoot = player->state() == omk::ActorState::Shoot;
+        std::int32_t shield = 0;
+        omk::readActorProperty(state.raw().subspan(recAt, recLen), 17, shield);
+        sin.bodyShield = shield;
+        sin.difficulty = settings.v.shootDifficulty;
+        sin.victimYaw = player->facing();
+        sin.dir[0] = dir[0];
+        sin.dir[2] = dir[2];
+        shootWake(n, "Astaroth's slam (sub_423B10)");
+        const omk::HitOut sho = omk::shootApplyStrike(playerShootRec, sin);
+        std::printf("frame %ld: actor %d %s - ASTAROTH's SLAM (sub_423B10): damage %d at "
+                    "%.0f away\n", n, s.actor, s.model.c_str(), dmg,
+                    std::sqrt(double(dir[0]) * dir[0] + double(dir[2]) * dir[2]));
+        if (sho.refused)
+            std::printf("  PLAYER strike REFUSED (`sub_423B10` returns -1)\n");
+        else if (sho.healthWas <= 0)
+            std::printf("  the player is down already (health %d): nothing\n", sho.healthWas);
+        else
+            applyPlayerDamage(n, s.actor, "slam", dmg, int(shield), sho);
+    };
+    // state 18: `sub_435020` / `sub_435770` / `sub_4353E0` on the player,
+    // and `sub_4359A0(+188, his cell, the player's, 1)`
+    w.leapCheck = [this, &rec](bool& sight, bool& refused) {
+        sight = false;
+        refused = false;
+        if (!shootMap.valid() || !player) return;
+        const float* p = player->pos();
+        const int fl = shootMap.floorAt(float(p[0]), float(p[1]), float(p[2]), -1);
+        int cx = 0, cz = 0;
+        // (LABELLED: with no floor the engine passes its own actor pointer
+        // as the cell - garbage; this asks for cell 0,0 on floor -1)
+        if (fl >= 0) shootMap.cellAt(fl, float(p[0]), float(p[2]), cx, cz);
+        refused = shootMap.blocked(fl, cx, cz);
+        const int own = static_cast<signed char>(rec.node & 0xFF);
+        // (every door open, as the generic sight - LABELLED there)
+        sight = own >= 0 && shootMap.lineOfSight(own, rec.destX, rec.destZ,
+                                                 playerShootRec.destX, playerShootRec.destZ,
+                                                 0xFFFF, nullptr, nullptr);
+    };
+    w.cell = [this, &rec](const float pos[3]) {
+        const int fl = static_cast<signed char>(rec.node & 0xFF);
+        int cx = 0, cz = 0;
+        if (fl >= 0 && shootMap.valid() && shootMap.cellAt(fl, pos[0], pos[2], cx, cz)) {
+            rec.destX = cx;
+            rec.destZ = cz;
+        }
+    };
+    w.stamp = [this, &rec]() { astarothStamp(rec); };
+    w.shake = [this](float, int) { ++astarothShakes; };
+    return w;
+}
+
+// `sub_4725B0` (0x004725B0): for every node, the key `(int)frame` at four
+// offsets -
+//     A = slerp(key + off8,  key + off10, wPitch)
+//     B = slerp(key + off14, key + off12, wPitch)
+//     q = slerp(A, B, wYaw)
+// with `sub_4721F0`'s integer k/256 weight (`qslerpK`). This tree's tracks
+// hold key k at index k - 1 (key 0 is the rest sentinel).
+std::vector<omk::MeshPose> PlayState::astarothPoseNow(const CharModel* mo,
+                                                      const omk::NodeTracks& pt,
+                                                      const omk::AstarothActor& a) {
+    if (!mo || !pt.valid() || pt.frames <= 0) return {};
+    const int key = static_cast<int>(static_cast<std::int64_t>(a.frame));
+    const auto at = [&](int off) {
+        return std::clamp(off + key - 1, 0, pt.frames - 1);
+    };
+    const auto& g = a.blend;
+    const auto& q8 = pt.quats[static_cast<std::size_t>(at(g.off8))];
+    const auto& q10 = pt.quats[static_cast<std::size_t>(at(g.off10))];
+    const auto& q12 = pt.quats[static_cast<std::size_t>(at(g.off12))];
+    const auto& q14 = pt.quats[static_cast<std::size_t>(at(g.off14))];
+    omk::NodeTracks one;
+    one.count = pt.count;
+    one.frames = 1;
+    one.rootTrack = pt.rootTrack;
+    one.ids = pt.ids;
+    one.names = pt.names;
+    one.quats.emplace_back(q8.size());
+    auto& row = one.quats[0];
+    const unsigned wp = static_cast<unsigned>(g.wPitch), wy = static_cast<unsigned>(g.wYaw);
+    for (std::size_t i = 0; i < row.size() && i < q10.size() && i < q12.size() && i < q14.size();
+         ++i) {
+        const omk::Quatf A = omk::qslerpK(q8[i], q10[i], wp);
+        const omk::Quatf B = omk::qslerpK(q14[i], q12[i], wp);
+        row[i] = omk::qslerpK(A, B, wy);
+    }
+    if (!pt.trans.empty())
+        one.trans.push_back(pt.trans[static_cast<std::size_t>(
+            std::min<int>(at(g.off8), static_cast<int>(pt.trans.size()) - 1))]);
+    return omk::composePose(mo->meshes, one, 0, false);
+}
+
+void PlayState::astarothStamp(omk::ShootRecord& rec) {
+    // the generic stamp (playframe_world_staged.cpp, after the brain), on the
+    // cell the tick left at +136/+140
+    if (!shootMap.valid() || rec.state == 2 || rec.cellStamped) return;
+    const int fl = static_cast<signed char>(rec.node & 0xFF);
+    if (fl < 0 || fl >= static_cast<int>(shootMap.floors().size())) return;
+    rec.cellSaved = shootMap.floors()[static_cast<std::size_t>(fl)].cell(rec.destX, rec.destZ);
+    shootMap.setCell(fl, rec.destX, rec.destZ, omk::Map2d::kOccupied);
+    rec.cellStamped = true;
+}
+
+// `sub_44CDF0(actor, slot, target)` (17_script.c 941, read from the assembly):
+// his weapon slot is his own `Tire` marker (`astarothTireSlots`), the timer
+// `actor+148+4*slot` is property 34's RELOAD (+202 - 0 for him), the ammo
+// property 35 spent through `Actor_SetProperty` - whose slot is the value's
+// HIGH word, so every shot spends SLOT 0's - and the bolt flies from the
+// marker's drawn position straight at the target, no jitter, at
+// `(int16)hi * 39 / 10` with damage `(int16)lo`.
+void PlayState::astarothFire(Staged& s, omk::ShootRecord& rec, int slot, const float target[3]) {
+    auto& session = *session_;
+    if (!s.mo || slot < 0 || slot > 3) return;
+    int slots[4];
+    omk::astarothTireSlots(s.mo->meshes, slots);
+    const int w = slots[slot];
+    if (w < 0) return;                                   // `if (!w) return 0`
+    auto& timer = astarothSlotTimer[s.actor][static_cast<std::size_t>(slot)];
+    if (timer > 0.0f) return;                            // the slot timer
+    int reload = 0, speedHi = 0, damage = 0, ammo = 0;
+    if (!session.actorWeaponSlot(s.actor, slot, reload, speedHi, damage, ammo)) return;
+    if (ammo < 0) return;                                // -1 refuses; 0 still fires
+    session.setActorProperty(s.actor, 35, ammo - 1);     // the HIGH word 0: slot 0's
+    timer = static_cast<float>(static_cast<std::int16_t>(reload));
+    omk::ShootWeaponRow row;
+    row.speed = static_cast<float>(static_cast<std::int16_t>(speedHi) * 39 / 10);
+    row.damage = static_cast<std::int16_t>(damage);
+    row.ammoIndex = 0;                                   // spent above, as the engine does
+    omk::RecordShot rs;
+    if (s.meshAt.size() >= static_cast<std::size_t>(w) * 3 + 3)
+        for (int k = 0; k < 3; ++k)
+            rs.muzzle[k] = s.meshAt[static_cast<std::size_t>(w) * 3 + static_cast<std::size_t>(k)];
+    else
+        for (int k = 0; k < 3; ++k) rs.muzzle[k] = s.drawAt[k];
+    const int k0[3] = {0, 0, 0};
+    const omk::GunmanAim aim = omk::shootGunmanAim(target, rs.muzzle, 0.0f, k0);
+    rs.yawDeg = aim.yawDeg;
+    rs.pitchDeg = aim.pitchDeg;
+    // the sprite row by the marker's PARENT bone (`sub_44EEB0(w->parent->desc
+    // + 16)`, four bytes): AstMaing -> AstMain, AstBuste -> AstBust
+    const omk::Mesh& wm = s.mo->meshes[static_cast<std::size_t>(w)];
+    std::string parentName;
+    for (const auto& m : s.mo->meshes)
+        if (m.id == wm.parent) { parentName = m.name; break; }
+    int muzzleFx = 0;
+    std::string rowName = "none";
+    if (const omk::FxShotSprite* sp = shootSfx.shotSprite(parentName)) {
+        rowName = sp->name;
+        muzzleFx = sp->muzzleEffect;
+        rs.impactEffect = sp->impactEffect;
+        rs.sprite = true;
+        // slot 1's WAIT is the one his tick rewrites (`dword_657AF0`)
+        rs.windUp = (slot == 1 && astarothSlot1Wait >= 0.0f) ? astarothSlot1Wait : sp->windUp;
+        rs.grow = sp->grow;
+        for (int k = 0; k < 3; ++k) rs.growStep[k] = sp->growStep[k];
+    }
+    const omk::RecordShotOut out = projectiles.fireFromRecord(s.actor, row, rs);
+    std::printf("frame %ld: actor %d %s - ASTAROTH FIRES slot %d (sub_44CDF0): %s from %.0f %.0f "
+                "%.0f, speed %.1f, damage %d, wait %.1f, row '%s' -> '%s', ammo %d -> %d, entry %d\n",
+                n, s.actor, s.model.c_str(), slot, wm.name, double(rs.muzzle[0]),
+                double(rs.muzzle[1]), double(rs.muzzle[2]), double(row.speed), row.damage,
+                double(rs.windUp), parentName.c_str(), rowName.c_str(), ammo, ammo - 1, out.entry);
+    if (out.entry >= 0) {
+        shotSound(n, muzzleFx, rs.muzzle, player ? player->pos() : nullptr, "Astaroth's fire");
+        shootNoise(n, s.actor, rs.muzzle, "Astaroth's shot");
+    }
+}
+
 void PlayState::shootWake(long frame, const char* what) {
     auto& session = *session_;
     if (!session.shootMode().frozen() || !session.shootMode().active()) return;

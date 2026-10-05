@@ -205,9 +205,24 @@ struct SfxFile {
         for (const auto& e : effects) if (e.id == id) return &e;
         return nullptr;
     }
-    // `sub_44EEB0`: section A by name, EXACTLY - it compares eight bytes.
+    // `sub_44EEB0`: section A by name - and it compares FOUR bytes, not eight
+    // (corrected 2026-10-05, `todo/astaroth.md`). The loop is an inlined
+    // two-dword compare whose second half reads `*i + 1 != v2 + 1` - the
+    // first dword plus one against itself - so only the first dword decides
+    // (0x44EECF..0x44EEDB). Every shipped row name is seven characters and a
+    // NUL, so an exact compare could never match a longer key - Astaroth's
+    // `AstBuste` / `AstMaing` find rows `AstBust` / `AstMain` this way - and
+    // no two of `shoot2.sfx`'s fourteen rows share their first four bytes, so
+    // no key that matched exactly matches a different row now.
     const FxShotSprite* shotSprite(const std::string& name) const {
-        for (const auto& s : shotSprites) if (s.name == name) return &s;
+        const auto dword = [](const std::string& v) {
+            std::uint32_t d = 0;
+            for (std::size_t k = 0; k < 4 && k < v.size(); ++k)
+                d |= static_cast<std::uint32_t>(static_cast<unsigned char>(v[k])) << (8 * k);
+            return d;
+        };
+        const std::uint32_t key = dword(name);
+        for (const auto& s : shotSprites) if (dword(s.name) == key) return &s;
         return nullptr;
     }
 };

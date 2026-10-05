@@ -40082,15 +40082,20 @@ def c_engine_astaroth_back():
     hit counts `+88` down while no clip plays, and at 0 he FLINCHES: clip id
     14, played ten times. He has no death clip, so the killing hit's clip
     plays out and his tick's prologue posts message 3 - AREA 175's handler
-    then ends the phase (`shoot.end 1`) and runs the ending.
+    then ends the phase (`shoot.end 1`).
 
-    Three runs, the souls struck down by the `--astaroth-souls` harness
-    (through `sub_47FCF0`, as `engine: astaroth souls` shows a bolt does) and
-    character 34 hidden as record 1 hides him. KILL: the player put BEHIND
-    him (`--player-at`; no address is) and shooting his `AstDos` - 34 back
-    hits of 6 from 200, the last killing, message 3 handled once, shoot
-    mode left the next frame. FRONT: from the retry point, every hit refused
-    and `+88` running 9..1 to the flinch. LEGS: from behind but low - the
+    Since step 3 he MOVES - his tick walks him at the player and turns him
+    round - so a standing player can no longer put 34 bolts in his back, and
+    the kill is reached with his health lowered by `--astaroth-health 6`
+    (one back hit), and the souls are struck just after his stand cell
+    wraps (frame 46) so he is still standing, facing away, when the first
+    bolt lands. Three runs, the souls struck down by `--astaroth-souls`
+    (through `sub_47FCF0`) and character 34 hidden as record 1 hides him.
+    KILL: the player put BEHIND him (`--player-at`) while he still stands in
+    state 29, shooting his `AstDos`: the hit goes in, the type-4 clip plays,
+    message 3 is handled and shoot mode ends the next frame. FRONT: from the
+    retry point, rapid fire as he walks at the player - every hit refused and
+    `+88` running 9..1 to the flinch. LEGS: from behind but low - the
     direction passes and the one-mesh sweep refuses.
 
     Shown to fail: the direction test's sign flipped; the sweep's one-mesh
@@ -40105,21 +40110,24 @@ def c_engine_astaroth_back():
     play = os.path.join(eng, "build", "omk-play")
     if b.returncode != 0 or not os.path.exists(play):
         return ("build failed",), ("built",), "engine/ must build"
-    def start(extra, aim, keys, delay, frames):
+    def start(extra, aim, keys, delay, frames, souls=10):
         return subprocess.Popen(
             [play, fr, os.path.join(ROOT, "tables"), "--save",
              os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "175",
              "--address", "526", "--zone-enable", "2936", "--zone-disable", "2935",
              "--hide-show", "34,1,100000,0", "--frames", str(frames), "--nodelay",
-             "--shoot-health", "1000", "--astaroth-souls", "10",
+             "--shoot-health", "5000", "--astaroth-souls", str(souls),
              "--keys", ",".join(["54"] * keys), "--keydelay", str(delay),
              "--aim-at", aim] + extra,
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, encoding="latin-1",
             env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
     behind = ["--player-at", "12:31950,1052,-2504,90"]
-    pk = start(behind, "32206,668,-2507", 45, 20, 1000)     # his AstDos
-    pf = start([], "32206,668,-2507", 13, 40, 560)
-    pl = start(behind, "32222,860,-2504", 3, 40, 140)       # his legs
+    # THE TIMING: his stand cell wraps at frame 44 and 29 -> 16 happens only
+    # at a wrap, so souls struck at 46 leave him standing, facing away, past
+    # the first bolt (fired 47, landing 50)
+    pk = start(behind + ["--astaroth-health", "6"], "32206,668,-2507", 3, 40, 140, 46)
+    pf = start([], "32206,668,-2507", 16, 8, 120)
+    pl = start(behind, "32222,860,-2504", 2, 40, 60, 46)      # his legs
     k, f, l = pk.communicate()[0], pf.communicate()[0], pl.communicate()[0]
     gate = r"ASTAROTH's gate \(sub_47FD90\): 6 of 6 souls down, state \d+, (from \w+(?: \w+)?), ([^-]+) - \+88 (\d+)"
     back = _re.findall(gate, k)
@@ -40128,8 +40136,8 @@ def c_engine_astaroth_back():
     dead = _re.findall(r"^frame (\d+): actor 609 AST_FNM - ASTAROTH DEAD .* message 3 (\w+)",
                        k, _re.M)
     leave = _re.search(r"^frame (\d+): SHOOT MODE LEAVE", k, _re.M)
-    kill = (sum(1 for x in back if x[1].startswith("IN THE BACK")),
-            clipK.groups() if clipK else None, len(hp), hp[-1:] if hp else [],
+    kill = ((back[0][0], back[0][1].strip()) if back else None,
+            clipK.groups() if clipK else None, hp[:1],
             "KILLED - Astaroth has no death clip" in k,
             [d[1] for d in dead],
             (int(leave.group(1)) - int(dead[0][0])) if (leave and dead) else None)
@@ -40140,16 +40148,89 @@ def c_engine_astaroth_back():
              clipF.groups() if clipF else None,
              len(_re.findall(r"^  hit: damage", f, _re.M)))
     lg = _re.findall(gate, l)
-    legs = ([(x[0], x[1].strip(), int(x[2])) for x in lg[:2]],
+    legs = ([(x[0], x[1].strip(), int(x[2])) for x in lg[:1]],
             len(_re.findall(r"^  hit: damage", l, _re.M)))
     return (kill, front, legs), \
-           ((34, ("4", "16"), 34, [-4], True, ["handled"], 1),
+           ((("from behind", "IN THE BACK (AstDos)"), ("4", "16"), [0], True, ["handled"], 1),
             ([9, 8, 7, 6, 5, 4, 3, 2, 1, 10], "refused, he FLINCHES", ("14", "10"), 0),
-            ([("from behind", "refused", 9), ("from behind", "refused", 8)], 0)), \
-           "KILL: back hits, the reaction clip (type, frames), hits that hurt, his last " \
-           "health, the kill, message 3, frames to the phase's end; FRONT: +88 down to " \
-           "the flinch, its clip id and plays, hits that hurt; LEGS: the gate's verdicts, " \
+            ([("from behind", "refused", 9)], 0)), \
+           "KILL: the first gate verdict, the reaction clip (type, frames), his health " \
+           "after it, the kill, message 3, frames to the phase's end; FRONT: +88 down to " \
+           "the flinch, its clip id and plays, hits that hurt; LEGS: the gate's verdict, " \
            "hits that hurt"
+
+
+def c_engine_astaroth_tick():
+    r"""ASTAROTH's OWN TICK, `sub_4800C0` (`todo/astaroth.md` step 3).
+
+    His brain is not the generic one. Standing (29) he plays the STAND grid -
+    clip 13, 449 frames, nine cells of 50 - posed by `sub_4725B0` from four
+    key offsets and two k/256 weights that `sub_4B30A0`/`sub_4B3260` aim at
+    the player (yaw +-45 from his left shoulder, pitch +-33), and fires weapon
+    SLOT 0 - his own `Tire000001` marker, under `AstMaing` - as each cell's
+    middle frame is crossed: property 34 speed 20 (78 a frame), damage 15,
+    the shot-sprite row by the marker's PARENT's first FOUR bytes (`AstMain`;
+    `sub_44EEB0` compares one dword). With the souls down he WALKS the walk
+    grid (clip 1) at the player; inside 195 units he winds up (17, clip 4),
+    crouches (18, clip 12), LEAPS onto where the player stood (19, clip 5,
+    the record by `step * rate`, the node by `step * dt`) and SLAMS on
+    landing - 3700 / 2300 / 1200 damage by the 78 / 156 bands through
+    `sub_423B10` - then plays the landing (clip 6, picked) and the big shot
+    (21, clip 11), firing SLOT 1 (`Tire000000`, `AstBuste` -> `AstBust`,
+    speed 39, damage 25) at frame 2 with the muzzle WAIT his tick writes
+    (60 / 1.2 = 50 at the default difficulty), and walks again. His gauge is
+    `Hud_DrawBar(+92, 200, 1, 0)`.
+
+    The fight from the retry point, the souls struck down at frame 10, no
+    shooting.
+
+    Shown to fail: the aim's pitch sign flipped (the weights move); the 195
+    reach to 0 (he never winds up); the shot-sprite lookup back to an exact
+    compare (no row for `AstMaing`).
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    o = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"), "--save",
+         os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "175",
+         "--address", "526", "--zone-enable", "2936", "--zone-disable", "2935",
+         "--hide-show", "34,1,100000,0", "--frames", "360", "--nodelay",
+         "--shoot-health", "5000", "--astaroth-souls", "10"],
+        capture_output=True, encoding="latin-1",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    stands = _re.search(r"ASTAROTH STANDS \(sub_4B2E90\): the stand grid, (\d+) frames, cell "
+                        r"(\d+), aim \S+ / \S+, weights (\d+) / (\d+)", o)
+    slots = _re.search(r"weapon slots \(sub_436DD0 \"Tire\"\): (\S+), (\S+)", o)
+    fires = _re.findall(r"ASTAROTH FIRES slot (\d) \(sub_44CDF0\): (\S+) from .*?, speed "
+                        r"(\S+), damage (\d+), wait (\S+), row '(\S+)' -> '(\S+)'", o)
+    first = {}
+    for f in fires:
+        first.setdefault(f[0], f[1:])
+    states = [(int(a), int(b)) for a, b in
+              _re.findall(r"ASTAROTH state (\d+) -> (\d+)", o)][:6]
+    slam = _re.search(r"ASTAROTH's SLAM \(sub_423B10\): damage (\d+) at (\d+) away", o)
+    landing = _re.search(r"ASTAROTH plays clip (\d+) \(type \d+, (\d+) frames\) picked", o)
+    gauge = _re.search(r"Astaroth's gauge \(Hud_DrawBar side 1\): (\d+)/200", o)
+    return ((stands.groups() if stands else None), (slots.groups() if slots else None),
+            first.get("0"), first.get("1"), states,
+            (slam.group(1), int(slam.group(2)) < 78) if slam else None,
+            (landing.groups() if landing else None), (gauge.group(1) if gauge else None)), \
+           (("449", "50", "45", "235"), ("Tire000001", "Tire000000"),
+            ("Tire000001", "78.0", "15", "0.0", "AstMaing", "AstMain"),
+            ("Tire000000", "39.0", "25", "50.0", "AstBuste", "AstBust"),
+            [(29, 16), (16, 17), (17, 18), (18, 19), (19, 21), (21, 16)],
+            ("3700", True), ("6", "69"), "200"), \
+           "the stand grid (frames, cell, yaw/pitch weights); the weapon slots; slot 0's " \
+           "and slot 1's first shot (marker, speed, damage, wait, parent -> row); the " \
+           "first six state changes; the slam (damage, inside 78); the landing clip; " \
+           "his gauge"
 
 
 def c_game_clock():
@@ -42723,6 +42804,7 @@ SLOW = [
     ("engine: hide piece", c_engine_hide_piece, "todo/drift-audit.md S11; o3de/setpiece.h"),
     ("engine: astaroth souls", c_engine_astaroth_souls, "todo/astaroth.md 1; actor/astaroth.h"),
     ("engine: astaroth back", c_engine_astaroth_back, "todo/astaroth.md 2; actor/astaroth.h"),
+    ("engine: astaroth tick", c_engine_astaroth_tick, "todo/astaroth.md 3; actor/astaroth.h"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),

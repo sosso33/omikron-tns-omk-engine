@@ -1173,6 +1173,13 @@ public:
     // metres) and 22 (damage), `omk::readActorAttack`. -> false with no record.
     bool actorAttack(int actor, int slot, std::int32_t& rangeMetres,
                      std::int32_t& damage) const;
+    // One of an actor's four WEAPON SLOTS as `Actor_GetProperty` reads them
+    // for `sub_44CDF0` (property 34 case 0x22 and 35 case 0x23): the
+    // int16s at record +202 (the reload), +210 (the speed, property 34's high
+    // word), +218 (the damage, its low word) and +260 (the ammunition), each
+    // `+ 2 * slot`. -> false with no record.
+    bool actorWeaponSlot(int actor, int slot, int& reload, int& speedHi, int& damage,
+                         int& ammo) const;
     // The spawned character with this id, or nullptr - the shown slot's
     // tables first, the same order `Scene_FindObjectRecord` searches.
     const Character* characterOf(int actor) const;

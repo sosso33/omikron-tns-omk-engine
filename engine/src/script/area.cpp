@@ -2022,6 +2022,22 @@ bool Session::setActorProperty(int actor, int property, std::int32_t value) {
     return hooks_.setActorProperty(actor, property, value);
 }
 
+bool Session::actorWeaponSlot(int actor, int slot, int& reload, int& speedHi, int& damage,
+                              int& ammo) const {
+    std::vector<std::byte> chunk;
+    std::size_t off = 0;
+    if (slot < 0 || slot > 3 || !actorRecord(actor, chunk, off)) return false;
+    const auto i16 = [&](std::size_t at) {
+        return static_cast<int>(loadLE<std::int16_t>(chunk.data() + off + at +
+                                                     2u * static_cast<std::size_t>(slot)));
+    };
+    reload = i16(202);
+    speedHi = i16(210);
+    damage = i16(218);
+    ammo = i16(260);
+    return true;
+}
+
 bool Session::actorAttack(int actor, int slot, std::int32_t& rangeMetres,
                           std::int32_t& damage) const {
     std::vector<std::byte> chunk;

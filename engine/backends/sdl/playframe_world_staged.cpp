@@ -404,6 +404,7 @@ void PlayState::worldStaged() {
         // `.ani`, not from a `.CTL` he does not have.
         const omk::NodeTracks* shootTracks = nullptr;
         int shootFrame = 0;    // a death clip plays through; the rest hold frame 0
+        const omk::AstarothActor* astGrid = nullptr;   // Astaroth on a 9-cell grid
         {
             const int act = session.shootAction(s.actor);
             // ---- THE GENERIC BRAIN, ticked (todo/shoot-mode.md 7d)
@@ -558,9 +559,25 @@ void PlayState::worldStaged() {
             // his ANIMATION RATE, `flt_6A062C`, before anything advances -
             // the picked clip below included (`sub_421770(.., flt_6A062C)`)
             omk::AstarothBand astBand;
-            if (astarothRec && act >= 0 && shootMode && !brainsOff)
-                astBand = omk::astarothBand(astaroth, deadIt->second.health,
-                                            static_cast<float>(frameSec * 30.0));
+            const float astDt = static_cast<float>(frameSec * 30.0);
+            const bool astTicks = astarothRec && act >= 0 && shootMode && !brainsOff;
+            // the node his functions moved, handed to the draw as `walkMove`
+            // (the draw seats his pelvis at `at + walkMove`; `at[1]` is +60)
+            const auto astPlace = [&](const omk::AstarothActor& aa) {
+                for (int k = 0; k < 3; ++k) s.walkMove[k] = aa.node[k] - s.at[k];
+            };
+            if (astTicks) {
+                omk::ShootRecord& ar = deadIt->second;
+                omk::AstarothActor& aa = astarothActors[s.actor];
+                // `rec+168 -= flt_4C30D8`; `Hud_DrawBar(+92, 200, 1, 0)`; the
+                // yaw wrap (`< 0` and `> 359`); `actor+248` re-read from the node
+                ar.timer -= astDt;
+                astarothBar = ar.health;
+                if (s.facing < 0.0f) s.facing += 360.0f;
+                if (s.facing > 359.0f) s.facing -= 360.0f;
+                if (aa.started) aa.pos[1] = aa.node[1];
+                astBand = omk::astarothBand(astaroth, ar.health, astDt);
+            }
             if (act >= 0 && shootMode && !shotDead && !brainsOff && deadIt != shootBrains.end() &&
                 (deadIt->second.flags & 8u)) {
                 GunClip& gc = gunClips[s.actor];
@@ -571,12 +588,41 @@ void PlayState::worldStaged() {
                 // "the ennemies continue moving in the pause menu").
                 const float gunDt = astarothRec ? astBand.rate
                                                 : static_cast<float>(frameSec * 30.0);
+                const float pickedPrev = gc.frame;     // actor+192 = +188
+                const float facingWas = s.facing;      // the node matrix is last tick's
                 gc.frame += gunDt;
                 s.facing += gc.turn * gunDt;
                 if (s.facing < 0.0f) s.facing += 360.0f;
                 if (s.facing > 360.0f) s.facing -= 360.0f;
                 if (gc.type >= 0 && gc.frame < static_cast<float>(gc.frames)) {
                     clipHolds = true;
+                    // ASTAROTH: `sub_421770` moves him by the picked clip's
+                    // root delta through the WALL TEST (`sub_421140(rec, {pos,
+                    // dx, dz}, 1)`: against a wall only the vertical) and
+                    // stamps his cell - the generic port leaves both out
+                    if (astarothRec) {
+                        omk::ShootRecord& ar = deadIt->second;
+                        omk::AstarothActor& aa = astarothActors[s.actor];
+                        const int grpP = static_cast<int>(ar.type);
+                        const omk::PedClip* pc = gc.slot >= 0 ? shootClipBySlot(grpP, gc.slot)
+                                                              : shootClipExact(grpP, gc.type);
+                        if (aa.started && pc && pc->root.size() >= 3) {
+                            float d0[3] = {0, 0, 0}, d[3];
+                            omk::pedRootDelta(*pc, pickedPrev, gc.frame, nullptr, d0);
+                            omk::rotateYaw(facingWas, d0, d);
+                            float snap[2];
+                            const bool wall = shootMap.valid() &&
+                                omk::shootWallTest(ar, shootMap, aa.node[0], aa.node[2], d[0],
+                                                   d[2], 1, snap) != 0;
+                            aa.node[1] += d[1];
+                            if (!wall) {
+                                aa.node[0] += d[0]; aa.node[2] += d[2];
+                                aa.pos[0] += d[0];  aa.pos[2] += d[2];
+                            }
+                            astPlace(aa);
+                        }
+                        if (ar.state != 2) astarothStamp(ar);
+                    }
                 } else if (astarothRec) {
                     // ---- `sub_4800C0` 0x4801FC.., his clip played out ----
                     omk::ShootRecord& ar = deadIt->second;
@@ -596,23 +642,19 @@ void PlayState::worldStaged() {
                         gc = GunClip{};
                         clipHolds = true;
                     } else {
-                        // ...his state's own clip back - 16 the walk grid,
-                        // 17 / 21 their clips, 29 the stand grid (step 3).
-                        // Until his tick is ported every state stands on the
-                        // stand grid's centre cell. LABELLED.
+                        // ...his state's own clip back (`astarothResume`) and
+                        // on into the body the same tick
                         gc = GunClip{};
-                        if (const omk::PedClip* st = shootClipBySlot(
-                                static_cast<int>(ar.type), 13)) {
-                            gunCurSlot[s.actor] = 13;
-                            GunAnim& ga = gunAnims[s.actor];
-                            ga.clip = st;
-                            ga.frame = static_cast<float>(4 * ((st->frames + 1) / 9) + 1);
+                        omk::AstarothActor& aa = astarothActors[s.actor];
+                        if (aa.started) {
+                            const omk::AstarothWorld aw = astarothWorld(s, ar, astDt);
+                            omk::astarothResume(aa, ar, s.facing, aw);
+                            astPlace(aa);
                         }
                         std::printf("frame %ld: actor %d %s - his picked clip over (sub_4800C0): "
-                                    "state %d resumes, health %d\n", n, s.actor,
-                                    s.model.c_str(), ar.state, ar.health);
+                                    "state %d resumes with clip %d, health %d\n", n, s.actor,
+                                    s.model.c_str(), ar.state, aa.clip, ar.health);
                     }
-                    s.walkMove[1] = 0.0f;
                 } else {
                     deadIt->second.flags &= ~8u;
                     std::printf("frame %ld: actor %d %s - picked clip over (sub_421770): "
@@ -723,16 +765,24 @@ void PlayState::worldStaged() {
                             if (mi < w.meshHidden.size()) w.meshHidden[mi] = 0;   // sub_436F50
                             ++shown;
                         }
-                        // `sub_4B2E90`: the STAND grid, clip id 13 - its
-                        // aim blend and its tick are step 3; until then he
-                        // holds the CENTRE cell (4 * L + 1, L = 50), which
-                        // is the grid aimed straight ahead. LABELLED.
-                        const int grpS13 = static_cast<int>(fresh.type);
-                        if (const omk::PedClip* st = shootClipBySlot(grpS13, 13)) {
-                            gunCurSlot[s.actor] = 13;
-                            GunAnim& ga = gunAnims[s.actor];
-                            ga.clip = st;
-                            ga.frame = static_cast<float>(4 * ((st->frames + 1) / 9) + 1);
+                        // `sub_4B2E90` - the STAND grid - waits for his first
+                        // tick on the grid, which is when this port knows his
+                        // `+60` (the generic entry's action waits the same way)
+                        astarothActors[s.actor] = omk::AstarothActor{};
+                        // (the TEST HARNESS `--astaroth-health N`, an instrument)
+                        if (astarothHealth >= 0) {
+                            fresh.health = astarothHealth;
+                            std::printf("frame %ld: ASTAROTH HEALTH - the test harness "
+                                        "--astaroth-health writes +92 = %d\n", n, astarothHealth);
+                        }
+                        astarothSlotTimer[s.actor] = {0.0f, 0.0f, 0.0f, 0.0f};
+                        if (s.mo) {
+                            int tire[4];
+                            omk::astarothTireSlots(s.mo->meshes, tire);
+                            std::printf("frame %ld: actor %d %s - weapon slots (sub_436DD0 "
+                                        "\"Tire\"): %s, %s\n", n, s.actor, s.model.c_str(),
+                                        tire[0] >= 0 ? s.mo->meshes[static_cast<std::size_t>(tire[0])].name : "-",
+                                        tire[1] >= 0 ? s.mo->meshes[static_cast<std::size_t>(tire[1])].name : "-");
                         }
                         std::printf("frame %ld: actor %d %s - ASTAROTH SETUP (sub_47FF70): state "
                                     "%d, +88 %d, flags 0x%x, AstDos mesh %d, %d of %d souls found "
@@ -825,7 +875,12 @@ void PlayState::worldStaged() {
                 // drawn point is the conservative half. Closing it
                 // properly means posing a staged body whether or not it
                 // is drawn, which is not this task's.
-                if (shootMap.valid()) {
+                // (ASTAROTH: `Shoot_Think` is his ENTRY's only - his tick
+                // keeps +136/+140 itself (`sub_435770` after every move) -
+                // so once his stand grid has begun it is not run for him)
+                const bool astThinks = !(rec.type == static_cast<std::uint32_t>(omk::kAstarothType) &&
+                                         astarothActors[s.actor].started);
+                if (shootMap.valid() && astThinks) {
                     // his y is `+60` once he has one - the engine's node
                     // y for a shoot walker, which nothing moves
                     const float at[3] = {s.drawAt[0],
@@ -900,15 +955,67 @@ void PlayState::worldStaged() {
                 // below is NOT his. Until his is ported he stands where his
                 // setup put him and does nothing. LABELLED.
                 if (rec.type == static_cast<std::uint32_t>(omk::kAstarothType)) {
-                    // 0x480303..0x48031D, every tick the prologue lets
-                    // through: `+100 = 0; +16 = 0; +160 &= ~0x800` - the
-                    // back hit's immunity ends here
-                    rec.repeats = 0;
-                    rec.flags &= ~0x800u;
-                    static std::set<int> astTold;
-                    if (astTold.insert(s.actor).second)
-                        std::printf("frame %ld: actor %d %s - his tick is sub_4800C0 (not "
-                                    "ported: he stands)\n", n, s.actor, s.model.c_str());
+                    omk::AstarothActor& aa = astarothActors[s.actor];
+                    const omk::AstarothWorld aw = astarothWorld(s, rec, astDt);
+                    if (!aa.started) {
+                        if (rec.groundY != 0.0f) {
+                            // `Shoot_ActorEnter`: the node at (pos.x, +60,
+                            // pos.z), the record at his placement; then
+                            // `sub_4B2E90` from `sub_47FF70`
+                            aa.pos[0] = s.at[0]; aa.pos[1] = rec.groundY; aa.pos[2] = s.at[2];
+                            for (int k = 0; k < 3; ++k) aa.node[k] = aa.pos[k];
+                            omk::astarothStartGrid(aa, rec, 13, s.facing, aw);
+                            aa.started = true;
+                            astPlace(aa);
+                            std::printf("frame %ld: actor %d %s - ASTAROTH STANDS (sub_4B2E90): "
+                                        "the stand grid, %d frames, cell %d, aim %.1f / %.1f, "
+                                        "weights %d / %d\n", n, s.actor, s.model.c_str(),
+                                        aa.clipFrames, (aa.clipFrames + 1) / 9,
+                                        double(aa.aimYaw), double(aa.aimPitch),
+                                        aa.blend.wYaw, aa.blend.wPitch);
+                        }
+                    } else {
+                        const int stateWas = rec.state;
+                        omk::astarothTick(astaroth, aa, rec, astBand, astDt, s.facing, aw);
+                        // the TAIL (0x480638..): a queued clip played PICKED -
+                        // `sub_421A20(+16)`, flag 8, `+100 = 0`, the +184 kept
+                        if (aa.queued >= 0 || aa.queuedTurnType >= 0) {
+                            const int grpQ = static_cast<int>(rec.type);
+                            const omk::PedClip* qc = aa.queued >= 0
+                                ? shootClipBySlot(grpQ, aa.queued)
+                                : shootClipExact(grpQ, aa.queuedTurnType);
+                            GunClip& gc = gunClips[s.actor];
+                            gc = GunClip{};
+                            if (qc) {
+                                gc.type = qc->type;
+                                gc.slot = aa.queued >= 0 ? qc->slot : -1;
+                                gc.frames = qc->frames;
+                                gc.frame = 1.0f;
+                                // `sub_421A20` sets the node again: the
+                                // record's x/z, +60 and the clip's dy 0->1
+                                float d01[3] = {0, 0, 0};
+                                if (qc->root.size() >= 3)
+                                    omk::pedRootDelta(*qc, 0.0f, 1.0f, nullptr, d01);
+                                aa.node[0] = aa.pos[0];
+                                aa.node[1] = rec.groundY + d01[1];
+                                aa.node[2] = aa.pos[2];
+                            }
+                            gc.turn = aa.queuedTurn;
+                            rec.flags |= 8u;
+                            rec.repeats = 0;
+                            std::printf("frame %ld: actor %d %s - ASTAROTH plays clip %d (type %d, "
+                                        "%d frames) picked, %.2f a frame\n", n, s.actor,
+                                        s.model.c_str(), qc ? qc->slot : -1, qc ? qc->type : -1,
+                                        qc ? qc->frames : 0, double(gc.turn));
+                        }
+                        astPlace(aa);
+                        if (rec.state != stateWas)
+                            std::printf("frame %ld: actor %d %s - ASTAROTH state %d -> %d (clip %d), "
+                                        "health %d, at %.0f %.0f %.0f facing %.1f\n", n, s.actor,
+                                        s.model.c_str(), stateWas, rec.state, aa.clip, rec.health,
+                                        double(aa.node[0]), double(aa.node[1]),
+                                        double(aa.node[2]), double(s.facing));
+                    }
                 } else {
                 const int before = rec.state;
                 omk::ShootFrameIn fin;
@@ -1975,7 +2082,7 @@ void PlayState::worldStaged() {
             // him instead of staying where he started)
             if (auto sb = shootBrains.find(s.actor);
                 shootMode && !shotDead && !brainsOff && sb != shootBrains.end() && shootMap.valid() &&
-                sb->second.state != 2 && !sb->second.cellStamped) {
+                sb->second.state != 2 && !sb->second.cellStamped && !astarothRec) {
                 omk::ShootRecord& sr = sb->second;
                 const int fl = static_cast<signed char>(sr.node & 0xFF);
                 if (fl >= 0 && fl < static_cast<int>(shootMap.floors().size())) {
@@ -2008,7 +2115,22 @@ void PlayState::worldStaged() {
                     if (const omk::PedClip* tc = gcIt->second.slot >= 0
                             ? shootClipBySlot(grp, gcIt->second.slot)
                             : shootClipExact(grp, gcIt->second.type)) c = tc;
+                // ASTAROTH's current clip is his own (`AstarothActor`): by ID,
+                // at KEY `(int)+188` (the grids' `sub_4725B0` and the plain
+                // clips' `Anim_SetFrame` both index the key array with the
+                // truncated frame; this tree's tracks hold key k at k - 1)
+                const auto astIt = grp == omk::kAstarothType ? astarothActors.find(s.actor)
+                                                             : astarothActors.end();
+                const bool astOwn = astIt != astarothActors.end() && astIt->second.started &&
+                                    !onTurn && s.deathType < 0;
+                if (astOwn)
+                    if (const omk::PedClip* ac = shootClipBySlot(grp, astIt->second.clip)) c = ac;
                 if (c) shootTracks = pedTracksFor(grp, *c, s.mo->meshes);
+                if (astOwn && shootTracks && shootTracks->frames > 0) {
+                    shootFrame = std::clamp(static_cast<int>(astIt->second.frame) - 1, 0,
+                                            shootTracks->frames - 1);
+                    if (astIt->second.grid) astGrid = &astIt->second;
+                }
                 if (onTurn && shootTracks && shootTracks->frames > 0)
                     shootFrame = std::min(static_cast<int>(gcIt->second.frame),
                                           static_cast<int>(shootTracks->frames) - 1);
@@ -2016,7 +2138,7 @@ void PlayState::worldStaged() {
                 // `sub_421370` has advanced it to (above) - the same clip
                 // `shootClipFor` just gave `c`, since both ask it alike
                 const auto gaIt = gunAnims.find(s.actor);
-                if (!onTurn && s.deathType < 0 && gaIt != gunAnims.end() &&
+                if (!astOwn && !onTurn && s.deathType < 0 && gaIt != gunAnims.end() &&
                     gaIt->second.clip == c && shootTracks && shootTracks->frames > 0)
                     shootFrame = std::min(static_cast<int>(gaIt->second.frame),
                                           static_cast<int>(shootTracks->frames) - 1);
@@ -2239,7 +2361,8 @@ void PlayState::worldStaged() {
             src = "a scene program's clip";
         } else if (shootTracks && shootTracks->valid()) {
             // ...bent by his aim layer while the gate runs him
-            pose = gunmanPoseNow(s.actor, s.deathType, s.mo, *shootTracks, shootFrame);
+            pose = astGrid ? astarothPoseNow(s.mo, *shootTracks, *astGrid)
+                           : gunmanPoseNow(s.actor, s.deathType, s.mo, *shootTracks, shootFrame);
             src = "shoot mode: the area's .ani, by character type";
         } else if (!s.lastPose.empty() && session.parkedOnProgram()) {
             // BETWEEN TWO BEATS OF ONE CUTSCENE the body holds the
