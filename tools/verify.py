@@ -27708,9 +27708,11 @@ def c_engine_lazy_collision():
     the doors', the crates' and the chest's checks, all green on it.
 
     Shown to fail (2026-10-05): every recorded mesh placed at the end of the
-    motion pass (red: made = recorded); and `SplitSoupGrid::place` left unset,
-    so a grid query reads a pending mesh where it last was (red: see the
-    tier-C record for which transition checks turn).
+    motion pass (red: 9896 made of 9896); and `SplitSoupGrid::place` left
+    unset, so a grid query reads a pending mesh where it last was - which this
+    street check does NOT see (nothing here stands on a moving mesh) and
+    `engine: tunnel door walk` does (red: the walker meets the door where it
+    last was). The two are run together for that reason.
     """
     import subprocess, tempfile, shutil
     eng = os.path.join(ROOT, "engine")

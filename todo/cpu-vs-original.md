@@ -242,3 +242,36 @@ divides are the software renderer's alone; the per-face far reject is done
 per mesh already and by the GPU per face; collision in mesh space is the
 Vita's other candidate (the `input: motion` zone), to be chosen from a
 console profile.
+
+## Tier C, 2026-10-05 - the moving collision placed on demand, DONE (exact)
+
+The reader chose this over collision in MESH SPACE (the original's way),
+because an audit found ~12 readers of the collision soups that bypass the
+grid - the camera's collision, the fight's walker, the shoot setup, a slider
+ride's surface probe, the walker's own steep scans, the scene camera
+instrument, the verify instruments - each of which mesh space would have had
+to rewrite, and a miss being silent (a door the camera passes through).
+
+**Now**: a moving mesh's placement is RECORDED each frame (`lazyMeshes`), and
+its walkable and steep triangles are placed - the same rest, the same
+`placePoints`, so the same bits - the first time a query reaches it:
+* a grid query through its part: `movingList` / `gatherSplitIds` call
+  `SplitSoupGrid::place` on a pending part they gather, whose extent is the
+  rest box carried through the placement and padded a unit - a SUPERSET of
+  where its triangles will be, so the answers do not move (step 38's
+  argument);
+* any LINEAR query through `omk::ensurePlaced`, which `floorUnder`,
+  `surfaceUnder`, `soupInBox`, `sweepSphere`, `buildSoupGrid` and the
+  single-grid probes all call first, and which places every pending mesh: no
+  reader that bypasses the grid, today's or a later one, can read a stale
+  triangle. The registry is cleared and refilled each frame (a soup vector
+  that reallocated would leave a dead address), it says so loudly if it ever
+  overflows, and a set change forgets every record (`rebuildWorld`, main
+  thread; `prepareSet` may run on a job) behind a generation guard.
+
+Measured, the street walk: **9896 placements recorded over 300 frames, 70
+made - 99% gone**; the frame and the log identical to `OMK_EAGER_SOUPS=1`.
+45 collision, door, lift, crate, slider, fight and camera checks green;
+`engine: lazy collision`, with two mutations (everything placed every frame
+- red; the grid's hook unset - `engine: tunnel door walk` red, the street
+check not, which is why they run together).
