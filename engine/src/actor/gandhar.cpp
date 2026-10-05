@@ -2,6 +2,7 @@
 // Gandhar's arm of the shoot AI - see gandhar.h and todo/gandhar.md.
 #include "actor/gandhar.h"
 
+#include <cmath>
 #include <cstdio>
 
 namespace omk {
@@ -60,9 +61,8 @@ bool look(ShootRecord& rec, float& facing, const GandharWorld& w, bool turn) {
     return in;
 }
 
-void stepToward(GandharActor& a, float out[2], const GandharWorld& w) {
-    out[0] = out[1] = 0.0f;
-    if (w.step) w.step(a, a.speed, out);
+void stepToward(GandharActor& a, float dt, float out[2], const GandharWorld& w) {
+    gandharStep(a, a.speed, dt, out, w);
 }
 
 }  // namespace
@@ -87,8 +87,17 @@ void gandharEnter(GandharActor& a, ShootRecord& rec, const float pos[3], int pro
     rec.repeats = 0;
     rec.flags |= 0x4020u;
     for (int k = 0; k < 3; ++k) { a.pos[k] = pos[k]; a.node[k] = pos[k]; }
-    // (`sub_421140` on his own spot and `sub_4368E0`'s nearest free cell when
-    // it is blocked: the frontend's, before this)
+    // his own spot refused by the wall test: to the nearest standable point
+    // on floor 1, node and record alike
+    if (w.wall && w.wall(0.0f, 0.0f) && w.standable) {
+        float x = a.node[0], z = a.node[2];
+        w.standable(x, z);
+        const float dx = x - a.pos[0], dz = z - a.pos[2];
+        a.node[0] += dx; a.node[2] += dz;
+        a.pos[0] += dx;  a.pos[2] += dz;
+        say(w, "his spot refused at entry: moved %d %d to a standable point",
+            static_cast<int>(dx), static_cast<int>(dz));
+    }
     a.node[1] = kGandharEntryY;
     rec.groundY = kGandharEntryY;
     a.speed = static_cast<float>(39 * property3 / 30);
@@ -99,6 +108,59 @@ void gandharEnter(GandharActor& a, ShootRecord& rec, const float pos[3], int pro
     rec.clipLen = w.listValue ? w.listValue() : 0.0f;
     a.grabbed = false;
     a.started = true;
+}
+
+void gandharStep(GandharActor& a, float speed, float dt, float out[2], const GandharWorld& w) {
+    out[0] = out[1] = 0.0f;
+    const auto wall = [&](float dx, float dz) { return w.wall ? w.wall(dx, dz) : 0; };
+    float ox = 0.0f, oz = 0.0f;
+    if (wall(0.0f, 0.0f)) {
+        // his own spot refused: the nearest standable point from his NODE
+        // (`Actor_GetPosAndFacing(him)`), `sub_4368E0(1, ..)`, as the step
+        float x = a.node[0], z = a.node[2];
+        if (w.standable) w.standable(x, z);
+        ox = x - a.pos[0];
+        oz = z - a.pos[2];
+    } else {
+        float fx = 0.0f, fz = 0.0f;
+        if (w.forward) w.forward(fx, fz);
+        ox = -(speed * fx * dt);
+        oz = -(speed * fz * dt);
+    }
+    const auto take = [&](float dx, float dz) {
+        a.pos[0] += dx; a.pos[2] += dz;
+        out[0] = dx;    out[1] = dz;
+    };
+    const int v = wall(ox, oz);
+    if (v != a.stepCut) {
+        a.stepCut = v;
+        if (w.say) {
+            char buf[160];
+            std::snprintf(buf, sizeof buf, "STEP %s (sub_47E5F0: the wall test answers %d) at "
+                          "%.0f %.0f, the step %.2f %.2f", v ? "CUT" : "free", v,
+                          double(a.pos[0]), double(a.pos[2]), double(ox), double(oz));
+            w.say(buf);
+        }
+    }
+    if (!v) { take(ox, oz); return; }
+    if (v != 3) {
+        // x alone, else z alone, else nothing
+        if (!wall(ox, 0.0f)) { take(ox, 0.0f); return; }
+        if (!wall(0.0f, oz)) { take(0.0f, oz); return; }
+        return;
+    }
+    // A BYTE-2 WALL (the test's 3). LABEL_15 is "x alone at the probe's x,
+    // else a nudge of +speed along z"; the two orders reach it differently.
+    float probeX = ox;
+    float xTaken = ox;                   // what LABEL_16 adds to x
+    if (std::fabs(oz) > std::fabs(ox)) {
+        if (!wall(0.0f, oz)) { take(0.0f, oz); return; }
+        if (!wall(speed, 0.0f)) { take(speed, 0.0f); return; }
+        probeX = speed;                  // `goto LABEL_15` with the step zeroed
+        xTaken = 0.0f;
+    }
+    if (!wall(probeX, 0.0f)) { take(xTaken, 0.0f); return; }
+    if (!wall(0.0f, speed)) { take(0.0f, speed); return; }
 }
 
 int gandharClock(GandharActor& a, float dt, bool stopAtEnd, const GandharWorld& w) {
@@ -163,7 +225,7 @@ bool tickAction(GandharActor& a, ShootRecord& rec, float dt, float& facing,
     switch (rec.state) {
         case 16: {   // `sub_47E520`: the wait, stepping toward him
             look(rec, facing, w, true);
-            stepToward(a, st, w);
+            stepToward(a, dt, st, w);
             moveNode(a, st[0], 0.0f, st[1]);
             rec.timer -= dt;
             return rec.timer <= 0.0f;
@@ -172,7 +234,7 @@ bool tickAction(GandharActor& a, ShootRecord& rec, float dt, float& facing,
             const float rel = a.node[1] - rec.height;
             look(rec, facing, w, true);
             rec.groundY = a.node[1];
-            stepToward(a, st, w);
+            stepToward(a, dt, st, w);
             if (rel >= kGandharSinkTo) { moveNode(a, st[0], 0.0f, st[1]); return true; }
             moveNode(a, st[0], a.speed * dt, 0.0f);   // the engine passes z 0 here
             return false;
@@ -184,7 +246,7 @@ bool tickAction(GandharActor& a, ShootRecord& rec, float dt, float& facing,
         }
         case 20: {   // `sub_47F0F0`: walking with the clip, rolling every frame
             look(rec, facing, w, true);
-            stepToward(a, st, w);
+            stepToward(a, dt, st, w);
             if (!gandharClock(a, dt, true, w)) return true;
             moveNode(a, st[0], 0.0f, st[1]);
             roll(a, rec, w);
@@ -213,7 +275,7 @@ bool tickAction(GandharActor& a, ShootRecord& rec, float dt, float& facing,
         }
         case 24: {   // `sub_47ED10`: stepping, FIRE on a coin flip (arm 0)
             const bool in = look(rec, facing, w, true);
-            stepToward(a, st, w);
+            stepToward(a, dt, st, w);
             const int c = gandharClock(a, dt, true, w);
             if (in && w.rnd && (w.rnd() & 1) && w.fire && w.fire(0)) {
                 rec.flags |= 0x80u;
@@ -259,7 +321,7 @@ bool tickAction(GandharActor& a, ShootRecord& rec, float dt, float& facing,
             const float rel = a.node[1] - rec.height;
             look(rec, facing, w, true);
             rec.groundY = a.node[1];
-            stepToward(a, st, w);
+            stepToward(a, dt, st, w);
             if (rel <= kGandharRiseTo) { moveNode(a, st[0], 0.0f, st[1]); return true; }
             moveNode(a, st[0], -a.speed * dt, st[1]);
             return false;

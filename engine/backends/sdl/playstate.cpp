@@ -813,10 +813,10 @@ omk::AstarothWorld PlayState::astarothWorld(Staged& s, omk::ShootRecord& rec, fl
     return w;
 }
 
-// GANDHAR's world (`actor/gandhar.h`, `todo/gandhar.md`). Step 1 wires the
-// clips, the sight, the turn, the attack pick and the posts; the STEP toward
-// the player (`sub_47E5F0`), the FIRE (`sub_44CDF0`) and the TOUCH
-// (`sub_45BC50`) are steps 2-4 and answer "nothing" until then - LABELLED.
+// GANDHAR's world (`actor/gandhar.h`, `todo/gandhar.md`): the clips, the
+// sight, the turn, the attack pick, the posts and his step's wall test; the
+// FIRE (`sub_44CDF0`) and the TOUCH (`sub_45BC50`) are steps 3-4 and answer
+// "nothing" until then - LABELLED.
 omk::GandharWorld PlayState::gandharWorld(Staged& s, omk::ShootRecord& rec, float dt) {
     omk::GandharWorld w;
     const int grp = static_cast<int>(rec.type);
@@ -864,6 +864,24 @@ omk::GandharWorld PlayState::gandharWorld(Staged& s, omk::ShootRecord& rec, floa
     };
     w.turn = [this, dt](float& facing) {
         omk::shootTurnToward(facing, gandharAcquire, false, dt);
+    };
+    // his STEP's three questions (`sub_47E5F0`): the wall test of one step from
+    // his record point on his floor (`sub_421140`), the nearest standable
+    // point on floor 1 (`sub_4368E0`), the forward axis the cone test left
+    w.wall = [this, &s, &rec](float dx, float dz) {
+        const auto it = gandharActors.find(s.actor);
+        if (it == gandharActors.end() || !shootMap.valid()) return 0;
+        float snap[2];
+        return omk::shootWallTest(rec, shootMap, it->second.pos[0], it->second.pos[2],
+                                  dx, dz, 1, snap);
+    };
+    w.standable = [this](float& x, float& z) {
+        if (!shootMap.valid()) return false;
+        return shootMap.snapToStandable(1, x, 0.0f, z);
+    };
+    w.forward = [this](float& fx, float& fz) {
+        fx = gandharAcquire.fwdX;
+        fz = gandharAcquire.fwdZ;
     };
     // `sub_421020`: the attack whose property-21 range still reaches
     w.pickAttack = [this, &s, &rec, crt]() {

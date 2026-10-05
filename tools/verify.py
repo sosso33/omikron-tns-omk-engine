@@ -40559,6 +40559,17 @@ def c_engine_gandhar():
     SHOWN TO FAIL: the band thresholds swapped (the critical run reads the
     wounded script), the sink's limit moved, the death post removed, the
     script walk not advancing its step.
+
+    **His WALK** (step 2, `sub_47E5F0`): actions 16, 17, 18, 20 and 24 step
+    him `+68` a frame along his facing - `-speed * (-sin yaw, cos yaw) * dt`,
+    the axis the cone test leaves in `flt_90E0E4`/`flt_90E0F8` - through the
+    wall test of one step from his record point (`sub_421140`), cut to x
+    alone, z alone or nothing. Asserted: his first step, free, from his entry
+    point (202, 798) at length 6 (`39 * property 3 = 5 / 30`); the wall
+    answering 1 (map byte 0, his floor's edge) at z 573; and where he stands
+    when action 24 hands over to 20, after sliding along x to the corner.
+    SHOWN TO FAIL: the forward axis negated (he walks AWAY), the x-alone
+    fallback removed (he stops at 166), the speed's /30 made /10.
     """
     import subprocess, re as _re, json as _json
     eng = os.path.join(ROOT, "engine")
@@ -40586,6 +40597,13 @@ def c_engine_gandhar():
     done = {}
     for c, y in _re.findall(r"GANDHAR action (\d+) DONE, node y (-?\d+)", o):
         done.setdefault(int(c), int(y))
+    steps = [(m.group(1), int(m.group(2)), int(m.group(3)), int(m.group(4)),
+              int(round((float(m.group(5)) ** 2 + float(m.group(6)) ** 2) ** 0.5)))
+             for m in _re.finditer(r"GANDHAR STEP (\w+) \(sub_47E5F0: the wall test answers "
+                                   r"(\d+)\) at (-?\d+) (-?\d+), the step (\S+) (\S+)", o)][:2]
+    m24 = _re.search(r"GANDHAR action 24 -> 20 \(clip [-0-9]+, \d+ frames\), health \d+, "
+                     r"band \d, step [-0-9/]+, node (-?\d+) -?\d+ (-?\d+)", o)
+    at20 = (int(m24.group(1)), int(m24.group(2))) if m24 else None
     o0 = run(880, "--gandhar-health", "0")
     dead = ("GANDHAR posts message 3 from 187 (handled)" in o0,
             "SHOOT MODE LEAVE" in o0)
@@ -40593,11 +40611,13 @@ def c_engine_gandhar():
     m = _re.search(r"GANDHAR action 23 -> (\d+) \(clip [-0-9]+, \d+ frames\), health 40, band (\d)",
                    o40)
     crit = (int(m.group(1)), int(m.group(2))) if m else None
-    return (seq[:len(want)], done.get(18), done.get(17), crit, dead), \
-           (want, 255, -153, (scripts["critical"][0]["action"], 2), (True, True)), \
+    return (seq[:len(want)], done.get(18), done.get(17), crit, dead, steps, at20), \
+           (want, 255, -153, (scripts["critical"][0]["action"], 2), (True, True),
+            [("free", 0, 202, 798, 6), ("CUT", 1, 166, 573, 6)], (96, 573)), \
            "the actions entered (the healthy script by its repeats, then its rewind), " \
            "where the sink and the rise end, the critical band's first action, and the " \
-           "death posting message 3 and ending the shoot"
+           "death posting message 3 and ending the shoot; his first step and the wall's " \
+           "cut (state, answer, where, its length); where he stands after the walk"
 
 
 def c_engine_head_camera():

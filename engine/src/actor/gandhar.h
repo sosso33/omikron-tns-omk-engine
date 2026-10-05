@@ -53,6 +53,7 @@ struct GandharActor {
     float speed = 0.0f;           // record +68: `39 * property 3 / 30`
     bool  started = false;        // `gandharEnter` has run
     bool  grabbed = false;        // `dword_657A28`, raised by the grab
+    int   stepCut = -1;           // the last step's wall answer (for the log)
     bool  deathPosted = false;    // message 3 sent (the engine re-posts it
                                   // every frame until `shoot.end` removes him)
 };
@@ -72,9 +73,15 @@ struct GandharWorld {
     // leaves the flat squared distance `sub_421020` reads
     std::function<bool()> sight;
     std::function<void(float& facing)> turn;                // `sub_420EB0(him, 0)`
-    // `sub_47E5F0(rec, him, out, speed)`: a step toward the player, gated by
-    // the floor cells; WRITES his record x / z (`pos`), returns the step
-    std::function<void(GandharActor& a, float speed, float out[2])> step;
+    // His STEP (`sub_47E5F0`, transcribed in `gandharStep`) asks three things:
+    // `sub_421140(rec, {+244, +252, dx, dz}, 1)` - the wall test of one step
+    // from his record point, 0 free, else the map byte + 1 (3 = byte 2, which
+    // has its own arm); `sub_4368E0(1, &x, &z)` - the nearest standable point
+    // on floor 1, untouched when there is none; and the forward axis the last
+    // cone test left (`flt_90E0E4` / `flt_90E0F8`)
+    std::function<int(float dx, float dz)> wall;
+    std::function<bool(float& x, float& z)> standable;
+    std::function<void(float& fx, float& fz)> forward;
     std::function<bool(int arm)> fire;                      // `sub_44CDF0(him, arm, target)`
     std::function<int()> pickAttack;                        // `sub_421020`, 0 none
     std::function<bool()> touch;                            // `sub_45BC50(him, the player)`
@@ -94,6 +101,13 @@ struct GandharWorld {
 // (integer arithmetic, as the engine does it). Enters action 23.
 void gandharEnter(GandharActor& a, ShootRecord& rec, const float pos[3], int property3,
                   const GandharWorld& w);
+
+// `sub_47E5F0(rec, him, out, speed)`: one step of `speed` along his facing -
+// or, when his own spot fails the wall test, to the nearest standable point
+// from his node - cut by the wall test to x alone, z alone or nothing (and on
+// a byte-2 wall a nudge of `+speed` along x or z). WRITES his record x / z
+// (`pos`) and returns the step for the caller to move the node by.
+void gandharStep(GandharActor& a, float speed, float dt, float out[2], const GandharWorld& w);
 
 // `sub_47EBF0(him, clip, out, a4)`: the clip clock. 1 while the clip runs, 2
 // from half its frames, 0 when it ends - where the clock wraps to `1 + dt`

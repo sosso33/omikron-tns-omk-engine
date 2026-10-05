@@ -353,6 +353,10 @@ struct AcquireOut {
     float dot     = 0.0f;   // flt_90E0F0  the full 3D forward dot
     float dotFlat = 0.0f;   // flt_90E114  its horizontal part
     float cross   = 0.0f;   // flt_90E0F4  the left/right sign
+    // the rotated +Z itself, `(-sin yaw, cos yaw)`: Gandhar's step
+    // (`sub_47E5F0`) moves him `-speed * this * dt`, i.e. along his facing
+    float fwdX    = 0.0f;   // flt_90E0E4
+    float fwdZ    = 0.0f;   // flt_90E0F8
 };
 
 // `sub_420C70` (0x00420C70): is `targetPos` inside the shooter's cone AND

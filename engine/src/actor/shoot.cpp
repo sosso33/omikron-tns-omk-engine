@@ -764,6 +764,8 @@ bool shootAcquires(const ShootRecord& r, const float self[4], const float target
     out.dotFlat = static_cast<float>(dz * fz + dx * fx);
     out.dot     = static_cast<float>(fy * dy + out.dotFlat);
     out.cross   = static_cast<float>(dx * fz - dz * fx);
+    out.fwdX    = static_cast<float>(fx);
+    out.fwdZ    = static_cast<float>(fz);
 
     const double reach = doubleRange ? double(r.rangeAcquire) + r.rangeAcquire
                                      : double(r.rangeAcquire);
