@@ -1577,7 +1577,10 @@ variable.
 **The world** — 45 `area.preload` (load an area into the *other* resident slot
 without transitioning, status 8; sits before lift and door screens), 123
 `set.hide_piece` (clear a 76-byte decor piece's visible bit; the show path is
-never scripted), 98 `object.place_at` (move a prop to another object's
+never scripted - **corrected 2026-10-05**: the 76-byte "piece" is an `.SFX`
+section E SET PIECE, an effect row (`SetPiece_Find` over 19-dword rows, `+72
+&= ~1`), not decor geometry, so it switches an effect off and changes no
+collision; ported, `todo/drift-audit.md` S11, `verify.py: engine: hide piece`), 98 `object.place_at` (move a prop to another object's
 position), 127 `player.pos.sync` (reset the collision walker's position pair to
 the node transform and invalidate the ground cache), 129/130
 `walk.ledges.ignore` / `.obey` (the walker refuses a step down of more than
