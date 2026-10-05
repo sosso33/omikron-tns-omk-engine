@@ -88,3 +88,58 @@ many times more.
 6. **The instruments' own costs** (`prof::control` every frame; the media
    line sending Vulkan frames to the CPU path) - the port's, no original
    to read.
+
+## Step 2 - item by item against the original, DONE 2026-10-05
+
+Four parallel readings of the decompilation (the software rasterizer, the
+GPU frame's pacing, the draw lists and the moving meshes, the bodies / the
+crowd / the scripts), and the decisive line of each re-read here before it
+was written down. The largest finding was then MEASURED, not estimated.
+
+**THE SOFTWARE RENDERER IS A HASH.** `drawGeometry` ends with an FNV hash of
+the WHOLE framebuffer (`raster.cpp`, after the clip fan), on every one of
+the frame's ~67 calls, and `SoftwareRenderer` keeps only the last
+(`renderer.cpp`: `st_.hash = s.hash; // the last one wins`). Timed: 300
+uncapped street frames take **23.0 s with it and 3.2 s without** (twice
+each, M1), frames byte-identical - the loop is ~86% of the software frame.
+The original has no such thing; the hash is this port's instrument for the
+checks, which can ask for it once.
+
+| item | the original | the port | what costs |
+|---|---|---|---|
+| software raster | per VERTEX transform into a pool, one divide a vertex; spans of 16 with one divide a run, 8.8 fixed-point u/v, one table load a pixel, 16-bit z (`ASSETS.md` 4b, read 2026-10-05) | per CORNER transform (139245 corners for 63079 vertices), bounding-box scan with three edge functions a pixel, 4 divides and 2 `%` a pixel, float z - and the frame hash per call | the hash (measured), then the box scan and the per-pixel divides |
+| GPU pacing | `Flip(NULL, DDFLIP_WAIT)`, one back buffer, no wait in the frame: the GPU draws frame N while the CPU simulates N+1; one `DrawPrimitive` a non-empty bucket from user memory, render states shadow-cached | **Vulkan**: three serial submits a frame, `vkWaitForFences` right after the scene's (1.9 ms on the M1), a readback copy recorded EVERY frame although nothing reads it on a GPU frame, a one-shot command buffer + `vkQueueWaitIdle` for the present pass, no state cache in `submit`. **GLES**: no CPU wait, a state cache - but six clock reads a draw, not compiled out. **GL1** (the G3): the world read back and composited on the CPU every frame | the Vulkan waits; GL1's round trip (measured on emulated Tiger at ~5 -> 17 fps without it, `handoff-classic-mac.md`) |
+| draw lists | rebuilt each frame face by face into 0x4000 head lists, a `memset` of 64 KB | rebuilt each frame into a fresh `std::vector` (capacity thrown away), a fresh `vis` per slot, a `stable_sort` with its buffer; on CPU-posed bodies `castBones` scans every posed corner for a log-only value | allocation and the corner scan |
+| moving meshes | a script writes 3 floats and a 3x3 (`o3de_SetNodePos`, `sub_437160`); the draw transforms every visible node anyway; collision tests the mesh IN ITS FRAME (`Sweep_MeshTest`) | only GLES poses a moving mesh on the GPU (`posesBodies`); Vulkan, GL1 and software re-place ~30 meshes' 8229 corners a frame; every backend re-places their ~2730 collision triangles and re-grids | the CPU re-place |
+| bodies | every live actor ticks (state, channel, motion); the hierarchy compose and the vertex work only for an object past the distance and frustum cull (`sub_48D3B0`) | the 25 staged bodies `composePose` BEFORE the cull (22 then culled), a crowd-model extra composes all four skeletons (76 meshes) for the one drawn; the idle (frame 0) recomposed every frame; the parent table re-sorted every call | compose work for the culled |
+| crowd | posed only in the draw, after the cull, its LOD skeleton only | the same order; on the CPU paths three passes over each walker's CORNERS (`applyPose`, the placement, `applyLights`) and 8 per-corner arrays re-copied each frame | per-corner passes |
+| particles | spawned unculled; dropped at submit by view depth (near / clip distance) | a quad for every particle, no depth gate; batches emitted keys x particles | small |
+| scripts | every object of both slots, every frame | the same | nothing |
+| the profiler | - | `tellState` writes `.state` EVERY frame (the frame number is in the line): 0.37 ms a frame of every capture, measured by sampling | the instrument's own cost |
+
+## Step 3 - the cuts, proposed in three tiers
+
+**A. Exact, small code** (frames byte-identical, each held by a check):
+the frame hash once a frame and only when asked (software ~7x, measured);
+`tellState` only on a change (0.37 ms off every capture); Vulkan: the
+readback copy only on a CPU frame, the fence waited at the point of REUSE
+(the next frame's buffer writes) rather than after the submit, the present
+pass in the same submit - the GPU overlapping the next frame as the
+original's flip chain lets it; GLES: the per-draw clock reads behind the
+instrument that wants them; and the housekeeping the readings found - the
+draw list's vector reused, the log-only corner scan gated, the staged
+bodies composing only the drawn skeleton and caching the idle, the parent
+table once a model, `applyPose`'s per-corner arrays copied only when the
+rest changes, `%` -> `&` in the sampler and a per-row bound on the box scan.
+
+**B. Exact, larger**: moving meshes and bodies posed on the GPU on Vulkan
+and GL1 as GLES already does (`posesBodies`); GL1 presenting its world
+directly with the interface drawn over it in GL (the G3's 5 -> 17 fps); the
+Vulkan overlay path so a subtitle no longer sends a frame to the CPU; the
+vertex transform once a vertex (it needs the corner -> vertex index - the
+geometry item `ram-vs-original.md` deferred).
+
+**C. Changes pixels**: a span rasterizer with a divide every N pixels (the
+original's method, and a new reference picture); dropping the per-pixel
+divides; the per-face far reject and the particles' depth gate (both
+TOWARD the original); collision in mesh space as the original does it.

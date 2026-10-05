@@ -1762,6 +1762,34 @@ depth value is a reciprocal-w and `ZFUNC = GREATER` is the right way round.
 `dword_53ADF0 == 2` dispatches to the libpoly2d software rasterizers, otherwise
 it drives D3D. Both take the bucket index as their state word.
 
+**The software back end, read 2026-10-05** (`todo/cpu-vs-original.md` step
+2; a reading of the decompilation and the assembly, not run). Six triangle
+routines, chosen by the key: `sub_484180` opaque, `sub_485350` cutout (key
+`0x400`: texel INDEX 0 is the key, `or dl,dl / jz`), `sub_486570` a 50%
+average (key `0x1000`, when the option byte at `dword_90E724`'s high byte is
+1 or more), `sub_487900` cutout + 50%, `sub_488CD0` saturating subtract
+(key `0x200`, no z write), `sub_48A470` saturating add (key `0x100`, no z
+write). What they share:
+* the VERTEX work is done once a vertex, before them: `sub_4947F0` transforms
+  into the frame's 48-byte pool with ONE divide (`v30 = flt_4DDBD0 /
+  v26[2]`) and an integer depth `(int)(z*16384)`; `Render_SubmitMesh`
+  rejects per face on those projected values (2D outcodes, integer near/far,
+  a screen-space cross product);
+* the setup in x87 at 24-bit precision (`and ax,0FCFFh / fldcw`), a
+  per-scanline edge table, plane gradients for 1/w, u/w, v/w and the shade;
+* the SPAN is unrolled by 16 with **one `fld1; fdiv` a 16 pixels**, u and v
+  linear between in 8.8 fixed point; the texel is `mov bl,ah; mov bh,ch;
+  mov dl,[ebx]` - the 256-wide wrap is free - and the colour ONE table load
+  (shade x palette index -> 565, a 8 KB table a texture slot);
+* the light is a LUMINANCE (`dword_65FEC8[r+g+b]`), the fog folded into it
+  per vertex (`shade * (1 - w / fogEnd)`), a 2-pixel checkerboard dither;
+* the z buffer is 16-bit, `int(w)`, CONSTANT across each 16-pixel run, test
+  `cmp si,[edi]; jnb skip`.
+So the original's software picture is coarser than its hardware one - grey
+light, a run-constant z - and the port's software reference reproduces the
+HARDWARE picture (the coloured light, the per-pixel fog); its speed is
+another matter (`todo/cpu-vs-original.md`).
+
 There is a **second** bucket walk, `sub_42FF80`, at vtable entry 1 of
 `off_4C4918`. It is **never installed**: `sub_42F9A0` wires entry [0] at
 startup and `sub_42FA00` is called exactly once, with `0`. Its four vtable
