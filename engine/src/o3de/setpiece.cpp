@@ -68,6 +68,13 @@ void SetPieceRunner::attach(const SfxFile* sfx) {
     }
 }
 
+bool SetPieceRunner::hideById(std::int32_t id) {
+    const int row = rowById(id);
+    if (row < 0 || static_cast<std::size_t>(row) >= st_.size()) return false;
+    st_[static_cast<std::size_t>(row)].shown = false;
+    return true;
+}
+
 int SetPieceRunner::rowById(std::int32_t id) const {
     // `sub_450FC0` case 1: the row whose +0 is the id, or nothing for -1.
     if (!sfx_ || id == -1) return -1;

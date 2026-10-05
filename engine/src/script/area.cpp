@@ -2881,6 +2881,18 @@ void Session::onCall(int i, const Call& call) {
         // todo/drift-audit.md S3.
         requestRestart();
         break;
+    case 123:
+        // `set.hide_piece` (0x4055C0, `asmfn.py --op 123`): the dry-run test,
+        // then `sub_41BD40(id, 0)` - `SetPiece_Find(id)` in the CURRENT `.sfx`
+        // bank (`dword_536BC0`, the active slot's) and `+72 &= ~1`. A set
+        // piece is an `.SFX` section E effect row, not decor geometry, so this
+        // touches nothing a walker collides with (todo/drift-audit.md S11).
+        if (!call.fields.empty()) {
+            const bool hid = scene_.hidePiece(call.fields[0]);
+            std::printf("frame %ld: set.hide_piece %d - %s\n", frameNo_, call.fields[0],
+                        hid ? "the row hidden" : "no row carries that id");
+        }
+        break;
     case 106: case 107:
         // `shoot.freeze_all` / `.unfreeze_all` (0x405300 / 0x405310, bare
         // `jmp`s to 0x422B90 / 0x422BD0, read from the image): bit 0x8000 of

@@ -39951,6 +39951,49 @@ def c_engine_message_two():
                alive_hits, len(msgs), p)
 
 
+def c_engine_hide_piece():
+    r"""`set.hide_piece` STOPS A SET PIECE (`todo/drift-audit.md` S11).
+
+    Op 123 (0x4055C0) is `sub_41BD40(id, 0)`: `SetPiece_Find(id)` - the
+    `.SFX` section E row whose +0 is the id, in the current bank - and
+    `sub_4501D0(row, 1, 0)`, `+72 &= ~1`, the row's SHOWN bit and nothing else.
+    A set piece is an effect row, not decor, so nothing a walker collides with
+    changes. 32 shipped sites; the port recorded the call and did nothing, so
+    an effect a script switched off went on emitting.
+
+    Kay'l's flat (AREA 237), ENTER at the television (zone 4096, a plain
+    press): its script hides pieces 0, 0, 1 and 2, and the frame's shown count
+    falls from 3 (the same run without the press) to 0.
+
+    Shown to fail: without the 123 arm no row is hidden and 3 stay shown.
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    def run(hold):
+        return subprocess.run(
+            [play, fr, os.path.join(ROOT, "tables"), "--save",
+             os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "237",
+             "--stand", "3429,1111,-674,132", "--hold", hold, "--frames", "140",
+             "--res", "640x480", "--nofmv", "--no-crowd"],
+            capture_output=True, encoding="latin-1",
+            env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    def shown(out):
+        m = _re.search(r"effects: \d+ set pieces shown so far, (\d+) shown now", out)
+        return int(m.group(1)) if m else None
+    a, p = run("0*200"), run("0*20,k28*2,0*200")
+    hid = _re.findall(r"set\.hide_piece (\d+) - the row hidden", p)
+    return (shown(a), hid, shown(p)), (3, ["0", "0", "1", "2"], 0), \
+           "the flat's shown set pieces with no press; the pieces the TV's " \
+           "script hides; the shown count after it"
+
+
 def c_game_clock():
     r"""GAME_STATE 6: the Omikron calendar - 41 days, 13 months, year 7216.
 
@@ -42516,6 +42559,7 @@ SLOW = [
     ("engine: shoot suspend", c_engine_shoot_suspend, "todo/drift-audit.md S7; actor/shootmode.h"),
     ("engine: zone box", c_engine_zone_box, "todo/drift-audit.md S10; script/zones.cpp"),
     ("engine: message two", c_engine_message_two, "todo/drift-audit.md S8; SCRIPT_VM"),
+    ("engine: hide piece", c_engine_hide_piece, "todo/drift-audit.md S11; o3de/setpiece.h"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),

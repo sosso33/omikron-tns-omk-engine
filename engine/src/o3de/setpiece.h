@@ -141,6 +141,13 @@ public:
     void showKeyed(int a1, int a2);
     // `SetPiece_Show` on one row.
     void show(int row);
+    // `set.hide_piece` (op 123, 0x4055C0 -> `sub_41BD40(id, 0)`):
+    // `SetPiece_Find(id)` - the row whose +0 is `id` - then `sub_4501D0(row,
+    // 1, 0)`, which is `+72 &= ~1` and nothing else: the row stops being
+    // shown, its clock and waypoint where they were (todo/drift-audit.md
+    // S11). -> false when no row carries the id (the engine would write
+    // through a null row there).
+    bool hideById(std::int32_t id);
     // `sub_451600` for every shown row, spawning through `fx`, then the
     // end test. Call before `fx.tick()`, as the engine's frame does.
     void tick(float dt, ParticleField& fx);

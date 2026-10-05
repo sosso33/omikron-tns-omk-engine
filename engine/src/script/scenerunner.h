@@ -109,6 +109,8 @@ public:
     // registers ONE emitter a frame at its current position, which the block
     // of waypoints moves; that is what orbits `ttt` round the intro's portal.
     const SetPieceRunner& pieces() const { return pieces_; }
+    // `set.hide_piece` on this pool's `.sfx` (`SetPieceRunner::hideById`)
+    bool hidePiece(std::int32_t id) { return pieces_.hideById(id); }
     // How a piece linked to an ACTOR (type 2, a three-letter tag) or the
     // PLAYER (type 3) finds it. The frontend owns those positions; without
     // a resolver such a record stands absolute, and says so in setpiece.h.
