@@ -424,7 +424,7 @@ contexts in the same frame. The golden traces are order-only, which is why
 this has never shown.
 **Correction (T11, 2026-09-02):** not "nine pump frames" - `sub_41EFA0` is the async file reader and only the `.3DO` set streams, ceil(bytes / 0x20000) frames: Anekbah 17, AImpasse 1, the boot 0.
 
-### 21. No restart path — B
+### 21. No restart path — B *(the Session half was ported earlier; the WRITERS - op 152 and the pause/sneak quit - and the frontend's half came 2026-10-05, `todo/drift-audit.md` S3/T1)*
 `Script_Pump` phase 1 opens with `if (g_RestartRequest) { Script_Pump(3);
 Script_Pump(2); Screen_FadeFromColor(0xFFFFFF, 15, 0); }`. Phase 3 is
 `sub_40E260`: stop the music (`Music_PlayTrack(0, 1)`), drop the held object

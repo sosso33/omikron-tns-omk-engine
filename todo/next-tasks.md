@@ -250,8 +250,9 @@ row - so it comes up on `Non`.
 `dword_4E6C9C` is a request served at the top of the next `Script_Pump(1)` as
 `Script_Pump(3)` / `Game_NewGame` / `Screen_FadeFromColor(0xFFFFFF, 15, 0)`.
 It ends the GAME and boots a new one, back out to the start menu. The port
-ends the run instead and says so - `omk-play`'s boot is `main`'s body rather
-than a function, so there is nothing to restart into.
+ended the run instead - until 2026-10-05, when `Session::restart` and the
+frontend's drop came in with `game.restart` (`todo/drift-audit.md` S3/T1);
+it now restarts as the engine does.
 
 **Three latent faults came out with it**, all the same shape - a rule written
 as `adventure`, a per-frame MODE that any open screen takes false, where the

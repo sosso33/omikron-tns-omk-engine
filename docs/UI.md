@@ -4303,7 +4303,13 @@ is that menu's own `Quitter`.
 
 Ported into `omk-play` 2026-09-07 (`todo/next-tasks` 3), with the restart the
 one part missing: this viewer's boot is `main`'s body rather than a function,
-so `Oui` ends the run and says so. `verify.py: engine: pause` asserts the ESC
+so `Oui` ended the run and said so. **Since 2026-10-05 it restarts**
+(`todo/drift-audit.md` S3, T1): `Session::restart` is `Script_Pump(3)` and
+`(2)` with both scene pools freed, and the frontend drops the old world on
+`Session::restarts()`; `game.restart` (op 152) writes the same flag. And this
+is the ONLY mid-session load the game has: screen 30 hides `Charger`
+(`Ui_BuildLoadPanel`) and this menu has no load, so loading during a session
+is `Quitter le jeu`, the start menu, `Charger`. `verify.py: engine: pause` asserts the ESC
 site, all six callback bodies byte for byte, the two screen flags, and then
 the port's own run.
 

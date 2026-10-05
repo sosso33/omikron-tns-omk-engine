@@ -315,6 +315,13 @@ press did nothing at all in a shoot phase. And in the Tetra raids
 (`shoot.freeze_all`), gunmen should stand still until a shot or a hit wakes
 them. `todo/drift-audit.md` S7.
 
+## 26. QUIT TO THE START MENU, THEN LOAD (2026-10-05)
+
+Anywhere in play: ESC, `Quitter le jeu`, `Oui`. The game should fade in from
+WHITE on the start menu - before this the viewer simply closed. Then
+`Charger une partie` and a slot should load it like a fresh boot does. The
+same from the sneak's quit tab. `todo/drift-audit.md` T1.
+
 ## What is NOT fixed, so do not report it as new
 
 * **The lift arrival is still black** and the camera is inside the lift-car
