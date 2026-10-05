@@ -379,9 +379,8 @@ animations, then sinking into the lava, waiting, rising again - turning to
 face you, with the boss health bar on the right. Killing him ends the shoot
 and runs the collapse. Since step 2 he WALKS toward you at 6 units a frame
 during his walking actions and stops at his floor's edge (sliding along it).
-Since step 3 he FIRES: a slow bolt from his tail once in each of his tail-attack animations (damage 20) and a rapid stream from his head (damage 10). NOT YET: he does not strike or grab (step 4), and he can still be hurt anywhere (the head-only gate, step 3b). To check by eye: is he drawn at the right HEIGHT over the
-lava (the engine puts him at y -147, high above his floor), and do the
-sink/rise look right? Headless: `--area 2 --stand 125,-9,401,0 --shoot`.
+Since step 3 he FIRES: a slow bolt from his tail once in each of his tail-attack animations (damage 20) and a rapid stream from his head (damage 10). Since 3b: he is drawn LOWER - his pelvis on his node (he had been drawn ~280 too high, his head above the cave ceiling, so nothing could hit him) - and he can be hurt only with the BATON (the cave gives it: zone 313, `Départ Shoot Grotte`), only through his HEAD, and only while he walks; a Waver bolt does nothing. To check by eye: does his height over the lava now look right, and do head hits flash (effect 19)? NOT YET: he does not strike or grab (step 4). Headless: `--area 2 --stand 1811,-9,1216,0 --player-at 60:125,-9,401,0` (the cave's own baton start). To check by eye: is he drawn at the right HEIGHT over the
+lava, and do the sink/rise look right?
 
 ## HEADLESS PASS over 19-29 (2026-10-05)
 

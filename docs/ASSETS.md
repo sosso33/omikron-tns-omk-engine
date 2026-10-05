@@ -3647,7 +3647,14 @@ on floor 1); 23 fires once at the clip's
 half, 24 on a coin flip each frame; and 19, 20, 23 and 24, once `sub_421020`
 finds an attack in range, roll `(rand() % 100 <= p) + 25` with p 100 / 70 / 40
 by band - **26 the STRIKE always when healthy**, 25 the GRAB 29% of the time
-wounded and 59% critical. **His entry** is `sub_47DFD0`'s type-10 arm: node
+wounded and 59% critical. **Hurting him** takes three gates in `sub_4240E0`, in order: `+160 & 0x800`
+refuses every hit, and nine of his twelve actions set it - only his walks (20,
+24) clear it; `0x4000` (his entry sets 0x4020) refuses any bolt but the
+BATON's (the reader's testimony, *"a Waver does nothing"*); and `sub_47DF60`
+re-sweeps the bolt (`sub_45E9C0` with `dword_53AA9C` = his `D3Tete`, found by
+name at his entry): only a bolt that meets his HEAD hurts him, and it plays
+effect 19 there. His node is his PELVIS (the root mesh's world point; the tail
+hangs 280 below it). **His entry** is `sub_47DFD0`'s type-10 arm: node
 and `+60` at **y -147** (`flt_4BCB74`, whatever the placement), `+68 = 39 *
 property 3 / 30`, action 23 entered at once. **`dword_657A28`** is the grab's
 restart (`sub_47F340` raises it on a touch; the brain enters a new action at

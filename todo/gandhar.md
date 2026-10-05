@@ -164,8 +164,29 @@ root delta (`Anim_SetFrame`) moves his node. **`sub_47E5F0`**: a step of
    with `dword_657A24` - his `D3Tete` node, found by `sub_41E210` at his
    entry - and refuses the damage when it misses; a pass spawns effect 19
    at the meeting point. So he can be hurt only through his HEAD (as
-   Astaroth only through his back). The port still damages him anywhere.
-   Read `sub_45E9C0` before porting it.
+   Astaroth only through his back).
+   ✔ **DONE 2026-10-05.** `sub_45E9C0` is the bolt's own body sweep, and its
+   fifth argument (`dword_53AA9C`) makes `sub_45ECA0` test that ONE mesh -
+   the port's `shootSweepBodies(.., onlyActor, onlyMesh)`, as Astaroth's
+   back. The type-10 arm of `HitIn::typeGate` sweeps for his `D3Tete`; a
+   meet plays effect 19 at `*(D3Tete)+36` and passes the damage, a miss
+   refuses it (`shootApplyHit` called the gate for type 13 only). **Three
+   gates in a row, and a reader's testimony behind the second** (*"against
+   demons a special weapon is needed, the baton de pouvoir - a Waver does
+   nothing"*): `+160 & 0x800` refuses every hit, and nine of his twelve
+   actions set it - he can be hurt only while he WALKS (20, 24, and 16 if it
+   follows one); `0x4000` refuses all but the baton (damage 6; the Waver's
+   is 5 - 20 of 20 refused); then the head. **And a DRAWING fault had made
+   him unhittable**: the viewer seated him by his FEET - the tip of a tail
+   280 below his pelvis - and added his node's offset on top, so his head
+   drew ~330 above the node, above the cave's ceiling (`GGplaf05`, y -257),
+   where every bolt struck. His node is his pelvis (the root mesh's world
+   point): he is drawn pelvis-on-node now (`s.pelvis`), his head at y -126
+   to -200. THE ROUTE IS THE CAVE'S OWN now: zone 313 (`Départ Shoot
+   Grotte`: `inventory.save`, `shoot.begin 40` - the BATON - and the twelve
+   zombies) then the bridge, zone 317 - `--stand 1811,-9,1216,0 --player-at
+   60:125,-9,401,0`; the `--shoot` harness equips the WAVER and is wrong for
+   him. `engine: gandhar head` (new, three mutations shown to fail).
 4. **The strike and the grab**: the touch test (`sub_45BC50`/`sub_45BB20`),
    the roll, 26's damage and push, 25's side -> messages 5-8 and the
    `dword_657A28` restart. Check: each side's message, the kill scene runs.
