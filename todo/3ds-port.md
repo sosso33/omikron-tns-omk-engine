@@ -255,6 +255,26 @@ rather than once a film.
 
 ### Step 2b - the bottom screen: the instrument panel
 
+**DONE 2026-10-06, RUN IN AZAHAR** (`n3dspanel.{h,cpp}`, `n3dshost.{h,cpp}`
+- the log ring the tee feeds, the card paths, the capture path). The panel
+draws in the game's SMALL face: the console line; fps, frame time (mean and
+worst over half a second) and the BUSY share (the interval less what the
+pacer's `delayMs` slept); the heap in use of libctru's, linear and VRAM
+free; the counting allocator's live and peak; the profiler's path and the
+state the game wrote; the log's last lines; four touch buttons. Looked at
+through `sdmc:/omk/panel-dump` (each redraw also written to
+`sdmc:/omk/panel.bin` - an instrument for a screen that cannot be
+photographed). **THE PROFILER WORKS ON THE 3DS** - which it never has on the
+Vita (`handoff-vita-port.md` 3b4c): `--profile sdmc:/omk/run.prof` writes the
+capture a chunk a frame and the `.state`; a `pause` written to `.ctl` the way
+the PAUSE button writes it paused the game at frame 434 and wrote the
+snapshot; `resume` ran it on; `tools/omkprof.py` reads the capture (442
+frames, the zones by name). The buttons' TOUCH is untested by the run - the
+reader can click the bottom screen in Azahar. Two things for the console:
+VRAM reads 0.0 MB free in Azahar, unexplained; and the game logs a SLOW
+FRAME line every frame while it runs slow, each flushed to the card by the
+tee - a real cost on an SD card, and the first thing to measure there.
+
 A 320x240 RGB565 surface the CPU composites with the engine's own text
 renderer and fonts (`ui/text.*`), redrawn a few times a second (stats move
 slowly, so its cost stays off most frames) and written straight to the bottom

@@ -3,12 +3,16 @@
 #include "n3dsfront.h"
 
 #include "input/pad.h"
+#include "n3dshost.h"
+#include "platform/datafs.h"
+#include "platform/profile.h"
 
 #include <3ds.h>
 
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 
 namespace omk {
 
@@ -146,6 +150,26 @@ bool N3dsFrontend::open(int, int, const std::string&) {
     // never the one on show.
     gfxSetScreenFormat(GFX_TOP, GSP_RGB565_OES);
     gfxSetDoubleBuffering(GFX_TOP, true);
+    // The bottom screen, the instrument panel: single-buffered - it is
+    // redrawn a few times a second, and a swapped pair would show the stale
+    // half every other frame.
+    gfxSetScreenFormat(GFX_BOTTOM, GSP_RGB565_OES);
+    gfxSetDoubleBuffering(GFX_BOTTOM, false);
+    bool n3ds = false;
+    APT_CheckNew3DS(&n3ds);
+    stats_.newModel = n3ds;
+    panelOk_ = panel_.open();
+    // AN INSTRUMENT: with `sdmc:/omk/panel-dump` on the card, every redraw is
+    // also written to `sdmc:/omk/panel.bin` (raw LE RGB565, 320x240) - how
+    // the bottom screen is looked at where it cannot be photographed.
+    if (std::FILE* f = std::fopen((std::string(n3ds::kHome) + "/panel-dump").c_str(), "r")) {
+        std::fclose(f);
+        panelDump_ = true;
+        std::printf("panel: panel-dump present - each redraw also written to %s/panel.bin\n", n3ds::kHome);
+    }
+    panel_.draw(panelSurf_, stats_);
+    n3ds::Panel::toScreen(panelSurf_);
+    winStart_ = lastPresent_ = svcGetSystemTick();
     opened_ = true;
     return true;
 }
@@ -204,6 +228,12 @@ bool N3dsFrontend::pump(HostInput& out) {
     out.pad.ry = -stick(cs.dy);
     // START is the menu key, read straight from `held` (`pad::kEscape`)
     if (out.pad.buttons & pad::Start) out.held.insert(pad::kEscape);
+    // the panel's buttons, on a touch going down
+    if (hidKeysDown() & KEY_TOUCH) {
+        touchPosition tp{};
+        hidTouchRead(&tp);
+        act(panel_.hit(tp.px, tp.py));
+    }
     // Every change of the pad, logged with the pump it came on: the sticks
     // only past the dead zone's edge (`pad::kDeadZone`), so a stick's jitter
     // at rest says nothing.
@@ -274,8 +304,103 @@ void N3dsFrontend::present(const Surface& fb) {
             col[239 - y] = p;
         }
     }
+    if (captureOwed_) {
+        captureOwed_ = false;
+        writeCapture(fb);
+    }
+    // THE FRAME, measured where it is presented: the interval since the last
+    // present, and of it what the pacer slept. Over a window of a second.
+    const std::uint64_t now = svcGetSystemTick();
+    const std::uint64_t interval = now - lastPresent_;
+    lastPresent_ = now;
+    winFrames_ += 1;
+    winSleep_ += std::min(sleepTicks_, interval);
+    winWorst_ = std::max(winWorst_, interval);
+    sleepTicks_ = 0;
+    stats_.frames += 1;
+    if (now - winStart_ >= SYSCLOCK_ARM11 / 2) {        // twice a second
+        const double span = static_cast<double>(now - winStart_);
+        stats_.fps = winFrames_ * static_cast<double>(SYSCLOCK_ARM11) / span;
+        stats_.frameMs = span * 1000.0 / SYSCLOCK_ARM11 / winFrames_;
+        stats_.worstMs = static_cast<double>(winWorst_) * 1000.0 / SYSCLOCK_ARM11;
+        stats_.busyPct = 100.0 * (1.0 - static_cast<double>(winSleep_) / span);
+        winStart_ = now;
+        winFrames_ = 0;
+        winSleep_ = winWorst_ = 0;
+        if (panelOk_) {
+            panel_.draw(panelSurf_, stats_);
+            n3ds::Panel::toScreen(panelSurf_);
+            if (panelDump_) {
+                std::vector<unsigned char> le(panelSurf_.px.size() * 2);
+                for (std::size_t i = 0; i < panelSurf_.px.size(); ++i) {
+                    le[2 * i] = static_cast<unsigned char>(panelSurf_.px[i] & 0xFF);
+                    le[2 * i + 1] = static_cast<unsigned char>(panelSurf_.px[i] >> 8);
+                }
+                writeWholeFile(std::string(n3ds::kHome) + "/panel.bin", le.data(), le.size());
+            }
+        }
+    }
     gfxFlushBuffers();
     gfxSwapBuffers();
+}
+
+// ---- the panel's buttons ----------------------------------------------------
+
+void N3dsFrontend::act(n3ds::Panel::Action a) {
+    switch (a) {
+    case n3ds::Panel::Action::None: return;
+    case n3ds::Panel::Action::Capture:
+        captureOwed_ = true;                         // written at the next present
+        if (!n3ds::capturePath().empty()) writeControl("snapshot");
+        break;
+    case n3ds::Panel::Action::Pause:  writeControl("pause"); break;
+    case n3ds::Panel::Action::Step:   writeControl("step"); break;
+    case n3ds::Panel::Action::Resume: writeControl("resume"); break;
+    }
+}
+
+// The profiler's control (`platform/profile.cpp` control()): "<seq> <cmd>
+// <n>" in `<capture>.ctl`, a seq the game has not seen. Written to a side
+// file and renamed into place, so the game never reads half a line; FAT
+// does not rename over a file, so the old one goes first.
+void N3dsFrontend::writeControl(const char* cmd) {
+    const std::string& base = n3ds::capturePath();
+    if (base.empty()) {
+        stats_.note = std::string(cmd) + ": no profiler capture - add --profile <path> to args.txt";
+        std::printf("panel: %s\n", stats_.note.c_str());
+        return;
+    }
+    const long seq = static_cast<long>(ticksMs() % 2000000000u);
+    const std::string tmp = base + ".ctl.tmp", ctl = base + ".ctl";
+    if (std::FILE* f = std::fopen(tmp.c_str(), "w")) {
+        std::fprintf(f, "%ld %s 1\n", seq, cmd);
+        std::fclose(f);
+        std::remove(ctl.c_str());
+        std::rename(tmp.c_str(), ctl.c_str());
+        stats_.note = std::string("sent ") + cmd + " (" + std::to_string(seq) + ")";
+    } else {
+        stats_.note = std::string(cmd) + ": could not write " + tmp;
+    }
+    std::printf("panel: %s\n", stats_.note.c_str());
+}
+
+// The frame on show, as `--dump` writes it: raw little-endian RGB565, the
+// size said in the log since the file carries none.
+void N3dsFrontend::writeCapture(const Surface& fb) {
+    makeDirectories(n3ds::kCaptures);
+    char name[96];
+    const std::time_t t = std::time(nullptr);
+    char when[32] = "undated";
+    if (const std::tm* lt = std::localtime(&t)) std::strftime(when, sizeof when, "%Y%m%d-%H%M%S", lt);
+    std::snprintf(name, sizeof name, "%s/frame-%s-%ld.bin", n3ds::kCaptures, when, stats_.frames);
+    std::vector<unsigned char> le(fb.px.size() * 2);
+    for (std::size_t i = 0; i < fb.px.size(); ++i) {
+        le[2 * i] = static_cast<unsigned char>(fb.px[i] & 0xFF);
+        le[2 * i + 1] = static_cast<unsigned char>(fb.px[i] >> 8);
+    }
+    const bool ok = writeWholeFile(name, le.data(), le.size());
+    stats_.note = ok ? std::string("captured ") + name : std::string("capture FAILED: ") + name;
+    std::printf("panel: %s (%dx%d RGB565, %zu bytes)\n", stats_.note.c_str(), fb.w, fb.h, le.size());
 }
 
 void N3dsFrontend::close() {
@@ -294,7 +419,9 @@ std::uint32_t N3dsFrontend::ticksMs() {
 std::uint64_t N3dsFrontend::perfCounter() { return svcGetSystemTick(); }
 std::uint64_t N3dsFrontend::perfFrequency() { return SYSCLOCK_ARM11; }
 void N3dsFrontend::delayMs(std::uint32_t ms) {
+    const std::uint64_t t0 = svcGetSystemTick();
     svcSleepThread(static_cast<s64>(ms) * 1000000);
+    sleepTicks_ += svcGetSystemTick() - t0;      // the panel's BUSY share
 }
 
 std::unique_ptr<Frontend> makeHostFrontend() { return std::make_unique<N3dsFrontend>(); }

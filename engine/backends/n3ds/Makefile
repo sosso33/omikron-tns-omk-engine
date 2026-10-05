@@ -73,8 +73,9 @@ PLAY_SRC := $(filter-out $(addprefix $(ENGINE)/backends/sdl/,sdlfront.cpp playsc
                          $(wildcard $(ENGINE)/backends/sdl/playgpu_*.cpp),$(PLAY_ALL)) \
             $(ENGINE)/backends/sdl/playgpu_none.cpp
 PLAY_OBJ := $(patsubst $(ENGINE)/backends/sdl/%.cpp,$(OUT)/obj/play/%.o,$(PLAY_SRC)) \
-            $(OUT)/obj/play/n3ds_main.o $(OUT)/obj/play/n3dsfront.o $(OUT)/obj/play/playscene_off.o
-BOOT_OBJ := $(OUT)/obj/boot/omk.o $(OUT)/obj/boot/n3ds_main.o
+            $(OUT)/obj/play/n3ds_main.o $(OUT)/obj/play/n3dsfront.o $(OUT)/obj/play/playscene_off.o \
+            $(OUT)/obj/play/n3dshost.o $(OUT)/obj/play/n3dspanel.o
+BOOT_OBJ := $(OUT)/obj/boot/omk.o $(OUT)/obj/boot/n3ds_main.o $(OUT)/obj/boot/n3dshost.o
 
 ICON     := $(CTRULIB)/default_icon.png
 
@@ -96,6 +97,9 @@ $(OUT)/obj/boot/omk.o: $(ENGINE)/tools/omk.cpp
 $(OUT)/obj/boot/n3ds_main.o: n3ds_main.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -DOMK_3DS_TOOL=1 -DOMK_3DS_ENTRY=omk_tool_main -c $< -o $@
+$(OUT)/obj/boot/%.o: %.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 # omk_play: `play.cpp`'s `main` under another name
 PLAY_FLAGS := -I$(ENGINE)/backends/sdl -I.

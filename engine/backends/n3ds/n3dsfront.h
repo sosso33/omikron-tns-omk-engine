@@ -26,11 +26,13 @@
 //   * the CLOCKS from the system tick (`svcGetSystemTick`, 268 MHz on both
 //     models - the New 3DS's faster CPU does not change it).
 //
-// The bottom screen is not this class's: it holds libctru's console (the log,
-// `n3ds_main.cpp`) until step 2b makes it the instrument panel.
+//   * the BOTTOM screen: the instrument panel (`n3dspanel.h`, step 2b) -
+//     its numbers measured here, where the frames are presented and the
+//     pacer sleeps, and its buttons read from the touch screen.
 #pragma once
 
 #include "audio/hostmix.h"
+#include "n3dspanel.h"
 #include "platform/frontend.h"
 
 #include <cstdint>
@@ -89,6 +91,20 @@ private:
     std::string lastError_;
     bool quit_ = false;
     bool opened_ = false;
+    // ---- the instrument panel (step 2b)
+    void act(n3ds::Panel::Action a);
+    void writeControl(const char* cmd);   // `<capture>.ctl`, as omkprof.py --ctl writes it
+    void writeCapture(const Surface& fb);
+    n3ds::Panel panel_;
+    Surface panelSurf_{320, 240};
+    n3ds::PanelStats stats_;
+    bool panelOk_ = false;
+    bool panelDump_ = false;              // `sdmc:/omk/panel-dump` exists: each redraw also to panel.bin
+    bool captureOwed_ = false;
+    std::uint64_t lastPresent_ = 0;       // system ticks
+    std::uint64_t winStart_ = 0, winSleep_ = 0, winWorst_ = 0;
+    long winFrames_ = 0;
+    std::uint64_t sleepTicks_ = 0;        // what `delayMs` slept since the last present
     // the pad as last reported, so a CHANGE is logged (what a play report
     // needs, and how a press nobody made is found)
     std::uint32_t lastButtons_ = 0;

@@ -27,10 +27,13 @@
 //                            so the runs sort by name and none overwrites
 //                            the one before (the Vita's rule)
 //
-// The log is also shown on the BOTTOM screen while the program runs - every
-// line written to stdout or stderr goes to the file AND to libctru's console
-// (`tee` below). Step 2b turns the bottom screen into the instrument panel;
-// until then it is where a run on the console says what it is doing.
+// Every line written to stdout or stderr goes to the file and to the LOG
+// RING (`n3dshost.h`) the instrument panel shows (`tee` below). `omk_boot`
+// also shows it live on the bottom screen through libctru's console;
+// `omk_play`'s bottom screen is the panel (step 2b), and the console comes
+// back only when the game has returned, with the log's last lines.
+#include "n3dshost.h"
+
 #include <3ds.h>
 #include <sys/iosupport.h>
 #include <sys/stat.h>
@@ -63,9 +66,9 @@ extern u32 __ctru_linear_heap_size;
 
 namespace {
 
-constexpr const char* kHome   = "sdmc:/omk";
-constexpr const char* kRoot   = "sdmc:/omk/gamedata";
-constexpr const char* kTables = "romfs:";
+using omk::n3ds::kHome;
+using omk::n3ds::kRoot;
+using omk::n3ds::kTables;
 constexpr const char* kSaves  = "sdmc:/omk/saves/GAMES";
 constexpr const char* kIni    = "sdmc:/omk/omk.ini";
 constexpr const char* kExtra  = "sdmc:/omk/args.txt";
@@ -87,28 +90,38 @@ std::FILE* g_err = nullptr;
 const devoptab_t* g_console = nullptr;
 devoptab_t g_teeOut, g_teeErr;
 
+bool g_showConsole = false;      // libctru's console is on the bottom screen
+
 ssize_t teeTo(std::FILE* f, struct _reent* r, void* fd, const char* p, size_t n) {
     if (f) {
         std::fwrite(p, 1, n, f);
         std::fflush(f);
     }
-    if (g_console && g_console->write_r) g_console->write_r(r, fd, p, n);
+    omk::n3ds::logAppend(p, n);
+    if (g_showConsole && g_console && g_console->write_r) g_console->write_r(r, fd, p, n);
     return static_cast<ssize_t>(n);
 }
 ssize_t teeOut(struct _reent* r, void* fd, const char* p, size_t n) { return teeTo(g_log, r, fd, p, n); }
 ssize_t teeErr(struct _reent* r, void* fd, const char* p, size_t n) { return teeTo(g_err, r, fd, p, n); }
 
-void installTee(const std::string& logPath, const std::string& errPath) {
-    g_log = std::fopen(logPath.c_str(), "w");
-    g_err = std::fopen(errPath.c_str(), "w");
+// The tee over whatever device stdout is now - the console's once
+// `consoleInit` has run, libctru's null device before. Called again after a
+// late `consoleInit`, which installs its own device over this one.
+void hookStdout() {
     g_console = devoptab_list[STD_OUT];
-    if (!g_console) return;
+    if (!g_console || g_console == &g_teeOut) return;
     g_teeOut = *g_console;
     g_teeOut.write_r = teeOut;
     g_teeErr = *g_console;
     g_teeErr.write_r = teeErr;
     devoptab_list[STD_OUT] = &g_teeOut;
     devoptab_list[STD_ERR] = &g_teeErr;
+}
+
+void installTee(const std::string& logPath, const std::string& errPath) {
+    g_log = std::fopen(logPath.c_str(), "w");
+    g_err = std::fopen(errPath.c_str(), "w");
+    hookStdout();
     // line-buffered: each line reaches the tee (and the card) as it is ended
     std::setvbuf(stdout, nullptr, _IOLBF, 1024);
     std::setvbuf(stderr, nullptr, _IOLBF, 1024);
@@ -142,6 +155,13 @@ void reportConsole() {
 // The program has returned; keep its last lines on the bottom screen until
 // the player has read them (START), or the system asks the program to close.
 void waitForStart(int rc) {
+#if !defined(OMK_3DS_TOOL)
+    // the bottom screen was the panel: the console back, with the log's tail
+    consoleInit(GFX_BOTTOM, nullptr);
+    hookStdout();
+    g_showConsole = true;
+    for (const std::string& l : omk::n3ds::logTail(24)) std::printf("%s\n", l.c_str());
+#endif
     std::printf("\nexit %d - press START to leave\n", rc);
     while (aptMainLoop()) {
         hidScanInput();
@@ -154,7 +174,10 @@ void waitForStart(int rc) {
 
 int main(int, char**) {
     gfxInitDefault();
+#if defined(OMK_3DS_TOOL)
     consoleInit(GFX_BOTTOM, nullptr);
+    g_showConsole = true;
+#endif
     osSetSpeedupEnable(true);           // the New 3DS's 804 MHz and L2; a no-op on the old one
     const Result romfs = romfsInit();
     mkdir(kHome, 0777);
@@ -190,6 +213,9 @@ int main(int, char**) {
     std::vector<char*> argv;
     for (auto& a : args) argv.push_back(a.data());
     argv.push_back(nullptr);
+    // the profiler capture, for the panel's buttons (`n3dspanel.h`)
+    for (std::size_t i = 0; i + 1 < args.size(); ++i)
+        if (args[i] == "--profile") omk::n3ds::setCapturePath(args[i + 1]);
 
     std::printf("run %s\n", when.c_str());
     for (const auto& a : args) std::printf("%s ", a.c_str());
