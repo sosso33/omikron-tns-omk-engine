@@ -198,10 +198,15 @@ at once there: `save-appart.bin` gives him Vie 10 and the harness presses
 nothing; `--fight-health` for a longer fight.) Its first version re-sent the
 whole band of interface rows every frame - `present` 41-58 ms an overlay frame
 on the emulated Tiger; now a row keeps its place in the texture and is sent
-only when its 565 row, mask row or fade changed (a hash a row, the GLES
+only when its 565 row or mask row changed (a hash a row, the GLES
 overlay's): the subtitle's frames **45-52 -> 2.7-4.6 ms**, the gauges ~42 ->
-26. A FADE still re-sends every row (it changes them all) - 26-31 ms; the
-fade done in GL instead (a second blended quad) is the next cut there.
+26. A FADE folded into the texture changed every row every frame (25-31 ms);
+since 2026-10-05 it is a SECOND QUAD, untextured over the window at the fade's
+colour and weight, `(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)` - `dst*(1-f) +
+fade*f`, the GLES shader's law done by the blender: the same fight, same
+frames (KO at 423, replay out at 511), `present` over the fade windows **26.0 /
+25.0 / 31.0 -> 9.6 / 3.0 / 3.6 ms** (means of 60 frames; the first window
+also carries the KO's gauges). Watched by the reader: see below.
 Not run on OS 9 (its emulation has no 3D card).
 
 ## 4. What is next, in the order proposed

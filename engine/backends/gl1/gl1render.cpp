@@ -521,9 +521,14 @@ public:
     // whose world rows are the KEY (0xF81F), and `mask` - how much of the
     // world shows through a pixel - drawn OVER the world as the GLES
     // overlay does: `C + world * M`, then the colour fade (`fade` rgb + its
-    // weight). Fixed function: the CPU folds key, mask and fade into one RGBA
-    // texture, a quad blends it with (GL_ONE, GL_SRC_ALPHA). Only the band of
-    // rows the overlay touches is uploaded and drawn.
+    // weight). Fixed function: the CPU folds key and mask into one RGBA
+    // texture, a quad blends it with (GL_ONE, GL_SRC_ALPHA); only the band of
+    // rows the overlay touches is uploaded and drawn. THE FADE IS A SECOND
+    // QUAD (2026-10-05): untextured over the whole window, its colour at its
+    // weight, blended (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA) - `dst*(1-f) +
+    // fade*f`, the GLES shader's `rgb*(1-f) + fade*f` done by the blender.
+    // Folded into the texture it changed every row every frame of a fade, and
+    // the emulated Tiger re-sent the whole frame for 26-31 ms each.
     bool presentOverlay(const Surface& fb, const std::uint8_t* mask, const float fade[4],
                         int ww, int wh) {
         if (ww != w_ || wh != h_ || fb.w != w_ || fb.h != h_) return false;
@@ -531,13 +536,24 @@ public:
         const bool fading = fade[3] > 0.0f;
         for (int y = 0; y < fb.h; ++y) {
             const std::uint16_t* row = fb.px.data() + static_cast<std::size_t>(y) * fb.w;
-            bool any = fading;
+            bool any = false;
             for (int x = 0; x < fb.w && !any; ++x) any = row[x] != 0xF81F;
             if (any) { if (lo > y) lo = y; hi = y; }
         }
         Current c(ctx_);
+        if (hi >= lo || fading) {
+            // the 2D state for the quads; `begin` sets all of its own again
+            glViewport(0, 0, ww, wh);
+            glMatrixMode(GL_PROJECTION); glLoadIdentity(); glOrtho(0, ww, 0, wh, -1, 1);
+            glMatrixMode(GL_MODELVIEW); glLoadIdentity();
+            glMatrixMode(GL_TEXTURE); glLoadIdentity(); glMatrixMode(GL_MODELVIEW);
+            glDisable(GL_DEPTH_TEST); glDisable(GL_FOG); glDisable(GL_CULL_FACE);
+            glDisable(GL_ALPHA_TEST); glDisable(GL_SCISSOR_TEST); glDisable(GL_LIGHTING);
+            glEnable(GL_BLEND);
+            stateValid_ = false;             // the draw state the cache assumed is gone
+            boundTex_ = ~0u;
+        }
         if (hi >= lo) {
-            const int bh = hi - lo + 1;
             const GLsizei tw = static_cast<GLsizei>(nextPow2(static_cast<unsigned>(fb.w)));
             const GLsizei th = static_cast<GLsizei>(nextPow2(static_cast<unsigned>(fb.h)));
             if (!ovTex_ || ovTexW_ != tw || ovTexH_ != th) {
@@ -552,8 +568,8 @@ public:
             }
             // ONLY THE ROWS THAT CHANGED (2026-10-05, run on Tiger): a row
             // keeps its place in the texture, and is converted and sent only
-            // when its source - the 565 row, its mask row, the fade - differs
-            // from what was last sent there. A subtitle is the same rows for
+            // when its source - the 565 row and its mask row - differs from
+            // what was last sent there. A subtitle is the same rows for
             // hundreds of frames; re-sending the band every frame cost the
             // emulated Tiger ~45 ms an overlay frame. The key a row is
             // compared by is a hash, as the GLES overlay's (four chains).
@@ -561,18 +577,10 @@ public:
             glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
             glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
             ovRgba_.resize(static_cast<std::size_t>(fb.w) * 4);
-            const float f = fade[3], g = 1.0f - f;
-            const float fr = fade[0] * 255.0f * f, fg = fade[1] * 255.0f * f, fbl = fade[2] * 255.0f * f;
-            std::uint32_t fadeKey = 2166136261u;
-            for (int q = 0; q < 4; ++q) {
-                std::uint32_t bits;
-                std::memcpy(&bits, &fade[q], 4);
-                fadeKey = (fadeKey ^ bits) * 16777619u;
-            }
             for (int y = lo; y <= hi; ++y) {
                 const std::uint16_t* src = fb.px.data() + static_cast<std::size_t>(y) * fb.w;
                 const std::uint8_t* msk = mask ? mask + static_cast<std::size_t>(y) * fb.w : nullptr;
-                std::uint32_t h0 = fadeKey, h1 = 0x9E3779B9u, h2 = 0x7F4A7C15u, h3 = 0x94D049BBu;
+                std::uint32_t h0 = 2166136261u, h1 = 0x9E3779B9u, h2 = 0x7F4A7C15u, h3 = 0x94D049BBu;
                 int x = 0;
                 for (; x + 4 <= fb.w; x += 4) {
                     h0 = (h0 ^ src[x])     * 16777619u;
@@ -589,37 +597,25 @@ public:
                 for (int xx = 0; xx < fb.w; ++xx) {
                     unsigned char* o = &ovRgba_[static_cast<std::size_t>(xx) * 4];
                     const std::uint16_t p = src[xx];
-                    float r = 0, gg = 0, b = 0, a = 255;           // the KEY: the world as it is
-                    if (p != 0xF81F) {
-                        const unsigned r5 = (p >> 11) & 31, g6 = (p >> 5) & 63, b5 = p & 31;
-                        r = static_cast<float>(r5 << 3 | r5 >> 2);
-                        gg = static_cast<float>(g6 << 2 | g6 >> 4);
-                        b = static_cast<float>(b5 << 3 | b5 >> 2);
-                        a = msk ? msk[xx] : 0;
+                    if (p == 0xF81F) {                             // the KEY: the world as it is
+                        o[0] = o[1] = o[2] = 0; o[3] = 255;
+                        continue;
                     }
-                    o[0] = static_cast<unsigned char>(r * g + fr + 0.5f);
-                    o[1] = static_cast<unsigned char>(gg * g + fg + 0.5f);
-                    o[2] = static_cast<unsigned char>(b * g + fbl + 0.5f);
-                    o[3] = static_cast<unsigned char>(a * g + 0.5f);
+                    const unsigned r5 = (p >> 11) & 31, g6 = (p >> 5) & 63, b5 = p & 31;
+                    o[0] = static_cast<unsigned char>(r5 << 3 | r5 >> 2);
+                    o[1] = static_cast<unsigned char>(g6 << 2 | g6 >> 4);
+                    o[2] = static_cast<unsigned char>(b5 << 3 | b5 >> 2);
+                    o[3] = msk ? msk[xx] : 0;
                 }
                 glTexSubImage2D(GL_TEXTURE_2D, 0, 0, y, fb.w, 1, GL_RGBA, GL_UNSIGNED_BYTE, ovRgba_.data());
             }
-            // the 2D state for one quad; `begin` sets all of its own again
-            glViewport(0, 0, ww, wh);
-            glMatrixMode(GL_PROJECTION); glLoadIdentity(); glOrtho(0, ww, 0, wh, -1, 1);
-            glMatrixMode(GL_MODELVIEW); glLoadIdentity();
-            glMatrixMode(GL_TEXTURE); glLoadIdentity(); glMatrixMode(GL_MODELVIEW);
-            glDisable(GL_DEPTH_TEST); glDisable(GL_FOG); glDisable(GL_CULL_FACE);
-            glDisable(GL_ALPHA_TEST); glDisable(GL_SCISSOR_TEST); glDisable(GL_LIGHTING);
             glEnable(GL_TEXTURE_2D);
             glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
-            glEnable(GL_BLEND);
             glBlendFunc(GL_ONE, GL_SRC_ALPHA);
             glColor4f(1, 1, 1, 1);
             // the band: fb rows lo..hi, top-down, onto window rows wh-lo..wh-hi-1
             const float t0 = static_cast<float>(lo) / th, t1 = static_cast<float>(hi + 1) / th,
                         s1 = static_cast<float>(fb.w) / tw;
-            (void)bh;
             const float yTop = static_cast<float>(wh - lo), yBot = static_cast<float>(wh - hi - 1);
             glBegin(GL_QUADS);
             glTexCoord2f(0, t0);  glVertex2f(0, yTop);
@@ -627,10 +623,21 @@ public:
             glTexCoord2f(s1, t1); glVertex2f(static_cast<float>(ww), yBot);
             glTexCoord2f(0, t1);  glVertex2f(0, yBot);
             glEnd();
-            glDisable(GL_BLEND);
-            stateValid_ = false;             // the draw state the cache assumed is gone
-            boundTex_ = ~0u;
         }
+        if (fading) {
+            // the fade over everything, interface included, as the GLES pass
+            glDisable(GL_TEXTURE_2D);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glColor4f(fade[0], fade[1], fade[2], fade[3] > 1.0f ? 1.0f : fade[3]);
+            glBegin(GL_QUADS);
+            glVertex2f(0, static_cast<float>(wh));
+            glVertex2f(static_cast<float>(ww), static_cast<float>(wh));
+            glVertex2f(static_cast<float>(ww), 0);
+            glVertex2f(0, 0);
+            glEnd();
+            glColor4f(1, 1, 1, 1);
+        }
+        if (hi >= lo || fading) glDisable(GL_BLEND);
         aglSwapBuffers(ctx_);
         return true;
     }

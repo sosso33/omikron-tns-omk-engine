@@ -196,8 +196,10 @@ re-pinned at 4 with the reason.
   drawable's depth - **the reader's choice of 2026-10-05**, as the original's
   16-bit D3D device dithered; a frame with the interface over it blends it
   there (`C + world * M`, then the fade - the GLES overlay's law, the CPU
-  folding key, mask and fade into one RGBA band, one quad with `(GL_ONE,
-  GL_SRC_ALPHA)`). Only for a window the frame's size; `--gl1-composite`
+  folding key and mask into one RGBA band, one quad with `(GL_ONE,
+  GL_SRC_ALPHA)`, and the fade a second untextured quad, `(GL_SRC_ALPHA,
+  GL_ONE_MINUS_SRC_ALPHA)` - 2026-10-05, fade frames 25-31 -> 3-4 ms on the
+  emulated Tiger). Only for a window the frame's size; `--gl1-composite`
   keeps the old path. The SDL host's GL1 is unchanged (`engine: gl1 backend`
   green). **Waiting on the tools disk** (`omk-devtools` on the external
   Crucial X8, not attached 2026-10-05) for the classic build and a Tiger run:
