@@ -565,6 +565,13 @@ public:
     // ever a guess dressed as a measurement. The reader's instruction was the
     // right one: look at the original code.
     float headLift() const { return headLift_; }
+    // the ROOT mesh's own bounding radius (`.3DO` mesh +88) - the half-size
+    // `Actor_ScanZones` gives the zone index (todo/drift-audit.md S10)
+    float rootRadius() const {
+        if (!meshes_) return 0.0f;
+        for (const auto& m : *meshes_) if (m.parent < 0) return m.radius;
+        return 0.0f;
+    }
     const FollowCamera& followCamera() const { return cam_; }
     // `+208` and `+328`, for a probe. 0 clear / 1 blocked / 2 recovering, and
     // the distance the pass is keeping.

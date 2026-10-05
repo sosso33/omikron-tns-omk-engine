@@ -294,21 +294,33 @@ void ZoneRegistry::scanZones(const double pos[3], double facingDegrees,
         // ARMED slot too (`Script_Pump` case 2, all 16) - it is the arming that
         // differs.
         //
-        // RECONSTRUCTION, labelled: the box's radius is a float the zone-space
-        // record carries and this has not read it. The band is the quad's OWN y
-        // extent plus one metre, and the corpus says the choice is not delicate:
-        // over all 4558 zones the quad's y spread is 0 at the median and 23.8 at
-        // the 99th, while zones that share a footprint at different heights sit
-        // a median 389.7 apart (130 to 225 in this lift). Anything between a few
-        // units and ~60 separates the levels identically.
+        // READ 2026-10-05 (todo/drift-audit.md S10), replacing a labelled
+        // reconstruction - a band of one metre around the quad. The index is a
+        // sweep-and-prune over all three axes (`sub_431D40` toggles a bit per
+        // axis and lists a zone at `== 7`), so a zone is yielded when two BOXES
+        // overlap in y as well as in x and z:
+        //   * the ZONE's - `Zone_Add` (0x004317C0): `Zone_Bounds` over the four
+        //     corners, then `minY -= flt_52B90C`, the height `sub_431600` sets
+        //     at init from `dword_910354` = 19.685 (50 cm). Y points down, so
+        //     the box reaches 50 cm ABOVE the quad and not at all below it;
+        //   * the ACTOR's - `sub_431D40(actor+1292, +244, +248, +252)`: his
+        //     NODE (the pelvis) plus and minus `f32(querier, 88)`, the querier
+        //     being the node `sub_431BA0(actor+8, ...)` registered - the root
+        //     mesh's own bounding radius (`setActorBox`).
+        // `Zone_ContainsPoint` then tests x and z only. For Kay'l the window is
+        // a quad from about 20 below his feet to 84 above them; the band let
+        // in 20..39 below and turned away 39..84 above.
         {
             double lo = z.zone.quad[0][1], hi = lo;
             for (int k = 1; k < 4; ++k) {
                 lo = std::min(lo, z.zone.quad[k][1]);
                 hi = std::max(hi, z.zone.quad[k][1]);
             }
-            const double kZoneBand = std::getenv("OMK_NO_ZONE_BAND") ? 1e9 : 39.370079;
-            if (pos[1] < lo - kZoneBand || pos[1] > hi + kZoneBand) { ++heightSkips_; continue; }
+            constexpr double kZoneHeight = 19.685039;   // dword_910354
+            const double pelvis = pos[1] - actorLift_;  // Y grows downward
+            const bool open = std::getenv("OMK_NO_ZONE_BAND") != nullptr;
+            if (!open && (lo - kZoneHeight > pelvis + actorRadius_ ||
+                          hi < pelvis - actorRadius_)) { ++heightSkips_; continue; }
         }
 
         // Event 8, raised BEFORE the facing test - a zone can be touched, and

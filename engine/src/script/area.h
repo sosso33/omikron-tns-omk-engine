@@ -604,6 +604,9 @@ public:
     // him after a teleport; E2's `Walker` does, and tells the Session so the
     // subject-relative cameras and the zone scan (T13) see it.
     void setPlayerPosition(const float pos[3], float yaw);
+    // the scanning actor's box for the zone index - his pelvis above the
+    // feet and his root mesh's radius (`ZoneRegistry::setActorBox`)
+    void setPlayerZoneBox(double lift, double radius) { zones_.setActorBox(lift, radius); }
 
     // `Area_Transition` mode 0's request without a script issuing it - what
     // `area.goto <area> -1 -1` stages, with no caller to park. Public so a

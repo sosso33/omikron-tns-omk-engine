@@ -2366,6 +2366,10 @@ void PlayState::adventureShot() {
     // belongs to the vehicle, and that is applied where the model
     // is posed - putting it here moved nothing on screen at all.
     session.setPlayerPosition(player->pos(), player->facing());
+    // ...and his BOX for the zone index: the pelvis above the feet and the
+    // root mesh's radius (`Actor_ScanZones`, todo/drift-audit.md S10)
+    if (player->cameraLift() > 0.0f && player->rootRadius() > 0.0f)
+        session.setPlayerZoneBox(player->cameraLift(), player->rootRadius());
 }
 
 // The action button, MDACTION, one activation per press

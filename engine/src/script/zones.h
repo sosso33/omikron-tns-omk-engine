@@ -302,6 +302,13 @@ public:
     // (see `scanZones`). A lift shaft stacks one zone per level over one
     // footprint, so this is never 0 in the security centre and 0 in a street.
     int heightSkips() const { return heightSkips_; }
+    // THE SCANNING ACTOR'S BOX (todo/drift-audit.md S10): `Actor_ScanZones`
+    // seeds the index with his node - the PELVIS, the hierarchy root - and a
+    // half-size that is that node's `+88`, the root mesh's bounding radius.
+    // `lift` is the pelvis's height above the feet the port's position is.
+    // The defaults are Kay'l's (`HO1_FN`): 41.81, his lowest sphere's bottom
+    // (`+276`), and 42.517, `UBassin`'s radius - for a caller with no model.
+    void setActorBox(double lift, double radius) { actorLift_ = lift; actorRadius_ = radius; }
     int cameraRequests() const { return cameraRequests_; }
     int touchedCamera() const { return touchCamera_; }
 
@@ -313,6 +320,7 @@ private:
     std::function<bool(std::span<const std::byte>, std::size_t)> usedObjectProbe_;
     int  touches_ = 0, cameraRequests_ = 0, touchCamera_ = -1;
     int  heightSkips_ = 0;
+    double actorLift_ = 41.81, actorRadius_ = 42.517;
     std::vector<std::int16_t> detached_;
 
     void addTable(const ResidentSlot& s, int slotIndex, ChunkKind kind,

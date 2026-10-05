@@ -39856,6 +39856,43 @@ def c_engine_shoot_suspend():
            "where the script puts him, and what the resume restores"
 
 
+def c_engine_zone_box():
+    r"""WHICH HEIGHTS A ZONE IS FOUND FROM (`todo/drift-audit.md` S10).
+
+    `Actor_ScanZones` asks a sweep-and-prune index (`sub_431D40`, a bit per
+    axis, listed at 7) for zones whose box overlaps the actor's in x, y AND z.
+    The zone's box is its quad with `flt_52B90C` = 19.685 added ABOVE it
+    (`Zone_Add`, set at init by `sub_431600(dword_910354)`); the actor's is
+    his NODE - the pelvis - plus and minus `f32(node, 88)`, the root mesh's
+    bounding radius (`sub_431BA0(actor+8, ...)`). `Zone_ContainsPoint` then
+    tests x and z only. The port had used a one-metre band around the quad, a
+    labelled reconstruction that let in a quad 20..39 below the feet and
+    turned away one 39..84 above them.
+
+    `engine/tools/zone_box_probe.cpp` stands the player in AREA 50's zone
+    1040 with his feet at five heights from its quad: level, 25 below the
+    feet, 60 above, 40 below, 100 above - touched 1 0 1 0 0. The band gave
+    1 1 0 0 0.
+
+    Shown to fail: the band put back gives 1 1 0 0 0.
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s", "build/zone_box_probe"], cwd=eng, capture_output=True)
+    probe = os.path.join(eng, "build", "zone_box_probe")
+    if b.returncode != 0 or not os.path.exists(probe):
+        return ("build failed",), ("built",), "engine/ must build"
+    out = subprocess.run([probe, fr, os.path.join(ROOT, "tables")],
+                         capture_output=True, encoding="latin-1").stdout
+    got = [(int(a), int(t)) for a, t in _re.findall(r"^offset (-?\d+) touched (\d)$", out, _re.M)]
+    return got, [(0, 1), (25, 0), (-60, 1), (40, 0), (-100, 0)], \
+           "zone 1040 touched or not with the feet level with its quad, the " \
+           "quad 25 below them, 60 above, 40 below and 100 above"
+
+
 def c_game_clock():
     r"""GAME_STATE 6: the Omikron calendar - 41 days, 13 months, year 7216.
 
@@ -40182,7 +40219,7 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (553, [], 1, []), \
+           (554, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -42419,6 +42456,7 @@ SLOW = [
     ("engine: lift ride", c_engine_lift_ride, "todo/drift-audit.md M9; actor/walk.h"),
     ("engine: shoot freeze", c_engine_shoot_freeze, "todo/drift-audit.md S7; actor/shootmode.h"),
     ("engine: shoot suspend", c_engine_shoot_suspend, "todo/drift-audit.md S7; actor/shootmode.h"),
+    ("engine: zone box", c_engine_zone_box, "todo/drift-audit.md S10; script/zones.cpp"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),
