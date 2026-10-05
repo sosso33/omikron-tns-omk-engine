@@ -994,6 +994,11 @@ void PlayState::worldCrowd() {
             playerHeadAt[0] = r[0] + pp[0];
             playerHeadAt[1] = r[1] + pp[1] - playerFeet + rootDrop;
             playerHeadAt[2] = r[2] + pp[2];
+            // ...and the same point as an OFFSET from where he stands, which
+            // is what the camera's head subject takes: the engine re-reads the
+            // head from the body it has just moved (`sub_415050` updates the
+            // hierarchy first), so a teleport must carry the head with it
+            for (int k = 0; k < 3; ++k) playerHeadRel[k] = playerHeadAt[k] - pp[k];
             playerHeadKnown = true;
         }
         playerMeshAt.assign(pose.size() * 3, 0.0f);

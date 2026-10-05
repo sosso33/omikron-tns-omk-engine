@@ -1437,8 +1437,10 @@ void Session::tickCamera() {
         // (`player->cameraLift()`), and a travel solved here at the feet sat
         // a whole lift too low - a reader's screenshot of the Impasse
         // tutorial framing Kay'l's legs.
-        const float subj[3] = {playerPos_[0], playerPos_[1] - subjectLift_, playerPos_[2]};
-        const auto r = resolveCamera(c, subj, playerYaw_);
+        // EACH POINT BY ITS OWN SUBJECT KIND (`solveCamera`): a travel into
+        // the rooftops' ladder camera (kind 9) or a close-up on the head
+        // (kinds 1 and 3) lerps toward that point, not the pelvis.
+        const auto r = solveCamera(c);
         for (int k = 0; k < 3; ++k) { eye[k] = r.eye[k]; at[k] = r.at[k]; }
     };
     float fe[3], fa[3], te[3], ta[3];
@@ -1533,6 +1535,51 @@ void Session::trackPlayer() {
     }
     for (int k = 0; k < 3; ++k) playerPos_[k] = base[k];
     playerPlaced_ = true;
+}
+
+void Session::setCameraHeadAnchors(const float posedRel[3], float posedYaw,
+                                   const float restRel[3], float restYaw) {
+    for (int k = 0; k < 3; ++k) { headPosed_[k] = posedRel[k]; headRest_[k] = restRel[k]; }
+    headPosedYaw_ = posedYaw;
+    headRestYaw_ = restYaw;
+    headKnown_ = true;
+}
+
+bool Session::cameraAnchor(int kind, float pos[3], float& yaw) const {
+    if (kind == -1) return false;
+    if (kind == 9) {
+        if (const Address* ad = findAddress(camSubjectAddress_)) {
+            for (int k = 0; k < 3; ++k) pos[k] = static_cast<float>(ad->memPos[k]);
+            yaw = static_cast<float>(ad->memYaw);
+            return true;
+        }
+    }
+    if (headKnown_ && (kind == 1 || kind == 3)) {
+        const float* h = kind == 1 ? headPosed_ : headRest_;
+        for (int k = 0; k < 3; ++k) pos[k] = playerPos_[k] + h[k];
+        yaw = kind == 1 ? headPosedYaw_ : headRestYaw_;
+        return true;
+    }
+    pos[0] = playerPos_[0];
+    pos[1] = playerPos_[1] - subjectLift_;
+    pos[2] = playerPos_[2];
+    yaw = playerYaw_;
+    return true;
+}
+
+ResolvedCamera Session::solveCamera(const WorldCamera& c) const {
+    ResolvedCamera out;
+    for (int k = 0; k < 3; ++k) { out.eye[k] = c.eye[k]; out.at[k] = c.at[k]; }
+    float p[3], yaw;
+    if (cameraAnchor(c.eyeSubject, p, yaw)) {
+        const ResolvedCamera r = resolveCamera(c, p, yaw);
+        for (int k = 0; k < 3; ++k) out.eye[k] = r.eye[k];
+    }
+    if (cameraAnchor(c.atSubject, p, yaw)) {
+        const ResolvedCamera r = resolveCamera(c, p, yaw);
+        for (int k = 0; k < 3; ++k) out.at[k] = r.at[k];
+    }
+    return out;
 }
 
 const Address* Session::findAddress(int id) const {

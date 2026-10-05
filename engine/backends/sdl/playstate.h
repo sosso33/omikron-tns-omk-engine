@@ -351,6 +351,8 @@ struct PlayState {
     float playerHeadAt[3] = {0, 0, 0};   // the player's `Tete`, for subject kinds 0/1
     float playerHeadRise{};   // the DRAWN head over the pelvis (Y up), the swim log
     bool playerHeadKnown{};
+    float playerHeadRel[3] = {0, 0, 0};   // `playerHeadAt` less where he stood when posed
+    const char* cameraHeadFrom = "";   // where `feedCameraHead` took the head from, for the log
     std::vector<float> playerMeshAt{};   // ...and every mesh, for the shadow
     std::vector<float> playerMeshRot{};   // ...and each one's world rotation, nine
     bool playerMeshAtKnown{};
@@ -714,6 +716,7 @@ struct PlayState {
     std::vector<omk::Draw> draws{};
     bool outsideView(const float c[3], float r, bool bodies);
     void worldCamera();   // the letterbox, the camera, the instrument override
+    void feedCameraHead();   // camera subject kinds 1/3: the player's head, to the Session
     void worldTexturePool();   // the texture pool
     void worldProps();   // the world's props
     void worldGuns();   // the gun in his hand, each gunman's gun

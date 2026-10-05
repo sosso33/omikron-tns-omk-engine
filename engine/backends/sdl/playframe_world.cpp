@@ -561,6 +561,16 @@ int PlayState::phaseWorld() {
                         y = session.playerYaw();
                     };
                     const auto playerHead = [&](float out[3], float& y) {
+                        // a program's staged body when one owns the player
+                        // (lunch with Telis): the walker stops drawing him
+                        // and `playerHeadAt` freezes where he stood
+                        if (const int pid = session.playerActor(); pid >= 0)
+                            for (const auto& up : staged)
+                                if (up->actor == pid && up->headKnown) {
+                                    for (int k = 0; k < 3; ++k) out[k] = up->headAt[k];
+                                    y = up->drawnYawKnown ? up->drawnYaw : up->facing;
+                                    return;
+                                }
                         if (!playerHeadKnown) { playerBody(out, y); return; }
                         for (int k = 0; k < 3; ++k) out[k] = playerHeadAt[k];
                         y = session.playerYaw();
@@ -573,12 +583,19 @@ int PlayState::phaseWorld() {
                         y = sb->drawnYawKnown ? sb->drawnYaw : sb->facing;
                         return true;
                     };
+                    // KIND 3 IS NOT THE ANIMATED HEAD (corrected 2026-10-05,
+                    // todo/drift-audit.md): `sub_415320` reads `*(Tete)+36`,
+                    // which `sub_4942A0` accumulates as the root's world
+                    // point plus the chain's locals UNROTATED - the head's
+                    // REST offset over the body origin, untouched by the
+                    // clip and the facing. Kind 1 (`sub_415050`) is the one
+                    // that reads the posed node (+44..+52).
                     const auto npcHead = [&](float out[3], float& y) -> bool {
                         const Staged* sb = speakerBody();
-                        if (!sb) return false;
-                        y = sb->drawnYawKnown ? sb->drawnYaw : sb->facing;
-                        if (!sb->headKnown) return npcBody(out, y);
-                        for (int k = 0; k < 3; ++k) out[k] = sb->headAt[k];
+                        if (!sb || !npcBody(out, y)) return false;
+                        float rest[3];
+                        if (sb->mo && omk::headRestOffset(sb->mo->meshes, rest))
+                            for (int k = 0; k < 3; ++k) out[k] += rest[k];
                         return true;
                     };
                     switch (code) {

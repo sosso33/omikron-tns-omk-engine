@@ -272,6 +272,14 @@ struct HeadLook {
 // The head mesh of a model: the first mesh whose name ends in "tete" under
 // the first root; -1 when none.
 int headMeshOf(const std::vector<Mesh>& meshes);
+// The head's REST offset from the hierarchy root, as the engine's transform
+// pass accumulates it in a node's header `+36`: `sub_4942A0` writes
+// `header+36 = parent.header+36 + header+128` - the LOCALS summed with NO
+// rotation - and the root's `+36` is its world position. So `*(Tete)+36`,
+// which `sub_415320` (camera subject kind 3) reads, is the root's world point
+// plus this, unrotated: neither the clip's bone turns nor the actor's facing
+// reach it. False when the model has no head.
+bool headRestOffset(const std::vector<Mesh>& meshes, float out[3]);
 // Aim `pose[head]` (and every mesh under it) at `target`, both in the pose's
 // own space, the way `Actors_TickAll` does it (read 2026-10-02):
 //  1. the head's OWN rotation is wiped - `sub_437190(head, 4)` resets its

@@ -1341,6 +1341,28 @@ public:
     void  setCameraSubjectLift(float lift) { subjectLift_ = lift; }
     float cameraSubjectLift() const { return subjectLift_; }
     float playerYaw() const { return playerYaw_; }
+    // THE HEAD, for camera subject kinds 1 and 3 (todo/drift-audit.md, the
+    // follow-up to S14). `sub_415050` (kind 1) reads the `Tete` node's POSED
+    // world position (node +44..+52) and turns by the actor's Euler plus his
+    // head look; `sub_415320` (kind 3) reads `*(Tete)+36`, the root's world
+    // point plus the head's REST offset unrotated, and turns by the body
+    // node's heading. Only the frontend poses bodies, so it hands both points
+    // over each frame, as OFFSETS from `playerPos_` (the feet): the engine
+    // re-reads the head from the body it has just moved, so a teleport
+    // carries it. Until it has, both kinds fall back to kind 0's.
+    void setCameraHeadAnchors(const float posedRel[3], float posedYaw,
+                              const float restRel[3], float restYaw);
+    // `sub_415A10`: ONE point's subject resolved by its KIND - 0 the player's
+    // pelvis (+244..+252), 1 / 3 the head as above, 9 the request's ADDRESS
+    // (`sub_415850`: its in-memory integers, its integer heading). A kind with
+    // no resolver here (none ships in a world camera) takes kind 0's -
+    // LABELLED. False only for an absolute point (-1).
+    bool cameraAnchor(int kind, float pos[3], float& yaw) const;
+    // A world camera's two points, EACH by its own kind - what `sub_415D10`
+    // (the target) and `sub_415E60` (the eye) do, both calling `sub_415A10`
+    // first. The travel solves both ends with it, and so does the frontend's
+    // standing shot, so the two cannot disagree.
+    ResolvedCamera solveCamera(const WorldCamera& c) const;
     // The address the last `actor.goto_address` named, or -1. Reported so a
     // check can assert the id the script chose as well as where it landed.
     int  playerAddress() const { return playerAddress_; }
@@ -1624,6 +1646,10 @@ private:
     std::vector<NothingHere> nothingHere_;
     bool playerDriven_ = false;              // a scx.play.player* program owns him
     float subjectLift_ = 0.0f;               // feet -> pelvis, the camera's +248
+    float headPosed_[3] = {0, 0, 0};          // camera subject kind 1's point, from the feet
+    float headRest_[3]  = {0, 0, 0};          // kind 3's, from the feet
+    float headPosedYaw_ = 0.0f, headRestYaw_ = 0.0f;
+    bool  headKnown_ = false;
     bool playerWalks_ = false;               // something outside feeds his position
     int  placementSeq_ = 0;                  // landings of placeActorAt
     bool playerAnimHeld_ = false;            // Actor_HoldAnimation's 0x81 on the player

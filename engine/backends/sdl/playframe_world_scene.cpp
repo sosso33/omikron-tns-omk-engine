@@ -9,6 +9,7 @@ void PlayState::worldCamera() {
     OMK_ZONE("world: camera");   // the profiler (todo/debug-tools.md 6)
     auto& session = *session_;
     view = dlgView;
+    feedCameraHead();
     // THE LETTERBOX. Camera mode - conversations and cutscenes - is
     // 1.818:1, which the dialogue captures measure and which a reader
     // confirmed does NOT belong to free roaming. Everything the
@@ -508,26 +509,18 @@ void PlayState::worldCamera() {
         session.setCameraSubjectLift(lift);
         const float* pp0 = session.playerPos();
         const float subj[3] = {pp0[0], pp0[1] - lift, pp0[2]};
-        omk::ResolvedCamera rc = omk::resolveCamera(
-            *wc, subj, session.playerYaw());
-        // A SUBJECT OF KIND 9 IS AN ADDRESS, not the player (todo/drift-
-        // audit.md S14). `+32`/`+34` are the subject KINDS `sub_415A10`
-        // switches on, and kind 9 (`sub_415850`) reads the request's subject
-        // as an ADDRESS record: the base point its in-memory integers, the
-        // rotation (0, its integer heading, 0) - no pelvis lift. Only
-        // `camera.set.at_address` (op 126) hands one over, putting
-        // `Address_Find(field 1)` in both subject slots; the four kind-9
-        // cameras in the game (4781..4784, the rooftops' ladders) are the
-        // only ones it names, at all 84 shipped sites.
+        (void)subj;
+        // EACH POINT BY ITS SUBJECT KIND, through the Session's resolver -
+        // the one the travel solves both ends with (`Session::solveCamera`,
+        // `sub_415A10`'s switch): 0 the pelvis above, 9 the request's
+        // ADDRESS (todo/drift-audit.md S14: `sub_415850` reads the in-memory
+        // integers and the integer heading, no pelvis lift; only
+        // `camera.set.at_address`, op 126, hands one over, and the four
+        // kind-9 cameras, 4781..4784 on the rooftops' ladders, are the only
+        // ones it names), 1 and 3 the player's HEAD (`feedCameraHead`).
+        const omk::ResolvedCamera rc = session.solveCamera(*wc);
         if (wc->eyeSubject == 9 || wc->atSubject == 9) {
             if (const omk::Address* ad = session.findAddress(session.cameraSubjectAddress())) {
-                const float base[3] = {static_cast<float>(ad->memPos[0]),
-                                       static_cast<float>(ad->memPos[1]),
-                                       static_cast<float>(ad->memPos[2])};
-                const omk::ResolvedCamera ra = omk::resolveCamera(
-                    *wc, base, static_cast<float>(ad->memYaw));
-                if (wc->eyeSubject == 9) for (int k = 0; k < 3; ++k) rc.eye[k] = ra.eye[k];
-                if (wc->atSubject == 9)  for (int k = 0; k < 3; ++k) rc.at[k] = ra.at[k];
                 static int addrTold = -1000;
                 if (addrTold != wc->id * 10000 + ad->id) {
                     addrTold = wc->id * 10000 + ad->id;
@@ -537,6 +530,25 @@ void PlayState::worldCamera() {
                                 ad->memPos[2], ad->memYaw, double(rc.eye[0]),
                                 double(rc.eye[1]), double(rc.eye[2]));
                 }
+            }
+        }
+        if (wc->eyeSubject == 1 || wc->atSubject == 1 ||
+            wc->eyeSubject == 3 || wc->atSubject == 3) {
+            static int headTold = -1;
+            if (headTold != wc->id) {
+                headTold = wc->id;
+                const int kind = (wc->eyeSubject == 1 || wc->eyeSubject == 3) ? wc->eyeSubject
+                                                                              : wc->atSubject;
+                float an[3], yaw;
+                session.cameraAnchor(kind, an, yaw);
+                std::printf("frame %ld: camera %d framed on the player's HEAD (subject kinds %d/%d, "
+                            "%s) at %.1f %.1f %.1f, %.1f above the kind-0 point%s - eye %.1f %.1f %.1f "
+                            "at %.1f %.1f %.1f\n",
+                            n, wc->id, wc->eyeSubject, wc->atSubject,
+                            kind == 3 ? "sub_415320, the rest offset" : "sub_415050, the Tete node",
+                            double(an[0]), double(an[1]), double(an[2]), double(subj[1] - an[1]),
+                            cameraHeadFrom, double(rc.eye[0]), double(rc.eye[1]), double(rc.eye[2]),
+                            double(rc.at[0]), double(rc.at[1]), double(rc.at[2]));
             }
         }
         for (int k = 0; k < 3; ++k) {
@@ -1171,4 +1183,43 @@ void PlayState::worldBolts() {
     }
 
     mark("props, guns");
+}
+
+// THE PLAYER'S HEAD for camera subject kinds 1 and 3, handed to the Session
+// each frame so the travel and the standing shot resolve it alike
+// (todo/drift-audit.md, the follow-up to S14). Kind 1 (`sub_415050`) is the
+// `Tete` node's POSED world position, turned by the actor's Euler plus his
+// head look (+432..+440 - zero for the player, whom no look target turns;
+// LABELLED); kind 3 (`sub_415320`) is `*(Tete)+36`, which `sub_4942A0`
+// accumulates as the root's world point plus the parent chain's LOCALS with
+// no rotation (`omk::headRestOffset`), turned by (0, the body node's heading,
+// 0). The head is the one the look-at code aims at: a program's staged body
+// when a program owns the player, else the walker's - one frame old, since
+// the camera runs before the bodies are posed. Until the player has been
+// drawn once nothing is handed over and both kinds take kind 0's point.
+void PlayState::feedCameraHead() {
+    auto& session = *session_;
+    const Staged* asPlayer = nullptr;
+    if (const int pid = session.playerActor(); pid >= 0)
+        for (const auto& up : staged)
+            if (up->actor == pid && up->headKnown && up->mo) { asPlayer = up.get(); break; }
+    if (!asPlayer && !playerHeadKnown) { cameraHeadFrom = " (not drawn yet: kind 0's point)"; return; }
+    const float lift = player ? player->cameraLift() : 0.0f;
+    const float* pp = session.playerPos();
+    // OFFSETS from where he stands (the Session adds its own `playerPos_`):
+    // the posed head is a frame old, and an absolute point would leave a
+    // teleport's first frame framing the spot he left
+    float head[3], base[3];
+    float yaw = session.playerYaw();
+    for (int k = 0; k < 3; ++k) {
+        head[k] = asPlayer ? asPlayer->headAt[k] - pp[k] : playerHeadRel[k];
+        base[k] = asPlayer ? (asPlayer->progRan ? asPlayer->drawAt[k] : asPlayer->at[k]) - pp[k]
+                           : (k == 1 ? -lift : 0.0f);
+    }
+    if (asPlayer) yaw = asPlayer->drawnYawKnown ? asPlayer->drawnYaw : asPlayer->facing;
+    float rest[3] = {0, 0, 0};
+    omk::headRestOffset(asPlayer ? asPlayer->mo->meshes : playerMeshes, rest);
+    const float h3[3] = {base[0] + rest[0], base[1] + rest[1], base[2] + rest[2]};
+    session.setCameraHeadAnchors(head, yaw, h3, yaw);
+    cameraHeadFrom = asPlayer ? " (a program's body)" : "";
 }

@@ -40486,6 +40486,18 @@ def c_engine_address_camera():
 
     Shown to fail: the player's heading in place of the address's moves both
     eyes.
+
+    **And the TRAVELS into them** (2026-10-05, the follow-up to S14): both
+    cameras are reached by a 20-frame travel, and `Session::tickCamera`
+    solved its two ends at the PLAYER whatever their subject kind, so the
+    travel ran toward the wrong point and the view jumped when the standing
+    shot took over. Both ends now go through `Session::solveCamera`, the one
+    resolver the standing shot uses. Asserted as the largest frame-to-frame
+    move of the drawn eye (`OMK_CAMLOG`) over the two travels and the frames
+    after them (44-61, 64-82; the first frames of the first travel start
+    from the shoot camera, a separate question): the travel's own step,
+    5.5 units, and nothing larger. SHOWN TO FAIL: kind 9 resolved as kind 0
+    in `Session::cameraAnchor` moves both eyes and the step.
     """
     import subprocess, re as _re
     eng = os.path.join(ROOT, "engine")
@@ -40501,14 +40513,102 @@ def c_engine_address_camera():
          "--stand", "25428,-364,1711,267", "--shoot", "--shoot-health", "1000",
          "--keys", "28,28,28", "--keydelay", "40", "--frames", "100", "--nodelay"],
         capture_output=True, encoding="latin-1",
-        env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_CAMLOG="1"))
+    out = o.stdout
     framed = _re.findall(r"camera (\d+) framed on ADDRESS (\d+) \(subject kind 9, "
-                         r"sub_415850\) at \S+ \S+ \S+ heading (-?\d+) - eye (\S+) (\S+) (\S+)", o)
-    return framed, \
-           [("4782", "710", "90", "25436", "-433", "1707"),
-            ("4781", "709", "270", "25380", "-551", "1710")], \
+                         r"sub_415850\) at \S+ \S+ \S+ heading (-?\d+) - eye (\S+) (\S+) (\S+)", out)
+    eyes = {int(f): (float(x), float(y), float(z)) for f, x, y, z in _re.findall(
+        r"\[cam\] frame (\d+) eye (\S+) (\S+) (\S+)", o.stderr)}
+    span = [f for f in list(range(44, 62)) + list(range(64, 83)) if f in eyes and f - 1 in eyes]
+    if len(span) < 30:
+        return ("camera log", len(span)), ("camera log", ">= 30 frames"), \
+               "OMK_CAMLOG must report the travels' frames"
+    step = max(sum((eyes[f][k] - eyes[f - 1][k]) ** 2 for k in range(3)) ** 0.5 for f in span)
+    return (framed, int(step)), \
+           ([("4782", "710", "90", "25436", "-433", "1707"),
+             ("4781", "709", "270", "25380", "-551", "1710")], 5), \
            "the ladder's two cameras: id, the address framed, its heading, and the eye " \
-           "resolved against it"
+           "resolved against it; then the largest frame-to-frame move of the drawn eye " \
+           "over the two travels into them - their own step, no jump at the hand-over"
+
+
+def c_engine_head_camera():
+    r"""A WORLD CAMERA ON THE PLAYER'S HEAD - subject kinds 1 and 3
+    (`todo/drift-audit.md`, the follow-up to S14).
+
+    `sub_415A10` switches on a world camera's subject KIND, and 71 cameras
+    carry kind 1 or 3 - among them GLOBAL's 11 `CAM GLOBAL BUSTE J` and the
+    areas' 69 `CAM GLOBAL PM J` / 13 `CAM GLOBAL GP J` (the medium shot and
+    the close-up of the player, `J` for *joueur*), named at about 140 script
+    sites. Kind 1 (`sub_415050`) is the `Tete` node's POSED world position
+    (node +44..+52, after `sub_440C80` has updated the body), turned by the
+    actor's Euler plus his head look; kind 3 (`sub_415320`) is `*(Tete)+36`,
+    which `sub_4942A0` accumulates as the root's world point plus the parent
+    chain's locals UNROTATED - the head's rest offset - turned by the body
+    node's heading. The port resolved every subject at the pelvis, so the
+    close-up framed Kay'l's chest.
+
+    The route is AREA 141's tomb (zone 2281, activate, behind `Shoot Retour`
+    = 1): `camera.set 69` then `camera.set.wait 13, 40` - a medium shot
+    travelling over 40 frames into a close-up. Asserted, from the viewer's
+    own lines:
+
+    * the close-up's HEAD line: camera 13, kinds 1/1, the head 20.1 above the
+      kind-0 (pelvis) point, the eye 22 units in front of it and the aim 6
+      behind it along his facing (90: +x), both level with it;
+    * the travel at frame 61, half way: the drawn eye 3 below the head - the
+      two ends are 6 below it (camera 69) and level with it (13) - where the
+      pelvis solve put it 23 below;
+    * the largest frame-to-frame move of the drawn eye over frames 43-81:
+      the travel's own step (under 1 unit), not the 90-unit pop a head
+      handed over as a world point gave on the frame `actor.goto_address`
+      moved him (the head is a frame old, so it now travels as an OFFSET from
+      where he stands; `sub_415050` re-reads the body it has just moved).
+
+    SHOWN TO FAIL: kinds 1 and 3 resolved as kind 0 in
+    `Session::cameraAnchor` (the head line reads 0.0 above and the travel 23);
+    the head handed over as a world point (the step reads 90).
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    o = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"), "--save",
+         os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "141",
+         "--stand", "40955,1116,-3021,90", "--var", "471=1", "--shoot",
+         "--keys", "28,28,28", "--keydelay", "40", "--frames", "84", "--nodelay",
+         "--no-crowd"],
+        capture_output=True, encoding="latin-1",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_CAMLOG="1"))
+    m = _re.search(r"camera 13 framed on the player's HEAD \(subject kinds (\d+)/(\d+), "
+                   r"(\w+)[^)]*\) at (\S+) (\S+) (\S+), (\S+) above the kind-0 point[^-]*"
+                   r"- eye (\S+) (\S+) (\S+) at (\S+) (\S+) (\S+)", o.stdout)
+    if not m:
+        return ("no head line",), ("camera 13's head line",), "the close-up must be framed"
+    g = m.groups()
+    head = [float(v) for v in g[3:6]]
+    eye = [float(v) for v in g[7:10]]
+    at = [float(v) for v in g[10:13]]
+    line = (g[0], g[1], g[2], g[6],
+            tuple(round(eye[k] - head[k], 1) + 0.0 for k in range(3)),
+            tuple(round(at[k] - head[k], 1) + 0.0 for k in range(3)))
+    eyes = {int(f): (float(x), float(y), float(z)) for f, x, y, z in _re.findall(
+        r"\[cam\] frame (\d+) eye (\S+) (\S+) (\S+)", o.stderr)}
+    span = [f for f in range(43, 82) if f in eyes and f - 1 in eyes]
+    if 61 not in eyes or len(span) < 35:
+        return line + (("camera log", len(span)),), line + (("camera log", ">= 35"),), \
+               "OMK_CAMLOG must report the travel's frames"
+    mid = round(eyes[61][1] - head[1])
+    step = max(sum((eyes[f][k] - eyes[f - 1][k]) ** 2 for k in range(3)) ** 0.5 for f in span)
+    return line + (mid, int(step)), \
+           ("1", "1", "sub_415050", "20.1", (22.0, 0.0, 0.0), (-6.0, 0.0, 0.0), 3, 0), \
+           "camera 13: its kinds, the resolver, the head's rise over the pelvis point, the " \
+           "eye and the aim from the head; the travel's half-way eye below the head; the " \
+           "largest per-frame move of the drawn eye over the travel"
 
 
 def c_game_clock():
@@ -43088,6 +43188,7 @@ SLOW = [
     ("engine: camera shake", c_engine_camera_shake, "todo/astaroth.md 4; script/area.h"),
     ("engine: shoot requests", c_engine_shoot_requests, "todo/drift-audit.md S13; actor/shootmode.h"),
     ("engine: address camera", c_engine_address_camera, "todo/drift-audit.md S14; o3de/worldcam.h"),
+    ("engine: head camera", c_engine_head_camera, "todo/drift-audit.md; o3de/worldcam.h"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),

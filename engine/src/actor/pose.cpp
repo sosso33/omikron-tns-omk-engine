@@ -773,6 +773,25 @@ int headMeshOf(const std::vector<Mesh>& meshes) {
     return -1;
 }
 
+bool headRestOffset(const std::vector<Mesh>& meshes, float out[3]) {
+    out[0] = out[1] = out[2] = 0.0f;
+    const int head = headMeshOf(meshes);
+    if (head < 0) return false;
+    // up the parent chain to the root, summing each node's local; the root's
+    // own is not part of it (its `+36` is the world point the sum starts from)
+    int m = head;
+    for (int guard = 0; guard < 64 && m >= 0; ++guard) {
+        const Mesh& me = meshes[static_cast<std::size_t>(m)];
+        int next = -1;
+        for (std::size_t j = 0; j < meshes.size(); ++j)
+            if (meshes[j].id == me.parent) { next = static_cast<int>(j); break; }
+        if (next < 0) return true;          // `m` is the root
+        for (int k = 0; k < 3; ++k) out[k] += me.local[k];
+        m = next;
+    }
+    return false;
+}
+
 void aimHead(std::vector<MeshPose>& pose, const std::vector<Mesh>& meshes, int head,
              const float target[3], HeadLook& look, float dt, bool snap,
              float* wantedPitch, float* wantedYaw) {
