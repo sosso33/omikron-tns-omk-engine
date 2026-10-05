@@ -32,11 +32,11 @@
 // constraint and the reference agree. `todo/vita-port.md` records the Vulkan
 // side as a question for whoever owns that file.
 //
-// WHAT IS NOT HERE, and each is an ENHANCEMENT or has a CPU fallback:
+// THE ENHANCEMENTS (`todo/enhancements.md`), all off by default:
 //   * the mapped shadow pass and the per-pixel lights (`View::lights`,
-//     `Draw::lit`) - enhancements, off by default (`todo/enhancements.md`);
-//     `lit` is ignored and the vertex colour stands, which is what the
-//     default game draws;
+//     `Draw::lit`) - the ENHANCED PROGRAMS (`kSceneFragX`), linked in place
+//     of the default two only when either is asked for
+//     (`glesSetEnhancedLighting`), so a default run builds what it always did;
 //   * trilinear filtering, anisotropy (where the context has the extension),
 //     supersampling and MSAA (where the GL can multisample a render target -
 //     desktop GL; not GLES2, not vitaGL) are the enhancements here; bilinear
@@ -363,6 +363,241 @@ void main() {
                   g6 * 4.0 + floor(g6 / 16.0),
                   b5 * 8.0 + floor(b5 / 4.0));
     gl_FragColor = vec4(o / 255.0, 1.0);
+}
+)";
+
+// ---- THE ENHANCED PROGRAMS (`todo/enhancements.md` 6 and 7) ----------------
+//
+// The scene and posing programs again, carrying what PER-PIXEL LIGHTING and
+// the MAPPED SHADOW need - the world position and the normal - and a fragment
+// stage with `scene.frag`'s two laws transcribed. Linked IN PLACE OF the two
+// default programs, and only when either enhancement is asked for: separate
+// strings, so the Vita's cached default programs are not orphaned by them
+// (`kPosedVert`'s note), and a context that cannot build them falls back to
+// the defaults with both enhancements refused. Keep them in step with
+// `kSceneVert` / `kPosedVert` by hand.
+constexpr const char* kSceneVertX = R"(
+uniform mat4  uMvp;
+uniform vec2  uTexSize;
+uniform float uShimmerClock;
+uniform vec4 uWave0; uniform vec4 uWave1; uniform vec4 uWave2; uniform vec4 uWave3;
+uniform vec4 uWave4; uniform vec4 uWave5; uniform vec4 uWave6; uniform vec4 uWave7;
+float waveAt(float i) {
+    float b = floor(i / 4.0);
+    vec4 v = b < 1.0 ? uWave0 : b < 2.0 ? uWave1 : b < 3.0 ? uWave2 : b < 4.0 ? uWave3 :
+             b < 5.0 ? uWave4 : b < 6.0 ? uWave5 : b < 7.0 ? uWave6 : uWave7;
+    float c = i - b * 4.0;
+    return c < 1.0 ? v.x : c < 2.0 ? v.y : c < 3.0 ? v.z : v.w;
+}
+attribute vec3  aPos;
+attribute vec2  aUV;
+attribute vec3  aCol;
+attribute float aPhase;
+// a LIT draw's normals, from a buffer of their own (`uploadNormals`); every
+// other draw leaves the array off and reads a constant it never uses
+attribute vec3  aNormal;
+varying vec2  vUV;
+varying vec3  vCol;
+varying float vDepth;
+varying vec3  vWorld;
+varying vec3  vNrm;
+void main() {
+    vUV = aUV / uTexSize;
+    float ph = aPhase;
+    float tie = 0.0;
+    if (ph < -4096.0) { ph += 8192.0; tie = 1.0; }
+    float wave = 0.0;
+    if (ph >= 0.0) {
+        float i = mod(floor(floor(uShimmerClock) / 4.0) + floor(ph), 32.0);
+        wave = waveAt(i);
+    }
+    vCol = aCol + vec3(wave);
+    vWorld = aPos;
+    vNrm = aNormal;
+    gl_Position = uMvp * vec4(aPos, 1.0);
+    gl_Position.z += tie * (4.0 / 65535.0) * gl_Position.w;
+    vDepth = gl_Position.w;
+}
+)";
+
+constexpr const char* kPosedVertX = R"(
+uniform mat4  uMvp;
+uniform vec2  uTexSize;
+uniform float uShimmerClock;
+uniform vec4 uWave0; uniform vec4 uWave1; uniform vec4 uWave2; uniform vec4 uWave3;
+uniform vec4 uWave4; uniform vec4 uWave5; uniform vec4 uWave6; uniform vec4 uWave7;
+float waveAt(float i) {
+    float b = floor(i / 4.0);
+    vec4 v = b < 1.0 ? uWave0 : b < 2.0 ? uWave1 : b < 3.0 ? uWave2 : b < 4.0 ? uWave3 :
+             b < 5.0 ? uWave4 : b < 6.0 ? uWave5 : b < 7.0 ? uWave6 : uWave7;
+    float c = i - b * 4.0;
+    return c < 1.0 ? v.x : c < 2.0 ? v.y : c < 3.0 ? v.z : v.w;
+}
+attribute vec3  aPos;
+attribute vec2  aUV;
+attribute vec3  aCol;
+attribute float aPhase;
+attribute float aSlot;
+uniform vec4  uPose[128];
+attribute vec3  aNormal;
+uniform vec4  uLight[16];
+uniform float uLightCount;
+uniform float uLightBlack;
+varying vec2  vUV;
+varying vec3  vCol;
+varying float vDepth;
+varying vec3  vWorld;
+varying vec3  vNrm;
+void main() {
+    vUV = aUV / uTexSize;
+    float wave = 0.0;
+    if (aPhase >= 0.0) {
+        float i = mod(floor(floor(uShimmerClock) / 4.0) + floor(aPhase), 32.0);
+        wave = waveAt(i);
+    }
+    vCol = aCol + vec3(wave);
+    int s = int(floor(aSlot + 0.5)) * 4;
+    vec3 nrm = vec3(dot(uPose[s].xyz, aNormal), dot(uPose[s + 1].xyz, aNormal),
+                    dot(uPose[s + 2].xyz, aNormal));
+    vec3 lit = uLightBlack > 0.5 ? vec3(0.0) : aCol;
+    for (int i = 0; i < 8; ++i) {
+        if (float(i) >= uLightCount) break;
+        float t = -dot(nrm, uLight[2 * i].xyz);
+        float ti = clamp(t < 0.0 ? ceil(t) : floor(t), 0.0, 255.0);
+        vec3 a = floor(ti * uLight[2 * i + 1].rgb / 256.0) / 255.0;
+        lit = min(lit + a, vec3(1.0));
+    }
+    if (uLightCount > 0.5 || uLightBlack > 0.5) vCol = lit + vec3(wave);
+    vec3 wp = vec3(dot(uPose[s].xyz, aPos) + uPose[s].w,
+                   dot(uPose[s + 1].xyz, aPos) + uPose[s + 1].w,
+                   dot(uPose[s + 2].xyz, aPos) + uPose[s + 2].w);
+    vWorld = wp;
+    vNrm = nrm;
+    gl_Position = uMvp * vec4(wp, 1.0);
+    vDepth = gl_Position.w;
+}
+)";
+
+// `scene.frag`'s per-pixel light (`sub_493E40` per fragment: the reach test,
+// the LINEAR falloff between the two radii, `k = intensity * 256 * fall`,
+// `-(N.L)` and the `(t * c) >> 8` ramp) and its mapped-shadow lookup (an
+// orthographic slab fitted to the casters, 3x3 PCF, a caster never receives),
+// over `kSceneFrag`. The map's depth arrives PACKED into RGBA8 (`kShadowFrag`):
+// GLES2 guarantees no depth texture.
+constexpr const char* kSceneFragX = R"(
+uniform sampler2D uTex;
+uniform int   uCutout;
+uniform float uFogStart;
+uniform float uFogEnd;
+uniform vec3  uFogColour;
+uniform float uLit;        // 0 the baked colour, 1 lit from BLACK, 2 lit ADDED to it
+uniform float uCaster;     // a caster does not receive
+uniform vec4  uPL[24];     // 8 lights: (pos, outer radius), (dir, inner), (colour, intensity)
+uniform float uPLCount;
+uniform sampler2D uShadow;
+uniform mat4  uLightMvp;
+uniform vec4  uShadowP;    // strength (0: no shadow this frame), texel, bias
+varying vec2  vUV;
+varying vec3  vCol;
+varying float vDepth;
+varying vec3  vWorld;
+varying vec3  vNrm;
+vec3 litColour(vec3 n, vec3 w) {
+    vec3 c = vec3(0.0);
+    for (int i = 0; i < 8; ++i) {
+        if (float(i) >= uPLCount) break;
+        vec4 pa = uPL[3 * i];
+        vec4 db = uPL[3 * i + 1];
+        vec4 ci = uPL[3 * i + 2];
+        vec3 d = w - pa.xyz;
+        float d2 = dot(d, d);
+        if (d2 > pa.w * pa.w) continue;      // the engine's own reach test
+        if (pa.w <= db.w) continue;          // a degenerate pair lights nothing
+        float fall = min(1.0 - (sqrt(d2) - db.w) / (pa.w - db.w), 1.0);
+        float k = ci.a * 256.0 * fall;
+        if (k <= 0.0) continue;
+        float t = -dot(n, db.xyz * k);
+        if (t <= 0.0) continue;
+        c += min(t * ci.rgb / 256.0, vec3(1.0));
+    }
+    return min(c, vec3(1.0));
+}
+float unpackDepth(vec4 e) {
+    return dot(e, vec4(1.0, 1.0 / 255.0, 1.0 / 65025.0, 1.0 / 16581375.0));
+}
+float litness() {
+    if (uShadowP.x <= 0.0 || uCaster > 0.5) return 1.0;
+    vec4 lp = uLightMvp * vec4(vWorld, 1.0);
+    if (lp.w <= 0.0) return 1.0;
+    vec3 p = lp.xyz / lp.w;
+    vec2 uv = p.xy * 0.5 + 0.5;
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 1.0;
+    if (p.z < 0.0 || p.z > 1.0) return 1.0;
+    float lit = 0.0;
+    for (int j = -1; j <= 1; ++j)
+        for (int i = -1; i <= 1; ++i) {
+            float d = unpackDepth(texture2D(uShadow, uv + vec2(float(i), float(j)) * uShadowP.y));
+            lit += (p.z - uShadowP.z <= d) ? 1.0 : 0.0;
+        }
+    return mix(1.0 - uShadowP.x, 1.0, lit / 9.0);
+}
+void main() {
+    vec4 t = texture2D(uTex, vUV);
+    if (uCutout != 0) {
+        if (t.a < 0.5) discard;
+        t.rgb /= t.a;
+    }
+    vec3 shade = vCol;
+    if (uLit > 1.5) shade = min(vCol + litColour(normalize(vNrm), vWorld), vec3(1.0));
+    else if (uLit > 0.5) shade = litColour(normalize(vNrm), vWorld);
+    vec3 c = clamp(t.rgb * shade * litness(), 0.0, 1.0);
+    if (uFogEnd > uFogStart && vDepth > uFogStart) {
+        float f = clamp((uFogEnd - vDepth) / (uFogEnd - uFogStart), 0.0, 1.0);
+        c = mix(uFogColour, c, f);
+    }
+    gl_FragColor = vec4(c, 1.0);
+}
+)";
+
+// THE SHADOW MAP's DEPTH PASS: the casters from the light, their slab depth
+// (0..1, `uLightMvp`'s z) PACKED into the RGBA8 target - the 8-bit fractions of
+// one float, read back by `unpackDepth`. GL's depth buffer orders the casters;
+// its clip z is the slab's remapped to -1..1.
+constexpr const char* kShadowVert = R"(
+uniform mat4 uLightMvp;
+attribute vec3 aPos;
+varying float vZ;
+void main() {
+    vec4 p = uLightMvp * vec4(aPos, 1.0);
+    vZ = p.z;
+    gl_Position = vec4(p.xy, p.z * 2.0 - 1.0, p.w);
+}
+)";
+
+constexpr const char* kShadowPosedVert = R"(
+uniform mat4 uLightMvp;
+uniform vec4 uPose[128];
+attribute vec3 aPos;
+attribute float aSlot;
+varying float vZ;
+void main() {
+    int s = int(floor(aSlot + 0.5)) * 4;
+    vec3 wp = vec3(dot(uPose[s].xyz, aPos) + uPose[s].w,
+                   dot(uPose[s + 1].xyz, aPos) + uPose[s + 1].w,
+                   dot(uPose[s + 2].xyz, aPos) + uPose[s + 2].w);
+    vec4 p = uLightMvp * vec4(wp, 1.0);
+    vZ = p.z;
+    gl_Position = vec4(p.xy, p.z * 2.0 - 1.0, p.w);
+}
+)";
+
+constexpr const char* kShadowFrag = R"(
+varying float vZ;
+void main() {
+    float d = clamp(vZ, 0.0, 0.99999);
+    vec4 e = fract(d * vec4(1.0, 255.0, 65025.0, 16581375.0));
+    e -= e.yzww * vec4(1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0, 0.0);
+    gl_FragColor = e;
 }
 )";
 
@@ -728,6 +963,19 @@ public:
     }
     int samples() const { return samples_; }
     int maxSamples() const { return maxSamples_; }
+    // PER-PIXEL LIGHTING and the MAPPED SHADOW (`todo/enhancements.md` 7 and
+    // 6): asked before `init`, which links the enhanced programs only then
+    // (`kSceneFragX`) - so a run that asks for neither builds, compiles and
+    // caches exactly what it did before. What `init` could build is what the
+    // two questions below answer, and the frontend refuses what they deny.
+    void setEnhancedLighting(bool perPixel, bool shadowMap) {
+        if (ready_) return;
+        wantPixLights_ = perPixel;
+        wantShadowMap_ = shadowMap;
+    }
+    bool drawsPixelLights() const override { return pixLights_; }
+    bool drawsShadowMap() const override { return shadowMap_; }
+    void shadowPass(const View& v, std::span<const Draw> casters) override;
 
     // ---- presentation, the window side. `frameW x frameH` is the ENGINE's
     // frame (640x480); the window is whatever the device has (960x544 on a
@@ -809,7 +1057,10 @@ public:
     void notePresent() { ++presentSeq_; }
 private:
 
-    bool uploadGeometry(const Geometry* g);
+    // `allowStream` false: never into the ring - a LIT draw reads its normals
+    // from a buffer of their own at the same corner index, which the ring's
+    // offset would break
+    bool uploadGeometry(const Geometry* g, bool allowStream = true);
     void setView(const View& view);
 public:
     bool drawMirrorScene(const View& v, const View& refl, std::span<const Draw> scene,
@@ -883,6 +1134,9 @@ private:
               fogStart = -1, fogEnd = -1, fogColour = -1, pose = -1,
               light = -1, lightCount = -1, lightBlack = -1;
         GLint wave[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
+        // the enhanced programs' (`kSceneFragX`); -1 in the default ones
+        GLint lit = -1, caster = -1, pl = -1, plCount = -1, shadow = -1, lightMvp = -1,
+              shadowP = -1;
     };
     SceneLoc mainLoc_, posedLoc_;
     GLuint curProg_ = 0;
@@ -916,6 +1170,28 @@ private:
     // a body with more meshes than `kPoseSlots`, posed here - per geometry
     std::unordered_map<const Geometry*, Geometry> cpuPosed_;
     bool uploadPosedGeometry(const Geometry* g, PoseVbo*& out);
+    // `uPose`'s values for a posed draw - one affine a slot - into `poseUni_`
+    void buildPoseUniforms(const Draw& d, const PoseVbo& pv);
+    // A BODY WITH MORE MESHES THAN THE PROGRAM HOLDS, posed here on the CPU
+    // into a geometry of its own - and its normals turned with it when the
+    // per-pixel light reads them. -> the draw to make instead.
+    Draw cpuPose(const Draw& d);
+    // ---- the enhancements' state (`setEnhancedLighting`)
+    bool wantPixLights_ = false, wantShadowMap_ = false;
+    bool pixLights_ = false, shadowMap_ = false;
+    // a LIT plain draw's normals, a buffer of their own (GpuVert carries none)
+    struct NrmVbo { GLuint id = 0; std::size_t n = 0; std::uint64_t rev = ~std::uint64_t{0}; };
+    std::unordered_map<const Geometry*, NrmVbo> nrmVbo_;
+    std::vector<float> nrmUp_;
+    bool uploadNormals(const Geometry* g);
+    // the shadow map: an RGBA8 target holding packed slab depth, its depth
+    // buffer, and the two programs that fill it
+    static constexpr int kShadowSide = 1024;
+    GLuint shFbo_ = 0, shTex_ = 0, shDepth_ = 0, shProg_ = 0, shPosed_ = 0;
+    GLint shMvp_ = -1, shPosedMvp_ = -1, shPosedPose_ = -1;
+    bool shadowLive_ = false;              // a depth pass was made this frame
+    float lightMvp_[16] = {};
+    float shadowStrength_ = 0.0f;
     // THE POSING PROGRAM CHECKED ON THE DEVICE (2026-09-26): see the body.
     bool poseSelfTest();
     bool usePosed(const Draw& d) const { return d.meshPose && d.meshPoses && posed_; }
@@ -934,6 +1210,7 @@ private:
         bool valid = false;
         float texW = 0, texH = 0, fogStart = 0, fogEnd = 0, fog[3] = {0, 0, 0};
         int cutout = 0;
+        float lit = -1, caster = -1;       // the enhanced programs'
         // the posed program's lights
         int lights = -1; float lightBlack = -1; std::vector<float> lightVals;
     };
@@ -967,6 +1244,11 @@ private:
         if (auto it = r->poseVbo_.find(g); it != r->poseVbo_.end()) {
             r->deadBufs_.push_back(it->second.id);
             r->poseVbo_.erase(it);
+            had = true;
+        }
+        if (auto it = r->nrmVbo_.find(g); it != r->nrmVbo_.end()) {
+            r->deadBufs_.push_back(it->second.id);
+            r->nrmVbo_.erase(it);
             had = true;
         }
         had |= r->tie_.erase(g) > 0;
@@ -1041,6 +1323,12 @@ GlesRenderer::~GlesRenderer() {
     if (presentSS_) glDeleteProgram(presentSS_);
     for (auto& [g, pv] : poseVbo_) deleteBuffers(1, &pv.id);
     if (posed_) glDeleteProgram(posed_);
+    for (auto& [g, nb] : nrmVbo_) deleteBuffers(1, &nb.id);
+    if (shTex_) deleteTextures(1, &shTex_);
+    if (shDepth_) deleteRenderbuffers(1, &shDepth_);
+    if (shFbo_) glDeleteFramebuffers(1, &shFbo_);
+    if (shProg_) glDeleteProgram(shProg_);
+    if (shPosed_) glDeleteProgram(shPosed_);
 }
 
 bool GlesRenderer::init(int w, int h) {
@@ -1070,15 +1358,35 @@ bool GlesRenderer::init(int w, int h) {
     }
     rw_ = w_ * ss_; rh_ = h_ * ss_;
     rgba_.assign(static_cast<std::size_t>(rw_) * rh_ * 4, 0);
-    prog_ = link(kSceneVert, kSceneFrag, {{kAttrPos, "aPos"}, {kAttrUV, "aUV"},
-                                          {kAttrCol, "aCol"}, {kAttrPhase, "aPhase"}});
+    // THE ENHANCED PROGRAMS, in place of the default two when either
+    // enhancement is asked for; a context that cannot build them keeps the
+    // defaults and refuses both (`drawsPixelLights` / `drawsShadowMap`)
+    bool enhanced = false;
+    if (wantPixLights_ || wantShadowMap_) {
+        prog_ = link(kSceneVertX, kSceneFragX, {{kAttrPos, "aPos"}, {kAttrUV, "aUV"},
+                                                {kAttrCol, "aCol"}, {kAttrPhase, "aPhase"},
+                                                {kAttrNormal, "aNormal"}});
+        if (prog_) {
+            posed_ = link(kPosedVertX, kSceneFragX,
+                          {{kAttrPos, "aPos"}, {kAttrUV, "aUV"}, {kAttrCol, "aCol"},
+                           {kAttrPhase, "aPhase"}, {kAttrSlot, "aSlot"}, {kAttrNormal, "aNormal"}});
+            if (!posed_) std::fprintf(stderr, "gles: no enhanced posing program - bodies are posed on the CPU\n");
+            enhanced = true;
+        } else {
+            std::printf("gles: the enhanced scene program did not build - per-pixel lighting and "
+                        "mapped shadows refused\n");
+        }
+    }
+    if (!prog_)
+        prog_ = link(kSceneVert, kSceneFrag, {{kAttrPos, "aPos"}, {kAttrUV, "aUV"},
+                                              {kAttrCol, "aCol"}, {kAttrPhase, "aPhase"}});
     present_ = link(kPresentVert, kPresentFrag, {{0, "aPos"}});
     if (!prog_ || !present_) return false;
     // ALL THREE PROGRAMS AT START: a shader first linked mid-game would be
     // missing from a shader cache made by one short run (`todo/vita-port.md`,
     // the precompiled shaders). Its uniforms are still looked up on first use.
     overlay_ = link(kPresentVert, kOverlayFrag, {{0, "aPos"}});
-    {
+    if (!enhanced) {
         // at start with the others, for the shader cache (above); a context
         // that cannot build it simply poses on the CPU
         posed_ = link(kPosedVert, kSceneFrag,
@@ -1113,6 +1421,13 @@ bool GlesRenderer::init(int w, int h) {
         L.light = glGetUniformLocation(p, "uLight");
         L.lightCount = glGetUniformLocation(p, "uLightCount");
         L.lightBlack = glGetUniformLocation(p, "uLightBlack");
+        L.lit = glGetUniformLocation(p, "uLit");
+        L.caster = glGetUniformLocation(p, "uCaster");
+        L.pl = glGetUniformLocation(p, "uPL");
+        L.plCount = glGetUniformLocation(p, "uPLCount");
+        L.shadow = glGetUniformLocation(p, "uShadow");
+        L.lightMvp = glGetUniformLocation(p, "uLightMvp");
+        L.shadowP = glGetUniformLocation(p, "uShadowP");
     };
     locsOf(prog_, mainLoc_);
     if (posed_) locsOf(posed_, posedLoc_);
@@ -1132,11 +1447,51 @@ bool GlesRenderer::init(int w, int h) {
     for (int i = 0; i < 32; ++i) wave[i] = static_cast<float>(kShimmerWave[i]) / 255.0f;
     for (int k = 0; k < 8; ++k) glUniform4fv(uWave_[k], 1, wave + 4 * k);
     glUniform1i(uTex_, 0);
+    if (mainLoc_.shadow >= 0) glUniform1i(mainLoc_.shadow, 2);   // the shadow map's unit
     if (posed_) {
         glUseProgram(posed_);
         for (int k = 0; k < 8; ++k) glUniform4fv(posedLoc_.wave[k], 1, wave + 4 * k);
         glUniform1i(posedLoc_.tex, 0);
+        if (posedLoc_.shadow >= 0) glUniform1i(posedLoc_.shadow, 2);
         glUseProgram(prog_);
+    }
+    if (enhanced) {
+        pixLights_ = wantPixLights_;
+        if (wantShadowMap_) {
+            // THE SHADOW MAP: 1024 x 1024 as Vulkan's, RGBA8 holding packed
+            // depth, NEAREST (the PCF is the shader's own nine taps)
+            shProg_ = link(kShadowVert, kShadowFrag, {{kAttrPos, "aPos"}});
+            if (posed_) shPosed_ = link(kShadowPosedVert, kShadowFrag, {{kAttrPos, "aPos"}, {kAttrSlot, "aSlot"}});
+            if (shProg_) {
+                shMvp_ = glGetUniformLocation(shProg_, "uLightMvp");
+                if (shPosed_) {
+                    shPosedMvp_ = glGetUniformLocation(shPosed_, "uLightMvp");
+                    shPosedPose_ = glGetUniformLocation(shPosed_, "uPose");
+                }
+                glGenTextures(1, &shTex_);
+                glBindTexture(GL_TEXTURE_2D, shTex_);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, kShadowSide, kShadowSide, 0, GL_RGBA,
+                             GL_UNSIGNED_BYTE, nullptr);
+gpuTexture("render targets", shTex_, 4LL * kShadowSide * kShadowSide);
+                glGenRenderbuffers(1, &shDepth_);
+                glBindRenderbuffer(GL_RENDERBUFFER, shDepth_);
+                glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, kShadowSide, kShadowSide);
+gpuRenderbuffer("render targets", shDepth_, 2LL * kShadowSide * kShadowSide);
+                glGenFramebuffers(1, &shFbo_);
+                glBindFramebuffer(GL_FRAMEBUFFER, shFbo_);
+                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, shTex_, 0);
+                glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, shDepth_);
+                shadowMap_ = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+                glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            }
+            if (!shadowMap_) std::printf("gles: the shadow map did not build - mapped shadows refused\n");
+        }
+        std::printf("gles: enhanced programs - per-pixel lighting %s, mapped shadows %s\n",
+                    pixLights_ ? "on" : "off", shadowMap_ ? "on" : "off");
     }
 
     // THE RENDER TARGET. Offscreen, at the ENGINE's size, because three
@@ -1207,6 +1562,13 @@ bool GlesRenderer::init(int w, int h) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, wpx);
 gpuTexture("textures", white_.id, 4);
+    // the shadow map's unit holds the white texel until a depth pass fills
+    // it, so no draw - the posing self-test's included - samples nothing
+    if (mainLoc_.shadow >= 0) {
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, white_.id);
+        glActiveTexture(GL_TEXTURE0);
+    }
 
     // the dither matrix - `omk::kBayer4`, the one the software dither and the
     // readback use - as a texture, so the fragment stage needs no array
@@ -1591,21 +1953,21 @@ gpuBuffer("vertex buffers", ring_, 3LL * kRingCorners * sizeof(GpuVert));
     return true;
 }
 
-bool GlesRenderer::uploadGeometry(const Geometry* g) {
+bool GlesRenderer::uploadGeometry(const Geometry* g, bool allowStream) {
     // The Vulkan backend's contract, verbatim in intent: cached by POINTER
     // while the revision holds; the same object with new vertices refills in
     // place, and when the geometry names the corners that moved since the
     // revision this buffer holds, only those are written.
     auto it = vbo_.find(g);
     if (it != vbo_.end() && it->second.rev == g->revision) {
-        if (!it->second.streamed || it->second.streamFrame == frameSeq_) return true;
+        if (!it->second.streamed || (allowStream && it->second.streamFrame == frameSeq_)) return true;
         // streamed corners are one frame's: unchanged since, it goes back to
         // its own buffer (a whole refill below)
         it->second.streamed = false;
         it->second.rev = 0;
     }
     if (g->corners.empty()) return false;
-    if (streamOn_ && (!tieOn_ || baked_.count(g)) && it != vbo_.end() && it->second.lastWhole + 1 >= frameSeq_ &&
+    if (streamOn_ && allowStream && (!tieOn_ || baked_.count(g)) && it != vbo_.end() && it->second.lastWhole + 1 >= frameSeq_ &&
         !(g->dirtyTo != 0 && g->dirtyTo == g->revision && it->second.rev == g->dirtyFrom &&
           it->second.n == g->corners.size()) &&
         streamToRing(g, it->second))
@@ -1992,6 +2354,35 @@ void GlesRenderer::begin(const View& view) {
     glUseProgram(prog_);
     curProg_ = prog_;
     glUniform1f(uClock_, view.shimmerClock);
+    // THE ENHANCEMENTS' per-frame state, on both programs: the set's lights
+    // (`View::lights`, nearest first, at most eight) and the shadow map the
+    // depth pass just filled - or a strength of 0, which turns the lookup off
+    if (pixLights_ || shadowMap_) {
+        float pl[24 * 4] = {};
+        const int nl = pixLights_ ? static_cast<int>(std::min<std::size_t>(
+                                        view.lights.size(), static_cast<std::size_t>(View::kMaxGpuLights)))
+                                  : 0;
+        for (int i = 0; i < nl; ++i) {
+            const auto& l = view.lights[static_cast<std::size_t>(i)];
+            float* o = pl + 12 * i;
+            for (int k = 0; k < 3; ++k) { o[k] = l.pos[k]; o[4 + k] = l.dir[k]; o[8 + k] = l.colour[k]; }
+            o[3] = l.radiusA; o[7] = l.radiusB; o[11] = l.intensity;
+        }
+        const float sp[4] = {shadowLive_ ? shadowStrength_ : 0.0f, 1.0f / kShadowSide, 0.0015f, 0.0f};
+        for (const GLuint p : {prog_, posed_}) {
+            if (!p) continue;
+            const SceneLoc& L = p == prog_ ? mainLoc_ : posedLoc_;
+            glUseProgram(p);
+            if (L.pl >= 0 && nl > 0) glUniform4fv(L.pl, 3 * nl, pl);
+            if (L.plCount >= 0) glUniform1f(L.plCount, static_cast<float>(nl));
+            if (L.shadowP >= 0) glUniform4fv(L.shadowP, 1, sp);
+            if (L.lightMvp >= 0) glUniformMatrix4fv(L.lightMvp, 1, GL_FALSE, lightMvp_);
+        }
+        glUseProgram(prog_);
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, shadowLive_ ? shTex_ : white_.id);
+        glActiveTexture(GL_TEXTURE0);
+    }
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
     glDisable(GL_CULL_FACE);
@@ -2094,33 +2485,190 @@ void GlesRenderer::resolvePosedTies(const Draw& d, PoseVbo& pv) {
     g_glesInTie = false;
 }
 
+void GlesRenderer::buildPoseUniforms(const Draw& d, const PoseVbo& pv) {
+    // one affine a slot: the mesh's, or the identity for a corner no mesh
+    // owns (`applyPose` leaves those at rest)
+    const std::size_t slots = pv.meshOfSlot.size();
+    poseUni_.assign(slots * 16u, 0.0f);            // four rows a slot (`kPosedVert`)
+    for (std::size_t sl = 0; sl < slots; ++sl) {
+        const std::int32_t m = pv.meshOfSlot[sl];
+        float* o = poseUni_.data() + 16 * sl;
+        if (m >= 0 && static_cast<std::size_t>(m) < d.meshPoses) {
+            std::memcpy(o, d.meshPose + 12 * static_cast<std::size_t>(m), 12 * sizeof(float));
+        } else {
+            o[0] = 1.0f; o[5] = 1.0f; o[10] = 1.0f;
+        }
+    }
+}
+
+Draw GlesRenderer::cpuPose(const Draw& d) {
+    Geometry& cp = cpuPosed_[d.geo];
+    d.geo->resident.mark();
+    if (cp.corners.size() != d.geo->corners.size()) cp = *d.geo;
+    for (std::size_t i = 0; i < cp.corners.size(); ++i) {
+        const Corner& rc = d.geo->corners[i];
+        const std::int32_t m = d.geo->cornerMesh[i];
+        Corner& c = cp.corners[i];
+        if (m < 0 || static_cast<std::size_t>(m) >= d.meshPoses) {
+            c.x = rc.x; c.y = rc.y; c.z = rc.z;
+            if (pixLights_) { c.nx = rc.nx; c.ny = rc.ny; c.nz = rc.nz; }
+            continue;
+        }
+        const float* a = d.meshPose + 12 * static_cast<std::size_t>(m);
+        c.x = a[0] * rc.x + a[1] * rc.y + a[2] * rc.z + a[3];
+        c.y = a[4] * rc.x + a[5] * rc.y + a[6] * rc.z + a[7];
+        c.z = a[8] * rc.x + a[9] * rc.y + a[10] * rc.z + a[11];
+        if (pixLights_) {
+            c.nx = a[0] * rc.nx + a[1] * rc.ny + a[2] * rc.nz;
+            c.ny = a[4] * rc.nx + a[5] * rc.ny + a[6] * rc.nz;
+            c.nz = a[8] * rc.nx + a[9] * rc.ny + a[10] * rc.nz;
+        }
+    }
+    cp.revision = d.geo->revision + (++cpuPoseRev_ << 32);
+    Draw c = d;
+    c.geo = &cp;
+    c.meshPose = nullptr;
+    c.meshPoses = 0;
+    return c;
+}
+
+bool GlesRenderer::uploadNormals(const Geometry* g) {
+    NrmVbo& nb = nrmVbo_[g];
+    const std::size_t n = g->corners.size();
+    if (nb.id && nb.rev == g->revision && nb.n == n) return true;
+    if (!n) return false;
+    nrmUp_.resize(3 * n);
+    for (std::size_t k = 0; k < n; ++k) {
+        nrmUp_[3 * k] = g->corners[k].nx;
+        nrmUp_[3 * k + 1] = g->corners[k].ny;
+        nrmUp_[3 * k + 2] = g->corners[k].nz;
+    }
+    if (!nb.id) glGenBuffers(1, &nb.id);
+    glBindBuffer(GL_ARRAY_BUFFER, nb.id);
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(nrmUp_.size() * sizeof(float)),
+                 nrmUp_.data(), GL_DYNAMIC_DRAW);
+gpuBuffer("vertex buffers", nb.id, static_cast<long long>(nrmUp_.size() * sizeof(float)));
+    ds_.attrBuf = 0;                      // the next draw re-points its attributes
+    ++g_glesFrame.uploads;
+    g_glesFrame.uploadBytes += static_cast<long>(nrmUp_.size() * sizeof(float));
+    nb.n = n;
+    nb.rev = g->revision;
+    g->resident.mark();
+    return true;
+}
+
+// THE DEPTH PASS FROM THE LIGHT - `todo/enhancements.md` row 6, Vulkan's
+// `shadowPass` on this API. The same ORTHOGRAPHIC slab fitted to the casters
+// (a fragment outside it is lit by definition), the same basis and the same
+// 0..1 slab depth - which `kShadowFrag` packs into RGBA8 and `kSceneFragX`
+// unpacks, GLES2 guaranteeing no depth texture. A body the renderer poses is
+// posed here too (`kShadowPosedVert`), one with more meshes than the program
+// holds on the CPU, as the scene pass does.
+void GlesRenderer::shadowPass(const View& v, std::span<const Draw> casters) {
+    if (!shadowMap_ || !v.shadow.on || casters.empty()) return;
+    const float R = v.shadow.radius > 1.0f ? v.shadow.radius : 1.0f;
+    float f[3] = {v.shadow.dir[0], v.shadow.dir[1], v.shadow.dir[2]};
+    const float fl = std::sqrt(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
+    if (fl < 1e-6f) return;
+    for (float& c : f) c /= fl;
+    float up[3] = {0.0f, -1.0f, 0.0f};
+    if (std::fabs(f[0] * up[0] + f[1] * up[1] + f[2] * up[2]) > 0.99f) {
+        up[0] = 1.0f; up[1] = 0.0f; up[2] = 0.0f;
+    }
+    float r[3] = {up[1] * f[2] - up[2] * f[1], up[2] * f[0] - up[0] * f[2],
+                  up[0] * f[1] - up[1] * f[0]};
+    const float rl = std::sqrt(r[0] * r[0] + r[1] * r[1] + r[2] * r[2]);
+    for (float& c : r) c /= rl;
+    float u[3] = {f[1] * r[2] - f[2] * r[1], f[2] * r[0] - f[0] * r[2],
+                  f[0] * r[1] - f[1] * r[0]};
+    const float back = R * 2.0f;
+    float eye[3];
+    for (int k = 0; k < 3; ++k) eye[k] = v.shadow.centre[k] - f[k] * back;
+    const float far = back + R * 2.0f;
+    float m[16] = {};
+    const float* ax[3] = {r, u, f};
+    const float sc[3] = {1.0f / R, 1.0f / R, 1.0f / far};
+    for (int row = 0; row < 3; ++row) {
+        float dd = 0.0f;
+        for (int c = 0; c < 3; ++c) {
+            m[c * 4 + row] = ax[row][c] * sc[row];
+            dd += ax[row][c] * eye[c];
+        }
+        m[12 + row] = -dd * sc[row];
+    }
+    m[15] = 1.0f;
+
+    // a new presented frame starts HERE when the depth pass precedes `begin`,
+    // so a geometry streamed now lands in this frame's third of the ring
+    if (frameFromPresent_ != presentSeq_) { frameFromPresent_ = presentSeq_; ++frameSeq_; }
+    glBindFramebuffer(GL_FRAMEBUFFER, shFbo_);
+    glViewport(0, 0, kShadowSide, kShadowSide);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glDepthMask(GL_TRUE);
+    glClearColor(1.0f, 1.0f, 1.0f, 1.0f);    // packed "far": past every slab depth
+    OMK_GL_CLEAR_DEPTH(1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    for (GLuint a = 0; a <= kAttrNormal; ++a) glDisableVertexAttribArray(a);
+    glEnableVertexAttribArray(kAttrPos);
+    bool mvpPlain = false, mvpPosed = false;
+    for (const Draw& d0 : casters) {
+        if (!d0.geo || !d0.count) continue;
+        Draw d = d0;
+        PoseVbo* pv = nullptr;
+        bool posed = usePosed(d) && shPosed_;
+        if (posed) {
+            if (!uploadPosedGeometry(d.geo, pv)) continue;
+            if (pv->meshOfSlot.size() > static_cast<std::size_t>(kPoseSlots)) { d = cpuPose(d0); posed = false; }
+        } else if (usePosed(d)) {
+            d = cpuPose(d0);
+        }
+        if (posed) {
+            useProgram(shPosed_);
+            if (!mvpPosed) { glUniformMatrix4fv(shPosedMvp_, 1, GL_FALSE, m); mvpPosed = true; }
+            buildPoseUniforms(d, *pv);
+            glUniform4fv(shPosedPose_, static_cast<GLsizei>(pv->meshOfSlot.size() * 4), poseUni_.data());
+            glBindBuffer(GL_ARRAY_BUFFER, pv->id);
+            glEnableVertexAttribArray(kAttrSlot);
+            glVertexAttribPointer(kAttrPos, 3, GL_FLOAT, GL_FALSE, sizeof(GpuPoseVert), nullptr);
+            glVertexAttribPointer(kAttrSlot, 1, GL_FLOAT, GL_FALSE, sizeof(GpuPoseVert),
+                                  reinterpret_cast<const void*>(offsetof(GpuPoseVert, slot)));
+            glDrawArrays(GL_TRIANGLES, static_cast<GLint>(d.start), static_cast<GLsizei>(d.count));
+            glDisableVertexAttribArray(kAttrSlot);
+        } else {
+            if (!uploadGeometry(d.geo, !(pixLights_ && d.lit))) continue;
+            const Vbo& vb = vbo_[d.geo];
+            useProgram(shProg_);
+            if (!mvpPlain) { glUniformMatrix4fv(shMvp_, 1, GL_FALSE, m); mvpPlain = true; }
+            glBindBuffer(GL_ARRAY_BUFFER, vb.streamed ? ring_ : vb.id);
+            glVertexAttribPointer(kAttrPos, 3, GL_FLOAT, GL_FALSE, sizeof(GpuVert), nullptr);
+            glDrawArrays(GL_TRIANGLES, static_cast<GLint>((vb.streamed ? vb.base : 0) + d.start),
+                         static_cast<GLsizei>(d.count));
+        }
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    forgetState();                            // `begin` sets every draw state afresh
+    std::memcpy(lightMvp_, m, sizeof m);
+    shadowStrength_ = v.shadow.strength;
+    shadowLive_ = true;
+}
+
 void GlesRenderer::submit(const Draw& d) {
     if (!recording_ || !d.geo || !d.count) return;
     PoseVbo* pvb = nullptr;
     bool posed = usePosed(d);
+    // a LIT plain draw reads its normals from a buffer of their own
+    const bool litNrm = !posed && pixLights_ && d.lit != 0;
     const double fu0 = glesClockMs();
-    bool uploaded = posed ? uploadPosedGeometry(d.geo, pvb) : uploadGeometry(d.geo);
+    bool uploaded = posed ? uploadPosedGeometry(d.geo, pvb) : uploadGeometry(d.geo, !litNrm);
+    if (uploaded && litNrm) uploaded = uploadNormals(d.geo);
     if (posed && uploaded && pvb->meshOfSlot.size() > static_cast<std::size_t>(kPoseSlots)) {
         // MORE MESHES THAN THE PROGRAM HOLDS: pose it here, on the CPU, into a
         // geometry of its own, and draw that the ordinary way
-        Geometry& cp = cpuPosed_[d.geo];
-        d.geo->resident.mark();
-        if (cp.corners.size() != d.geo->corners.size()) cp = *d.geo;
-        for (std::size_t i = 0; i < cp.corners.size(); ++i) {
-            const Corner& rc = d.geo->corners[i];
-            const std::int32_t m = d.geo->cornerMesh[i];
-            Corner& c = cp.corners[i];
-            if (m < 0 || static_cast<std::size_t>(m) >= d.meshPoses) { c.x = rc.x; c.y = rc.y; c.z = rc.z; continue; }
-            const float* a = d.meshPose + 12 * static_cast<std::size_t>(m);
-            c.x = a[0] * rc.x + a[1] * rc.y + a[2] * rc.z + a[3];
-            c.y = a[4] * rc.x + a[5] * rc.y + a[6] * rc.z + a[7];
-            c.z = a[8] * rc.x + a[9] * rc.y + a[10] * rc.z + a[11];
-        }
-        cp.revision = d.geo->revision + (++cpuPoseRev_ << 32);
-        Draw c = d;
-        c.geo = &cp;
-        c.meshPose = nullptr;
-        c.meshPoses = 0;
+        const Draw c = cpuPose(d);
         g_glesFrame.uploadMs += glesClockMs() - fu0;
         submit(c);
         return;
@@ -2137,20 +2685,8 @@ void GlesRenderer::submit(const Draw& d) {
     const SceneLoc& L = posed ? posedLoc_ : mainLoc_;
     useProgram(posed ? posed_ : prog_);
     if (posed && (lastPose_ != d.meshPose || lastPoseGeo_ != d.geo)) {
-        // one affine a slot: the mesh's, or the identity for a corner no mesh
-        // owns (`applyPose` leaves those at rest)
-        const std::size_t slots = pvb->meshOfSlot.size();
-        poseUni_.assign(slots * 16u, 0.0f);            // four rows a slot (`kPosedVert`)
-        for (std::size_t sl = 0; sl < slots; ++sl) {
-            const std::int32_t m = pvb->meshOfSlot[sl];
-            float* o = poseUni_.data() + 16 * sl;
-            if (m >= 0 && static_cast<std::size_t>(m) < d.meshPoses) {
-                std::memcpy(o, d.meshPose + 12 * static_cast<std::size_t>(m), 12 * sizeof(float));
-            } else {
-                o[0] = 1.0f; o[5] = 1.0f; o[10] = 1.0f;
-            }
-        }
-        glUniform4fv(L.pose, static_cast<GLsizei>(slots * 4), poseUni_.data());
+        buildPoseUniforms(d, *pvb);
+        glUniform4fv(L.pose, static_cast<GLsizei>(pvb->meshOfSlot.size() * 4), poseUni_.data());
         lastPose_ = d.meshPose;
         lastPoseGeo_ = d.geo;
     }
@@ -2222,6 +2758,14 @@ void GlesRenderer::submit(const Draw& d) {
         glUniform1i(L.cutout, cut);
         U.cutout = cut;
     }
+    // the enhanced programs' two per-draw words: how this batch is LIT, and
+    // whether it CASTS (a caster does not receive - `scene.frag`)
+    if (L.lit >= 0) {
+        const float lit = pixLights_ ? static_cast<float>(d.lit) : 0.0f;
+        if (set(!uv || U.lit != lit)) { glUniform1f(L.lit, lit); U.lit = lit; }
+        const float cs = d.castsShadow ? 1.0f : 0.0f;
+        if (set(!uv || U.caster != cs)) { glUniform1f(L.caster, cs); U.caster = cs; }
+    }
 
     // THE FOG's two exclusions - the rule `renderer.cpp` applies for the
     // software loop and `vkrender.cpp` for Vulkan.
@@ -2248,8 +2792,15 @@ void GlesRenderer::submit(const Draw& d) {
     const Vbo* sv = posed ? nullptr : &vbo_[d.geo];
     const bool fromRing = sv && sv->streamed;
     const GLuint buf = posed ? pvb->id : fromRing ? ring_ : sv->id;
-    const int layout = posed ? 1 : 0;
+    const int layout = posed ? 1 : litNrm ? 2 : 0;
     if (set(ds_.attrBuf != buf || ds_.attrLayout != layout)) {
+        if (litNrm) {
+            // the normals' own buffer, at the same corner index (a lit draw is
+            // never streamed, so its first corner is 0 in both)
+            glBindBuffer(GL_ARRAY_BUFFER, nrmVbo_[d.geo].id);
+            glEnableVertexAttribArray(kAttrNormal);
+            glVertexAttribPointer(kAttrNormal, 3, GL_FLOAT, GL_FALSE, 12, nullptr);
+        }
         glBindBuffer(GL_ARRAY_BUFFER, buf);
         const GLsizei st = posed ? sizeof(GpuPoseVert) : sizeof(GpuVert);
         glEnableVertexAttribArray(kAttrPos);
@@ -2265,7 +2816,7 @@ void GlesRenderer::submit(const Draw& d) {
                                   reinterpret_cast<const void*>(offsetof(GpuPoseVert, nx)));
         } else {
             glDisableVertexAttribArray(kAttrSlot);
-            glDisableVertexAttribArray(kAttrNormal);
+            if (!litNrm) glDisableVertexAttribArray(kAttrNormal);
         }
         glVertexAttribPointer(kAttrPos, 3, GL_FLOAT, GL_FALSE, st, reinterpret_cast<const void*>(0));
         glVertexAttribPointer(kAttrUV, 2, GL_FLOAT, GL_FALSE, st, reinterpret_cast<const void*>(12));
@@ -2307,6 +2858,7 @@ void GlesRenderer::submit(const Draw& d) {
 void GlesRenderer::end() {
     if (!recording_) return;
     recording_ = false;
+    shadowLive_ = false;   // the next frame's depth pass, if any, fills it again
     // The cull is the SCENE's: nothing drawn after it (the mirror composite,
     // the interface, the present) has an authored winding.
     glDisable(GL_CULL_FACE);
@@ -2787,6 +3339,12 @@ void glesSamples(Renderer* r, int* got, int* most) {
     auto* g = dynamic_cast<GlesRenderer*>(r);
     *got = g ? g->samples() : 1;
     *most = g ? g->maxSamples() : 1;
+}
+
+// per-pixel lighting and the mapped shadow asked for, BEFORE `init`
+// (`setEnhancedLighting`)
+void glesSetEnhancedLighting(Renderer* r, bool perPixel, bool shadowMap) {
+    if (auto* g = dynamic_cast<GlesRenderer*>(r)) g->setEnhancedLighting(perPixel, shadowMap);
 }
 
 // the draw-state cache on or off, for a probe that compares the two

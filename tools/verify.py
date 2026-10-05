@@ -6496,6 +6496,14 @@ def c_engine_mapped_shadows():
     block (the fault that actually shipped for an hour) puts the shadow on the
     caster instead of the ground; forcing `litness()` to 1.0 gives 0 shadowed
     pixels at every direction.
+
+    THE GLES BACKEND (2026-10-05), through `gles_probe --shadow` (headless
+    CGL, macOS only, skipped elsewhere): the same scene, the same four
+    readings, with the caster drawn PLAIN and as a body the RENDERER POSES
+    (`kShadowPosedVert`) - a depth pass packed into RGBA8, GLES2 promising no
+    depth texture. Measured both ways: 0 at strength 0, 1026 shadowed centred
+    at 159.5, 187.5 / 131.5 under the tilted lights. Shown to fail
+    (2026-10-05) with the depth pass skipped: nothing is shadowed.
     """
     eng = os.path.join(ROOT, "engine")
     if not os.path.isdir(eng):
@@ -6507,10 +6515,35 @@ def c_engine_mapped_shadows():
     # enhancement, and it is a property of the source, not of a frame
     swSrc = open(os.path.join(eng, "src", "o3de", "raster.cpp"), encoding="utf-8").read()
     swClean = "shadowPass" not in swSrc
+    gles, want_gles = ("skipped",), ("skipped",)
+    import platform
+    if platform.system() == "Darwin":
+        mk = subprocess.run(["make", "-s", "build/gles_probe"], cwd=eng, capture_output=True, text=True)
+        gp = os.path.join(eng, "build", "gles_probe")
+        gles = want_gles = ("no gles_probe",)
+        if mk.returncode == 0 and os.path.exists(gp):
+            def grun(d, strength, extra):
+                r = subprocess.run([gp, omkpaths.data_root(), "--shadow", d, str(strength)] + extra,
+                                   capture_output=True, text=True)
+                m = re.search(r"shadowed (\d+)\s+centroid (-?\d+\.\d+) (-?\d+\.\d+)", r.stdout)
+                return (int(m.group(1)), float(m.group(2))) if m and "drawsShadowMap 1" in r.stdout \
+                    else (-1, -1.0)
+            gles = []
+            for extra in ([], ["posed"]):
+                g_off, g_down = grun("0,1,0", 0.0, extra), grun("0,1,0", 0.6, extra)
+                g_plus, g_minus = grun("0.5,1,0", 0.6, extra), grun("-0.5,1,0", 0.6, extra)
+                gles.append((g_off[0],
+                             g_down[0] > 200 and abs(g_down[1] - 160.0) < 6.0,
+                             g_plus[1] > g_down[1] + 15.0 and g_minus[1] < g_down[1] - 15.0,
+                             abs((g_plus[1] - g_down[1]) + (g_minus[1] - g_down[1])) < 6.0))
+                print(f"        gles {'posed' if extra else 'plain'}: {g_down[0]} shadowed at "
+                      f"{g_down[1]}, tilted {g_plus[1]} / {g_minus[1]}")
+            gles = tuple(gles)
+            want_gles = ((0, True, True, True), (0, True, True, True))
     mk = subprocess.run(["make", "-s", "vulkan"], cwd=eng, capture_output=True, text=True)
     probe = os.path.join(eng, "build", "shadow_probe")
     if mk.returncode != 0 or not os.path.exists(probe):
-        return ("skipped",), ("skipped",), "no Vulkan or no glslc - the GPU backend is optional"
+        return (("skipped",), gles), (("skipped",), want_gles), "no Vulkan or no glslc - the GPU backend is optional"
 
     def run(d, strength):
         r = subprocess.run([probe, d, str(strength)], capture_output=True, text=True)
@@ -6521,7 +6554,7 @@ def c_engine_mapped_shadows():
 
     off = run("0,1,0", 0.0)
     if off is None:
-        return ("skipped",), ("skipped",), "no Vulkan device"
+        return (("skipped",), gles), (("skipped",), want_gles), "no Vulkan device"
     down = run("0,1,0", 0.6)
     plus = run("0.5,1,0", 0.6)
     minus = run("-0.5,1,0", 0.6)
@@ -6529,8 +6562,8 @@ def c_engine_mapped_shadows():
     centred = down[0] > 200 and abs(down[1] - 160.0) < 6.0
     moved = plus[1] > down[1] + 15.0 and minus[1] < down[1] - 15.0
     symmetric = abs((plus[1] - down[1]) + (minus[1] - down[1])) < 6.0
-    got = (defaultOff, swClean, off[0], centred, moved, symmetric)
-    want = (True, True, 0, True, True, True)
+    got = (defaultOff, swClean, off[0], centred, moved, symmetric, gles)
+    want = (True, True, 0, True, True, True, want_gles)
     return got, want, ("the default is classic and the software reference has no shadow "
                        "pass; strength 0 shadows %d pixels; a light straight down centres "
                        "the shadow at %.1f and tilting it moves the centroid to %.1f / %.1f"
@@ -6625,20 +6658,50 @@ def c_engine_perpixel_lighting():
     What this cannot see, and a person must: whether the finer sampling looks
     better on a character. The gain is largest where a light's falloff bends
     across a big triangle, which on a crowd model is a thigh.
+
+    THE GLES BACKEND (2026-10-05), through `gles_probe --perpixel` (headless
+    CGL, macOS only, skipped elsewhere): the same scene and the same two
+    readings, twice - the quad as a PLAIN draw (its normals from a buffer of
+    their own) and as a body the RENDERER POSES (`kPosedVertX`), the two
+    programs the light lives in. Measured: centre 51 against the law's 51,
+    spread 11 against 0, both ways. Shown to fail (2026-10-05) with
+    `kSceneFragX`'s `litColour` returning a constant: the centre leaves the law
+    and the spread falls to 0, plain and posed.
     """
     eng = os.path.join(ROOT, "engine")
     if not os.path.isdir(eng):
         return ("skipped",), ("skipped",), "engine/ absent"
+    gles, want_gles = ("skipped",), ("skipped",)
+    import platform
+    if platform.system() == "Darwin":
+        mk = subprocess.run(["make", "-s", "build/gles_probe"], cwd=eng, capture_output=True, text=True)
+        gp = os.path.join(eng, "build", "gles_probe")
+        gles = want_gles = ("no gles_probe",)
+        if mk.returncode == 0 and os.path.exists(gp):
+            gles = []
+            for extra in ([], ["posed"]):
+                r = subprocess.run([gp, omkpaths.data_root(), "--perpixel"] + extra,
+                                   capture_output=True, text=True)
+                m = re.search(r"the law says (\d+), delta (\d+)", r.stdout)
+                sp = re.search(r"perpixel (\d+), pervertex (\d+)", r.stdout)
+                ok = "drawsPixelLights 1" in r.stdout
+                gles.append((ok, int(m.group(2)), int(sp.group(1)) >= 8, int(sp.group(2)) < 2)
+                            if m and sp else ("no reading",))
+                if m and sp:
+                    print(f"        gles {'posed' if extra else 'plain'}: delta {m.group(2)}, "
+                          f"spread {sp.group(1)} against {sp.group(2)}")
+            gles = tuple(gles)
+            want_gles = ((True, 0, True, True), (True, 0, True, True))
     src = open(os.path.join(eng, "src", "platform", "settings.h"),
                encoding="utf-8").read()
     defaultOff = "int    lighting = 0;" in src
     mk = subprocess.run(["make", "-s", "vulkan"], cwd=eng, capture_output=True, text=True)
     probe = os.path.join(eng, "build", "perpixel_probe")
     if mk.returncode != 0 or not os.path.exists(probe):
-        return ("skipped",), ("skipped",), "no Vulkan or no glslc - the GPU backend is optional"
+        return (("skipped",), gles), (("skipped",), want_gles), "no Vulkan or no glslc - the GPU backend is optional"
     r = subprocess.run([probe], capture_output=True, text=True)
     if "no vulkan" in r.stdout:
-        return ("skipped",), ("skipped",), "no Vulkan device"
+        return (("skipped",), gles), (("skipped",), want_gles), "no Vulkan device"
     m = re.search(r"the law says (\d+), delta (\d+)", r.stdout)
     sp = re.search(r"perpixel (\d+), pervertex (\d+)", r.stdout)
     if not m or not sp:
@@ -6648,8 +6711,8 @@ def c_engine_perpixel_lighting():
     # Over the QUAD (the probe's window since 2026-10-01): per pixel the light
     # falls 51 -> 40 across it, per vertex it is flat. The old > 20 was set on
     # a window that took in the black background beside the quad.
-    got = (defaultOff, delta, perPixel >= 8, perVertex < 2)
-    want = (True, 0, True, True)
+    got = (defaultOff, delta, perPixel >= 8, perVertex < 2, gles)
+    want = (True, 0, True, True, want_gles)
     return got, want, ("the default is per vertex in the source; the shader matches the "
                        "law at the centre to %d; and along a scanline per pixel varies by "
                        "%d where per vertex varies by %d" % (delta, perPixel, perVertex))
@@ -15424,15 +15487,17 @@ def c_engine_gles_backend():
     # its bilinear line since `f2875ee` (2026-10-03), which `engine: texture
     # filter` reads - counted here, it turned this check red in that day's sweep
     cov = re.findall(r"^(?:plain|dithered)\s.*coverage ([0-9.]+)", r.stdout, re.M)
+    # SEVEN presents since 2026-10-05: the supersampled world and its
+    # letterbox joined the five (`engine: supersampling` reads those two)
     present = re.findall(r"present(?: world| surface)?: (EXACT|\d+ DIFFERENT)", r.stdout)
     fails = re.findall(r"^failures (\d+)$", r.stdout, re.M)
-    if len(cov) != 2 or len(present) != 5 or len(fails) != 1:
-        return (len(cov), len(present), len(fails)), (2, 5, 1), \
+    if len(cov) != 2 or len(present) != 7 or len(fails) != 1:
+        return (len(cov), len(present), len(fails)), (2, 7, 1), \
                "gles_probe output parsed - the tool's format changed, or no GL context"
     return (tuple(float(c) >= 0.99 for c in cov), tuple(present), int(fails[0])), \
-        ((True, True), ("EXACT",) * 5, 0), \
-        "coverage >= 0.99 plain and dithered; world, surface (x2) and letterbox " \
-        "presents exact in 565; the probe's own failure count"
+        ((True, True), ("EXACT",) * 7, 0), \
+        "coverage >= 0.99 plain and dithered; world, surface (x2), letterbox and the " \
+        "two supersampled presents exact in 565; the probe's own failure count"
 
 
 def c_engine_gles_state_cache():

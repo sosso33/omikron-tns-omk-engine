@@ -20,6 +20,7 @@ void glesTakeStateCalls(long out[3]);
 void glesGeometryStats(Renderer*, long out[3]);
 long glesTakeOverlayRows(Renderer*);
 void glesSetDepthTie(Renderer*, bool);
+void glesSetEnhancedLighting(Renderer*, bool perPixel, bool shadowMap);
 bool glesPresentOverlay(Renderer*, const Surface&, const unsigned char* mask, const unsigned char* maskRows,
                         const float fade[4], int vy, int vh, int winW, int winH);
 void glesWindowPicture(Renderer*, int w, int h, std::vector<unsigned char>& out);

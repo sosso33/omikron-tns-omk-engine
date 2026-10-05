@@ -60,6 +60,11 @@ void PlayState::gpuOpenWindow() {
             if (texFilter > 0) gr->setTextureFilter(texFilter);
             if (texAniso > 1) gr->setAnisotropy(texAniso);
             if (ssaa > 1) gr->setSupersample(ssaa);
+            // per-pixel lighting and the mapped shadow: their programs are
+            // linked at `init` only when asked, and what it could build is
+            // what `drawsPixelLights` / `drawsShadowMap` answer later
+            if (lighting > 0 || shadowQuality >= 2)
+                omk::glesSetEnhancedLighting(gr, lighting > 0, shadowQuality >= 2);
             if (gr->init(dispW, dispH)) {
                 glRen = gr;
                 omk::sdlFrontend(front).attachWindow(glWin);   // F11 and row 2 act on it

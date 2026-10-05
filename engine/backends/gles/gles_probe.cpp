@@ -70,6 +70,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -85,6 +86,7 @@ void glesGeometryStats(Renderer*, long out[3]);
 int glesAnisotropy(Renderer*);
 int glesSupersample(Renderer*);
 void glesSamples(Renderer*, int* got, int* most);
+void glesSetEnhancedLighting(Renderer*, bool perPixel, bool shadowMap);
 }
 
 namespace {
@@ -432,9 +434,180 @@ int poseMode(int argc, char** argv) {
     return ok ? 0 : 1;
 }
 
+// ---- THE LIGHTING ENHANCEMENTS' MODES (`todo/enhancements.md` 6 and 7) ----
+//
+//     gles_probe <gamedata> --perpixel [posed]
+//     gles_probe <gamedata> --shadow <dirX,dirY,dirZ> <strength> [posed]
+//
+// `tools/perpixel_probe.cpp` and `tools/shadow_probe.cpp` - the Vulkan probes
+// `engine: perpixel lighting` and `engine: mapped shadows` read - on this
+// backend, with the same synthetic scenes and the same printed lines, so one
+// regex reads both. `posed` draws the lit quad (or the caster) as a body the
+// RENDERER poses - every corner on mesh 0, one identity affine - which is the
+// other program the enhancements live in.
+namespace {
+
+omk::Geometry flatQuad(float cx, float cy, float cz, float half, float col) {
+    omk::Geometry g;
+    const float p[4][3] = {{cx - half, cy, cz - half}, {cx + half, cy, cz - half},
+                           {cx + half, cy, cz + half}, {cx - half, cy, cz + half}};
+    const int fan[2][3] = {{0, 1, 2}, {0, 2, 3}};
+    for (const auto& t : fan)
+        for (int k = 0; k < 3; ++k) {
+            omk::Corner c{};
+            c.x = p[t[k]][0]; c.y = p[t[k]][1]; c.z = p[t[k]][2];
+            c.u = 0.5f; c.v = 0.5f;
+            c.r = c.g = c.b = col;
+            c.nx = 0; c.ny = -1; c.nz = 0;      // facing UP in the game's Y-down world
+            c.phase = -1;
+            g.corners.push_back(c);
+        }
+    g.cornerMirror.resize(g.corners.size(), 0);
+    g.cornerMesh.resize(g.corners.size(), 0);   // mesh 0: what a `posed` draw needs
+    g.cornerVertex.resize(g.corners.size(), -1);
+    g.cornerDeclared.resize(g.corners.size(), -1);
+    return g;
+}
+
+const float kIdentityAffine[12] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
+
+void posedDraw(omk::Draw& d, bool posed) {
+    if (!posed) return;
+    d.meshPose = kIdentityAffine;
+    d.meshPoses = 1;
+}
+
+int perpixelMode(bool posed) {
+    omk::Renderer* r = omk::makeGlesRenderer();
+    omk::glesSetEnhancedLighting(r, true, false);
+    const int W = 256, H = 256;
+    if (!r->init(W, H)) { std::printf("gles renderer failed to come up\n"); return 1; }
+    r->setTextures({});
+    std::printf("drawsPixelLights %d  posesBodies %d\n", r->drawsPixelLights() ? 1 : 0,
+                r->posesBodies() ? 1 : 0);
+    const float half = 200.0f;
+    omk::Light3do L{};
+    L.pos[0] = 0; L.pos[1] = -150; L.pos[2] = 0;
+    L.dir[0] = 0; L.dir[1] = 1; L.dir[2] = 0;
+    L.radiusA = 600.0f; L.radiusB = 40.0f;
+    L.colour = 0x00FFFFFF; L.f32 = 1.0f;
+    omk::View v;
+    v.cam.eye[0] = 0; v.cam.eye[1] = -520; v.cam.eye[2] = 0.1f;
+    v.cam.at[0] = 0;  v.cam.at[1] = 0;  v.cam.at[2] = 0;
+    v.cam.hfovDeg = 60.0f;
+    v.dither = false;
+    omk::Surface pix, vert;
+    {
+        omk::Geometry g = flatQuad(0, 0, 0, half, 0.0f);
+        omk::View::GpuLight gl{};
+        for (int k = 0; k < 3; ++k) { gl.pos[k] = L.pos[k]; gl.dir[k] = L.dir[k]; }
+        gl.radiusA = L.radiusA; gl.radiusB = L.radiusB;
+        gl.colour[0] = gl.colour[1] = gl.colour[2] = 1.0f;
+        gl.intensity = L.f32;
+        v.lights.assign(1, gl);
+        std::vector<omk::Draw> d;
+        d.push_back({0, &g, 0, g.corners.size(), omk::Blend::Opaque, false, 1, false});
+        posedDraw(d.back(), posed);
+        omk::drawWithMirror(*r, d, v, omk::MirrorPlane{});
+        pix = r->readback();
+    }
+    {
+        omk::Geometry g = flatQuad(0, 0, 0, half, 0.0f);
+        const float at[3] = {0, 0, 0};
+        omk::applyLights(g, 0, g.corners.size(), at, std::span<const omk::Light3do>(&L, 1));
+        v.lights.clear();
+        std::vector<omk::Draw> d;
+        d.push_back({0, &g, 0, g.corners.size(), omk::Blend::Opaque, false, 0, false});
+        omk::drawWithMirror(*r, d, v, omk::MirrorPlane{});
+        vert = r->readback();
+    }
+    const auto green = [](const omk::Surface& s, int x, int y) {
+        return (s.px[static_cast<std::size_t>(y) * s.w + x] >> 5) & 63;
+    };
+    const auto expect = [&](float x, float z) {
+        const float dx = x - L.pos[0], dy = 0.0f - L.pos[1], dz = z - L.pos[2];
+        const float dd = std::sqrt(dx * dx + dy * dy + dz * dz);
+        if (dd > L.radiusA) return 0.0f;
+        float fall = 1.0f - (dd - L.radiusB) / (L.radiusA - L.radiusB);
+        if (fall > 1.0f) fall = 1.0f;
+        return std::min(L.f32 * 256.0f * fall / 256.0f, 1.0f);
+    };
+    const int cx = W / 2, cy = H / 2;
+    const int wantCentre = static_cast<int>(expect(0.0f, 0.0f) * 63.0f + 0.5f);
+    int x0 = -1, x1 = -1;
+    for (int x = 0; x < W; ++x)
+        if (green(vert, x, cy) > 0) { if (x0 < 0) x0 = x; x1 = x; }
+    x0 += 4; x1 -= 4;
+    const auto spread = [&](const omk::Surface& sf) {
+        int lo = 64, hi = -1;
+        for (int x = x0; x <= x1; ++x) {
+            const int g = green(sf, x, cy);
+            lo = std::min(lo, g); hi = std::max(hi, g);
+        }
+        return x0 < x1 ? hi - lo : -1;
+    };
+    std::printf("%s\n", posed ? "posed by the renderer" : "plain");
+    std::printf("perpixel at the centre %d, the law says %d, delta %d\n",
+                green(pix, cx, cy), wantCentre, std::abs(green(pix, cx, cy) - wantCentre));
+    std::printf("spread across the middle scanline: perpixel %d, pervertex %d (x %d..%d)\n",
+                spread(pix), spread(vert), x0, x1);
+    delete r;
+    return 0;
+}
+
+int shadowMode(const char* dirArg, float strength, bool posed) {
+    float dir[3] = {0.0f, 1.0f, 0.0f};
+    std::sscanf(dirArg, "%f,%f,%f", &dir[0], &dir[1], &dir[2]);
+    omk::Renderer* r = omk::makeGlesRenderer();
+    omk::glesSetEnhancedLighting(r, false, true);
+    const int W = 320, H = 320;
+    if (!r->init(W, H)) { std::printf("gles renderer failed to come up\n"); return 1; }
+    r->setTextures({});
+    std::printf("drawsShadowMap %d  posesBodies %d  %s\n", r->drawsShadowMap() ? 1 : 0,
+                r->posesBodies() ? 1 : 0, posed ? "caster posed by the renderer" : "plain caster");
+    omk::Geometry ground = flatQuad(0, 0, 0, 400.0f, 1.0f);
+    omk::Geometry caster = flatQuad(0, -120.0f, 0, 40.0f, 1.0f);
+    omk::View v;
+    v.cam.eye[0] = 0; v.cam.eye[1] = -420; v.cam.eye[2] = -420;
+    v.cam.at[0] = 0;  v.cam.at[1] = 0;   v.cam.at[2] = 0;
+    v.cam.hfovDeg = 60.0f;
+    v.shadow.on = strength > 0.0f;
+    for (int k = 0; k < 3; ++k) { v.shadow.dir[k] = dir[k]; v.shadow.centre[k] = 0.0f; }
+    v.shadow.centre[1] = -60.0f;
+    v.shadow.radius = 260.0f;
+    v.shadow.strength = strength;
+    std::vector<omk::Draw> draws;
+    draws.push_back({0, &ground, 0, ground.corners.size(), omk::Blend::Opaque, false, 0, false});
+    draws.push_back({0, &caster, 0, caster.corners.size(), omk::Blend::Opaque, false, 0, true});
+    posedDraw(draws.back(), posed);
+    omk::drawWithMirror(*r, draws, v, omk::MirrorPlane{});
+    const omk::Surface& sf = r->readback();
+    long dark = 0, lit = 0;
+    double sx = 0, sy = 0;
+    for (int y = 0; y < sf.h; ++y)
+        for (int x = 0; x < sf.w; ++x) {
+            const std::uint16_t px = sf.px[static_cast<std::size_t>(y) * sf.w + x];
+            const int rr = (px >> 11) & 31, gg = (px >> 5) & 63, bb = px & 31;
+            if (rr < 2 && gg < 4 && bb < 2) continue;
+            if (rr >= 28 && gg >= 56 && bb >= 28) { ++lit; continue; }
+            ++dark; sx += x; sy += y;
+        }
+    std::printf("dir %.2f,%.2f,%.2f  strength %.2f  lit %ld  shadowed %ld  centroid %.1f %.1f\n",
+                static_cast<double>(dir[0]), static_cast<double>(dir[1]),
+                static_cast<double>(dir[2]), static_cast<double>(strength), lit, dark,
+                dark ? sx / static_cast<double>(dark) : -1.0,
+                dark ? sy / static_cast<double>(dark) : -1.0);
+    delete r;
+    return 0;
+}
+
+}  // namespace
+
 int main(int argc, char** argv) {
     const bool poseArg = argc > 2 && std::string(argv[2]) == "--pose";
-    if (argc < 6 && !poseArg) {
+    const bool ppArg = argc > 2 && std::string(argv[2]) == "--perpixel";
+    const bool shArg = argc > 4 && std::string(argv[2]) == "--shadow";
+    if (argc < 6 && !poseArg && !ppArg && !shArg) {
         std::fprintf(stderr, "usage: gles_probe <gamedata> <model.3DO> <eye> <at> <hfov> [WxH]\n");
         return 2;
     }
@@ -456,6 +629,14 @@ int main(int argc, char** argv) {
     std::printf("gl: %s | %s\n", reinterpret_cast<const char*>(glGetString(GL_RENDERER)),
                 reinterpret_cast<const char*>(glGetString(GL_VERSION)));
 
+    if (ppArg || shArg) {
+        const int rc = ppArg ? perpixelMode(argc > 3 && std::string(argv[3]) == "posed")
+                             : shadowMode(argv[3], static_cast<float>(std::atof(argv[4])),
+                                          argc > 5 && std::string(argv[5]) == "posed");
+        CGLSetCurrentContext(nullptr);
+        CGLDestroyContext(ctx);
+        return rc;
+    }
     if (poseArg) {
         const int rc = poseMode(argc, argv);
         CGLSetCurrentContext(nullptr);
@@ -612,6 +793,33 @@ int main(int argc, char** argv) {
                     "coverage %.4f\n", tTook ? "taken" : "REFUSED", gb, gt, ga, anGot, ct.agree());
         failures += !tTook || !(gt < gb) || (anGot > 1 && !(gt < ga && ga < gb)) || ct.agree() < 0.98;
         delete bi; delete tri; delete an;
+    }
+
+    // ---- THE ENHANCED PROGRAMS AT REST (`todo/enhancements.md` 6 and 7):
+    // linked in place of the default two when either enhancement is asked
+    // for, they must draw the DEFAULT picture byte for byte where nothing is
+    // lit and nothing casts - which is what keeps the two copies of the
+    // scene and posing programs in step. Dithered and fogged, so the fog and
+    // the shimmer paths are both compared.
+    {
+        omk::View v;
+        v.cam = cam; v.cam.w = W; v.cam.h = H;
+        v.dither = true;
+        v.fog = true; v.fogStart = 300.0f; v.fogEnd = 1500.0f;
+        const omk::Surface base = *run(*gl, v, W, H);
+        omk::Renderer* en = omk::makeGlesRenderer();
+        omk::glesSetEnhancedLighting(en, true, true);
+        const omk::Surface* e = run(*en, v, W, H);
+        long differ = -1;
+        if (e) {
+            differ = 0;
+            for (std::size_t i = 0; i < base.px.size(); ++i) differ += base.px[i] != e->px[i];
+        }
+        std::printf("enhanced programs at rest: lights %d, shadow map %d, %ld pixels differ "
+                    "from the default programs\n", en->drawsPixelLights() ? 1 : 0,
+                    en->drawsShadowMap() ? 1 : 0, differ);
+        failures += !en->drawsPixelLights() || !en->drawsShadowMap() || differ != 0;
+        delete en;
     }
 
     // ---- SUPERSAMPLING (`todo/enhancements.md` 9), `engine: supersampling`'s

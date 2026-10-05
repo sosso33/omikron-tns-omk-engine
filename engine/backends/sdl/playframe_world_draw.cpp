@@ -562,11 +562,30 @@ void PlayState::worldDrawLists() {
             ++bodies;
             any = true;
         };
+        // A BODY THE RENDERER POSES (GLES) has no world corners here, so it
+        // is bounded by its meshes' ORIGINS - each affine's translation, the
+        // skeleton's joints - which is what places the slab and nothing
+        // finer is needed for that
+        const auto boundAffine = [&](const std::vector<float>& a) {
+            if (a.size() < 12) return;
+            const float dx = a[3] - view.cam.eye[0], dy = a[7] - view.cam.eye[1],
+                        dz = a[11] - view.cam.eye[2];
+            if (dx * dx + dy * dy + dz * dz > kShadowRange * kShadowRange) return;
+            for (std::size_t m = 0; m + 12 <= a.size(); m += 12) {
+                const float p3[3] = {a[m + 3], a[m + 7], a[m + 11]};
+                for (int k = 0; k < 3; ++k) {
+                    lo[k] = std::min(lo[k], p3[k]);
+                    hi[k] = std::max(hi[k], p3[k]);
+                }
+            }
+            ++bodies;
+            any = true;
+        };
         if (drawPlayer && !playerPosed.corners.empty()) bound(playerPosed);
-        for (const auto& up : staged) if (up->drawn && up->mo && !up->gpu) bound(up->posed);
-        // (a body the renderer poses has no world corners here; the
-        // mapped shadows are Vulkan's, and Vulkan does not pose)
-        for (const auto& up : pedStaged) if (up->drawn && up->mo && !up->gpu) bound(up->posed);
+        for (const auto& up : staged)
+            if (up->drawn && up->mo) { if (up->gpu) boundAffine(up->affine); else bound(up->posed); }
+        for (const auto& up : pedStaged)
+            if (up->drawn && up->mo) { if (up->gpu) boundAffine(up->affine); else bound(up->posed); }
         if (any) {
             // ...CENTRED ON THE PLAYER, not on the bodies' midpoint.
             // A street's lamps reach about 700 units and eleven
