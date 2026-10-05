@@ -1003,6 +1003,13 @@ one-shot one cannot. **37 of the 4558 shipped zones carry it.** The full
 state machine is in [SCRIPT_VM.md](SCRIPT_VM.md), under the context status
 word; `verify.py: engine zone pump`.
 
+**WHICH ZONES ARE TESTED AT ALL is the index's, not the record's** (read
+2026-10-05): `Zone_Add` (0x004317C0) enters each zone as an axis-aligned box -
+the quad's bounds with 19.685 (`flt_52B90C`, 50 cm) added ABOVE it - and
+`Actor_ScanZones` asks for the boxes overlapping the actor's, his pelvis plus
+and minus his root mesh's `+88` radius, on all three axes. `Zone_ContainsPoint`
+then reads x and z only. `docs/UI.md` "THE LIFT", `verify.py: engine: zone box`.
+
 **`+66`'s camera is asked for on TOUCH, before the facing test.**
 `Actor_ScanZones` (`0x00467770`) tests containment first and raises event 8 for
 every zone the player stands in, whatever way he faces; `Game_HandleEvent` case

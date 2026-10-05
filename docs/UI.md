@@ -3621,10 +3621,16 @@ takes the y and never reads it - so **the filter is the iterator**:
 a box of `+88` in all three axes, and only zones at his height are yielded.
 Without that the port armed every level's lift zone at once, five scripts
 parked on five `ui.open 4`, and the one answer went to the wrong one.
-**Reconstruction, labelled**: the port bands by the quad's own y extent plus a
-metre, not the record's `+88` radius, which is unread; over all 4558 zones the
-quad's y spread is 0.0 at the median and zones stacked on one footprint sit a
-median 389.7 apart, so the choice does not decide anything shipped.
+~~**Reconstruction, labelled**: the port bands by the quad's own y extent plus a
+metre~~ - **READ 2026-10-05** (`todo/drift-audit.md` S10): the `+88` is not the
+zone's but the ACTOR's - `f32(querier, 88)`, the querier being his NODE
+(`sub_431BA0(actor+8, ...)`), so the root mesh's bounding radius, 42.5 for
+Kay'l, around his PELVIS; and the zone's box is its quad plus `flt_52B90C` =
+19.685 ABOVE it (`Zone_Add`, from `dword_910354` at init). The sweep-and-prune
+lists a zone when the two boxes overlap on all three axes. For Kay'l that is a
+quad from ~20 below his feet to ~84 above - the band had let in 20..39 below
+and turned away 39..84 above. Stacked levels 130-225 apart still separate.
+`verify.py: engine: zone box`.
 `verify.py: engine: lift`.
 
 **The box under the grid** is one 475x105 text item in font 67 whose text is
