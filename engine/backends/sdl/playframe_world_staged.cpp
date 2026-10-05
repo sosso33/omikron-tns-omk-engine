@@ -2912,6 +2912,11 @@ void PlayState::worldStaged() {
             omk::particleGateCounts(fxBuilt, fxGated);
             std::printf("frame %ld: particles since the last line - %ld made into quads, %ld "
                         "left out by the depth gate\n", n, fxBuilt, fxGated);
+            // the moving collision (`lazyPlace`): meshes the frames recorded,
+            // and how many a query needed placed - counted by the placer
+            std::printf("frame %ld: moving collision since the last line - %ld mesh placements "
+                        "recorded, %ld made\n", n, lazyRecordedTotal, lazyPlacedFrame);
+            lazyRecordedTotal = 0; lazyPlacedFrame = 0;
             std::printf("frame %ld: staged bodies - %zu staged, %d skinned and drawn, "
                         "%d beyond the clip distance and %d outside the view (not "
                         "skinned), %d posed by the renderer\n",

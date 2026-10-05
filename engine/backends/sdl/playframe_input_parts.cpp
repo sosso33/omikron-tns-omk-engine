@@ -750,8 +750,35 @@ void PlayState::inputMotion() {
                         omk::placePoints(pp, soup.data(), 3, soup.data(), 3, pts.data(), pts.size());
                 };
                 const double motionSoups0 = phaseNow();
-                patchSoup(w.soup, w.restSoupOfMesh[mi], meshSoupTris, movedSoup[sl]);
-                patchSoup(w.steep, w.restSteepOfMesh[mi], meshSteepTris, movedSteep[sl]);
+                static const bool eagerSoups = omk::envSet("OMK_EAGER_SOUPS");
+                if (eagerSoups) {
+                    patchSoup(w.soup, w.restSoupOfMesh[mi], meshSoupTris, movedSoup[sl]);
+                    patchSoup(w.steep, w.restSteepOfMesh[mi], meshSteepTris, movedSteep[sl]);
+                } else {
+                    // RECORDED, placed when a query reaches it (`lazyPlace`)
+                    movedSoup[sl].insert(movedSoup[sl].end(), meshSoupTris.begin(), meshSoupTris.end());
+                    movedSteep[sl].insert(movedSteep[sl].end(), meshSteepTris.begin(), meshSteepTris.end());
+                    const int key = sl * 1000000 + mi;
+                    LazyMesh& lm = lazyMeshes[key];
+                    lm.sl = sl; lm.mi = mi; lm.pp = pp; lm.gen = worldGen;
+                    if (!lm.pending) { lm.pending = true; ++lazyPending; }
+                    ++lazyRecordedTotal;
+                    if (!lm.boxKnown) {
+                        // the rest triangles' box, each layer - what the
+                        // conservative extent is carried from
+                        const auto boxOf = [](const std::vector<float>& r, float* b) {
+                            b[0] = b[1] = b[2] = 1e30f; b[3] = b[4] = b[5] = -1e30f;
+                            for (std::size_t k = 0; k + 2 < r.size(); k += 3)
+                                for (int a = 0; a < 3; ++a) {
+                                    b[a] = std::min(b[a], r[k + static_cast<std::size_t>(a)]);
+                                    b[3 + a] = std::max(b[3 + a], r[k + static_cast<std::size_t>(a)]);
+                                }
+                        };
+                        boxOf(w.restSoupOfMesh[mi], lm.restBox[0]);
+                        boxOf(w.restSteepOfMesh[mi], lm.restBox[1]);
+                        lm.boxKnown = true;
+                    }
+                }
                 if (std::find(w.soupMovers.begin(), w.soupMovers.end(), mi) == w.soupMovers.end())
                     w.soupMovers.push_back(mi);
                 phSpan["motion soups"] += phaseNow() - motionSoups0;
@@ -850,9 +877,12 @@ void PlayState::inputMotion() {
             for (int sl = 0; sl < 2; ++sl) {
                 const WorldSlot& w = worldSlots[static_cast<std::size_t>(sl)];
                 if (w.stem.empty()) continue;
+                static const bool eagerMerge = omk::envSet("OMK_EAGER_SOUPS");
                 for (const std::uint32_t t : movedSoup[sl]) {
-                    std::copy_n(w.soup.data() + 9 * static_cast<std::size_t>(t), 9,
-                                playerSoup.data() + offSoup + 9 * static_cast<std::size_t>(t));
+                    // a recorded mesh is copied in when it is placed (`lazyPlace`)
+                    if (eagerMerge)
+                        std::copy_n(w.soup.data() + 9 * static_cast<std::size_t>(t), 9,
+                                    playerSoup.data() + offSoup + 9 * static_cast<std::size_t>(t));
                     const std::size_t gt = offSoup / 9 + t;
                     if (gt < playerMovingTri.size() && !playerMovingTri[gt]) {
                         playerMovingTri[gt] = 1;
@@ -861,8 +891,9 @@ void PlayState::inputMotion() {
                     }
                 }
                 for (const std::uint32_t t : movedSteep[sl]) {
-                    std::copy_n(w.steep.data() + 9 * static_cast<std::size_t>(t), 9,
-                                playerSteep.data() + offSteep + 9 * static_cast<std::size_t>(t));
+                    if (eagerMerge)
+                        std::copy_n(w.steep.data() + 9 * static_cast<std::size_t>(t), 9,
+                                    playerSteep.data() + offSteep + 9 * static_cast<std::size_t>(t));
                     const std::size_t gt = offSteep / 9 + t;
                     if (gt < steepMovingTri.size() && !steepMovingTri[gt]) {
                         steepMovingTri[gt] = 1;
@@ -873,6 +904,7 @@ void PlayState::inputMotion() {
                 offSoup += w.soup.size(); offSteep += w.steep.size();
             }
         } else {
+            lazyPlaceAll();       // the slots' soups are copied whole: every mesh placed first
             playerSoup.clear(); playerSteep.clear();
             for (int sl = 0; sl < 2; ++sl) {
                 const WorldSlot& w = worldSlots[static_cast<std::size_t>(sl)];
@@ -915,6 +947,7 @@ void PlayState::inputMotion() {
         // moving frame, compared bit for bit (`verify.py: engine: patch index`).
         static const bool verifyPatch = std::getenv("OMK_VERIFY_PATCH") != nullptr;
         if (verifyPatch) {
+            lazyPlaceAll();   // the instrument compares every triangle
             static long compared = 0, mismatched = 0;
             omk::TriangleSoup refSoup, refSteep;
             for (int sl = 0; sl < 2; ++sl) {
@@ -961,6 +994,7 @@ void PlayState::inputMotion() {
                     for (const int mi : w.soupMovers) {
                         if (mi < 0 || static_cast<std::size_t>(mi) >= byMesh.size()) continue;
                         omk::MovingPart part;
+                        part.owner = sl * 1000000 + mi;
                         for (const std::uint32_t t : byMesh[static_cast<std::size_t>(mi)]) {
                             const std::size_t gt = off / 9 + t;
                             // only what the fixed layer leaves out, so each
@@ -975,10 +1009,41 @@ void PlayState::inputMotion() {
                 grid.moving = omk::SoupGrid{};
                 grid.useParts = true;
             }
-            for (auto& part : grid.parts) omk::measurePart(merged, part);
+            // THE EXTENT: a placed part's own, as before; a RECORDED one's
+            // carried from its rest box through the placement and padded by
+            // a unit - a superset of where its triangles will be, so a query
+            // gathers what it would have, and the answers do not move
+            static const bool eager = omk::envSet("OMK_EAGER_SOUPS");
+            if (!lazyPlaceOneFn) lazyPlaceOneFn = [this](int key) { lazyPlace(key); };
+            grid.place = eager ? std::function<void(int)>{} : lazyPlaceOneFn;
+            for (auto& part : grid.parts) {
+                const auto lit = eager ? lazyMeshes.end() : lazyMeshes.find(part.owner);
+                if (lit == lazyMeshes.end()) { omk::measurePart(merged, part); part.pending = false; continue; }
+                const LazyMesh& lm = lit->second;
+                const float* b = lm.restBox[steep ? 1 : 0];
+                float c[24], o[24];
+                std::uint32_t idx[8];
+                for (int k = 0; k < 8; ++k) {
+                    c[3 * k] = b[(k & 1) ? 3 : 0];
+                    c[3 * k + 1] = b[(k & 2) ? 4 : 1];
+                    c[3 * k + 2] = b[(k & 4) ? 5 : 2];
+                    idx[k] = static_cast<std::uint32_t>(k);
+                }
+                omk::placePoints(lm.pp, c, 3, o, 3, idx, 8);
+                double lo[2] = {1e300, 1e300}, hi[2] = {-1e300, -1e300};
+                for (int k = 0; k < 8; ++k) {
+                    lo[0] = std::min(lo[0], double(o[3 * k])); hi[0] = std::max(hi[0], double(o[3 * k]));
+                    lo[1] = std::min(lo[1], double(o[3 * k + 2])); hi[1] = std::max(hi[1], double(o[3 * k + 2]));
+                }
+                part.minX = lo[0] - 1.0; part.maxX = hi[0] + 1.0;
+                part.minZ = lo[1] - 1.0; part.maxZ = hi[1] + 1.0;
+                part.pending = lm.pending;
+            }
             grid.partsData = merged.data();
             grid.partsSize = merged.size();
         };
+        if (!lazyPlaceAllFn) lazyPlaceAllFn = [this] { lazyPlaceAll(); };
+        if (movingGrid) lazyPlaceAll();   // a grid built over the triangles reads them all
         spanned("grid moving (floor)", [&] {
             if (movingGrid) rebuildMovingGrid();
             else partsOf(playerGrid, playerSoup, playerMovingTri, false, newlyMoving);
@@ -991,6 +1056,8 @@ void PlayState::inputMotion() {
             if (movingGrid) rebuildSteepMovingGrid();
             else partsOf(playerSteepGrid, playerSteep, steepMovingTri, true, newlySteep);
         });
+        // the soups the linear readers must not see stale (`ensurePlaced`)
+        lazyRegister();
         mark("scripted motion: grids rebuilt");
         // `OMK_VERIFY_SPLIT=1`: the moved triangles' centres from above and a
         // fixed lattice over the street, probed through the two-layer grid and
@@ -998,6 +1065,7 @@ void PlayState::inputMotion() {
         // (`verify.py: engine: split grid`).
         static const bool verifySplit = std::getenv("OMK_VERIFY_SPLIT") != nullptr;
         if (verifySplit) {
+            lazyPlaceAll();   // it reads triangle centres straight out of the soup
             static long frames = 0, probes = 0, mismatched = 0;
             ++frames;
             const auto check = [&](double x, double y, double z) {
@@ -1285,4 +1353,94 @@ void PlayState::inputSounds() {
     }
 
     mark("sounds");
+}
+
+// ---- THE MOVING COLLISION, PLACED ON DEMAND (todo/cpu-vs-original.md tier C)
+//
+// A moving mesh's collision triangles used to be re-placed every frame it
+// moved - ~2730 in Anekbah, most of them far from anything that probes. Now
+// the frame RECORDS the placement (`lazyMeshes`) and the triangles are placed
+// the first time a query reaches the mesh: a grid query through its part
+// (`SplitSoupGrid::place`), a linear one through `omk::ensurePlaced`, which
+// places all. The same rest, the same `placePoints`, the same placement - so
+// the same bits as the eager patch, only later or never.
+
+std::size_t PlayState::slotSoupOffset(int sl, bool steep) const {
+    std::size_t off = 0;
+    for (int k = 0; k < sl; ++k) {
+        const WorldSlot& w = worldSlots[static_cast<std::size_t>(k)];
+        if (w.stem.empty()) continue;
+        off += steep ? w.steep.size() : w.soup.size();
+    }
+    return off;
+}
+
+void PlayState::lazyPlace(int key) {
+    auto it = lazyMeshes.find(key);
+    if (it == lazyMeshes.end() || !it->second.pending) return;
+    LazyMesh& lm = it->second;
+    if (lm.gen != worldGen) {             // recorded against soups since replaced
+        lm.pending = false;
+        if (--lazyPending <= 0) { lazyPending = 0; lazyRegister(); }
+        return;
+    }
+    WorldSlot& w = worldSlots[static_cast<std::size_t>(lm.sl)];
+    const auto mi = static_cast<std::size_t>(lm.mi);
+    const auto placeLayer = [&](omk::TriangleSoup& soup, const std::vector<float>& rest,
+                                const std::vector<std::uint32_t>& tris, omk::TriangleSoup& merged,
+                                std::size_t off) {
+        if (tris.empty() || rest.size() != 9 * tris.size()) return;
+        // the rest written back, then placed in place - `patchSoup`'s steps
+        for (std::size_t k = 0; k < tris.size(); ++k)
+            std::copy(rest.begin() + 9 * k, rest.begin() + 9 * k + 9, soup.begin() + 9 * tris[k]);
+        static std::vector<std::uint32_t> pts;   // main thread only
+        pts.clear();
+        for (const std::uint32_t t : tris) {
+            pts.push_back(3 * t); pts.push_back(3 * t + 1); pts.push_back(3 * t + 2);
+        }
+        omk::placePoints(lm.pp, soup.data(), 3, soup.data(), 3, pts.data(), pts.size());
+        // ...and into the merged soup at the slot's offset, as the merge does
+        if (mergedValid)
+            for (const std::uint32_t t : tris)
+                if (off + 9 * static_cast<std::size_t>(t) + 9 <= merged.size())
+                    std::copy_n(soup.data() + 9 * static_cast<std::size_t>(t), 9,
+                                merged.data() + off + 9 * static_cast<std::size_t>(t));
+    };
+    if (mi < w.soupTrisOfMesh.size())
+        placeLayer(w.soup, w.restSoupOfMesh[lm.mi], w.soupTrisOfMesh[mi], playerSoup,
+                   slotSoupOffset(lm.sl, false));
+    if (mi < w.steepTrisOfMesh.size())
+        placeLayer(w.steep, w.restSteepOfMesh[lm.mi], w.steepTrisOfMesh[mi], playerSteep,
+                   slotSoupOffset(lm.sl, true));
+    lm.pending = false;
+    for (auto* g : {&playerGrid, &playerSteepGrid})
+        for (const auto& p : g->parts)
+            if (p.owner == key) p.pending = false;
+    ++lazyPlacedFrame;
+    if (--lazyPending <= 0) { lazyPending = 0; lazyRegister(); }
+}
+
+void PlayState::lazyPlaceAll() {
+    for (auto& kv : lazyMeshes)
+        if (kv.second.pending) lazyPlace(kv.first);
+}
+
+void PlayState::lazyRegister() {
+    // the table cleared and refilled with the soups' CURRENT addresses: a
+    // vector that reallocated would otherwise leave its old one behind
+    omk::clearPendingSoups();
+    if (lazyPending <= 0) return;
+    const std::function<void()>* fn = &lazyPlaceAllFn;
+    omk::setPendingSoup(playerSoup.data(), fn);
+    omk::setPendingSoup(playerSteep.data(), fn);
+    for (const WorldSlot& w : worldSlots) {
+        omk::setPendingSoup(w.soup.data(), fn);
+        omk::setPendingSoup(w.steep.data(), fn);
+    }
+}
+
+void PlayState::lazyForget() {
+    lazyPending = 0;
+    lazyRegister();          // unregister while the soups are still the old ones
+    lazyMeshes.clear();
 }

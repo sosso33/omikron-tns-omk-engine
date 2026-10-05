@@ -19,6 +19,7 @@
 
 #include "formats/mesh3do.h"
 
+#include <functional>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -244,6 +245,14 @@ TriangleSoup soupInBox(const TriangleSoup& tris, const SoupGrid& grid,
 struct MovingPart {
     std::vector<std::uint32_t> ids;          // ascending triangle numbers in the soup
     double minX = 0.0, maxX = 0.0, minZ = 0.0, maxZ = 0.0;   // their extent now
+    // PLACED LAZILY (todo/cpu-vs-original.md tier C): a moving mesh's
+    // triangles are re-placed only when a query reaches them, once a frame.
+    // `pending` - not yet this frame - and the extent is then a CONSERVATIVE
+    // one (the rest box carried through the placement, padded): a superset,
+    // so the same answers (step 38). `owner` is what `SplitSoupGrid::place`
+    // is told to place; it clears `pending` on every part it owns.
+    int owner = -1;
+    mutable bool pending = false;
 };
 struct SplitSoupGrid {
     SoupGrid fixed, moving;
@@ -252,6 +261,9 @@ struct SplitSoupGrid {
     // were made over, as `SoupGrid::data` does
     bool useParts = false;
     std::vector<MovingPart> parts;
+    // places a pending part's triangles, by its `owner`, before a query reads
+    // them (main thread only, as every query of the moving layer is)
+    std::function<void(int)> place;
     const float* partsData = nullptr;
     std::size_t partsSize = 0;
     bool matches(const TriangleSoup& tris) const {
@@ -262,6 +274,16 @@ struct SplitSoupGrid {
 };
 // The extent of a part's triangles in `tris` (a part with none gets an empty one).
 void measurePart(const TriangleSoup& tris, MovingPart& part);
+
+// THE LAZY SOUPS' SAFETY: a soup whose moving triangles may be pending is
+// registered with the function that places them all, and EVERY linear query
+// (`floorUnder`, `surfaceUnder`, `soupInBox`, `sweepSphere` without a grid)
+// calls `ensurePlaced` first - so a reader that bypasses the grid, today's or
+// a later one, never sees a triangle where it was last frame. `placeAll`
+// nullptr unregisters. Main thread only.
+void setPendingSoup(const float* data, const std::function<void()>* placeAll);
+void clearPendingSoups();   // every registration gone (a soup may have moved in memory)
+void ensurePlaced(const TriangleSoup& tris);
 std::optional<double> floorUnder(const TriangleSoup& tris, const SplitSoupGrid& grid,
                                  double x, double y, double z);
 // ...and which triangle gave it: the FIRST in soup order to reach the answer,

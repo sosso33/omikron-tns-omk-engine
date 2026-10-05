@@ -305,6 +305,25 @@ struct PlayState {
     std::vector<std::uint8_t> playerFixedTri{};
     std::vector<std::uint32_t> playerMovingIds{};   // the same set, ascending: the moving layer's build list
     bool mergedValid{};
+    // THE MOVING COLLISION PLACED LAZILY (todo/cpu-vs-original.md tier C): a
+    // moving mesh's walkable and steep triangles are re-placed only when a
+    // query reaches them, once a frame - `lazyPlace`, through the grids'
+    // `place` hook and `omk::ensurePlaced` for the linear readers. Keyed by
+    // slot and mesh (`sl * 1000000 + mi`). `OMK_EAGER_SOUPS=1` places every
+    // moving mesh every frame, as before.
+    struct LazyMesh {
+        int sl = 0, mi = 0;
+        long gen = -1;           // the `worldGen` it was recorded in
+        omk::PointPlace pp;
+        bool pending = false;
+        bool boxKnown = false;
+        float restBox[2][6]{};   // walkable, steep: the rest triangles' min xyz, max xyz
+    };
+    std::map<int, LazyMesh> lazyMeshes{};
+    int lazyPending = 0;
+    long lazyPlacedFrame = 0, lazyPlacedTotal = 0, lazyRecordedTotal = 0;   // counts for the log
+    std::function<void()> lazyPlaceAllFn{};
+    std::function<void(int)> lazyPlaceOneFn{};
     omk::TriangleSoup playerSteep{};
     omk::SplitSoupGrid playerSteepGrid{};
     std::vector<std::uint8_t> steepMovingTri{};
@@ -756,6 +775,11 @@ struct PlayState {
     const omk::Geometry& vehAtRestFor(const std::string& model, const CharModel& mo, int rootMesh);
     void releaseIdleCrowd();
     void releaseIdleStaged();
+    void lazyPlace(int key);       // the moving collision, placed on demand
+    void lazyPlaceAll();
+    void lazyRegister();           // the soups' `ensurePlaced` registration
+    void lazyForget();             // a world rebuild: nothing is pending
+    std::size_t slotSoupOffset(int sl, bool steep) const;
     // the profiler's view of the marks: each a SECTION from the mark before
     // it (`--profile`, todo/debug-tools.md), outside the call tree
     std::uint64_t profMarkT = 0;

@@ -8,6 +8,37 @@
 
 namespace omk {
 
+namespace {
+struct PendingSoup { const float* data; const std::function<void()>* placeAll; };
+PendingSoup g_pending[8];
+int g_pendingCount = 0;
+}  // namespace
+
+void setPendingSoup(const float* data, const std::function<void()>* placeAll) {
+    if (!data) return;
+    for (int i = 0; i < g_pendingCount; ++i)
+        if (g_pending[i].data == data) {
+            if (placeAll) { g_pending[i].placeAll = placeAll; return; }
+            g_pending[i] = g_pending[--g_pendingCount];
+            return;
+        }
+    if (placeAll && g_pendingCount < 8) { g_pending[g_pendingCount++] = {data, placeAll}; return; }
+    // a registration that does not fit would leave a stale soup unguarded:
+    // say so loudly rather than read it wrong
+    if (placeAll) std::fprintf(stderr, "collision: more than 8 lazy soups - one left unguarded\n");
+}
+
+void clearPendingSoups() { g_pendingCount = 0; }
+
+void ensurePlaced(const TriangleSoup& tris) {
+    if (!g_pendingCount) return;
+    for (int i = 0; i < g_pendingCount; ++i)
+        if (g_pending[i].data == tris.data() && g_pending[i].placeAll) {
+            (*g_pending[i].placeAll)();      // places every pending mesh, all soups
+            return;
+        }
+}
+
 TriangleSoup collisionSoup(std::span<const std::byte> d, SoupKind kind,
                            std::vector<int>* meshOf) {
     OMK_MEM_TAG("collision");   // the profiler's category (todo/debug-tools.md 4)
@@ -175,6 +206,7 @@ TriangleSoup collisionSoup(std::span<const std::byte> d, SoupKind kind,
 
 std::optional<double> floorUnder(const TriangleSoup& tris, double x, double y,
                                  double z) {
+    ensurePlaced(tris);   // a lazy soup's pending meshes (collision.h)
     std::optional<double> best;
     for (std::size_t t = 0; t + 9 <= tris.size(); t += 9) {
         const double ax = tris[t],     ay = tris[t + 1], az = tris[t + 2];
@@ -195,6 +227,7 @@ std::optional<double> floorUnder(const TriangleSoup& tris, double x, double y,
 
 TriangleSoup soupInBox(const TriangleSoup& tris, double minX, double maxX,
                        double minZ, double maxZ) {
+    ensurePlaced(tris);   // a lazy soup's pending meshes (collision.h)
     TriangleSoup out;
     for (std::size_t t = 0; t + 9 <= tris.size(); t += 9) {
         double lo[2] = {tris[t], tris[t + 2]}, hi[2] = {tris[t], tris[t + 2]};
@@ -212,6 +245,7 @@ TriangleSoup soupInBox(const TriangleSoup& tris, double minX, double maxX,
 
 std::optional<GroundHit> surfaceUnder(const TriangleSoup& tris, double x,
                                       double y, double z) {
+    ensurePlaced(tris);   // a lazy soup's pending meshes (collision.h)
     std::optional<GroundHit> best;
     for (std::size_t t = 0; t + 9 <= tris.size(); t += 9) {
         const double ax = tris[t],     ay = tris[t + 1], az = tris[t + 2];
@@ -395,6 +429,7 @@ SoupGrid buildSoupGrid(const TriangleSoup& tris, double cell,
 
 SoupGrid buildSoupGrid(const TriangleSoup& tris, double cell,
                        std::span<const std::uint32_t> ids) {
+    ensurePlaced(tris);   // a lazy soup's pending meshes (collision.h)
     OMK_MEM_TAG("collision grids");   // the profiler's category (see above)
     const std::size_t n = tris.size() / 9;
     return buildOver(tris, cell, [&](auto&& f) {
@@ -405,6 +440,7 @@ SoupGrid buildSoupGrid(const TriangleSoup& tris, double cell,
 
 std::optional<double> floorUnder(const TriangleSoup& tris, const SoupGrid& g,
                                  double x, double y, double z) {
+    ensurePlaced(tris);   // a lazy soup's pending meshes (collision.h)
     if (!g.matches(tris)) return floorUnder(tris, x, y, z);
     std::optional<double> best;
     if (g.nx <= 0) return best;
@@ -423,6 +459,7 @@ std::optional<double> floorUnder(const TriangleSoup& tris, const SoupGrid& g,
 
 std::optional<GroundHit> surfaceUnder(const TriangleSoup& tris, const SoupGrid& g,
                                       double x, double y, double z) {
+    ensurePlaced(tris);   // a lazy soup's pending meshes (collision.h)
     if (!g.matches(tris)) return surfaceUnder(tris, x, y, z);
     std::optional<GroundHit> best;
     if (g.nx <= 0) return best;
@@ -513,6 +550,7 @@ inline std::pair<const std::uint32_t*, const std::uint32_t*> movingList(
         if (p.ids.empty()) continue;
         if (!(x >= p.minX - kGridEps && x <= p.maxX + kGridEps &&
               z >= p.minZ - kGridEps && z <= p.maxZ + kGridEps)) continue;
+        if (p.pending && g.place) g.place(p.owner);   // placed before it is read
         if (++hits == 1) { only = &p; continue; }
         if (hits == 2) scratch.assign(only->ids.begin(), only->ids.end());
         scratch.insert(scratch.end(), p.ids.begin(), p.ids.end());
@@ -560,6 +598,7 @@ std::optional<double> floorUnder(const TriangleSoup& tris, const SplitSoupGrid& 
         if (hit > y + 1.0 && (!best || hit < *best)) { best = hit; tri = t; }
     };
     if (!g.matches(tris)) {
+        ensurePlaced(tris);
         for (std::size_t t = 0; t + 9 <= tris.size(); t += 9) visit(static_cast<std::uint32_t>(t / 9));
         return best;
     }
@@ -618,6 +657,7 @@ void gatherSplitIds(const SplitSoupGrid& g, double minX, double maxX, double min
             if (p.ids.empty() || minX > maxX || minZ > maxZ) continue;
             if (maxX < p.minX - kGridEps || minX > p.maxX + kGridEps ||
                 maxZ < p.minZ - kGridEps || minZ > p.maxZ + kGridEps) continue;
+            if (p.pending && g.place) g.place(p.owner);   // placed before it is read
             ids.insert(ids.end(), p.ids.begin(), p.ids.end());
         }
     std::sort(ids.begin(), ids.end());
@@ -822,6 +862,7 @@ inline void sweptBox(const double p0[3], const double d[3], double radius, doubl
 
 std::optional<SweepHit> sweepSphere(const TriangleSoup& tris, const double p0[3],
                                     const double d[3], double radius) {
+    ensurePlaced(tris);   // a lazy soup's pending meshes (collision.h)
     std::optional<SweepHit> best;
     double lo[3], hi[3];
     sweptBox(p0, d, radius, lo, hi);

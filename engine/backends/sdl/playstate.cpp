@@ -1455,6 +1455,9 @@ void PlayState::rebuildWorld() {
  OMK_ZONE("set: rebuild world");   // the profiler (todo/debug-tools.md 6)
     omk::Renderer& world = *world_;
     const double rebuild0 = static_cast<double>(front.perfCounter());
+    // nothing recorded survives new soups (`lazyPlace`); main thread, here -
+    // not in `prepareSet`, which may run on a background job
+    lazyForget();
     ++worldGen;
     worldTex.clear();
     worldDecors.clear();

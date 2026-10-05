@@ -27687,6 +27687,71 @@ def c_engine_particle_gate():
         "picture is byte-identical to the ungated run"
 
 
+def c_engine_lazy_collision():
+    r"""THE MOVING COLLISION PLACED ON DEMAND (2026-10-05,
+    `todo/cpu-vs-original.md` tier C, the reader's choice over mesh space).
+    A moving mesh's walkable and steep triangles were re-placed every frame
+    it moved - ~33 meshes a street frame. Now the frame RECORDS the placement
+    and the triangles are placed the first time a query reaches the mesh: a
+    grid query through its part (whose extent, while pending, is the rest box
+    carried through the placement and padded - a superset, so the same
+    answers, step 38), a linear one through `omk::ensurePlaced`, which places
+    all. The original moves nothing at all (it tests in mesh space); this
+    keeps the answers bit for bit.
+
+    The street walk (785 frames, the `todo/cpu-vs-original.md` path, 3000
+    units, no door) twice - lazily and with `OMK_EAGER_SOUPS=1`: the last
+    frame byte-identical and the log identical but for the placer's own line;
+    and the placer's counts over frames 300..600 must show it made under a
+    tenth of the placements it recorded (measured 2026-10-05: 9896 recorded,
+    70 made). The transitions that stand ON moving meshes are the lift's,
+    the doors', the crates' and the chest's checks, all green on it.
+
+    Shown to fail (2026-10-05): every recorded mesh placed at the end of the
+    motion pass (red: made = recorded); and `SplitSoupGrid::place` left unset,
+    so a grid query reads a pending mesh where it last was (red: see the
+    tier-C record for which transition checks turn).
+    """
+    import subprocess, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    hold = "0*45,k200*150,k200+54*200,k203*40,k200+54*200,k200*150"
+    tmp = tempfile.mkdtemp()
+    try:
+        outs, dumps = [], []
+        for eager in (False, True):
+            d = os.path.join(tmp, "l%d.bin" % eager)
+            env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+            if eager:
+                env["OMK_EAGER_SOUPS"] = "1"
+            r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                                "--save", os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "0",
+                                "--stand", "1804,0,-6890,336", "--nofmv", "--res", "640x480",
+                                "--hold", hold, "--frames", "785", "--nodelay", "--dump", d],
+                               capture_output=True, text=True, errors="replace", env=env)
+            outs.append(r.stdout)
+            dumps.append(open(d, "rb").read() if os.path.exists(d) else b"")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    m = re.search(r"frame 600: moving collision since the last line - (\d+) mesh placements recorded, "
+                  r"(\d+) made", outs[0])
+    if not m or not dumps[0]:
+        return ("no count",), ("count",), "the run must print the frame-600 placement line and dump"
+    rec, made = int(m.group(1)), int(m.group(2))
+    strip = lambda o: [ln for ln in o.splitlines()
+                       if not re.search(r"ms|MB|KB|took|fps|wrote|moving collision since", ln)]
+    print("        frames 300..600: %d placements recorded, %d made" % (rec, made))
+    return (rec > 0 and made * 10 < rec, dumps[0] == dumps[1], strip(outs[0]) == strip(outs[1])), \
+        (True, True, True), \
+        "the street walk makes under a tenth of the placements it records, and its frame and " \
+        "log are those of the eager placement"
+
+
 def c_engine_street_memory():
     r"""THE STREET'S MEMORY AGAINST THE ORIGINAL'S, tier A (2026-10-04,
     `todo/ram-vs-original.md`): what the port keeps in Anekbah where the
@@ -41851,6 +41916,7 @@ SLOW = [
     ("engine: scx kept", c_engine_scx_kept, "todo/ram-vs-original.md tier C; script/program.h"),
     ("engine: raster cost", c_engine_raster_cost, "todo/cpu-vs-original.md tier A; o3de/raster.h"),
     ("engine: particle gate", c_engine_particle_gate, "todo/cpu-vs-original.md tier C; o3de/particles.h"),
+    ("engine: lazy collision", c_engine_lazy_collision, "todo/cpu-vs-original.md tier C; o3de/collision.h"),
     ("engine: profiler control", c_engine_profiler_control, "todo/debug-tools.md step 3"),
     ("engine: profiler gpu", c_engine_profiler_gpu, "todo/debug-tools.md step 5"),
     ("engine: release build", c_engine_release_build, "todo/debug-tools.md"),
