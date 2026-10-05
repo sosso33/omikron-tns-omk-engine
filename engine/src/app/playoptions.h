@@ -195,6 +195,9 @@ struct PlayOptions {
     bool noCrowd = false;
     bool noScriptSprites = false;   // DEBUG: leave the scripted sprites undrawn, for a before/after
     std::vector<int> scxPlay;       // --scx-play: objects to start by handle, once
+    // --hide-show A,H,S,F: opcode 79 on actor A at frame H, then opcode 78
+    // with second field F at frame S - a hidden body's return, on demand
+    int hideShow[4] = {-1, -1, -1, 0};
     // `--sneak` opens the device as soon as the player is on his feet,
     // through the SAME path TAB takes - `MDSNEAK0`'s handler, event 25 and
     // screen 9 - rather than a second way in. A testing convenience for a

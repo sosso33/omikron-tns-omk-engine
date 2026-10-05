@@ -91,12 +91,35 @@ int PlayState::phaseWorld() {
                 if ((adventure || session.dialogOpen()) && player && sh.actor == playerId) continue;
                 Staged* s = nullptr;
                 for (auto& up : staged) if (up->actor == sh.actor) { s = up.get(); break; }
+                // RE-SHOWN: `Actor_Attach` re-links the node `Actor_Detach`
+                // parked - same place, same pose. Its cached pointers are
+                // re-resolved, since the model pool may have let them go.
+                if (!s)
+                    for (std::size_t k = 0; k < parked.size(); ++k)
+                        if (parked[k]->actor == sh.actor) {
+                            staged.push_back(std::move(parked[k]));
+                            parked.erase(parked.begin() + static_cast<long>(k));
+                            s = staged.back().get();
+                            s->mo = charModelFor(s->model);
+                            s->bk = charBankFor(s->bank);
+                            s->restGeo = nullptr;
+                            s->gpu = false;
+                            s->poolWas = nullptr;
+                            s->lastSkinned = -1;
+                            std::printf("frame %ld: re-shown actor %d %s - where it was left, "
+                                        "at %.0f %.0f %.0f facing %.0f (Actor_Attach keeps the node)\n",
+                                        n, s->actor, s->model.c_str(), s->at[0], s->at[1], s->at[2],
+                                        s->facing);
+                            ++poolComposition;
+                            break;
+                        }
                 if (!s) {
                     staged.push_back(std::make_unique<Staged>());
                     s = staged.back().get();
                     s->actor = sh.actor;
                     s->model = sh.model;
                     s->bank  = sh.bank;
+                    s->placeSeqSeen = sh.placeSeq;
                     s->mo = charModelFor(sh.model);
                     s->bk = charBankFor(sh.bank);
                     ++stagedEver;
@@ -113,6 +136,33 @@ int PlayState::phaseWorld() {
                                              : "shown by a script, no placement of his own");
                 }
                 s->seen = true;
+                // `character.show` with a NON-ZERO second field: `sub_41BDF0`
+                // puts the node at the record's position and facing, over
+                // whatever a program or a fight had done (0x403CB0, M1).
+                if (sh.fromTable && sh.placeSeq != s->placeSeqSeen) {
+                    s->placeSeqSeen = sh.placeSeq;
+                    for (int k = 0; k < 3; ++k) s->at[k] = sh.pos[k];
+                    s->facing = sh.facing;
+                    // ...and `sub_41BDF0` writes the NODE's facing, so a held
+                    // pose is held at the record's heading from now on. The
+                    // pose itself is not touched: a scene clip's last frame
+                    // may carry its own root turn, which the node's facing
+                    // does not undo in the engine either.
+                    s->progYawKnown = false;
+                    if (s->lastYawKnown) {
+                        s->lastBodyYaw = sh.facing;
+                        s->lastDrawnYaw = sh.facing;
+                        s->lastAboutPelvis = true;
+                    }
+                    s->progRan = false;
+                    s->fightPlaced = false;
+                    s->drawAtKnown = false;
+                    s->placed = true;
+                    s->pelvis = false;
+                    std::printf("frame %ld: actor %d put at his record %.0f %.0f %.0f facing %.0f "
+                                "(character.show, second field set)\n",
+                                n, s->actor, sh.pos[0], sh.pos[1], sh.pos[2], sh.facing);
+                }
                 // A placement record names a spot on the GROUND; a script
                 // show carries none (`Session::showCharacter` pushes a bare
                 // record), so such a body waits for a program or a camera
@@ -257,10 +307,28 @@ int PlayState::phaseWorld() {
             playerProgramWas = playerProgram;
             for (std::size_t k = 0; k < staged.size(); ) {
                 if (staged[k]->seen) { ++k; continue; }
+                // hidden while his actor keeps its slot: PARKED, not dropped
+                if (staged[k]->actor != session.playerActor() &&
+                    session.actorHeld(staged[k]->actor)) {
+                    std::printf("frame %ld: hid actor %d %s - kept where it stands "
+                                "(Actor_Detach)\n", n,
+                                staged[k]->actor, staged[k]->model.c_str());
+                    parked.push_back(std::move(staged[k]));
+                    staged.erase(staged.begin() + static_cast<long>(k));
+                    ++poolComposition;
+                    continue;
+                }
                 std::printf("frame %ld: dropped actor %d %s\n", n,
                             staged[k]->actor, staged[k]->model.c_str());
                 staged.erase(staged.begin() + static_cast<long>(k));
                 ++poolComposition;
+            }
+            // ...and a parked body goes for good once its slot is freed
+            for (std::size_t k = 0; k < parked.size(); ) {
+                if (session.actorHeld(parked[k]->actor)) { ++k; continue; }
+                std::printf("frame %ld: dropped actor %d %s (hidden, and its slot freed)\n",
+                            n, parked[k]->actor, parked[k]->model.c_str());
+                parked.erase(parked.begin() + static_cast<long>(k));
             }
             // A model no staged body wears any more leaves the pool, so the
             // 64 slots a bucket key can address are not spent on the last

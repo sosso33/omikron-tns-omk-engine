@@ -196,7 +196,18 @@ public:
         float       facing = 0.0f;        // degrees, 4096 per turn unwrapped
         int         slot = -1;            // the runtime slot record +0 took
         bool        fromTable = false;    // a placement record put it here
+        // `Character::placeSeq`: a frontend that sees it MOVE puts the body
+        // back at `pos`/`facing`; otherwise a re-shown body stands where it
+        // was left, as `Actor_Attach` leaves its node (todo/drift-audit M1)
+        int         placeSeq = 0;
     };
+    // IS THIS ACTOR STILL IN A SLOT? `character.hide` is `Actor_Detach`
+    // (0x0041CDD0): the node is unlinked and parked (slot state 1), its
+    // transform and its pose untouched, until a show re-links it or the
+    // area's unload frees the slot. True for a character a resident chunk
+    // placed and gave a runtime slot, attached or not - what a frontend
+    // needs to know to KEEP a hidden body's state rather than drop it.
+    bool actorHeld(int actor) const;
     // Slot 0's attached characters, then slot 1's, then anything a script
     // showed that no table places. Rebuilt whenever attachment changes.
     const std::vector<Shown>& shown() const { return shown_; }
@@ -388,6 +399,12 @@ public:
     // `shoot.begin` and the `shoot.actor.action` calls
     // (`todo/shoot-patrol.md` 5a).
     void enableZoneById(int id);
+    // OPCODES 78 / 79, whole - the attach or detach and the `ObjectShown`
+    // bit - so a harness (`omk-play --hide-show`) reaches exactly what a
+    // script does. `field1` is `character.show`'s second field: non-zero
+    // re-places the body at its record (todo/drift-audit.md M1).
+    void characterShow(int actor, int field1);
+    void characterHide(int actor);
     // ...and its mirror, the op-65 arm's two lines: the save bit cleared and
     // the zones re-registered. A HARNESS for what a script the start skipped
     // would have done - AREA 231's record 1 disables 3949 on the way in.
@@ -479,6 +496,9 @@ public:
         int         bit = -1;             // the ObjectShown index
         bool        attached = false;     // Actor_Attach was called
         bool        fromScene = false;    // the SCENE's table, not the AREA's
+        // How many times `sub_41BDF0` has put the node at this record since
+        // the spawn: `character.show` with a non-zero second field (M1).
+        int         placeSeq = 0;
     };
 
     struct ResidentSlot {
@@ -1737,7 +1757,7 @@ private:
     void spawnFromTables(int slot, bool area, bool scene);
     void freeActorSlots(int slot, bool area, bool scene);
     void rebuildShown();
-    void showCharacter(int actor);
+    void showCharacter(int actor, bool place = false);
     void hideCharacter(int actor);
     double       frameSeconds_ = 1.0 / 30.0;
     void openDialog(int id);

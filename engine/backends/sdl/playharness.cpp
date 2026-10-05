@@ -383,6 +383,22 @@ void PlayState::harnessScxPlay() {
     }
 }
 
+// --hide-show: opcode 79, then 78 with the given second field, on one actor
+void PlayState::harnessHideShow() {
+    if (hideShow[0] < 0) return;
+    auto& session = *session_;
+    if (n == hideShow[1]) {
+        session.characterHide(hideShow[0]);
+        std::printf("--hide-show: frame %ld  character.hide %d (a harness call)\n",
+                    n, hideShow[0]);
+    }
+    if (n == hideShow[2]) {
+        session.characterShow(hideShow[0], hideShow[3]);
+        std::printf("--hide-show: frame %ld  character.show %d, %d (a harness call)\n",
+                    n, hideShow[0], hideShow[3]);
+    }
+}
+
 // the frame's facts for the flicker catcher
 void PlayState::harnessFlickerNote(std::size_t& runsDrawn, std::size_t& runsCulled, std::size_t& litBodies) {
     auto& session = *session_;

@@ -99,6 +99,7 @@ struct PlayState {
     bool & noCrowd = opt.noCrowd;
     bool & noScriptSprites = opt.noScriptSprites;
     std::vector<int> & scxPlay = opt.scxPlay;
+    int (&hideShow)[4] = opt.hideShow;
     bool & openSneak = opt.openSneak;
     bool & startShoot = opt.startShoot;
     int & shootHealth = opt.shootHealth;
@@ -409,6 +410,12 @@ struct PlayState {
     std::set<int> propsTold{};   // one line per prop, not per frame
     std::map<std::string, CharBank> charBanks{};
     std::vector<std::unique_ptr<Staged>> staged{};
+    // HIDDEN, NOT GONE (todo/drift-audit.md M1): a body `character.hide`
+    // detached while its actor still holds a slot (`Session::actorHeld`),
+    // kept whole - position, facing, the pose it was left in - and moved
+    // back into `staged` when a show re-links it, as `Actor_Detach` /
+    // `Actor_Attach` keep the node. Dropped once the slot is freed.
+    std::vector<std::unique_ptr<Staged>> parked{};
     std::vector<PedJob> pedJobs{};
     std::vector<std::unique_ptr<PedStaged>> pedStaged{};
     std::map<std::pair<const omk::NodeTracks *, int>, omk::NodeTracks> pedLodTracks{};
@@ -817,6 +824,7 @@ struct PlayState {
     void harnessFoeAt(const float *& foeAt);   // --fight-foe-at: the opponent started elsewhere
     void harnessFightHealth(omk::FightStats& ps);   // --fight-health: the player's Vie at Fight_Begin
     void harnessScxPlay();   // --scx-play: scene objects started by handle, once
+    void harnessHideShow();  // --hide-show: opcodes 79 then 78 on one actor
     void harnessFlickerNote(std::size_t& runsDrawn, std::size_t& runsCulled, std::size_t& litBodies);   // the frame's facts for the flicker catcher
     void harnessSnaps();   // --snaps: the framebuffer every N frames from the hand-over
 

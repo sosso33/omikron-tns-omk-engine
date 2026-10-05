@@ -516,6 +516,13 @@ int PlayOptions::parse(int argc, char** argv) {
                 else cur.push_back(c);
             }
         }
+        // A HARNESS FLAG: `--hide-show A,H,S,F` - `character.hide A` at
+        // frame H and `character.show A, F` at frame S, through the
+        // Session's own 78/79, so a body's return can be watched without the
+        // script that would hide it (todo/drift-audit.md M1).
+        else if (a == "--hide-show" && i + 1 < argc)
+            std::sscanf(argv[++i], "%d,%d,%d,%d", &hideShow[0], &hideShow[1],
+                        &hideShow[2], &hideShow[3]);
         else if (a == "--shoot") startShoot = true;
         else if (a == "--shoot-end" && i + 1 < argc) shootEndAt = std::atol(argv[++i]);
         else if (a == "--shoot-health" && i + 1 < argc) shootHealth = std::atoi(argv[++i]);

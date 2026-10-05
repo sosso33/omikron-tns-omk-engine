@@ -2162,6 +2162,7 @@ void Session::rebuildShown() {
             sh.facing = c.facing;
             sh.slot = c.slot;
             sh.fromTable = true;
+            sh.placeSeq = c.placeSeq;
             shown_.push_back(sh);
         }
     for (const auto& sh : scriptShown_) {
@@ -2179,11 +2180,23 @@ void Session::rebuildShown() {
 // side list so a frontend still sees the body, and marks it `fromTable`
 // false. The bit is written by the caller, because 78 writes one and
 // `player.become` does not.
-void Session::showCharacter(int actor) {
+//
+// THE SECOND FIELD (todo/drift-audit.md M1), read from 0x403CB0: after
+// `Actor_Attach` and the bit, `test ebx, ebx; jz` - only a NON-ZERO second
+// field goes on to `sub_41BDF0(record +0, {fild +4, +8, +C, +10h})`, which
+// puts the node at the record's position and facing. With 0 the node is
+// re-linked where `Actor_Detach` left it, in the pose it was left in.
+// 801 of the 1256 shipped shows pass 0. `place` is that field.
+void Session::showCharacter(int actor, bool place) {
     if (actor == -1) return;
     for (auto& sl : slots_)
         for (auto& c : sl.characters)
-            if (c.actor == actor) { c.attached = true; rebuildShown(); return; }
+            if (c.actor == actor) {
+                c.attached = true;
+                if (place) ++c.placeSeq;
+                rebuildShown();
+                return;
+            }
     bool have = false;
     for (const auto& sh : scriptShown_) if (sh.actor == actor) have = true;
     if (!have) {
@@ -2194,6 +2207,27 @@ void Session::showCharacter(int actor) {
         scriptShown_.push_back(sh);
     }
     rebuildShown();
+}
+
+void Session::characterShow(int actor, int field1) {
+    showCharacter(actor, field1 != 0);
+    const int bit = shownBitOf(actor);
+    if (bit >= 0) state_.setBit(StateArray::ObjectShown, bit, 1);
+}
+
+void Session::characterHide(int actor) {
+    const int id = actor == -1 ? playerActor() : actor;
+    hideCharacter(id);
+    const int bit = actor == -1 ? -1 : shownBitOf(id);
+    if (bit >= 0) state_.setBit(StateArray::ObjectShown, bit, 0);
+}
+
+bool Session::actorHeld(int actor) const {
+    if (actor == -1) return false;
+    for (const auto& sl : slots_)
+        for (const auto& c : sl.characters)
+            if (c.actor == actor && c.slot >= 0) return true;
+    return false;
 }
 
 // `character.hide` (79, 0x403DD0): `sub_41CDD0` on the record's slot.
@@ -2796,10 +2830,7 @@ void Session::onCall(int i, const Call& call) {
         // `ObjectShown` map at DB +20, which `Actors_SpawnFromTables` reads
         // back on every area load and which travels in the save (issue 28).
         if (call.fields.empty()) break;
-        const int id = call.fields[0];
-        showCharacter(id);
-        const int bit = shownBitOf(id);
-        if (bit >= 0) state_.setBit(StateArray::ObjectShown, bit, 1);
+        characterShow(call.fields[0], call.fields.size() > 1 ? call.fields[1] : 0);
         break;
     }
     case 79: {
@@ -2808,10 +2839,7 @@ void Session::onCall(int i, const Call& call) {
         // 1050, three bytes after `player.become 136`, so the body the
         // player just took leaves the screen. No bit is written for him.
         if (call.fields.empty()) break;
-        const int id = call.fields[0] == -1 ? playerActor() : call.fields[0];
-        hideCharacter(id);
-        const int bit = call.fields[0] == -1 ? -1 : shownBitOf(id);
-        if (bit >= 0) state_.setBit(StateArray::ObjectShown, bit, 0);
+        characterHide(call.fields[0]);
         break;
     }
     case 104:

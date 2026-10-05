@@ -263,6 +263,7 @@ struct Staged {
     // carrying `drawAt` over on his FIRST frame reads it before anything
     // wrote it and teleports him to the world origin.
     bool  progRan = false;         // a program placed him at some point
+    int   placeSeqSeen = 0;        // `Shown::placeSeq` last applied (M1)
     bool  fightPlaced = false;     // a melee moved him: the fight's place STANDS after it
     float progYaw = 0.0f;          // the call's Euler y (`Actor_SetEuler(node, p4, p5, p6)` every tick)
     bool  progYawKnown = false;

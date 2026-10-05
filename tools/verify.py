@@ -39486,6 +39486,73 @@ def c_engine_reply_action():
            "then the two save bits and whether each zone is in the live list"
 
 
+def c_engine_hide_show():
+    r"""A HIDDEN BODY COMES BACK WHERE IT WAS LEFT (`todo/drift-audit.md` M1).
+
+    `character.hide` is `Actor_Detach` (0x0041CDD0): the node is unlinked and
+    parked, its transform and pose untouched. `character.show` (0x403CB0) is
+    `Actor_Attach`, the bit, and then - `test ebx, ebx` - ONLY when its second
+    field is non-zero, `sub_41BDF0` with the record's position and facing.
+    801 of the 1256 shipped shows pass 0. The viewer ERASED a hidden body and
+    rebuilt it at its record, ignoring the field: a body a program had moved
+    snapped back to its chunk spot, and one with no `.CTL` came back with no
+    pose at all - the rest pose, a T-pose.
+
+    Telis (53) in Kay'l's flat, through `omk-play --hide-show` (opcodes 79 and
+    78 through the Session's own arms): her first program leaves her on the
+    floor at 3651/1041/-598 and ends at frame 123; the conversation closes at
+    235; nothing drives her until 437. Hidden at 260 and re-shown at 300:
+    with field 0 she is PARKED and RE-SHOWN where she stood, in the pose she
+    was left in; with field 1 she is put at her record, 3635/1278/-656, at its
+    facing 0.
+
+    Shown to fail: erasing instead of parking brings her back at the record
+    with field 0, posed from nothing; ignoring the second field leaves her on
+    the floor with field 1.
+
+    SKIPS without `omk-saves/GAMES`, as `program placement` does: the flat's
+    scene sits behind a gate no committed save reaches.
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    saves = os.path.join(ROOT, "omk-saves", "GAMES")
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    if not os.path.exists(saves):
+        return ("skipped",), ("skipped",), \
+               "omk-saves/GAMES absent - the scene is behind a gate no " \
+               "committed save reaches"
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    hold = "0*110" + ",k28*2,0*18" * 7 + ",0*400"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_TRACE_ACTOR="53")
+    def run(field):
+        r = subprocess.run([play, fr, os.path.join(ROOT, "tables"),
+                            "--save", saves, "--saves", saves, "--slot", "0",
+                            "--var", "652=1,657=1", "--give", "0:42,0:3,1:3",
+                            "--stand", "3054,1071,-753,154", "--hold", hold,
+                            "--hide-show", "53,260,300,%d" % field,
+                            "--frames", "320", "--res", "640x480"],
+                           capture_output=True, env=env, encoding="latin-1")
+        out = r.stdout
+        m = _re.search(r"\[trace\] frame 310 actor 53\s+at (\S+) (\S+) (\S+).*?"
+                       r"yaw (\S+)\s+src (.*)$", out, _re.M)
+        at = tuple(round(float(m.group(i))) for i in (1, 2, 3)) if m else None
+        yaw = round(float(m.group(4))) if m else None
+        held = bool(m) and "last" in m.group(5)
+        parked = "hid actor 53 TE1_FNM - kept" in out
+        return at, yaw, held, parked
+    a0, a1 = run(0), run(1)
+    return (a0[0], a0[2], a0[3], a1[0], a1[1]), \
+           ((3651, 1041, -598), True, True, (3635, 1278, -656), 0), \
+           "re-shown with field 0: where her program left her, in her last " \
+           "pose, the body parked while hidden; with field 1: at her record, " \
+           "at its facing - got %s / %s" % (a0, a1)
+
+
 def c_game_clock():
     r"""GAME_STATE 6: the Omikron calendar - 41 days, 13 months, year 7216.
 
@@ -42042,6 +42109,7 @@ SLOW = [
     ("engine: run over", c_engine_run_over, "todo/falls.md 4"),
     ("engine: script timer", c_engine_script_timer, "todo/drift-audit.md S1; GAME_STATE"),
     ("engine: reply action", c_engine_reply_action, "todo/drift-audit.md S2; SCRIPT_VM"),
+    ("engine: hide show", c_engine_hide_show, "todo/drift-audit.md M1; SCRIPT_VM"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),
