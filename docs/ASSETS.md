@@ -3608,8 +3608,9 @@ model names corroborate them (`ZOH_FN` is a Zombie, `SPV_FNM` a Spectre,
 
 **The behaviour script.** `sub_47FB40` (0x0047FB40) walks it: play the current
 entry `repeats` times (counter at `+100`, index at `+144`), then step on; a
-`{0, n}` entry rewinds. Which script plays is re-read **every frame** from the
-health at `+92` — **> 100 healthy, ≤ 100 wounded, ≤ 50 critical** — and
+`{0, n}` entry rewinds. Which script plays is re-read from the health at `+92`
+**every time the brain picks an action** (an action's tick returned done, or
+the grab's restart - corrected 2026-10-05 from "every frame", `sub_47F6F0`) — **> 100 healthy, ≤ 100 wounded, ≤ 50 critical** — and
 changing band **resets** the index and the counter, so a wounded Gandhar
 restarts his routine rather than resuming it. Expanded:
 
@@ -3622,6 +3623,29 @@ restarts his routine rather than resuming it. Expanded:
 All three share the same five-action tail and differ only in the head: healthy
 varies, critical repeats 24 and 23 five and three times over. It is one routine
 getting more single-minded as he is hurt.
+
+**The actions themselves** (read 2026-10-05, `todo/gandhar.md`, ported in
+`engine/src/actor/gandhar.*`). Each code has an ENTER (`0x004CFB98`: the code
+into `+156`, channel flag 0x800 set or cleared, a clip picked into `+8` by TYPE
+or by ID through `sub_421A20(.., 0)`, which restarts the clock at 1.0 and puts
+the node on `+60` plus the clip's first-frame dy) and a TICK (`0x004CFBC8`,
+by `+156`; any other code takes row 0, action 17's) returning *done*. The
+clock every tick runs is `sub_47EBF0`: `+188 += dt`, **1** while the clip runs,
+**2** from half its frames (`flt_4BCB80` 0.5), **0** at the end, where it wraps
+to `1 + dt` and moves nothing. 16 waits `(rand() & 0x1F) + 30` frames; 17 RISES
+(`node.y - +64 <= -150`) and 18 SINKS (`>= 250`) at `+68` a frame with no clip
+- he comes up out of the lava and goes back into it; 19/21/22/27 play their
+clip; 20 and 24 step toward the player as it plays; 23 fires once at the clip's
+half, 24 on a coin flip each frame; and 19, 20, 23 and 24, once `sub_421020`
+finds an attack in range, roll `(rand() % 100 <= p) + 25` with p 100 / 70 / 40
+by band - **26 the STRIKE always when healthy**, 25 the GRAB 29% of the time
+wounded and 59% critical. **His entry** is `sub_47DFD0`'s type-10 arm: node
+and `+60` at **y -147** (`flt_4BCB74`, whatever the placement), `+68 = 39 *
+property 3 / 30`, action 23 entered at once. **`dword_657A28`** is the grab's
+restart (`sub_47F340` raises it on a touch; the brain enters a new action at
+once), not "the action has finished" as this tree had it. A missed grab enters
+27 and returns done, so the brain replaces 27 with the next script action the
+same frame (the assembly at 0x47F4CE).
 
 **The actions.** A code 16..27 picks a row through a `switch` **permutation**,
 not by subtraction — 16→11, 17→0, 18→1, 19→2, 20→5, 21→6, 22→9, 23→3, 24→4,

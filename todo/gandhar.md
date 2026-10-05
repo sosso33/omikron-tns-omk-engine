@@ -101,7 +101,26 @@ root delta (`Anim_SetFrame`) moves his node. **`sub_47E5F0`**: a step of
 
 ## Steps
 
-1. **His brain in the viewer**: a type-10 branch like Astaroth's - the band,
+1. ✔ **DONE 2026-10-05.** `engine/src/actor/gandhar.*` (the entry, the clock,
+   the twelve enters and ticks, the brain, the 25/26 roll) and the viewer's
+   type-10 branch (his entry arm instead of the default arm, his brain instead
+   of the generic one, his picked clip's restart, his own clip as the pose, the
+   boss bar). Route: `--area 2 --stand 125,-9,401,0 --shoot`, zone 317, he
+   enters at frame 875. The healthy script runs in order with its repeats and
+   rewinds; he SINKS into the lava to y 255 and RISES to -153; at health 40
+   the critical script, at 0 message 3 and the cave's ending (`shoot.end`,
+   the collapse, `area.goto`). `engine: gandhar` (four mutations shown to
+   fail); `--gandhar-health N` is the instrument. Found on the way: `+64` must
+   be set before his arm (it was 0 only by the generic path's order - his
+   model's is 0 anyway); `dword_657A28` is the GRAB's restart, not "the
+   action finished" (`ShootAi`'s comment corrected); action 22's tick runs its
+   cone test on a target it never fetched (stack garbage in the engine; the
+   player here, LABELLED). Still stubbed for steps 2-4: the step toward the
+   player, the fire, the touch - he turns and plays his actions in place.
+   **His look is for a person to judge**: his node sits at y -147 as the
+   engine puts it, which draws his body high over the lava (a fire spirit
+   with a flame tail, rising and sinking).
+   Originally: **His brain in the viewer**: a type-10 branch like Astaroth's - the band,
    the script walk, the enter (flags, the clip by type), the clip clock, the
    done test, the floor placement, the HP bar out of 200, death -> message 3.
    The actions as clip players first (21, 22, 27, and 16's wait). Fix

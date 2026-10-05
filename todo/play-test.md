@@ -371,6 +371,17 @@ about a unit - a SEATED speaker is where the two readings part. Rendered
 headlessly and looked at: both shots read as their names say.
 `todo/drift-audit.md` S14b.
 
+## 31. GANDHAR FIGHTS AS HIMSELF (2026-10-05, step 1 of `todo/gandhar.md`)
+
+In the lava cave (AREA 2), after the bridge meeting (zone 317), Gandhar no
+longer behaves as an ordinary gunman: he plays his own routine - his attack
+animations, then sinking into the lava, waiting, rising again - turning to
+face you, with the boss health bar on the right. Killing him ends the shoot
+and runs the collapse. NOT YET: he does not move toward you, fire, strike or
+grab (steps 2-4). To check by eye: is he drawn at the right HEIGHT over the
+lava (the engine puts him at y -147, high above his floor), and do the
+sink/rise look right? Headless: `--area 2 --stand 125,-9,401,0 --shoot`.
+
 ## HEADLESS PASS over 19-29 (2026-10-05)
 
 Each item driven through the viewer with its check's own command, frames
