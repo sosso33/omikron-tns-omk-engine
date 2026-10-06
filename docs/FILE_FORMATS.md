@@ -773,7 +773,33 @@ the chain is three functions:
   overlapping light **once** a frame (`sub_493CE0`, gated on flag bit 8),
   calls `sub_493E40` per light, and only then `Render_SubmitMesh`.
 
-**The set provides the lights and the crowd receives them.**
+**The set provides the lights and the crowd receives them** - and, read
+2026-10-06, **so does every character**. There is a second consumer, and it is
+the one for the bodies the scripts move:
+
+* `Actor_LoadModel` (0x0041A730) and `Object_Load` (0x0041C980) both call
+  `LightObject` (0x00436F80, *"LightObject, internal error, object %s has a
+  parent"* / *"…is not in a scene"*) on the model's node, unconditionally,
+  while it is still a top-level child of its own model scene; it registers
+  the node in the same structure and keeps the slot at `node+180`.
+* The scene walk `sub_48D3B0` hands every top-level object to `sub_440CA0`:
+  `node+180 == -1` takes the unlit transform (`sub_4947F0`), anything else the
+  crowd's sequence - `sub_494E80`, the query over the root's world point and
+  `+88` radius (`sub_48E590`), `sub_493E40` per light per mesh, then the
+  shimmer (`sub_494180`).
+
+**And a lit vertex starts from the SCENE's AMBIENT, not from black.**
+`sub_494E80(scene, mesh)` writes `scene+416` into every runtime vertex, and
+`Read3DO_Init` sets that to `65793 * (int64)(desc+184 * 255.0)` - a grey -
+beside `scene+420 = 0xFFFFFF`. **`desc+184` is a float, the set's ambient**: 0
+to 0.64 over the shipped sets (ACSgrot 0.25, Aapkayl 0.2, Anekbah 0.1), 1.0 in
+176 of the character models, whose own value nothing reads. The crowd's first
+port read `+416` as 0 everywhere - the writes it found are ACTOR records'
+`+416`, the Euler, a different structure. The pair `+416`/`+420` is also the
+floor and ceiling the UNLIT copy clamps every set vertex's baked colour to,
+one unsigned whole-dword compare (`sub_4947F0`, `jnb`/`jbe`; the colour's top
+byte is 0 in all 405537 set vertices), which raises 3.8% of them to the grey.
+`verify.py: engine: actor lighting`; `todo/drift-audit.md` L1.
 
 `sub_493E40` is per-vertex, and its arithmetic names the record's fields:
 

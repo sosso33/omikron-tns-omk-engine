@@ -55,6 +55,9 @@ light`.
 The question that made the table worth decoding is answered, and the answer is
 the one this repo recorded as a hypothesis and refused to assert: **a decor set
 supplies the lights and the street's moving population receives them.**
+**CORRECTED 2026-10-06: so does every character and prop** (`LightObject` in
+`Actor_LoadModel` / `Object_Load`, drawn through `sub_440CA0`), **and the base
+is the set's ambient grey, not black** (`docs/FILE_FORMATS.md`, `todo/drift-audit.md` L1).
 
 `Read3DO_Init` registers a set's lights into the structure the binary calls
 "Lights Collisions". `sub_4380B0` - LightInstance, by its own error strings -

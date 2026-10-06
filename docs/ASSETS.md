@@ -2091,6 +2091,12 @@ it up all three channels.
 
 The copy is clamped between the scene's `+416` and `+420` — a whole-dword
 compare, not per channel, which is crude but is what the code does.
+**What the two are** (read 2026-10-06): `Read3DO_Init` sets `+416` to the
+set's AMBIENT grey, `65793 * (int64)(desc+184 * 255.0)`, and `+420` to
+`0xFFFFFF`; the compare is unsigned (`jnb`/`jbe`) and the top byte is 0 in
+every shipped set vertex, so the clamp raises any colour below the grey -
+3.8% of set vertices. And `+416` is also what a LIT vertex starts from
+(`sub_494E80`). The clamp is NOT yet ported (`todo/drift-audit.md` L1).
 
 Two mesh flags animate the colour after it is read, and they are **not** the
 `0x40000000` `.SFX` effect of §4:
@@ -2166,7 +2172,10 @@ either, and the unlight path is gated on **mesh flag `0x8`, which no shipped
 mesh carries** — 0 of 12203 in `DECORS`, 0 of 3517 in `PERSOS`. So the dynamic
 lighting is for characters and props, and a set is baked, full stop.
 
-Not implemented in the viewers: characters ship a flat white baked light, so
+**Corrected 2026-10-06: the ENGINE PORT now lights every character this way**
+(`Actor_LoadModel` / `Object_Load` call `LightObject`, `sub_440CA0` lights the
+node, from the scene's ambient grey - `docs/FILE_FORMATS.md` §5b;
+`todo/drift-audit.md` L1). Not implemented in the WEB viewers: characters ship a flat white baked light, so
 they are drawn unlit, and the dynamic pass would need the 304-byte light
 records at `scene[8]` (169 of them in ANEKBAH) decoded first. ~~That decode is
 **not** done~~ — **it is, since 2026-09-05** (`docs/FILE_FORMATS.md` §5b "The
