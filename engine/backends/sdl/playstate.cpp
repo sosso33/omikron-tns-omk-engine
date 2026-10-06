@@ -1911,6 +1911,21 @@ void PlayState::prepareSet(SetLoad& L) {
     t = clk::now();
     w.geo = omk::buildGeometry(d, omk::DrawFilter::Engine);
     omk::dropCharacterArrays(w.geo);   // a set has no face morph and no seams
+    // THE UNLIT COPY'S CLAMP (`sub_4947F0`, todo/drift-audit.md L1 step 2):
+    // every set vertex's baked colour floored at the set's AMBIENT grey, the
+    // scene's `+416`. **OFF unless `OMK_AMBIENT_CLAMP` is set, and that is
+    // deliberate**: as read it turns the cave's pure-green door pieces
+    // (`GGporte`, `GGtedoor01`, 0x00FF00 < 0x3F3F3F) grey, and the reader's
+    // frame of the original shows that green VIVID - so something in the
+    // reading is wrong and the clamp is not shipped until it is found.
+    if (const auto mh0 = omk::readHeader(d); mh0 && omk::envSet("OMK_AMBIENT_CLAMP")) {
+        const int grey = static_cast<int>(static_cast<std::int64_t>(
+            static_cast<double>(mh0->ambient) * 255.0));
+        const std::size_t raised = omk::clampToAmbient(w.geo, grey);
+        std::printf("set %s: %zu of %zu corners raised to its ambient grey %d "
+                    "(sub_4947F0's clamp)\n", L.stem.c_str(), raised,
+                    w.geo.corners.size(), grey);
+    }
     // The runs, in submission order: batch by batch, and inside a batch
     // split wherever `cornerMesh` changes. A set whose corners carry no
     // mesh index leaves this empty, and the draw path then submits whole

@@ -2096,7 +2096,7 @@ set's AMBIENT grey, `65793 * (int64)(desc+184 * 255.0)`, and `+420` to
 `0xFFFFFF`; the compare is unsigned (`jnb`/`jbe`) and the top byte is 0 in
 every shipped set vertex, so the clamp raises any colour below the grey -
 3.8% of set vertices. And `+416` is also what a LIT vertex starts from
-(`sub_494E80`). The clamp is NOT yet ported (`todo/drift-audit.md` L1).
+(`sub_494E80`). **CONTRADICTED by the original (2026-10-06):** as read, the clamp turns the cave's pure-green door pieces (`GGporte`, `GGarche`, `GGaltar`, the stairs, the additive `GGtedoor01` - 169 vertices of `0x00FF00`, below the 0x3F3F3F floor) grey, and the reader's frame of the original shows a VIVID green glow behind Gandhar (with a dark door frame in front of it, which the clamp does reproduce). So something in this reading is wrong - which branch those meshes take, the floor this slot really has (`sub_41E7A0`, the day/night cycle, rewrites `+416`/`+420` from the clock for a decor slot whose byte `+105` is set: a floor of 0..128 grey, `dword_4C2C28 = 0x80`), or the green coming from elsewhere (`FX_Porte`). Ported as `omk::clampToAmbient`, OFF unless `OMK_AMBIENT_CLAMP` is set. `todo/drift-audit.md` L1.
 
 Two mesh flags animate the colour after it is read, and they are **not** the
 `0x40000000` `.SFX` effect of §4:

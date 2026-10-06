@@ -798,7 +798,7 @@ port read `+416` as 0 everywhere - the writes it found are ACTOR records'
 `+416`, the Euler, a different structure. The pair `+416`/`+420` is also the
 floor and ceiling the UNLIT copy clamps every set vertex's baked colour to,
 one unsigned whole-dword compare (`sub_4947F0`, `jnb`/`jbe`; the colour's top
-byte is 0 in all 405537 set vertices), which raises 3.8% of them to the grey.
+byte is 0 in all 405537 set vertices), which raises 3.8% of them to the grey. **CONTRADICTED by the original (2026-10-06):** as read, the clamp turns the cave's pure-green door pieces (`GGporte`, `GGarche`, `GGaltar`, the stairs, the additive `GGtedoor01` - 169 vertices of `0x00FF00`, below the 0x3F3F3F floor) grey, and the reader's frame of the original shows a VIVID green glow behind Gandhar (with a dark door frame in front of it, which the clamp does reproduce). So something in this reading is wrong - which branch those meshes take, the floor this slot really has (`sub_41E7A0`, the day/night cycle, rewrites `+416`/`+420` from the clock for a decor slot whose byte `+105` is set: a floor of 0..128 grey, `dword_4C2C28 = 0x80`), or the green coming from elsewhere (`FX_Porte`). Ported as `omk::clampToAmbient`, OFF unless `OMK_AMBIENT_CLAMP` is set.
 `verify.py: engine: actor lighting`; `todo/drift-audit.md` L1.
 
 `sub_493E40` is per-vertex, and its arithmetic names the record's fields:

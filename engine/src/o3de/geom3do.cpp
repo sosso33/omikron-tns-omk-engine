@@ -88,6 +88,27 @@ void dropCharacterArrays(Geometry& g) {
     std::vector<std::int32_t>().swap(g.cornerDeclared);
 }
 
+std::size_t clampToAmbient(Geometry& g, int grey) {
+    if (grey <= 0) return 0;                       // a floor of 0 raises nothing
+    if (grey > 255) grey = 255;
+    const std::uint32_t floor = 65793u * static_cast<std::uint32_t>(grey);
+    const float gf = static_cast<float>(grey) / 255.0f;
+    std::size_t raised = 0;
+    for (Corner& c : g.corners) {
+        if (c.phase >= 0.0f) continue;             // the shimmer's branch: no clamp
+        // the bytes the corner was built from (`buildGeometry`: byte / 255)
+        const auto byte = [](float f) {
+            const int v = static_cast<int>(f * 255.0f + 0.5f);
+            return static_cast<std::uint32_t>(v < 0 ? 0 : (v > 255 ? 255 : v));
+        };
+        const std::uint32_t dw = byte(c.r) << 16 | byte(c.g) << 8 | byte(c.b);
+        if (dw >= floor) continue;                 // `jnb`: unsigned, the whole dword
+        c.r = c.g = c.b = gf;
+        ++raised;
+    }
+    return raised;
+}
+
 Geometry buildGeometry(std::span<const std::byte> d, DrawFilter filter) {
     OMK_MEM_TAG("geometry");   // the profiler's category (todo/debug-tools.md 4)
     Geometry out;

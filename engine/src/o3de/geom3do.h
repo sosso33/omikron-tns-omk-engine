@@ -242,6 +242,20 @@ MirrorPlane mirrorPlane(std::span<const std::byte> d);
 // runtime texture slot, handed out in material-record order (ASSETS 4b).
 Geometry buildGeometry(std::span<const std::byte> d, DrawFilter filter);
 
+// THE UNLIT COPY'S CLAMP (`sub_4947F0`; todo/drift-audit.md L1 step 2). Every
+// vertex a node draws UNLIT takes its baked colour clamped between the
+// drawing scene's `+416` and `+420` - one UNSIGNED compare of the whole
+// dword (`jnb` / `jbe`), not per channel - and `Read3DO_Init` sets those to
+// the set's ambient grey (`65793 * grey`) and `0xFFFFFF`. The dword is the
+// vertex's `+28` read as `R<<16 | G<<8 | B` (its top byte is 0 in all
+// 405537 set vertices), so any colour whose value falls below the grey's -
+// in practice a red byte under the grey - becomes the grey. The SHIMMER
+// branch (flag 0x8000000, a corner with `phase >= 0`) adds from its table and
+// clamps nothing. For a SET's own geometry, with its own ambient: a
+// character drawn unlit would take the decor's, never its model's.
+// -> how many corners it raised.
+std::size_t clampToAmbient(Geometry& g, int grey);
+
 // A SET's geometry gives back the two per-corner arrays only a CHARACTER
 // reads (todo/ram-vs-original.md, tier A): `cornerVertex` feeds the face
 // morph and `cornerDeclared` the seam control, neither of which a decor set
