@@ -814,10 +814,29 @@ void PlayState::worldTexturePool() {
     // it can only take him out whole. Whatever the exemption is for
     // in first person - the weapon in his hands is the obvious
     // candidate - is not reproduced here.
-    drawPlayer = playerReady && player &&
+    // ...and NOT WHILE HE SITS IN A SLIDER. `MDSLIDIN` ends with
+    // `push 8; push [esi+8]; call sub_436E70` - `o3de_DisableObject(his
+    // node, 8)`, the hidden bit on his whole tree - and `sub_457040`
+    // (Manuelle) does the same; `sub_468FA0`, the exit's start, is what
+    // `o3de_EnableObject`s him again. The door is shut over him, so the
+    // seat was never something the original drew (drift audit A1, the
+    // reader: "once he's seated, the door closes so we can't see what's
+    // inside the slider").
+    const bool seatedHidden = boarded && !leaving;
+    drawPlayer = playerReady && player && !seatedHidden &&
                             !(session.shootMode().active() && shootCameraLive) &&
                             (adventure || uiPause ||
                              (session.dialogOpen() && !playerProgram));
+    {
+        static bool wasSeatedHidden = false;
+        if (seatedHidden != wasSeatedHidden && player) {
+            wasSeatedHidden = seatedHidden;
+            std::printf("frame %ld: player %s\n", n, seatedHidden
+                        ? "HIDDEN in the slider - MDSLIDIN's o3de_DisableObject(node, 8); drawn: no"
+                        : (drawPlayer ? "SHOWN again - sub_468FA0's o3de_EnableObject(node, 8); drawn: yes"
+                                      : "SHOWN again - sub_468FA0's o3de_EnableObject(node, 8); drawn: no"));
+        }
+    }
     // ...AND THE EXEMPTION, ported 2026-09-10 (`todo/shoot-mode.md`
     // 8.0). `Shoot_Enter` hides the player's tree with `sub_436CE0`,
     // which sets the hidden bit on every node WITHOUT 0x200000 - and in

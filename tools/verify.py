@@ -9454,6 +9454,20 @@ def c_render_states():
         "HARDWARE: dither, filters LINEAR/LINEAR/NONE, ANTIALIAS not set; EDGEANTIALIAS never set"
 
 
+def _hiddenSeat(o):
+    """The player is HIDDEN in the slider from MDSLIDIN to `sub_468FA0` and
+    drawn again after (drift audit A1), read from the draw decision's own
+    lines: the hide comes after `MDSLIDIN: aboard`, the show after `ARRIVED`
+    and says `drawn: yes`, and each happens once."""
+    i_in = o.find("MDSLIDIN: aboard")
+    i_hide = o.find("player HIDDEN in the slider")
+    i_arr = o.find("ARRIVED - he gets OUT WHERE IT STOPPED")
+    i_show = o.find("player SHOWN again")
+    return (0 <= i_in < i_hide < i_arr < i_show and
+            o.count("player HIDDEN in the slider") == 1 and
+            "SHOWN again - sub_468FA0's o3de_EnableObject(node, 8); drawn: yes" in o)
+
+
 def c_engine_slider_journey():
     r"""THE WHOLE SLIDER, from the sneak to getting out at the destination.
 
@@ -9524,8 +9538,10 @@ def c_engine_slider_journey():
             # A5: case 7 with no 0x200 hands it back the tick after MDSLIDOU,
             # where it waited ~800 frames for "300 clear and in front"
             bool(_re.search(r"slider: released [12] frame\(s\) after MDSLIDOU", o)),
+            # A1: hidden from MDSLIDIN to the exit's start, drawn again after
+            _hiddenSeat(o),
             _seatOf(o)), \
-           (True,) * 14, \
+           (True,) * 15, \
         "from the sneak's destination row: the call (he stays put), the " \
         "slider OPEN at the kerb, MDACTION's door snap and H_SLDIN, then " \
         "MDSLIDIN ONCE - it fired twice until the frontend stopped re-reading " \
