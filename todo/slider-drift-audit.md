@@ -31,12 +31,13 @@ Each with a check shown to fail on the old code (a mutation per commit):
 | B3 the sneak's open forgets the destination | `6942ef9` | `engine: slider forget` (new) |
 | M1 Manuelle's stop through `sub_468FA0` (no longer stuck), the slider put back where the drive began; A7 camera 9 blends and holds; A3 a journey ends on camera 10; B11 camera 17's fixed eye and 6.00 m release; A6 MDSLIDOU's facing | `5d4b439` | `engine: slider manual` (drives to the stop and walks away), `engine: slider journey` (the camera request chain), `engine: slider journey area` |
 | A4 the call's hold and black-fade bands, released at the arrival / H_SLDOUT's first tick; `--board-after N` | `d875956` | `engine: slider arrives` (UP held while it comes: walked 0.4), `engine: slider journey`, `refused`/`forget` re-timed past the arrival |
+| D1 a journey that drives (Jaunpur -> Tetra, 75 frames); `--address-enable N,...` | `eaef82e` | `engine: slider journey drive` (new) |
 
 The port's mode order is now the engine's: case 2 -> **1** (open, bit 4,
 600 frames) -> MDACTION sets **3** -> MDSLIDIN **4** -> a journey's case 6
 -> 4, `sub_468FA0` **5**, MDSLIDOU **7** -> case 7 at once (no 0x200) or
-after 300-and-in-front (Manuelle). M1 and the exit are DONE (`5d4b439`); A4 DONE (`d875956`); next is D1 (a journey that actually
-drives), then the L/M-sized rows.
+after 300-and-in-front (Manuelle). M1 and the exit are DONE (`5d4b439`); A4 DONE (`d875956`); D1 DONE (`eaef82e`); next the small rows (B6, B9,
+M4, M5, B7, B10, M6, B8), then the L/M-sized ones.
 
 **B3 DONE, and the reader was right** (`engine: slider forget`). The
 reset of `dword_6A17CC` read as "new game" is the OPEN CALLBACK of the
