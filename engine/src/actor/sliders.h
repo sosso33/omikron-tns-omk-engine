@@ -38,6 +38,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <span>
 #include <string>
 #include <vector>
@@ -331,7 +332,9 @@ struct Pedestrian {
     float        remaining = 0.0f;            // +48, units*256 left on the segment
     float        baseSpeed = 0.0f;            // +52, units*256 a frame
     float        speed = 0.0f;                // +56
-    float        radius = 0.0f;               // +60, half the model's bounding radius
+    float        radius = 0.0f;               // +60: HALF the model's bounding radius for a
+                                              // walker (`sub_453ED0`), TWICE it for a vehicle
+                                              // (`sub_4544B0`: `fadd st, st`)
     int          ahead = -1;                  // +68, the walker in front this frame
     int          lane = -1;                   // +72
     int          route = -1;                  // +76
@@ -636,6 +639,7 @@ private:
     float bumpHold_ = 0.0f;                  // `flt_536C28`, 90 frames
     int   bumpLatch_ = -1;                   // `dword_538E20`
     int   nSliderModels_ = 0, nMotoModels_ = 0;   // dword_539934 / dword_539930
+    std::map<std::string, float> vehRadius_;      // `sub_438040` per vehicle model, once handed in
     int   level_ = kDefaultStreetActivity;
     int   talkTarget_ = -1;
     std::uint32_t rng_ = 1u;

@@ -266,7 +266,15 @@ remaining length and the position advanced. When it runs out:
   the mover ahead in the same list is what the following logic reads.
 
 **Following and blocking.** The mover ahead (`+68`) within the sum of the two
-radii (`+60`) sets flag `1` (blocked); `sub_455D10` then decides the gait
+radii (`+60`) sets flag `1` (blocked) - and `+60` is not the same quantity
+for the two classes: the walkers' `sub_453ED0` stores `r * 0.5` of the
+model's `sub_438040` radius and the vehicles' `sub_4544B0` **`r + r`**
+(`fadd st, st` before `fstp [ebx+3Ch]`), so two sliders (r 82.3) block 329
+units apart, carrot to carrot. The port gave the vehicles the walkers' half
+until 2026-10-06 and queued them at a quarter of that - a slider's nose
+inside the one ahead, which a reader saw parked in Anekbah (`veh_probe`'s
+`overlap` line: 5587 overlapping pair-frames in 1800, closest 23.6, against
+259 and 74.9 with `2r`); `sub_455D10` then decides the gait
 from the distance covered this frame: under 2 units → stop, and the body
 swaps the walk clip (type 9) for an idle (type **11**) on flag `0x100`;
 between the two thresholds at `unk_4C8880` the base speed, beyond them the

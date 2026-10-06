@@ -317,10 +317,30 @@ int main(int argc, char** argv) {
         return static_cast<int>(track.steps[static_cast<std::size_t>(si)].group);
     };
     int bumpEvents = 0, conflicts = 0, sharedFrames = 0, vehHeld = 0, pedHeld = 0;
+    int overlapPairFrames = 0;
+    float minGap = 1e30f;
     std::vector<int> la, lb;
     for (int f = 0; f < frames; ++f) {
         pool.tick(1.0f);
         bumpEvents += static_cast<int>(pool.bumped().size());
+        // two vehicle BODIES nearer than their two half-lengths - a slider
+        // 85 and a moto 45, half the long axis of the sub-object traffic
+        // draws - are one inside the other, whatever their headings
+        {
+            const auto& V = pool.vehicles();
+            for (std::size_t i = 0; i < V.size(); ++i) {
+                if (!V[i].live || V[i].mover < 0) continue;
+                const auto& a = pool.movers()[static_cast<std::size_t>(V[i].mover)];
+                for (std::size_t j = i + 1; j < V.size(); ++j) {
+                    if (!V[j].live || V[j].mover < 0) continue;
+                    const auto& c = pool.movers()[static_cast<std::size_t>(V[j].mover)];
+                    const float dx = a.body[0] - c.body[0], dz = a.body[2] - c.body[2];
+                    const float d = std::sqrt(dx * dx + dz * dz);
+                    const float need = (V[i].kind == 1 ? 85.0f : 45.0f) + (V[j].kind == 1 ? 85.0f : 45.0f);
+                    if (d < need) { ++overlapPairFrames; minGap = std::min(minGap, d); }
+                }
+            }
+        }
         std::vector<int> pg, vg;
         for (const auto& m : pool.movers()) {
             if (!m.live) continue;
@@ -374,6 +394,7 @@ int main(int argc, char** argv) {
                         m.body[0], m.body[1], m.body[2], m.pos[0], m.pos[1], m.pos[2], m.facing,
                         m.baseSpeed, std::sqrt(lx * lx + ly * ly + lz * lz), best, v.sound);
     }
+    std::printf("overlap pair_frames %d min_gap %.1f\n", overlapPairFrames, minGap < 1e29f ? minGap : -1.0f);
     std::printf("run frames %d live %d moved %d lane_changes %d blocked %d stops %d brakes %d "
                 "bumps %d bump_events %d sounding %d max_speed %.1f max_lag %.1f max_offlane %.2f nan %d\n",
                 frames, live, moved, laneChanges, blocked, stops, brakes, bumps, bumpEvents, sound,

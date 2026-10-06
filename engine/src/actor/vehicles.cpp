@@ -162,12 +162,20 @@ bool Sliders::spawnVehicle(int lane, const float at[3], const float dir[3],
     // and +56 is the carrot's, which the gait sets from it each frame. (For a
     // walker +52 is the clip's stride and never moves.)
     m.baseSpeed = m.speed = kVehSpawnSpeed;
-    // `sub_438040`: half the model's bounding radius. The pool holds no
-    // models; the Session hands the real one in with `setVehicleModelRadius`
-    // and until then a vehicle is the crowd's 20 - a LABELLED stand-in, and
-    // the value only decides who blocks whom.
-    m.bodyRadius = 20.0f;
-    m.radius = m.bodyRadius * 0.5f;                  // `f32i(v7, 15) = r + r` over 2
+    // `sub_438040`: the model's bounding radius. The pool holds no models;
+    // the Session hands the real one in with `setVehicleModelRadius` and
+    // until then a vehicle is the crowd's 20 - a LABELLED stand-in.
+    // And +60 is TWICE it: `sub_4544B0` ends `call sub_438040; fadd st, st;
+    // fstp [ebx+3Ch]` - where the walkers' `sub_453ED0` stores `r * 0.5`.
+    // It is what `checkAhead` blocks a follower on (the two +60s summed,
+    // carrot to carrot), so a vehicle given the walker's half queued at a
+    // quarter of the engine's distance: two sliders (r 82.3) stopped 82
+    // apart instead of 329, nose inside the tail of a 170-unit body.
+    {
+        const auto r = vehRadius_.find(v.model);
+        m.bodyRadius = r != vehRadius_.end() ? r->second : 20.0f;
+    }
+    m.radius = m.bodyRadius + m.bodyRadius;          // `f32i(v7, 15) = v27 + v27`
     // ...then `sub_453B40` fills the mover, exactly as it does for a walker
     for (int i = 0; i < 3; ++i) { m.pos[i] = at[i]; m.prev[i] = at[i]; m.dir[i] = dir[i]; }
     // `sub_4543F0`'s trailing loop orients every mover it placed with
@@ -194,11 +202,12 @@ bool Sliders::spawnVehicle(int lane, const float at[3], const float dir[3],
 }
 
 void Sliders::setVehicleModelRadius(const std::string& model, float radius) {
+    vehRadius_[model] = radius;                      // for a vehicle spawned later (a call)
     for (auto& v : vehicles_) {
         if (!v.live || v.model != model || v.mover < 0) continue;
         Pedestrian& m = movers_[static_cast<std::size_t>(v.mover)];
         m.bodyRadius = radius;
-        m.radius = radius * 0.5f;
+        m.radius = radius + radius;                  // `sub_4544B0`: `fadd st, st`
     }
 }
 
