@@ -89,6 +89,19 @@ void PlayState::harnessStateWrites() {
                     giveList.find(':') == std::string::npos ? " (0, carried)" : "",
                     refused);
     }
+    if (!addressEnableList.empty()) {
+        std::string cur;
+        for (char ch : addressEnableList + ",") {
+            if (ch != ',') { cur.push_back(ch); continue; }
+            if (!cur.empty()) {
+                const int bit = std::atoi(cur.c_str());
+                state.setBit(omk::StateArray::AddressEnabled, bit, 1);
+                std::printf("--address-enable: address bit %d set (a harness write, "
+                            "not VM op 87)\n", bit);
+            }
+            cur.clear();
+        }
+    }
     if (!varList.empty()) {
         std::string cur;
         int wrote = 0;

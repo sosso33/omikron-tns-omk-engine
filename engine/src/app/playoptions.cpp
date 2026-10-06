@@ -141,6 +141,8 @@ int PlayOptions::parse(int argc, char** argv) {
 "                   to try a flow against a new game\'s state without the intro\n"
 "  --var N=V,...    set world VARIABLES before the first frame, for a gate that\n"
 "                   a save predates\n"
+"  --address-enable N,...  set destination (address) bits, for a slider row a\n"
+"                   save has not opened\n"
 "  --config <ini>   the game's own config file - [Preferences], and this\n"
 "                   port's [Options] for density and level of detail\n"
 "  --clip <metres>  options row 3, the clip distance (25/50/100/150/200);\n"
@@ -427,6 +429,7 @@ int PlayOptions::parse(int argc, char** argv) {
         // before it even looks at what you carry, so the Telis cutscene
         // behind it cannot be entered from a save that predates them.
         else if (a == "--var" && i + 1 < argc) varList = argv[++i];
+        else if (a == "--address-enable" && i + 1 < argc) addressEnableList = argv[++i];
         else if (a == "--bank-reject") bankReject = true;
         // ...and its companion: keep the save's PLAYER but take the world
         // from `IAM\START`, so a flow can be tried against a new game's

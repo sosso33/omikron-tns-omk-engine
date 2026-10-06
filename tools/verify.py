@@ -9061,6 +9061,66 @@ def c_engine_slider_forget():
         "slider menu instead of riding there"
 
 
+def c_engine_slider_journey_drive():
+    r"""A JOURNEY THAT DRIVES (todo/slider-drift-audit.md D1).
+
+    Both Anekbah destinations in the fixture save have their nearest lane
+    point beside the lane's start, so `sub_456530` case 6 arrives on the
+    tick the journey starts and no other check ever ran the drive - nor
+    case 6's own camera 8, nor camera 10's 60-frame blend out of it. This
+    stands in Jaunpur, opens `Jaunpur - Tetra` by hand (`--address-enable
+    36`, a harness write of the bit VM op 87 sets - the save has not been
+    there), calls a slider from its row, boards, and lets screen 7's hook
+    start the journey: `sub_452CC0` relinks the slider at the top of the
+    destination's lane, case 6 drives it down to the stop, and he gets out
+    there.
+
+    Asserted: the request chain (8 while it comes, 0, 9, then case 6's 8
+    and camera 10 blended over 60 FROM it), the drive taking real time
+    between the two, and the exit nearer the address than the boarding.
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr, tb = omkpaths.data_root(), os.path.join(ROOT, "tables")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(eng) or not os.path.exists(save):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return (True,) * 5, (True,) * 5, "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
+                        "--save", save, "--area", "1",
+                        "--stand", "15509,-251,10552,314", "--frames", "620", "--board",
+                        "--address-enable", "36",
+                        # the slider page, then row 2 (three DOWNs) - Tetra
+                        "--hold", "0*40,k15*3,0*30,k205*4,0*10,k200*4,0*10,k28*4,0*30,"
+                                  "k203*4,0*10,k208*4,0*10,k208*4,0*10,k208*4,0*10,k28*4,0*420"],
+                       capture_output=True, text=True, env=env, errors="replace")
+    o = r.stdout
+    reqs = [(int(f), int(m), int(d), int(fr_)) for f, m, d, fr_ in _re.findall(
+        r"frame (\d+): slider camera (-?\d+) requested over (\d+) frames \(from (-?\d+)\)", o)]
+    chain = [(m, d, fr_) for _, m, d, fr_ in reqs]
+    t8 = next((f for f, m, d, fr_ in reqs if m == 8 and fr_ == 9), None)
+    t10 = next((f for f, m, d, fr_ in reqs if m == 10), None)
+    drove = (t10 - t8) if (t8 is not None and t10 is not None) else -1
+    m_in = _re.search(r"MDSLIDIN: aboard at (-?\d+) (-?\d+) (-?\d+)", o)
+    m_out = _re.search(r"ARRIVED - he gets OUT WHERE IT STOPPED, (-?\d+) (-?\d+) (-?\d+)", o)
+    addr = (14957.0, 5099.0)          # address 36, as the viewer lists it
+    def far(m):
+        return ((float(m.group(1)) - addr[0]) ** 2 + (float(m.group(3)) - addr[1]) ** 2) ** 0.5 if m else 0.0
+    return ("JOURNEY to 'Jaunpur - Tetra - 2130 Madeb St' - state 6" in o,
+            chain == [(8, 0, -1), (0, 60, 8), (9, 60, -1), (8, 0, 9), (10, 60, 8), (0, 60, 10)],
+            drove >= 30,
+            bool(m_in and m_out) and far(m_out) < far(m_in) / 2,
+            "slider: RELEASED - the journey is over and he is out" in o), \
+           (True,) * 5, \
+        "Jaunpur to Tetra: case 6 drove %d frames down the destination's lane, camera 8 " \
+        "then 10 blended over 60 from it; out %.0f from the address, boarded %.0f away" % (
+            drove, far(m_out), far(m_in))
+
+
 def c_engine_slider_arrives():
     r"""A CALLED SLIDER ACTUALLY ARRIVES - the feature, not a harness.
 
@@ -44374,6 +44434,7 @@ CHECKS = [
     ("engine: slider ride", c_engine_slider_ride, "todo/slider"),
     ("engine: slider call", c_engine_slider_call, "todo/slider"),
     ("engine: slider arrives", c_engine_slider_arrives, "todo/slider"),
+    ("engine: slider journey drive", c_engine_slider_journey_drive, "todo/slider-drift-audit D1"),
     ("engine: slider forget", c_engine_slider_forget, "todo/slider-drift-audit B3"),
     ("engine: slider refused", c_engine_slider_refused, "todo/slider-drift-audit B5"),
     ("engine: slider runover", c_engine_slider_runover, "todo/slider-drift-audit A8"),

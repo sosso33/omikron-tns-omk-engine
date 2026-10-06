@@ -6,7 +6,7 @@
 #include "playframe.h"
 
 void PlayState::harnessStateWrites() {
-    if (moneyArg >= 0 || ringsArg >= 0 || clockArg >= 0 || !giveList.empty() || !varList.empty() || newWorld ||
+    if (moneyArg >= 0 || ringsArg >= 0 || clockArg >= 0 || !giveList.empty() || !varList.empty() || !addressEnableList.empty() || newWorld ||
         !zoneEnable.empty() || !zoneDisable.empty() || !sceneLoads.empty() || bankReject ||
         rideArg || saveSlotArg >= 0 || boardArg || fightArg >= 0 || callDialog >= 0 ||
         animHoldHarness || shootEndAt >= 0 || shootHealth >= 0 || aimAtSet || playerAtFrame >= 0 || playerAt2Frame >= 0 || astarothSoulsAt >= 0 || astarothHealth >= 0 || gandharHealth >= 0 || fightHealth >= 0 || foeAtSet ||

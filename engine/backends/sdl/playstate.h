@@ -109,6 +109,7 @@ struct PlayState {
     int & ringsArg = opt.ringsArg;
     long & clockArg = opt.clockArg;
     std::string & varList = opt.varList;
+    std::string & addressEnableList = opt.addressEnableList;
     bool & newWorld = opt.newWorld;
     int & sceneChunk = opt.sceneChunk;
     std::vector<int> & zoneEnable = opt.zoneEnable;

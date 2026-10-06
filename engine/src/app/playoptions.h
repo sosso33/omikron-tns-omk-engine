@@ -190,6 +190,9 @@ struct PlayOptions {
     int ringsArg = -1;              // --rings: the same over record +174
     long clockArg = -1;             // --clock: the game clock at start (Clock_SetTime)
     std::string varList;
+    // `--address-enable 12,40`: StateArray::AddressEnabled bits set by hand
+    // (a HARNESS write, not VM op 87) - a destination the save has not opened
+    std::string addressEnableList;
     bool newWorld = false; // --newgame-world: START's world, the save's player
     // --scene-chunk N: run a SCENE chunk's startup script over the area, the
     // way `scene.load` does. A street start jumps straight to an area, so the
