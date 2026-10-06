@@ -32,12 +32,22 @@ Each with a check shown to fail on the old code (a mutation per commit):
 | M1 Manuelle's stop through `sub_468FA0` (no longer stuck), the slider put back where the drive began; A7 camera 9 blends and holds; A3 a journey ends on camera 10; B11 camera 17's fixed eye and 6.00 m release; A6 MDSLIDOU's facing | `5d4b439` | `engine: slider manual` (drives to the stop and walks away), `engine: slider journey` (the camera request chain), `engine: slider journey area` |
 | A4 the call's hold and black-fade bands, released at the arrival / H_SLDOUT's first tick; `--board-after N` | `d875956` | `engine: slider arrives` (UP held while it comes: walked 0.4), `engine: slider journey`, `refused`/`forget` re-timed past the arrival |
 | D1 a journey that drives (Jaunpur -> Tetra, 75 frames); `--address-enable N,...` | `eaef82e` | `engine: slider journey drive` (new) |
+| B6 the arrival deferral (0x10 -> 0x400) - transcribed, measured DORMANT: `veh_probe --defer`, 81 calls at every vehicle lane's end in three cities, 0 deferred, 0 on a connector (a call relinks at the top of the pickup's own lane); no check can fail | `62715df` | - |
+| B9 a load or restart drops the ride, the boarding, the slider camera and the hold (`sliderForget`) | `62715df` | `engine: slider restart` (new) |
+| M4 Manuelle's slider at the ride's height (it flew 61.5 over the road) | `3d3c5f1` | `engine: slider manual` (the drawn node 20-45 over the ground) |
+| B7 boarding as MDACTION's slider arm, after the take, before the zone press | `dbb2a03` | none discriminates (needs an object in reach of a door); the families green |
+| M6 the skid recovery only with no thrust key, the slow skid cancelled | `1a4958b` | `engine: slider fly` (`skid` row; `none` re-pinned -0.120 with its reason) |
+| B8 no call from inside a building beside the city | `ff51bc1` | `engine: city return` (inside refused, the street accepted) |
+| B10 MDSLIDOU's input-queue reset (the ground probe left to the walker) | `c7a0242` | none can tell it apart |
+| M5 `Actors_TickAll` not run while Manuelle drives - READ AND CONFIRMED (05_sys.c 2170), NOT PORTED: no single counterpart in the port (scene clocks, zone scan, head aim, shadows, effects are separate calls); exposure: scripted extras pause while you drive | - | - |
 
 The port's mode order is now the engine's: case 2 -> **1** (open, bit 4,
 600 frames) -> MDACTION sets **3** -> MDSLIDIN **4** -> a journey's case 6
 -> 4, `sub_468FA0` **5**, MDSLIDOU **7** -> case 7 at once (no 0x200) or
-after 300-and-in-front (Manuelle). M1 and the exit are DONE (`5d4b439`); A4 DONE (`d875956`); D1 DONE (`eaef82e`); next the small rows (B6, B9,
-M4, M5, B7, B10, M6, B8), then the L/M-sized ones.
+after 300-and-in-front (Manuelle). M1 and the exit are DONE (`5d4b439`); A4 DONE (`d875956`); D1 and the small rows DONE (M5 read, not ported); left: M3 (Manuelle's
+collisions and road-keeping, L), B12 (mode 8's lag and wall pass), A9
+(vehicle sound), B2 (the call's lane placement and the take-over), M6's
+bank into the node matrix, M5.
 
 **B3 DONE, and the reader was right** (`engine: slider forget`). The
 reset of `dword_6A17CC` read as "new game" is the OPEN CALLBACK of the
