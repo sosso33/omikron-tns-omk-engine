@@ -12404,8 +12404,12 @@ def c_engine_frame_hold():
         return sum(1 for v in struct.unpack("<%dH" % (len(b) // 2), b) if v)
     held = shots[330] == shots[331]
     moved = shots[331] != shots[332]
+    # the lit figure re-pinned 2026-10-06 (was 52.5): the unlit set colour is
+    # now floored at the set's ambient grey (`sub_4947F0`'s clamp,
+    # todo/drift-audit.md L1), so the Impasse's pure-black vertices are not -
+    # the hold (the two booleans) did not move
     return (held, moved, round(100.0 * lit(shots[331]) / (800 * 600), 1)), \
-           (True, True, 52.5), \
+           (True, True, 72.7), \
            ("the tick an editing ends on holds the frame before it, byte for " \
             "byte, and the next beat then changes it")
 
@@ -18817,7 +18821,11 @@ def c_engine_backface_cull():
     wantGpu = [g if g in ("no vulkan", "no gles") else True for g in gpu]
 
     got = ((two, total), dark(l1), dark(l0), differ > 100000, tuple(gpu))
-    want = ((93, 16188), 56.9, 90.3, True, tuple(wantGpu))
+    # re-pinned 2026-10-06 (was 56.9 / 90.3): the unlit set colour is now
+    # floored at the set's ambient grey (`sub_4947F0`'s clamp,
+    # todo/drift-audit.md L1), so vertices that were pure black are not, and
+    # fewer pixels count as dark either way; the contrast this measures holds
+    want = ((93, 16188), 45.8, 86.4, True, tuple(wantGpu))
     return got, want, "meshes two-sided of all; the lift's arrival dark percent culled, " \
         "then two-sided (the old reading); the crane frame differs by over 100000 pixels " \
         "between the two (it differed by %d); then the GPUs against the software render " \
