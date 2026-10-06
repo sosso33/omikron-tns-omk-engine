@@ -549,6 +549,8 @@ struct PlayState {
     std::uint64_t poolTold{};
     bool poolHasSprites{};
     bool poolHasPlayer{};
+    std::size_t propEventsSeen{};
+    std::map<int, std::array<float, 3>> propsDrawnAt{};   // by prop id, for the moved line   // the Session's prop events this frontend has answered
     // the pool was handed over GREYED (ops 150/151): a change of bank is a
     // re-hand, as `sub_42FE80` / `sub_42FC10` re-grey or re-upload every slot
     bool poolGrey{};

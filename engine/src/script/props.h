@@ -42,6 +42,10 @@ std::optional<PropRecord> findPropById(std::span<const std::byte> chunk,
                                        ChunkKind kind, int id);
 std::optional<PropRecord> findPropBySlot(std::span<const std::byte> chunk,
                                          ChunkKind kind, int slot);
+// ...and op 98's walk, `sub_40A2C0` (0x0040A2C0): the same table, the STATE
+// INDEX at `+22` (`movsx ebx, word ptr [eax+16h]`) compared with the operand.
+std::optional<PropRecord> findPropByState(std::span<const std::byte> chunk,
+                                          ChunkKind kind, int stateIndex);
 
 // A prop's PLACEMENT, converted the way `Area_Load` converts it in place.
 //

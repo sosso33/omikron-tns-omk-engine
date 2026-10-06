@@ -384,6 +384,14 @@ void Session::loadIntoSlot(int slot, int area) {
 
 void Session::evictSlot(int slot) {
     ResidentSlot& s = slots_[slot & 1];
+    // op 98's placements live in the runtime object slots, which go with the
+    // chunk: a prop of this slot comes back at its chunk placement
+    for (auto it = propMoved_.begin(); it != propMoved_.end();) {
+        const bool here = s.area >= 0 &&
+            (findPropByState(s.areaChunk, ChunkKind::Area, it->first) ||
+             (s.scene != -1 && findPropByState(s.sceneChunk, ChunkKind::Scene, it->first)));
+        it = here ? propMoved_.erase(it) : std::next(it);
+    }
     // the circuit goes with the slot that loaded it (`Area_LoadSliderTrack`'s
     // walk over the decor slots' "has a track" flags, `sub_4548C0`)
     if (trafficSlot_ == (slot & 1)) {
@@ -4094,8 +4102,34 @@ bool Session::Hooks::propById(int id, PropRef& out) {
     return false;
 }
 
-void Session::Hooks::placeObjectAt(int objectId, int address) {
-    s_->propEvents_.push_back({"place", -1, objectId, address, s_->frameNo_});
+void Session::Hooks::placeObjectAt(int character, int stateIndex) {
+    // `sub_40A2C0` returns no record for a state index neither chunk carries,
+    // and the handler would then read through it; nothing shipped does that
+    bool found = false;
+    for (const auto& s : s_->slots_) {
+        if (s.area < 0) continue;
+        if (findPropByState(s.areaChunk, ChunkKind::Area, stateIndex) ||
+            (s.scene != -1 && findPropByState(s.sceneChunk, ChunkKind::Scene, stateIndex)))
+            found = true;
+    }
+    std::printf("frame %ld: object.place_at - prop state %d under CHARACTERS %d (%s)\n",
+                s_->frameNo_, stateIndex, character,
+                found ? "the frontend places it" : "no loaded chunk carries it");
+    if (found) s_->propEvents_.push_back({"place", character, stateIndex, -1, s_->frameNo_});
+}
+
+bool Session::setPropPlacement(int stateIndex, const float pos[3], const float rotDeg[3]) {
+    for (const auto& s : slots_) {
+        if (s.area < 0) continue;
+        if (findPropByState(s.areaChunk, ChunkKind::Area, stateIndex) ||
+            (s.scene != -1 && findPropByState(s.sceneChunk, ChunkKind::Scene, stateIndex))) {
+            PropPlacement pl;
+            for (int k = 0; k < 3; ++k) { pl.pos[k] = pos[k]; pl.rotDeg[k] = rotDeg[k]; }
+            propMoved_[stateIndex] = pl;
+            return true;
+        }
+    }
+    return false;
 }
 
 // Every prop of both resident chunks the loader would have loaded, with the
@@ -4137,7 +4171,9 @@ std::vector<Session::PropInstance> Session::props() const {
             pi.id = rec.id;
             pi.stateIndex = rec.stateIndex;
             pi.shown = (st & 2) != 0;
-            const auto pl = propPlacement(chunk, rec);
+            // op 98's placement, while the chunk it moved stays loaded
+            const auto moved = propMoved_.find(rec.stateIndex);
+            const auto pl = moved != propMoved_.end() ? moved->second : propPlacement(chunk, rec);
             for (int k = 0; k < 3; ++k) { pi.pos[k] = pl.pos[k]; pi.rotDeg[k] = pl.rotDeg[k]; }
             out.push_back(pi);
         }

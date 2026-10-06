@@ -72,6 +72,16 @@ std::optional<PropRecord> findPropBySlot(std::span<const std::byte> chunk,
     return propAt(chunk, *o);
 }
 
+std::optional<PropRecord> findPropByState(std::span<const std::byte> chunk,
+                                          ChunkKind kind, int stateIndex) {
+    const std::size_t po = kind == ChunkKind::Area ? 44 : 12;
+    const std::size_t co = kind == ChunkKind::Area ? 74 : 42;
+    const auto o = walk(chunk, po, co, 24,
+                        [&](std::size_t r) { return i16(chunk, r + 22) == stateIndex; });
+    if (!o) return std::nullopt;
+    return propAt(chunk, *o);
+}
+
 std::optional<CharacterRecord> findCharacterRecord(std::span<const std::byte> chunk,
                                                    ChunkKind kind, int id) {
     const std::size_t po = kind == ChunkKind::Area ? 40 : 8;

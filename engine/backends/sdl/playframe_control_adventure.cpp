@@ -719,6 +719,7 @@ void PlayState::adventureScreenInput() {
                 // anchor already.
                 fightRun.body->pelvis = true;
                 fightRun.body->fightPlaced = true;
+                fightRun.body->fightDrop = foeDrop;
             }
             playerTicked = true;
             // Every second of the fight, so a headless run can be

@@ -164,6 +164,10 @@ struct CharModel {
     int root = -1;
     std::size_t texBase = 0;      // its first slot in the pool
     bool ready = false;
+    // `max(centre.y + radius)` over the model's body spheres - the actor's
+    // `+276`, its origin's height above its lowest point (y down), which
+    // `Actor_LoadModel` writes and op 98 adds (`omk::bodyExtentBelow`)
+    float extentBelow = 0.0f;
     // LOOKUPS OF THE MODEL ALONE, filled on first use and kept: they were
     // walked per body per frame - the head's O(n^2) root search and name
     // strings twice, the 76x76 roots count, the skeleton walk - where
@@ -215,6 +219,9 @@ struct PropModel {
     // the same correction the scripted crates needed.
     float origin[3] = {0, 0, 0};
     float localOff[3] = {0, 0, 0};   // the root mesh's +128: where it sits under a parent
+    // the root mesh's box maximum y (`+108`, the bottom with y down) - what
+    // op 98's `sub_41D050` reads through `sub_437D60` to seat the prop
+    float rootBoxMaxY = 0.0f;
     bool ready = false;
 };
 
@@ -273,6 +280,10 @@ struct Staged {
     bool  progRan = false;         // a program placed him at some point
     int   placeSeqSeen = 0;        // `Shown::placeSeq` last applied (M1)
     bool  fightPlaced = false;     // a melee moved him: the fight's place STANDS after it
+    // ...and the root drop that place carries for DRAWING (`foeDrop`): the
+    // actor's own position is `at` less it - his standing node, which is what
+    // `Actor_GetPosAndFacing` hands op 98
+    float fightDrop = 0.0f;
     float progYaw = 0.0f;          // the call's Euler y (`Actor_SetEuler(node, p4, p5, p6)` every tick)
     bool  progYawKnown = false;
     float progBase[3] = {0, 0, 0};

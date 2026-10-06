@@ -953,16 +953,17 @@ RunResult Interpreter::resume(std::span<const std::byte> code, std::size_t at) {
                 recordCall(op, {obj});
                 continue;
             }
-            // 98 `object.place_at` (0x404DB0): object, address. `sub_40AF00`
-            // finds the object's slot in the id table, `Address_Find` the
-            // ADDRESSES record, `sub_41CF50` moves the node - and nothing in
-            // the DB or a chunk record changes. 6 sites.
+            // 98 `object.place_at` (0x404DB0): CHARACTER, prop STATE INDEX
+            // (`hooks.h`) - the prop moved under the character, and nothing
+            // in the DB or a chunk record changes. 6 sites, every one the
+            // ring a beaten character drops. (Read as "object, address" until
+            // 2026-10-06.)
             if (op == 98 && hooks_) {
                 std::size_t q = start + 1;
-                const auto obj  = fetch16(code, q);
-                const auto addr = fetch16(code, q);
-                hooks_->placeObjectAt(obj, addr);
-                recordCall(op, {obj, addr});
+                const auto who   = fetch16(code, q);
+                const auto state = fetch16(code, q);
+                hooks_->placeObjectAt(who, state);
+                recordCall(op, {who, state});
                 continue;
             }
         }

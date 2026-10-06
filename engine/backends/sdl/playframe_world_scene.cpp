@@ -858,6 +858,59 @@ void PlayState::worldProps() {
                         m[0] * k, m[1] * k, m[2] * k);
         }
     };
+    // OP 98, `object.place_at character, prop` (0x404DB0): the prop moved
+    // under the character - every shipped site is the ring a beaten character
+    // drops. The handler, read 2026-10-06:
+    //
+    //     Actor_GetPosAndFacing(actor, p)        his position (actor +0xF4)
+    //     p.y += actor[+0x114]                   `+276`, origin to lowest point
+    //     p.y -= box.max.y                       the prop root mesh's `+108`
+    //     Object_SetPlacement(prop, {p, rot})    the node moved there
+    //
+    // so the prop's lowest point is seated where his feet would be, under his
+    // STANDING origin whatever pose he lies in. The three ROTATION words of
+    // that block are never written by the handler: they are whatever its
+    // stack frame held - in all six sites `object.show`'s three saved
+    // registers if nothing ran between, which read as floats are denormals.
+    // **0 here is a RECONSTRUCTION, labelled.** The position is the Session's
+    // to hold (`setPropPlacement`), where drawing and the take scan both read
+    // it; the character's position is the frontend's to know.
+    {
+        const auto& ev = session.propEvents();
+        for (; propEventsSeen < ev.size(); ++propEventsSeen) {
+            const auto& e = ev[propEventsSeen];
+            if (std::strcmp(e.what, "place") != 0) continue;
+            const Staged* body = nullptr;
+            for (const auto* list : {&staged, &parked})
+                for (const auto& s : *list)
+                    if (s && s->actor == e.actor && s->mo) { body = s.get(); break; }
+            int propId = -1;
+            for (const auto& pr : session.props())
+                if (pr.stateIndex == e.slot) { propId = pr.id; break; }
+            const auto& objs = voiceLib.objects();
+            const PropModel* pm = (propId >= 0 && static_cast<std::size_t>(propId) < objs.size())
+                ? propModelFor(objs[static_cast<std::size_t>(propId)].stem) : nullptr;
+            if (!body || !pm || !pm->ready) {
+                std::printf("frame %ld: object.place_at - prop state %d under CHARACTERS %d: "
+                            "%s - left at its chunk placement\n", n, e.slot, e.actor,
+                            !body ? "no body of his is staged" : "no model for the prop");
+                continue;
+            }
+            const float origin[3] = {body->at[0],
+                                     body->at[1] - (body->fightPlaced ? body->fightDrop : 0.0f),
+                                     body->at[2]};
+            const float pos[3] = {origin[0], origin[1] + body->mo->extentBelow - pm->rootBoxMaxY,
+                                  origin[2]};
+            const float rot[3] = {0.0f, 0.0f, 0.0f};
+            const bool ok = session.setPropPlacement(e.slot, pos, rot);
+            std::printf("frame %ld: object.place_at - prop %d (state %d) PLACED under CHARACTERS "
+                        "%d at %.1f %.1f %.1f: his origin %.1f %.1f %.1f, +276 %.2f, the prop's "
+                        "box bottom %.2f (Object_SetPlacement)%s\n", n, propId, e.slot, e.actor,
+                        double(pos[0]), double(pos[1]), double(pos[2]), double(origin[0]),
+                        double(origin[1]), double(origin[2]), double(body->mo->extentBelow),
+                        double(pm->rootBoxMaxY), ok ? "" : " - REFUSED");
+        }
+    }
     {
         const auto shown = session.props();
         for (const auto& pr : shown) {
@@ -1044,6 +1097,29 @@ void PlayState::worldProps() {
                 nb.start += static_cast<int>(base);
                 propGeo.batches.push_back(nb);
                 propBatchOwner.push_back(pm);
+            }
+            // ...and where its corners went, from the corners THEMSELVES - a
+            // prop op 98 moves says so once it is drawn there
+            {
+                double sum[3] = {0, 0, 0};
+                const std::size_t cn = propGeo.corners.size() - base;
+                for (std::size_t i = base; i < propGeo.corners.size(); ++i) {
+                    sum[0] += propGeo.corners[i].x; sum[1] += propGeo.corners[i].y;
+                    sum[2] += propGeo.corners[i].z;
+                }
+                if (cn > 0) {
+                    const std::array<float, 3> c = {float(sum[0] / cn), float(sum[1] / cn),
+                                                    float(sum[2] / cn)};
+                    auto [it, fresh] = propsDrawnAt.try_emplace(pr.id, c);
+                    if (!fresh && std::hypot(c[0] - it->second[0], c[1] - it->second[1],
+                                             c[2] - it->second[2]) > 1.0f) {
+                        std::printf("frame %ld: prop %d DRAWN at %.1f %.1f %.1f (its corners' "
+                                    "mean; was %.1f %.1f %.1f)\n", n, pr.id, double(c[0]),
+                                    double(c[1]), double(c[2]), double(it->second[0]),
+                                    double(it->second[1]), double(it->second[2]));
+                        it->second = c;
+                    }
+                }
             }
             if (propsTold.insert(pr.id).second)
                 std::printf("prop %d SHOWN at %.1f %.1f %.1f rot %.1f %.1f %.1f\n",

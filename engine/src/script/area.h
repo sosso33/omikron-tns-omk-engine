@@ -1024,6 +1024,9 @@ public:
     // `Object_ShowInScene` / `HideFromScene`: what a frontend draws props from.
     const std::set<int>& shownSlots() const { return shownSlots_; }
     // What the hooks were asked to do in 3D and did not: for a frontend.
+    // "place" (op 98) carries the CHARACTER in `actor` and the prop's STATE
+    // INDEX in `slot`: where he stands is the frontend's to know, and it
+    // answers with `setPropPlacement`.
     struct PropEvent { const char* what; int actor; int slot; int address; long frame; };
     const std::vector<PropEvent>& propEvents() const { return propEvents_; }
 
@@ -1044,6 +1047,13 @@ public:
         float rotDeg[3] = {0, 0, 0};
     };
     std::vector<PropInstance> props() const;
+    // `Object_SetPlacement` (0x0041CF50): the prop whose state index this is
+    // drawn - and taken - at `pos`, turned by `rotDeg`, instead of its chunk
+    // placement. It writes the RUNTIME object slot (`unk_4E7EA0[slot * 96]`
+    // +0x38..+0x58), which lives as long as the chunk does: the override goes
+    // when the slot holding the prop is evicted, and a reload places it from
+    // the chunk again. False when no loaded chunk carries that state index.
+    bool setPropPlacement(int stateIndex, const float pos[3], const float rotDeg[3]);
 
     // ------------------------------------------- THE WORLD TAKE (omk-play 66)
     //
@@ -1683,6 +1693,7 @@ private:
     std::map<int, int> heldSlot_;            // Actor_HeldObjectSlot, by id; -1 = player
     std::set<int> shownSlots_;               // Object_ShowInScene / HideFromScene
     std::vector<PropEvent> propEvents_;
+    std::map<int, PropPlacement> propMoved_;   // op 98's, by state index
     class Hooks final : public WorldHooks {
     public:
         explicit Hooks(Session* s) : s_(s) {}
@@ -1699,7 +1710,7 @@ private:
         void hideObject(int slot) override;
         bool propBySlot(int slot, PropRef& out) override;
         bool propById(int id, PropRef& out) override;
-        void placeObjectAt(int objectId, int address) override;
+        void placeObjectAt(int character, int stateIndex) override;
         void shootStatSet(int actor, int property, std::int32_t value) override;
     private:
         Session* s_;

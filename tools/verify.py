@@ -40513,6 +40513,73 @@ def c_engine_grey_bank():
 
 
 
+def c_engine_prop_place():
+    r"""OP 98, `object.place_at character, prop` - the ring a beaten character
+    drops (`todo/drift-audit.md` M5).
+
+    The handler (0x404DB0) was read as "object, address" and its call queued
+    for nothing. It is a CHARACTER and a prop STATE INDEX: `sub_40AF00` finds
+    his actor slot, `Actor_GetPosAndFacing` his position, `+0x114` (the
+    actor's `+276`, his model's lowest sphere extent) is added to y and the
+    prop root mesh's box maximum y (`+108`, `sub_41D050`) taken away, and
+    `Object_SetPlacement` moves the node - so the prop's bottom sits on the
+    floor under his STANDING origin. All six shipped sites are `object.show
+    163` ('Anneaux 5') then `object.place_at <beaten character>, <state>`.
+
+    The real route: `--fight-supermarket`, won with the kick cycle
+    (`engine: training partner`'s recipe) at `--fight-health 200`; AREA 245's
+    record 0 script then runs `object.place_at 48, 606` and record 0 of the
+    prop table is 163 with state 606. Asserted: the frontend's placement line
+    (where, his origin, `+276`, the box) with y recomputed here from the
+    three, and the DRAWN line the prop loop prints from the corners it
+    emitted - the ring moved from its authored spot by the robber.
+
+    Shown to fail: the Session's override not applied in `props()` (placed,
+    never drawn there); the hook's event not raised (neither line); `+276`
+    left out of the frontend's sum (y 35 units up). The rotation is 0 - the
+    handler leaves those three words to its stack (labelled in the viewer).
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    hold = "0*380" + ",k17*3,k31*3" * 500
+    v = subprocess.run([play, fr, os.path.join(ROOT, "tables"), "--save", save,
+                        "--fight-supermarket", "--fight-health", "200", "--hold", hold,
+                        "--frames", "1460"],
+                       capture_output=True, encoding="latin-1",
+                       env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    won = bool(_re.search(r"FIGHT ENDS after \d+ frames - the player won", v))
+    m = _re.search(r"object\.place_at - prop (\d+) \(state (\d+)\) PLACED under CHARACTERS (\d+) "
+                   r"at (\S+) (\S+) (\S+): his origin (\S+) (\S+) (\S+), \+276 (\S+), the prop's "
+                   r"box bottom (\S+)", v)
+    d = _re.search(r"prop 163 DRAWN at (\S+) (\S+) (\S+) \(its corners' mean; was (\S+) (\S+) (\S+)\)", v)
+    placed = None
+    if m:
+        y = float(m.group(8)) + float(m.group(10)) - float(m.group(11))
+        placed = (int(m.group(1)), int(m.group(2)), int(m.group(3)),
+                  m.group(4), m.group(5), m.group(6), m.group(10), m.group(11),
+                  abs(y - float(m.group(5))) < 0.16)   # three values printed to 0.1
+    drawn = None
+    if d:
+        drawn = (round(float(d.group(1))), round(float(d.group(3))),
+                 abs(float(d.group(2)) - (float(m.group(5)) if m else 1e9)) < 2.0,
+                 round(float(d.group(4))), round(float(d.group(6))))
+    return (won, placed, drawn), \
+           (True, (163, 606, 48, "15198.8", "7.7", "1762.0", "42.84", "2.17", True),
+            (15199, 1762, True, 15069, 1398)), \
+           "the fight won; op 98's placement: prop, state, character, where, +276, the " \
+           "box bottom, y = origin + 276 - box; the prop DRAWN there (x, z, y near), " \
+           "from its authored spot (x, z)"
+
+
+
 def c_engine_camera_shake():
     r"""THE CAMERA SHAKE (`todo/astaroth.md` step 4; drift audit S11, op 136).
 
@@ -44217,6 +44284,7 @@ SLOW = [
     ("engine: astaroth tick", c_engine_astaroth_tick, "todo/astaroth.md 3; actor/astaroth.h"),
     ("engine: camera shake", c_engine_camera_shake, "todo/astaroth.md 4; script/area.h"),
     ("engine: grey bank", c_engine_grey_bank, "todo/drift-audit.md S11; o3de/greybank.h"),
+    ("engine: prop place", c_engine_prop_place, "todo/drift-audit.md M5; script/hooks.h"),
     ("engine: shoot requests", c_engine_shoot_requests, "todo/drift-audit.md S13; actor/shootmode.h"),
     ("engine: address camera", c_engine_address_camera, "todo/drift-audit.md S14; o3de/worldcam.h"),
     ("engine: head camera", c_engine_head_camera, "todo/drift-audit.md; o3de/worldcam.h"),

@@ -90,10 +90,14 @@ public:
     virtual bool propById(int /*id*/, PropRef& /*out*/) { return false; }
 
     // ---- `object.place_at` (98) ----------------------------------------
-    // `sub_40AF00(id)` -> the object's slot in the id table; `Address_Find`
-    // (`sub_40A2C0`) the ADDRESSES record; `sub_41CF50(slot, pos)` moves
-    // the node. World positioning, no DB write: output-class.
-    virtual void placeObjectAt(int /*objectId*/, int /*address*/) {}
+    // `object.place_at character, prop` (0x404DB0, read 2026-10-06): field 0
+    // is a CHARACTER - `sub_40AF00` finds his slot in the actor id table and
+    // `Actor_GetPosAndFacing` reads his position - and field 1 a prop's STATE
+    // INDEX, which `sub_40A2C0` matches against the record's `+22` in the
+    // context's AREA and then its SCENE. `Object_SetPlacement` (0x0041CF50)
+    // then moves the prop's node under him. World positioning, no DB write:
+    // output-class. (Read until 2026-10-06 as "object, address".)
+    virtual void placeObjectAt(int /*character*/, int /*stateIndex*/) {}
 
     // ---- `sub_423A40` (0x00423A40), the TAIL of `Actor_SetProperty` ------
     // Every property write ends `sub_423A40(index, property, value)` with the

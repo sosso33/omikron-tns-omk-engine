@@ -1468,7 +1468,10 @@ CharModel * PlayState::charModelFor(const std::string& name) {
     if (const auto mo = fs.resolve("MESHES/PERSOS/" + name + ".3DO")) {
         const auto md = omk::DataFs::readPath(*mo);
         m.rest = omk::buildGeometry(md, omk::DrawFilter::Engine);
-        if (const auto mh = omk::readHeader(md)) m.meshes = omk::readMeshes(md, *mh);
+        if (const auto mh = omk::readHeader(md)) {
+            m.meshes = omk::readMeshes(md, *mh);
+            m.extentBelow = omk::bodyExtentBelow(md, *mh);
+        }
         if (const auto mt = fs.resolve("MESHES/PERSOS/" + name + ".3DT"))
             m.tex = omk::textures(md, omk::DataFs::readPath(*mt));
         m.face = omk::faceMeshOf(m.meshes);
@@ -1507,9 +1510,11 @@ PropModel * PlayState::propModelFor(const std::string& stem) {
                     if (q.id == ms[i].parent) { hasParent = true; break; }
                 if (!hasParent) root = static_cast<int>(i);
             }
-            if (root >= 0)
+            if (root >= 0) {
                 for (int k = 0; k < 3; ++k)
                     m.origin[k] = ms[static_cast<std::size_t>(root)].pos[k];
+                m.rootBoxMaxY = ms[static_cast<std::size_t>(root)].boxMax[1];
+            }
                 for (int k = 0; k < 3; ++k)
                     m.localOff[k] = ms[static_cast<std::size_t>(root)].local[k];
         }
