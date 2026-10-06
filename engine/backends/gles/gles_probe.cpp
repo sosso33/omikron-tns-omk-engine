@@ -501,6 +501,10 @@ int perpixelMode(bool posed) {
     v.cam.at[0] = 0;  v.cam.at[1] = 0;  v.cam.at[2] = 0;
     v.cam.hfovDeg = 60.0f;
     v.dither = false;
+    // THE LIT START (`View::litBase`, todo/drift-audit.md L1): a lit batch
+    // starts from the scene's `+416`, not from black - Anekbah's 25 here, low
+    // enough that the centre (0.80 of the light) stays under white
+    v.litBase = 25.0f / 255.0f;
     omk::Surface pix, vert;
     {
         omk::Geometry g = flatQuad(0, 0, 0, half, 0.0f);
@@ -535,7 +539,7 @@ int perpixelMode(bool posed) {
         if (dd > L.radiusA) return 0.0f;
         float fall = 1.0f - (dd - L.radiusB) / (L.radiusA - L.radiusB);
         if (fall > 1.0f) fall = 1.0f;
-        return std::min(L.f32 * 256.0f * fall / 256.0f, 1.0f);
+        return std::min(L.f32 * 256.0f * fall / 256.0f + v.litBase, 1.0f);
     };
     const int cx = W / 2, cy = H / 2;
     const int wantCentre = static_cast<int>(expect(0.0f, 0.0f) * 63.0f + 0.5f);

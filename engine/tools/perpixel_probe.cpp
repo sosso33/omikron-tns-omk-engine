@@ -94,6 +94,10 @@ int main() {
     // with it on the centre pixel misses the law by 1 and says nothing about
     // the light. Dithering is measured by its own check; here it is noise.
     v.dither = false;
+    // THE LIT START (`View::litBase`, todo/drift-audit.md L1): a lit batch
+    // starts from the scene's `+416`, not from black - Anekbah's 25 here, low
+    // enough that the centre (0.80 of the light) stays under white
+    v.litBase = 25.0f / 255.0f;
 
     omk::Surface pix, vert;
     {   // ---- per PIXEL: the light goes to the shader
@@ -128,7 +132,7 @@ int main() {
         float fall = 1.0f - (d - L.radiusB) / (L.radiusA - L.radiusB);
         if (fall > 1.0f) fall = 1.0f;
         const float k = L.f32 * 256.0f * fall;   // `-(N.L)` is k, N facing the light
-        return std::min(k / 256.0f, 1.0f);
+        return std::min(k / 256.0f + v.litBase, 1.0f);
     };
     const int cx = W / 2, cy = H / 2;
     const int wantCentre = static_cast<int>(expect(0.0f, 0.0f) * 63.0f + 0.5f);

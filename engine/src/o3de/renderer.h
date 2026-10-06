@@ -128,6 +128,11 @@ struct View {
     // past the clip distance fades into it rather than into black
     // (`o3de/daynight.h`; todo/drift-audit.md L1 step 4).
     std::uint8_t clearColour[3] = {0, 0, 0};   // r, g, b
+    // ...and the grey a PER-PIXEL-lit batch (`Draw::lit` 1, the enhancement of
+    // row 7) starts from, 0..1: the active scene's `+416` - the set's ambient,
+    // or the clock's in a day/night area - which is what the engine's own lit
+    // path starts every vertex from (`sub_494E80`). It was black.
+    float litBase = 0.0f;
 
     // ------------------------------------------- THE SHADOW MAP's LIGHT
     //

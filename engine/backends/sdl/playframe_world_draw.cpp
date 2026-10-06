@@ -494,14 +494,17 @@ void PlayState::worldDrawLists() {
     // PSH_FN's vertices are 255,255,255), so there is no baked light
     // in them to lose.
     //
-    // `2` ADDS to the baked colour, and that is this port's decision
-    // for the bodies the engine never lights. HO1_FN is not a white
-    // model - it carries real baked shading - so black-plus-lamps
-    // throws away everything the artist put in and leaves him a
-    // silhouette wherever no lamp reaches. Stated here because it is
-    // the one place row 7 departs from transcription.
+    // `2` ADDED to the baked colour, and that WAS this port's decision for
+    // the bodies it believed the engine never lights - HO1_FN carries real
+    // baked shading, and black-plus-lamps threw it away. Corrected
+    // 2026-10-06 (todo/drift-audit.md L1): `Actor_LoadModel` calls
+    // `LightObject` and `sub_440CA0` lights every character exactly as it
+    // lights a walker, from the scene's `+416`, so a character takes `1`
+    // like the crowd, and `1` now starts from that grey (`View::litBase`)
+    // rather than from black. Mode `2` stays in the shaders, unused here.
     const int litCrowd  = litPerPixel ? 1 : 0;
-    const int litStaged = litPerPixel ? 2 : 0;
+    const int litStaged = litPerPixel ? 1 : 0;
+    view.litBase = static_cast<float>(std::clamp(activeAmbientGrey, 0, 255)) / 255.0f;
     view.lights.clear();
     if (litPerPixel) {
         float at[3] = {view.cam.eye[0], view.cam.eye[1], view.cam.eye[2]};
@@ -1057,6 +1060,10 @@ void PlayState::worldDrawLists() {
                                static_cast<std::uint32_t>(b.material +
                                    static_cast<int>(owner->texBase))),
                          &propGeo, b.start, b.count, b.blend, b.cutout});
+        // a prop is lit as a character is (`Object_Load`'s `LightObject`) -
+        // per pixel too, when that enhancement takes the place of the
+        // per-vertex light
+        draws.back().lit = litStaged;
     }
     if (spriteBase >= 0)
         for (const auto& b : fxGeo.batches) {

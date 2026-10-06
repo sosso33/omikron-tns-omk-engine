@@ -6654,6 +6654,13 @@ def c_engine_perpixel_lighting():
 
     Shown to fail: a `litColour` that returns a constant takes the centre off
     the law and the spread to 0.
+    And the lit START (2026-10-06, `todo/drift-audit.md` L1): a lit batch
+    starts from the scene's `+416` - the set's ambient, the clock's in a
+    day/night area - not from black, so both probes hand the shader
+    `View::litBase` = 25/255 (Anekbah's) and the law adds it. Characters take
+    mode 1 like the crowd, since the engine lights them too. Shown to fail
+    with the GLES shader's `vec3(uLitBase)` made `vec3(0.0)`: the centre falls
+    6 steps below the law, plain and posed.
 
     What this cannot see, and a person must: whether the finer sampling looks
     better on a character. The gain is largest where a light's falloff bends

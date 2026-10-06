@@ -75,8 +75,9 @@ struct GpuLight {
 };
 layout(set = 1, binding = 2) uniform Lights {
     GpuLight l[8];
-    int  count;
-    int  pad0, pad1, pad2;
+    int   count;
+    float base;        // View::litBase - the scene's +416, what a lit batch starts from
+    int   pad1, pad2;
 } lg;
 
 vec3 litColour(vec3 n, vec3 w) {
@@ -164,7 +165,7 @@ void main() {
             -64.0, -56.0, -48.0, -32.0, -28.0, -18.0, -13.0, -10.0);
         wave = tbl[wi] / 255.0;
     }
-    vec3 shade = pc.lit == 1 ? litColour(normalize(vNrm), vWorld)
+    vec3 shade = pc.lit == 1 ? min(vec3(lg.base) + litColour(normalize(vNrm), vWorld), vec3(1.0))
                : pc.lit == 2 ? min(vCol + litColour(normalize(vNrm), vWorld), vec3(1.0))
                              : vCol + vec3(wave);
     vec3 c = clamp(t.rgb * shade * litness(), 0.0, 1.0);

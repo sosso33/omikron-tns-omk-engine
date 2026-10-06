@@ -494,7 +494,8 @@ uniform int   uCutout;
 uniform float uFogStart;
 uniform float uFogEnd;
 uniform vec3  uFogColour;
-uniform float uLit;        // 0 the baked colour, 1 lit from BLACK, 2 lit ADDED to it
+uniform float uLit;        // 0 the baked colour, 1 lit from the scene's +416 (uLitBase), 2 lit ADDED to it
+uniform float uLitBase;    // View::litBase
 uniform float uCaster;     // a caster does not receive
 uniform vec4  uPL[24];     // 8 lights: (pos, outer radius), (dir, inner), (colour, intensity)
 uniform float uPLCount;
@@ -553,7 +554,7 @@ void main() {
     }
     vec3 shade = vCol;
     if (uLit > 1.5) shade = min(vCol + litColour(normalize(vNrm), vWorld), vec3(1.0));
-    else if (uLit > 0.5) shade = litColour(normalize(vNrm), vWorld);
+    else if (uLit > 0.5) shade = min(vec3(uLitBase) + litColour(normalize(vNrm), vWorld), vec3(1.0));
     vec3 c = clamp(t.rgb * shade * litness(), 0.0, 1.0);
     if (uFogEnd > uFogStart && vDepth > uFogStart) {
         float f = clamp((uFogEnd - vDepth) / (uFogEnd - uFogStart), 0.0, 1.0);
@@ -1140,7 +1141,7 @@ private:
         GLint wave[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
         // the enhanced programs' (`kSceneFragX`); -1 in the default ones
         GLint lit = -1, caster = -1, pl = -1, plCount = -1, shadow = -1, lightMvp = -1,
-              shadowP = -1;
+              shadowP = -1, litBase = -1;
     };
     SceneLoc mainLoc_, posedLoc_;
     GLuint curProg_ = 0;
@@ -1215,6 +1216,7 @@ private:
         float texW = 0, texH = 0, fogStart = 0, fogEnd = 0, fog[3] = {0, 0, 0};
         int cutout = 0;
         float lit = -1, caster = -1;       // the enhanced programs'
+        float litBase = -1;
         // the posed program's lights
         int lights = -1; float lightBlack = -1, lightBase = -1; std::vector<float> lightVals;
     };
@@ -1427,6 +1429,7 @@ bool GlesRenderer::init(int w, int h) {
         L.lightBlack = glGetUniformLocation(p, "uLightBlack");
         L.lightBase = glGetUniformLocation(p, "uLightBase");
         L.lit = glGetUniformLocation(p, "uLit");
+        L.litBase = glGetUniformLocation(p, "uLitBase");
         L.caster = glGetUniformLocation(p, "uCaster");
         L.pl = glGetUniformLocation(p, "uPL");
         L.plCount = glGetUniformLocation(p, "uPLCount");
@@ -2783,6 +2786,10 @@ void GlesRenderer::submit(const Draw& d) {
     if (L.lit >= 0) {
         const float lit = pixLights_ ? static_cast<float>(d.lit) : 0.0f;
         if (set(!uv || U.lit != lit)) { glUniform1f(L.lit, lit); U.lit = lit; }
+        if (L.litBase >= 0 && set(!uv || U.litBase != view_.litBase)) {
+            glUniform1f(L.litBase, view_.litBase);
+            U.litBase = view_.litBase;
+        }
         const float cs = d.castsShadow ? 1.0f : 0.0f;
         if (set(!uv || U.caster != cs)) { glUniform1f(L.caster, cs); U.caster = cs; }
     }

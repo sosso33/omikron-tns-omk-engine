@@ -111,7 +111,8 @@ struct GpuLightStd140 {
 struct LightUbo {
     GpuLightStd140 l[8];
     int32_t count;
-    int32_t pad[3];
+    float   base;      // View::litBase, in the std140 padding that was here
+    int32_t pad[2];
 };
 
 struct ShadowUbo {
@@ -2287,6 +2288,7 @@ void VulkanRenderer::begin(const omk::View& view) {
             ub.l[i].colourI[3] = l.intensity;
         }
         ub.count = n;
+        ub.base = view.litBase;
         litCount_ = n;
         std::memcpy(litUboPtr_, &ub, sizeof ub);
     }
