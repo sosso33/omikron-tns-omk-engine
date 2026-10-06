@@ -99,6 +99,7 @@ private:
     Surface panelSurf_{320, 240};
     n3ds::PanelStats stats_;
     bool panelOk_ = false;
+    long captureAt_ = -1;                 // `sdmc:/omk/capture-at`: CAPTURE this present (an instrument)
     bool panelDump_ = false;              // `sdmc:/omk/panel-dump` exists: each redraw also to panel.bin
     bool captureOwed_ = false;
     std::uint64_t lastPresent_ = 0;       // system ticks

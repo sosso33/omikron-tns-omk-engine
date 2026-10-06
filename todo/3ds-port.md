@@ -432,9 +432,21 @@ clock says 2017-06-14). What it established, ON HARDWARE:
   sizing somewhere the 64-bit build does not show. 800x448 in Azahar: 99.8%
   within 24 levels of the desktop at the same size; halved, 400x224 on the
   top screen (93%, where 4:3 used 80%).
-* 3c: present straight to the top screen, the interface composited only on
-  the frames something is drawn over the world - screens/hud ~29 + present
-  12-14.
+* **3c, DONE 2026-10-06 (Azahar): the straight present.** The 3DS glue now
+  answers `gpuWindowBuild()`, so the build decides frame by frame - the GLES
+  window's gates in `playframe_world_draw.cpp` - whether anything is drawn
+  over the world; a frame with nothing over it skips the readback and the CPU
+  composite: inside the frame the display transfer halves the target with its
+  own 2x2 average (`GX_TRANSFER_SCALE_XY`) into a linear buffer, and the CPU
+  writes that, dithered, into a 400x240 screen image the frontend's `present`
+  copies 1:1 (its stats and CAPTURE as ever). One convention found: with
+  SCALE_XY the transfer halves the OUTPUT size it is given, so it is given
+  the input's (told the halved size it wrote a quarter-size picture). A
+  capture of such a frame (`sdmc:/omk/capture-at`, a new instrument: CAPTURE
+  on a given present) against the desktop's 800x448 frame halved: **97.0%
+  within 24 levels** (frame 100 against 120 - the crowd moved). Frames with
+  the interface over the world keep the CPU path; the GLES overlay's way of
+  blending them on the GPU is not ported.
 * 3d: bodies posed by the vertex shader - staged bodies 12-13.
 
 ### Step 4 - the memory fit

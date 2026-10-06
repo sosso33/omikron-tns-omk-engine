@@ -162,6 +162,15 @@ bool N3dsFrontend::open(int, int, const std::string&) {
     // AN INSTRUMENT: with `sdmc:/omk/panel-dump` on the card, every redraw is
     // also written to `sdmc:/omk/panel.bin` (raw LE RGB565, 320x240) - how
     // the bottom screen is looked at where it cannot be photographed.
+    // ...and with `sdmc:/omk/capture-at` holding a number, that present is
+    // CAPTUREd as the panel's button would - how a frame is taken where
+    // nobody presses the button (an emulator run)
+    if (std::FILE* f = std::fopen((std::string(n3ds::kHome) + "/capture-at").c_str(), "r")) {
+        long at = -1;
+        if (std::fscanf(f, "%ld", &at) == 1) captureAt_ = at;
+        std::fclose(f);
+        std::printf("panel: capture-at present - present %ld will be captured\n", captureAt_);
+    }
     if (std::FILE* f = std::fopen((std::string(n3ds::kHome) + "/panel-dump").c_str(), "r")) {
         std::fclose(f);
         panelDump_ = true;
@@ -304,6 +313,7 @@ void N3dsFrontend::present(const Surface& fb) {
             col[239 - y] = p;
         }
     }
+    if (captureAt_ >= 0 && stats_.frames == captureAt_) captureOwed_ = true;
     if (captureOwed_) {
         captureOwed_ = false;
         writeCapture(fb);

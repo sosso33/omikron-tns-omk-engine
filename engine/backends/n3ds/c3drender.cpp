@@ -76,6 +76,7 @@ public:
         if (target_) C3D_RenderTargetDelete(target_);
         if (ring_) linearFree(ring_);
         if (read_) linearFree(read_);
+        if (small_) linearFree(small_);
         if (dvlb_) { shaderProgramFree(&prog_); DVLB_Free(dvlb_); }
         C3D_Fini();
     }
@@ -111,6 +112,7 @@ public:
         }
         if (target_) { C3D_RenderTargetDelete(target_); target_ = nullptr; }
         if (read_) { linearFree(read_); read_ = nullptr; }
+        if (small_) { linearFree(small_); small_ = nullptr; }
         // THE PICA's SIDES ARE MULTIPLES OF 8 (its 8x8 tiles), and a frame
         // need not be (800x450, say): the target is rounded up and
         // the picture drawn in its top `h` rows - the top-left rectangle the
@@ -354,6 +356,51 @@ public:
         return fb_;
     }
 
+    // 3c: see `c3dPresentHalf` (c3drender.h).
+    bool presentHalf(int vy, int vh, Surface& screen) {
+        const int hw = tw_ / 2, hh = th_ / 2;           // the target halved
+        if (!inFrame_ || hw % 8 || hh % 8 || w_ / 2 > 400 || h_ / 2 > 240) return false;
+        if (!small_) {
+            small_ = static_cast<std::uint32_t*>(linearAlloc(static_cast<std::size_t>(hw) * hh * 4));
+            if (!small_) return false;
+        }
+        // the OUTPUT dimensions are given as the input's: with SCALE_XY the
+        // transfer halves what it is told (Azahar, 2026-10-06 - told the
+        // halved size, it wrote a quarter-size picture, 200x112)
+        C3D_SyncDisplayTransfer(static_cast<u32*>(target_->frameBuf.colorBuf), GX_BUFFER_DIM(tw_, th_),
+                                reinterpret_cast<u32*>(small_), GX_BUFFER_DIM(tw_, th_),
+                                GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) |
+                                GX_TRANSFER_RAW_COPY(0) |
+                                GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) |
+                                GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) |
+                                GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_XY));
+        closeFrame();
+        GSPGPU_InvalidateDataCache(small_, static_cast<u32>(hw) * hh * 4);
+        if (screen.w != 400 || screen.h != 240) screen = Surface(400, 240, 0);
+        std::fill(screen.px.begin(), screen.px.end(), std::uint16_t(0));
+        // the frame halved and centred; the picture is its rows vy..vy+vh,
+        // drawn in the target's top rows
+        const int ox = (400 - w_ / 2) / 2, oy = (240 - h_ / 2) / 2;
+        const int py0 = vy / 2, ph = vh / 2, pw = std::min(w_ / 2, hw);
+        for (int r = 0; r < ph && r < hh; ++r) {
+            const int y = oy + py0 + r;
+            if (y < 0 || y >= 240) continue;
+            const std::uint32_t* row = small_ + static_cast<std::size_t>(r) * hw;
+            std::uint16_t* out = screen.px.data() + static_cast<std::size_t>(y) * 400 + ox;
+            for (int x = 0; x < pw; ++x) {
+                const std::uint32_t p = row[x];
+                const int cr = static_cast<int>(p >> 24), cg = static_cast<int>((p >> 16) & 0xFF),
+                          cb = static_cast<int>((p >> 8) & 0xFF);
+                out[x] = view_.dither ? quantise888Dither(cr, cg, cb, ox + x, y) : quantise888(cr, cg, cb);
+            }
+        }
+        ++straight_;
+        if (straight_ == 1)
+            std::printf("c3d: the first frame presented STRAIGHT - the transfer's 2x2 average, %dx%d onto "
+                        "the top screen at %d,%d\n", pw, ph, ox, oy + py0);
+        return true;
+    }
+
     RasterStats stats() const override { return st_; }
     const char* name() const override { return "citro3d (PICA200)"; }
 
@@ -583,6 +630,8 @@ private:
     std::vector<GpuVert*> grave_;
     long pass_ = 0;
     std::uint32_t* read_ = nullptr;
+    std::uint32_t* small_ = nullptr;      // the halved picture (3c), linear
+    long straight_ = 0;
     int w_ = 0, h_ = 0;          // the frame
     int tw_ = 0, th_ = 0;        // the target: the frame rounded up to multiples of 8
     std::vector<Slot> tex_;
@@ -603,5 +652,9 @@ private:
 }  // namespace
 
 Renderer* makeC3dRenderer() { return new C3dRenderer(); }
+
+bool c3dPresentHalf(Renderer* r, int vy, int vh, Surface& screen) {
+    return r && static_cast<C3dRenderer*>(r)->presentHalf(vy, vh, screen);
+}
 
 }  // namespace omk
