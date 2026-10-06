@@ -1725,7 +1725,17 @@ colour `off_` because the value looks like an address, but `0x405028` lands in
 `20_ddraw.c`'s own packing that is **R 40, G 80, B 64**, a murky green. The
 mode is entered when a camera carrying flag `0x800` passes a height threshold
 derived from the player, and it flags the player's own node. Consistent with
-going underwater; **not proven**, and recorded as a reading.
+going underwater; **not proven**, and recorded as a reading. **Proven and
+ported 2026-10-06** (`todo/drift-audit.md` L1 step 5): the camera flag is
+`0x800`, which only the SWIM camera carries (`sub_413CD0`, states 11/13/14,
+flags `0x4800`); the height is `flt_4E7D0C`, the WATER LINE that setup probes
+2.5 m above the swimmer (a hit on a `0x20000000` surface), in the BSS so 0.0
+until one is found; the mode is on while the camera's EYE is under it
+(`sub_4187B0`). The player's flag is mesh flag `0x8000000` on his whole
+hierarchy - the SHIMMER; and the swim camera's `0x4000` runs `sub_417FC0`,
+which while the mode is on SWAYS it: fov `70 + 20 cos 3v sin v`, roll
+`5 sin 2v cos v`, `v` on a clock advancing `dt x 0.0004`.
+`verify.py: engine: underwater`.
 
 Two exclusions and one modifier, all keyed off the bucket key of the batch
 being drawn:
