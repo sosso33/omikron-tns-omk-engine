@@ -92,10 +92,18 @@ WALKING INTO the parked slider, not a seated rider shown.
     snap is from the BODY (`sub_438310` reads mover `+36`, road level), pelvis
     at body - 33.15 + the slf_112 offset - the port's; H_SLDIN's descent moves
     his position once (`307e537`); the slider's own door clips carry no root
-    motion (0 over 72 and 51 frames), so the hull does not settle either. One
-    measured difference, invisible: H_SLDIN leaves his pelvis ~24 above the
-    road and `sub_457F50`'s hidden seat is node + 10, ~15 above it - but A1
-    hides him from MDSLIDIN, so nothing drawn uses the seat.
+    motion (0 over 72 and 51 frames), so the hull does not settle either.
+    **The hull is not too low** (the reader's second question): a root mesh's
+    `local` is (0,0,0) and `sub_453A70` only collects and sorts the roots, so
+    SlBassin's origin is ON the node, at body - 30.75 - what the port draws.
+    **And the last frame is not compared against a seat**: `sub_457F50` (rider
+    at the ride's y + 10, body at ride y + 33.15) is `Slider_TickRide`'s -
+    MANUELLE's flight only - not a journey's; a called slider's rider goes
+    hidden at MDSLIDIN and is placed by nothing visible. (This handoff first
+    set H_SLDIN's end, pelvis ~24 above the road, against that node + 10 and
+    called it a 9-unit mismatch; it was two different rides.) Both ends of
+    H_SLDIN are start + the summed root deltas in the original and the port
+    alike. Nothing found; LEFT, as the reader asked.
 
 ## What is left (the audit's order)
 
