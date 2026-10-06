@@ -1083,6 +1083,21 @@ void PlayState::adventureScreenInput() {
                 const float* kWaterEye = waterCamPreset ? kWaterPresetEye : kWaterChaseEye;
                 static constexpr float kWaterAt[3]  = {0.0f, 0.0f, 0.0f};
                 playerCamRequest(kWaterEye, kWaterAt, 75.0f, 50.0f);
+                // ...and the WATER LINE, as `sub_413CD0` sets the swim camera
+                // up: `World_ProbePoint` from 98.425 above him (2.5 m, Y down)
+                // and, when the surface it meets carries 0x20000000, that
+                // height is `flt_4E7D0C`. Kept until the next setup finds one.
+                {
+                    std::uint32_t fl = 0;
+                    const auto h = player->walker().probeFlags(
+                        player->pos()[0], player->pos()[1] - 98.425194, player->pos()[2], fl);
+                    if (h && (fl & 0x20000000u)) {
+                        waterLine = static_cast<float>(*h);
+                        waterLineKnown = true;
+                        std::printf("frame %ld: the water line (sub_413CD0's probe) at y %.1f\n",
+                                    n, double(waterLine));
+                    }
+                }
                 std::printf("frame %ld: INTO THE WATER at %.0f %.0f %.0f - %s, scheme 1, "
                             "ACTOR_STATE %d, camera 21 over 50 frames\n", n,
                             player->pos()[0], player->pos()[1], player->pos()[2],

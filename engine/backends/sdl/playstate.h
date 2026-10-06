@@ -91,6 +91,17 @@ struct PlayState {
     bool & fogRGBSet = opt.fogRGBSet;
     omk::DayNight dayNight{};          // this frame's `sub_41E7A0` for the active slot
     int dayNightToldArea = -2, dayNightToldPhase = -1;
+    // THE UNDERWATER MODE, `dword_93082C` (todo/drift-audit.md L1 step 5):
+    // the water line `sub_413CD0` probes when the swim camera is set up
+    // (`flt_4E7D0C`), whether the camera's eye is under it, and the clock the
+    // sway reads (`dword_4E9750`, + dt x 0.0004 a frame, wrapped at 1)
+    // `flt_4E7D0C` is in the BSS (`dd ?`): 0.0 until a probe finds a 0x20000000
+    // surface, and kept for the session after - so the mode works from 0.0 too
+    float waterLine = 0.0f;
+    bool  waterLineKnown = true;
+    bool  underwater = false;
+    bool  swimCamNow = false;          // this frame's camera is the swim variant (flags 0x4800)
+    float swayClock = 0.0f;
     int activeAmbientGrey = 0;         // the active scene's +416 this frame (static, or by the clock)
     std::string & giveList = opt.giveList;
     int & moneyArg = opt.moneyArg;

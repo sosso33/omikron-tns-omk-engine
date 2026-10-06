@@ -41249,6 +41249,53 @@ def c_engine_day_night():
            "from its chunk; the cave's colour, its flag, any re-floor"
 
 
+def c_engine_underwater():
+    r"""UNDER THE WATER LINE - `dword_93082C` (`todo/drift-audit.md` L1 step 5).
+
+    `sub_4187B0`, the camera tick: a camera with flag 0x800 - the swim variant
+    `sub_413CD0` sets up in states 11/13/14 - whose eye y goes past
+    `flt_4E7D0C` (Y down: under the surface) turns the mode on; back above, or
+    a camera without the flag, turns it off. `flt_4E7D0C` is set where the
+    swim camera's setup probes 2.5 m above the swimmer and meets a 0x20000000
+    surface, and it is in the BSS, so it is 0.0 until one does - which is
+    where the canal's own walk-in leaves it (the probe starts under the
+    surface at y 3.4 and meets the bed). While it is on: the fog colour
+    `0x405028` = (40, 80, 64) over 590.551 x 0.25 .. 590.551 (15 m), the
+    screen cleared to it (`sub_41E7A0`), the camera's fov and roll swayed by
+    `sub_417FC0`, and the player's hierarchy given the shimmer flag.
+
+    The canal walk-in of `engine: water entry`, 300 frames: the mode comes on
+    under the line, the view it hands on, and it goes off again above it.
+    SHOWN TO FAIL: the eye test's sense inverted (the first ON is above).
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    o = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"),
+         "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--area", "1", "--stand", "10524,-40,10284,270", "--frames", "300",
+         "--nofmv", "--nodelay", "--no-crowd",
+         "--hold", "k200*140,k*40,k157+208*320,k*60,k157*6"],
+        capture_output=True, encoding="latin-1",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    on = _re.search(r"UNDERWATER ON \(dword_93082C\) - the eye at y (-?[\d.]+), the water line (-?[\d.]+)", o)
+    off = _re.search(r"UNDERWATER OFF \(dword_93082C\) - the eye at y (-?[\d.]+), the water line (-?[\d.]+)", o)
+    vw = _re.search(r"underwater view - fog (\d+) (\d+) (\d+) over ([\d.]+)\.\.([\d.]+), clear "
+                    r"(\d+) (\d+) (\d+), fov ([\d.]+) roll", o)
+    got = ((float(on.group(1)) > float(on.group(2)), float(on.group(2))) if on else None,
+           (float(off.group(1)) < float(off.group(2))) if off else None,
+           (tuple(int(vw.group(k)) for k in (1, 2, 3)), vw.group(4), vw.group(5),
+            tuple(int(vw.group(k)) for k in (6, 7, 8)), 50.0 <= float(vw.group(9)) <= 90.0) if vw else None)
+    return got, ((True, 0.0), True, ((40, 80, 64), "147.6", "590.6", (40, 80, 64), True)), \
+           "on: the eye under the line, the line (0.0, the BSS); off: the eye above it; the " \
+           "view handed on - fog colour and range, clear colour, the fov inside the sway's 50..90"
+
+
 def c_engine_undriven_rest_pose():
     r"""AN NPC NOTHING DRIVES HOLDS HIS REST POSE (`todo/drift-audit.md` M2).
 
@@ -44010,6 +44057,7 @@ SLOW = [
     ("engine: gandhar head", c_engine_gandhar_head, "todo/gandhar.md 3b; actor/shoothit.h"),
     ("engine: gandhar grab", c_engine_gandhar_grab, "todo/gandhar.md 4; actor/gandhar.h"),
     ("engine: gandhar play", c_engine_gandhar_play, "todo/gandhar.md 5; actor/gandhar.h"),
+    ("engine: underwater", c_engine_underwater, "todo/drift-audit.md L1; backends/sdl/playframe_world_scene.cpp"),
     ("engine: day night", c_engine_day_night, "todo/drift-audit.md L1; o3de/daynight.h"),
     ("engine: ambient clamp", c_engine_ambient_clamp, "todo/drift-audit.md L1; o3de/geom3do.h"),
     ("engine: actor lighting", c_engine_actor_lighting, "todo/drift-audit.md L1; backends/sdl/playframe_world_staged.cpp"),

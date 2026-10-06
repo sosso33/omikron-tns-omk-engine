@@ -6,6 +6,7 @@
 
 // The letterbox, the camera, the instrument override
 void PlayState::worldCamera() {
+    swimCamNow = false;
     OMK_ZONE("world: camera");   // the profiler (todo/debug-tools.md 6)
     auto& session = *session_;
     view = dlgView;
@@ -384,6 +385,7 @@ void PlayState::worldCamera() {
         // to this mode, and the walk it interrupts is full-frame.
         const int wcs = static_cast<int>(player->state());
         const bool swimCam = !waterCamPreset && wcs >= 11 && wcs <= 14;
+        swimCamNow = swimCam;
         omk::FollowCamera tc =
             swimCam ? player->resolveOffsetsYaw(takeCamEye, takeCamAt, takeCamFov)
                     : player->resolveOffsets(takeCamEye, takeCamAt, takeCamFov);
@@ -675,6 +677,64 @@ void PlayState::worldCamera() {
                     view.cam.at[0], view.cam.at[1], view.cam.at[2],
                     session.playerPos()[0], session.playerPos()[1],
                     session.playerPos()[2]);
+    }
+    // ---- UNDERWATER (`dword_93082C`; todo/drift-audit.md L1 step 5)
+    //
+    // `sub_4187B0`, the camera tick: a camera carrying flag 0x800 - the swim
+    // variant `sub_413CD0` sets up in states 11/13/14 (flags 0x4800) - whose
+    // EYE y has gone past the water line (`C+24 > flt_4E7D0C`, Y down: under
+    // the surface) turns the mode ON, and sets mesh flag 0x8000000 - the
+    // SHIMMER - on the player's whole hierarchy (`sub_437220(node, 0x100, 8)`);
+    // back above the line (`<`), or any camera without 0x800, turns it OFF
+    // and clears the flag (`sub_4372D0`). While it is on, `sub_41E7A0` gives
+    // every shown scene the fog colour `0x405028` - (40, 80, 64) - over a
+    // 590.551-inch (15 m) range, and the screen is cleared to it; and
+    // `sub_417CF0` runs `sub_417FC0` on a camera with flag 0x4000, which
+    // SWAYS it: fov `70 + 20 cos(3v) sin(v)`, roll `5 sin(2v) cos(v)`, with
+    // `v = clock * 3.14 * 14` on `dword_4E9750`, which `Game_Tick` advances
+    // by `dt x 0.0004` and wraps at 1.
+    {
+        swayClock += static_cast<float>(frameSec * 30.0) * 0.0004f;
+        if (swayClock > 1.0f) swayClock -= 1.0f;
+        if (underwater && swimCamNow) {
+            // the sway first, as the tick runs it before the 0x800 test
+            const double v = static_cast<double>(swayClock) * 3.1400001 * 14.0;
+            view.cam.rollDeg = static_cast<float>(std::sin(v + v) * std::cos(v) * 5.0);
+            view.cam.hfovDeg = static_cast<float>(70.0 - std::cos(v * 3.0) * std::sin(v) * -20.0);
+        }
+        const bool was = underwater;
+        if (!swimCamNow) underwater = false;
+        else if (waterLineKnown) {
+            if (!underwater && view.cam.eye[1] > waterLine) underwater = true;
+            else if (underwater && view.cam.eye[1] < waterLine) underwater = false;
+        }
+        if (underwater != was) {
+            // the shimmer on (phase from the vertex, as `buildGeometry` gives
+            // a flagged set mesh) or off, on the rest every pose copies from
+            for (std::size_t i = 0; i < playerRest.corners.size(); ++i)
+                playerRest.corners[i].phase =
+                    underwater && i < playerRest.cornerVertex.size() && playerRest.cornerVertex[i] >= 0
+                        ? static_cast<float>((2u * static_cast<std::uint32_t>(playerRest.cornerVertex[i])) % 32u)
+                        : -1.0f;
+            playerRest.revision = ++worldGeoRev;
+            std::printf("frame %ld: UNDERWATER %s (dword_93082C) - the eye at y %.1f, the water "
+                        "line %.1f\n", n, underwater ? "ON" : "OFF", double(view.cam.eye[1]),
+                        double(waterLine));
+        }
+        if (underwater) {
+            constexpr double kUnderwaterFog = 590.5512085;   // flt_4C2C34 = 0x4413A347
+            view.fogStart = static_cast<float>(kUnderwaterFog * 0.25);
+            view.fogEnd = static_cast<float>(kUnderwaterFog);
+            view.fogColour[0] = 40; view.fogColour[1] = 80; view.fogColour[2] = 64;   // 0x405028
+            for (int k = 0; k < 3; ++k) view.clearColour[k] = view.fogColour[k];
+            // said on the frame the mode comes on, from the view handed on
+            if (!was)
+                std::printf("frame %ld: underwater view - fog %d %d %d over %.1f..%.1f, clear "
+                            "%d %d %d, fov %.1f roll %.2f\n", n, view.fogColour[0],
+                            view.fogColour[1], view.fogColour[2], double(view.fogStart),
+                            double(view.fogEnd), view.clearColour[0], view.clearColour[1],
+                            view.clearColour[2], double(view.cam.hfovDeg), double(view.cam.rollDeg));
+        }
     }
     lastFov = view.cam.hfovDeg;
     lastRoll = view.cam.rollDeg;
