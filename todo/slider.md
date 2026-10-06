@@ -95,9 +95,10 @@ if (dword_6A17CC != -1) {           ; a destination was remembered
 So *called by a destination → transported directly* is the hook firing the
 journey before the menu is ever used, and *called by the header → the menu
 opens* is `dword_6A17CC == -1` leaving the page up for Automatique/Manuelle.
-Both arms of `sub_49BC60` write `dword_6A17CC`; its only reset is in the
-new-game path (`sub_49B400`, beside `F1AVNT.CTL` and `UI_LoadScreen(35)`), so
-the engine remembers the last destination across calls.
+Both arms of `sub_49BC60` write `dword_6A17CC`; its only reset is
+`sub_49B400` - which is NOT the new-game path but the sneak family's OPEN
+callback (`Ui_OpenSneakFamily`), in the SNEAK's parameter-0 arm: every open
+of the sneak forgets the row (corrected 2026-10-06, `engine: slider forget`).
 
 **Still not found**: the *correct side* test. `MDSLIDIN` itself has no side
 check in it, so the constraint is somewhere else — the `.CTL` entry's own

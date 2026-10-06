@@ -951,6 +951,22 @@ int PlayState::modesShoot() {
                 // `sub_40E630` and call `sub_452570` at once - the journey
                 // starts without the menu being used. That is what "called
                 // by a destination -> transported directly" is.
+                // THE SNEAK'S OWN OPEN FORGETS IT. `Ui_OpenSneakFamily`
+                // (0x0049B400, the open callback of screens 0, 7 and 9)
+                // writes `dword_6A17CC = -1` in its parameter-0 arm - the
+                // SNEAK's, beside the setek/anneau/imager previews and
+                // `UI_LoadScreen(35)`. So a destination is remembered only
+                // from its row to the boarding: "Appel du slider" (which
+                // never writes it) always finds -1, and boarding opens the
+                // menu - destination or Manuelle - which is what the reader
+                // remembers. This port cleared it at the dismount instead,
+                // which the engine never does.
+                if (want == omk::kScreenSneak && calledDestination >= 0) {
+                    calledDestination = -1;
+                    std::printf("slider: the sneak opens - Ui_OpenSneakFamily "
+                                "forgets the remembered destination (dword_6A17CC "
+                                "= -1)\n");
+                }
                 if (want == 7 && boarded && calledDestination >= 0) {
                     walk->requestTravel(calledDestination);
                     std::printf("slider: screen 7 - a destination was "

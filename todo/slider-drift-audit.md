@@ -28,6 +28,7 @@ Each with a check shown to fail on the old code (a mutation per commit):
 | A8 no run-over on his own ride, the on-road flag off in mode 6 | `9cb7515` | `engine: slider runover` (new; `veh_probe --runover`) |
 | B5 a refused call keeps the sneak up, string 42 | `2181e2c` | `engine: slider refused` (new) |
 | A1 the rider hidden while seated (the reader: the door shuts over him) | `d11d0cf` | `engine: slider journey` |
+| B3 the sneak's open forgets the destination | (this commit) | `engine: slider forget` (new) |
 
 The port's mode order is now the engine's: case 2 -> **1** (open, bit 4,
 600 frames) -> MDACTION sets **3** -> MDSLIDIN **4** -> a journey's case 6
@@ -36,16 +37,17 @@ after 300-and-in-front (Manuelle). Still to do: M1 (the manual stop leaves
 him stuck - the stop has to run `sub_468FA0` too), then the rest of the
 order below.
 
-**B3 settled from the assembly, and it is the reader's call.**
-`dword_6A17CC` has three writers in the whole listing: both arms of
-`sub_49BC60`, on SUCCESS only (`loc_49BCFA` and the call arm), and the
-new-game reset. "Appel du slider" (0x0049D400) never writes it. So in the
-original, once any destination row has been used, a later "Appel du
-slider" + boarding goes STRAIGHT back to that destination; the menu opens
-only while none has been chosen since the new game. The reader remembers
-the menu opening after "Appel du slider" - which is exactly what happens
-before any destination has been used. The port clears it at the dismount,
-which is neither.
+**B3 DONE, and the reader was right** (`engine: slider forget`). The
+reset of `dword_6A17CC` read as "new game" is the OPEN CALLBACK of the
+sneak-family screens, `Ui_OpenSneakFamily` (0x0049B400, slot +20 of
+screens 0, 7 and 9), in its parameter-0 arm - the SNEAK's. So every time
+the sneak opens, the remembered row is forgotten: a destination is kept
+from its row to the boarding and no further, and "Appel du slider" (which
+never writes it) always boards into the menu - destination or Manuelle.
+The port cleared it at the dismount instead; it now clears it where the
+sneak opens. (A first reading this same day took the reset for the
+new-game path because of the setek/anneau previews beside it - those are
+the sneak's own inventory previews.)
 
 ## Settled on the way: the camera-request block
 

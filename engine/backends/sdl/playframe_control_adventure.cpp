@@ -1467,7 +1467,8 @@ void PlayState::adventureSeated() {
             session.sliders().exitCalled();
             boarded = false;
             journeyTo = -1;
-            calledDestination = -1;
+            // `dword_6A17CC` is NOT cleared here: the sneak's own open does
+            // that (`Ui_OpenSneakFamily`), and nothing at the dismount does
         }
     }
 }

@@ -8988,6 +8988,53 @@ def c_engine_slider_refused():
         "and the page stays up"
 
 
+def c_engine_slider_forget():
+    r"""THE SNEAK'S OPEN FORGETS THE DESTINATION (todo/slider-drift-audit.md
+    B3).
+
+    `dword_6A17CC` - the row a slider was called from - has three writers:
+    both arms of `sub_49BC60`, on a successful call, and the open callback
+    `Ui_OpenSneakFamily` (0x0049B400; screens 0, 7 and 9), whose
+    parameter-0 arm, the SNEAK's, writes -1. Screen 7's hook (0x0049D4D0)
+    rides to the row when it is not -1 and leaves the menu up (a
+    destination, or Manuelle) when it is. So a destination is remembered
+    from its row to the boarding and no further, and "Appel du slider" -
+    which never writes it - always boards into the menu: the reader's
+    memory exactly. The port cleared it at the dismount instead.
+
+    The run picks a destination row (a slider comes), opens and closes the
+    sneak once, then boards: the menu, not a journey. With the old rule it
+    rode to the destination. `engine: slider journey` is the positive
+    control - a row, no sneak in between, and the journey starts.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr, tb = omkpaths.data_root(), os.path.join(ROOT, "tables")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(eng) or not os.path.exists(save):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return (True,) * 4, (True,) * 4, "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
+                        "--save", save, "--area", "0",
+                        "--stand", "1804,0,-6890,244", "--frames", "750", "--board",
+                        "--hold", "0*40,k15*3,0*30,k205*4,0*10,k200*4,0*10,k28*4,0*30,"
+                                  "k203*4,0*10,k208*4,0*10,k28*4,0*40,k15*3,0*40,k15*3,0*500"],
+                       capture_output=True, text=True, env=env, errors="replace")
+    o = r.stdout
+    return ("chosen - a slider is COMING" in o,
+            "Ui_OpenSneakFamily forgets the remembered destination" in o,
+            "MDSLIDIN: aboard" in o and "screen 7 opened" in o,
+            "a destination was remembered" not in o and "JOURNEY to" not in o), \
+           (True,) * 4, \
+        "a destination row calls a slider; opening the sneak again forgets the " \
+        "row (Ui_OpenSneakFamily's dword_6A17CC = -1), so boarding opens the " \
+        "slider menu instead of riding there"
+
+
 def c_engine_slider_arrives():
     r"""A CALLED SLIDER ACTUALLY ARRIVES - the feature, not a harness.
 
@@ -44275,6 +44322,7 @@ CHECKS = [
     ("engine: slider ride", c_engine_slider_ride, "todo/slider"),
     ("engine: slider call", c_engine_slider_call, "todo/slider"),
     ("engine: slider arrives", c_engine_slider_arrives, "todo/slider"),
+    ("engine: slider forget", c_engine_slider_forget, "todo/slider-drift-audit B3"),
     ("engine: slider refused", c_engine_slider_refused, "todo/slider-drift-audit B5"),
     ("engine: slider runover", c_engine_slider_runover, "todo/slider-drift-audit A8"),
     ("engine: slider manual", c_engine_slider_manual, "todo/slider-drift-audit M2"),
