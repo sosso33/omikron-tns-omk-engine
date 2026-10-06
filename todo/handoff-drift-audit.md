@@ -51,7 +51,7 @@ enhancement's start colour.
    line's voice plays, the delta is the voice clock's advance (no 3-frame cap)
    and the face samples that clock (`engine: line sync`; `todo/play-test.md`
    36 - the classic Mac and the Vita are where it shows).
-5. ~~**T3**~~, ~~**T5**~~, S12's watchdog and T6's smoothing - **DONE 2026-10-06**; M7 reviewed and left declared (a pitch sign needs a frame) (the fight AI on the wall
+5. ~~**T3**~~, ~~**T5**~~, S12's watchdog and T6's smoothing - **DONE 2026-10-06**; M7 reviewed and left declared (a pitch sign needs a frame); M5's pool measured (no exposure); **M6 READ** - the original grounds every NPC each frame through `Actor_ApplyMotion`'s probe and response, the port's walker has both, waiting on the reader's go like M4 (the fight AI on the wall
    clock in paced play; the session's randomness seeded at boot). **M4** READ
    and MEASURED 2026-10-06 (44 transitions pair two areas sharing actor ids;
    the original keeps one actor per placement RECORD) and NOT changed - a
