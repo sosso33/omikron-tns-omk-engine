@@ -409,6 +409,16 @@ public:
     // The walker the player is talking to (`dword_53992C`): its action
     // countdown is held while set.
     void setTalkTarget(int w) { talkTarget_ = w; }
+    // `sub_4563A0` (0x004563A0), which `Sliders_Tick` runs every frame there
+    // is a player: once the player's ACTOR_STATE is neither 16 nor 17 - the
+    // conversation over - the target is let go, its countdown ZEROED and the
+    // phase step `sub_456250` takes at a clip's end run at once: enter goes to
+    // main, main to its exit (or back to walking), exit to walking. The
+    // caller passes whether a conversation holds the player. Before
+    // 2026-10-06 the port never released it, and a walker spoken to stood
+    // at his action point for good (`todo/drift-audit.md` M3).
+    // -> whether a target was released.
+    bool releaseTalk(bool playerInDialogue);
     // the action phase of walker `w`: 0 walking to the point, 1 enter, 2 main
     // (the talkable one), 3 exit; -1 when not in an action
     int  actionPhase(int w) const;

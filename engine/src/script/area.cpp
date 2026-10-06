@@ -2575,6 +2575,7 @@ void Session::frame() {
         if (sceneOutArea_ >= 0)
             sceneOut_.tick(static_cast<float>(frameSeconds_ * 30.0));
         sliders_.tick(static_cast<float>(frameSeconds_ * 30.0));   // `Sliders_Tick`, no dialogue gate either
+        releaseTalkTarget();
         postRunOvers();
         refreshCrowdIndex();
         if (bumpCooldown_ > 0.0f) tickBumpCooldown();
@@ -2657,6 +2658,7 @@ void Session::frame() {
         sceneOut_.tick(static_cast<float>(frameSeconds_ * 30.0));
     // `Sliders_Tick`: the traffic and the pedestrians, every frame
     sliders_.tick(static_cast<float>(frameSeconds_ * 30.0));
+    releaseTalkTarget();
     postRunOvers();
     refreshCrowdIndex();
     if (bumpCooldown_ > 0.0f) tickBumpCooldown();
@@ -4353,6 +4355,16 @@ bool Session::crowdPush(const std::vector<CollisionSphere>& mine, float myReach,
         }
     }
     return any;
+}
+
+// `Sliders_Tick`'s tail call of `sub_4563A0`: the walker the player talked
+// to goes back to his walk once no conversation holds the player (ACTOR_STATE
+// 16 or 17, which here is an open conversation)
+void Session::releaseTalkTarget() {
+    const int w = sliders_.talkTarget();
+    if (sliders_.releaseTalk(dialogOpen()))
+        std::printf("frame %ld: the talked-to walker %d RELEASED (sub_4563A0) - "
+                    "his action countdown zeroed\n", frameNo_, w);
 }
 
 bool Session::talkToPedestrian(const float pos[3], float facing) {

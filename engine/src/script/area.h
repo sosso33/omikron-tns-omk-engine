@@ -355,6 +355,7 @@ public:
     // action countdown holds. -> whether one was found. `pressAction` calls
     // it with the tracked player position.
     bool talkToPedestrian(const float pos[3], float facing);
+    void releaseTalkTarget();
     const SpatialIndex& spatial() const { return spatial_; }
     // THE SHOOT GUNMEN'S BODIES in the same index (2026-09-11, a reader:
     // robbers walked into the player's own spot "like I had no collider").

@@ -7439,7 +7439,12 @@ def c_engine_crowd_push():
     frames (100 frames of hold after it). `talk`: a walker in its action's
     main phase, the player 80 units in front, `talkToPedestrian` finds it,
     posts 13/14 once, and the walker's phase holds at 2 for 200 more frames
-    (the countdown is suspended for the talk target).
+    (the countdown is suspended for the talk target). `release` (2026-10-06,
+    `todo/drift-audit.md` M3): the talk opened a conversation (GLOBAL's
+    message 13/14 scripts start 111..114), and once it closes `sub_4563A0`
+    lets the walker go on the very next frame - countdown zeroed, main phase
+    straight to its exit (3). The port never released him before: shown to
+    fail with `releaseTalk` returning early (released -1).
     """
     eng = os.path.join(ROOT, "engine")
     if not os.path.isdir(eng):
@@ -7457,15 +7462,17 @@ def c_engine_crowd_push():
         f = ln.split()
         if f and f[0] == "shape":
             L[f[1]] = {k: float(v) for k, v in (x.split(":") for x in f[2:])}
-        elif f and f[0] in ("walk", "talk"):
+        elif f and f[0] in ("walk", "talk", "release"):
             L[f[0]] = dict(zip(f[1::2], f[2::2]))
     ac, al, w, t = L.get("across", {}), L.get("along", {}), L.get("walk", {}), L.get("talk", {})
+    rl = L.get("release", {})
     got = (ac.get("x30"), ac.get("x20"), ac.get("x10") > ac.get("x20", 0) if "x10" in ac else None,
            al.get("z40"), al.get("z30"), al.get("z10", 0) < al.get("z30", 0),
            int(w.get("touched_frames", 0)) >= 1, float(w.get("moved", 0)) > 10.0, int(w.get("bumps", -1)),
-           int(t.get("found", 0)), int(t.get("talks", 0)), t.get("phase_before"), t.get("phase_after"))
-    want = (0.0, 2.5, True, 0.0, -5.0, True, True, True, 1, 1, 1, "2", "2")
-    return got, want, "shape across x30/x20/x10 grows; along z40 clipped, z30 = -5, z10 stronger; walk touched, moved, one bump; talk found, one message, phase held"
+           int(t.get("found", 0)), int(t.get("talks", 0)), t.get("phase_before"), t.get("phase_after"),
+           (rl.get("open_at_start"), rl.get("released"), rl.get("phase_then")))
+    want = (0.0, 2.5, True, 0.0, -5.0, True, True, True, 1, 1, 1, "2", "2", ("1", "0", "3"))
+    return got, want, "shape across x30/x20/x10 grows; along z40 clipped, z30 = -5, z10 stronger; walk touched, moved, one bump; talk found, one message, phase held; the talk's conversation open, the walker released the frame it closes, into his exit"
 
 
 def c_engine_head_look():

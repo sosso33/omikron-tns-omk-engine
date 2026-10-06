@@ -859,6 +859,23 @@ void Sliders::actionTransition(Pedestrian& m, ActionState& s) {
     finishAction(m, s);
 }
 
+bool Sliders::releaseTalk(bool playerInDialogue) {
+    if (talkTarget_ < 0 || playerInDialogue) return false;
+    const int w = talkTarget_;
+    talkTarget_ = -1;
+    if (w >= static_cast<int>(movers_.size())) return true;
+    Pedestrian& m = movers_[static_cast<std::size_t>(w)];
+    ActionState* s = nullptr;
+    for (auto& st : states_) if (st.used && st.actionIndex == m.action) { s = &st; break; }
+    if (!s) return true;
+    // `mov [edi+2Ch], bx`, then the same arms as the clip-end step. A phase
+    // outside 1..3 reads an uninitialised clip in the original; the talk only
+    // ever takes a walker in its main phase (`sub_452280`), so it cannot occur.
+    s->count = 0;
+    if (s->phase >= 1 && s->phase <= 3) actionTransition(m, *s);
+    return true;
+}
+
 void Sliders::actionStep(int wi, float dt) {
     // `sub_455E90`
     Pedestrian& m = movers_[static_cast<std::size_t>(wi)];

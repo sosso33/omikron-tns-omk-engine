@@ -37,8 +37,6 @@ void PlayState::worldStaged() {
     const omk::SceneRunner& sc = session.scene();
     const int convSpeaker = session.dialogOpen()
         ? session.dialogue().conversation().speaker : -1;
-    bool convOwned = false;
-    for (const auto& up : staged) if (up->actor == convSpeaker) convOwned = true;
     // A running program whose actor is nobody on screen. AREA 118's
     // arrival is one: the shown list carries Kay'l as 310 and the
     // program names another id, so with no fallback the intro would
@@ -468,13 +466,15 @@ void PlayState::worldStaged() {
                             std::sqrt(dx * dx + dz * dz));
             }
         }
-        // (b) THE CONVERSATION'S LINE, for its speaker only. The
-        // DIALOG chunk's word 0 is the speaker's actor id; when no
-        // staged body carries it the model name is the fallback,
-        // which is what the file matched on before there were ids.
+        // (b) THE CONVERSATION'S LINE, for its speaker only - the body
+        // whose actor id is the DIALOG chunk's word 0. The model name
+        // was a fallback here until 2026-10-06, and it made EVERY body
+        // wearing the speaker's model mouth the line; the engine plays
+        // the line on one actor (`Morph_Play`), and with no speaker (-1)
+        // on the street's stand-in, which nothing draws
+        // (`todo/drift-audit.md` M3).
         const bool isSpeaker = session.dialogOpen() && speakerReady &&
-            (s.actor == convSpeaker ||
-             (!convOwned && !speakerModel.empty() && s.model == speakerModel));
+            s.actor == convSpeaker && convSpeaker >= 0;
         const float lineT = (isSpeaker && speakerTracks.valid())
             ? static_cast<float>(session.dialogue().elapsed() * 30.0) : -1.0f;
         const bool useLine = lineT >= 0.0f &&

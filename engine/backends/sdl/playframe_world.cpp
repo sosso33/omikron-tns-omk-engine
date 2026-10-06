@@ -214,11 +214,14 @@ int PlayState::phaseWorld() {
             // where a speaker no table places and no script shows is standing.
             if (session.dialogOpen() && speakerReady && !speakerModel.empty()) {
                 const int sp = session.dialogue().conversation().speaker;
+                // HIS body and no other: `Dialog_Load` resolves the speaker by
+                // his id and `Dialog_SetSubjectActor` flags that actor's own
+                // node - it never borrows another body wearing his model, which
+                // this did until 2026-10-06 (`todo/drift-audit.md` M3), so a
+                // stranger in the crowd model was taken as the speaker, moved
+                // to the solve and given his lines.
                 Staged* s = nullptr;
                 for (auto& up : staged) if (up->actor == sp) { s = up.get(); break; }
-                if (!s)
-                    for (auto& up : staged)
-                        if (up->model == speakerModel) { s = up.get(); break; }
                 if (!s) {
                     staged.push_back(std::make_unique<Staged>());
                     s = staged.back().get();

@@ -144,5 +144,19 @@ int main(int argc, char** argv) {
     for (int f = 0; f < 200; ++f) s.frame();
     std::printf("talk walker %d model %s sex %d found %d target %d talks %d phase_before %d phase_after %d\n",
                 ti, t.model.c_str(), t.sex, found ? 1 : 0, peds.talkTarget(), talks - before, phaseBefore, peds.actionPhase(ti));
+    // ...and LET GO when the conversation ends (`sub_4563A0`): the frame the
+    // conversation closed, the frame the target cleared, and his phase then
+    // - the countdown zeroed, so main goes on to its exit or the walk
+    int closedAt = -1, releasedAt = -1, phaseThen = -9;
+    const bool openAtStart = s.dialogOpen();
+    // with no morph directory the CALLER closes a conversation (`Session::frame`)
+    if (openAtStart) s.endDialog();
+    for (int f = 0; f < 600 && releasedAt < 0; ++f) {
+        s.frame();
+        if (closedAt < 0 && !s.dialogOpen()) closedAt = f;
+        if (peds.talkTarget() < 0) { releasedAt = f; phaseThen = peds.actionPhase(ti); }
+    }
+    std::printf("release open_at_start %d closed %d released %d phase_then %d\n",
+                openAtStart ? 1 : 0, closedAt, releasedAt, phaseThen);
     return 0;
 }
