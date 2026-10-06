@@ -1243,7 +1243,7 @@ the 50 object slots, which no DB field holds.
 | 68 | 0x40AAF0 | `object.release`, no operand — the PLAYER drops what it holds. Bails when `Actor_HeldObjectSlot` is −1. Then the record whose **`+0` equals the held SLOT** (`movsx edi, word ptr [edx]`), not the id: found with state bit 0 set → `Actor_ReleaseObject(player, 0)` (dropped where it was), `ObjectState_Set(+22, state & ~2)`, `Object_HideFromScene(slot)`; otherwise `word_4E6CA0[slot] = −1` and `Actor_ReleaseObject(player, 1)` (freed). Both arms end with the player record's `+270 = −1`. 226 sites |
 | 69 | 0x40AC20 | `object.release.actor actor`: `Actor_HeldObjectSlot` of that actor, −1 → nothing; else `Actor_ReleaseObject(index, 0)` — a DROP, the same function the review called `Actor_SetState` — and `Actor_FindById(actor)->+270 = −1`. 499 sites |
 | 76 | 0x40ACF0 | `object.show object`: the record by id; `ObjectState_Get(+22) & 1` → `ObjectState_Set(+22, state \| 2)` and `Object_ShowInScene(+0)`. Bit 0 clear: nothing. No record: `xor esi, esi` and a read at `[esi+16h]` — the Win9x null page, which the shipped game reads rather than faults on. 251 sites |
-| 98 | 0x404DB0 | `object.place_at object, address`: the object's slot in the id table, `Address_Find`, `sub_41CF50(slot, pos)`. World positioning only, no state. 6 sites |
+| 98 | 0x404DB0 | `object.place_at character, prop` - **corrected 2026-10-06**, read as "object, address" until then: field 0 a CHARACTER (`sub_40AF00`, the actor id table; `Actor_GetPosAndFacing`), field 1 a prop's STATE INDEX (`sub_40A2C0` against the record's `+22`, AREA then SCENE). The prop's node goes to his position with y + the actor's `+276` - the prop root mesh's box maximum y (`sub_41D050`), i.e. seated on the floor under his standing origin (`Object_SetPlacement`, 0x0041CF50); the block's three rotation words are never written by the handler (stack residue). World positioning only, no state. 6 sites, every one `object.show 163` ('Anneaux 5') then the ring placed under the character just beaten. Ported, `verify.py: engine: prop place` |
 
 The runtime slot is `Scene_LoadProps`'s (0x00409FC0): for every prop record whose
 state has bit 0, the **first free** entry of `word_4E6CA0` takes the id and the
@@ -1596,8 +1596,8 @@ without transitioning, status 8; sits before lift and door screens), 123
 never scripted - **corrected 2026-10-05**: the 76-byte "piece" is an `.SFX`
 section E SET PIECE, an effect row (`SetPiece_Find` over 19-dword rows, `+72
 &= ~1`), not decor geometry, so it switches an effect off and changes no
-collision; ported, `todo/drift-audit.md` S11, `verify.py: engine: hide piece`), 98 `object.place_at` (move a prop to another object's
-position), 127 `player.pos.sync` (reset the collision walker's position pair to
+collision; ported, `todo/drift-audit.md` S11, `verify.py: engine: hide piece`), 98 `object.place_at` (the ring a beaten character drops,
+placed under him - ported 2026-10-06, `engine: prop place`), 127 `player.pos.sync` (reset the collision walker's position pair to
 the node transform and invalidate the ground cache), 129/130
 `walk.ledges.ignore` / `.obey` (the walker refuses a step down of more than
 11.81 units — 30 raw — unless `g_IgnoreLedges` is set; scripts bracket staged

@@ -37,8 +37,10 @@ enhancement's start colour.
 1. ~~**S11's op 150/151**~~ - **DONE 2026-10-06**, the BLACK-AND-WHITE
    cutscenes on every backend (`engine: grey bank`; the 3DS shaders written
    but not built - no devkitARM on this machine). `todo/play-test.md` 33.
-2. **M5 - `object.place_at` (op 98)** queues a `PropEvent` nothing reads; a
-   prop a script moves stays at its chunk placement. Gameplay-visible.
+2. ~~**M5 - `object.place_at` (op 98)**~~ - **DONE 2026-10-06**: a character
+   and a prop state index, not "object, address" - the ring a beaten character
+   drops, now placed under him (`engine: prop place`; `todo/play-test.md` 34).
+   M5's other half (the 50-slot pool, a hidden slot's props) is still open.
 3. **M3 - the conversation speaker.** An unresolved speaker is the street's
    reserved pedestrian (`Slider_Init`'s `dword_4C8898`), not "any body
    wearing the model", and never a fresh body at the camera solve. Read, not

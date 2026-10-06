@@ -414,6 +414,16 @@ the 3D picture; the colour coming back at the bracket's end. Without a route,
 traces/save-appart.bin --area 237 --scene-chunk 57`). **Not seen on the 3DS:**
 its two shaders carry the grey, but nothing has been built or run there.
 
+## 34. THE RING A BEATEN CHARACTER DROPS (2026-10-06, `todo/drift-audit.md` M5, op 98)
+
+After the six scripted melee wins, the script shows `Anneaux 5` and places it
+UNDER THE CHARACTER JUST BEATEN - in the port it stayed at its authored spot
+(the supermarket's ring 385 units away). To check by eye: win the supermarket
+fight (`--fight-supermarket`); the ring should lie on the floor where the
+Gun Waver went down, and be takeable there. Note its ROTATION: the original
+leaves it to stack residue, the port draws it unrotated - say whether the
+original's ring stands, lies or tilts there.
+
 ## HEADLESS PASS over 19-29 (2026-10-05)
 
 Each item driven through the viewer with its check's own command, frames
