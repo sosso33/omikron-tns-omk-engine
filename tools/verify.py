@@ -12404,12 +12404,13 @@ def c_engine_frame_hold():
         return sum(1 for v in struct.unpack("<%dH" % (len(b) // 2), b) if v)
     held = shots[330] == shots[331]
     moved = shots[331] != shots[332]
-    # the lit figure re-pinned 2026-10-06 (was 52.5): the unlit set colour is
-    # now floored at the set's ambient grey (`sub_4947F0`'s clamp,
-    # todo/drift-audit.md L1), so the Impasse's pure-black vertices are not -
-    # the hold (the two booleans) did not move
+    # the lit figure re-pinned 2026-10-06, twice (52.5 -> 72.7 -> 58.3): the
+    # unlit set colour is floored at the scene's `+416` (`sub_4947F0`'s clamp,
+    # todo/drift-audit.md L1), first the set's static ambient and then - the
+    # Impasse being one of the 19 day/night areas - the clock's grey, 10 at
+    # the save's evening hour; the hold (the two booleans) did not move
     return (held, moved, round(100.0 * lit(shots[331]) / (800 * 600), 1)), \
-           (True, True, 72.7), \
+           (True, True, 58.3), \
            ("the tick an editing ends on holds the frame before it, byte for " \
             "byte, and the next beat then changes it")
 
@@ -41082,8 +41083,10 @@ def c_engine_actor_lighting():
     first form (actor 17) at frame 0 and the snake (187) at 737, base, lights
     reaching, and the corners' mean; then `--no-actor-light`, no lit line.
     And a PROP (step 3): `Object_Load` calls `LightObject` too - the docks'
-    prop 361 at frame 0, base 76 (that set's ambient 0.3), lights reaching,
-    corners above the base.
+    prop 361 at frame 0, lights reaching, corners above the base. Its base is
+    10, not the set's static 76 (ambient 0.3): the docks are one of the 19
+    day/night areas (step 4), and at the save's clock (2566060, phase 2) the
+    scene's `+416` is `64 - 64 * 766060 / 900000` = 10.
     SHOWN TO FAIL: the base forced back to 0 (the green and blue go to 0);
     the props' lighting skipped (no prop line).
     """
@@ -41123,7 +41126,7 @@ def c_engine_actor_lighting():
     prop = (int(m.group(1)), int(m.group(2)) > 0,
             min(int(m.group(3)), int(m.group(4)), int(m.group(5))) > int(m.group(1))) if m else None
     return (lit(17, o), lit(187, o), "LIT by the set" in off, prop), \
-           ((63, True, True, 63, 63), (63, True, True, 63, 63), False, (76, True, True)), \
+           ((63, True, True, 63, 63), (63, True, True, 63, 63), False, (10, True, True)), \
            "Gandhar's first form and the snake: the base grey, lights reaching, red " \
            "over 150, green and blue at the base; nothing lit with --no-actor-light; " \
            "the docks' prop 361: its base, lights reaching, every channel above the base"

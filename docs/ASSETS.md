@@ -1697,6 +1697,16 @@ ramp (UI §5), which is authored, not rendered.
 then `FOGSTART` and `FOGEND` from the two globals above. Its COLOUR is the
 scene's `+336`, three bytes packed and sent through `FOGCOLOR` (34).
 
+**CORRECTED 2026-10-06: that colour is the AREA's, by the clock - not always
+black.** `sub_41E7A0` (every frame, from `Game_Tick`) writes the scene's `+336`
+as `v5[84]` - the writer the paragraph below missed - lerping the four colours
+at AREA `+144` (stored `0x00BBGGRR`: byte 0 is red, as the greyscale bank's
+luma weights show) by the game clock, and `Game_Tick` clears the screen to the
+same colour. Black only where the chunk is (Kay'l's flat, the Morgue); the cave
+is a lava red (223, 28, 0), Anekbah runs from (95, 171, 177) at dawn to
+(9, 19, 26) at night. `engine/src/o3de/daynight.h`; `verify.py: engine: day
+night`. What follows was the first reading, kept as the record of it:
+
 **And that colour is BLACK in the shipped game.** This is the part that had to
 be read rather than guessed. The scene object is `memset` to 0 at load
 (`Scene_Load3DO`, 0x1A8 bytes) and `sub_44E830` then writes `a1[84] = 0` —

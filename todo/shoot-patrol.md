@@ -286,6 +286,11 @@ run now reads
 
 ```
 roots   (237, 4857, -2793, 44.4) (238, 5286, -2509, 44.4) (240, 4612, -2797, 44.4)
+```
+
+**2026-10-06:** gunman 240's root now reads **4516**, -2797 - his placement and the check's own want - where it read 4612 here. Lighting cannot move a root; the change is from that day's pose work (`todo/drift-audit.md` M2, an undriven NPC in his rest pose, and M2b), not bisected. 237 and 238 are as recorded, so the check stays red on purpose.
+
+```
 hits    237 237 237 240 240 240        <- was: 237 and 238 once each
 kills   (5, True) (5, True)            <- was: NOBODY
 falls   237 240                        <- both, to the floor

@@ -100,12 +100,13 @@ struct View {
     // menu's clip distance times 0.25 and times 1 (`platform/settings.h`).
     // `FOGCOLOR` comes from the scene's `+336`.
     //
-    // **That colour is BLACK in normal play**, and this is the part that took
-    // reading rather than guessing: the scene object is `memset` to 0 at load
-    // and `sub_44E830` then writes `a1[84] = 0` - which IS `+336` - explicitly.
-    // No other writer of the scene's `+336` exists in the decompilation. So
-    // the shipped fog darkens toward the horizon rather than hazing it, which
-    // is what a domed city at night wants and what the captures show.
+    // **That colour is NOT always black** - corrected 2026-10-06. The load
+    // zeroes it (`memset`, then `sub_44E830`'s `a1[84] = 0`), and this said no
+    // other writer exists; `sub_41E7A0` is one, every frame, as `v5[84]` on
+    // the decor slot's scene: the AREA's four colours at `+144` lerped by the
+    // game clock (`o3de/daynight.h`) - black only where the chunk is (Kay'l's
+    // flat), lava red in the cave, a dawn-to-night ramp in the cities. The
+    // screen is cleared to the same colour (`clearColour`).
     //
     // One mode replaces it: with `dword_93082C == 1` the scene takes colour
     // 0x00405028 and a clip distance of `flt_4C2C34` = 590.551 units = exactly
