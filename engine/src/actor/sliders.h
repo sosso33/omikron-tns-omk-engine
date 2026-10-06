@@ -480,6 +480,13 @@ public:
     // how many ticks an arrival was put off because the mover was on a route
     // connector (`0x10` -> `0x400`, drift audit B6)
     int  arrivalDeferrals() const { return deferrals_; }
+    // ONE-SHOT: case 2's arrival happened on this tick - the camera's hand-back,
+    // `Screen_Fade(0)` and the hold's release belong to it. An EVENT, not a
+    // state the caller compares between frames: a call can spawn within the
+    // 117 of its pickup and arrive on its very first tick, which a frame-to-
+    // frame comparison never sees - and then the hold and the bands stayed on
+    // for good (a reader: "a cutscene without any slider on it")
+    bool takeCameNotice() { const bool r = cameNotice_; cameNotice_ = false; return r; }
     // Its state machine, for a caller that wants the camera or the mount gate.
     const RideMachine& callMachine() const { return callRide_; }
     // Where it is, and whether it is OPEN and near enough to board.
@@ -684,6 +691,7 @@ private:
     std::map<std::string, float> vehRadius_;      // `sub_438040` per vehicle model, once handed in
     int   lastSpawnSlot_ = -1;                // the slot `spawnVehicle` last filled
     int   deferrals_ = 0;                     // arrivals put off by a route connector (B6)
+    bool  cameNotice_ = false;                // case 2 arrived this tick (takeCameNotice)
     Pedestrian manualStart_{};               // the mover when Manuelle began (`dword_8F5E2C/28/30`)
     bool  haveManualStart_ = false;
     int   level_ = kDefaultStreetActivity;

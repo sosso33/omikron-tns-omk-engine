@@ -491,6 +491,8 @@ struct PedStaged {
 // the geometry is composed once at rest and only transformed per frame.
 struct VehStaged {
     CharModel* mo = nullptr;
+    std::string model;         // the model `mo` was taken for - a slot is REUSED
+
     // the chosen sub-object, composed, in model space - SHARED by every
     // vehicle of this model and sub-object (`PlayState::vehAtRestFor`), as
     // the original holds a model's LOD sub-objects once (`sub_453A70`)

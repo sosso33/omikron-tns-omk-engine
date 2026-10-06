@@ -9177,6 +9177,51 @@ def c_engine_slider_restart():
         "the ride, the boarding, the slider camera and the hold"
 
 
+def c_engine_slider_second_call():
+    r"""A CALL AFTER A JOURNEY that arrives on its first tick (a reader's
+    route, 2026-10-06: Tahira's restaurant -> Kay'l's apartment by slider,
+    then a call for Jenna's).
+
+    The second call spawns at the top of the pickup's lane inside its 117 and
+    `sub_456530` case 2 arrives on the call's very first tick. The viewer
+    released the hold and the black-fade bands on a 2 -> 1 it compared
+    BETWEEN frames, which never saw state 2 - so he stayed HELD under the
+    bands for good, which reads as a cutscene that never ends with no slider
+    driving in. The arrival is now the pool's own event (`takeCameNotice`).
+    Asserted: three holds over the call, the journey and the second call,
+    and the last event a release.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr, tb = omkpaths.data_root(), os.path.join(ROOT, "tables")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(eng) or not os.path.exists(save):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return (True,) * 3, (True,) * 3, "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    page = "k15*3,0*30,k205*4,0*10,k200*4,0*10,k28*4,0*30,k203*4,0*10"
+    r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
+                        "--save", save, "--area", "0",
+                        "--stand", "2835,-113,-6144,9",          # address 5, Tahira's restaurant
+                        "--frames", "1300", "--board", "--address-enable", "2",
+                        "--hold", "0*40," + page + ",k208*4,0*10,k28*4,0*900," +
+                                  page + ",k208*4,0*10,k208*4,0*10,k208*4,0*10,k28*4,0*60"],
+                       capture_output=True, text=True, env=env, errors="replace")
+    o = r.stdout
+    import re as _re
+    ev = _re.findall(r"(Screen_Fade\(1\) and the player HELD|Screen_Fade\(0\), the hold released)", o)
+    return ("'Anekbah - Appartement de Jenna' chosen - a slider is COMING" in o,
+            ev.count("Screen_Fade(1) and the player HELD"),
+            bool(ev) and ev[-1].startswith("Screen_Fade(0)")), \
+           (True, 3, True), \
+        "restaurant -> apartment by slider, then a call for Jenna's that arrives on " \
+        "its first tick: three holds (the call, the journey, the second call), the " \
+        "last released on the arrival's own tick"
+
+
 def c_engine_slider_arrives():
     r"""A CALLED SLIDER ACTUALLY ARRIVES - the feature, not a harness.
 
@@ -44498,6 +44543,7 @@ CHECKS = [
     ("engine: slider ride", c_engine_slider_ride, "todo/slider"),
     ("engine: slider call", c_engine_slider_call, "todo/slider"),
     ("engine: slider arrives", c_engine_slider_arrives, "todo/slider"),
+    ("engine: slider second call", c_engine_slider_second_call, "the reader route of 2026-10-06"),
     ("engine: slider restart", c_engine_slider_restart, "todo/slider-drift-audit B9"),
     ("engine: slider journey drive", c_engine_slider_journey_drive, "todo/slider-drift-audit D1"),
     ("engine: slider forget", c_engine_slider_forget, "todo/slider-drift-audit B3"),

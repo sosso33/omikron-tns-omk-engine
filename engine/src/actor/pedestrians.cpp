@@ -220,7 +220,7 @@ void Sliders::clear() {
     // pool had put in that slot - in Qalisar a moto, which is why the reader
     // watched it vanish at the kerb while the log said "relinked".
     called_ = -1; callRide_ = RideMachine{}; journeyDone_ = false;
-    riderKnown_ = false; releasedTold_ = 0; forCall_ = false; haveManualStart_ = false;
+    riderKnown_ = false; releasedTold_ = 0; forCall_ = false; haveManualStart_ = false; cameNotice_ = false;
     loaded_ = false;
 }
 

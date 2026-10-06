@@ -1272,8 +1272,13 @@ void PlayState::adventureSeated() {
         // ...and in the same arm, under the same guard, `Screen_Fade(0)`
         // and `Actor_HoldAnimation(player, 0)`: the bands go and he is his
         // own again (drift audit A4)
-        if (sliderPrevState == 2 && st == 1 && sliderCamMode >= 0 && sliderCamMode != 17) {
-            sliderCamRequest(0, 60.0f);
+        // The arrival is the pool's EVENT, not a 2 -> 1 seen between two
+        // frames: a call that spawns inside its 117 arrives on its first
+        // tick and the frames never see it in state 2. In the engine that
+        // tick has just asked for mode 8 (`if (mode != 8)`), so the guard
+        // passes unless he is in 17.
+        if (session.sliders().takeCameNotice() && sliderCamMode != 17) {
+            if (sliderCamMode >= 0 || takeCam) sliderCamRequest(0, 60.0f);
             session.startBlackFade(false);
             session.holdPlayer(false);
             std::printf("frame %ld: the slider has come - Screen_Fade(0), the hold "

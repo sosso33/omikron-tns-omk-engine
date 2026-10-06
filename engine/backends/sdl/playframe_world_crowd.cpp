@@ -422,7 +422,20 @@ void PlayState::worldCrowd() {
             const float vx = m.body[0] - view.cam.eye[0], vy = m.body[1] - view.cam.eye[1],
                         vz = m.body[2] - view.cam.eye[2];
             if (vx * vx + vy * vy + vz * vz > vreach * vreach) { skipMine(2, "beyond the vehicle LOD reach"); continue; }
-            if (!sv.mo) sv.mo = charModelFor(v.model);
+            // A SLOT IS REUSED, and with another model: a call spawns into
+            // the first slot a journey's `takeOverAt` emptied, and in a full
+            // pool takes an ambient vehicle and rebinds its model to the
+            // slider row (`sub_452CC0`'s take-over) - so a slot that drew a
+            // MOTO can hold the player's slider next. `sv.mo` was taken once
+            // and never compared, so the called slider was drawn as the moto
+            // the slot had held: a reader's call after a journey brought "a
+            // cutscene without any slider on it"
+            if (sv.mo && sv.model != v.model) {
+                std::printf("frame %ld: vehicle slot %zu restaged - '%s' -> '%s'\n",
+                            n, i, sv.model.c_str(), v.model.c_str());
+                sv.mo = nullptr; sv.atRest = nullptr; sv.built = false; sv.lodRoot = -1;
+            }
+            if (!sv.mo) { sv.mo = charModelFor(v.model); sv.model = v.model; }
             if (!sv.mo || !sv.mo->ready) { skipMine(3, "its model did not load"); continue; }
             if (mine && calledSkipTold != 0) { calledSkipTold = 0; std::printf("frame %ld: the called vehicle (slot %zu, model '%s') is staged at %.0f %.0f %.0f\n", n, i, v.model.c_str(), m.body[0], m.body[1], m.body[2]); }
             // ---- `sub_4521E0`, THE MODEL SWAP ----------------------

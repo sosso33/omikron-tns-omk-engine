@@ -327,6 +327,7 @@ void Sliders::tickVehicles(float dt) {
                 journeyDone_ = true;
                 v.state = 4;
             } else if (was == 2 && callRide_.state == 1) {
+                cameNotice_ = true;           // case 2's arrival, for the viewer
                 // It stopped where it arrived: mode 1, OPEN (bit 4), and the
                 // 600-frame idle running. This forced mode 3 until
                 // 2026-10-06, which nothing in the engine waits in - MDACTION
