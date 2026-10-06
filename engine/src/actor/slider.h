@@ -55,8 +55,32 @@
 
 #include <cstdint>
 #include <functional>
+#include <vector>
 
 namespace omk {
+
+// WHAT THE RIDE MEETS (drift audit M3) - the world `sub_458600`'s helpers
+// read, handed in by the frontend each frame:
+//
+//   `surface`   `World_ProbePoint(-1, x, y, z, &mesh, ..., &drop)` WITH the hit
+//               mesh's NAME (its first two bytes, `+16`): the road is a name
+//               starting `X` or `OP`, a pedestrian crossing `O`
+//   `vehicles`  the 40 slots' live vehicle nodes but the ridden one (slot
+//               order - `sub_458880` takes the FIRST it overlaps): body
+//               (mover +36), heading (+24), speed (+52 / 256, `sub_4382A0`)
+//               and model radius (+88, `sub_438040`)
+//   `walkers`   the street's 200 walker records in order: body and heading
+//   `radius`    the RIDDEN slider's model radius
+//   `setSpeed`  `sub_4382D0` on a vehicle hit: its +52 = speed * 256
+struct RideVehicle { int slot = -1; double x = 0, y = 0, z = 0, dirx = 0, dirz = 0, speed = 0, radius = 0; };
+struct RideWalker  { double x = 0, y = 0, z = 0, dirx = 0, dirz = 0; };
+struct RideWorld {
+    std::function<bool(double x, double y, double z, double& drop, char name[2])> surface;
+    std::vector<RideVehicle> vehicles;
+    std::vector<RideWalker>  walkers;
+    double radius = 0.0;
+    std::function<void(int slot, double speed)> setSpeed;
+};
 
 // One ride, as the engine's own globals. Named for what they hold; the
 // address each one is stands beside it so the transcription stays checkable.
@@ -73,7 +97,11 @@ struct SliderRide {
     double lastSpeed = 0;              // flt_53997C
     int    turnSign = 0;               // 539978, -1 / 0 / +1
     int    noThrust = 0;               // 8F5DF0, a countdown that kills thrust
-    int    settle = 0;                 // 8F5E08, the 80-frame counter
+    int    settle = 0;                 // 8F5E08: 40 after a vehicle hit, counted down by
+                                       //         `Slider_TickRide`, 0 after a road-edge push
+    double pushX = 0, pushZ = 0;       // 8F5E20 / 8F5E24 - written by `sub_458880`, read nowhere
+    int    vehicleHits = 0;            // instruments: `sub_458880`'s bounces
+    int    walkerSteps = 0;            //              `sub_459970`'s side-steps
     bool   stopped = false;            // `sub_4570F0` was reached
 
     // THE INPUT WORD is the interface's own 14-slot word (`dword_4E9718`),
@@ -124,6 +152,17 @@ struct SliderRide {
     // `sub_458600`'s height arm: the hover over the surface, the bob, and the
     // 0.75 damping the "OP" surfaces apply.
     void hover(double dt, const Probe& probe);
+    // ...the same with the world (`sub_458600` whole, in its order): the
+    // vehicle push first, the noThrust countdown, the probe; the "OP" arm
+    // only for a WALKER ahead on a crossing (`sub_458490`), who is stepped
+    // round (`sub_459970`); then the height. The `Probe` form above keeps
+    // the bare arm for the flight probes.
+    void hover(double dt, const RideWorld& world);
+    // `sub_458880`: the first vehicle the ride overlaps, pushed out to the
+    // edge of the two ellipses if the ground there is ROAD, the velocity
+    // bounced by 2/3 of the closing speed, `settle` = 40 and the speed
+    // handed to the vehicle hit. -> whether it bounced.
+    bool collideVehicles(const RideWorld& world);
 
     // `sub_457F50`: where the RIDER sits - the slider's x and z, and its y
     // plus `kRiderUp`. The actor's own `+248` takes `kNodeUp` instead, which

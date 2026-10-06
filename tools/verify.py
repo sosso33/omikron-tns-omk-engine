@@ -8617,6 +8617,15 @@ def c_engine_slider_fly():
         "coast frames 272 z -1074.7".split(),
         "hover y -30.75 bob 3.84 amp 1.922".split(),
         "moving y -30.75 drift 0.0000 phase 0.00".split(),
+        # M3 (2026-10-06), `sub_458880`: UP held into a parked slider on a
+        # road bounces 47 times and never passes it (closest 87.8, inside the
+        # 138 contact distance only because `sub_4583D0`'s own test,
+        # sqrt(dx^2 + 2 dz^2) < 1.5r, fires late), settle 40 and the parked
+        # one handed 7; on a pavement nothing pushes; a walker crossing ahead
+        # on an `O` mesh is stepped round (`sub_459970`) and the ride damped
+        "collide hits 47 closest 87.8 settle 40 handed 7.0 final z -281.7".split(),
+        "collide offroad hits 0".split(),
+        "crossing steps 7 x 71.24 speed 5.43".split(),
     ]
     return got, want, \
         "the six-value thrust LADDER by input and by the direction of travel " \

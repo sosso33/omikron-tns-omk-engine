@@ -146,8 +146,26 @@ authored to meet, H_TAK031's +19.58 into H_PUT032's key 1 of +19.58).
 
 ## What is left (the audit's order)
 
-- **M3** Manuelle's collisions with vehicles and road-keeping (`sub_458880`,
-  `sub_458C70`, `sub_459BD0` — the last unread). Large.
+- **M3** Manuelle's collisions - READ WHOLE 2026-10-06, three steps:
+  1. DONE: `sub_458880` the vehicle push and `sub_458490`/`sub_459970` the
+     walker on a crossing (`SliderRide::hover(dt, RideWorld)`; the viewer
+     fills the world with the named-surface probe, the vehicles, the walkers;
+     `PlayState::soupMeshName`). NOT PLAYED.
+  2. `sub_458C70` (466 lines): four hull corners at +-60.37 (fore/aft and
+     across, 20 above, led by the velocity: x0 when |speed| <= 18, -v at
+     18..32, -2v above) probed for ROAD; where corners disagree
+     `sub_459810` bisects the hull edge (2 halvings, probes 39.37 down) for
+     the crossing point; the slider is pushed back along the edge normal
+     (2.5, the `flt_8F5D80/84` impulse damped 1/8 a frame afterwards),
+     `dword_8F5DF0 = 8`, `settle = 0`, the yaw turned toward the edge by
+     `dword_8F5E18` clamped +-2.5. All four off-road: back by -2v and a
+     quarter of the speed. Decompile has two undefined flags (v17, v21)
+     - read the asm at 0x4594D0 / 0x459580.
+  3. `sub_459BD0` (312): the WALL pass - the four hull edges (+-60 on the
+     node's own axes) cast both ways with `sub_444810` (the port's
+     `WorldRay`), the hit pair chosen, the slider moved half back out along
+     the wall, the velocity laid along it at 95% of |speed|, the yaw nudged
+     +-2 (`dword_8F5E18`). Two undefined flags (v19/v20) at 0x45A365.
 - ~~**A9**~~ DONE 2026-10-06 (`engine: vehicle sound`): one looped
   `sliderm01.wav` per vehicle within 585 of the camera's eye, gain 39/d.
   NOT PLAYED - listen for it while the called slider comes (the camera

@@ -478,6 +478,13 @@ public:
 
     // `sub_438040` for a vehicle: the body radius of one of the two shipped
     // models, which the pool cannot read itself.
+    // `sub_4382D0`: a vehicle's body speed (+52) set to `s` units a frame -
+    // what a slider hit by the player's own manual ride is handed
+    void setVehicleSpeed(int slot, float s) {
+        if (slot < 0 || static_cast<std::size_t>(slot) >= vehicles_.size()) return;
+        const Vehicle& v = vehicles_[static_cast<std::size_t>(slot)];
+        if (v.mover >= 0) movers_[static_cast<std::size_t>(v.mover)].baseSpeed = s * 256.0f;
+    }
     void setVehicleModelRadius(const std::string& model, float radius);
 
     // ------------------------------------------------- THE PLAYER'S SLIDER

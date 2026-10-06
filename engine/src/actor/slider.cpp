@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "actor/slider.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace omk {
@@ -248,6 +249,133 @@ void SliderRide::fly(std::uint32_t input, double dt, const Probe& probe) {
 // so **a stationary slider BOBS and a moving one EASES** toward its hover
 // height at a third of the gap a frame. Parked it idles up and down; under
 // way it simply follows the ground.
+// `sub_458880` (0x00458880), transcribed. Its overlap test is `sub_4583D0`:
+// the box `max(|dx|, |dz|) <= 1.5 r` and then `sqrt(dx^2 + 2 dz^2) < 1.5 r`
+// (the -2.0 is `flt_4BC634`, read from the image), r the OTHER vehicle's
+// model radius; a distance of exactly 0 returns 0.0, which is "no".
+bool SliderRide::collideVehicles(const RideWorld& w) {
+    if (noThrust) { pushX = pushZ = 0.0; return false; }
+    const RideVehicle* hit = nullptr;
+    for (const auto& v : w.vehicles) {
+        const double dx = x - v.x, dz = z - v.z;
+        const double R = v.radius * 1.5;
+        if (R < std::max(std::fabs(dx), std::fabs(dz))) continue;
+        const double d = std::sqrt(dx * dx - dz * dz * -2.0);
+        if (R <= d || d == 0.0) continue;
+        hit = &v;
+        break;
+    }
+    if (!hit) return false;
+    double vs = hit->speed;                       // `sub_4382A0`: +52 / 256
+    if (vs == 0.0) vs = 7.0;
+    const double A = hit->radius * 1.5;
+    const double A2 = A * A, B2 = (A * 0.5) * (A * 0.5);
+    const double rvx = -(hit->dirx * vs) - vx;    // the closing velocity
+    const double rvz = -(hit->dirz * vs) - vz;
+    double ox = x - hit->x, oz = z - hit->z;
+    double d = std::sqrt(ox * ox + oz * oz);
+    if (d == 0.0) return false;
+    double c = (hit->dirx * ox + hit->dirz * oz) / d;
+    double e = c * c * (A2 - B2) + B2;            // its ellipse along the offset
+    c = (std::cos(yaw * kDeg) * -oz + std::sin(yaw * kDeg) * -ox) / d;
+    e += c * c * (A2 - B2) + B2;                  // ...and the ride's, same axes
+    if (e < d * d) return false;
+    const double rv = std::sqrt(rvx * rvx + rvz * rvz);
+    const double s = std::sqrt(e);
+    pushX = rv * ox / d * -0.25;
+    pushZ = rv * oz / d * -0.25;
+    const double cx = hit->x + s * ox / d, cz = hit->z + s * oz / d;
+    double drop = 0.0; char nm[2] = {0, 0};
+    if (!w.surface || !w.surface(cx, y, cz, drop, nm)) return false;
+    // `strncmp("X", name, 1)` or `strncmp("OP", name, 2)`: only onto ROAD
+    if (!(nm[0] == 'X' || (nm[0] == 'O' && nm[1] == 'P'))) return false;
+    x = cx; z = cz;
+    ox = x - hit->x; oz = z - hit->z;
+    d = std::sqrt(ox * ox + oz * oz);
+    vx -= rv * ox / d * 0.66666669;
+    vz -= rv * oz / d * 0.66666669;
+    double sp = std::sqrt(vx * vx + vz * vz);
+    if (std::sin(yaw * kDeg) * vx + std::cos(yaw * kDeg) * vz < 0.0) sp = -sp;
+    speed = sp;
+    settle = 40;
+    if (w.setSpeed) w.setSpeed(hit->slot, vs);
+    ++vehicleHits;
+    return true;
+}
+
+namespace {
+// `sub_458490`: the first walker (record order) within 300 of the ride and
+// AHEAD of its motion (`x -= v`, so ahead is `-cos > 0.5`) whose own surface
+// is a crossing - a mesh name starting `O`. -1 for none.
+int crossingWalker(const SliderRide& r, const RideWorld& w) {
+    for (std::size_t i = 0; i < w.walkers.size(); ++i) {
+        const RideWalker& p = w.walkers[i];
+        const double ox = p.x - r.x, oy = p.y - r.y, oz = p.z - r.z;
+        const double d = std::sqrt(ox * ox + oy * oy + oz * oz);
+        if (!(d < 300.0)) continue;
+        double c = oz * r.vz + ox * r.vx;
+        if (d != 0.0) c /= d;
+        if (r.speed != 0.0) c /= std::fabs(r.speed);
+        if (!(-c > 0.5)) continue;
+        double drop = 0.0; char nm[2] = {0, 0};
+        if (w.surface && w.surface(p.x, p.y, p.z, drop, nm) && nm[0] == 'O')
+            return static_cast<int>(i);
+    }
+    return -1;
+}
+}  // namespace
+
+void SliderRide::hover(double dt, const RideWorld& w) {
+    collideVehicles(w);                           // `sub_458880`
+    if (noThrust) --noThrust;
+    if (!w.surface) return;
+    double drop = 0.0; char nm[2] = {0, 0};
+    if (w.surface(x, y, z, drop, nm)) {
+        // the ride on a crossing (`strncmp("OP", name, 1)` - the byte `O`),
+        // and a walker ahead on one too
+        if (nm[0] == 'O') {
+            const int wi = crossingWalker(*this, w);
+            if (wi >= 0) {
+                // `sub_459970`: if the walker's path at the ride's distance
+                // falls inside the ride's +-2r band, step a fifteenth of 2r
+                // to the side, across the offset
+                const RideWalker& p = w.walkers[static_cast<std::size_t>(wi)];
+                const double r2 = w.radius + w.radius;
+                const double ox = x - p.x, oz = z - p.z;
+                const double d = std::sqrt(ox * ox + oz * oz);
+                if (d != 0.0) {
+                    const double px = oz / d * r2, pz = -ox / d * r2;
+                    const double wx = p.dirx * d, wz = p.dirz * d;
+                    if ((ox - px - wx) * (px + ox - wx) + (oz - pz - wz) * (pz + oz - wz) <= 0.0) {
+                        x -= px * -0.06666667;
+                        z -= pz * -0.06666667;
+                        ++walkerSteps;
+                    }
+                }
+                const double qx = vx * dt;
+                vx -= vx * 0.25;
+                const double qz = vz * dt;
+                vz -= vz * 0.25;
+                z += qz;
+                speed -= speed * 0.25;
+                x = qx + x - vx * dt;
+                z -= vz * dt;
+            }
+        }
+        const double gap = drop - kHover;
+        if (speed == 0.0) {
+            bobPhase += dt * kBobRate;
+            if (bobPhase >= 360.0) bobPhase -= 360.0;
+            y += gap - std::sin(bobPhase * kDeg) * kBobAmp;
+        } else {
+            y += gap * dt * 0.33333334;
+        }
+    } else {
+        double d2 = 0.0; char n2[2] = {0, 0};
+        if (w.surface(x, y - 39.0, z, d2, n2)) y -= 39.0;
+    }
+}
+
 void SliderRide::hover(double dt, const Probe& probe) {
     if (noThrust) --noThrust;
     if (!probe) return;

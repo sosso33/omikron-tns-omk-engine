@@ -230,6 +230,30 @@ void PlayState::adventureDeath() {
     }
 }
 
+// The NAME of the set mesh a floor triangle of `playerSoup` belongs to - the
+// `+16` that `World_ProbePoint` hands back through its mesh pointer, which the
+// road tests (`X...`, `OP...`) and the crossing test (`O...`) read. Null when
+// the triangle is not a set mesh's.
+const char* PlayState::soupMeshName(std::uint32_t tri) const {
+    std::size_t off = 0;
+    for (int sl = 0; sl < 2; ++sl) {
+        const WorldSlot& ws = worldSlots[static_cast<std::size_t>(sl)];
+        if (ws.stem.empty()) continue;
+        const std::size_t cnt = ws.soup.size() / 9;
+        if (tri < off + cnt) {
+            const std::size_t t = tri - off;
+            if (t < ws.soupMesh.size()) {
+                const int mi = ws.soupMesh[t];
+                if (mi >= 0 && static_cast<std::size_t>(mi) < ws.meshes.size())
+                    return ws.meshes[static_cast<std::size_t>(mi)].name;
+            }
+            return nullptr;
+        }
+        off += cnt;
+    }
+    return nullptr;
+}
+
 // The crowd push
 void PlayState::adventureCrowdPush() {
     auto& session = *session_;
@@ -1240,24 +1264,8 @@ void PlayState::adventureSeated() {
             bool onRoad = false;
             std::uint32_t tri = 0;
             if (omk::floorUnder(playerSoup, playerGrid, pp[0], pp[1] - 12.81, pp[2], tri)) {
-                std::size_t off = 0;
-                for (int sl = 0; sl < 2; ++sl) {
-                    const WorldSlot& ws = worldSlots[static_cast<std::size_t>(sl)];
-                    if (ws.stem.empty()) continue;
-                    const std::size_t cnt = ws.soup.size() / 9;
-                    if (tri < off + cnt) {
-                        const std::size_t t = tri - off;
-                        if (t < ws.soupMesh.size()) {
-                            const int mi = ws.soupMesh[t];
-                            if (mi >= 0 && static_cast<std::size_t>(mi) < ws.meshes.size()) {
-                                const char* nm = ws.meshes[static_cast<std::size_t>(mi)].name;
-                                onRoad = nm[0] == 'X' || (nm[0] == 'O' && nm[1] == 'P');
-                            }
-                        }
-                        break;
-                    }
-                    off += cnt;
-                }
+                if (const char* nm = soupMeshName(tri))
+                    onRoad = nm[0] == 'X' || (nm[0] == 'O' && nm[1] == 'P');
             }
             session.sliders().setPlayer(pp, onRoad);
             static int roadTold = -1;
@@ -1477,7 +1485,45 @@ void PlayState::adventureRide() {
         };
         const double dt = frameSec * 30.0 * 0.5;
         ride->fly(bits, dt, probe);
-        ride->hover(dt, probe);
+        // ---- WHAT THE RIDE MEETS (drift audit M3) ----------------------
+        // `sub_458600` whole: the vehicles (`sub_458880`), the walkers on a
+        // crossing (`sub_458490`), every probe with its mesh NAME
+        omk::RideWorld rw;
+        rw.surface = [&](double px, double py, double pz, double& drop, char nm[2]) {
+            std::uint32_t tri = 0;
+            const auto fy = omk::floorUnder(playerSoup, playerGrid, px, py, pz, tri);
+            if (!fy) return false;
+            drop = *fy - py;
+            nm[0] = nm[1] = 0;
+            if (const char* n = soupMeshName(tri)) { nm[0] = n[0]; nm[1] = n[0] ? n[1] : 0; }
+            return true;
+        };
+        {
+            const auto& sl = session.sliders();
+            const int mine = sl.calledVehicle();
+            for (std::size_t i = 0; i < sl.vehicles().size(); ++i) {
+                const auto& v = sl.vehicles()[i];
+                if (!v.live || v.mover < 0) continue;
+                const auto& m = sl.movers()[static_cast<std::size_t>(v.mover)];
+                if (static_cast<int>(i) == mine) { rw.radius = m.bodyRadius; continue; }
+                rw.vehicles.push_back({static_cast<int>(i), m.body[0], m.body[1], m.body[2],
+                                       m.dir[0], m.dir[2], m.baseSpeed / 256.0, m.bodyRadius});
+            }
+            for (const auto& m : sl.movers())
+                if (m.live && m.vehicle < 0)
+                    rw.walkers.push_back({m.body[0], m.body[1], m.body[2], m.dir[0], m.dir[2]});
+        }
+        rw.setSpeed = [&](int slot, double s) { session.sliders().setVehicleSpeed(slot, static_cast<float>(s)); };
+        const int hitsWas = ride->vehicleHits, stepsWas = ride->walkerSteps;
+        ride->hover(dt, rw);
+        if (ride->vehicleHits != hitsWas)
+            std::printf("frame %ld: slider: Manuelle HIT a vehicle (sub_458880) - pushed out to "
+                        "%.0f %.0f, speed %.2f, settle %d\n", n, ride->x, ride->z, ride->speed, ride->settle);
+        if (ride->walkerSteps != stepsWas && ride->walkerSteps == 1)
+            std::printf("frame %ld: slider: Manuelle steps round a walker on a crossing (sub_459970)\n", n);
+        // `Slider_TickRide`, after its three helpers: `if (dword_8F5E08)
+        // --dword_8F5E08`
+        if (ride->settle) --ride->settle;
         if (ride->stopped && session.sliders().calledVehicle() >= 0) {
             // ---- `sub_4570F0`, THE MANUAL STOP (drift audit M1) ----
             //

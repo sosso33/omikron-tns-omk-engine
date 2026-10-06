@@ -25,6 +25,7 @@
 //   moving ...      ...and that a moving one does NOT bob
 #include "actor/slider.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
@@ -139,6 +140,55 @@ int main() {
                                        s.hover(dt, p); }
         std::printf("moving y %.2f drift %.4f phase %.2f\n",
                     s.y, std::fabs(s.y - a), s.bobPhase);
+    }
+    // ---- WHAT THE RIDE MEETS (drift audit M3) ---------------------------
+    // A flat ROAD (`X...`) with one slider (r 82.3, the shipped sli_fn's)
+    // parked 400 ahead across the lane, and UP held into it: `sub_458880`
+    // must bounce the ride off the two ellipses - never through - set
+    // `settle` to 40 and hand the parked one a speed (0 -> 7). Then a walker
+    // on a crossing (`O...`) 200 ahead, walking across: `sub_458490` finds
+    // him, `sub_459970` steps round him and the 0.25 damping runs.
+    {
+        omk::RideWorld w;
+        w.surface = [](double, double y, double, double& drop, char nm[2]) {
+            drop = 0.0 - y; nm[0] = 'X'; nm[1] = 0; return true;
+        };
+        w.radius = 82.3;
+        w.vehicles.push_back({7, 0.0, 0.0, -400.0, 1.0, 0.0, 0.0, 82.3});
+        double handed = -1.0;
+        w.setSpeed = [&](int slot, double sp) { if (slot == 7) handed = sp; };
+        omk::SliderRide s;
+        const auto p = flat();
+        double closest = 1e9; int settleSeen = 0;
+        for (int k = 0; k < 400; ++k) {
+            s.fly(omk::SliderRide::kThrustUp, dt, p);
+            s.hover(dt, w);
+            if (s.settle) { settleSeen = std::max(settleSeen, s.settle); --s.settle; }
+            const double dx = s.x - 0.0, dz = s.z + 400.0;
+            closest = std::min(closest, std::sqrt(dx * dx + dz * dz));
+        }
+        std::printf("collide hits %d closest %.1f settle %d handed %.1f final z %.1f\n",
+                    s.vehicleHits, closest, settleSeen, handed, s.z);
+        // off the road the push is refused: the same run on a pavement (`T`)
+        omk::RideWorld w2 = w;
+        w2.surface = [](double, double y, double, double& drop, char nm[2]) {
+            drop = 0.0 - y; nm[0] = 'T'; nm[1] = 0; return true;
+        };
+        omk::SliderRide t;
+        for (int k = 0; k < 400; ++k) { t.fly(omk::SliderRide::kThrustUp, dt, p); t.hover(dt, w2); }
+        std::printf("collide offroad hits %d\n", t.vehicleHits);
+
+        omk::RideWorld c;
+        c.surface = [](double, double y, double, double& drop, char nm[2]) {
+            drop = 0.0 - y; nm[0] = 'O'; nm[1] = 'P'; return true;
+        };
+        c.radius = 82.3;
+        c.walkers.push_back({0.0, 0.0, -200.0, 1.0, 0.0});
+        omk::SliderRide u;
+        u.speed = 20.0; u.vz = 20.0;
+        double sMin = 1e9;
+        for (int k = 0; k < 30; ++k) { u.fly(omk::SliderRide::kThrustUp, dt, p); u.hover(dt, c); sMin = std::min(sMin, std::fabs(u.speed)); }
+        std::printf("crossing steps %d x %.2f speed %.2f\n", u.walkerSteps, u.x, u.speed);
     }
     return 0;
 }

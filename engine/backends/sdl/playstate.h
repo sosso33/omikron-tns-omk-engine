@@ -762,7 +762,8 @@ struct PlayState {
     void adventureAim();   // the follow camera's offsets, first-person aim
     void adventurePathField();   // the path field
     void adventureDeath();   // the death's countdown
-    void adventureCrowdPush();   // the crowd push
+    void adventureCrowdPush();
+    const char* soupMeshName(std::uint32_t tri) const;   // a playerSoup triangle's set mesh name   // the crowd push
     void adventureScreenInput();   // a screen has the input, and the world still runs
     void adventureSeated();   // seated, not driving; where the slider is after he gets out
     void adventureRide();   // the ride
