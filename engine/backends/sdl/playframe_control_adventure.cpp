@@ -407,96 +407,9 @@ void PlayState::adventureScreenInput() {
         // - and the `MDSLIDIN` half is what the CHANNEL fires at
         // the end of that clip (group 60's entry [160], no input,
         // goto H_SLIDER), handled with the other special moves.
-        if (!ride && !boarded && !boarding && (bits & 0x10u) && !mountSpent) {
-            const float me[3] = {session.playerPos()[0],
-                                 session.playerPos()[1],
-                                 session.playerPos()[2]};
-            float at[3], ax[3], az[3];
-            // ...and when it refuses, SAY WHICH TEST. Both are
-            // geometric and neither is visible from the seat of a
-            // keyboard: "nothing happened" is the same picture for
-            // standing 5 m away and for standing at the wrong door.
-            if (player && !session.sliders().canMount(me) &&
-                session.sliders().calledVehicle() >= 0 &&
-                session.sliders().calledFrame(at, ax, az)) {
-                const float dx = at[0] - me[0];
-                const float dy = at[1] + omk::kBoardSeatY - me[1];
-                const float dz = at[2] - me[2];
-                const float dot = dx * ax[0] + dy * ax[1] + dz * ax[2];
-                const float len = std::sqrt(dx * dx + dy * dy + dz * dz);
-                const bool side = dot < 0.0f;
-                const bool far_ = len >= omk::kBoardReach;
-                const int  st   = session.sliders().callMachine().state;
-                const bool shut = !session.sliders().calledIsOpen();
-                std::printf("MDACTION: the slider refuses - %s%s%s%s (dot %+.0f, "
-                            "%.2f m of the 4.00 it allows, ride state %d)\n",
-                            shut ? "it is not standing OPEN" : "",
-                            (shut && (side || far_)) ? "; " : "",
-                            side ? "he is on the WRONG SIDE; its door is on "
-                                   "its own -X" : "",
-                            (side && far_) ? ", and he is too far away"
-                                           : (far_ ? "he is too far away" : ""),
-                            dot, len * 0.0254f, st);
-            }
-            if (player && session.sliders().canMount(me) &&
-                session.sliders().calledFrame(at, ax, az)) {
-                if (!doorOffState) {
-                    // `dword_90EF28`, which `Game_Init` fills with
-                    // `anims\slf_112.3da` for exactly this.
-                    const auto ref = fs.read("ANIMS/slf_112.3da");
-                    doorOffState = (!ref.empty() &&
-                                    player->boardOffset(ref, 60, doorOff)) ? 1 : -1;
-                }
-                float door[3] = {at[0], at[1] - omk::kBoardSeatY, at[2]};
-                if (doorOffState == 1)
-                    for (int k = 0; k < 3; ++k)
-                        door[k] += doorOff[0] * ax[k] + doorOff[2] * az[k];
-                if (doorOffState == 1) door[1] += doorOff[1];
-                // ...AND THAT Y IS A PELVIS, THIS CLASS TAKES FEET.
-                // The engine writes the actor's +244..+252, which
-                // is his ORIGIN and is the PELVIS (`player.h`,
-                // settled with the camera lift - 41.9 for
-                // `HO1_FNM`), while `PlayerController`'s position
-                // is the walker's, at the feet. Handing the
-                // engine's number straight over left him standing
-                // 0.8 m in the air with his feet at the slider's
-                // waistline - which is what a render of the
-                // boarding beside the original's screenshot shows
-                // at once and no amount of reading the listing
-                // was going to say. Y points down, so the feet are
-                // BELOW the pelvis by the lift.
-                door[1] += player->cameraLift();
-                const float dd = std::sqrt(
-                    (at[0] - me[0]) * (at[0] - me[0]) +
-                    (at[2] - me[2]) * (at[2] - me[2]));
-                // The euler is NOT written by this arm - only the
-                // position and the root frame are - so he keeps
-                // the way he was facing and the clip turns him.
-                player->rideAt(door, player->facing());
-                session.sliders().boardCalled();     // mode 3, the 0x200 bit off from 7
-                player->setActorState(omk::ActorState::ChannelOnly6, "MDACTION");
-                player->setRootFrame(ax, az);
-                player->setChannelOnly(true);
-                boarding = true;
-                mountSpent = true;
-                // `Camera_Request(9, {slider, slider}, 60.0)`: a 60-frame
-                // BLEND into preset 9, which then HOLDS - nothing requests
-                // another through H_SLDIN, the seat or screen 7 (drift
-                // audit A7: this counted 60 down as a hold and dropped to
-                // the follow camera mid-clip)
-                sliderCamRequest(9, 60.0f);
-                const bool got = player->enterGroupById(60);
-                std::printf("MDACTION: the slider's door at %.0f %.0f %.0f, "
-                            "%.1f m away on the right side - snapped to "
-                            "%.0f %.0f %.0f (offset %.1f %.1f %.1f in its "
-                            "frame%s), ACTOR_STATE 6, %s, camera 9\n",
-                            at[0], at[1], at[2], dd * 0.0254f,
-                            door[0], door[1], door[2],
-                            doorOff[0], doorOff[1], doorOff[2],
-                            doorOffState == 1 ? "" : " - UNREAD, at the slider",
-                            got ? "H_SLDIN plays" : "but the bank has no group 60");
-            }
-        }
+        // (the slider arm of MDACTION runs from `adventureAction`, in the
+        // handler's own order: take, then the slider, then the zone press -
+        // `tryBoardSlider`, drift audit B7)
         if (!(bits & 0x10u)) mountSpent = false;
         // ...UNLESS HE IS RIDING. ACTOR_STATE 7 and 8 do not
         // walk - `Actors_TickAll`'s row for each has `walks`
@@ -2677,6 +2590,10 @@ void PlayState::adventureAction() {
     // zone is a spent ONE-SHOT and nothing else could consume the
     // press. With the arm modelled, the line goes back to what it
     // is for: a press with nothing in front of you.
+    // THE SLIDER ARM, between the take and the zone press
+    if (actionFromMove && stateAllowsAction && !actionTookObject && !ride && !boarded &&
+        !boarding && !mountSpent && !session.dialogOpen() && tryBoardSlider())
+        actionSpent = true;
     if (actionFromMove && (stateAllowsAction || shootPress) && !session.dialogOpen() &&
         !actionSpent && !actionTookObject) {
         const int armed = session.zones().armedCount();
@@ -2875,4 +2792,108 @@ bool PlayState::beginSliderExit() {
     }
     boarded = false;
     return out;
+}
+
+// MDACTION's SLIDER ARM (`loc_46AFF8`), reached as the handler reaches it:
+// only when the object scan found nothing within `flt_4BC918` and ACTOR_STATE
+// is none of 3, 4, 11, 13, 14 - `adventureAction` calls it at that point of
+// the order, before the zone press. This ran off the raw action bit at the
+// top of the frame, so a press with an object in reach both took it and
+// boarded, and it fired in states the `.CTL` never sends to MDACTION (drift
+// audit B7). -> true when he boards, which ends the press as the arm's
+// `retn` does.
+bool PlayState::tryBoardSlider() {
+    const auto& fs = *fs_;
+    auto& session = *session_;
+    bool boardedNow = false;
+    const float me[3] = {session.playerPos()[0],
+                         session.playerPos()[1],
+                         session.playerPos()[2]};
+    float at[3], ax[3], az[3];
+    // ...and when it refuses, SAY WHICH TEST. Both are
+    // geometric and neither is visible from the seat of a
+    // keyboard: "nothing happened" is the same picture for
+    // standing 5 m away and for standing at the wrong door.
+    if (player && !session.sliders().canMount(me) &&
+        session.sliders().calledVehicle() >= 0 &&
+        session.sliders().calledFrame(at, ax, az)) {
+        const float dx = at[0] - me[0];
+        const float dy = at[1] + omk::kBoardSeatY - me[1];
+        const float dz = at[2] - me[2];
+        const float dot = dx * ax[0] + dy * ax[1] + dz * ax[2];
+        const float len = std::sqrt(dx * dx + dy * dy + dz * dz);
+        const bool side = dot < 0.0f;
+        const bool far_ = len >= omk::kBoardReach;
+        const int  st   = session.sliders().callMachine().state;
+        const bool shut = !session.sliders().calledIsOpen();
+        std::printf("MDACTION: the slider refuses - %s%s%s%s (dot %+.0f, "
+                    "%.2f m of the 4.00 it allows, ride state %d)\n",
+                    shut ? "it is not standing OPEN" : "",
+                    (shut && (side || far_)) ? "; " : "",
+                    side ? "he is on the WRONG SIDE; its door is on "
+                           "its own -X" : "",
+                    (side && far_) ? ", and he is too far away"
+                                   : (far_ ? "he is too far away" : ""),
+                    dot, len * 0.0254f, st);
+    }
+    if (player && session.sliders().canMount(me) &&
+        session.sliders().calledFrame(at, ax, az)) {
+        if (!doorOffState) {
+            // `dword_90EF28`, which `Game_Init` fills with
+            // `anims\slf_112.3da` for exactly this.
+            const auto ref = fs.read("ANIMS/slf_112.3da");
+            doorOffState = (!ref.empty() &&
+                            player->boardOffset(ref, 60, doorOff)) ? 1 : -1;
+        }
+        float door[3] = {at[0], at[1] - omk::kBoardSeatY, at[2]};
+        if (doorOffState == 1)
+            for (int k = 0; k < 3; ++k)
+                door[k] += doorOff[0] * ax[k] + doorOff[2] * az[k];
+        if (doorOffState == 1) door[1] += doorOff[1];
+        // ...AND THAT Y IS A PELVIS, THIS CLASS TAKES FEET.
+        // The engine writes the actor's +244..+252, which
+        // is his ORIGIN and is the PELVIS (`player.h`,
+        // settled with the camera lift - 41.9 for
+        // `HO1_FNM`), while `PlayerController`'s position
+        // is the walker's, at the feet. Handing the
+        // engine's number straight over left him standing
+        // 0.8 m in the air with his feet at the slider's
+        // waistline - which is what a render of the
+        // boarding beside the original's screenshot shows
+        // at once and no amount of reading the listing
+        // was going to say. Y points down, so the feet are
+        // BELOW the pelvis by the lift.
+        door[1] += player->cameraLift();
+        const float dd = std::sqrt(
+            (at[0] - me[0]) * (at[0] - me[0]) +
+            (at[2] - me[2]) * (at[2] - me[2]));
+        // The euler is NOT written by this arm - only the
+        // position and the root frame are - so he keeps
+        // the way he was facing and the clip turns him.
+        player->rideAt(door, player->facing());
+        session.sliders().boardCalled();     // mode 3, the 0x200 bit off from 7
+        player->setActorState(omk::ActorState::ChannelOnly6, "MDACTION");
+        player->setRootFrame(ax, az);
+        player->setChannelOnly(true);
+        boarding = true;
+        boardedNow = true;
+        mountSpent = true;
+        // `Camera_Request(9, {slider, slider}, 60.0)`: a 60-frame
+        // BLEND into preset 9, which then HOLDS - nothing requests
+        // another through H_SLDIN, the seat or screen 7 (drift
+        // audit A7: this counted 60 down as a hold and dropped to
+        // the follow camera mid-clip)
+        sliderCamRequest(9, 60.0f);
+        const bool got = player->enterGroupById(60);
+        std::printf("MDACTION: the slider's door at %.0f %.0f %.0f, "
+                    "%.1f m away on the right side - snapped to "
+                    "%.0f %.0f %.0f (offset %.1f %.1f %.1f in its "
+                    "frame%s), ACTOR_STATE 6, %s, camera 9\n",
+                    at[0], at[1], at[2], dd * 0.0254f,
+                    door[0], door[1], door[2],
+                    doorOff[0], doorOff[1], doorOff[2],
+                    doorOffState == 1 ? "" : " - UNREAD, at the slider",
+                    got ? "H_SLDIN plays" : "but the bank has no group 60");
+    }
+    return boardedNow;
 }
