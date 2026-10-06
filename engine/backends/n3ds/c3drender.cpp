@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The citro3d backend - see c3drender.h. Its per-triangle work is the GL1
-// backend's (`backends/gl1/gl1render.cpp`), kept line for line where it can
-// be, so a difference between the two frames is the API's and not a second
-// reading of the laws.
+// The citro3d backend - see c3drender.h. Since 3b (`todo/3ds-port.md`) the
+// GPU transforms: the geometry is RESIDENT in linear memory and the vertex
+// shader (`scene.v.pica`) does the view-projection, the shimmer and the fog -
+// the GLES backend's design (`backends/gles/glesrender.cpp`: buffers cached by
+// geometry and revision, the dirty corners patched, the cull one draw per run
+// of `cornerCull`), because the first console run spent 44-48 ms a street
+// frame doing that work per vertex on the CPU, GL1's way.
 #include "c3drender.h"
 
 #include "o3de/shimmer.h"
@@ -13,12 +16,14 @@
 #include <citro3d.h>
 
 #include <algorithm>
-#include <map>
-#include <memory>
-#include <tuple>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <map>
+#include <memory>
+#include <tuple>
+#include <unordered_map>
 #include <vector>
 
 // the vertex shader, assembled by picasso and embedded by bin2s (Makefile)
@@ -30,19 +35,34 @@ extern const u32 scene_shbin_size;
 namespace omk {
 namespace {
 
-// One vertex as the shader reads it: clip-space position, colour as four
-// bytes, texture coordinates normalised.
-struct GpuVertex {
-    float x, y, z, w;
-    std::uint8_t r, g, b, a;
+// One corner as the shader reads it: the world position, texels, the baked
+// colour as four bytes, the shimmer phase - the GLES `GpuVert` with the colour
+// packed (28 bytes, not 36: linear memory is the 3DS's scarce one).
+struct GpuVert {
+    float x, y, z;
     float u, v;
+    std::uint8_t r, g, b, a;
+    float phase;
 };
-static_assert(sizeof(GpuVertex) == 28, "the attribute stride below");
+static_assert(sizeof(GpuVert) == 28, "the attribute stride below");
 
-// The vertices of a frame, in linear memory the GPU reads. A frame's draws
-// are appended and drawn by offset; `C3D_FrameBegin` waits for the previous
-// frame's GPU work, so one buffer is reused frame after frame.
-constexpr std::size_t kRingVertices = 160 * 1024;      // 4.4 MB
+inline std::uint8_t toByte(float v) {
+    const float x = v * 255.0f + 0.5f;
+    return static_cast<std::uint8_t>(x <= 0.0f ? 0.0f : (x >= 255.0f ? 255.0f : x));
+}
+inline GpuVert gpuVert(const Corner& c) {
+    return {c.x, c.y, c.z, c.u, c.v, toByte(c.r), toByte(c.g), toByte(c.b), 255, c.phase};
+}
+
+// A geometry changed AFTER it was drawn in the same pass cannot be rewritten
+// in place - the GPU reads a buffer when the pass is submitted, not when the
+// draw is recorded - so its corners go through this ring, one pass's worth.
+constexpr std::size_t kRingCorners = 96 * 1024;        // 2.6 MB
+
+// WHICH WAY THE PICA CULLS the software rasterizer's back face under this
+// projection - MEASURED, as GLES's `kGlesCullBack` is (3b, Azahar): the wrong
+// value culls every front face, which no frame can hide.
+constexpr GPU_CULLMODE kCullBack = GPU_CULL_BACK_CCW, kCullFront = GPU_CULL_FRONT_CCW;
 
 class C3dRenderer final : public Renderer {
 public:
@@ -50,6 +70,9 @@ public:
         if (!ready_) return;
         closeFrame();
         freeTextures();
+        removeGeometryListener(&C3dRenderer::geometryGone, this);
+        for (auto& [g, r] : res_) if (r.buf) linearFree(r.buf);
+        for (GpuVert* b : grave_) linearFree(b);
         if (target_) C3D_RenderTargetDelete(target_);
         if (ring_) linearFree(ring_);
         if (read_) linearFree(read_);
@@ -70,8 +93,20 @@ public:
             if (!dvlb_) { std::printf("c3d: the vertex shader did not parse\n"); return false; }
             shaderProgramInit(&prog_);
             shaderProgramSetVsh(&prog_, &dvlb_->DVLE[0]);
-            ring_ = static_cast<GpuVertex*>(linearAlloc(kRingVertices * sizeof(GpuVertex)));
+            shaderInstance_s* vs = prog_.vertexShader;
+            uMvp_ = shaderInstanceGetUniformLocation(vs, "mvp");
+            uTexScale_ = shaderInstanceGetUniformLocation(vs, "texscale");
+            uFog_ = shaderInstanceGetUniformLocation(vs, "fogp");
+            uShim_ = shaderInstanceGetUniformLocation(vs, "shim");
+            uWave_ = shaderInstanceGetUniformLocation(vs, "wave");
+            if (uMvp_ < 0 || uTexScale_ < 0 || uFog_ < 0 || uShim_ < 0 || uWave_ < 0) {
+                std::printf("c3d: the vertex shader lacks a uniform (mvp %d texscale %d fogp %d "
+                            "shim %d wave %d)\n", uMvp_, uTexScale_, uFog_, uShim_, uWave_);
+                return false;
+            }
+            ring_ = static_cast<GpuVert*>(linearAlloc(kRingCorners * sizeof(GpuVert)));
             if (!ring_) { std::printf("c3d: no linear memory for the vertex ring\n"); return false; }
+            addGeometryListener(&C3dRenderer::geometryGone, this);
             ready_ = true;
         }
         if (target_) { C3D_RenderTargetDelete(target_); target_ = nullptr; }
@@ -88,7 +123,8 @@ public:
         fb_ = Surface(w, h, 0);
         readDone_ = false;
         std::printf("c3d: citro3d on the PICA200, a %dx%d RGBA8 target with 24-bit depth in VRAM, "
-                    "%u KB of VRAM left\n", w, h, static_cast<unsigned>(vramSpaceFree() / 1024));
+                    "%u KB of VRAM left; the GPU transforms (resident geometry)\n",
+                    w, h, static_cast<unsigned>(vramSpaceFree() / 1024));
         return true;
     }
 
@@ -168,12 +204,13 @@ public:
         cam.w = v.letterboxed() ? v.vw : w_;
         cam.h = v.letterboxed() ? v.vh : h_;
         flipX_ = cam.flipX;
-        cameraBasis(cam, bs_, bu_, bf_, th_, tv_);
-        for (int k = 0; k < 3; ++k) eye_[k] = cam.eye[k];
-        camW_ = cam.w; camH_ = cam.h;
 
-        C3D_FrameBegin(0);                       // waits for the GPU's last frame, not for a VBlank
+        C3D_FrameBegin(0);                       // waits for the GPU's last pass, not for a VBlank
         inFrame_ = true;
+        ++pass_;
+        // what a destroyed geometry left while the last pass could still read it
+        for (GpuVert* b : grave_) linearFree(b);
+        grave_.clear();
         C3D_RenderTargetClear(target_, C3D_CLEAR_ALL, 0x000000FF, 0x00FFFFFF);
         C3D_FrameDrawOn(target_);
         // the picture in the TOP-LEFT cam.w x cam.h, as the reference draws
@@ -182,19 +219,37 @@ public:
         C3D_BindProgram(&prog_);
         C3D_AttrInfo* ai = C3D_GetAttrInfo();
         AttrInfo_Init(ai);
-        AttrInfo_AddLoader(ai, 0, GPU_FLOAT, 4);             // position, clip space
-        AttrInfo_AddLoader(ai, 1, GPU_UNSIGNED_BYTE, 4);     // colour
-        AttrInfo_AddLoader(ai, 2, GPU_FLOAT, 2);             // texture coordinates
-        C3D_BufInfo* bi = C3D_GetBufInfo();
-        BufInfo_Init(bi);
-        BufInfo_Add(bi, ring_, sizeof(GpuVertex), 3, 0x210);
+        AttrInfo_AddLoader(ai, 0, GPU_FLOAT, 3);             // position, world
+        AttrInfo_AddLoader(ai, 1, GPU_FLOAT, 2);             // texels
+        AttrInfo_AddLoader(ai, 2, GPU_UNSIGNED_BYTE, 4);     // the baked colour
+        AttrInfo_AddLoader(ai, 3, GPU_FLOAT, 1);             // the shimmer phase
+        boundBuf_ = nullptr;
         used_ = 0;
-        // the D3D device's fixed states (`sub_4638C0`): depth tested, strict
-        // - the first of two equal faces wins - and culled on the CPU
-        C3D_CullFace(GPU_CULL_NONE);
-        // z/w runs 0 at the near cut to -1 far away (`submit`); the depth map
-        // turns that into 0..1, increasing away from the eye
+
+        // THE VIEW-PROJECTION from the software rasterizer's own basis, as
+        // GLES builds it - rows 0 and 1 the screen axes over the two tangents
+        // (y UP, as GL), row 3 f . (world - eye), the view depth the fog reads.
+        // Row 2 is the PICA's: z = kNearCut - w, so z/w runs 0 at the near
+        // cut toward -1 far away, the hardware clips z > 0 - the reference's
+        // near cut - and the depth map makes 0..1 increasing away from the eye.
+        float s[3], u[3], f[3], tanH = 0, tanV = 0;
+        cameraBasis(cam, s, u, f, tanH, tanV);
+        const float* e = cam.eye;
+        const float se = s[0] * e[0] + s[1] * e[1] + s[2] * e[2];
+        const float ue = u[0] * e[0] + u[1] * e[1] + u[2] * e[2];
+        const float fe = f[0] * e[0] + f[1] * e[1] + f[2] * e[2];
+        C3D_FVUnifSet(GPU_VERTEX_SHADER, uMvp_ + 0, s[0] / tanH, s[1] / tanH, s[2] / tanH, -se / tanH);
+        C3D_FVUnifSet(GPU_VERTEX_SHADER, uMvp_ + 1, u[0] / tanV, u[1] / tanV, u[2] / tanV, -ue / tanV);
+        C3D_FVUnifSet(GPU_VERTEX_SHADER, uMvp_ + 2, -f[0], -f[1], -f[2], fe + kNearCut);
+        C3D_FVUnifSet(GPU_VERTEX_SHADER, uMvp_ + 3, f[0], f[1], f[2], -fe);
         C3D_DepthMap(true, -1.0f, 0.0f);
+        // the shimmer's clock and wave (`o3de/shimmer.h`)
+        C3D_FVUnifSet(GPU_VERTEX_SHADER, uShim_,
+                      std::floor(std::floor(v.shimmerClock) / 4.0f), 0.0f, 0.0f, 0.0f);
+        for (int i = 0; i < 32; ++i)
+            C3D_FVUnifSet(GPU_VERTEX_SHADER, uWave_ + i, kShimmerWave[i] / 255.0f, 0.0f, 0.0f, 0.0f);
+
+        cull_ = -1;
         stateValid_ = false;
         boundTex_ = ~0u;
         st_ = RasterStats{};
@@ -211,118 +266,40 @@ public:
         if (!inFrame_ || !d.geo || d.count < 3) return;
         const Geometry& g = *d.geo;
         if (d.start + d.count > g.corners.size()) return;
+        // the corners on the GPU: the geometry's own buffer, or this pass's
+        // ring when it changed after being drawn in it; `first` is the
+        // buffer's index of the draw's first corner
+        std::size_t first = d.start;
+        const GpuVert* buf = resident(g, d.start, d.count, first);
+        if (!buf) return;
         setState(d);
-        const unsigned slot = d.bucketKey & 0x3F;
-        const bool hasTex = slot < tex_.size() && tex_[slot].tex;
-        const float su = hasTex ? 1.0f / tex_[slot].w : 0.0f, sv = hasTex ? 1.0f / tex_[slot].h : 0.0f;
-
-        // Per triangle, the GL1 backend's own loop: into view space, the near
-        // cut, the single-sided cull, the screen edges, then CLIP-SPACE
-        // positions - (x w, y w, z, w) with z = near - w, so z/w runs from 0
-        // at the near cut toward -1, inside the PICA's [-w, 0] clip range.
-        const std::size_t nCorner = d.count - d.count % 3;
-        const bool haveCull = g.cornerCull.size() == g.corners.size();
-        const std::size_t first = used_;
-        for (std::size_t t = 0; t < nCorner; t += 3) {
-            ++st_.triangles;
-            Vtx in[3];
-            for (int k = 0; k < 3; ++k) {
-                const Corner& c = g.corners[d.start + t + static_cast<std::size_t>(k)];
-                const float dx = c.x - eye_[0], dy = c.y - eye_[1], dz = c.z - eye_[2];
-                in[k].v[0] = dx * bs_[0] + dy * bs_[1] + dz * bs_[2];
-                in[k].v[1] = dx * bu_[0] + dy * bu_[1] + dz * bu_[2];
-                in[k].v[2] = dx * bf_[0] + dy * bf_[1] + dz * bf_[2];
-                const float sh = shimmerOffset(c.phase, view_.shimmerClock);
-                in[k].c[0] = c.r + sh; in[k].c[1] = c.g + sh; in[k].c[2] = c.b + sh;
-                in[k].u = c.u; in[k].t = c.v;
-            }
-            Vtx poly[4];
-            int np = 0;
-            for (int k = 0; k < 3 && np < 4; ++k) {
-                const Vtx& a = in[k];
-                const Vtx& b = in[(k + 1) % 3];
-                const bool ina = a.v[2] > kNearCut, inb = b.v[2] > kNearCut;
-                if (ina) poly[np++] = a;
-                if (ina != inb && np < 4) poly[np++] = lerp(a, b, (kNearCut - a.v[2]) / (b.v[2] - a.v[2]));
-            }
-            if (np < 3) { ++st_.behind; continue; }
-            if (haveCull && g.cornerCull[d.start + t] != 0 && !noCull()) {
-                float cx[3], cy[3];
-                for (int k = 0; k < 3; ++k) {
-                    cx[k] = camW_ * 0.5f * (1.0f + (poly[k].v[0] / poly[k].v[2]) / th_);
-                    cy[k] = camH_ * 0.5f * (1.0f - (poly[k].v[1] / poly[k].v[2]) / tv_);
-                }
-                const float area = (cx[1] - cx[0]) * (cy[2] - cy[0]) - (cx[2] - cx[0]) * (cy[1] - cy[0]);
-                if ((flipX_ ? -area : area) > 0.0f) { ++st_.culled; continue; }
-            }
-            Vtx buf[2][8];
-            int nb = np;
-            for (int k = 0; k < np; ++k) buf[0][k] = poly[k];
-            const float gx = th_ * 1.01f, gy = tv_ * 1.01f;
-            int cur = 0;
-            for (int plane = 0; plane < 4 && nb >= 3; ++plane) {
-                const auto dist = [&](const Vtx& q) {
-                    switch (plane) {
-                    case 0:  return q.v[2] * gx - q.v[0];
-                    case 1:  return q.v[2] * gx + q.v[0];
-                    case 2:  return q.v[2] * gy - q.v[1];
-                    default: return q.v[2] * gy + q.v[1];
-                    }
-                };
-                int no = 0;
-                for (int k = 0; k < nb && no < 8; ++k) {
-                    const Vtx& a = buf[cur][k];
-                    const Vtx& b = buf[cur][(k + 1) % nb];
-                    const float da = dist(a), db = dist(b);
-                    if (da >= 0.0f) buf[cur ^ 1][no++] = a;
-                    if ((da >= 0.0f) != (db >= 0.0f) && no < 8) buf[cur ^ 1][no++] = lerp(a, b, da / (da - db));
-                }
-                nb = no;
-                cur ^= 1;
-            }
-            if (nb < 3) { ++st_.offscreen; continue; }
-            np = nb;
-            if (used_ + static_cast<std::size_t>(np - 2) * 3 > kRingVertices) {
-                if (!toldFull_) {
-                    toldFull_ = true;
-                    std::printf("c3d: the vertex ring is full (%zu vertices) - the rest of the frame is not drawn\n",
-                                kRingVertices);
-                }
-                break;
-            }
-            const Vtx* out = buf[cur];
-            float sx[8], sy[8];
-            for (int k = 0; k < np; ++k) {
-                sx[k] = camW_ * 0.5f * (1.0f + (out[k].v[0] / out[k].v[2]) / th_);
-                sy[k] = camH_ * 0.5f * (1.0f - (out[k].v[1] / out[k].v[2]) / tv_);
-            }
-            ++st_.drawn;
-            for (int k = 1; k + 1 < np; ++k) {
-                const int idx[3] = {0, k, k + 1};
-                for (int j : idx) {
-                    const Vtx& p = out[j];
-                    const float w = p.v[2];
-                    GpuVertex& o = ring_[used_++];
-                    o.x = (2.0f * sx[j] / camW_ - 1.0f) * w;
-                    o.y = (1.0f - 2.0f * sy[j] / camH_) * w;
-                    o.z = kNearCut - w;
-                    o.w = w;
-                    float a = 0.0f;
-                    if (fogKind_ != 0 && w > fogStart_) {
-                        const float f = (fogEnd_ - w) / (fogEnd_ - fogStart_);
-                        a = 1.0f - (f < 0.0f ? 0.0f : (f > 1.0f ? 1.0f : f));
-                    }
-                    o.r = toByte(p.c[0] * (1.0f - a));
-                    o.g = toByte(p.c[1] * (1.0f - a));
-                    o.b = toByte(p.c[2] * (1.0f - a));
-                    o.a = 255;
-                    o.u = p.u * su;
-                    o.v = p.t * sv;
-                }
-            }
+        if (buf != boundBuf_) {
+            C3D_BufInfo* bi = C3D_GetBufInfo();
+            BufInfo_Init(bi);
+            BufInfo_Add(bi, buf, sizeof(GpuVert), 4, 0x3210);
+            boundBuf_ = buf;
         }
-        if (used_ > first)
-            C3D_DrawArrays(GPU_TRIANGLES, static_cast<int>(first), static_cast<int>(used_ - first));
+        st_.triangles += static_cast<long>(d.count / 3);
+        // THE BACK-FACE CULL, one draw per run of `cornerCull` (`geom3do.h`),
+        // GLES's way: the engine culls in software (`Render_SubmitMesh`), here
+        // the PICA culls the face the reference calls back - the mirror's
+        // screen-X flip swapping it, as it swaps the area `raster.cpp` tests.
+        const bool haveCull = g.cornerCull.size() == g.corners.size() && !noCull();
+        const std::size_t e = d.start + d.count - d.count % 3;
+        std::size_t i = d.start;
+        while (i < e) {
+            const std::uint8_t c = haveCull ? g.cornerCull[i] : 0u;
+            std::size_t j = i;
+            while (j < e && (haveCull ? g.cornerCull[j] : 0u) == c) ++j;
+            const int mode = !c ? 0 : flipX_ ? 2 : 1;
+            if (mode != cull_) {
+                C3D_CullFace(mode == 0 ? GPU_CULL_NONE : mode == 1 ? kCullBack : kCullFront);
+                cull_ = mode;
+            }
+            C3D_DrawArrays(GPU_TRIANGLES, static_cast<int>(first + (i - d.start)), static_cast<int>(j - i));
+            i = j;
+        }
+        st_.drawn += static_cast<long>(d.count / 3);
     }
 
     void end() override {
@@ -333,7 +310,6 @@ public:
     const Surface& readback() override {
         if (readDone_) return fb_;               // idempotent (renderer.h)
         if (inFrame_) {
-            GSPGPU_FlushDataCache(ring_, used_ * sizeof(GpuVertex));
             // INSIDE the frame: `C3D_SyncDisplayTransfer` then splits it,
             // waits for the GPU to finish what was queued, and transfers -
             // out of the frame it would wait on citro3d's frame pacer first
@@ -364,8 +340,8 @@ public:
         if (!toldRead_) {
             toldRead_ = true;
             const std::uint32_t m = read_[static_cast<std::size_t>(h_ / 2) * w_ + w_ / 2];
-            std::printf("c3d: first readback %dx%d, %ld triangles (%ld drawn, %zu vertices), centre "
-                        "pixel %u %u %u\n", w_, h_, st_.triangles, st_.drawn, used_,
+            std::printf("c3d: first readback %dx%d, %ld triangles, %zu geometries resident, centre "
+                        "pixel %u %u %u\n", w_, h_, st_.triangles, res_.size(),
                         static_cast<unsigned>(m >> 24), static_cast<unsigned>((m >> 16) & 0xFF),
                         static_cast<unsigned>((m >> 8) & 0xFF));
         }
@@ -392,17 +368,108 @@ private:
     // An upload, kept across pools: the storage it was made from is held, so
     // the key's address stays this texture's.
     struct Uploaded { std::unique_ptr<C3D_Tex> tex; PixelBuffer keep; long long bytes = 0; bool used = false; };
-    struct Vtx { float v[3]; float c[3]; float u, t; };
-    static Vtx lerp(const Vtx& a, const Vtx& b, float t) {
-        Vtx o;
-        for (int k = 0; k < 3; ++k) { o.v[k] = a.v[k] + (b.v[k] - a.v[k]) * t; o.c[k] = a.c[k] + (b.c[k] - a.c[k]) * t; }
-        o.u = a.u + (b.u - a.u) * t; o.t = a.t + (b.t - a.t) * t;
-        return o;
-    }
+
     static bool noCull() { static const bool n = std::getenv("OMK_NO_CULL") != nullptr; return n; }
-    static std::uint8_t toByte(float v) {
-        const float x = v * 255.0f + 0.5f;
-        return static_cast<std::uint8_t>(x <= 0.0f ? 0.0f : (x >= 255.0f ? 255.0f : x));
+
+    // ---- THE RESIDENT GEOMETRY (3b) ------------------------------------------
+    // GLES's contract (`uploadGeometry`): cached by POINTER while the revision
+    // holds; the same object with new corners refills in place, only the ones
+    // `dirtyCorners` names when it names them (`geom3do.h`: valid when
+    // `dirtyTo == revision` and this buffer holds `dirtyFrom`); a new size is
+    // a new buffer. The geometry is marked resident, so its destruction
+    // reaches `geometryGone` and its address can never meet this state again.
+    struct Res {
+        GpuVert* buf = nullptr;
+        std::size_t n = 0;
+        std::uint64_t rev = 0;
+        long drawnPass = -1;          // the pass that last drew from it
+    };
+
+    const GpuVert* resident(const Geometry& g, std::size_t start, std::size_t count, std::size_t& first) {
+        auto it = res_.find(&g);
+        if (it != res_.end() && it->second.buf && it->second.rev == g.revision &&
+            it->second.n == g.corners.size()) {
+            it->second.drawnPass = pass_;
+            return it->second.buf;
+        }
+        if (it != res_.end() && it->second.buf && it->second.drawnPass == pass_) {
+            // changed after this pass drew it: the draw's corners through the ring
+            if (used_ + count > kRingCorners) {
+                if (!toldFull_) {
+                    toldFull_ = true;
+                    std::printf("c3d: the vertex ring is full (%zu corners) - a redrawn geometry is "
+                                "skipped\n", kRingCorners);
+                }
+                return nullptr;
+            }
+            GpuVert* out = ring_ + used_;
+            for (std::size_t k = 0; k < count; ++k) out[k] = gpuVert(g.corners[start + k]);
+            GSPGPU_FlushDataCache(out, count * sizeof(GpuVert));
+            used_ += count;
+            first = 0;
+            return out;
+        }
+        const std::size_t n = g.corners.size();
+        if (it != res_.end() && it->second.buf && it->second.n == n) {
+            Res& r = it->second;
+            const bool partial = g.dirtyTo != 0 && g.dirtyTo == g.revision && r.rev == g.dirtyFrom;
+            if (partial) {
+                // runs of consecutive corners, each written and flushed once;
+                // the list is not sorted (CLAUDE.md 1, "the dirty list")
+                const auto& dc = g.dirtyCorners;
+                std::size_t i = 0;
+                while (i < dc.size()) {
+                    std::size_t j = i;
+                    while (j + 1 < dc.size() && dc[j + 1] == dc[j] + 1) ++j;
+                    const std::uint32_t lo = dc[i], hi = dc[j];
+                    if (hi < n) {
+                        for (std::uint32_t k = lo; k <= hi; ++k) r.buf[k] = gpuVert(g.corners[k]);
+                        GSPGPU_FlushDataCache(r.buf + lo, (hi - lo + 1) * sizeof(GpuVert));
+                    }
+                    i = j + 1;
+                }
+            } else {
+                for (std::size_t k = 0; k < n; ++k) r.buf[k] = gpuVert(g.corners[k]);
+                GSPGPU_FlushDataCache(r.buf, n * sizeof(GpuVert));
+            }
+            r.rev = g.revision;
+            r.drawnPass = pass_;
+            return r.buf;
+        }
+        // new, or a new size
+        auto* buf = static_cast<GpuVert*>(linearAlloc(n * sizeof(GpuVert)));
+        if (!buf) {
+            if (!toldNoMem_) {
+                toldNoMem_ = true;
+                std::printf("c3d: no linear memory for a geometry of %zu corners (%u KB left) - not "
+                            "drawn\n", n, static_cast<unsigned>(linearSpaceFree() / 1024));
+            }
+            return nullptr;
+        }
+        for (std::size_t k = 0; k < n; ++k) buf[k] = gpuVert(g.corners[k]);
+        GSPGPU_FlushDataCache(buf, n * sizeof(GpuVert));
+        if (it != res_.end()) retire(it->second);
+        Res& r = res_[&g];
+        r.buf = buf; r.n = n; r.rev = g.revision; r.drawnPass = pass_;
+        g.resident.mark();
+        return buf;
+    }
+
+    // A buffer let go: at once when no recorded draw of this pass reads it,
+    // else when the next pass begins (`begin` waits for the GPU first).
+    void retire(Res& r) {
+        if (!r.buf) return;
+        if (inFrame_ && r.drawnPass == pass_) grave_.push_back(r.buf);
+        else linearFree(r.buf);
+        r.buf = nullptr;
+    }
+
+    static void geometryGone(void* ctx, const Geometry* g) {
+        auto* self = static_cast<C3dRenderer*>(ctx);
+        auto it = self->res_.find(g);
+        if (it == self->res_.end()) return;
+        self->retire(it->second);
+        self->res_.erase(it);
     }
 
     // THE PICA's TEXTURE LAYOUT: 8x8 tiles, the tiles row by row from the
@@ -431,11 +498,10 @@ private:
         tex_.clear();
     }
 
-    // The frame closed if open: the vertices the GPU will read flushed out of
-    // the CPU's cache first.
+    // The frame closed if open (every buffer the GPU reads was flushed out of
+    // the CPU's cache where it was written).
     void closeFrame() {
         if (!inFrame_) return;
-        GSPGPU_FlushDataCache(ring_, used_ * sizeof(GpuVertex));
         C3D_FrameEnd(0);
         inFrame_ = false;
     }
@@ -467,14 +533,21 @@ private:
             C3D_AlphaTest(d.cutout, GPU_GREATER, 0x80);       // the colour key: alpha 0 dropped
             cutout_ = d.cutout;
         }
+        // the fog's two exclusions (View::fog): 0x2080 none, 0x800 doubled
         const int fogKind = !view_.fog || view_.fogEnd <= view_.fogStart ? 0
                           : (d.bucketKey & 0x2080) ? 0 : (d.bucketKey & 0x800) ? 2 : 1;
-        fogKind_ = fogKind;
-        const float fk = fogKind == 2 ? 2.0f : 1.0f;
-        fogStart_ = view_.fogStart * fk;
-        fogEnd_ = view_.fogEnd * fk;
+        if (!stateValid_ || fogKind != fogKind_) {
+            const float fk = fogKind == 2 ? 2.0f : 1.0f;
+            const float fs = view_.fogStart * fk, fe = view_.fogEnd * fk;
+            C3D_FVUnifSet(GPU_VERTEX_SHADER, uFog_, fe, fogKind ? 1.0f / (fe - fs) : 0.0f,
+                          fogKind ? 1.0f : 0.0f, 0.0f);
+            fogKind_ = fogKind;
+        }
         const unsigned want = hasTex ? slot : ~1u;
         if (want != boundTex_) {
+            // texels to the PICA's 0..1, by the bound texture's size
+            C3D_FVUnifSet(GPU_VERTEX_SHADER, uTexScale_, hasTex ? 1.0f / tex_[slot].w : 0.0f,
+                          hasTex ? 1.0f / tex_[slot].h : 0.0f, 0.0f, 0.0f);
             C3D_TexEnv* env = C3D_GetTexEnv(0);
             C3D_TexEnvInit(env);
             if (hasTex) {
@@ -495,9 +568,14 @@ private:
     bool ready_ = false, inFrame_ = false;
     DVLB_s* dvlb_ = nullptr;
     shaderProgram_s prog_{};
+    int uMvp_ = -1, uTexScale_ = -1, uFog_ = -1, uShim_ = -1, uWave_ = -1;
     C3D_RenderTarget* target_ = nullptr;
-    GpuVertex* ring_ = nullptr;
+    GpuVert* ring_ = nullptr;
     std::size_t used_ = 0;
+    const GpuVert* boundBuf_ = nullptr;
+    std::unordered_map<const Geometry*, Res> res_;
+    std::vector<GpuVert*> grave_;
+    long pass_ = 0;
     std::uint32_t* read_ = nullptr;
     int w_ = 0, h_ = 0;
     std::vector<Slot> tex_;
@@ -505,16 +583,14 @@ private:
     View view_;
     bool flipX_ = false;
     Surface fb_{1, 1, 0};
-    bool readDone_ = false, toldRead_ = false, toldFull_ = false, toldFogColour_ = false;
+    bool readDone_ = false, toldRead_ = false, toldFull_ = false, toldFogColour_ = false, toldNoMem_ = false;
     RasterStats st_;
     bool stateValid_ = false, cutout_ = false;
     int filter_ = 0;
     Blend blend_ = Blend::Opaque;
     int fogKind_ = -1;
-    float fogStart_ = 0, fogEnd_ = 0;
+    int cull_ = -1;
     unsigned boundTex_ = ~0u;
-    float bs_[3]{}, bu_[3]{}, bf_[3]{}, th_ = 1, tv_ = 1, eye_[3]{};
-    int camW_ = 1, camH_ = 1;
 };
 
 }  // namespace

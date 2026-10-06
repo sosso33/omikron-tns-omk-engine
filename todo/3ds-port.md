@@ -400,8 +400,20 @@ clock says 2017-06-14). What it established, ON HARDWARE:
   uploaded, then **31 kept and 8 uploaded, 43 ms instead of 167**; the frame
   still 99.9% within 24 levels of the reference. The console's ~20 re-uploads
   walking out of the restaurant become uploads of the new textures only.
-* 3b: the geometry resident, transformed by the vertex shader (the GLES
-  design) - world submit, 44-48 ms on the console.
+* **3b, DONE 2026-10-06: the geometry resident, transformed by the vertex
+  shader** - the GLES design. Each geometry in a linear-memory buffer keyed
+  by pointer, refilled when its revision moves (only the dirty corners when
+  it lists them), freed by the residency listener when it is destroyed (or at
+  the next pass, if this pass drew it); one changed after this pass drew it
+  goes through a per-pass ring. `scene.v.pica` does the view-projection (its
+  depth row puts the PICA's hardware near clip at `kNearCut`), the shimmer
+  (the 32-entry wave by relative addressing, indexed as `shimmerOffset`), the
+  linear fog toward black with the key's exclusions, texels to 0..1. The cull
+  is the PICA's, one draw per run of `cornerCull`, `GPU_CULL_BACK_CCW` for the
+  reference's back face (measured: the frame is right with it). In Azahar the
+  same scores as the CPU path - **the street 99.9% within 24 levels, the
+  Impasse letterbox exact and 97.1%** - so nothing of the picture moved; the
+  console says what it saved.
 * 3c: present straight to the top screen, the interface composited only on
   the frames something is drawn over the world - screens/hud ~29 + present
   12-14.
