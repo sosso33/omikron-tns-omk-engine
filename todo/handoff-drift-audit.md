@@ -47,9 +47,15 @@ enhancement's start colour.
    reserved pedestrian (`Slider_Init`'s `dword_4C8898`), not "any body
    wearing the model", and never a fresh body at the camera solve. Read, not
    changed.
-4. **T2 - the dialogue line clock below 10 fps** (the classic Mac at 6-10
-   fps, heavy Vita scenes): faces fall behind the voice.
-5. **M4** one actor id in both resident chunks (95 ids, co-residence not
+4. ~~**T2**~~ - **DONE 2026-10-06**: `Game_Frame`'s line sync - while a
+   line's voice plays, the delta is the voice clock's advance (no 3-frame cap)
+   and the face samples that clock (`engine: line sync`; `todo/play-test.md`
+   36 - the classic Mac and the Vita are where it shows).
+5. ~~**T3**~~ and ~~**T5**~~ - **DONE 2026-10-06** (the fight AI on the wall
+   clock in paced play; the session's randomness seeded at boot). **M4** READ
+   and MEASURED 2026-10-06 (44 transitions pair two areas sharing actor ids;
+   the original keeps one actor per placement RECORD) and NOT changed - a
+   viewer refactor off actor-id keys, waiting on the reader. Was: **M4** one actor id in both resident chunks (95 ids, co-residence not
    measured); **T5** randomness (the VM's xorshift never seeded, the crowd
    reseeded to 1 on every load); **T3** the fight AI on game time;
    **M6** the port's 100-unit floor snap; **M7** a scene clip's pitch (3

@@ -409,6 +409,9 @@ int PlayState::setupSession() {
     session.setStreetActivity(density);
     session.setMusicOption(settings.v.volumeMusic);   // options row 11
     session.setDataRoot(fr);   // IAM\OBJECT for the kind ladder, crowd or not
+    // `Script_Pump` case 0's `srand(ms since start)` - in paced play only, so
+    // a `--frames` run draws the fixed sequence every check was written on
+    if (!frames) session.setSessionSeed(front.ticksMs() | 1u);
     if (!noCrowd) session.loadTraffic(fr);
     // A movie chain is the intro's; a street start skips it.
     if (forceAdventure) playMovies = false;

@@ -1780,6 +1780,7 @@ bool PlayState::beginMelee(int opponentId, int level) {
     fightRun.foeFrame = 1.0f;
 
     fightRun.ms = 0.0;
+    fightRun.wallStart = front.ticksMs();
     fightRun.fight = std::make_unique<omk::Fight>(
         // THE CRT's GENERATOR, NOT THE HOST'S (2026-09-23). This was
         // `std::rand()`: on macOS a different generator from the engine's

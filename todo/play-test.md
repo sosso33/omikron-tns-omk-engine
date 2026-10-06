@@ -435,6 +435,26 @@ widely), and a stranger in his model could be taken as the speaker and moved
 to where the cameras look. Say if a conversation now shows nobody where the
 speaker should be.
 
+## 36. FACES ON THE VOICE AT A LOW FRAME RATE (2026-10-06, `todo/drift-audit.md` T2)
+
+On a slow machine (the classic Mac at 6-10 fps, a heavy Vita scene) a
+conversation's face used to fall further behind its voice as the line ran,
+because the frame delta is capped at 0.1 s. While a line's voice plays the
+port now follows the voice's play position, as the original's `Game_Frame`
+does: the mouth should stay on the words at any frame rate, and the camera
+moves and the scene around it run at the voice's pace. Worth watching on the
+Tiger build. Nothing changes on a fast machine or in a headless run.
+
+## 37. THE FIGHT'S PACE, AND A DIFFERENT CROWD EACH SESSION (2026-10-06, `todo/drift-audit.md` T3/T5)
+
+(1) The melee AI now times its waits on the WALL clock, as the original's
+`Sys_GetTimeMs` does: on a slow machine (6-10 fps) the opponent attacks more
+often per game second than before, and after the pause menu his next move
+comes at once. (2) Each session now draws its own random sequence (the
+passer-by lines, the scripted random choices) and each city visit its own
+crowd, where before every boot replayed the same one. Neither shows in a
+headless run.
+
 ## HEADLESS PASS over 19-29 (2026-10-05)
 
 Each item driven through the viewer with its check's own command, frames

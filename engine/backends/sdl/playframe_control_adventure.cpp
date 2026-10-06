@@ -516,7 +516,16 @@ void PlayState::adventureScreenInput() {
                     return true;
                 });
             fightRun.camRaySet = true;
-            fightRun.ms += frameSec * 1000.0;
+            // THE AI'S CLOCK IS THE WALL'S (todo/drift-audit.md T3):
+            // `Fight_TickAI` (0x00464830) waits on `Sys_GetTimeMs` - five
+            // calls, no reference to the delta - so a wait runs in real time
+            // whatever the frame rate, the `--speed` or a pause: below 10 fps
+            // the original attacks more often per GAME second, and after a
+            // pause its waits have already run out. This read the clamped,
+            // speed-scaled game delta. A frame-bounded run keeps the fixed
+            // delta, so every `--frames` fight check stays deterministic.
+            if (frames) fightRun.ms += frameSec * 1000.0;
+            else fightRun.ms = static_cast<double>(front.ticksMs() - fightRun.wallStart);
             const float was[3] = {player->pos()[0], player->pos()[1],
                                   player->pos()[2]};
             // ...on the PELVIS, the opponent's convention (above).

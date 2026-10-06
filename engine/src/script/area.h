@@ -316,6 +316,19 @@ public:
     // this call no pedestrians exist, with it every later area load spawns
     // its circuit's - and a slot already loaded when it is called spawns now.
     void loadTraffic(const std::string& gamedataRoot);
+    // THE SESSION'S RANDOMNESS (todo/drift-audit.md T5). The original seeds
+    // the C library's `rand()` ONCE, in `Script_Pump` case 0 - the boot pump -
+    // with `srand(sub_412100())`, the milliseconds since start
+    // (`timeGetTime` less the base `sub_412120` latched), so every session
+    // draws a different sequence; and every consumer, the crowd included,
+    // draws from that one stream, never reseeded. The port keeps its own
+    // generators (the VM's xorshift, the crowd's) and seeded neither: the
+    // same `var.set.random` sequence from every boot and the identical crowd
+    // on every visit. This seeds the VM's once and makes each crowd load
+    // draw from a seed DERIVED from it - one stream continued across loads is
+    // the engine's, a seed per load is this port's, declared. 0 (the default,
+    // every frame-bounded run) leaves both at their fixed seeds.
+    void setSessionSeed(std::uint32_t seed);
     // The gamedata tree `objectKind` / `objectName` / `applyObjectEffect` read
     // `IAM\OBJECT` from. `loadTraffic` sets it too; this exists because a run
     // with no crowd never calls that, and every kind then read -1 - a ring
@@ -1607,6 +1620,8 @@ private:
     int         trafficSlot_ = -1;           // the slot whose circuit `sliders_` holds
     int         streetActivity_ = kDefaultStreetActivity;
     void loadTrafficFor(int slot);
+    std::uint32_t sessionSeed_ = 0;
+    std::uint32_t crowdLoads_ = 0;
     // The AREA whose `.SCX` `scene_` holds. The file is the area's (`+97`),
     // so a scene loaded over the same area keeps the runner - and every
     // program running - exactly as the engine does; only an area change

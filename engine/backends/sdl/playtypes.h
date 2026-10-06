@@ -625,6 +625,7 @@ struct FightRun {
     int   koSeen = 0;                  // the KO counter as the fade last saw it
     int   cardProps[6] = {0, 0, 0, 0, 0, 0};
     double ms = 0.0;                   // the AI's `Sys_GetTimeMs` clock
+    std::uint32_t wallStart = 0;       // the host's tick at `Fight_Begin`, for it
     long  startedAt = 0;
 };
 

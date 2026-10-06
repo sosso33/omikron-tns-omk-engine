@@ -4190,6 +4190,12 @@ std::vector<Session::PropInstance> Session::props() const {
 
 // ------------------------------------------------------------ STREET LIFE
 
+void Session::setSessionSeed(std::uint32_t seed) {
+    sessionSeed_ = seed;
+    if (seed) Interpreter::seedRandom(seed);
+    std::printf("session: randomness seeded %u (srand at the boot pump, T5)\n", seed);
+}
+
 void Session::loadTraffic(const std::string& gamedataRoot) {
     dataRoot_ = gamedataRoot;
     trafficWanted_ = true;
@@ -4214,7 +4220,11 @@ void Session::loadTrafficFor(int slot) {
     const auto track = loadOpt(fs.read("TRAJECTOIRES/" + s.opt + ".OPT"));
     if (!track.valid) return;
     const PedClips clips = pedClipsFrom(fs.read("ANIMS/" + s.ani + ".ANI"));
-    sliders_.load(track, clips, s.menMask, s.womenMask, streetActivity_, 1u,
+    // a fixed 1 with no session seed (every check); otherwise a fresh draw
+    // per load from the session's (`setSessionSeed`, T5)
+    const std::uint32_t crowdSeed = sessionSeed_
+        ? (sessionSeed_ ^ (++crowdLoads_ * 2654435761u)) | 1u : 1u;
+    sliders_.load(track, clips, s.menMask, s.womenMask, streetActivity_, crowdSeed,
                 static_cast<std::uint32_t>(s.sliderMask), static_cast<std::uint32_t>(s.motoMask));
     // `sub_438040`: a body's radius is its model's root mesh `+88`
     for (const auto& m : sliders_.models()) sliders_.setModelRadius(m.name, modelReach(m.name));
