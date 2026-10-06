@@ -8626,6 +8626,11 @@ def c_engine_slider_fly():
         "collide hits 47 closest 87.8 settle 40 handed 7.0 final z -281.7".split(),
         "collide offroad hits 0".split(),
         "crossing steps 7 x 71.24 speed 5.43".split(),
+        # M3 step 2, `sub_458C70`: a 300-wide road (`X`), the ride entering
+        # at 30 degrees with UP held - shoved back 18 times, its centre never
+        # past x 76.3 (the hull's front corners at +-60.37 meet the edge
+        # first) while it runs 10209 down the road, turned to +17.3
+        "road edges 18 max_x 76.3 yaw 17.3 z -10209".split(),
     ]
     return got, want, \
         "the six-value thrust LADDER by input and by the direction of travel " \
@@ -8697,9 +8702,13 @@ def c_engine_slider_ride():
     facing, walked, ticks = float(m.group(4)), float(m.group(5)), int(m.group(6))
     return ("ride: mounted at 4839 -103 -677" in o,
             round(z), round(facing), walked, ticks), \
-           (True, -3238, 49, 0.0, 0), \
+           (True, -1795, 49, 0.0, 0), \
         "mounted where the address put him and flown 120 frames of UP then " \
-        "20 of RIGHT: he ends 2561 units up the street at z -3238, turned 49 " \
+        "20 of RIGHT: he ends at z -1795 (re-pinned 2026-10-06 from -3238, drift " \
+        "audit M3 step 2: the harness mounts him on the PAVEMENT - a `Ba` mesh - " \
+        "and the street he flies up is `YX`, which is not road to `sub_458C70`'s " \
+        "`X`/`OP` test, so its road edges hold him there as the original's would; " \
+        "-3238 was the port with no road-keeping), turned 49 " \
         "degrees, and the WALKER never ticked - 0 ticks and 0 walked, which " \
         "is what ACTOR_STATE 7 and 8 mean by `walks` false. Ticking it beside " \
         "the ride made the two fight and the walker win"

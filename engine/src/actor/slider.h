@@ -100,6 +100,10 @@ struct SliderRide {
     int    settle = 0;                 // 8F5E08: 40 after a vehicle hit, counted down by
                                        //         `Slider_TickRide`, 0 after a road-edge push
     double pushX = 0, pushZ = 0;       // 8F5E20 / 8F5E24 - written by `sub_458880`, read nowhere
+    double edgeX = 0, edgeZ = 0;       // flt_8F5D80 / 84 - the road edge's shove, damped 1/8 a frame
+    double edgeNX = 0, edgeNZ = 0;     // flt_8F5DE8 / EC - the last edge normal
+    double yawRate = 0;                // 8F5E18 - the edge's turn, +-2.5, damped 1/16 a frame
+    int    edgeHits = 0;               // instruments: `sub_458C70`'s pushes
     int    vehicleHits = 0;            // instruments: `sub_458880`'s bounces
     int    walkerSteps = 0;            //              `sub_459970`'s side-steps
     bool   stopped = false;            // `sub_4570F0` was reached
@@ -163,6 +167,11 @@ struct SliderRide {
     // bounced by 2/3 of the closing speed, `settle` = 40 and the speed
     // handed to the vehicle hit. -> whether it bounced.
     bool collideVehicles(const RideWorld& world);
+    // `sub_458C70`: the four hull corners (+-60.37 along and across the
+    // heading, led by the velocity, 20 above) probed for ROAD; where corners
+    // disagree `sub_459810` finds the crossing on that hull edge, and the
+    // ride is shoved back off the boundary and turned along it.
+    void roadEdges(const RideWorld& world);
 
     // `sub_457F50`: where the RIDER sits - the slider's x and z, and its y
     // plus `kRiderUp`. The actor's own `+248` takes `kNodeUp` instead, which

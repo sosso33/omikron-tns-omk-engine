@@ -190,5 +190,31 @@ int main() {
         for (int k = 0; k < 30; ++k) { u.fly(omk::SliderRide::kThrustUp, dt, p); u.hover(dt, c); sMin = std::min(sMin, std::fabs(u.speed)); }
         std::printf("crossing steps %d x %.2f speed %.2f\n", u.walkerSteps, u.x, u.speed);
     }
+
+    // ---- `sub_458C70`, THE ROAD EDGES (drift audit M3 step 2) -----------
+    // A road strip |x| < 150 (`X`), pavement (`T`) beyond, the ride on its
+    // centreline heading 30 degrees toward +x with UP held: the corners that
+    // leave the road shove it back off the boundary and turn it along it.
+    // The furthest any part of the hull's centre gets past the edge, the
+    // final heading (0 / 180 is along the road), and how many pushes.
+    {
+        omk::RideWorld w;
+        w.surface = [](double x, double y, double, double& drop, char nm[2]) {
+            drop = 0.0 - y; nm[0] = std::fabs(x) < 150.0 ? 'X' : 'T'; nm[1] = 0; return true;
+        };
+        w.radius = 82.3;
+        omk::SliderRide s;
+        s.yaw = 330.0;                    // x -= sin(yaw) v: toward +x
+        const auto p = flat();
+        double maxX = -1e9;
+        for (int k = 0; k < 600; ++k) {
+            s.fly(omk::SliderRide::kThrustUp, dt, p);
+            s.hover(dt, w);
+            if (s.settle) --s.settle;
+            maxX = std::max(maxX, s.x);
+        }
+        double yw = s.yaw > 180.0 ? s.yaw - 360.0 : s.yaw;
+        std::printf("road edges %d max_x %.1f yaw %.1f z %.0f\n", s.edgeHits, maxX, yw, s.z);
+    }
     return 0;
 }

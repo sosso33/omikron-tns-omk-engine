@@ -1519,6 +1519,14 @@ void PlayState::adventureRide() {
         if (ride->vehicleHits != hitsWas)
             std::printf("frame %ld: slider: Manuelle HIT a vehicle (sub_458880) - pushed out to "
                         "%.0f %.0f, speed %.2f, settle %d\n", n, ride->x, ride->z, ride->speed, ride->settle);
+        if (n % 30 == 0) {
+            double dr = 0.0; char nm[2] = {0, 0};
+            const bool on = rw.surface(ride->x, ride->y, ride->z, dr, nm);
+            std::printf("frame %ld: slider ride at %.0f %.0f, speed %.2f, road-edge pushes %d, "
+                        "vehicle hits %d, surface '%c%c'%s\n", n, ride->x, ride->z, ride->speed,
+                        ride->edgeHits, ride->vehicleHits, nm[0] ? nm[0] : '-', nm[1] ? nm[1] : '-',
+                        on ? "" : " (none)");
+        }
         if (ride->walkerSteps != stepsWas && ride->walkerSteps == 1)
             std::printf("frame %ld: slider: Manuelle steps round a walker on a crossing (sub_459970)\n", n);
         // `Slider_TickRide`, after its three helpers: `if (dword_8F5E08)

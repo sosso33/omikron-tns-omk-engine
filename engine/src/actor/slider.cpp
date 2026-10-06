@@ -304,6 +304,162 @@ bool SliderRide::collideVehicles(const RideWorld& w) {
 }
 
 namespace {
+bool isRoad(const char nm[2]) { return nm[0] == 'X' || (nm[0] == 'O' && nm[1] == 'P'); }
+
+// `sub_459810(a, b, out, 2)`: from the middle of a..b, four halving steps
+// along it, each probing 39.370079 under the ride's height - back toward `a`
+// (the OFF-road corner) while the probe is on road, forward while it is not
+// - so `out` lands on the boundary.
+void edgeCrossing(const SliderRide& r, const RideWorld& w, const double a[2],
+                  const double b[2], double out[2]) {
+    double hx = (b[0] - a[0]) * 0.5, hz = (b[1] - a[1]) * 0.5;
+    double mx = a[0] + hx, mz = a[1] + hz;
+    for (int k = 0; k < 4; ++k) {
+        double drop = 0.0; char nm[2] = {0, 0};
+        const bool road = w.surface && w.surface(mx, r.y - 39.370079, mz, drop, nm) && isRoad(nm);
+        hx = road ? -(hx * 0.5) : hx * 0.5;
+        hz = road ? -(hz * 0.5) : hz * 0.5;
+        mx += hx; mz += hz;
+    }
+    out[0] = mx; out[1] = mz;
+}
+}  // namespace
+
+// `sub_458C70` (0x00458C70), 466 lines, transcribed - its edge selection
+// branch for branch, the two flags the decompiler lost read from the image
+// (0x4594D0: the shove is x-5 under |speed| 30 and x-10 above; 0x459580:
+// the boundary's angle is atan(e.x / e.z), or 90 / 270 when e.z is 0).
+void SliderRide::roadEdges(const RideWorld& w) {
+    if (!w.surface) return;
+    const double as = std::fabs(speed);
+    double lx = 0.0, lz = 0.0;                         // v69 / v77, the lead
+    if (as > 32.0) { lx = vx * -2.0; lz = vz * -2.0; }
+    else if (as > 18.0) { lx = -vx; lz = -vz; }
+    const double r = yaw * kDeg;
+    const double c = std::cos(r), s = std::sin(r);
+    const double v50 = s * 60.369999, v51 = c * 60.369999, v49 = s * -60.369999;
+    const double v52 = v50 * -2.0, v68x = v51 * -2.0;
+    const double A[2] = {v51 + v50 + x, v49 + v51 + z};
+    const double B[2] = {A[0] + v52, A[1] + v68x};
+    const double C[2] = {v50 - v51 + x, v51 - v49 + z};
+    const double D[2] = {C[0] + v52, C[1] + v68x};
+    // each corner: no surface at all -> `sub_459BD0` and out (LABEL_121);
+    // otherwise 1 when it is OFF the road
+    auto off = [&](const double p[2], int& o) {
+        double drop = 0.0; char nm[2] = {0, 0};
+        if (!w.surface(p[0] + lx, y - 20.0, p[1] + lz, drop, nm)) return false;
+        o = isRoad(nm) ? 0 : 1;
+        return true;
+    };
+    int oA = 0, oB = 0, oC = 0, oD = 0;               // v56, v57, v7, v6
+    if (!off(A, oA) || !off(B, oB)) return;           // (the wall pass: step 3)
+    double P[2][2] = {{0, 0}, {0, 0}};                // v64/v65 and v66[0..1]
+    int npt = 0;                                      // v1
+    bool abCrossed = false;                           // v59
+    if (oA != oB) {
+        if (oA) edgeCrossing(*this, w, A, B, P[0]); else edgeCrossing(*this, w, B, A, P[0]);
+        npt = 1; abCrossed = true;
+    }
+    if (!off(C, oC) || !off(D, oD)) return;
+    if (!(oA | oB | oC | oD)) {                       // all four on the road
+        edgeX -= edgeX * 0.125;
+        edgeZ -= edgeZ * 0.125;
+        yawRate -= yawRate * 0.0625;
+        yaw += yawRate;
+        x += edgeX;
+        z += edgeZ;
+        return;
+    }
+    const bool allOff = (oB & oC & oD & oA) != 0;
+    int centreOff = 0;
+    if (allOff) {
+        x -= vx * -2.0;                                // back along the motion
+        z -= vz * -2.0;
+        const double q = std::fabs(speed) * 0.25;
+        edgeX = edgeNX * q;
+        edgeZ = edgeNZ * q;
+        speed *= 0.25;
+    } else {
+        double drop = 0.0; char nm[2] = {0, 0};
+        centreOff = (!w.surface(x + lx, y - 20.0, z + lz, drop, nm) || !isRoad(nm)) ? 1 : 0;
+    }
+    noThrust = 8;                                     // dword_8F5DF0
+    ++edgeHits;
+    if (allOff) { vx = edgeX; vz = edgeZ; return; }
+    bool cdCrossed = false;                           // v10
+    if (oC != oD) {
+        double* pt = P[npt < 2 ? npt : 1];
+        if (oC) edgeCrossing(*this, w, C, D, pt); else edgeCrossing(*this, w, D, C, pt);
+        ++npt; cdCrossed = true;
+    }
+    // ...the END edges (A-C, B-D) for the point(s) still owed: the
+    // decompiled selection, kept as it branches
+    auto at = [&](int k) -> double* { return P[k < 2 ? k : 1]; };
+    const int k = npt;
+    if (!(oB && oA)) {
+        if (oD && oC) {
+            if (oA) edgeCrossing(*this, w, D, B, at(k));
+            else if (oB) edgeCrossing(*this, w, C, A, at(k));
+            else { edgeCrossing(*this, w, C, A, at(k)); edgeCrossing(*this, w, D, B, at(k + 1)); }
+        } else if (!abCrossed) {
+            if (oC) edgeCrossing(*this, w, C, A, at(k));
+            else if (oD) edgeCrossing(*this, w, D, B, at(k));
+        } else if (!cdCrossed) {
+            if (oA) edgeCrossing(*this, w, A, C, at(k));
+            else if (oB) edgeCrossing(*this, w, B, D, at(k));
+        }
+    } else {                                          // A and B both off
+        if (oC) edgeCrossing(*this, w, B, D, at(k));
+        else if (oD) edgeCrossing(*this, w, A, C, at(k));
+        else { edgeCrossing(*this, w, A, C, at(k)); edgeCrossing(*this, w, B, D, at(k + 1)); }
+    }
+    // LABEL_65: the boundary through the two points, its normal toward the ride
+    const double ex = P[1][0] - P[0][0], ez = P[1][1] - P[0][1];
+    const double len = std::sqrt(ex * ex + ez * ez);
+    if (!(len > 0.0)) return;
+    double nx = ez / len, nz = -ex / len;
+    if ((x - P[0][0]) * nx + (z - P[0][1]) * nz < 0.0) { nx = -nx; nz = -nz; }
+    const double ux = ex / len, uz = ez / len;
+    double base;
+    if (centreOff == 0) {
+        vx -= nx; vz -= nz;                            // the motion turned off the edge
+        base = edgeX;
+    } else {
+        x += vx; z += vz;                              // a step back
+        const double k5 = std::fabs(speed) < 30.0 ? -5.0 : -10.0;
+        vx = nx * k5; vz = nz * k5;
+        base = 0.0; edgeZ = 0.0;
+    }
+    edgeNX = nx; edgeNZ = nz;
+    edgeX = nx * 2.5 + base;
+    edgeZ = nz * 2.5 + edgeZ;
+    x += edgeX;
+    z += edgeZ;
+    // ...and turned along it, by a rate clamped to +-2.5
+    double want = (uz == 0.0) ? (ux < 0.0 ? 270.0 : 90.0)
+                              : std::atan2(ux / uz, 1.0) * 57.29577951308232;
+    double cur = yaw > 180.0 ? yaw - 360.0 : yaw;
+    if (std::fabs(cur - want) > 90.0) want = want <= 0.0 ? want + 180.0 : want - 180.0;
+    const double dyaw = want - cur;
+    const bool backSide  = (oB && !oA) || (oD && !oC);    // `v57 && !v56 || v6 && !v7`
+    const bool frontSide = (oA && !oB) || (oC && !oD);    // `v56 && !v57 || v7 && !v6`
+    auto clamp = [&] { if (yawRate < -2.5) yawRate = -2.5; else if (yawRate > 2.5) yawRate = 2.5; };
+    if (std::fabs(dyaw) >= 180.0) {
+        if (speed < 0.0) { if (!backSide) clamp(); }
+        else if (!frontSide) clamp();
+    } else if (speed < 0.0) {
+        if (!backSide) clamp();
+    } else if (!frontSide) {
+        yawRate += dyaw * 0.020833334 * speed * 0.028571429;
+        clamp();
+    }
+    yaw += yawRate;
+    if (yaw > 360.0) yaw -= 360.0;
+    if (yaw < 0.0) yaw += 360.0;
+    settle = 0;                                       // dword_8F5E08
+}
+
+namespace {
 // `sub_458490`: the first walker (record order) within 300 of the ride and
 // AHEAD of its motion (`x -= v`, so ahead is `-cos > 0.5`) whose own surface
 // is a crossing - a mesh name starting `O`. -1 for none.
@@ -330,7 +486,9 @@ void SliderRide::hover(double dt, const RideWorld& w) {
     if (noThrust) --noThrust;
     if (!w.surface) return;
     double drop = 0.0; char nm[2] = {0, 0};
-    if (w.surface(x, y, z, drop, nm)) {
+    const bool have = w.surface(x, y, z, drop, nm);
+    roadEdges(w);                                 // `sub_458C70`
+    if (have) {
         // the ride on a crossing (`strncmp("OP", name, 1)` - the byte `O`),
         // and a walker ahead on one too
         if (nm[0] == 'O') {

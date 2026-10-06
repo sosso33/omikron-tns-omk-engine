@@ -151,7 +151,7 @@ authored to meet, H_TAK031's +19.58 into H_PUT032's key 1 of +19.58).
      walker on a crossing (`SliderRide::hover(dt, RideWorld)`; the viewer
      fills the world with the named-surface probe, the vehicles, the walkers;
      `PlayState::soupMeshName`). NOT PLAYED.
-  2. `sub_458C70` (466 lines): four hull corners at +-60.37 (fore/aft and
+  2. DONE (NOT PLAYED): `sub_458C70` (466 lines): four hull corners at +-60.37 (fore/aft and
      across, 20 above, led by the velocity: x0 when |speed| <= 18, -v at
      18..32, -2v above) probed for ROAD; where corners disagree
      `sub_459810` bisects the hull edge (2 halvings, probes 39.37 down) for
