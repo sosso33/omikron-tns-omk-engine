@@ -361,6 +361,36 @@ the boundary, not a new design:
 Checked as GL1 and GLES were: one set through it against the reference
 (coverage agreement), and every frame decided by the same draw list.
 
+### THE FIRST CONSOLE RUN - the reader, 2026-10-06 (a New 3DS, CFW, Homebrew Launcher)
+
+Logs and three panel captures off the card (`EMUNAND9SD/omk/`; the console's
+clock says 2017-06-14). What it established, ON HARDWARE:
+
+* **`omk_boot`**: boots headless, 61 decisions as everywhere; the console has
+  **124 MB** of application memory under the Homebrew Launcher, an 89 MB heap.
+* **`omk_play`**: the films, the start menu, a save loaded (the restaurant,
+  AREA 217), out into **Anekbah** with its crowd - the captures are the
+  street drawn by citro3d as on the desktop. **Sound works** (the DSP
+  firmware was on the card): ndsp at 44100 for the films, 22050 for the world.
+  **The touch buttons work**: two CAPTUREs written, STEP and PAUSE refused
+  without `--profile`, as they should.
+* **The films nearly keep up in software**: EIDOS dropped 147 of 386 frames,
+  QUANTIC 8 of the 77 it played before the reader skipped it - the MPEG-1
+  path stays (section 3's video reasons). GAME.MPG was missing from the card
+  (an incomplete copy; "not decodable, skipped").
+* **THE FRAME IS CPU-BOUND** - the reader: *"I try modifying graphic options
+  in-game and the framerate didn't change so the bottleneck seems to be the
+  cpu"*, and the sections agree. In the street, the mean of 60 frames: world
+  submit **44-48 ms** (this backend's CPU transform, clip and cull of every
+  vertex - GL1's way), screens/hud **~29** (the CPU composite of the frame),
+  present **12-14** (the readback and the 2:1 halving), staged bodies
+  **12-13**, pedestrians/traffic **10-13**, scripted motion 4.7. Slow frames:
+  median **99 ms**, 90% 138, about 10 fps.
+* **The textures were re-uploaded ~20 times** (`c3d: 54 textures ...` at
+  every pool change, each re-tiling ~7 MB on the CPU) - hitches walking.
+* Loads: Anekbah's set 712 ms, its `.SCX` 841 ms, its **traffic circuit
+  1897 ms**.
+
 ### Step 4 - the memory fit
 
 The `.cia`'s memory mode in the exheader; textures in the linear heap at 2
