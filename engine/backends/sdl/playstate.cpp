@@ -1913,12 +1913,14 @@ void PlayState::prepareSet(SetLoad& L) {
     omk::dropCharacterArrays(w.geo);   // a set has no face morph and no seams
     // THE UNLIT COPY'S CLAMP (`sub_4947F0`, todo/drift-audit.md L1 step 2):
     // every set vertex's baked colour floored at the set's AMBIENT grey, the
-    // scene's `+416`. **OFF unless `OMK_AMBIENT_CLAMP` is set, and that is
-    // deliberate**: as read it turns the cave's pure-green door pieces
-    // (`GGporte`, `GGtedoor01`, 0x00FF00 < 0x3F3F3F) grey, and the reader's
-    // frame of the original shows that green VIVID - so something in the
-    // reading is wrong and the clamp is not shipped until it is found.
-    if (const auto mh0 = omk::readHeader(d); mh0 && omk::envSet("OMK_AMBIENT_CLAMP")) {
+    // scene's `+416`. It greys the cave's pure-green door pieces (`GGporte`,
+    // `GGtedoor01`, 0x00FF00 < 0x3F3F3F), which looked like a contradiction
+    // with the reader's frames until the green there turned out to be the
+    // SET PIECES keyed to `Wait2sec` (`PT`, `PT2`: additive sprites, which
+    // nothing clamps) - the door is the dark silhouette in front of them, as
+    // the clamp draws it (todo/drift-audit.md L1). `OMK_NO_AMBIENT_CLAMP` is
+    // the before/after.
+    if (const auto mh0 = omk::readHeader(d); mh0 && !omk::envSet("OMK_NO_AMBIENT_CLAMP")) {
         const int grey = static_cast<int>(static_cast<std::int64_t>(
             static_cast<double>(mh0->ambient) * 255.0));
         const std::size_t raised = omk::clampToAmbient(w.geo, grey);

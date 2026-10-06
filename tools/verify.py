@@ -41106,6 +41106,51 @@ def c_engine_actor_lighting():
            "over 150, green and blue at the base; and nothing lit with --no-actor-light"
 
 
+def c_engine_ambient_clamp():
+    r"""THE UNLIT SET COLOUR IS FLOORED AT THE SET'S AMBIENT GREY
+    (`todo/drift-audit.md` L1 step 2).
+
+    `sub_4947F0` copies every unlit vertex's baked colour into the pool through
+    `cmp eax, [+416]; jnb` / `cmp eax, [+420]; jbe` - one UNSIGNED compare of
+    the whole dword - and `Read3DO_Init` sets the scene's `+416` to
+    `65793 * (int64)(desc+184 * 255.0)` and `+420` to `0xFFFFFF`. The shimmer
+    branch (mesh flag 0x8000000) clamps nothing. In the cave (ambient 0.25,
+    grey 63) that floors 1126 of the set's 7800 corners - the pure-green door
+    pieces among them.
+
+    It looked refuted for an hour: the reader's frames of the original show a
+    vivid green there. That green is the cave's SET PIECES (`grotte.SFX` 0-3,
+    keyed to object 181 `Wait2sec`, which every lava touch starts): additive
+    sprites, `PT2` at the door's centre - the door itself is the dark
+    silhouette in front of them, which is what the clamp draws and the
+    unclamped green slab was not.
+
+    SHOWN TO FAIL: `clampToAmbient` returning before its loop (0 of 7800).
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+
+    def run(extra_env):
+        return subprocess.run(
+            [play, fr, os.path.join(ROOT, "tables"), "--save",
+             os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "2",
+             "--stand", "125,-9,401,0", "--frames", "5", "--nodelay", "--no-crowd"],
+            capture_output=True, encoding="latin-1",
+            env=dict(os.environ, SDL_VIDEODRIVER="dummy", **extra_env)).stdout
+    o = run({})
+    m = _re.search(r"set ACSGROT: (\d+) of (\d+) corners raised to its ambient grey (\d+)", o)
+    got = (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else None
+    off = "sub_4947F0's clamp" in run({"OMK_NO_AMBIENT_CLAMP": "1"})
+    return (got, off), ((1126, 7800, 63), False), \
+           "the cave's corners raised, its corners, its ambient grey; any clamp line with " \
+           "OMK_NO_AMBIENT_CLAMP"
+
+
 def c_engine_undriven_rest_pose():
     r"""AN NPC NOTHING DRIVES HOLDS HIS REST POSE (`todo/drift-audit.md` M2).
 
@@ -43867,6 +43912,7 @@ SLOW = [
     ("engine: gandhar head", c_engine_gandhar_head, "todo/gandhar.md 3b; actor/shoothit.h"),
     ("engine: gandhar grab", c_engine_gandhar_grab, "todo/gandhar.md 4; actor/gandhar.h"),
     ("engine: gandhar play", c_engine_gandhar_play, "todo/gandhar.md 5; actor/gandhar.h"),
+    ("engine: ambient clamp", c_engine_ambient_clamp, "todo/drift-audit.md L1; o3de/geom3do.h"),
     ("engine: actor lighting", c_engine_actor_lighting, "todo/drift-audit.md L1; backends/sdl/playframe_world_staged.cpp"),
     ("engine: undriven rest pose", c_engine_undriven_rest_pose, "todo/drift-audit.md M2; backends/sdl/playframe_world_staged.cpp"),
     ("character shows resolve", c_character_shows_resolve, "todo/drift-audit.md T4; script/area.cpp"),
