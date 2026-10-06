@@ -18254,6 +18254,15 @@ def c_played_actor_inventory():
     baked at an absolute (-1565, -114, -8494) where an ordinary character's
     sits near the origin, so it is a fixed prop - a body on a slab - and its
     rest pose is its authored pose.
+
+    **CORRECTED 2026-10-06 for the Morgue's two (`todo/drift-audit.md` M2b):
+    they ARE driven, by a PLAIN `scx.play` (op 57) of `amorgue.SCX`'s object
+    36 `Cadavre`, whose body steps name `M2Bassin` and `MOBassin` - nodes the
+    engine finds BY NAME (`Script_SelectRelativeBodyAnimation` param 0
+    through the object's table, `o3de_FindNodeByName`), not by an actor id.**
+    This census counts `scx.play.actor` sites only, so they still count as
+    named by nothing HERE; the numbers stand, the conclusion drawn from them
+    for these two does not.
     """
     import dialog_triggers as T2, script_dump as SD
     play, shoot = set(), set()
@@ -40617,7 +40626,11 @@ def c_engine_gandhar():
     and the first hit at 921 rather than 977 - he is drawn pelvis-on-node
     now, so his tail's muzzle is ~280 lower and his first bolt reaches the
     player sooner; and the rolled actions are left out of the sequence, since
-    the closer fight now brings an attack into reach - a 26, the strike.)
+    the closer fight now brings an attack into reach - a 26, the strike.
+    **2026-10-06, M2b: (224, 593) -> (199, 532) and (175, 532), and the first
+    hit slot 0's at 1024 (damage 10)** - his rise out of the lava
+    (`4_D+Pont2`, found by name) now plays before the entry, so he starts
+    where it leaves him rather than on his frozen placement at (202, 798).)
     SHOWN TO FAIL: the forward axis negated (he walks AWAY), the x-alone
     fallback removed (he stops at 166), the speed's /30 made /10.
 
@@ -40691,9 +40704,9 @@ def c_engine_gandhar():
     return (seq[:len(want)], done.get(18), done.get(17), crit, dead, steps, at20,
             first.get(1), first.get(0), burst, hit), \
            (want, 255, -153, (scripts["critical"][0]["action"], 2), (True, True),
-            [("free", 0, 202, 798, 6), ("CUT", 1, 176, 536, 6)], (175, 536),
+            [("free", 0, 224, 593, 6), ("CUT", 1, 199, 532, 6)], (175, 532),
             (897, 1, "Tire000000", 23.0, 20), (1016, 0, "Tire000001", 58.0, 10), 19,
-            (921, 20)), \
+            (1024, 10)), \
            "the actions entered (the healthy script by its repeats, then its rewind), " \
            "where the sink and the rise end, the critical band's first action, and the " \
            "death posting message 3 and ending the shoot; his first step and the wall's " \
@@ -40768,12 +40781,17 @@ def c_engine_gandhar_head():
     first = [(str(a), str(b2)) for a, b2 in applied[:3]]
     w = run("--stand", "125,-9,401,0", "--shoot")
     weapon = "Waver" in w and "weapon 'Waver'" in w
+    # re-pinned 2026-10-06 (was 4, 7, 6, 7, 208, three applied, (-200, -126)):
+    # his rise out of the lava now plays (`todo/drift-audit.md` M2b) and he
+    # enters the shoot where it leaves him (224, 593), not on his frozen
+    # placement (202, 798), so the fixed aim point meets his head twice where
+    # it met it seven times
     wh = len(_re.findall(r"HIT ACTOR 187 ", w))
     wgate = len(_re.findall(r"GANDHAR's gate", w))
     return (hits - len(gates), meets, misses, len(applied),
             applied[-1][1] if applied else None, first,
             (min(ys), max(ys)) if ys else None, weapon, wh, wgate), \
-           (4, 7, 6, 7, 208, [("250", "244"), ("244", "238"), ("238", "232")], (-200, -126),
+           (4, 2, 11, 2, 238, [("250", "244"), ("244", "238")], (-201, -128),
             True, 20, 0), \
            "the baton: hits refused before the gate (0x800), bolts meeting his head and " \
            "missing it, the hits APPLIED to him and his health after them, the first " \
@@ -40928,7 +40946,12 @@ def c_engine_gandhar_grab():
              "--gandhar-health", "40", "--frames", str(frames), "--nodelay", "--no-crowd"],
             capture_output=True, encoding="latin-1",
             env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
-    o = run("175,-9,370", 1500)
+    # The two placements were SWAPPED on 2026-10-06 (`todo/drift-audit.md`
+    # M2b): once his rise out of the lava plays he enters the shoot where it
+    # leaves him, the shoot's timing moves and so does the CRT's sequence -
+    # at frame 1000, (120, 375) now rolls 18 (the strike) and (175, 370) 41
+    # (the grab), each touching.
+    o = run("120,-9,375", 1500)
     roll = _re.search(r"GANDHAR the attack reaches \(slot \d+\): rolled (\d+) against (\d+)", o)
     ent = _re.search(r"GANDHAR action (2[5-7]) entered", o)
     touch = _re.search(r"GANDHAR's TOUCH \(sub_45BC50\) MEETS the player: .* radius (\d+), .* - his (\S+)", o)
@@ -40937,7 +40960,7 @@ def c_engine_gandhar_grab():
               int(ent.group(1)) if ent else None,
               (int(touch.group(1)), touch.group(2)) if touch else None,
               int(hit.group(1)) if hit else None)
-    g = run("120,-9,375", 1600)
+    g = run("175,-9,370", 1600)
     roll = _re.search(r"GANDHAR the attack reaches \(slot \d+\): rolled (\d+) against (\d+)", g)
     ent = _re.search(r"GANDHAR action (2[5-7]) entered", g)
     touch = _re.search(r"GANDHAR's TOUCH \(sub_45BC50\) MEETS the player: .* - his (\S+)", g)
@@ -40950,7 +40973,7 @@ def c_engine_gandhar_grab():
             (int(msg.group(1)), int(msg.group(2)), msg.group(3)) if msg else None,
             int(cam.group(1)) if cam else None)
     return (strike, grab), \
-           (((0, 40), 26, (381, "UAvantd"), 11), ((95, 40), 25, "UAvantd", (8, 49, "handled"), 383)), \
+           (((18, 40), 26, (381, "UAvantd"), 11), ((41, 40), 25, "UAvantd", (8, 49, "handled"), 383)), \
            "the STRIKE (the roll, the action, the touch's radius and the mesh met, the " \
            "damage applied) and the GRAB (the roll, the action, the mesh met, the message, " \
            "its sender and handling, the kill scene's camera)"

@@ -1702,6 +1702,44 @@ accepted by `Wav_LoadToBuffer`**; the corpus streams **1667** chunk-3 records
 across the 220 scenes. `verify.py: engine: scene sounds`.
 
 
+#### WHICH BODY a body-animation step moves — **param 0, by NAME; read 2026-10-06**
+
+Neither function takes an actor. Both resolve the node they animate from
+**param 0**, an index into the object's own string table
+(`Script_SelectRelativeBodyAnimation`, 0x004A3AD0):
+
+```c
+node = ObjectTable_Cached(Scene_ObjectTables(obj), p0);
+if (!node) {
+    name = ObjectTable_Name(Scene_ObjectTables(obj), p0);   /* e.g. "D3Bassin" */
+    node = o3de_FindNodeByName(Script_GetCurrentScene(), name);
+    if (!node) { Log_Printf("...Can't find object \"%s\" in current scene."); return 0; }
+    ObjectTable_SetCached(Scene_ObjectTables(obj), p0, node);
+}
+```
+
+The names are a character's ROOT mesh (`D3Bassin`, `GDBassin`, `UBassin`…).
+`o3de_FindNodeByName` is a `strcmp` over every node of the scene
+(`o3de_TraverseNodes` with `sub_436C90`) that **keeps the last match**, and
+`Actor_Attach` links a body as the scene's **first** child, so of several
+bodies wearing one name the one found is the one attached earliest.
+
+The opcode that STARTED the object only pins one slot of that cache.
+`ScriptObject_StartOnActor` (46/90 the player, 59/60 a named actor) does
+`Script_ModifyObject1(obj, sub_44B6D0(obj, 0x2000000), actor+8)`: the first
+function of family `0x0200` in the walk of the main steps and their sync
+chains, whose param-0 slot becomes that actor's node. The family holds exactly
+the two body animations in the shipped files (545 + 2398, no other id).
+`ScriptObject_Start` (57/58, plain `scx.play`) pins nothing, so every step of
+such an object finds its body by name. Of the 1451 shipped objects with a body
+step, **5 are started plainly** (`Grotte`'s `4_D+Pont2` — Gandhar's snake
+rising out of the lava; `amorgue`'s `Cadavre`, `M2Bassin` and `MOBassin`;
+`Hall03`'s `DemonAppears`; the Impasse's `C_1_BoxMoves`; the roofs'
+`2Planches_Crac`), and **69 name two or more nodes** (`2_K+G_Dial`: `UBassin`
+and `GDBassin`), each index a different name. The port bound a program to the
+started actor alone until 2026-10-06 (`todo/drift-audit.md` M2b);
+`verify.py: engine: gandhar play` asserts the snake's step found by name.
+
 #### How the two body-animation functions PLACE the character — **read from the loaders, 2026-08-30**
 
 The two are not variants of one thing. They select the same kind of clip and
