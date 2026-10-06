@@ -41321,9 +41321,13 @@ def c_engine_fight_park():
     Two runs: AREA 5 with `--fight 572` - a melee opponent hidden at the
     load - is attached and staged by the fight and the fight begins; and the
     supermarket's scripted fight with `OMK_FIGHT_REFUSE=1` (an instrument that
-    makes the frontend refuse) WAITS - the voice line its script plays after
-    the fight (`media.play 251`) never comes. SHOWN TO FAIL: the old
-    `if (!beginFight(...)) break;` restored - the line plays.
+    makes the frontend refuse) WAITS - what its script does after the fight
+    (the switch to music track 59, then the `POTMANA` prop) never comes. That
+    discriminator is measured, not assumed: a first version waited for the
+    post-fight voice line, which the old run-on path never reaches inside 700
+    frames either, so it stayed green under the mutation and only the new
+    log line turned it red. SHOWN TO FAIL: the old
+    `if (!beginFight(...)) break;` restored - the music switches at once.
     """
     import subprocess
     eng = os.path.join(ROOT, "engine")
@@ -41348,7 +41352,8 @@ def c_engine_fight_park():
         env=dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_FIGHT_REFUSE="1")).stdout
     refused = "fight.begin 48: REFUSED by OMK_FIGHT_REFUSE" in r
     waits = "the script waits for event 2 all the same" in r
-    ranOn = "media.play 251" in r
+    at = r.find("fight.begin 48: REFUSED")
+    ranOn = at >= 0 and "audio: music switch to 59" in r[at:]
     return (attached, begins, refused, waits, ranOn), (True, True, True, True, False), \
            "AREA 5: opponent 572 attached by the fight, the fight begins; the supermarket " \
            "refused: the refusal, the wait, and whether the post-fight line played anyway"
