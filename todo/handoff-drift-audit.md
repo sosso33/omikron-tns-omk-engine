@@ -41,7 +41,9 @@ enhancement's start colour.
    and a prop state index, not "object, address" - the ring a beaten character
    drops, now placed under him (`engine: prop place`; `todo/play-test.md` 34).
    M5's other half (the 50-slot pool, a hidden slot's props) is still open.
-3. **M3 - the conversation speaker.** An unresolved speaker is the street's
+3. ~~**M3**~~ - **DONE 2026-10-06**: the talked-to walker released when the
+   conversation ends (`sub_4563A0`), and no stranger borrowed as the speaker;
+   `todo/play-test.md` 35. Was: **M3 - the conversation speaker.** An unresolved speaker is the street's
    reserved pedestrian (`Slider_Init`'s `dword_4C8898`), not "any body
    wearing the model", and never a fresh body at the camera solve. Read, not
    changed.

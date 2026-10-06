@@ -424,6 +424,17 @@ Gun Waver went down, and be takeable there. Note its ROTATION: the original
 leaves it to stack residue, the port draws it unrotated - say whether the
 original's ring stands, lies or tilts there.
 
+## 35. TALKING TO A PASSER-BY, AND WHO SPEAKS (2026-10-06, `todo/drift-audit.md` M3)
+
+Two changes to watch in a city. (1) After talking to a walker (the action
+button facing one standing at a shop window or a bench), the conversation
+plays and, when it ends, he should **go back to his walk** - before, he stood
+there for good. (2) In any conversation, ONLY the speaker mouths the line -
+before, every body wearing his model did (the crowd models are shared
+widely), and a stranger in his model could be taken as the speaker and moved
+to where the cameras look. Say if a conversation now shows nobody where the
+speaker should be.
+
 ## HEADLESS PASS over 19-29 (2026-10-05)
 
 Each item driven through the viewer with its check's own command, frames

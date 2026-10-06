@@ -235,6 +235,19 @@ lines — and AREA 86 (the library) overrides 13/14 with its own; no chunk
 subscribes 15/16 but GLOBAL. So talking to a walker and bumping one are
 already scripted, through the message path the port has.
 
+**And the talk opens a CONVERSATION** (read 2026-10-06, `todo/drift-audit.md`
+M3): GLOBAL's scripts 6 and 7 start `dialog.start` 111 'ZP méfiant', 112/113
+'ZP Anissa' and 114 'ZPH pressé', whose speaker is **-1**. `Dialog_SetSubjectActor`
+resolves -1 to `dword_4C8898`, which `Slider_Init` set from event 51: the
+chunk's actor record whose dword at `+176` is **1** - a per-record role field;
+nine records carry it, one stand-in per city (Anekbah's 394 'Passant Anekbah',
+`PSH_FN`). No placement record stages him and nothing moves him to the
+walker: the shot is the player and the walker the talk HOLDS, and the line's
+face animation goes to the unseen stand-in. The hold ends in `Sliders_Tick`'s
+last call, `sub_4563A0`: once the player leaves ACTOR_STATE 16/17 the target
+is cleared, its countdown zeroed and the walker's phase stepped at once - main
+to exit. `engine: crowd push` measures both.
+
 ### The walk — `sub_454F40` (the mover) and `sub_455830` (the body)
 
 The mover holds a position, a direction, a "remaining" length at `+48`
