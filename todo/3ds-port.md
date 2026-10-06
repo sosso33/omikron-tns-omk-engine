@@ -582,7 +582,14 @@ at `102b751` (the M3's first 3DS build).
   present too; otherwise that frame waits for its own. `sdmc:/omk/c3d-sync`
   forces every one synchronous, for laying the two side by side. The `c3d`
   line now reads the wait at begin and at a synchronous transfer apart, and
-  counts the presents each way. NOT YET RUN on the console or in Azahar.
+  counts the presents each way. **Proved in Azahar** (2026-10-06, the M3,
+  Azahar 2126.1.2; the street start, `--frames 360`, CAPTURE at present 300,
+  against the desktop's 800x448 frames halved, % of pixels within 24
+  levels): the default capture peaks at desktop frame 300 (**99.86%**, its
+  neighbours 99.35/99.38) and the `c3d-sync` capture at 301 (**99.85%**,
+  99.36/99.41) - exactly one frame apart, each a clean single frame; 359 of
+  360 presents a frame behind, the first synchronous (no last picture yet).
+  Azahar cannot show the race the fix closes; the console run owes the speed.
 * The rest: the dither loop 5.2-6.2 ms, unchanged; submit 1.1-3.4 with 5-6 ms
   spikes where textures go resident; the panel's redraw grew 6 -> 15 ms in
   the street (twice a second); 109 slow frames, the worst 4.8 s at

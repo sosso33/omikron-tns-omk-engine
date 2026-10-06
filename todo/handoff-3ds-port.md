@@ -37,7 +37,8 @@ specific code").
   2026-10-06): the GPU draws frame N while the CPU shows N-1. It read its
   buffer too early before - a stale or torn picture on the console that
   Azahar could never show - and `readback()` is now truly synchronous.
-  **Not yet run** on the console or in Azahar.
+  **Proved in Azahar** one frame apart from `c3d-sync` (99.86% at desktop
+  frame 300 against 99.85% at 301); the speed is owed by the console.
 * **16:9 by default** (`--res 800x448`, the reader's decision), halved to
   400x224 on the top screen.
 
@@ -97,12 +98,17 @@ omk/save-appart.bin  traces/save-appart.bin, for starting in a city
 1804,0,-6890,336` (add `--nofmv` to skip the films). **No `--profile` for a
 speed reading** - the capture is written to the card every frame.
 
-**Azahar** (installed in `/Applications`; the emulated card is
+**Azahar** (2126.1.2 on the M3 since 2026-10-06 - the release's arm64 zip,
+ad-hoc signed, so Gatekeeper rejects it: the reader accepted it into
+`/Applications`; installed in `/Applications` on both; the emulated card is
 `~/Library/Application Support/Azahar/sdmc/`, its `omk/gamedata` a SYMLINK to
 the repo's tree): `/Applications/Azahar.app/Contents/MacOS/azahar <3dsx>`.
 It ignores SIGTERM - `pkill -9`. Wait for the previous instance to be gone
 before launching another (a launch racing an exit silently does nothing).
 Its timings are not the console's (no cache model, a different CPU speed).
+The log is `omk/omk-play-<date>.log` - with a HYPHEN, while the program is
+`omk_play.3dsx`; a wait loop globbing `omk_play-*.log` never ends. A run with
+`--frames N` in args.txt stops at "N frames presented" and waits for START.
 
 **The instruments** (all 3DS-only, `n3dsfront.cpp` / `c3drender.cpp`):
 
