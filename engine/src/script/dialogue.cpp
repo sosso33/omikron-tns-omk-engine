@@ -384,7 +384,9 @@ void DialogPlayer::tick(double dt) {
     camFrames_ += dt * 30.0;
     // The VOICE. When it runs out the line is over and the node stays exactly
     // where it is, because what comes next is the player's...
-    if (phase_ == DialogPhase::Speaking && lineAt_ < lineLen_) lineAt_ += dt;
+    if (phase_ == DialogPhase::Speaking && lineAt_ < lineLen_)
+        lineAt_ = lineClock_ >= 0.0 ? std::min(lineClock_, lineLen_) : lineAt_ + dt;
+    lineClock_ = -1.0;
     // ...unless the asset says otherwise. `cutBy(0)` is case 2/7/8 with no
     // input word, which only a `SelfEnding` line can satisfy, and the engine's
     // answer to it is state 3 - the line over, walk on - so this does what a

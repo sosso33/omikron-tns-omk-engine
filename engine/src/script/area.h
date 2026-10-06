@@ -298,6 +298,7 @@ public:
     // move it. `Game_HandleEvent` events 55 and 59 sit behind them.
     void clearDialogLineChanged() { dialog_.clearLineChanged(); }
     void dialogNext()          { dialog_.next(); }
+    void setLineClock(double s) { dialog_.setLineClock(s); }   // T2, `DialogPlayer`
     void dialogChoose(int k)   { dialog_.choose(k); }
     // event 59: a reply's action as a throwaway context (area.cpp)
     void runReplyAction(std::span<const std::byte> code, std::size_t pc);

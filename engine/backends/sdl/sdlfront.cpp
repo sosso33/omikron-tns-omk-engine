@@ -604,6 +604,13 @@ void SdlFrontend::stopSound(int handle) {
     mix_.stop(handle);
 }
 
+double SdlFrontend::soundPlayedSeconds(int handle) {
+    if (handle < 0 || arate_ <= 0) return -1.0;
+    AudioLock lk(amx_);
+    const long long p = mix_.played(handle);
+    return p < 0 ? -1.0 : static_cast<double>(p) / (arate_ * achan_);
+}
+
 void SdlFrontend::flushAudio() {
     AudioLock lk(amx_);
     mix_.flush();

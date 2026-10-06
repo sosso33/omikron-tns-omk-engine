@@ -165,6 +165,12 @@ public:
     // voice buffer (`sub_46CAE0`): a line cut short by NEXT falls silent at
     // once. A reader heard the previous line run on under the menu.
     virtual void stopSound(int /*handle*/) {}
+    // How many SECONDS of a one-shot have played, or a negative number once
+    // it has ended or when there is no device - a headless run has none, so
+    // nothing that follows an audio clock can make a `--frames` run differ.
+    // A conversation line's voice is the clock `Game_Frame` syncs the
+    // simulation to while the line plays (todo/drift-audit.md T2).
+    virtual double soundPlayedSeconds(int /*handle*/) { return -1.0; }
     // Drop whatever is still queued. Skipping a movie has to silence it: the
     // device holds seconds of audio the decoder ran ahead into, and without
     // this the soundtrack of a skipped movie plays on over the menu - which

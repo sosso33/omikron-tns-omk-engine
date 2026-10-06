@@ -285,6 +285,13 @@ public:
     const std::vector<DialogReply>& replies() const { return replies_; }
     double lineSeconds() const { return lineLen_; }
     double elapsed() const { return lineAt_; }
+    // THE LINE CLOCK (todo/drift-audit.md T2): the seconds of this line's
+    // voice the device has played, for the NEXT tick to take as the line's
+    // position instead of adding its delta - `sub_42D120` samples the face at
+    // the audio position (`sub_42BC30`, clamped to the line's length), not at
+    // an accumulated clock. Negative (the default, and every headless run):
+    // the delta is added as before.
+    void setLineClock(double seconds) { lineClock_ = seconds; }
     bool   lineOver() const { return lineAt_ >= lineLen_; }
     const std::vector<std::int16_t>& pcm() const { return pcm_; }
     // the line's whole `.3DM`, as read for its voice - the face's tracks come
@@ -383,6 +390,7 @@ private:
     bool   lineChanged_ = false;
     int    node_ = 0, lines_ = 0, voiced_ = 0, channels_ = 1;
     double lineLen_ = 0.0, lineAt_ = 0.0;
+    double lineClock_ = -1.0;
     double camFrames_ = 0.0;      // frames since the phase began
     std::string voice_, line_;
     std::vector<DialogReply>  replies_;

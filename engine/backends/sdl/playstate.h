@@ -434,6 +434,7 @@ struct PlayState {
     std::string speakerModel{};
     std::string speakerVoice{};
     int voiceShot{};   // the line's voice in the mixer, for the press that cuts it
+    omk::LineSync lineSync{};   // `Game_Frame`'s line sync (T2, `script/linesync.h`)
     float speakerAt[3] = {0, 0, 0};   // the camera solve, a GROUND point
     bool speakerSolved{};
     bool speakerReady{};

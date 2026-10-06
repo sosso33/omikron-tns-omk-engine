@@ -67,6 +67,11 @@ public:
     int play(std::shared_ptr<const DeviceSound> s, bool loop, float gain,
              std::shared_ptr<const void>* dropped = nullptr);
     void stop(int handle);
+    // How far a one-shot has PLAYED: the device samples (all channels) mixed
+    // from it so far, or -1 once it is gone (ended, stopped or never). Mixed
+    // is a device buffer ahead of heard - the nearest thing to the play
+    // cursor `Game_Frame`'s line clock reads (T2).
+    long long played(int handle) const;
     void flush() { head_ = 0; count_ = 0; }                   // the stream only
     // everything, and the ring's memory back: the next device's rate and
     // queue need not be the last one's (the films at 44100, the world at 22050)

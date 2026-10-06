@@ -40587,6 +40587,52 @@ def c_engine_prop_place():
 
 
 
+def c_engine_line_sync():
+    r"""THE LINE SYNC - a conversation line keeps its face on its voice at any
+    frame rate (`todo/drift-audit.md` T2; `engine/src/script/linesync.h`).
+
+    `Game_Frame` caps its delta at 3 frames, so below 10 fps the game slows
+    down - but while a line is loaded on this frame and the last
+    (`sub_42CC10`), the delta becomes the advance of the line's AUDIO clock
+    (`sub_42BC30`: the voice's play position in 30-fps frames), `clock -
+    flt_4E9704 + delta`, with `flt_4E9704` latched at the edge and advanced by
+    each frame's delta; and `sub_42D120` samples the face at that same clock.
+    The port added a clamped delta to the line, so on the classic Mac at 6-10
+    fps the face fell behind the voice.
+
+    `linesync_probe`: 60 frames 1/6 s apart, the voice in real time, the
+    delta capped at 0.1 - with the sync the simulation reaches 9.933 s
+    against the voice's 9.833 (one capped delta ahead, which the formula
+    gives), without it 6.000; the second frame's delta is the 0.167 the clock
+    moved. Conversation 402's line, fed the clock, sits ON it (3.333 after 20
+    frames) where the clamped sum gives 2.000. The viewer feeds both from the
+    frontend's play cursor for the line's voice; a headless run has no device
+    and so no clock, which keeps every `--frames` check as it was.
+
+    Shown to fail: `LineSync::step` returning the clamped delta (synced
+    6.000, second delta 0.100); `DialogPlayer::tick` ignoring the clock (fed
+    2.000).
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s", "build/linesync_probe"], cwd=eng, capture_output=True)
+    probe = os.path.join(eng, "build", "linesync_probe")
+    if b.returncode != 0 or not os.path.exists(probe):
+        return ("build failed",), ("built",), "engine/ must build"
+    out = subprocess.run([probe, fr, os.path.join(ROOT, "tables", "vm_opcodes.json")],
+                         capture_output=True, text=True).stdout
+    sy = _re.search(r"^sync frames (\d+) clock (\S+) synced (\S+) plain (\S+) second_delta (\S+)$", out, _re.M)
+    fa = _re.search(r"^face conversation (\d+) line \S+ s after 20 frames: fed (\S+) unfed (\S+) clock (\S+)$", out, _re.M)
+    return (sy.groups() if sy else None, fa.groups() if fa else None), \
+           (("60", "9.833", "9.933", "6.000", "0.167"), ("402", "3.333", "2.000", "3.333")), \
+           "60 frames at 6 fps: the voice's clock, the synced and the capped simulation, " \
+           "the second delta; conversation 402's line fed the clock, not fed, the clock"
+
+
+
 def c_engine_camera_shake():
     r"""THE CAMERA SHAKE (`todo/astaroth.md` step 4; drift audit S11, op 136).
 
@@ -42044,9 +42090,10 @@ def c_licence_headers():
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
     # the census is 574 since 2026-10-06: + `engine/src/o3de/daynight.h` / `.cpp`;
-    # 575 the same day: + `engine/src/o3de/greybank.h` (ops 150/151)
+    # 575 the same day: + `engine/src/o3de/greybank.h` (ops 150/151); 577: +
+    # `engine/src/script/linesync.h` and `engine/tools/linesync_probe.cpp` (T2)
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (575, [], 1, []), \
+           (577, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -44292,6 +44339,7 @@ SLOW = [
     ("engine: camera shake", c_engine_camera_shake, "todo/astaroth.md 4; script/area.h"),
     ("engine: grey bank", c_engine_grey_bank, "todo/drift-audit.md S11; o3de/greybank.h"),
     ("engine: prop place", c_engine_prop_place, "todo/drift-audit.md M5; script/hooks.h"),
+    ("engine: line sync", c_engine_line_sync, "todo/drift-audit.md T2; script/linesync.h"),
     ("engine: shoot requests", c_engine_shoot_requests, "todo/drift-audit.md S13; actor/shootmode.h"),
     ("engine: address camera", c_engine_address_camera, "todo/drift-audit.md S14; o3de/worldcam.h"),
     ("engine: head camera", c_engine_head_camera, "todo/drift-audit.md; o3de/worldcam.h"),

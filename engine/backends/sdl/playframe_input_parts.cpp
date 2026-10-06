@@ -309,6 +309,28 @@ void PlayState::inputPause() {
         if (dt < 0.0) dt = 1.0 / 30.0;
         if (dt > 3.0 / 30.0) dt = 3.0 / 30.0;
         dt *= speed;                     // --speed, the engine's own trick
+        // ...AND THE LINE SYNC, which outranks the clamp (`Game_Frame`,
+        // 0x0041F740; todo/drift-audit.md T2). While a conversation line is
+        // loaded (`sub_42CC10`: the morph player's line length is nonzero)
+        // on this frame AND the last, the delta is the advance of the line's
+        // AUDIO clock (`sub_42BC30`, the voice's play position in 30-fps
+        // frames - both `Morph_SetAudioFormat` callers pass 30):
+        //
+        //     edge (off -> on):  E = clock
+        //     on, on:            E += last frame's delta
+        //                        delta = clock - E + delta, and 0 if <= 0
+        //
+        // so the simulation - the face, the cameras, every program - catches
+        // up with the voice at any frame rate, with no 3-frame cap. The clock
+        // here is the frontend's play cursor for the line's voice, and the
+        // sync runs only while that voice is still playing: past its end the
+        // engine's clock may stand still (which would hold the delta at 0
+        // until the line is cleared) and what it reads there is not traced.
+        // No device - every headless run - no clock, no sync.
+        const double clock = session.dialogOpen() && voiceShot >= 0
+                           ? front.soundPlayedSeconds(voiceShot) : -1.0;
+        dt = lineSync.step(clock, frameSec, dt);       // `script/linesync.h`
+        if (clock >= 0.0) session.setLineClock(clock);   // `sub_42D120` reads the same clock
         session.setFrameSeconds(dt);
         frameSec = dt;
     } else {

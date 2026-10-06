@@ -54,6 +54,13 @@ void HostMixer::stop(int handle) {
     std::erase_if(shots_, [handle](const Shot& o) { return o.id == handle; });
 }
 
+long long HostMixer::played(int handle) const {
+    if (handle < 0) return -1;
+    for (const Shot& o : shots_)
+        if (o.id == handle) return static_cast<long long>(o.pos);
+    return -1;
+}
+
 void HostMixer::mix(float* dst, std::size_t n) {
     for (std::size_t i = 0; i < n; ++i) {
         float v = 0.0f;
