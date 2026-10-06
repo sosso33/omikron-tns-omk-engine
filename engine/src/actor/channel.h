@@ -359,6 +359,12 @@ public:
     const std::vector<EdgeTaken>& edges() const { return edges_; }
     void clearEvents() { events_.clear(); edges_.clear(); }
     const ChannelStats& stats() const { return stats_; }
+    // `GoToMove`'s `seekNeeded`: the last transition's start frame was not
+    // 1.0 (captured in the entry loop, after an alias adopted its own start
+    // and before the overshoot folds in). `sub_45C680` then zeroes the x and z
+    // of the new clip's first delta, so a phase-matched entry does not sum
+    // the keys before its start into a jump.
+    bool lastSeek() const { return seek_; }
     ChannelStats& stats() { return stats_; }
     std::uint32_t flags() const { return flags_; }
 
@@ -394,6 +400,7 @@ private:
     std::uint16_t priorityThreshold_ = 0;         // +212
     mutable long gateSkips_ = 0;         // an instrument, see gateSkips()
     int repeat_ = 0;                              // +220
+    bool  seek_ = false;              // lastSeek()
     // Entry flag 0x800 rewrites the target's GoTo to point back at the state
     // it was entered from - a dynamic return edge. The engine writes that into
     // its own loaded copy of the file; here a `CtlFile` is const and shared

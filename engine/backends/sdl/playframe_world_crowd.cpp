@@ -820,12 +820,11 @@ void PlayState::worldCrowd() {
             // live for ever. Back in the idle, the body is standing by
             // definition, so the sum is released there.
             if (player->clipName() == "H_STAND") rootAccum = 0.0f;
-            // ...and NOT while the slider clips carry him. In ACTOR_STATE
-            // 6 and 8 the clip's root y is applied to his POSITION
-            // (`Actor_MoveBy`, the channel-only tick), so adding the
-            // same travel here as a drop put him one clip's descent
-            // (12.5) too low in the seat - the reader: *"he is just a
-            // bit too low"*.
+            // ...and NOT while the slider clips carry him: in ACTOR_STATE
+            // 6 and 8 the clip's root y is the NODE's (`sub_45C680` cases
+            // 6/8), carried by `PlayerController::nodeDrop()` below - adding
+            // this sum as well put him one clip's descent (12.5) too low in
+            // the seat (the reader: *"he is just a bit too low"*).
             if (boarding || leaving) rootAccum = 0.0f;
             rootDrop = rootAccum;
             // ...EXCEPT WHERE THE BODY IS ON THE GROUND BY DEFINITION,

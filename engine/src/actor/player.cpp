@@ -912,6 +912,7 @@ void PlayerController::tick(float dt, std::uint32_t word) {
     // ---- the machine ---------------------------------------------------
     const float f0 = rt_.channel().frame();
     const int   s0 = rt_.channel().state();
+    const long  tr0 = rt_.channel().stats().transitions;
     rt_.tick(dt, word);
     const float f1 = rt_.channel().frame();
     const int   s1 = rt_.channel().state();
@@ -968,26 +969,45 @@ void PlayerController::tick(float dt, std::uint32_t word) {
     }
     rt_.channel().clearEvents();
 
-    // ---- sub_45C680 case 1: the clip's root delta over the advance -------
+    // ---- sub_45C680: the clip's root delta ------------------------------
     //
-    // A transition resets both frames to the start (Actor_PlayClip zeroes
-    // the previous frame), so the advance that crossed it applies nothing -
-    // which is what keeps a looping walk from jumping back on every wrap.
+    // The delta a tick applies is (the frame shown last tick, the frame shown
+    // this tick] - `Anim_SetFrame(node, clip, +192, +188)` - and on the tick
+    // the clip CHANGES it is (0, the new start]: `Cef_TickChannel` either
+    // ticks the clip (`sub_45C680(frame)`) or returns `GoToMove`, which calls
+    // `sub_45C680(startFrame)` itself after `Actor_PlayClip` /
+    // `Actor_BlendToClip` ZEROED +192 (both write `u32i(actor, 48) = 0`). A
+    // looping clip's end is such a change too (`GoToMove(cur, cur, 1.0)`). So
+    // every new clip's KEY 1 is applied, on the transition tick, and the old
+    // clip's last interval is not - with x and z zeroed when the start was a
+    // seek (`seekNeeded`, start != 1.0), so a phase-matched entry does not
+    // jump. This port applied NOTHING on a transition, which dropped each new
+    // clip's key 1: H_SLDOUT's whole +12.49 drop into the seat (the reader's
+    // fall after the exit, 2026-10-06) and a frame of stride at every walk
+    // cycle. A clip set from OUTSIDE the tick (`enterGroupById`) is the same
+    // `GoToMove`, so its first tick runs from 0 too.
     float local[3] = {0, 0, 0};
-    // THE SLIDER CLIPS' ENTRY (ACTOR_STATE 6/8, `Actor_TickChannelOnly`):
-    // `Actor_PlayClip` zeroed the previous frame, so the first delta of the
-    // clip is (0, frame] and key 1 is in it - whether the clip was set from
-    // outside the tick (`enterGroupById`) or by a transition inside it. This
-    // port measured from the start frame, 1.0, and lost key 1: H_SLDOUT's
-    // +12.49 drop into the seat, so he was drawn seated at standing height,
-    // rose 13 more and fell 11.8 when the clip ended (a reader, 2026-10-06).
-    // Scoped to these two states; see todo/handoff-slider.md for the other
-    // states' transitions, which this does not change.
-    const bool slEntry = channelOnly_ && (clipEntered_ || s1 != s0);
+    const bool transitioned = rt_.channel().stats().transitions != tr0;
+    const bool fromZero = transitioned || clipEntered_;
+    const bool seek = transitioned && rt_.channel().lastSeek();
     clipEntered_ = false;
-    if (slEntry) {
-        nodeDrop_ = 0.0f;                          // `o3de_SetNodePos(+244..+252)`
-        if (const RootTrack* rt = rootTrackOf(clip())) rootDelta(*rt, 0.0f, f1, local);
+    if (fromZero) {
+        if (channelOnly_) nodeDrop_ = 0.0f;        // `o3de_SetNodePos(+244..+252)`
+        const int variants = variantCount();
+        const NodeTracks* baked = variants > 1 ? poseTracks() : nullptr;
+        if (baked && !baked->trans.empty()) {
+            // the grid's blended window, summed from its start (see below)
+            const int last = static_cast<int>(baked->trans.size()) - 2 > 0
+                                 ? static_cast<int>(baked->trans.size()) - 2 : 0;
+            const int b = static_cast<int>(std::floor(f1)) - 1;
+            const int ib = b < 0 ? 0 : (b > last ? last : b);
+            for (int k = 0; k < 3; ++k)
+                local[static_cast<std::size_t>(k)] =
+                    baked->trans[static_cast<std::size_t>(ib)][static_cast<std::size_t>(k)];
+        } else if (const RootTrack* rt = rootTrackOf(clip())) {
+            rootDelta(*rt, 0.0f, f1, local);
+        }
+        if (seek) { local[0] = 0.0f; local[2] = 0.0f; }
     } else if (s1 == s0 && f1 >= f0) {
         // A VARIANT-GRID CLIP MOVES BY THE CELL THE BLEND CHOSE, not by the
         // raw frame (omk-play 69). `H_ADJSTP`'s six cells are six DIRECTIONS

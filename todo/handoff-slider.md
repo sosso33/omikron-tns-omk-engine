@@ -129,13 +129,20 @@ original's same-frame channel tick does (`Sliders_Tick` runs before
 +12.49 from its first frame, +0.68 at its last, then H_STAND on the road
 (+0.01), no landing. NOT YET PLAYED.
 
-**OPEN, and wider than the slider**: the same `Actor_PlayClip` reading says
-EVERY clip change applies (0, frame] of the new clip on its first tick. The
-port's channel tick applies NOTHING on a transition in every other state
-("a transition resets both frames", `player.cpp`), so it drops each new
-clip's key 1 - for a looping walk one frame of stride per cycle. Not changed
-here (it moves every walk and every check that pins a position); measure it
-and decide.
+**SETTLED 2026-10-06 (the reader asked)**: the same rule holds for EVERY
+clip change - `Cef_TickChannel` either ticks the clip or returns `GoToMove`,
+which calls `sub_45C680(startFrame)` after `Actor_PlayClip` /
+`Actor_BlendToClip` zeroed +192, a looping clip's end included - so the port
+now applies (0, start] of the new clip on any tick whose transition count
+moved (x and z zeroed on a seek, `CefChannel::lastSeek`), in every state.
+Measured: key 1 is a pure VERTICAL offset in all of Kay'l's clips (47 of 81
+over 0.5) and has x/z in 7 clips of other characters, never over 0.5 - so
+where he STANDS does not move (a 300-frame walk identical to 0.01; 82 of the
+movement checks unchanged, `shoot hit` red on purpose and identical on the
+old code), and the DRAWN side already agreed (looping clips read their
+summed y absolutely; the take's accumulator carries chained clips that are
+authored to meet, H_TAK031's +19.58 into H_PUT032's key 1 of +19.58).
+`docs/ASSETS.md` (the clip section) has it.
 
 ## What is left (the audit's order)
 

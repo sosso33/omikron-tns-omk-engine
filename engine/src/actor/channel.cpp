@@ -178,6 +178,7 @@ bool CefChannel::gotoMove(int from, int to, float startFrame) {
         if (++guard > kChainGuard) { ++stats_.chainAborted; return false; }
         repeat_ = (to == from) ? repeat_ + 1 : 0;
         if (flags_ & 0x81u) repeat_ = 0;
+        seek_ = startFrame != 1.0f;            // `seekNeeded`, before the overshoot
 
         if (from >= 0) {
             if (!(flags_ & 0x20u)) {          // not while following an alias

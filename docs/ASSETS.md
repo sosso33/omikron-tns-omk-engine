@@ -3043,7 +3043,27 @@ by writing the facing Euler directly.
   `Matrix3x3_FromEulerAngles(+416,+420,+424)` rebuilt every frame in
   `Actors_TickAll` and installed on the node by `sub_437140(node,
   actor+288)` in `Actor_LoadModel`. The delta moves the node and is added to
-  +244/+252 (and +248 only in states 11..14). `H1AVNT`'s `H_WALK` root
+  +244/+252 (and +248 only in states 11..14; in the slider states 6 and 8 to
+  +244/+252 and +232/+240, never +248 - the y is the NODE's alone, which is
+  how H_SLDIN and H_SLDOUT step into the seat and out over a position that
+  stays put). **And on a CLIP CHANGE the interval is (0, start]**:
+  `Cef_TickChannel` either ticks the clip or returns `GoToMove`, which calls
+  `sub_45C680(startFrame)` itself after `Actor_PlayClip` / `Actor_BlendToClip`
+  have ZEROED prev (`+192`, both write `u32i(actor, 48) = 0`) and
+  `o3de_SetNodePos(+244..+252)` has snapped the node back onto the actor -
+  a looping clip's end included (`GoToMove(cur, cur, 1.0)`). So every new
+  clip's KEY 1 is applied on the transition tick, x and z zeroed when the
+  start is a seek (`seekNeeded`, start != 1.0), and the old clip's last
+  interval is not. Key 1 is almost always a pure VERTICAL offset - the clip's
+  frame-0 pelvis against its key-0 placement: 47 of `H1AVNT`'s 81 root
+  tracks carry more than 0.5 of it (`H_SLDOUT` and `H_SLIDER` +12.49, the
+  seat; `H_PUT032` +19.58, starting crouched where `H_TAK031` ends; `H_WALK`
+  +2.09; `H_STAND` +0.68) and only 7 clips in all seven `.CTL` files have any
+  x or z in it, none of them Kay'l's and none over 0.5. So the rule changes
+  where an actor STANDS almost nowhere and where the node is DRAWN at every
+  clip: the clip's y is absolute per clip, chained clips authored to meet
+  (the port draws it through `rootDrop`; ported 2026-10-06, `player.cpp`).
+  `H1AVNT`'s `H_WALK` root
   carries 28 keys of 2.5-3.3 in/frame (2.1 m/s), `H_RUN` 20 of 7.4 (5.6
   m/s), `H_STAND` 1 (a sway); the root SHIFT blocks (0x80) are the
   phase-matched hand-overs between gaits (junction 11: run -> walk at
