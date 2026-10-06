@@ -1,5 +1,10 @@
 # Handoff — 2026-09-09, moving to another machine
 
+> **2026-10-06: the current task is the DRIFT AUDIT - read
+> [`todo/handoff-drift-audit.md`](handoff-drift-audit.md) for where it stands.**
+> Section 1 below (setting the machine up) still applies; the rest is the
+> state of 2026-09-09.
+
 Written to pick the work up elsewhere. Everything below is **pushed** on
 `main` at `862caf0`; nothing is left uncommitted.
 

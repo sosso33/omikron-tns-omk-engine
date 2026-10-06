@@ -41872,8 +41872,9 @@ def c_licence_headers():
     mislabelled = [os.path.relpath(p, ROOT) for p in vendored
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
+    # the census is 574 since 2026-10-06: + `engine/src/o3de/daynight.h` / `.cpp`
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (572, [], 1, []), \
+           (574, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
