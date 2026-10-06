@@ -40,7 +40,8 @@ Renderer* makeC3dRenderer();
 // over leaves the GPU already HALVED - the display transfer's own 2x2
 // average (`GX_TRANSFER_SCALE_XY`) - into `screen`, the 400x240 top-screen
 // picture: the world's `vh` rows at row `vy` of the frame, halved and centred,
-// dithered as the reference is, black elsewhere. No 640x480-class readback, no
+// dithered as the reference is, black elsewhere. A frame that already fits
+// the screen (`--res 400x224`) goes over 1:1 instead, unhalved. No 640x480-class readback, no
 // CPU composite, no CPU halving. -> false when the frame cannot go that way
 // (its halves not multiples of 8, or larger than the screen), and the caller
 // reads back and composites as before. `r` is `makeC3dRenderer`'s.

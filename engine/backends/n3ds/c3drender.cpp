@@ -479,8 +479,14 @@ public:
 
     // 3c: see `c3dPresentHalf` (c3drender.h).
     bool presentHalf(int vy, int vh, Surface& screen) {
-        const int hw = tw_ / 2, hh = th_ / 2;           // the target halved
-        if (!inFrame_ || hw % 8 || hh % 8 || w_ / 2 > 400 || h_ / 2 > 240) return false;
+        // A FRAME THE SCREEN'S OWN SIZE (`--res 400x224` in args.txt, the
+        // GPU-fill experiment of 2026-10-06: a quarter of the pixels to fill,
+        // and no 2x2 average - so no anti-aliasing either) goes over 1:1;
+        // anything larger is halved by the transfer, as the default 800x448.
+        const bool one = w_ <= 400 && h_ <= 240;
+        const int k = one ? 1 : 2;                      // the transfer's reduction
+        const int hw = tw_ / k, hh = th_ / k;           // the target as transferred
+        if (!inFrame_ || hw % 8 || hh % 8 || w_ / k > 400 || h_ / k > 240) return false;
         for (std::uint32_t*& b : small_)
             if (!b) {
                 b = static_cast<std::uint32_t*>(linearAlloc(static_cast<std::size_t>(hw) * hh * 4));
@@ -505,7 +511,7 @@ public:
         // transfer halves what it is told (Azahar, 2026-10-06 - told the
         // halved size, it wrote a quarter-size picture, 200x112)
         const u32 flags = GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) | GX_TRANSFER_RAW_COPY(0) |
-                          transferFormats() | GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_XY);
+                          transferFormats() | GX_TRANSFER_SCALING(one ? GX_TRANSFER_SCALE_NO : GX_TRANSFER_SCALE_XY);
         if (piped) {
             // inside the frame: queued behind the pass's draws, not waited for
             C3D_SyncDisplayTransfer(static_cast<u32*>(target_->frameBuf.colorBuf), GX_BUFFER_DIM(tw_, th_),
@@ -530,8 +536,8 @@ public:
         std::fill(screen.px.begin(), screen.px.end(), std::uint16_t(0));
         // the frame halved and centred; the picture is its rows vy..vy+vh,
         // drawn in the target's top rows
-        const int ox = (400 - w_ / 2) / 2, oy = (240 - h_ / 2) / 2;
-        const int py0 = vy / 2, ph = vh / 2, pw = std::min(w_ / 2, hw);
+        const int ox = (400 - w_ / k) / 2, oy = (240 - h_ / k) / 2;
+        const int py0 = vy / k, ph = vh / k, pw = std::min(w_ / k, hw);
         for (int r = 0; r < ph && r < hh; ++r) {
             const int y = oy + py0 + r;
             if (y < 0 || y >= 240) continue;
@@ -545,8 +551,8 @@ public:
         rep_.halfLoopTicks += svcGetSystemTick() - p0;
         ++straight_;
         if (straight_ == 1)
-            std::printf("c3d: the first frame presented STRAIGHT - the transfer's 2x2 average, %dx%d onto "
-                        "the top screen at %d,%d\n", pw, ph, ox, oy + py0);
+            std::printf("c3d: the first frame presented STRAIGHT - %s, %dx%d onto the top screen at %d,%d\n",
+                        one ? "the screen's own size, 1:1" : "the transfer's 2x2 average", pw, ph, ox, oy + py0);
         return true;
     }
 

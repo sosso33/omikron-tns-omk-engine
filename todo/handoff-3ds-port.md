@@ -144,7 +144,15 @@ Decode a capture: raw little-endian RGB565, the size in the log line.
 
 1. **Read the next log** (section 3): the pipelined present against
    `c3d-sync`, and decide the 16-bit default with the reader.
-1b. **The GPU's side** in the dense street (52 ms drawing at ~220 draws):
+1b. **THE FILL EXPERIMENT IS READY**: `--res 400x224` in args.txt draws the
+   whole frame at the screen's own size - a quarter of the 800x448 pixels,
+   and no 2x2 average, so no anti-aliasing either - and the straight present
+   goes over 1:1 (Azahar: the capture 99.51% against the desktop's own
+   400x224 frame, one frame behind as the default). On the console: the
+   dense street at 400x224 against 800x448 - if citro3d's drawing and the
+   wait at begin fall by much, fill is the GPU's cost. A measurement, not a
+   default: 800x448 stays the reader's.
+1c. **The GPU's side** in the dense street (52 ms drawing at ~220 draws):
    what the PICA spends it on - fill (800x448 is 2.6x the screen's pixels;
    a 400x224 target would be the screen's own) or vertices - before any CPU
    work, since the CPU now waits for it there.
@@ -162,7 +170,20 @@ Decode a capture: raw little-endian RGB565, the size in the log line.
 6. Owed in SHARED code, for when the other sessions allow: the name-field
    keyboard (`swkbd`, a `Frontend` call instead of the Vita's `#if`), and the
    **800x450 bad_alloc** (a 135 MB allocation in the 32-bit build at the first
-   world frame; the desktop draws it - unexplained, open).
+   world frame; the desktop draws it - unexplained, open). **A second one,
+   2026-10-06, in Azahar at `--res 400x224`**: 2147483632 bytes =
+   `0x7FFFFFF0`, which in the 32-bit build is `max_size()` of a
+   `std::vector` with 16-byte elements - what libstdc++ asks for when a vector
+   GROWS believing its size is over half of `max_size()`, i.e. a `push_back`
+   on a vector whose pointers are garbage (uninitialized, freed or
+   overwritten). It did NOT come back on the next four runs with the same
+   args, the only change one `printf` in the allocator: layout-dependent,
+   the signature of an uninitialized read or a use-after-free. The refusal
+   line now prints its SITE (`new: N bytes REFUSED at 0x...`), so the next
+   one is `arm-none-eabi-addr2line -e engine/build/n3ds/omk_play.elf 0x...`
+   away - keep the `.elf` of any build sent to the card. AddressSanitizer on
+   the desktop is NOT the way on this M3: its runtime deadlocks in its own
+   initialiser on macOS 26 (`AsanInitFromRtl`, a spin lock, before `main`).
 7. Then steps 7 (Old 3DS), 8 (stereoscopic 3D, OFF by default), 9
    (packaging), and 10 last (the per-screen survey).
 

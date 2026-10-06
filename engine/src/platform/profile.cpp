@@ -177,9 +177,11 @@ __attribute__((noinline)) void* counted(std::size_t n, const void* site) {
     if (!p) {
         // A REFUSED ALLOCATION SAYS ITS SIZE - the Vita's own `operator new`
         // did (vita_main.cpp, a city load dead at 86 MB of 192); this one
-        // takes its place in a profiling build, so it says it too
-        std::printf("new: %lu bytes REFUSED - %ld KB live in %ld counted blocks\n",
-                    static_cast<unsigned long>(n), static_cast<long>(static_cast<long long>(g_total) / 1024),
+        // takes its place in a profiling build, so it says it too - and
+        // WHERE (`operator new`'s return address, for addr2line on the ELF)
+        std::printf("new: %lu bytes REFUSED at %p - %ld KB live in %ld counted blocks\n",
+                    static_cast<unsigned long>(n), site,
+                    static_cast<long>(static_cast<long long>(g_total) / 1024),
                     static_cast<long>(static_cast<long long>(g_totalBlocks)));
         throw std::bad_alloc();
     }
