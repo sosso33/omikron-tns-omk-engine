@@ -15547,6 +15547,10 @@ def c_engine_gles_state_cache():
     r"""The GLES backend's draw-state cache draws the SAME picture with fewer
     calls (todo/optimization.md step 17).
 
+    **2026-10-06: 200 -> 225 off, 34 -> 35 on, 166 -> 190 skipped** - the
+    greyscale bank's uniform (`uGrey`, ops 150/151) is one more piece of state
+    a draw sets: +25 over the 25 draws with the cache off, +1 with it on.
+
     **2026-10-01: 175 -> 200 off, 33 -> 34 on, 142 -> 166 skipped** - the
     back-face cull is one more piece of state a draw sets (`GL_CULL_FACE` and
     its face, per run of `cornerCull`): +25 over the 25 draws with the cache
@@ -15594,7 +15598,7 @@ def c_engine_gles_state_cache():
         return ("unparsed",), ("parsed",), "gles_probe's state-cache line is " \
             "missing - the tool's format changed, or no GL context"
     draws, off, on, skipped, lit, d1, d2 = (int(x) for x in m.groups())
-    return (draws, off, on, skipped, lit > 0, d1, d2), (25, 200, 34, 166, True, 0, 0), \
+    return (draws, off, on, skipped, lit > 0, d1, d2), (25, 225, 35, 190, True, 0, 0), \
         "draws; state-call groups made with the cache off, on, and skipped; a " \
         "lit picture; pixels differing cache-on and on a second frame"
 
@@ -41965,9 +41969,10 @@ def c_licence_headers():
     mislabelled = [os.path.relpath(p, ROOT) for p in vendored
                    if TAG in open(p, encoding="utf-8",
                                   errors="replace").read(600)]
-    # the census is 574 since 2026-10-06: + `engine/src/o3de/daynight.h` / `.cpp`
+    # the census is 574 since 2026-10-06: + `engine/src/o3de/daynight.h` / `.cpp`;
+    # 575 the same day: + `engine/src/o3de/greybank.h` (ops 150/151)
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (574, [], 1, []), \
+           (575, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \

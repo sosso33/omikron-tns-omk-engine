@@ -623,6 +623,22 @@ length** — `Render_FlushBuckets` **659** lines against `sub_42FF80`'s **660** 
 and they differ in one thing: bank 1 converts every vertex colour to luma grey,
 `(299 R + 587 G + 114 B) / 1000`, **17 occurrences against 0**.
 
+**The whole bank, read 2026-10-06 - and it greys the TEXTURES too.** The other
+four pointers and the two activate hooks (`funcs_42FA4D`) are bank 1's
+`C:\Omikron\Sources\libdirect3d\bw.c`, each its colour twin with the colour
+taken to the same luma: the clears (`dword_90E0AC`/`dword_90E0A0`,
+`sub_431410`/`sub_431460`) through `word_4EB8D8`, a 64K screen-format table
+`sub_431010` builds; the texture and palette uploads (`dword_90E0A8`/`A4`,
+`sub_4311C0`/`sub_430D90`); and the hook `sub_42FE80`, which `sub_42FA00` runs
+only when the bank CHANGES, greys every resident texture in place - through
+`word_50B8D8` for a 16-bit surface, the palette (`sub_42FD40`) for a
+palettised one, the shade tables (`sub_483EB0`) on the software device. Bank
+0's hook `sub_42FC10` re-uploads them all. The walk also greys the FOG colour.
+`sub_4193E0` installs bank 0 again, and both the restart (`Script_Pump` case 3)
+and `Game_LoadSave` reach it through `sub_40E260`. **Ported 2026-10-06**:
+`engine/src/o3de/greybank.h`, `verify.py: engine: grey bank`
+(`todo/drift-audit.md` S11).
+
 **The corpus says what it is for, and says it loudly.** All **14** sites of
 opcode 150 are closed by a later 151, none left open, and **74 of the 82
 instructions between them — 90% — are `camera.set`, `camera.set.wait`,

@@ -34,9 +34,9 @@ enhancement's start colour.
 
 **Open, in the order I would take them** (my ranking, the reader decides):
 
-1. **S11's op 150/151 - `render.grey.on`/`.off`**, the game's BLACK-AND-WHITE
-   cutscenes (14 sites, the Morgue, Kay'l's flat, the Bowie concert). Still
-   recorded and never drawn. Visible.
+1. ~~**S11's op 150/151**~~ - **DONE 2026-10-06**, the BLACK-AND-WHITE
+   cutscenes on every backend (`engine: grey bank`; the 3DS shaders written
+   but not built - no devkitARM on this machine). `todo/play-test.md` 33.
 2. **M5 - `object.place_at` (op 98)** queues a `PropEvent` nothing reads; a
    prop a script moves stays at its chunk placement. Gameplay-visible.
 3. **M3 - the conversation speaker.** An unresolved speaker is the street's

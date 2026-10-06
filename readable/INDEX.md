@@ -404,7 +404,7 @@ Regenerate this file with `python3 tools/index.py`.
 | `0x0042B820` | `Ui_StartOscillator` | named | 06_sys.c | 7 | name established, body still as generated |
 | `0x0042BE60` | `Music_SetVolume` | named | 07_thread.c | 1 | name established, body still as generated |
 | `0x0042EE70` | `Ambience_Load` | named | 08_wave.c | 1 | name established, body still as generated |
-| `0x0042FF80` | `sub_42FF80` | read | 08_wave.c | 0 | The SECOND bucket walk - entry 1 of the renderer vtable (off_4C4918 = { Render_FlushBuckets, sub_42FF80 }), and it is NEVER INSTALLED in the… |
+| `0x0042FF80` | `sub_42FF80` | read | 08_wave.c | 0 | The SECOND bucket walk - entry 1 of the renderer vtable (off_4C4918 = { Render_FlushBuckets, sub_42FF80 }): bank 1, the GREYSCALE bank (`bw.c`),… |
 | `0x004316C0` | `Zones_Clear` | named | 08_wave.c | 3 | name established, body still as generated |
 | `0x004317C0` | `Zone_Add` | named | 08_wave.c | 2 | name established, body still as generated |
 | `0x004345E0` | `List_PickRandomByType` | read | 09_ddraw.c | 103 | Read, not changed: the engine never asks for an animation by name - this collects every clip whose type (node+0) matches and returns a random one,… |
@@ -636,7 +636,7 @@ Nothing in the code establishes what these are for, and a wrong name is worse th
 | address | status | file | what it does |
 |---|---|---|---|
 | `0x004272B0` | read | 05_sys.c | Read, not changed: this is the behaviour selector - a 304-line switch that picks an animation for whatever the character is doing next. |
-| `0x0042FF80` | read | 08_wave.c | The SECOND bucket walk - entry 1 of the renderer vtable (off_4C4918 = { Render_FlushBuckets, sub_42FF80 }), and it is NEVER INSTALLED in the… |
+| `0x0042FF80` | read | 08_wave.c | The SECOND bucket walk - entry 1 of the renderer vtable (off_4C4918 = { Render_FlushBuckets, sub_42FF80 }): bank 1, the GREYSCALE bank (`bw.c`),… |
 | `0x00434630` | read | 09_ddraw.c | Read, not changed: a by-id lookup over the same clip list, matching the field at +4 rather than the type at +0. |
 | `0x004372D0` | clean | 10_dsound.c | Translate a compact 11-bit flag word into the engine's 32-bit node flags and either clear them on one node or apply them down a subtree. |
 | `0x00440C80` | clean | 16_o3de.c | Walk a node and its children, applying sub_4942A0 to each. |

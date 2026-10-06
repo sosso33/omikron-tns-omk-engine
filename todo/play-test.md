@@ -397,6 +397,23 @@ REST pose (or the last pose he was given) instead of his bank's first frame -
 nothing visible was found that changes (the AREA 71 mecaguards are out of
 sight before zone 1414 wakes them).
 
+## 33. THE BLACK-AND-WHITE CUTSCENES (2026-10-06, `todo/drift-audit.md` S11, ops 150/151)
+
+Fourteen scripted camera sequences now draw in GREYSCALE, as the original
+does: the 3D picture only (set, bodies, props, effects, fog and the clear
+colour); the interface and subtitles keep their colour. Where to see them in
+play: the FIRST entry into the Morgue (SCENE 9's zone 851, while variable 286
+`Première Morgue` is 0 - the two `cam Flash Plan` shots); Telis's flashback in
+Kay'l's flat (SCENE 57's zone 4128, `ZVO M012 Telis Flash Appart 1`); Anissa
+Aka's bar (SCENE 42); the Bowie concert (SCENE 60); and four AREA scripts
+(145, 156, 158, 177). Each bracket ends in colour. Look for: a shade that
+looks right against the original (the port greys through the palette - the
+original's 16-bit path differs by under a level); nothing left coloured in
+the 3D picture; the colour coming back at the bracket's end. Without a route,
+`--op-at 30:150,60:151` shows the bank alone (Kay'l's flat: `--save
+traces/save-appart.bin --area 237 --scene-chunk 57`). **Not seen on the 3DS:**
+its two shaders carry the grey, but nothing has been built or run there.
+
 ## HEADLESS PASS over 19-29 (2026-10-05)
 
 Each item driven through the viewer with its check's own command, frames

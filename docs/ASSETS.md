@@ -2071,8 +2071,10 @@ in that order. Same answer.
 > 151, and **74 of the 82 instructions between them are camera and fade
 > opcodes**, so the bank brackets a **cutscene**. The game has black-and-white
 > cutscenes, in the eight chunks above. `SCRIPT_VM.md`'s earlier guess that
-> the pointers "draw the 2D sprites" is superseded; the other four pointers
-> remain unread.
+> the pointers "draw the 2D sprites" is superseded. The other four pointers
+> and the activate hooks were read on 2026-10-06: the whole 3D picture goes
+> grey - textures, clears and fog included (`SCRIPT_VM.md` 150/151,
+> `engine/src/o3de/greybank.h`).
 >
 > **And the player confirms it** (2026-09-01): asked whether the game has
 > black-and-white cutscenes, the answer was yes. The prediction ran from the
