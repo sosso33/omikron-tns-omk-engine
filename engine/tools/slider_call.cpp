@@ -104,7 +104,7 @@ int main(int argc, char** argv) {
             const auto c = omk::planSliderCall(t, addrs.front().pos, 1);
             std::printf("call area %d lane %d route %d at %.0f %.0f %.0f "
                         "dir %.2f %.2f node %.0f\n", area, c.at.lane, c.route,
-                        c.place[0], c.place[1], c.place[2],
+                        c.body[0], c.body[1], c.body[2],
                         c.dir[0], c.dir[2], c.nodeY);
         }
     }

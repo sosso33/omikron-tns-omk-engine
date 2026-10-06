@@ -145,20 +145,36 @@ LanePoint nearestVehicleLane(const OptTrack& t, const float target[3]);
 // none of that is transcribed and this carries only what the function
 // DECIDES:
 //
-//   * the mover goes to the chosen lane's ORIGIN, set back **39 units** along
-//     the lane's own direction in x and z - the y is the origin's, untouched;
-//   * the direction is the lane's FIRST key delta, normalised;
-//   * `mover+56 = 256.0` and `mover+52 = 0`, `mover+186 = 1` (the priority
-//     the swap test compares against), and the node's flag word takes `| 8`;
+//   * the mover's CARROT (`+0`, and `+12`) goes to the chosen lane's ORIGIN
+//     and its BODY (`+36`) **39 units** behind it along the lane's own
+//     direction in x and z - the y is the origin's, untouched. (Until
+//     2026-10-06 this port put the carrot at the 39 and the body a further
+//     117 behind, the ambient spawn's `sub_453B40` set-back copied in: 156
+//     back. Drift audit B2);
+//   * the direction is the lane's FIRST key delta, normalised in 3D - but the
+//     HEADING is built flat, `sub_453330(+140, {dx, 0, dz, 0, len})`;
+//   * `mover+52 = 0` and `mover+56 = 256.0` (the body's speed and the
+//     carrot's: a journey does NOT launch at the arrival's leftover speed),
+//     `mover+186 = 1`, flags `& ~0x18 | 8`, and the route is drawn from the
+//     round-robin counter a SECOND time (`sub_452570` already advanced it);
+//   * a vehicle within the two `+60`s of the lane origin, on that lane or
+//     routed onto it, decides the rest: one on an EARLIER segment than the
+//     pickup's (`+186 <= a1[4]`) is SWAPPED in - the player's slot takes its
+//     mover where it stands - and one only routed onto the lane sets the
+//     body back by its own `+60` (horizontal unit direction). Nothing is
+//     ever killed;
 //   * the node itself sits at `y - 30.75` - the SAME hover height the ride
 //     uses (`SliderRide::kHover`), which is the third place that number
 //     turns up.
 struct SliderCall {
     LanePoint at;                    // the lane the search chose
     int   route = -1;                // the round-robin route off it
-    float place[3] = {0, 0, 0};      // where the mover is put
-    float dir[3] = {0, 0, 0};        // the lane's normalised direction
-    float nodeY = 0.0f;              // `place[1] - 30.75`, where the node sits
+    float carrot[3] = {0, 0, 0};     // mover +0: the lane's origin
+    float body[3] = {0, 0, 0};       // mover +36: 39 behind it, before any set-back
+    float dir[3] = {0, 0, 0};        // the lane's normalised direction (3D)
+    float dirH[2] = {0, 0};          // ...and its x/z unit, for the set-backs
+    float segLen = 0.0f;             // the first key's 3D length
+    float nodeY = 0.0f;              // `body[1] - 30.75`, where the node sits
     static constexpr float kSetBack = 39.0f;    // a flat 39, not the 39.370079
                                                 // that is a metre elsewhere
     static constexpr float kSpeed   = 256.0f;   // mover +56
@@ -558,6 +574,10 @@ public:
     // 6 - which `sub_456530` case 6 then finds within its 117 at once.
     bool arriveAt(const float target[3]);
     // ...and whether that journey has ARRIVED (state 6 -> 4 this tick or since).
+    // How often a call or journey SWAPPED a vehicle in, and SET BACK behind
+    // one (`sub_452CC0`'s two arms) - for `veh_probe --place`.
+    int  callSwaps() const { return callSwaps_; }
+    int  callSetBacks() const { return callSetBacks_; }
     bool journeyArrived() const { return called_ >= 0 && callRide_.state == 4 && journeyDone_; }
     // Put the called vehicle where the ride is, so it is DRAWN under him.
     void placeCalled(const float pos[3], float yawDeg);
@@ -605,9 +625,19 @@ private:
     RideMachine callRide_;
     float       callTarget_[3] = {0, 0, 0};
     bool        journeyDone_ = false;
-    void placeOnLane(int vi, const SliderCall& c);
-    // `sub_452CC0`'s take-over of the occupant: ambient vehicles on `lane` within `radius` of `place` die.
+    // `sub_452CC0`'s non-swap arm: the vehicle onto `c`'s lane, its body at
+    // `body` (the 39 set-back, or the scan's).
+    void placeOnLane(int vi, const SliderCall& c, const float body[3]);
+    // `sub_452CC0`'s 40-slot scan. -> the vehicle to SWAP in, or -1, with
+    // `body` the place for the non-swap arm. `own` is excluded; `ownRadius`
+    // is its `+60`.
+    int  scanCallLane(const SliderCall& c, int own, float ownRadius, float body[3]) const;
+    // The swap arm: the two SLOTS exchange MOVERS, each slot keeping its model.
+    void swapMovers(int a, int b);
+    // The port's own, for the cross-area `arriveAt` only (not read yet - see
+    // there): ambient vehicles on `lane` within `radius` of `place` die.
     void takeOverAt(int lane, const float place[3], float radius);
+    int  callSwaps_ = 0, callSetBacks_ = 0;    // for veh_probe --place
 
     struct ActionState {                      // one of `dword_539928`'s 48-byte records
         bool  used = false;

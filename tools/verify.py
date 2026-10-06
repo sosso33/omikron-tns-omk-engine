@@ -8860,9 +8860,58 @@ def c_engine_slider_recall():
     if not m:
         return ("no recall line",), ("a recall line",), "veh_probe --recall must report"
     dead, into, called, ok = int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(4)
-    return (dead > 0, ok, called == into), (True, "ok", True), \
+    # Since B2 (2026-10-06) a journey kills NOTHING - `sub_452CC0` swaps or
+    # sets back - so no dead slot is left for the next call to spawn into
+    # (`spawned_into -1`) and it takes a vehicle out of the full pool. The B1
+    # rule stays asserted for whenever a dead slot does sit below a live one.
+    return (dead, ok, into < 0 or called == into), (0, "ok", True), \
         "a journey killed %d vehicle(s); the next call spawned into slot %d and " \
-        "marked slot %d COMING - the same vehicle" % (dead, into, called)
+        "marked slot %d COMING" % (dead, into, called)
+
+
+def c_engine_slider_placement():
+    r"""WHERE `sub_452CC0` PUTS THE PLAYER'S SLIDER on its lane, for a call
+    and for a journey (todo/slider-drift-audit.md B2; veh_probe --place).
+
+    The CARROT (mover +0) goes to the lane ORIGIN and the BODY (+36) 39 units
+    behind it in x and z; `+52 = 0`, `+56 = 256`. Before it, a 40-slot scan:
+    a vehicle within the two `+60`s of the origin, on that lane or routed
+    onto it, on an EARLIER segment than the pickup's (`+186 <= a1[4]`) is
+    SWAPPED in where it stands; one only routed onto the lane sets the body
+    back by its own `+60`. Nothing is killed. The port put the carrot at the
+    39 and the body a further 117 behind (the ambient spawn's set-back - 156
+    back, so a call near a lane top arrived on its first tick), left the
+    arrival's leftover speed on a journey, and KILLED the ambient vehicles
+    within 400 of the place. Shown to fail on the old placement:
+    `carrot_off 39.00 body_back 156.0..156.0 speeds_ok 0/77 vanished 4`.
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s", "build/veh_probe"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "veh_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "veh_probe must build"
+    import re as _re
+    r = subprocess.run([binp, omkpaths.data_root(), "0", "--place"],
+                       capture_output=True, text=True)
+    m = _re.search(r"^place calls (\d+) journeys (\d+) placed (\d+) at39 (\d+) setbacks (\d+) "
+                   r"swaps (\d+) carrot_off ([\d.]+) body_back ([\d.]+)\.\.([\d.]+) "
+                   r"speeds_ok (\d+) vanished (-?\d+)", r.stdout, _re.M)
+    if not m:
+        return ("no place line",), ("a place line",), "veh_probe --place must report"
+    calls, journeys, placed, at39, setbacks, swaps = (int(m.group(i)) for i in range(1, 7))
+    carrot, bmin = float(m.group(7)), float(m.group(8))
+    speeds, vanished = int(m.group(10)), int(m.group(11))
+    # every placement either at the 39 or set back; the set-back only ever
+    # moves the body FURTHER back
+    return ((calls, journeys) >= (40, 40), carrot, at39 + setbacks == placed,
+            bmin >= 38.5, speeds == placed, swaps + placed == calls + journeys, vanished), \
+           (True, 0.0, True, True, True, True, 0), \
+        "%d calls and %d journeys in Anekbah: %d placed (%d at the 39, %d set back), " \
+        "%d swapped in; carrot %.2f off the origin, body %.1f..%s back, speeds reset " \
+        "%d/%d, %d vehicles vanished" % (calls, journeys, placed, at39, setbacks, swaps,
+                                          carrot, bmin, m.group(9), speeds, placed, vanished)
 
 
 def c_engine_slider_manual():
@@ -9304,14 +9353,24 @@ def c_engine_slider_arrives():
     # yaw it was right along +-X and reflected along +-Z, so the lines with a
     # large z heading are the ones that discriminate.
     import re as _re
-    cams = [(float(b), float(c), float(hz)) for b, c, hz in _re.findall(
+    cams = [(float(b), float(c), float(hx), float(hz)) for b, c, hx, hz in _re.findall(
         r"slider: come camera frame \d+ - the eye (-?\d+) behind, (-?\d+) across, "
-        r"heading -?[\d.]+ (-?[\d.]+)", o)]
-    turned = sum(1 for _, _, hz in cams if abs(hz) > 0.5)
+        r"heading (-?[\d.]+) (-?[\d.]+)", o)]
+    turned = sum(1 for _, _, _, hz in cams if abs(hz) > 0.5)
     # ...BEHIND it, not at 276 exactly: since B12 (2026-10-06) the eye CHASES
     # its place at dt/8 and the yaw at dt/8, as `sub_415E60` does - so at
-    # speed it trails (~412) and swings wide through a turn before catching up
-    behind = all(b >= 200 and abs(c) <= 260 for b, c, _ in cams)
+    # speed it trails (~412) and swings wide through a turn before catching
+    # up. So the A2 property is asserted where the heading has SETTLED (the
+    # same as at the previous sample): there it sits squarely behind. Just
+    # after a turn the eye is still on the old heading and may be as far
+    # across as it is away (412 sin 56 = 341 after the street's corner);
+    # which sample lands on the transient depends on the call's timing (B2
+    # moved it, 2026-10-06), so a transient is bounded only by the distance.
+    settled = [(b, c) for (b, c, hx, hz), (_, _, px, pz) in zip(cams[1:], cams)
+               if hx * px + hz * pz > 0.98]
+    behind = all(b >= 200 for b, _, _, _ in cams) and \
+        all(abs(c) <= 430 for _, c, _, _ in cams) and \
+        len(settled) >= 4 and all(abs(c) <= 60 for _, c in settled)
     # B12, the stutter: the eye's largest single-frame step while the
     # slider comes. Rigid, a lane change swung it 112-194 units in one frame
     # against ~20 between; chased, it stays near the slider's own pace
@@ -9328,13 +9387,13 @@ def c_engine_slider_arrives():
     walked = float(m_w.group(1)) if m_w else 1e9
     return (called, line, gone, len(cams) >= 5, turned >= 3, behind,
             0 <= i_hold < i_come, walked < 5.0, step < 45.0), \
-           (True, "slider: OPEN at 1304 6 -6651 - walk to it and press the "
+           (True, "slider: OPEN at 1274 6 -6644 - walk to it and press the "
                   "action button", True, True, True, True, True, True, True), \
         "confirming a destination ROW on the sneak's slider page calls one " \
         "to where the player stands; it spawns at the top of lane 237, drives twenty-one " \
-        "segments down the road and STOPS OPEN with its BODY at 1304 6 -6651 - " \
-        "117 units behind the lane carrot at 1448 -6540, which is kCarrotBehind, " \
-        "and the body is what sub_438310 reads and what the gate measures from " \
+        "segments down the road and STOPS OPEN with its BODY at 1274 6 -6644 " \
+        "(1304 -6651 until B2 put the call's body 39 behind its carrot rather " \
+        "than 156) - the body is what sub_438310 reads and what the gate measures from " \
         "(2026-09-08: it had reported the carrot) - within the " \
         "117 units of the pickup point that `sub_456530`'s state 2 tests " \
         "against - and that point is the nearest LANE point, not the player, " \
@@ -9788,10 +9847,10 @@ def c_engine_slider_journey():
     import re as _re
     _sld = [float(x) for x in _re.findall(r"DBG ply f\d+ H_SLD(?:IN|OUT)\s.*?rootDrop\s+([+-][\d.]+)", o)]
     return ("chosen - a slider is COMING to 1804 0 -6890" in o,
-            "slider: OPEN at 1304 6 -6651" in o,
+            "slider: OPEN at 1274 6 -6644" in o,          # 1304 -6651 before B2
             "on the right side - snapped to" in o,
             "H_SLDIN plays" in o,
-            "MDSLIDIN: aboard at 1304 6 -6651" in o,
+            "MDSLIDIN: aboard at 1274 6 -6644" in o,
             o.count("MDSLIDIN: aboard") == 1,
             "a destination was remembered (row 0), the journey starts" in o,
             "JOURNEY to 'Anekbah - Appartement de Kay'l' - state 6" in o,
@@ -44567,6 +44626,7 @@ CHECKS = [
     ("engine: slider runover", c_engine_slider_runover, "todo/slider-drift-audit A8"),
     ("engine: slider manual", c_engine_slider_manual, "todo/slider-drift-audit M2"),
     ("engine: slider recall", c_engine_slider_recall, "todo/slider-drift-audit B1"),
+    ("engine: slider placement", c_engine_slider_placement, "todo/slider-drift-audit B2"),
     ("engine: slider journey", c_engine_slider_journey, "todo/slider"),
     ("ui open answer",     c_ui_open_answer,    "SCRIPT_VM 70"),
     ("ui confirm gate",    c_ui_confirm_gate,   "UI"),

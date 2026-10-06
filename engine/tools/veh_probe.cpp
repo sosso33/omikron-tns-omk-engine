@@ -153,12 +153,14 @@ int main(int argc, char** argv) {
     const std::string root = argv[1];
     const int area = std::atoi(argv[2]);
     int frames = 600;
-    bool list = false, hasPlayer = false, recall = false, runover = false, defer = false;
+    bool list = false, hasPlayer = false, recall = false, runover = false, defer = false,
+         place = false;
     float player[3] = {0, 0, 0};
     for (int i = 3; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--vehicles") list = true;
         else if (a == "--recall") recall = true;
+        else if (a == "--place") place = true;
         else if (a == "--runover") runover = true;
         else if (a == "--defer") defer = true;
         else if (a == "--player" && i + 1 < argc) {
@@ -205,7 +207,7 @@ int main(int argc, char** argv) {
     }
     if (hasPlayer) pool.setPlayer(player, true);
 
-    // `--recall`: THE CALL AFTER A JOURNEY. A journey's `takeOverAt` kills
+    // `--recall`: THE CALL AFTER A JOURNEY. A journey's `takeOverAt` killed (B2 ended that: 0)
     // the ambient vehicles in the way, which leaves DEAD slots in the pool;
     // the next call's `spawnVehicle` fills the FIRST dead slot, and the call
     // must then be using THAT vehicle (`sub_452570` hands `sub_452CC0` the
@@ -224,6 +226,81 @@ int main(int argc, char** argv) {
     // slider stops (mode 1): how many arrivals were put off because the mover
     // was on a route connector (0x10 -> 0x400), and how many stopped ON one
     // anyway - which `sub_456530` cases 2/6 never let happen.
+    // `--place`: WHERE `sub_452CC0` PUTS THE PLAYER'S SLIDER (drift audit B2).
+    // A call to each vehicle's own place on a fresh pool, then from aboard a
+    // journey to each of them in turn on one pool. For every placement that
+    // did not SWAP a vehicle in: the carrot's distance from the lane origin
+    // (0), the body's distance behind it (39, or the scan's set-back), and
+    // the two speeds (+52 0, +56 256). Over everything: how many vehicles
+    // VANISHED - `sub_452CC0` kills none.
+    if (place) {
+        std::vector<std::array<float, 3>> targets;
+        for (const auto& v : pool.vehicles())
+            if (v.live && v.mover >= 0) {
+                const auto& m = pool.movers()[static_cast<std::size_t>(v.mover)];
+                targets.push_back({m.pos[0], m.pos[1], m.pos[2]});
+            }
+        int placed = 0, at39 = 0, swaps = 0, setbacks = 0, speedOk = 0, vanished = 0;
+        float carrotOff = 0.0f, backMin = 1e9f, backMax = 0.0f;
+        auto measure = [&](const omk::Sliders& p, int swapsBefore, int sbBefore) {
+            const auto& v = p.vehicles()[static_cast<std::size_t>(p.calledVehicle())];
+            const auto& m = p.movers()[static_cast<std::size_t>(v.mover)];
+            if (m.baseSpeed == 0.0f && m.speed == 256.0f) ++speedOk;
+            if (p.callSwaps() > swapsBefore) { ++swaps; return; }
+            ++placed;
+            const auto& L = track.lanes[static_cast<std::size_t>(m.lane)];
+            const float cx = m.pos[0] - L.origin[0], cy = m.pos[1] - L.origin[1],
+                        cz = m.pos[2] - L.origin[2];
+            carrotOff = std::max(carrotOff, std::sqrt(cx * cx + cy * cy + cz * cz));
+            const float bx = m.body[0] - L.origin[0], bz = m.body[2] - L.origin[2];
+            const float back = std::sqrt(bx * bx + bz * bz);
+            backMin = std::min(backMin, back);
+            backMax = std::max(backMax, back);
+            if (p.callSetBacks() > sbBefore) ++setbacks;
+            else if (std::fabs(back - 39.0f) < 0.5f) ++at39;
+        };
+        int calls = 0;
+        for (const auto& t : targets) {
+            omk::Sliders p2;
+            p2.load(track, clips, menMask, womenMask, omk::kDefaultStreetActivity, 1u,
+                    static_cast<std::uint32_t>(sliMask), static_cast<std::uint32_t>(motoMask));
+            for (const std::string& name : {std::string("sli_fn"), std::string("moto")}) {
+                const auto d = fs.read("MESHES/PERSOS/" + name + ".3DO");
+                if (const auto h = omk::readHeader(d)) {
+                    const auto meshes = omk::readMeshes(d, *h);
+                    if (!meshes.empty()) p2.setVehicleModelRadius(name, meshes.front().radius);
+                }
+            }
+            for (int f = 0; f < 60; ++f) p2.tick(1.0f);
+            const int before = p2.liveVehicles();
+            const int sw = p2.callSwaps(), sb = p2.callSetBacks();
+            if (!p2.callSlider(t.data())) continue;
+            ++calls;
+            measure(p2, sw, sb);
+            vanished += before - p2.liveVehicles();
+        }
+        // the journeys, from aboard, on the probe's own pool
+        const float home[3] = {1804.0f, 0.0f, -6890.0f};
+        int journeys = 0;
+        if (pool.callSlider(home)) {
+            pool.mountCalled();
+            for (const auto& t : targets) {
+                for (int f = 0; f < 30; ++f) pool.tick(1.0f);
+                // leftover speed to reset: what the arrival left on the body
+                const int before = pool.liveVehicles();
+                const int sw = pool.callSwaps(), sb = pool.callSetBacks();
+                if (!pool.sendCalledTo(t.data())) continue;
+                ++journeys;
+                measure(pool, sw, sb);
+                vanished += before - pool.liveVehicles();
+            }
+        }
+        std::printf("place calls %d journeys %d placed %d at39 %d setbacks %d swaps %d "
+                    "carrot_off %.2f body_back %.1f..%.1f speeds_ok %d vanished %d\n",
+                    calls, journeys, placed, at39, setbacks, swaps, carrotOff,
+                    placed ? backMin : 0.0f, backMax, speedOk, vanished);
+        return 0;
+    }
     if (defer) {
         // ...each vehicle lane's END point: there the 117 units reach past
         // the lane into the junction that follows it

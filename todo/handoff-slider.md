@@ -35,6 +35,7 @@ commit, then restored with `touch` + rebuild). The commits, in order:
 | PLAY REPORT 4: a call arriving on its first tick left him held under the bands; a reused slot drew the slider as a moto | `49dee1a` |
 | PLAY REPORT 2: Kay'l too low in the seat while the door clips play | `307e537` |
 | PLAY REPORT 1 / B12: the slider cameras chase (dt/8), no more stutter | `292542e` |
+| B2 `sub_452CC0` transcribed: carrot at the origin, body 39 back (was 156), speeds reset, the scan swaps or sets back and never kills | `git log --grep 'B2)'` |
 
 The checks: `python3 tools/verify.py --jobs 4 --only "engine: slider"` — 17
 checks, all green at the last run, plus `engine: city return`, `engine: road
@@ -75,10 +76,13 @@ was reached.**
 - **M3** Manuelle's collisions with vehicles and road-keeping (`sub_458880`,
   `sub_458C70`, `sub_459BD0` — the last unread). Large.
 - **A9** no vehicle sound (`sub_456B40`, `sliderm01.wav` looped within 585).
-- **B2** the call's lane placement (the ambient 117 copied: body 156 back
-  instead of 39; speeds not reset) and `takeOverAt` KILLING traffic where
-  `sub_452CC0` swaps or sets back. This 117 is why calls near a lane top arrive
-  on their first tick.
+- ~~**B2**~~ DONE 2026-10-06 (`engine: slider placement`). Left from it:
+  the CROSS-AREA arrival (`arriveAt`) still puts the slider at the lane
+  POINT and kills what stands there (`takeOverAt`) - its original path
+  (`sub_4541E0` / `sub_4544B0(0)` after the load) is unread; and a FULL pool
+  with nothing in the way relinks an ambient vehicle, where the engine uses
+  its reserved slot-0 mover. NOT PLAYED: a call now stops 30 units short of
+  where it did (1274 -6644 against 1304 -6651 on the checks' route).
 - **B12 rest**: the wall pass (`sub_417070`) for the slider modes; the
   Manuelle ride camera is still rigid (its heading changes smoothly, so less
   visible).

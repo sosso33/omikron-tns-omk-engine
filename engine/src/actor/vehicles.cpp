@@ -554,12 +554,19 @@ SliderCall planSliderCall(const OptTrack& t, const float target[3],
                                 K.delta[2] * K.delta[2]);
     if (len > 0.0f)
         for (int k = 0; k < 3; ++k) c.dir[k] = K.delta[k] / len;
-    // The set-back is in x and z only: `u32(v22, 40) = v61[6]` leaves the
+    c.segLen = len;
+    // The scan's set-backs use the x/z unit instead (`v71` is the length over
+    // +4 and +12 alone).
+    const float lenH = std::sqrt(K.delta[0] * K.delta[0] + K.delta[2] * K.delta[2]);
+    if (lenH > 0.0f) { c.dirH[0] = K.delta[0] / lenH; c.dirH[1] = K.delta[2] / lenH; }
+    // The CARROT at the origin (`u32(v22, 0..8) = v61[5..7]`) and the BODY
+    // 39 behind it in x and z only: `u32(v22, 40) = v61[6]` leaves the
     // origin's y exactly as it is.
-    c.place[0] = L.origin[0] - c.dir[0] * SliderCall::kSetBack;
-    c.place[1] = L.origin[1];
-    c.place[2] = L.origin[2] - c.dir[2] * SliderCall::kSetBack;
-    c.nodeY = c.place[1] - SliderRide::kHover;
+    for (int k = 0; k < 3; ++k) c.carrot[k] = L.origin[k];
+    c.body[0] = L.origin[0] - c.dir[0] * SliderCall::kSetBack;
+    c.body[1] = L.origin[1];
+    c.body[2] = L.origin[2] - c.dir[2] * SliderCall::kSetBack;
+    c.nodeY = c.body[1] - SliderRide::kHover;
     return c;
 }
 
@@ -636,7 +643,7 @@ bool Sliders::arriveAt(const float target[3]) {
     const SliderCall c = planSliderCall(track_, target, counter_);
     if (!c.ok()) return false;
     // `sub_452CC0` puts the vehicle AT the lane point the search chose - not
-    // `c.place`, the set-back at the lane's origin that a called slider
+    // `c.carrot`, the lane's origin that a called slider
     // drives down from.
     const float yaw = static_cast<float>(std::atan2(c.dir[0], c.dir[2]) * 57.29577951308232);
     takeOverAt(c.at.lane, c.at.at, 400.0f);
@@ -655,11 +662,38 @@ bool Sliders::callSlider(const float target[3]) {
     const SliderCall c = planSliderCall(track_, target, counter_ + 1);
     // No vehicle lanes at all is LAHOREY, and the engine fails there too.
     if (!c.ok()) return false;
-    const OptLane& L = track_.lanes[static_cast<std::size_t>(c.at.lane)];
-    const OptKey& K = track_.keys[static_cast<std::size_t>(L.firstKey)];
-    const float segLen = std::sqrt(K.delta[0] * K.delta[0] +
-                                   K.delta[1] * K.delta[1] +
-                                   K.delta[2] * K.delta[2]);
+    // `sub_452570`'s own round-robin draw, which `sub_452CC0` never reads -
+    // it draws again - but which advances the counter all the same.
+    counter_ = (counter_ + 1) & 0x7FFFFFFFu;
+    // `sub_452CC0`'s SCAN first. The engine runs it with the reserved slot
+    // already chosen; this pool has no reserved mover until the call spawns
+    // one, so it scans with none excluded and the reserved slider's `+60`
+    // (twice row 0's radius, as `sub_4544B0` stores it). A vehicle in the way
+    // on an earlier segment than the pickup is TAKEN where it stands - its
+    // mover, speeds and route - and rebound to row 0: the engine's swap gives
+    // the reserved mover the blocker's model in exchange, and here there is
+    // no reserved mover to give it.
+    float body[3];
+    {
+        const auto& sliTab = vehModelTable(1);
+        float ownR = 40.0f;                              // the crowd's 20, doubled
+        if (!sliTab.empty()) {
+            const auto r = vehRadius_.find(sliTab[0]);
+            if (r != vehRadius_.end()) ownR = r->second + r->second;
+        }
+        const int blocker = scanCallLane(c, -1, ownR, body);
+        if (blocker >= 0) {
+            Vehicle& bv = vehicles_[static_cast<std::size_t>(blocker)];
+            if (!sliTab.empty()) {
+                bv.model = sliTab[0];
+                bv.kind = 1;
+                movers_[static_cast<std::size_t>(bv.mover)].model = sliTab[0];
+            }
+            ++callSwaps_;
+            called_ = blocker;
+        }
+    }
+    const float segLen = c.segLen;
     // A FREE SLOT FIRST, and an AMBIENT ONE when the pool is full - which it
     // is in a city, because the spawner fills all 40. The engine has the same
     // problem and answers it twice over: it reserves slot 0 for the player
@@ -669,10 +703,17 @@ bool Sliders::callSlider(const float target[3]) {
     // come to the same thing - a call always finds a vehicle where there are
     // roads - and taking an ambient one is the second of them.
     const int before = liveVehicles();
+    // The reserved slot exists from `Slider_Init` in the engine; spawning it
+    // here must not take a draw from the counter the engine never took.
+    const std::uint32_t keepCounter = counter_;
     forCall_ = true;
-    const bool spawned = spawnVehicle(c.at.lane, c.place, c.dir, segLen, 0);
+    const bool spawned = called_ < 0 &&
+                         spawnVehicle(c.at.lane, c.carrot, c.dir, segLen, 0);
     forCall_ = false;
-    if (spawned &&
+    counter_ = keepCounter;
+    if (called_ >= 0) {
+        // swapped in above - nothing to place
+    } else if (spawned &&
         liveVehicles() != before) {
         // THE SLOT THE SPAWN FILLED - `sub_452570` hands `sub_452CC0` the
         // very slot it took. This picked "the newest live slot", the
@@ -682,11 +723,12 @@ bool Sliders::callSlider(const float target[3]) {
         // COMING and the camera followed it (`veh_probe --recall`: spawned
         // into 5, called 39).
         called_ = lastSpawnSlot_;
+        placeOnLane(called_, c, body);
     } else {
         for (int i = 0; i < static_cast<int>(vehicles_.size()); ++i) {
             Vehicle& av = vehicles_[static_cast<std::size_t>(i)];
             if (!av.live || av.state != 0 || av.reserved || av.mover < 0) continue;
-            placeOnLane(i, c);
+            placeOnLane(i, c, body);
             // `sub_452CC0` takes the occupant's SLOT and REBINDS ITS MODEL to
             // row 0 (`sub_437F20(v7 + 20, dword_538E30)`): the one in the way
             // becomes the player's slider, body included. Relinked as it was,
@@ -709,6 +751,8 @@ bool Sliders::callSlider(const float target[3]) {
     Vehicle& v = vehicles_[static_cast<std::size_t>(called_)];
     v.reserved = true;                          // `slot[+22] = 1`
     v.state = 2;                                // `u32(slot, 8) = 2` - COMING
+    // `u32(u32(v28, 0), 56) = 256.0` - after either arm, the swap's too
+    if (v.mover >= 0) movers_[static_cast<std::size_t>(v.mover)].speed = SliderCall::kSpeed;
     callRide_ = RideMachine{};
     callRide_.state = 2;
     journeyDone_ = false;
@@ -727,43 +771,104 @@ bool Sliders::callSlider(const float target[3]) {
 // `sub_452CC0`'s relink, in this pool's terms: off whatever lane the vehicle
 // was on, onto the one the call chose, at the same place the spawner would
 // have put it.
-void Sliders::placeOnLane(int vi, const SliderCall& c) {
+void Sliders::placeOnLane(int vi, const SliderCall& c, const float body[3]) {
     Vehicle& av = vehicles_[static_cast<std::size_t>(vi)];
     if (!av.live || av.mover < 0) return;
-    const OptLane& L = track_.lanes[static_cast<std::size_t>(c.at.lane)];
-    const OptKey& K = track_.keys[static_cast<std::size_t>(L.firstKey)];
-    const float segLen = std::sqrt(K.delta[0] * K.delta[0] + K.delta[1] * K.delta[1] +
-                                   K.delta[2] * K.delta[2]);
     removeFromLists(av.mover);
     Pedestrian& m = movers_[static_cast<std::size_t>(av.mover)];
     for (int k = 0; k < 3; ++k) {
-        m.pos[k] = c.place[k];
-        m.prev[k] = c.place[k];
-        m.dir[k] = c.dir[k];
+        m.pos[k] = c.carrot[k];                     // +0
+        m.prev[k] = c.carrot[k];                    // +12
+        m.dir[k] = c.dir[k];                        // +24
+        m.body[k] = body[k];                        // +36
     }
-    setHeading(m, c.dir[0], c.dir[1], c.dir[2]);
-    m.body[0] = c.place[0] - c.dir[0] * kCarrotBehind;
-    m.body[1] = c.place[1];
-    m.body[2] = c.place[2] - c.dir[2] * kCarrotBehind;
-    m.remaining = segLen * 256.0f;
-    m.seg = 1;
-    m.lane = c.at.lane;
-    m.route = c.route;
-    m.flags = 0x8;
+    // `sub_453330(+140, {dx, 0, dz, 0, len})` - flat, where the ambient
+    // spawn's `sub_4427D0` takes the lane's pitch
+    setHeading(m, c.dir[0], 0.0f, c.dir[2]);
+    m.remaining = c.segLen * 256.0f;               // +48
+    m.baseSpeed = 0.0f;                            // +52 = 0
+    m.speed = SliderCall::kSpeed;                  // +56 = 256.0
+    m.seg = 1;                                     // +186
+    m.lane = c.at.lane;                            // +72
+    // `+76`: the round-robin a second time, from `sub_452CC0`'s own draw
+    counter_ = (counter_ + 1) & 0x7FFFFFFFu;
+    m.route = laneRoute(track_, c.at.lane, counter_);
+    m.flags = (m.flags & ~0x18u) | 0x8u;           // `&= ~0x18`, then `|= 8`
     listFor(c.at.lane, 1).insert(listFor(c.at.lane, 1).begin(), av.mover);
+}
+
+// `sub_452CC0`'s scan over the 40 slots, transcribed: a vehicle whose BODY
+// is within the two `+60`s of the lane ORIGIN, and which is on that lane
+// (`+72`) or routed onto it (the route's `+4`), is either the one to swap
+// in - on an earlier segment than the pickup's, `+186 <= a1[4]` - or, when
+// it is only routed there, a reason to set the body back by its own `+60`
+// along the lane's x/z unit. The set-backs SUM, and REPLACE the 39: the body
+// goes to `origin - sum`, the carrot stays at the origin.
+int Sliders::scanCallLane(const SliderCall& c, int own, float ownRadius,
+                          float body[3]) const {
+    for (int k = 0; k < 3; ++k) body[k] = c.body[k];
+    const OptLane& L = track_.lanes[static_cast<std::size_t>(c.at.lane)];
+    float bx = L.origin[0], bz = L.origin[2];
+    bool setBack = false;
+    for (int i = 0; i < static_cast<int>(vehicles_.size()); ++i) {
+        if (i == own) continue;
+        const Vehicle& av = vehicles_[static_cast<std::size_t>(i)];
+        if (!av.live || av.mover < 0) continue;
+        const Pedestrian& m = movers_[static_cast<std::size_t>(av.mover)];
+        const float dx = m.body[0] - L.origin[0], dy = m.body[1] - L.origin[1],
+                    dz = m.body[2] - L.origin[2];
+        if (ownRadius + m.radius < std::sqrt(dx * dx + dy * dy + dz * dz)) continue;
+        const bool routedOnto = m.route >= 0 &&
+            static_cast<std::size_t>(m.route) < track_.routes.size() &&
+            track_.routes[static_cast<std::size_t>(m.route)].dest == c.at.lane;
+        if (m.lane != c.at.lane && !routedOnto) continue;
+        if (m.seg <= c.at.key) return i;
+        if (routedOnto) {
+            bx -= m.radius * c.dirH[0];
+            bz -= m.radius * c.dirH[1];
+            setBack = true;
+        }
+    }
+    if (setBack) {
+        body[0] = bx;
+        body[2] = bz;
+        ++const_cast<Sliders*>(this)->callSetBacks_;
+    }
+    return -1;
+}
+
+// The swap arm: `dword_8F5E3C[idx]` and the player's slot exchange their
+// MOVER pointers, and the models are rebound so each SLOT keeps its own -
+// the vehicle in the way becomes the player's slider where it stands, its
+// speeds and route untouched, and the player's former mover goes on as
+// traffic under the other slot's model. The mover's `+60` is the mover's
+// and is not recomputed.
+void Sliders::swapMovers(int a, int b) {
+    Vehicle& va = vehicles_[static_cast<std::size_t>(a)];
+    Vehicle& vb = vehicles_[static_cast<std::size_t>(b)];
+    std::swap(va.mover, vb.mover);
+    if (va.mover >= 0) {
+        Pedestrian& m = movers_[static_cast<std::size_t>(va.mover)];
+        m.vehicle = a; m.model = va.model;
+    }
+    if (vb.mover >= 0) {
+        Pedestrian& m = movers_[static_cast<std::size_t>(vb.mover)];
+        m.vehicle = b; m.model = vb.model;
+    }
 }
 
 // `sub_452570` with `dword_8F5E44` already set: the same lane search, and
 // then `u32(dword_8F5E44, 8) = 6` instead of 2 - FETCHING. The vehicle goes
 // to the lane nearest the destination and `sub_456530`'s state 6 drives it
 // in; the rider is on it the whole way (the caller seats him each frame).
-// `sub_452CC0`: the vehicle already ON the lane point the search chose does
-// not get a second vehicle put on top of it - its slot is TAKEN OVER, the
-// record copied into the static player's slot and its model rebound ("the
-// one in the way becomes the player's slider"). This port relinks the called
-// vehicle there instead, so the occupant has to go, or two bodies stand in
-// one place and their coincident faces flicker - which a reader saw at the
-// destination. Ambient vehicles within `radius` of the place, same lane, die.
+// THE PORT'S OWN, and now only for `arriveAt` - the cross-area arrival, whose
+// original path (`sub_4541E0` / `sub_4544B0(0)` after the load) is not read
+// yet. It puts the called vehicle at the lane POINT, so the occupant there
+// has to go or two bodies stand in one place and their coincident faces
+// flicker - which a reader saw at the destination. Ambient vehicles within
+// `radius` of the place, same lane, die. The call and the same-area journey
+// no longer use it: `sub_452CC0` never kills (drift audit B2) - it swaps or
+// sets back, `scanCallLane`.
 void Sliders::takeOverAt(int lane, const float place[3], float radius) {
     for (int i = 0; i < static_cast<int>(vehicles_.size()); ++i) {
         if (i == called_) continue;
@@ -783,8 +888,21 @@ bool Sliders::sendCalledTo(const float target[3]) {
     if (called_ < 0 || !track_.valid) return false;
     const SliderCall c = planSliderCall(track_, target, counter_ + 1);
     if (!c.ok()) return false;
-    takeOverAt(c.at.lane, c.place, 400.0f);
-    placeOnLane(called_, c);
+    counter_ = (counter_ + 1) & 0x7FFFFFFFu;        // `sub_452570`'s draw
+    float body[3];
+    const int own = vehicles_[static_cast<std::size_t>(called_)].mover;
+    const float ownR = own >= 0 ? movers_[static_cast<std::size_t>(own)].radius : 40.0f;
+    const int blocker = scanCallLane(c, called_, ownR, body);
+    if (blocker >= 0) {
+        swapMovers(called_, blocker);
+        ++callSwaps_;
+    } else {
+        placeOnLane(called_, c, body);
+    }
+    {
+        Vehicle& cv = vehicles_[static_cast<std::size_t>(called_)];
+        if (cv.mover >= 0) movers_[static_cast<std::size_t>(cv.mover)].speed = SliderCall::kSpeed;
+    }
     vehicles_[static_cast<std::size_t>(called_)].state = 6;
     callRide_.state = 6;
     journeyDone_ = false;

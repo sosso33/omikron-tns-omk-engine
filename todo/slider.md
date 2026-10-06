@@ -352,6 +352,29 @@ Each ends in a commit and a report.
    was in the way BECOMES the player's slider. Cheap, and not what a reader
    would guess.
 
+   **Transcribed 2026-10-06 (drift audit B2)**, because the port's stand-in
+   got three things wrong that a player sees: it put the CARROT at the 39
+   and the body a further 117 behind (the ambient spawn's `sub_453B40`
+   set-back - 156 back, so a call near a lane top arrived on its first
+   tick), it left a journey's slider at the arrival's leftover speed, and it
+   KILLED every ambient vehicle within 400 units of the place, so traffic
+   vanished. Read whole now: the carrot is the ORIGIN, the body 39 behind it,
+   `+52 = 0` / `+56 = 256` (and `sub_452570` sets `+56` again after either
+   arm), the heading built FLAT (`sub_453330(+140, {dx, 0, dz, 0, len})`),
+   flags `& ~0x18 | 8`, and the route drawn from the counter a second time.
+   The SCAN before it, over all 40 slots but the player's: a vehicle whose
+   body is within the two `+60`s of the lane ORIGIN and which is on that lane
+   (`+72`) or routed onto it (the route's `+4`) is SWAPPED in when it is on an
+   earlier segment than the pickup (`+186 <= a1[4]`, `a1[4]` the 0-based key
+   the search found) - the slots exchange MOVERS and keep their models, so it
+   becomes the player's slider WHERE IT STANDS with its speeds and route -
+   and one only routed onto the lane sets the body back by its own `+60` along
+   the x/z unit (the set-backs sum and REPLACE the 39). Nothing is ever
+   killed. In Anekbah, 40 calls and 40 journeys: 75 placed (72 at the 39, 3
+   set back), 5 swapped in, 0 vanished (`veh_probe --place`, `verify.py:
+   engine: slider placement`). `takeOverAt` stays for the CROSS-AREA arrival
+   only, whose original path is not read.
+
 6. **THE RIDE STATE MACHINE** — `sub_456530`'s switch on the slot's `+8`,
    ported and driven. — **DONE 2026-09-07**, `verify.py: engine: slider call`
    extended and shown to fail by doubling the arrival radius.
@@ -653,6 +676,7 @@ What is still not there, so the labelling is not mistaken for done:
   the camera cut, *not every time*; unfound. State 2's `+180 & 0x10` /
   `0x400` pair is the right shape and nothing read ties it to an editing;
 * **the 600-frame idle** (state 1) is in the machine and not driven;
-* the engine's **swap** of an occupying vehicle (`sub_452CC0`) — this port
-  relinks an ambient one instead; same effect, one of the engine's two
-  mechanisms.
+* ~~the engine's **swap** of an occupying vehicle (`sub_452CC0`)~~ —
+  transcribed 2026-10-06 (step 5's B2 note); the port's relink of an ambient
+  vehicle survives only for a FULL pool with nothing in the way, where the
+  engine would use its reserved slot-0 mover.
