@@ -617,6 +617,10 @@ struct PlayState {
     omk::Surface fb{};
     long n{};
     long slidOutAt{-1};        // the frame MDSLIDOU last fired, for the release line
+    // the sneak's echo-bar message, oscillator 0's 5000 ms (`sub_42B820(0,
+    // -1, text)` into `byte_6A4CA0`): string 42 when a slider call is refused
+    std::string sneakEcho{};
+    long sneakEchoMs{-1000000};
     std::uint32_t lastMs{};
     std::uint32_t fpsSince{};
     std::uint32_t fpsLastMs{};
@@ -720,6 +724,7 @@ struct PlayState {
     std::vector<std::string> kNoMoves{};   // was a function-local static
     bool actionFromMove{};
     bool actionTookObject{};
+    void sliderRefused();  // `sub_452570` said no: string 42 on the echo bar
     void adventureAim();   // the follow camera's offsets, first-person aim
     void adventurePathField();   // the path field
     void adventureDeath();   // the death's countdown

@@ -718,6 +718,12 @@ void PlayState::screensSneakRows() {
         // dialog"*. 76 `inventory.add` sites fill list 2 with `Memo NNN ...`
         // objects, whose record NAME is the memo's heading ("Moi :") and
         // whose description is its body.
+        // oscillator 0's message (string 42, a refused slider call) for its
+        // 5000 ms, in place of everything else on the bar - on EVERY page,
+        // the slider's (row kind 4) included
+        comp.setEchoMessage(!sneakEcho.empty() &&
+                            static_cast<long>(front.ticksMs()) - sneakEchoMs < 5000
+                            ? &sneakEcho : nullptr);
         if (rowKind == 2 && inv.openedList() != 2) inv.openList(2);
         if ((rowKind == 0 || rowKind == 2) && inv.openedList() >= 0) {
             const omk::ObjectList rowSource = rowKind == 2

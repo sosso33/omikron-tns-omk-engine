@@ -2366,7 +2366,8 @@ bool UiWalk::confirm() {
         if (it->callback == kCbSliderCall) {
             state_->pendingCallHere = true;
             log_.push_back("slider: Appel du slider - call one here, no destination");
-            panel_ = nullptr;                  // `screen[+8] = 3`
+            // `screen[+8] = 3` ONLY if `sub_452570` accepts: the caller
+            // closes it (`closeScreen`) or flashes string 42
             return true;
         }
         // "Automatique" is five instructions: `panel+24 = 2`, the rows.
@@ -2408,7 +2409,9 @@ bool UiWalk::confirm() {
             log_.push_back(state_->travelToDestination
                            ? "slider: travel to destination row " + std::to_string(row)
                            : "slider: CALL one here, remembering row " + std::to_string(row));
-            panel_ = nullptr;                  // `screen[+8] = 3`
+            // `screen[+8] = 3` on success only - a CALL is closed (or refused
+            // with string 42) by the caller; the journey closes here as before
+            if (state_->travelToDestination) panel_ = nullptr;
             return true;
         }
         // ---- THE MEMO READER, `sub_49BC60`'s KIND-2 ARM ------------------

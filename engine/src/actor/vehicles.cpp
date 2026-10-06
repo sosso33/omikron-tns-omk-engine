@@ -631,7 +631,11 @@ bool Sliders::arriveAt(const float target[3]) {
 
 bool Sliders::callSlider(const float target[3]) {
     if (!loaded_ || !track_.valid) return false;
-    if (called_ >= 0) return true;              // one call at a time
+    // ONE CALL AT A TIME, and a second one FAILS: `sub_452570` returns 0
+    // when `dword_8F5E44` is set and its mode is not 4 - so the sneak shows
+    // string 42 and stays up. This answered true, and the page closed on a
+    // call that did nothing (drift audit B5).
+    if (called_ >= 0) return false;
     const SliderCall c = planSliderCall(track_, target, counter_ + 1);
     // No vehicle lanes at all is LAHOREY, and the engine fails there too.
     if (!c.ok()) return false;

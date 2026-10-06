@@ -8942,6 +8942,52 @@ def c_engine_slider_runover():
         "run over %d time(s) with no call, %d with his slider coming, %d aboard" % (none, coming, aboard)
 
 
+def c_engine_slider_refused():
+    r"""A REFUSED SLIDER CALL keeps the sneak up and says so
+    (todo/slider-drift-audit.md B5).
+
+    0x0049D400 ("Appel du slider") and `sub_49BC60`'s kind-4 arm close the
+    page (`screen[+8] = 3`) only when `sub_452570` accepts; otherwise they
+    put screen string 42 - *"Aucun Slider disponible !"* - on oscillator 0
+    (`sub_42B820(0, -1, text)`, the echo bar's 5000 ms) and the page stays.
+    And `sub_452570` refuses a second call while one is out (`dword_8F5E44`
+    set, mode not 4). The port answered a second call TRUE and closed the
+    page on every call, so a refused one did nothing in silence.
+
+    The run calls once from the slider page's header (LEFT, ENTER), opens
+    the sneak again and calls again. Asserted from the composer's own echo
+    bar (`sf.echoBar`, arm 0 = the transient message) and the screen-close
+    lines: the first call closes the page, the second is refused and does
+    not.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr, tb = omkpaths.data_root(), os.path.join(ROOT, "tables")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(eng) or not os.path.exists(save):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return (True,) * 4, (True,) * 4, "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    call = "k15*3,0*30,k205*4,0*10,k200*4,0*10,k28*4,0*30,k203*4,0*10,k28*4"
+    r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
+                        "--save", save, "--area", "0",
+                        "--stand", "1804,0,-6890,244", "--frames", "330",
+                        "--hold", "0*40," + call + ",0*40," + call + ",0*120"],
+                       capture_output=True, text=True, env=env, errors="replace")
+    o = r.stdout
+    return ("slider: Appel du slider - a slider is COMING" in o,
+            "slider: the call is REFUSED" in o,
+            "sneak: echo bar - arm 0 'Aucun Slider disponible !'" in o,
+            o.count("screen 9 closed by the player")), \
+           (True, True, True, 1), \
+        "the first Appel du slider calls one and closes the sneak; the second, " \
+        "with that one still coming, is refused - string 42 on the echo bar, " \
+        "and the page stays up"
+
+
 def c_engine_slider_arrives():
     r"""A CALLED SLIDER ACTUALLY ARRIVES - the feature, not a harness.
 
@@ -44213,6 +44259,7 @@ CHECKS = [
     ("engine: slider ride", c_engine_slider_ride, "todo/slider"),
     ("engine: slider call", c_engine_slider_call, "todo/slider"),
     ("engine: slider arrives", c_engine_slider_arrives, "todo/slider"),
+    ("engine: slider refused", c_engine_slider_refused, "todo/slider-drift-audit B5"),
     ("engine: slider runover", c_engine_slider_runover, "todo/slider-drift-audit A8"),
     ("engine: slider manual", c_engine_slider_manual, "todo/slider-drift-audit M2"),
     ("engine: slider recall", c_engine_slider_recall, "todo/slider-drift-audit B1"),

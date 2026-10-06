@@ -1461,13 +1461,14 @@ int PlayState::modesShoot() {
             if (walk->takeCallHere()) {
                 float me[3] = {session.playerPos()[0], session.playerPos()[1],
                                session.playerPos()[2]};
-                if (session.sliders().callSlider(me))
+                if (session.sliders().callSlider(me)) {
+                    walk->closeScreen();                // `screen[+8] = 3`
                     std::printf("slider: Appel du slider - a slider is COMING "
                                 "to %.0f %.0f %.0f, no destination\n",
                                 me[0], me[1], me[2]);
-                else
-                    std::printf("slider: Appel du slider, but no vehicle lane "
-                                "here - the call FAILS (text 42)\n");
+                } else {
+                    sliderRefused();
+                }
             }
             // ---- "Manuelle" -----------------------------------------
             //
@@ -1510,19 +1511,20 @@ int PlayState::modesShoot() {
                     // aboard - which is why `MDSLIDIN` ends in
                     // `UI_OpenScreen(7, ...)`.
                     const auto* d = known[static_cast<std::size_t>(row)];
-                    calledDestination = row;
                     float me[3] = {session.playerPos()[0], session.playerPos()[1],
                                    session.playerPos()[2]};
-                    if (session.sliders().callSlider(me))
+                    if (session.sliders().callSlider(me)) {
+                        // `dword_6A17CC = tag` - written only when the call
+                        // is accepted (`sub_49BC60`, `loc_49BCFA`)
+                        calledDestination = row;
+                        walk->closeScreen();            // `screen[+8] = 3`
                         std::printf("slider: '%s' chosen - a slider is COMING "
                                     "to %.0f %.0f %.0f. Wait for it, then walk "
                                     "to it and press the action button\n",
                                     d->name.c_str(), me[0], me[1], me[2]);
-                    else
-                        std::printf("slider: '%s' chosen, but there is no "
-                                    "vehicle lane here - the call FAILS, which "
-                                    "is what the engine does too (text 42)\n",
-                                    d->name.c_str());
+                    } else {
+                        sliderRefused();
+                    }
                 } else if (boarded && known[static_cast<std::size_t>(row)]->area
                                        == session.residentSlot(session.activeSlot()).area) {
                     // ...the RESIDENT area, not `state.currentArea()`: the
@@ -1958,4 +1960,17 @@ int PlayState::modesQuitLoad() {
         done = true;
     } while (false);
     return done ? -1 : -2;
+}
+
+// `sub_452570` refused the call (0x0049D400's `loc_49D44C`, `sub_49BC60`'s
+// `loc_49BD23`): `Ui_ScreenString(screen, 42)` - "Aucun Slider disponible !"
+// - started on oscillator 0 (`sub_42B820(0, -1, text)`, 5000 ms), and the page
+// stays up. The port closed the page and said nothing (drift audit B5).
+void PlayState::sliderRefused() {
+    const auto& fs = *fs_;
+    static const auto sneakText = omk::iamStrings(fs, "IAM/Sneak");
+    sneakEcho = sneakText.size() > 42 ? sneakText[42] : std::string();
+    sneakEchoMs = static_cast<long>(front.ticksMs());
+    std::printf("slider: the call is REFUSED (sub_452570 -> 0) - the page stays "
+                "up and flashes string 42 '%s'\n", sneakEcho.c_str());
 }

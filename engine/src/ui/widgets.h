@@ -988,6 +988,11 @@ public:
                                   panel_ = nullptr; }
     bool takeManual()   { const bool v = state_->pendingManual;
                           state_->pendingManual = false; return v; }
+    // `screen[+8] = 3`: the page closes. A slider CALL closes it only once
+    // `sub_452570` has accepted (0x0049D400, `sub_49BC60`'s kind-4 arm); on a
+    // refusal the page stays up and flashes screen string 42 - so the walk
+    // leaves the close to the caller, who knows the answer.
+    void closeScreen() { panel_ = nullptr; }
     // The shop's pending purchase or sale - kind 0 buy, 1 sell - and the row
     // it names. Reading it CLEARS it, as `takeVerb` does. -> false when none.
     // Put the focus on the list at `addr` in the installed panel - a callback
