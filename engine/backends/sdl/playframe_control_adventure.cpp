@@ -1599,7 +1599,14 @@ void PlayState::adventureRide() {
             // The pool draws its nose along `(sin t, cos t)`; the ride's
             // yaw is that heading plus 180 (`sub_457270`), so the nose it
             // flies along is the yaw minus 180.
-            session.sliders().placeCalled(vp, static_cast<float>(ride->yaw - 180.0));
+            // `sub_457F50` puts the NODE at the ride's height; the pool
+            // keeps a vehicle's road-level body and draws its node
+            // `kVehNodeLift` above it (`sub_437F80(node, y - 30.75)`), so
+            // the body goes that far BELOW the ride (y points down) - or
+            // the slider flew 30.75 too high, 61.5 over the road (drift
+            // audit M4)
+            const float vbody[3] = {vp[0], vp[1] + omk::kVehNodeLift, vp[2]};
+            session.sliders().placeCalled(vbody, static_cast<float>(ride->yaw - 180.0));
             // ...and SAY which way it went, against the nose the pool
             // DRAWS (its mover heading, `-row 2` of `calledFrame`), from
             // where the manual drive began: a slider driven forward moves
@@ -1615,9 +1622,15 @@ void PlayState::adventureRide() {
             if (n - rideTold >= 30 && session.sliders().calledFrame(sat, sx, sz)) {
                 rideTold = n;
                 const float dx = vp[0] - rideFrom[0], dz = vp[2] - rideFrom[2];
+                // ...and how high the node the pool DRAWS (its body less
+                // `kVehNodeLift`, as the crowd file stages it) hovers over the
+                // ground under it - the hover's own 30.75 give or take its bob
+                double hover = -1.0;
+                if (const auto h = omk::surfaceUnder(playerSoup, sat[0], sat[1] - 200.0, sat[2]))
+                    hover = h->y - (sat[1] - omk::kVehNodeLift);
                 std::printf("slider: manual ride frame %ld - moved %.0f along its "
-                            "drawn nose, %.0f across\n", n,
-                            dx * -sz[0] + dz * -sz[2], dx * sx[0] + dz * sx[2]);
+                            "drawn nose, %.0f across; the drawn node %.1f over the ground\n", n,
+                            dx * -sz[0] + dz * -sz[2], dx * sx[0] + dz * sx[2], hover);
             }
         }
     }

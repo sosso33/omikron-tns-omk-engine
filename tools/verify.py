@@ -8892,6 +8892,9 @@ def c_engine_slider_manual():
     o = r.stdout
     rides = [(int(f), float(a), float(b)) for f, a, b in _re.findall(
         r"slider: manual ride frame (\d+) - moved (-?\d+) along its drawn nose, (-?\d+) across", o)]
+    hovers = [float(h) for f, h in _re.findall(
+        r"slider: manual ride frame (\d+) - .*?; the drawn node (-?[\d.]+) over the ground", o)
+        if int(f) <= 800]
     # the drive under UP alone (the brake starts at frame ~860)
     up = [(a, b) for f, a, b in rides if f <= 800]
     along, across = up[-1] if up else (0.0, 0.0)
@@ -8923,8 +8926,11 @@ def c_engine_slider_manual():
             (17, 60, 8) in cams17 and (0, 60, 17) in cams17,
             "MDSLIDOU: out and standing" in o,
             "RELEASED - he is 300 clear and in front of it (case 7, a manual ride)" in o,
-            back < 60), \
-           (True,) * 10, \
+            back < 60,
+            # M4: the node the pool draws hovers the ride's 30.75 (give or
+            # take the bob) over the ground - it flew 61.5 up before
+            bool(hovers) and all(20.0 <= h <= 45.0 for h in hovers)), \
+           (True,) * 11, \
         "Appel du slider, boarded, Manuelle, UP held: the slider moved %.0f " \
         "along the nose it is drawn with (%.0f across), and the ride camera's " \
         "eye trails the motion (cos %.3f)" % (along, across, trail)
