@@ -3319,7 +3319,7 @@ void PlayState::worldStaged() {
         const bool actorLit = lightActors && lighting == 0;
         float litAt[3] = {0, 0, 0};
         const int baseGrey = std::clamp(
-            worldSlots[static_cast<std::size_t>(session.activeSlot() & 1)].ambientGrey, 0, 255);
+            activeAmbientGrey, 0, 255);
         s.lightCount = 0;
         s.lightsBlack = false;
         s.lightBase = static_cast<float>(baseGrey) / 255.0f;

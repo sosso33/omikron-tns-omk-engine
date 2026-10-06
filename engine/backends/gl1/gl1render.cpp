@@ -257,7 +257,8 @@ public:
         bindTarget();
         glViewport(0, 0, w_, h_);
         glDisable(GL_SCISSOR_TEST);
-        glClearColor(0, 0, 0, 1);
+        glClearColor(v.clearColour[0] / 255.0f, v.clearColour[1] / 255.0f,
+                     v.clearColour[2] / 255.0f, 1.0f);   // the scene's fog colour
         glClearDepth(1.0);
         glDepthMask(GL_TRUE);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);

@@ -255,6 +255,15 @@ Geometry buildGeometry(std::span<const std::byte> d, DrawFilter filter);
 // character drawn unlit would take the decor's, never its model's.
 // -> how many corners it raised.
 std::size_t clampToAmbient(Geometry& g, int grey);
+// The original colours `clampToAmbient` floors, packed `R<<16 | G<<8 | B`
+// per corner - kept for a set whose floor MOVES (the day/night cycle,
+// `o3de/daynight.h`), which `sub_4947F0` re-applies every frame.
+std::vector<std::uint32_t> bakedColours(const Geometry& g);
+// Re-floor `g` from `baked` at `grey`: every non-shimmer corner takes its
+// baked colour, or the grey when that is below it. The corners whose colour
+// changed are appended to `dirty`. -> how many are now floored.
+std::size_t reclampToAmbient(Geometry& g, const std::vector<std::uint32_t>& baked, int grey,
+                             std::vector<std::uint32_t>& dirty);
 
 // A SET's geometry gives back the two per-corner arrays only a CHARACTER
 // reads (todo/ram-vs-original.md, tier A): `cornerVertex` feeds the face

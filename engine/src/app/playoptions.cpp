@@ -148,7 +148,7 @@ int PlayOptions::parse(int argc, char** argv) {
 "  --fog 0|1        the linear fog (default on - the engine always fogs)\n"
 "  --no-crowd-light  do not light the crowd from the set's .3DO lights\n"
 "  --no-actor-light  do not light the characters and props from them\n"
-"  --fog-colour r,g,b   override the scene's +336, which ships as 0,0,0\n"
+"  --fog-colour r,g,b   override the scene's +336 (else the area's day/night colour)\n"
 "  --no-crowd       no pedestrians at all\n"
 "  --invert-x       invert the mouse's X axis in shoot mode; --invert-y\n"
 "                   the same for Y. The engine reads mouse motion NOWHERE\n"
@@ -211,7 +211,9 @@ int PlayOptions::parse(int argc, char** argv) {
 "                   Inventory_Insert: a row, a merge, or for money and rings\n"
 "                   Object_ApplyEffect - the count goes up, no row\n"
 "  --money N        the player record's +172, the seteks - a HARNESS write, so\n"
-"                   a shop purchase can be driven from a save that has none\n""  --rings N        the same over the record's +174, the anneaux - what a SAVE\n"
+"                   a shop purchase can be driven from a save that has none\n""  --clock T        the game clock at start, 0..3599999 a day (a harness write) - the\n"
+"                   time of day the day/night cycle (fog colour, ambient) follows\n"
+"  --rings N        the same over the record's +174, the anneaux - what a SAVE\n"
 "                   costs, one apiece\n"
 "  --give a,b,c     object ids into the carried list - a HARNESS write, not\n"
 "                   `inventory.add`. A list, because a new game ships two\n"
@@ -416,6 +418,7 @@ int PlayOptions::parse(int argc, char** argv) {
         else if (a == "--give" && i + 1 < argc) giveList = argv[++i];
         else if (a == "--money" && i + 1 < argc) moneyArg = std::atoi(argv[++i]);
         else if (a == "--rings" && i + 1 < argc) ringsArg = std::atoi(argv[++i]);
+        else if (a == "--clock" && i + 1 < argc) clockArg = std::atol(argv[++i]);
         // A HARNESS FLAG, not a port: `--var 652=1,657=1` writes the game DB
         // directly. A flow can sit behind state no flag can otherwise reach -
         // the flat's lift gate tests `Porte Asc Fermee` and `Rencontre Telis`
@@ -521,6 +524,7 @@ int PlayOptions::parse(int argc, char** argv) {
                 fogRGB[0] = static_cast<std::uint8_t>(std::clamp(rr, 0, 255));
                 fogRGB[1] = static_cast<std::uint8_t>(std::clamp(gg, 0, 255));
                 fogRGB[2] = static_cast<std::uint8_t>(std::clamp(bb, 0, 255));
+                fogRGBSet = true;
             }
         }
         else if (a == "--no-crowd") noCrowd = true;

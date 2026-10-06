@@ -143,7 +143,62 @@ void PlayState::worldCamera() {
     view.fog      = drawFog && !unlimitedClip;
     view.fogStart = unlimitedClip ? 0.0f : static_cast<float>(clipInches * 0.25);
     view.fogEnd   = unlimitedClip ? 0.0f : static_cast<float>(clipInches);
-    for (int k = 0; k < 3; ++k) view.fogColour[k] = fogRGB[k];
+    // THE DAY/NIGHT CYCLE (`sub_41E7A0`, `o3de/daynight.h`): the fog colour
+    // and the clear colour are the active area's four colours lerped by the
+    // game clock, every area - black only where the chunk says black. The
+    // reading above that `+336` is always 0 missed this writer (`v5[84]`,
+    // the slot's scene). `--fog-colour` still overrides.
+    {
+        const auto& rs = session.residentSlot(session.activeSlot());
+        dayNight = omk::dayNightAt(state.clock(), rs.areaChunk);
+        if (rs.area != dayNightToldArea || dayNight.phase != dayNightToldPhase) {
+            dayNightToldArea = rs.area;
+            dayNightToldPhase = dayNight.phase;
+            std::printf("frame %ld: day/night (sub_41E7A0) - area %d, clock %d, phase %d: "
+                        "fog and clear colour %d %d %d%s\n", n, rs.area,
+                        static_cast<int>(state.clock()), dayNight.phase,
+                        dayNight.rgb[0], dayNight.rgb[1], dayNight.rgb[2],
+                        dayNight.floorByClock ? ", ambient floor by the clock" : "");
+        }
+    }
+    // ...AND THE AMBIENT FLOOR, in the 19 areas whose chunk sets +178: the
+    // scene's `+416` follows the clock (0..128 grey), so every lit body
+    // starts from it this frame and the set is RE-FLOORED from its original
+    // colours whenever the grey moves (`sub_4947F0` reads `+416` every frame;
+    // the port bakes it, so a moving floor is re-baked - only the corners
+    // that change go to the GPU).
+    activeAmbientGrey = dayNight.floorByClock
+        ? dayNight.floorGrey
+        : worldSlots[static_cast<std::size_t>(session.activeSlot() & 1)].ambientGrey;
+    if (!omk::envSet("OMK_NO_AMBIENT_CLAMP"))
+        for (std::size_t k = 0; k < worldSlots.size(); ++k) {
+            WorldSlot& w = worldSlots[k];
+            if (w.bakedColour.empty() || w.bakedColour.size() != w.geo.corners.size()) continue;
+            int grey = -1;
+            for (int r = 0; r < 2; ++r)
+                if (session.residentSlot(r).area == w.area) {
+                    const omk::DayNight dn = omk::dayNightAt(state.clock(), session.residentSlot(r).areaChunk);
+                    if (dn.floorByClock) grey = dn.floorGrey;
+                }
+            if (grey < 0 || grey == w.clampGrey) continue;
+            std::vector<std::uint32_t> dirty;
+            const std::size_t floored = omk::reclampToAmbient(w.geo, w.bakedColour, grey, dirty);
+            if (w.clampGrey < 0 || std::abs(grey - w.clampGrey) >= 16 || dirty.size() > 0)
+                std::printf("frame %ld: set %s re-floored at grey %d by the clock (sub_41E7A0): "
+                            "%zu corners floored, %zu changed\n", n, w.stem.c_str(), grey,
+                            floored, dirty.size());
+            w.clampGrey = grey;
+            if (!dirty.empty()) {
+                w.geo.dirtyFrom = w.geo.revision;
+                w.geo.revision = ++worldGeoRev;
+                w.geo.dirtyTo = w.geo.revision;
+                w.geo.dirtyCorners.swap(dirty);
+            }
+        }
+    for (int k = 0; k < 3; ++k) {
+        view.fogColour[k] = fogRGBSet ? fogRGB[k] : dayNight.rgb[k];
+        view.clearColour[k] = view.fogColour[k];
+    }
     // CAMERA MODE 14 OUTRANKS THE EDITING, including its HOLD.
     //
     // `fight.begin` ends with `Camera_Request(0Eh, …)`, and a mode
@@ -717,7 +772,7 @@ void PlayState::worldProps() {
     // where it is drawn. Same per-body deviation as the crowd's.
     const bool propLit = lightActors && lighting == 0;
     const float propBase = static_cast<float>(std::clamp(
-        worldSlots[static_cast<std::size_t>(session.activeSlot() & 1)].ambientGrey, 0, 255)) / 255.0f;
+        activeAmbientGrey, 0, 255)) / 255.0f;
     const auto lightProp = [&](std::size_t first, const float at[3]) {
         if (!propLit) return;
         const std::size_t cnt = propGeo.corners.size() - first;

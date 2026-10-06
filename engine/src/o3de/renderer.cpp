@@ -36,7 +36,10 @@ void SoftwareRenderer::begin(const View& v) {
     // letterbox a viewport rather than two black bars. The caller places it.
     view_.cam.w = v.letterboxed() ? v.vw : fb_.w;
     view_.cam.h = v.letterboxed() ? v.vh : fb_.h;
-    std::fill(fb_.px.begin(), fb_.px.end(), std::uint16_t(0));
+    // the clear colour in RGB565, truncated as the 565 surface takes it
+    const std::uint16_t clear565 = static_cast<std::uint16_t>(
+        ((v.clearColour[0] >> 3) << 11) | ((v.clearColour[1] >> 2) << 5) | (v.clearColour[2] >> 3));
+    std::fill(fb_.px.begin(), fb_.px.end(), clear565);
     clearDepth(depth_, fb_.w, fb_.h);
     st_ = RasterStats{};
 }

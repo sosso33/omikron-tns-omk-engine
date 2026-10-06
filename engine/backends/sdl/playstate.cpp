@@ -1923,6 +1923,7 @@ void PlayState::prepareSet(SetLoad& L) {
     if (const auto mh0 = omk::readHeader(d); mh0 && !omk::envSet("OMK_NO_AMBIENT_CLAMP")) {
         const int grey = static_cast<int>(static_cast<std::int64_t>(
             static_cast<double>(mh0->ambient) * 255.0));
+        if (L.dayNight) w.bakedColour = omk::bakedColours(w.geo);   // before the floor
         const std::size_t raised = omk::clampToAmbient(w.geo, grey);
         std::printf("set %s: %zu of %zu corners raised to its ambient grey %d "
                     "(sub_4947F0's clamp)\n", L.stem.c_str(), raised,
@@ -2020,6 +2021,11 @@ bool PlayState::askSet(int slot, const std::string& stem, int area, long frame) 
     L->slot = slot;
     L->stem = stem;
     L->area = area;
+    // the area's day/night flag, read here on the frame's thread: the job
+    // keeps the set's original colours only where the floor will move
+    for (int k = 0; k < 2; ++k)
+        if (session.residentSlot(k).area == area)
+            L->dayNight = omk::dayNightAt(0, session.residentSlot(k).areaChunk).floorByClock;
     L->askedFrame = frame;
     L->path3do = *o;
     if (const auto t = fs.resolve("MESHES/DECORS/" + stem + ".3DT")) L->path3dt = *t;

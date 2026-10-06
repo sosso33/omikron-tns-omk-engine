@@ -407,6 +407,7 @@ private:
     bool             fog_ = false;
     float            fogStart_ = 0.0f, fogEnd_ = 0.0f;
     float            fogColour_[3] = {0.0f, 0.0f, 0.0f};
+    float            clearColour_[3] = {0.0f, 0.0f, 0.0f};   // View::clearColour
     omk::RasterStats st_;
     omk::Surface     fb_{1, 1, 0};
     bool             recording_ = false;
@@ -2263,6 +2264,8 @@ void VulkanRenderer::begin(const omk::View& view) {
     fogEnd_ = view.fogEnd;
     for (int i = 0; i < 3; ++i)
         fogColour_[i] = static_cast<float>(view.fogColour[i]) / 255.0f;
+    for (int i = 0; i < 3; ++i)
+        clearColour_[i] = static_cast<float>(view.clearColour[i]) / 255.0f;
     pushView(view);
     // ---- THE LIGHTS, per frame (`todo/enhancements.md` row 7) ------------
     shimmerClock_ = view.shimmerClock;
@@ -2306,7 +2309,8 @@ void VulkanRenderer::begin(const omk::View& view) {
         std::memcpy(shUboPtr_, &ub, sizeof ub);
     }
     VkClearValue clear[2]{};
-    clear[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};   // black, as the engine clears
+    // the engine clears to the scene's fog colour (`View::clearColour`)
+    clear[0].color = {{clearColour_[0], clearColour_[1], clearColour_[2], 1.0f}};
     clear[1].depthStencil = {1.0f, 0};   // depth far, stencil 0
     VkRenderPassBeginInfo rp{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
     rp.renderPass = pass_; rp.framebuffer = fbuf_;

@@ -41174,6 +41174,78 @@ def c_engine_ambient_clamp():
            "OMK_NO_AMBIENT_CLAMP"
 
 
+def c_engine_day_night():
+    r"""THE DAY/NIGHT CYCLE - `sub_41E7A0`, every frame (`todo/drift-audit.md`
+    L1 step 4; `engine/src/o3de/daynight.h`).
+
+    For every shown decor slot the scene's `+336` - the FOG colour, and the
+    colour the screen is CLEARED to - is lerped between the four colours the
+    AREA chunk carries at `+144`, by the game clock: `phase = (clock % 3600000)
+    / 900000`, per byte `(int64)((next - cur) * u) + cur`. And where the chunk
+    sets the byte at `+178` (19 of 242 areas, Anekbah among them) the scene's
+    `+416` - the ambient floor every unlit set vertex is clamped to and every
+    lit one starts from - follows the clock too: 64..128, 128..64, 64..0,
+    0..64 over the four phases. The port's fog was black and its floor the
+    set's static ambient ("no other writer of +336" missed `v5[84]`).
+
+    Two chains that must agree: the viewer's own lines at four clocks
+    (`--clock`) against this file's transcription computed from the chunk's
+    bytes; and the cave, unflagged, keeping its one colour (223, 28, 0) and no
+    re-floor. SHOWN TO FAIL: the phase's lerp taken from the wrong colour
+    (`next` = `phase`).
+    """
+    import subprocess, re as _re, struct
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    import dialog_triggers as T2
+    chunk = T2.archive(omkpaths.data("IAM", "AREA"))[0]
+    cols = struct.unpack_from("<4I", chunk, 144)
+
+    def want(clock):
+        t = clock % 3600000
+        ph = t // 900000
+        u = (t % 900000) / 900000.0
+        c0, c1 = cols[ph], cols[(ph + 1) % 4]
+        rgb = tuple((int((((c1 >> (8 * k)) & 255) - ((c0 >> (8 * k)) & 255)) * u)
+                     + ((c0 >> (8 * k)) & 255)) & 255 for k in range(3))
+        q = 64 * (t % 900000) // 900000
+        grey = (q + 64, 128 - q, 64 - q, q)[ph]
+        return (ph, rgb, grey)
+
+    got, exp = [], []
+    for clock in (100000, 1000000, 2000000, 3000000):
+        o = subprocess.run(
+            [play, fr, os.path.join(ROOT, "tables"), "--save",
+             os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "0",
+             "--stand", "1804,0,-6890,336", "--clock", str(clock),
+             "--frames", "3", "--nodelay", "--no-crowd"],
+            capture_output=True, encoding="latin-1",
+            env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+        m = _re.search(r"day/night \(sub_41E7A0\) - area 0, clock %d, phase (\d): fog and clear "
+                       r"colour (\d+) (\d+) (\d+), ambient floor by the clock" % clock, o)
+        g = _re.search(r"set ANEKBAH re-floored at grey (\d+) by the clock", o)
+        got.append((int(m.group(1)), tuple(int(m.group(k)) for k in (2, 3, 4)),
+                    int(g.group(1)) if g else None) if m else None)
+        exp.append(want(clock))
+    cave = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"), "--save",
+         os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "2",
+         "--stand", "125,-9,401,0", "--clock", "1000000", "--frames", "3", "--nodelay", "--no-crowd"],
+        capture_output=True, encoding="latin-1",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    cm = _re.search(r"day/night \(sub_41E7A0\) - area 2, clock 1000000, phase \d: fog and clear "
+                    r"colour (\d+) (\d+) (\d+)(, ambient floor by the clock)?", cave)
+    caveGot = (tuple(int(cm.group(k)) for k in (1, 2, 3)), bool(cm.group(4)),
+               "re-floored" in cave) if cm else None
+    return (tuple(got), caveGot), (tuple(exp), ((223, 28, 0), False, False)), \
+           "Anekbah at four clocks (phase, fog colour, the floor) against the transcription " \
+           "from its chunk; the cave's colour, its flag, any re-floor"
+
+
 def c_engine_undriven_rest_pose():
     r"""AN NPC NOTHING DRIVES HOLDS HIS REST POSE (`todo/drift-audit.md` M2).
 
@@ -43935,6 +44007,7 @@ SLOW = [
     ("engine: gandhar head", c_engine_gandhar_head, "todo/gandhar.md 3b; actor/shoothit.h"),
     ("engine: gandhar grab", c_engine_gandhar_grab, "todo/gandhar.md 4; actor/gandhar.h"),
     ("engine: gandhar play", c_engine_gandhar_play, "todo/gandhar.md 5; actor/gandhar.h"),
+    ("engine: day night", c_engine_day_night, "todo/drift-audit.md L1; o3de/daynight.h"),
     ("engine: ambient clamp", c_engine_ambient_clamp, "todo/drift-audit.md L1; o3de/geom3do.h"),
     ("engine: actor lighting", c_engine_actor_lighting, "todo/drift-audit.md L1; backends/sdl/playframe_world_staged.cpp"),
     ("engine: undriven rest pose", c_engine_undriven_rest_pose, "todo/drift-audit.md M2; backends/sdl/playframe_world_staged.cpp"),

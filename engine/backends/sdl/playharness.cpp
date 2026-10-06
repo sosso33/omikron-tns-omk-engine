@@ -46,6 +46,13 @@ void PlayState::harnessStateWrites() {
         std::printf("--rings: the player record's +174 set to %d (a harness write)\n",
                     state.rings());
     }
+    // `--clock T`: the game clock, `Clock_SetTime` - the time of day the
+    // day/night cycle reads (`o3de/daynight.h`). A HARNESS write.
+    if (clockArg >= 0) {
+        state.setClock(static_cast<std::int32_t>(clockArg));
+        std::printf("--clock: the game clock set to %d (a harness write)\n",
+                    static_cast<int>(state.clock()));
+    }
     if (!giveList.empty()) {
         int placed = 0, refused = 0;
         std::string cur;

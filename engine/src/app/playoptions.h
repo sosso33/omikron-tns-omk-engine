@@ -175,7 +175,8 @@ struct PlayOptions {
     // `LightObject` registers for the same lights (`sub_440CA0`;
     // todo/drift-audit.md L1). `--no-actor-light` is the before/after.
     bool lightActors = true;
-    std::uint8_t fogRGB[3] = {0, 0, 0};   // the scene's +336, which ships as 0
+    std::uint8_t fogRGB[3] = {0, 0, 0};   // --fog-colour: an override of the scene's +336
+    bool fogRGBSet = false;               // ...given (else the day/night cycle's colour)
     // --give: object ids for the carried list, comma-separated. A LIST
     // rather than one id because the flows worth driving need a bagful - row
     // scrolling wants more than the nine row widgets, and `Utiliser sur`
@@ -183,6 +184,7 @@ struct PlayOptions {
     std::string giveList;
     int moneyArg = -1;              // --money: a harness write of record +172
     int ringsArg = -1;              // --rings: the same over record +174
+    long clockArg = -1;             // --clock: the game clock at start (Clock_SetTime)
     std::string varList;
     bool newWorld = false; // --newgame-world: START's world, the save's player
     // --scene-chunk N: run a SCENE chunk's startup script over the area, the

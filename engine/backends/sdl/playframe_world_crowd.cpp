@@ -168,7 +168,7 @@ void PlayState::worldCrowd() {
         // 0, which is what this file read until 2026-10-06 (todo/drift-audit.md
         // L1). The active slot's scene, the one the walkers are linked to.
         const float crowdBase = static_cast<float>(std::clamp(
-            worldSlots[static_cast<std::size_t>(session.activeSlot() & 1)].ambientGrey, 0, 255)) / 255.0f;
+            activeAmbientGrey, 0, 255)) / 255.0f;
         {
             static bool told = false;
             if (!told) {
@@ -960,7 +960,7 @@ void PlayState::worldCrowd() {
         playerLightCount = 0;
         playerLightsBlack = false;
         playerLightBase = static_cast<float>(std::clamp(
-            worldSlots[static_cast<std::size_t>(session.activeSlot() & 1)].ambientGrey, 0, 255)) / 255.0f;
+            activeAmbientGrey, 0, 255)) / 255.0f;
         if (playerLit) {
             std::size_t ri = 0;
             for (std::size_t i = 0; i < playerMeshes.size(); ++i)

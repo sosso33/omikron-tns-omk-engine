@@ -109,6 +109,45 @@ std::size_t clampToAmbient(Geometry& g, int grey) {
     return raised;
 }
 
+namespace {
+std::uint32_t packedOf(const Corner& c) {
+    const auto byte = [](float f) {
+        const int v = static_cast<int>(f * 255.0f + 0.5f);
+        return static_cast<std::uint32_t>(v < 0 ? 0 : (v > 255 ? 255 : v));
+    };
+    return byte(c.r) << 16 | byte(c.g) << 8 | byte(c.b);
+}
+}  // namespace
+
+std::vector<std::uint32_t> bakedColours(const Geometry& g) {
+    std::vector<std::uint32_t> out;
+    out.reserve(g.corners.size());
+    for (const Corner& c : g.corners) out.push_back(packedOf(c));
+    return out;
+}
+
+std::size_t reclampToAmbient(Geometry& g, const std::vector<std::uint32_t>& baked, int grey,
+                             std::vector<std::uint32_t>& dirty) {
+    if (baked.size() != g.corners.size()) return 0;
+    if (grey < 0) grey = 0;
+    if (grey > 255) grey = 255;
+    const std::uint32_t floor = 65793u * static_cast<std::uint32_t>(grey);
+    std::size_t floored = 0;
+    for (std::size_t i = 0; i < g.corners.size(); ++i) {
+        Corner& c = g.corners[i];
+        if (c.phase >= 0.0f) continue;             // the shimmer's branch: no clamp
+        const std::uint32_t dw = baked[i] < floor ? floor : baked[i];
+        if (baked[i] < floor) ++floored;
+        const float r = static_cast<float>((dw >> 16) & 0xFF) / 255.0f;
+        const float gg = static_cast<float>((dw >> 8) & 0xFF) / 255.0f;
+        const float b = static_cast<float>(dw & 0xFF) / 255.0f;
+        if (c.r == r && c.g == gg && c.b == b) continue;
+        c.r = r; c.g = gg; c.b = b;
+        dirty.push_back(static_cast<std::uint32_t>(i));
+    }
+    return floored;
+}
+
 Geometry buildGeometry(std::span<const std::byte> d, DrawFilter filter) {
     OMK_MEM_TAG("geometry");   // the profiler's category (todo/debug-tools.md 4)
     Geometry out;

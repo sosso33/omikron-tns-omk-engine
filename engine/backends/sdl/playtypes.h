@@ -720,6 +720,10 @@ struct WorldSlot {
     // scene's `+416` (`(int64)(desc+184 * 255.0)`): what a lit vertex starts
     // from (todo/drift-audit.md L1)
     int ambientGrey = 0;
+    // ...and where the DAY/NIGHT cycle moves it (`o3de/daynight.h`): the set's
+    // corner colours before the floor, and the grey last applied
+    std::vector<std::uint32_t> bakedColour;
+    int clampGrey = -1;
     // its `0x40000000` meshes, the candidates `Sfx_BindAmbientEffects`
     // matches against the resident `.sfx` - kept, because that file can
     // arrive after the set does (the frame loop binds them)
@@ -863,6 +867,7 @@ struct SetLoad {
     int slot = 0;
     std::string stem;
     int area = -1;
+    bool dayNight = false;           // the area's floor follows the clock (AREA +178)
     std::string path3do, path3dt;    // resolved on the frame's thread
     WorldSlot out;                   // what the job builds; nobody else's until it is done
     bool found = false;

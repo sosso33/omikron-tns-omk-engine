@@ -121,6 +121,12 @@ struct View {
     float fogStart = 0.0f;
     float fogEnd   = 0.0f;
     std::uint8_t fogColour[3] = {0, 0, 0};   // r, g, b
+    // ...and the colour the picture is CLEARED to: `Game_Tick` clears the
+    // screen every frame with `dword_90EFB0`, which `sub_41E7A0` sets to the
+    // current scene's `+336` - the same colour as the fog - so the horizon
+    // past the clip distance fades into it rather than into black
+    // (`o3de/daynight.h`; todo/drift-audit.md L1 step 4).
+    std::uint8_t clearColour[3] = {0, 0, 0};   // r, g, b
 
     // ------------------------------------------- THE SHADOW MAP's LIGHT
     //

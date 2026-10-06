@@ -88,9 +88,14 @@ struct PlayState {
     bool & lightCrowd = opt.lightCrowd;
     bool & lightActors = opt.lightActors;
     std::uint8_t (&fogRGB)[3] = opt.fogRGB;
+    bool & fogRGBSet = opt.fogRGBSet;
+    omk::DayNight dayNight{};          // this frame's `sub_41E7A0` for the active slot
+    int dayNightToldArea = -2, dayNightToldPhase = -1;
+    int activeAmbientGrey = 0;         // the active scene's +416 this frame (static, or by the clock)
     std::string & giveList = opt.giveList;
     int & moneyArg = opt.moneyArg;
     int & ringsArg = opt.ringsArg;
+    long & clockArg = opt.clockArg;
     std::string & varList = opt.varList;
     bool & newWorld = opt.newWorld;
     int & sceneChunk = opt.sceneChunk;
