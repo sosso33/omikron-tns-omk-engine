@@ -178,10 +178,21 @@ Decode a capture: raw little-endian RGB565, the size in the log line.
    on a vector whose pointers are garbage (uninitialized, freed or
    overwritten). It did NOT come back on the next four runs with the same
    args, the only change one `printf` in the allocator: layout-dependent,
-   the signature of an uninitialized read or a use-after-free. The refusal
-   line now prints its SITE (`new: N bytes REFUSED at 0x...`), so the next
-   one is `arm-none-eabi-addr2line -e engine/build/n3ds/omk_play.elf 0x...`
-   away - keep the `.elf` of any build sent to the card. AddressSanitizer on
+   the signature of an uninitialized read or a use-after-free (not a thread
+   race: the 3DS build runs none, and Azahar has no sound device). Not
+   reproduced in 15 more runs over four sizes, nor by rebuilding that commit.
+   The desktop under UBSan + libc++'s DEBUG hardening (every `vector[]`
+   checked; shown to trap) is clean through the crash window. THE NEXT ONE
+   EXPLAINS ITSELF: the refusal prints its SITE and the stack's RETURN
+   ADDRESSES (a word in the program whose previous instruction is a call);
+   resolve them with `arm-none-eabi-addr2line -i -f -C -e
+   engine/build/n3ds/omk_play.elf <addresses>` - `-i` matters, the site is
+   usually inside an inlined `std::vector` chain whose outermost frame is the
+   caller. Proved with a forced refusal in Azahar: the site named the very
+   line, the scan the call above it, with stale libc entries among them.
+   **Keep the `.elf` of every build sent to the card** - without it the
+   addresses mean nothing. The window: after the start-up's `screen 29.`
+   line, before the first frame's `motion: mesh ...` line. AddressSanitizer on
    the desktop is NOT the way on this M3: its runtime deadlocks in its own
    initialiser on macOS 26 (`AsanInitFromRtl`, a spin lock, before `main`).
 7. Then steps 7 (Old 3DS), 8 (stereoscopic 3D, OFF by default), 9

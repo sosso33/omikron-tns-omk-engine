@@ -172,6 +172,44 @@ constexpr std::uint32_t kMagic = 0x4F4D4B6Du;   // "OMKm"
 
 int workersTag();
 
+#if defined(__3DS__)
+// THE 3DS HAS NO FRAME CHAIN to walk (the build omits frame pointers), so a
+// refused allocation prints the stack's CODE WORDS instead - every word near
+// the top of the stack that is a RETURN ADDRESS into the program: inside
+// `__start__` .. `__exidx_start` (devkitARM's 3dsx.ld) with a call - ARM `BL`
+// or `BLX`, or Thumb's - just before it. Stale ones from calls already
+// returned come too, so read them as candidates, nearest first; the line
+// before carries the SITE, which `arm-none-eabi-addr2line -i -f -C -e
+// omk_play.elf` resolves through its inline chain (proved 2026-10-06 in
+// Azahar with a forced refusal: the site gave `main` at the very line).
+// For a fault that came once in seventeen runs and never again (2026-10-06).
+extern "C" char __start__[], __exidx_start[];
+__attribute__((noinline)) void printStackCode() {
+    volatile int probe = 0;
+    const auto* sp = reinterpret_cast<const std::uintptr_t*>(const_cast<int*>(&probe));
+    const auto lo = reinterpret_cast<std::uintptr_t>(__start__);
+    const auto hi = reinterpret_cast<std::uintptr_t>(__exidx_start);
+    std::printf("new: return addresses on the stack (addr2line -i -f -C -e omk_play.elf):");
+    int shown = 0;
+    for (int i = 0; i < 1024 && shown < 32; ++i) {
+        const std::uintptr_t w = sp[i];
+        if (w < lo + 4 || w >= hi) continue;
+        bool call = false;
+        if (w & 1) {                        // Thumb: BL/BLX imm (32-bit) or BLX reg (16-bit)
+            const auto* h = reinterpret_cast<const std::uint16_t*>(w - 1);
+            call = ((h[-2] & 0xF800u) == 0xF000u && (h[-1] & 0xC000u) == 0xC000u) ||
+                   (h[-1] & 0xFF87u) == 0x4780u;
+        } else if ((w & 3) == 0) {          // ARM: BL, BLX imm, BLX reg
+            const std::uint32_t in = reinterpret_cast<const std::uint32_t*>(w)[-1];
+            call = (in & 0x0F000000u) == 0x0B000000u || (in & 0xFE000000u) == 0xFA000000u ||
+                   (in & 0x0FFFFFF0u) == 0x012FFF30u;
+        }
+        if (call) { std::printf(" 0x%lx", static_cast<unsigned long>(w)); ++shown; }
+    }
+    std::printf("\n");
+}
+#endif
+
 __attribute__((noinline)) void* counted(std::size_t n, const void* site) {
     auto* p = static_cast<unsigned char*>(std::malloc(n + kHeader));
     if (!p) {
@@ -183,6 +221,9 @@ __attribute__((noinline)) void* counted(std::size_t n, const void* site) {
                     static_cast<unsigned long>(n), site,
                     static_cast<long>(static_cast<long long>(g_total) / 1024),
                     static_cast<long>(static_cast<long long>(g_totalBlocks)));
+#if defined(__3DS__)
+        printStackCode();
+#endif
         throw std::bad_alloc();
     }
 #if OMK_THREADS && defined(__vita__)
