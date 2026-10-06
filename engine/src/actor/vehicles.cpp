@@ -257,11 +257,21 @@ void Sliders::tickVehicles(float dt) {
         if (vi == called_) {
             float d = 1e9f;
             if (callRide_.state == 2 || callRide_.state == 6) {
-                const Pedestrian& m = movers_[static_cast<std::size_t>(v.mover)];
+                Pedestrian& m = movers_[static_cast<std::size_t>(v.mover)];
                 const float dx = m.pos[0] - callTarget_[0];
                 const float dy = m.pos[1] - callTarget_[1];
                 const float dz = m.pos[2] - callTarget_[2];
                 d = std::sqrt(dx * dx + dy * dy + dz * dz);
+                // THE ARRIVAL DEFERRAL (cases 2 and 6, drift audit B6):
+                // `if (d < 117 || (flags & 0x400))` it stops only if the
+                // mover is NOT on a route connector (0x10); on one it sets
+                // 0x400 and drives on, and the first tick back on a lane it
+                // stops wherever it is - so it never parks inside a
+                // junction's curve
+                if (d < RideMachine::kArrive || (m.flags & 0x400u)) {
+                    if (m.flags & 0x10u) { m.flags |= 0x400u; d = 1e9f; ++deferrals_; }
+                    else                 { m.flags &= ~0x400u; d = 0.0f; }
+                }
             }
             const int was = callRide_.state;
             // ---- and case 7's two ARGUMENTS, which were never supplied ----

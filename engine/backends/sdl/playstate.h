@@ -743,6 +743,7 @@ struct PlayState {
     bool actionTookObject{};
     void sliderRefused();  // `sub_452570` said no: string 42 on the echo bar
     void sliderHold();     // `sub_452570` said yes: Screen_Fade(1) and the hold
+    void sliderForget(const char* why);   // a load or restart: no ride survives it
     void sliderCamRequest(int mode, float frames);   // `Camera_Request` for the slider's modes
     bool beginSliderExit();   // `sub_468FA0`: out at the door, H_SLDOUT, ACTOR_STATE 8, mode 5
     void adventureAim();   // the follow camera's offsets, first-person aim

@@ -477,6 +477,9 @@ public:
     bool callSlider(const float target[3]);
     // Which vehicle the call is using, -1 when none is out.
     int  calledVehicle() const { return called_; }
+    // how many ticks an arrival was put off because the mover was on a route
+    // connector (`0x10` -> `0x400`, drift audit B6)
+    int  arrivalDeferrals() const { return deferrals_; }
     // Its state machine, for a caller that wants the camera or the mount gate.
     const RideMachine& callMachine() const { return callRide_; }
     // Where it is, and whether it is OPEN and near enough to board.
@@ -680,6 +683,7 @@ private:
     int   nSliderModels_ = 0, nMotoModels_ = 0;   // dword_539934 / dword_539930
     std::map<std::string, float> vehRadius_;      // `sub_438040` per vehicle model, once handed in
     int   lastSpawnSlot_ = -1;                // the slot `spawnVehicle` last filled
+    int   deferrals_ = 0;                     // arrivals put off by a route connector (B6)
     Pedestrian manualStart_{};               // the mover when Manuelle began (`dword_8F5E2C/28/30`)
     bool  haveManualStart_ = false;
     int   level_ = kDefaultStreetActivity;

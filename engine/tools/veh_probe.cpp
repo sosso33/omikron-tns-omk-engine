@@ -153,13 +153,14 @@ int main(int argc, char** argv) {
     const std::string root = argv[1];
     const int area = std::atoi(argv[2]);
     int frames = 600;
-    bool list = false, hasPlayer = false, recall = false, runover = false;
+    bool list = false, hasPlayer = false, recall = false, runover = false, defer = false;
     float player[3] = {0, 0, 0};
     for (int i = 3; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--vehicles") list = true;
         else if (a == "--recall") recall = true;
         else if (a == "--runover") runover = true;
+        else if (a == "--defer") defer = true;
         else if (a == "--player" && i + 1 < argc) {
             hasPlayer = (std::sscanf(argv[++i], "%f,%f,%f", &player[0], &player[1], &player[2]) == 3);
         } else if (i == 3) frames = std::atoi(argv[i]);
@@ -218,6 +219,41 @@ int main(int argc, char** argv) {
     // (state 2) and with him ABOARD (state 4). `sub_456C70` raises none while
     // the called slider is in 3..6 (`v10 = 0`), and `sub_456530`'s arms keep
     // the 90-frame latch re-armed while a call is out.
+    // `--defer`: THE ARRIVAL DEFERRAL. A call to each of the starting
+    // vehicles' own places in turn, each on a fresh pool, ticked until the
+    // slider stops (mode 1): how many arrivals were put off because the mover
+    // was on a route connector (0x10 -> 0x400), and how many stopped ON one
+    // anyway - which `sub_456530` cases 2/6 never let happen.
+    if (defer) {
+        // ...each vehicle lane's END point: there the 117 units reach past
+        // the lane into the junction that follows it
+        std::vector<std::array<float, 3>> targets;
+        for (std::uint32_t li = track.pedEnd; li < track.laneCount; ++li) {
+            const auto& L = track.lanes[li];
+            std::array<float, 3> p{L.origin[0], L.origin[1], L.origin[2]};
+            for (int k = 0; k < L.keyCount; ++k)
+                for (int c = 0; c < 3; ++c) p[c] += track.keys[static_cast<std::size_t>(L.firstKey + k)].delta[c];
+            targets.push_back(p);
+        }
+        int calls = 0, deferred = 0, onConnector = 0, stopped = 0;
+        for (const auto& t : targets) {
+            omk::Sliders p2;
+            p2.load(track, clips, menMask, womenMask, omk::kDefaultStreetActivity, 1u,
+                    static_cast<std::uint32_t>(sliMask), static_cast<std::uint32_t>(motoMask));
+            if (!p2.callSlider(t.data())) continue;
+            ++calls;
+            const int before = p2.arrivalDeferrals();
+            for (int f = 0; f < 4000 && p2.callMachine().state == 2; ++f) p2.tick(1.0f);
+            if (p2.callMachine().state != 1) continue;
+            ++stopped;
+            if (p2.arrivalDeferrals() > before) ++deferred;
+            const auto& v = p2.vehicles()[static_cast<std::size_t>(p2.calledVehicle())];
+            if (p2.movers()[static_cast<std::size_t>(v.mover)].flags & 0x10u) ++onConnector;
+        }
+        std::printf("defer calls %d stopped %d deferred %d on_connector %d\n",
+                    calls, stopped, deferred, onConnector);
+        return 0;
+    }
     if (runover) {
         auto count = [&](int mode) {
             omk::Sliders p2;

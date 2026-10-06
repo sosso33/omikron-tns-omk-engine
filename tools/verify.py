@@ -9121,6 +9121,46 @@ def c_engine_slider_journey_drive():
             drove, far(m_out), far(m_in))
 
 
+def c_engine_slider_restart():
+    r"""A RESTART WHILE SEATED drops the ride (todo/slider-drift-audit.md B9).
+
+    The Session's pool goes with the old world and the player record comes
+    back at ACTOR_STATE 1, so nothing of a ride can stand in the frontend
+    either - but the viewer kept `boarded`, `boarding` and `leaving`, and a
+    `boarded` left set blocks the walker for good. The run boards from
+    "Appel du slider", closes screen 7, and quits from the pause menu
+    (ESC, `Quitter le jeu`, `Oui` - the restart `sub_409090` asks for);
+    asserted from the frontend's flags READ BACK after the reset. (The
+    in-game load runs the same `sliderForget`.)
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr, tb = omkpaths.data_root(), os.path.join(ROOT, "tables")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(eng) or not os.path.exists(save):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return (True,) * 3, (True,) * 3, "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
+                        "--save", save, "--area", "0",
+                        "--stand", "1804,0,-6890,244", "--frames", "900", "--board",
+                        "--hold", "0*40,k15*3,0*30,k205*4,0*10,k200*4,0*10,k28*4,0*30,"
+                                  "k203*4,0*10,k28*4,0*560,k15*3,0*80,k1*4,0*10,k208*2,0*8,"
+                                  "k28*2,0*10,k200*2,0*8,k28*2,0*100"],
+                       capture_output=True, text=True, env=env, errors="replace")
+    o = r.stdout
+    return ("MDSLIDIN: aboard" in o,
+            "game.restart - Game_NewGame" in o,
+            "restart - the ride, the boarding and the slider camera dropped with the old "
+            "world (now ride 0 boarding 0 boarded 0 leaving 0 camera -1 held 0)" in o), \
+           (True,) * 3, \
+        "boarded, then quit from the pause menu while seated: the restart drops " \
+        "the ride, the boarding, the slider camera and the hold"
+
+
 def c_engine_slider_arrives():
     r"""A CALLED SLIDER ACTUALLY ARRIVES - the feature, not a harness.
 
@@ -44434,6 +44474,7 @@ CHECKS = [
     ("engine: slider ride", c_engine_slider_ride, "todo/slider"),
     ("engine: slider call", c_engine_slider_call, "todo/slider"),
     ("engine: slider arrives", c_engine_slider_arrives, "todo/slider"),
+    ("engine: slider restart", c_engine_slider_restart, "todo/slider-drift-audit B9"),
     ("engine: slider journey drive", c_engine_slider_journey_drive, "todo/slider-drift-audit D1"),
     ("engine: slider forget", c_engine_slider_forget, "todo/slider-drift-audit B3"),
     ("engine: slider refused", c_engine_slider_refused, "todo/slider-drift-audit B5"),

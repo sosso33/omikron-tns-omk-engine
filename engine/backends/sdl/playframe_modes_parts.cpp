@@ -1906,6 +1906,7 @@ int PlayState::modesQuitLoad() {
                 state.placementWorld(savedAt, savedYaw);
                 haveSavedPlacement = state.playerActorId() != -1;
                 loadedName = sl->name;
+                sliderForget("load");
                 session.loadArea(state.currentArea());
                 if (haveSavedPlacement)
                     session.setPlayerPosition(savedAt, savedYaw);
@@ -1947,7 +1948,7 @@ int PlayState::modesQuitLoad() {
                 fightRun.foeChannel.reset();
             }
             fightRun.body = nullptr;
-            ride.reset();
+            sliderForget("restart");
             player.reset();
             playerReady = false; adventure = false; forceAdventure = false;
             staged.clear();
@@ -2010,4 +2011,30 @@ void PlayState::sliderHold() {
     session.startBlackFade(true);
     session.holdPlayer(true);
     std::printf("frame %ld: sub_452570 - Screen_Fade(1) and the player HELD\n", n);
+}
+
+// A LOAD OR A RESTART UNDER A RIDE (drift audit B9). The Session's pool goes
+// with the old world (`Slider_Init` builds a fresh one, `dword_8F5E44` is
+// gone with it), and the player record comes back from the save at ACTOR_STATE
+// 1 - so nothing of a ride can stand in the frontend either. This kept
+// `boarded`, `boarding` and `leaving`, and a `boarded` left set blocks the
+// walker for good: loaded while seated, he could never move again. The
+// remembered destination (`dword_6A17CC`) is NOT touched - neither path
+// writes it.
+void PlayState::sliderForget(const char* why) {
+    auto& session = *session_;
+    const bool any = ride || boarding || boarded || leaving || sliderCamMode >= 0;
+    ride.reset();
+    boarding = false; boarded = false; leaving = false;
+    journeyTo = -1;
+    sliderCamMode = -1;
+    sliderPrevState = 0;
+    boardAt = -1;
+    session.holdPlayer(false);
+    if (any)
+        std::printf("frame %ld: %s - the ride, the boarding and the slider camera "
+                    "dropped with the old world (now ride %d boarding %d boarded %d "
+                    "leaving %d camera %d held %d)\n", n, why, ride ? 1 : 0, boarding ? 1 : 0,
+                    boarded ? 1 : 0, leaving ? 1 : 0, sliderCamMode,
+                    session.playerAnimHeld() ? 1 : 0);
 }
