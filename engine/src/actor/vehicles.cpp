@@ -152,6 +152,7 @@ bool Sliders::spawnVehicle(int lane, const float at[3], const float dir[3],
     const int mi = newMover();
     v.mover = mi;
     vehicles_[static_cast<std::size_t>(slot)] = v;
+    lastSpawnSlot_ = slot;
 
     Pedestrian& m = movers_[static_cast<std::size_t>(mi)];
     m.live = true;
@@ -625,11 +626,14 @@ bool Sliders::callSlider(const float target[3]) {
     forCall_ = false;
     if (spawned &&
         liveVehicles() != before) {
-        for (int i = 0; i < static_cast<int>(vehicles_.size()); ++i)
-            if (vehicles_[static_cast<std::size_t>(i)].live &&
-                vehicles_[static_cast<std::size_t>(i)].state == 0 &&
-                !vehicles_[static_cast<std::size_t>(i)].reserved)
-                called_ = i;                    // the newest live slot
+        // THE SLOT THE SPAWN FILLED - `sub_452570` hands `sub_452CC0` the
+        // very slot it took. This picked "the newest live slot", the
+        // HIGHEST-numbered live one, which is the spawned vehicle only while
+        // no dead slot sits below a live one; a journey's `takeOverAt` kills
+        // vehicles, so the next call marked an unrelated ambient vehicle
+        // COMING and the camera followed it (`veh_probe --recall`: spawned
+        // into 5, called 39).
+        called_ = lastSpawnSlot_;
     } else {
         for (int i = 0; i < static_cast<int>(vehicles_.size()); ++i) {
             Vehicle& av = vehicles_[static_cast<std::size_t>(i)];

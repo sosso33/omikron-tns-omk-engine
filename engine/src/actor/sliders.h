@@ -640,6 +640,7 @@ private:
     int   bumpLatch_ = -1;                   // `dword_538E20`
     int   nSliderModels_ = 0, nMotoModels_ = 0;   // dword_539934 / dword_539930
     std::map<std::string, float> vehRadius_;      // `sub_438040` per vehicle model, once handed in
+    int   lastSpawnSlot_ = -1;                // the slot `spawnVehicle` last filled
     int   level_ = kDefaultStreetActivity;
     int   talkTarget_ = -1;
     std::uint32_t rng_ = 1u;

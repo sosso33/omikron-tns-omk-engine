@@ -8817,6 +8817,41 @@ def c_engine_slider_call():
         "so the round-robin over `routeCount` is running"
 
 
+def c_engine_slider_recall():
+    r"""THE CALL AFTER A JOURNEY uses the vehicle it spawned
+    (todo/slider-drift-audit.md B1; engine/tools/veh_probe --recall).
+
+    `sub_452570` hands `sub_452CC0` the very slot it took. The port's
+    `callSlider` marked "the newest live slot" - the HIGHEST-numbered live
+    one - which is the vehicle the spawn just filled only while no dead slot
+    sits below a live one. A journey's `takeOverAt` kills ambient vehicles,
+    so after one the next call marked an UNRELATED vehicle as COMING (state
+    2) and the coming camera followed it, while the real one drove on as
+    traffic. `--recall` calls, journeys until a vehicle dies, lets the slider
+    go, calls again, and prints the slot the spawn filled against the slot
+    the call marked. Shown to fail on the old rule: `dead 1 spawned_into 5
+    called 39`.
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s", "build/veh_probe"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "veh_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "veh_probe must build"
+    import re as _re
+    r = subprocess.run([binp, omkpaths.data_root(), "0", "--recall"],
+                       capture_output=True, text=True)
+    m = _re.search(r"^recall dead (\d+) spawned_into (-?\d+) called (-?\d+) (\w+)",
+                   r.stdout, _re.M)
+    if not m:
+        return ("no recall line",), ("a recall line",), "veh_probe --recall must report"
+    dead, into, called, ok = int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(4)
+    return (dead > 0, ok, called == into), (True, "ok", True), \
+        "a journey killed %d vehicle(s); the next call spawned into slot %d and " \
+        "marked slot %d COMING - the same vehicle" % (dead, into, called)
+
+
 def c_engine_slider_arrives():
     r"""A CALLED SLIDER ACTUALLY ARRIVES - the feature, not a harness.
 
@@ -44070,6 +44105,7 @@ CHECKS = [
     ("engine: slider ride", c_engine_slider_ride, "todo/slider"),
     ("engine: slider call", c_engine_slider_call, "todo/slider"),
     ("engine: slider arrives", c_engine_slider_arrives, "todo/slider"),
+    ("engine: slider recall", c_engine_slider_recall, "todo/slider-drift-audit B1"),
     ("engine: slider journey", c_engine_slider_journey, "todo/slider"),
     ("ui open answer",     c_ui_open_answer,    "SCRIPT_VM 70"),
     ("ui confirm gate",    c_ui_confirm_gate,   "UI"),

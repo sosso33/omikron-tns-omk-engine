@@ -153,11 +153,12 @@ int main(int argc, char** argv) {
     const std::string root = argv[1];
     const int area = std::atoi(argv[2]);
     int frames = 600;
-    bool list = false, hasPlayer = false;
+    bool list = false, hasPlayer = false, recall = false;
     float player[3] = {0, 0, 0};
     for (int i = 3; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--vehicles") list = true;
+        else if (a == "--recall") recall = true;
         else if (a == "--player" && i + 1 < argc) {
             hasPlayer = (std::sscanf(argv[++i], "%f,%f,%f", &player[0], &player[1], &player[2]) == 3);
         } else if (i == 3) frames = std::atoi(argv[i]);
@@ -201,6 +202,51 @@ int main(int argc, char** argv) {
         }
     }
     if (hasPlayer) pool.setPlayer(player, true);
+
+    // `--recall`: THE CALL AFTER A JOURNEY. A journey's `takeOverAt` kills
+    // the ambient vehicles in the way, which leaves DEAD slots in the pool;
+    // the next call's `spawnVehicle` fills the FIRST dead slot, and the call
+    // must then be using THAT vehicle (`sub_452570` hands `sub_452CC0` the
+    // slot it took). Prints the slot the spawn filled against the slot the
+    // call marked; `recall dead 0` means no journey killed anything and the
+    // line says nothing.
+    if (recall) {
+        const float home[3] = {1804.0f, 0.0f, -6890.0f};
+        if (!pool.callSlider(home)) { std::printf("recall first call failed\n"); return 1; }
+        pool.mountCalled();
+        const int before = pool.liveVehicles();
+        // journeys to every vehicle's own place until one kills something
+        std::vector<std::array<float, 3>> targets;
+        for (const auto& v : pool.vehicles())
+            if (v.live && v.mover >= 0) {
+                const auto& m = pool.movers()[static_cast<std::size_t>(v.mover)];
+                targets.push_back({m.pos[0], m.pos[1], m.pos[2]});
+            }
+        for (const auto& t : targets) {
+            pool.sendCalledTo(t.data());
+            if (pool.liveVehicles() < before) break;
+        }
+        const int dead = before - pool.liveVehicles();
+        pool.dismountCalled();
+        // he walks off, far and in front: case 7 hands it back
+        for (int f = 0; f < 4000 && pool.calledVehicle() >= 0; ++f) {
+            float at[3];
+            pool.calledAt(at);
+            const float far[3] = {at[0] + 2000.0f, at[1], at[2]};
+            for (float fac : {0.0f, 90.0f, 180.0f, 270.0f}) {
+                pool.setRider(far, fac);
+                pool.tick(1.0f);
+                if (pool.calledVehicle() < 0) break;
+            }
+        }
+        int firstDead = -1;
+        for (std::size_t i = 0; i < pool.vehicles().size(); ++i)
+            if (!pool.vehicles()[i].live) { firstDead = static_cast<int>(i); break; }
+        const bool again = pool.callSlider(home);
+        std::printf("recall dead %d spawned_into %d called %d %s\n", dead,
+                    firstDead, pool.calledVehicle(), again ? "ok" : "failed");
+        return 0;
+    }
 
     // THE NOSE. A still frame cannot settle whether a vehicle faces where it
     // is going, but the models are elongated - a slider is about twice as
