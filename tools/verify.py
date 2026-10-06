@@ -12687,6 +12687,12 @@ def c_engine_fight_letterbox():
     actions, the address cameras, the `--frames` delta restore, the walker
     settle). No camera shake fires in this run. Not bisected, same rule; the
     frame was rendered and looked at (the robber's throw, the player down).
+    **2026-10-06: 596 -> 594**, two pixels, after that day's LIGHTING work
+    (`todo/drift-audit.md` L1: characters and props lit by the set from its
+    ambient grey, the unlit set floored at it, the fog and clear colour by the
+    clock) - the middle row counts non-black pixels, and those changed what a
+    dark pixel is. Not bisected, same rule; the fight-start change of the same
+    day (S6) draws nothing.
 
     SHOWN TO FAIL: drop `if (holdEditCam && fightRun.active)` from the
     clear-list and frame 500 reads 0 lit on both edge rows.
@@ -12743,7 +12749,7 @@ def c_engine_fight_letterbox():
         return ("no render",), ("3 frames",), "all three frames must render"
     return (rows[300][0], rows[300][2], rows[500][0], rows[500][1], rows[500][2],
             rows[530][0], rows[530][2]), \
-           (0, 0, 600, 596, 600, 0, 0), \
+           (0, 0, 600, 594, 600, 0, 0), \
            ("the approach cutscene keeps its bars and the FIGHT does not - "
             "the middle row is quoted so a black frame cannot pass by "
             "having no bars either. 625 of 640 until " + "the melee AI's dice are the CRT's generator since 2026-09-24 (not the host's std::rand()), and on them the robber's first move is a throw that ends the fight at +30")
