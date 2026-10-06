@@ -13,6 +13,9 @@
 #include <citro3d.h>
 
 #include <algorithm>
+#include <map>
+#include <memory>
+#include <tuple>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -89,42 +92,72 @@ public:
         return true;
     }
 
+    // THE TEXTURE POOL, uploaded only where it is new (`todo/3ds-port.md`
+    // 3a). The pool is handed over again at every change of the resident set
+    // - the first console run logged it some twenty times walking out of the
+    // restaurant into Anekbah, each re-tiling ~7 MB on the CPU. As the GLES
+    // backend does (`glesrender.cpp` setTextures): a texture already on the
+    // GPU from an earlier pool - the same pixel storage, the same size - is
+    // kept, and the entry holds that storage, so its address cannot come back
+    // as another texture's while cached; what no slot of the new pool uses
+    // leaves the GPU.
     void setTextures(std::span<const Texture> t) override {
         closeFrame();                            // a texture in use is never freed under the GPU
-        freeTextures();
-        tex_.assign(t.size(), C3dTex{});
-        long long bytes = 0;
+        const u64 t0 = svcGetSystemTick();
+        for (auto& [key, u] : uploaded_) u.used = false;
+        tex_.assign(t.size(), Slot{});
+        int reused = 0, fresh = 0, failed = 0;
         std::vector<std::uint16_t> tiled;
         for (std::size_t i = 0; i < t.size(); ++i) {
             const Texture& x = t[i];
             if (!x.hasPixels()) continue;
-            if (!C3D_TexInit(&tex_[i].tex, static_cast<u16>(x.width), static_cast<u16>(x.height),
-                             GPU_RGBA5551)) {
-                std::printf("c3d: texture %zu (%s, %dx%d) has no memory - drawn untextured\n",
-                            i, x.name.c_str(), x.width, x.height);
-                continue;
+            const auto key = std::make_tuple(x.idx.data(), x.width, x.height);
+            auto hit = uploaded_.find(key);
+            if (hit == uploaded_.end()) {
+                auto tex = std::make_unique<C3D_Tex>();
+                if (!C3D_TexInit(tex.get(), static_cast<u16>(x.width), static_cast<u16>(x.height),
+                                 GPU_RGBA5551)) {
+                    std::printf("c3d: texture %zu (%s, %dx%d) has no memory - drawn untextured\n",
+                                i, x.name.c_str(), x.width, x.height);
+                    ++failed;
+                    continue;
+                }
+                // the palette as RGBA5551 once - the colour key on black as alpha 0
+                std::uint16_t pal[256];
+                for (int k = 0; k < 256; ++k) {
+                    const std::uint8_t* p = x.pal.data() + 3 * k;
+                    const unsigned r = p[0], g = p[1], b = p[2];
+                    pal[k] = static_cast<std::uint16_t>((r >> 3) << 11 | (g >> 3) << 6 | (b >> 3) << 1 |
+                                                        ((r | g | b) ? 1u : 0u));
+                }
+                tile(x, pal, tiled);
+                C3D_TexUpload(tex.get(), tiled.data());
+                C3D_TexFlush(tex.get());
+                C3D_TexSetWrap(tex.get(), GPU_REPEAT, GPU_REPEAT);
+                const GPU_TEXTURE_FILTER_PARAM f = filter_ ? GPU_LINEAR : GPU_NEAREST;
+                C3D_TexSetFilter(tex.get(), f, f);
+                hit = uploaded_.emplace(key, Uploaded{std::move(tex), x.idx, 2LL * x.width * x.height,
+                                                      false}).first;
+                ++fresh;
+            } else {
+                ++reused;
             }
-            // the palette as RGBA5551 once - the colour key on black as alpha 0
-            std::uint16_t pal[256];
-            for (int k = 0; k < 256; ++k) {
-                const std::uint8_t* p = x.pal.data() + 3 * k;
-                const unsigned r = p[0], g = p[1], b = p[2];
-                pal[k] = static_cast<std::uint16_t>((r >> 3) << 11 | (g >> 3) << 6 | (b >> 3) << 1 |
-                                                    ((r | g | b) ? 1u : 0u));
-            }
-            tile(x, pal, tiled);
-            C3D_TexUpload(&tex_[i].tex, tiled.data());
-            C3D_TexFlush(&tex_[i].tex);
-            C3D_TexSetWrap(&tex_[i].tex, GPU_REPEAT, GPU_REPEAT);
-            const GPU_TEXTURE_FILTER_PARAM f = filter_ ? GPU_LINEAR : GPU_NEAREST;
-            C3D_TexSetFilter(&tex_[i].tex, f, f);
-            tex_[i].ok = true;
-            tex_[i].w = static_cast<float>(x.width);
-            tex_[i].h = static_cast<float>(x.height);
-            bytes += 2LL * x.width * x.height;
+            hit->second.used = true;
+            tex_[i] = Slot{hit->second.tex.get(), static_cast<float>(x.width), static_cast<float>(x.height)};
         }
-        std::printf("c3d: %zu textures as RGBA5551, %lld KB, %u KB of linear memory left\n",
-                    t.size(), bytes / 1024, static_cast<unsigned>(linearSpaceFree() / 1024));
+        int dropped = 0;
+        long long bytes = 0;
+        for (auto it = uploaded_.begin(); it != uploaded_.end(); ) {
+            if (it->second.used) { bytes += it->second.bytes; ++it; continue; }
+            C3D_TexDelete(it->second.tex.get());
+            it = uploaded_.erase(it);
+            ++dropped;
+        }
+        std::printf("c3d: texture pool of %zu - %d kept on the GPU, %d uploaded, %d dropped%s; "
+                    "%lld KB as RGBA5551, %u KB of linear memory left, %.1f ms\n",
+                    t.size(), reused, fresh, dropped, failed ? " (some failed)" : "", bytes / 1024,
+                    static_cast<unsigned>(linearSpaceFree() / 1024),
+                    (svcGetSystemTick() - t0) * 1000.0 / SYSCLOCK_ARM11);
         boundTex_ = ~0u;
     }
 
@@ -180,7 +213,7 @@ public:
         if (d.start + d.count > g.corners.size()) return;
         setState(d);
         const unsigned slot = d.bucketKey & 0x3F;
-        const bool hasTex = slot < tex_.size() && tex_[slot].ok;
+        const bool hasTex = slot < tex_.size() && tex_[slot].tex;
         const float su = hasTex ? 1.0f / tex_[slot].w : 0.0f, sv = hasTex ? 1.0f / tex_[slot].h : 0.0f;
 
         // Per triangle, the GL1 backend's own loop: into view space, the near
@@ -349,12 +382,16 @@ public:
         filter_ = mode >= 1 ? 1 : 0;
         if (mode >= 2) std::printf("c3d: trilinear asked - no mip chain yet, drawn bilinear\n");
         const GPU_TEXTURE_FILTER_PARAM f = filter_ ? GPU_LINEAR : GPU_NEAREST;
-        for (C3dTex& t : tex_) if (t.ok) C3D_TexSetFilter(&t.tex, f, f);
+        for (auto& [key, u] : uploaded_) C3D_TexSetFilter(u.tex.get(), f, f);
         return mode <= 1;
     }
 
 private:
-    struct C3dTex { C3D_Tex tex{}; bool ok = false; float w = 1, h = 1; };
+    // A pool slot: the texture on the GPU (an entry of `uploaded_`) and its size.
+    struct Slot { C3D_Tex* tex = nullptr; float w = 1, h = 1; };
+    // An upload, kept across pools: the storage it was made from is held, so
+    // the key's address stays this texture's.
+    struct Uploaded { std::unique_ptr<C3D_Tex> tex; PixelBuffer keep; long long bytes = 0; bool used = false; };
     struct Vtx { float v[3]; float c[3]; float u, t; };
     static Vtx lerp(const Vtx& a, const Vtx& b, float t) {
         Vtx o;
@@ -389,7 +426,8 @@ private:
     }
 
     void freeTextures() {
-        for (C3dTex& t : tex_) if (t.ok) C3D_TexDelete(&t.tex);
+        for (auto& [key, u] : uploaded_) C3D_TexDelete(u.tex.get());
+        uploaded_.clear();
         tex_.clear();
     }
 
@@ -406,7 +444,7 @@ private:
     // here only when they differ from the last draw's.
     void setState(const Draw& d) {
         const unsigned slot = d.bucketKey & 0x3F;   // ASSETS 4b: the key's low six bits
-        const bool hasTex = slot < tex_.size() && tex_[slot].ok;
+        const bool hasTex = slot < tex_.size() && tex_[slot].tex;
         if (!stateValid_ || d.blend != blend_) {
             switch (d.blend) {
             case Blend::Opaque:
@@ -440,7 +478,7 @@ private:
             C3D_TexEnv* env = C3D_GetTexEnv(0);
             C3D_TexEnvInit(env);
             if (hasTex) {
-                C3D_TexBind(0, &tex_[slot].tex);
+                C3D_TexBind(0, tex_[slot].tex);
                 C3D_TexEnvSrc(env, C3D_RGB, GPU_TEXTURE0, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
                 C3D_TexEnvFunc(env, C3D_RGB, GPU_MODULATE);   // texel x colour
                 C3D_TexEnvSrc(env, C3D_Alpha, GPU_TEXTURE0, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
@@ -462,7 +500,8 @@ private:
     std::size_t used_ = 0;
     std::uint32_t* read_ = nullptr;
     int w_ = 0, h_ = 0;
-    std::vector<C3dTex> tex_;
+    std::vector<Slot> tex_;
+    std::map<std::tuple<const std::uint8_t*, int, int>, Uploaded> uploaded_;
     View view_;
     bool flipX_ = false;
     Surface fb_{1, 1, 0};

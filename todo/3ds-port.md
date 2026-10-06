@@ -391,6 +391,22 @@ clock says 2017-06-14). What it established, ON HARDWARE:
 * Loads: Anekbah's set 712 ms, its `.SCX` 841 ms, its **traffic circuit
   1897 ms**.
 
+### Step 3, the CPU work (the reader's go, 2026-10-06) - 3a to 3d
+
+* **3a, DONE 2026-10-06: the texture uploads cached** - as GLES: a texture
+  already on the GPU from an earlier pool (the same pixel storage, the same
+  size; the entry holds the storage) is kept, the rest uploaded, what the new
+  pool does not use dropped. In Azahar on the street's two hand-overs: 31
+  uploaded, then **31 kept and 8 uploaded, 43 ms instead of 167**; the frame
+  still 99.9% within 24 levels of the reference. The console's ~20 re-uploads
+  walking out of the restaurant become uploads of the new textures only.
+* 3b: the geometry resident, transformed by the vertex shader (the GLES
+  design) - world submit, 44-48 ms on the console.
+* 3c: present straight to the top screen, the interface composited only on
+  the frames something is drawn over the world - screens/hud ~29 + present
+  12-14.
+* 3d: bodies posed by the vertex shader - staged bodies 12-13.
+
 ### Step 4 - the memory fit
 
 The `.cia`'s memory mode in the exheader; textures in the linear heap at 2
