@@ -234,9 +234,12 @@ struct Draw {
     // `Read3DO_Init` sets it to the set's ambient grey (`Draw::lightBase`;
     // read as 0 until 2026-10-06) - and the crowd models ship pure white, so
     // there is no baked light in them to keep.
-    // 0 not lit; 1 lit from BLACK (the engine's own rule, for the bodies it
-    // lights - their models ship white); 2 lit ADDED to the baked colour, for
-    // the bodies it does not, whose models carry real baked shading.
+    // 0 not lit; 1 lit from the scene's `+416` (`View::litBase` - the
+    // engine's own rule, for every body it lights: the crowd, the characters
+    // and the props, all through `sub_494E80`); 2 lit ADDED to the baked
+    // colour - kept in the shaders, used by nothing since 2026-10-06, when
+    // the characters it was for turned out to be lit by the engine too
+    // (todo/drift-audit.md L1).
     int             lit         = 0;
     // Row 6 again: whether this batch goes into the shadow map's depth pass.
     // Only characters do, and that is a constraint rather than a saving - a
