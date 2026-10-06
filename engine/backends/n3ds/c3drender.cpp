@@ -111,20 +111,26 @@ public:
         }
         if (target_) { C3D_RenderTargetDelete(target_); target_ = nullptr; }
         if (read_) { linearFree(read_); read_ = nullptr; }
-        target_ = C3D_RenderTargetCreate(w, h, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
+        // THE PICA's SIDES ARE MULTIPLES OF 8 (its 8x8 tiles), and a frame
+        // need not be (800x450, say): the target is rounded up and
+        // the picture drawn in its top `h` rows - the top-left rectangle the
+        // reference draws into anyway (`renderer.h`, View).
+        tw_ = (w + 7) & ~7;
+        th_ = (h + 7) & ~7;
+        target_ = C3D_RenderTargetCreate(tw_, th_, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
         if (!target_) {
             std::printf("c3d: no %dx%d render target (VRAM)\n", w, h);
             return false;
         }
-        read_ = static_cast<std::uint32_t*>(linearAlloc(static_cast<std::size_t>(w) * h * 4));
+        read_ = static_cast<std::uint32_t*>(linearAlloc(static_cast<std::size_t>(tw_) * th_ * 4));
         if (!read_) { std::printf("c3d: no linear memory for the readback\n"); return false; }
         OMK_GPU_ALLOC("render targets", omk::prof::gpuKey(omk::prof::kGlRenderbuffer, 1u), 8LL * w * h);
         w_ = w; h_ = h;
         fb_ = Surface(w, h, 0);
         readDone_ = false;
-        std::printf("c3d: citro3d on the PICA200, a %dx%d RGBA8 target with 24-bit depth in VRAM, "
-                    "%u KB of VRAM left; the GPU transforms (resident geometry)\n",
-                    w, h, static_cast<unsigned>(vramSpaceFree() / 1024));
+        std::printf("c3d: citro3d on the PICA200, a %dx%d RGBA8 target (the %dx%d frame in it) with "
+                    "24-bit depth in VRAM, %u KB of VRAM left; the GPU transforms (resident geometry)\n",
+                    tw_, th_, w, h, static_cast<unsigned>(vramSpaceFree() / 1024));
         return true;
     }
 
@@ -215,7 +221,7 @@ public:
         C3D_FrameDrawOn(target_);
         // the picture in the TOP-LEFT cam.w x cam.h, as the reference draws
         // it; the PICA's viewport origin is the bottom-left, as GL's
-        C3D_SetViewport(0, static_cast<u32>(h_ - cam.h), static_cast<u32>(cam.w), static_cast<u32>(cam.h));
+        C3D_SetViewport(0, static_cast<u32>(th_ - cam.h), static_cast<u32>(cam.w), static_cast<u32>(cam.h));
         C3D_BindProgram(&prog_);
         C3D_AttrInfo* ai = C3D_GetAttrInfo();
         AttrInfo_Init(ai);
@@ -313,8 +319,8 @@ public:
             // INSIDE the frame: `C3D_SyncDisplayTransfer` then splits it,
             // waits for the GPU to finish what was queued, and transfers -
             // out of the frame it would wait on citro3d's frame pacer first
-            C3D_SyncDisplayTransfer(static_cast<u32*>(target_->frameBuf.colorBuf), GX_BUFFER_DIM(w_, h_),
-                                    reinterpret_cast<u32*>(read_), GX_BUFFER_DIM(w_, h_),
+            C3D_SyncDisplayTransfer(static_cast<u32*>(target_->frameBuf.colorBuf), GX_BUFFER_DIM(tw_, th_),
+                                    reinterpret_cast<u32*>(read_), GX_BUFFER_DIM(tw_, th_),
                                     GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) |
                                     GX_TRANSFER_RAW_COPY(0) |
                                     GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) |
@@ -322,13 +328,13 @@ public:
                                     GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO));
             closeFrame();
         }
-        GSPGPU_InvalidateDataCache(read_, static_cast<u32>(w_) * h_ * 4);
+        GSPGPU_InvalidateDataCache(read_, static_cast<u32>(tw_) * th_ * 4);
         // A pixel is a word 0xRRGGBBAA, and the transfer hands the rows
         // TOP-DOWN already (the first Azahar frame, 2026-10-06, read them
         // bottom-up and came out upside down, everything else right). Into
         // the frame dithered as the reference is.
         for (int y = 0; y < h_; ++y) {
-            const std::uint32_t* row = read_ + static_cast<std::size_t>(y) * w_;
+            const std::uint32_t* row = read_ + static_cast<std::size_t>(y) * tw_;
             for (int x = 0; x < w_; ++x) {
                 const std::uint32_t p = row[x];
                 const int r = static_cast<int>(p >> 24), g = static_cast<int>((p >> 16) & 0xFF),
@@ -339,7 +345,7 @@ public:
         readDone_ = true;
         if (!toldRead_) {
             toldRead_ = true;
-            const std::uint32_t m = read_[static_cast<std::size_t>(h_ / 2) * w_ + w_ / 2];
+            const std::uint32_t m = read_[static_cast<std::size_t>(h_ / 2) * tw_ + w_ / 2];
             std::printf("c3d: first readback %dx%d, %ld triangles, %zu geometries resident, centre "
                         "pixel %u %u %u\n", w_, h_, st_.triangles, res_.size(),
                         static_cast<unsigned>(m >> 24), static_cast<unsigned>((m >> 16) & 0xFF),
@@ -577,7 +583,8 @@ private:
     std::vector<GpuVert*> grave_;
     long pass_ = 0;
     std::uint32_t* read_ = nullptr;
-    int w_ = 0, h_ = 0;
+    int w_ = 0, h_ = 0;          // the frame
+    int tw_ = 0, th_ = 0;        // the target: the frame rounded up to multiples of 8
     std::vector<Slot> tex_;
     std::map<std::tuple<const std::uint8_t*, int, int>, Uploaded> uploaded_;
     View view_;

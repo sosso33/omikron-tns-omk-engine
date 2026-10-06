@@ -414,6 +414,24 @@ clock says 2017-06-14). What it established, ON HARDWARE:
   same scores as the CPU path - **the street 99.9% within 24 levels, the
   Impasse letterbox exact and 97.1%** - so nothing of the picture moved; the
   console says what it saved.
+* **3b ON THE CONSOLE (the reader's second run, 2026-10-06): world submit
+  44-48 -> 9-13 ms**; the texture pool kept what it had (54 kept, 1 uploaded,
+  2.8 ms); slow frames median 99 -> **86 ms**, 90% 138 -> 117. What is left
+  of the frame: "screens, hud" ~28 - mostly the READBACK, which runs after
+  the "world end, submit" mark and so is booked to the next section: the wait
+  for the GPU's drawing, then 640x480 converted on the CPU - present 11-12,
+  staged bodies 9-15, pedestrians 10-14.
+* **16:9 BY DEFAULT** (the reader, 2026-10-06: "use 16:9 resolution by
+  default on 3ds since it is already supported"): `--res 800x448`, added by
+  `n3ds_main.cpp` only when args.txt names no `--res` - the viewer takes the
+  FIRST `--res` it is given, so a default put first silently won over the
+  reader's (found in Azahar). 800x448 and not 800x450: 450 is not a multiple
+  of the PICA's 8 (the target is rounded up for such a frame), and **800x450
+  asked a 135 MB allocation of the 32-bit build at the first world frame -
+  bad_alloc, in Azahar; the desktop draws it. UNEXPLAINED, open** - a 32-bit
+  sizing somewhere the 64-bit build does not show. 800x448 in Azahar: 99.8%
+  within 24 levels of the desktop at the same size; halved, 400x224 on the
+  top screen (93%, where 4:3 used 80%).
 * 3c: present straight to the top screen, the interface composited only on
   the frames something is drawn over the world - screens/hud ~29 + present
   12-14.

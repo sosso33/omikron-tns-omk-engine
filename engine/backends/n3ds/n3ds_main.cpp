@@ -40,6 +40,7 @@
 
 #include <malloc.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <ctime>
 #include <exception>
@@ -195,10 +196,20 @@ int main(int, char**) {
 #if defined(OMK_3DS_TOOL)
     std::vector<std::string> args = {"omk", kRoot, "--tables", kTables};
 #else
-    // The frame is 640x480, the size `Frontend::present` is promised
-    // (PORTING A3); the frontend fits it to the top screen.
-    std::vector<std::string> args = {"omk-play", kRoot, kTables,
-                                     "--saves", kSaves, "--res", "640x480"};
+    // THE FRAME IS 16:9 BY DEFAULT - the reader's decision of 2026-10-06
+    // ("use 16:9 resolution by default on 3ds since it is already
+    // supported"). 800x448 rather than 800x450: the PICA tiles its sides
+    // exactly (multiples of 8), and 800x450 asked a 135 MB allocation of the
+    // 32-bit build at the first world frame (Azahar, unexplained - the
+    // desktop draws it; `todo/3ds-port.md`). Halved it is 400x224 on the
+    // 400x240 top screen, 93% of it where 4:3 used 80%. The engine scales the 640x480 interface to the
+    // frame (`I2D_ScaleX/Y`), as the Vita's 16:9 does, and keeps the 3D's
+    // horizontal fov. The frontend fits whatever the frame is to the top
+    // screen. Added only when args.txt names no `--res` of its own: the
+    // viewer takes the FIRST `--res` it is given (measured in Azahar,
+    // 2026-10-06 - an args.txt `--res 800x448` after this default was
+    // ignored), so a default put first would always win.
+    std::vector<std::string> args = {"omk-play", kRoot, kTables, "--saves", kSaves};
     if (exists(kIni)) { args.push_back("--config"); args.push_back(kIni); }
 #endif
     if (std::FILE* f = std::fopen(kExtra, "r")) {
@@ -210,6 +221,12 @@ int main(int, char**) {
         }
         std::fclose(f);
     }
+#if !defined(OMK_3DS_TOOL)
+    if (std::find(args.begin(), args.end(), std::string("--res")) == args.end()) {
+        args.push_back("--res");
+        args.push_back("800x448");                      // 16:9, the 3DS default (above)
+    }
+#endif
     std::vector<char*> argv;
     for (auto& a : args) argv.push_back(a.data());
     argv.push_back(nullptr);
