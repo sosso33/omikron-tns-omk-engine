@@ -81,6 +81,10 @@ keeps the head smooth but the world freezes. §4 is the answer.
 
 ## 3. The first test version - about 4-6 working days
 
+(The estimate of 2026-10-05. §3b's answers add controller aim, look-relative
+movement, the fight camera and the keyboard; §5 is the plan that replaces
+this table, at 6-8 days.)
+
 Scope, as the reader asked:
 
 * **Every authored camera** (conversations, cutscenes, the slider ride,
@@ -230,3 +234,170 @@ busy street is ~100-200 MB against several GB on a Quest 2 or 3.
 **The first step**: the zone scan, counting door targets per city within
 25 m of the streets. That number decides whether step 5's "everything
 reachable" fits a budget. About 2-4 days for the whole mode with its checks.
+
+## 5. The first prototype - the implementation plan (2026-10-06)
+
+Six steps of work and one of play, each ending in a commit and a report.
+The first three run on the Mac alone, through a fake headset, so they are
+built and checked before any device is involved; the Quest arrives at step 4.
+About **6-8 working days**, more than §3's 4-6 because §3b added controller
+aim, look-relative movement, the fight camera and the keyboard.
+
+**Three rules hold every step:**
+
+* **The head is a RENDER transform.** Everything that is game logic reads the
+  AUTHORED camera, kept as it is at the end of `PlayState::worldCamera()`
+  (`playframe_world_scene.cpp`); only the drawing, the culling and the
+  sound listener take the head-composed one. A head turn must never change
+  what the game decides. The exceptions are deliberate and named: adventure
+  mode's first-person view and movement (§3b 7) and shoot mode's aim (§3b 8).
+* **Everything VR is behind the gateway.** Game code reaches the host only
+  through `omk::Frontend` (`platform/frontend.h`); the head and the
+  controllers arrive there, and no OpenXR header leaves the new frontend -
+  as no SDL header leaves `sdlfront.*` (`verify.py: engine: frontend
+  gateway`).
+* **Off unless asked, and the flat game unchanged.** With no head pose the
+  frame is byte-identical to today's; every check below asserts that first.
+  It is this project's own work - there is no original to be faithful to -
+  and each slice says so in PORTING B2's three places.
+
+### Step 1 - the stereo seam and the fake headset (Mac; ~1-1.5 days)
+
+* **The pose types**, in `frontend.h`: a `HeadPose` (per eye a position in
+  metres, an orientation, and the four field-of-view tangents OpenXR gives;
+  `valid` false by default) and a virtual `bool headPose(HeadPose&)` that
+  returns false everywhere today.
+* **One conversion module, pure and testable** (`src/platform/xrspace.h`):
+  metres to inches (x39.37); OpenXR's Y-up into the game's Y-down - a
+  REFLECTION, so a rotation's sense flips (CLAUDE.md §5) and the conversion
+  is done once, here, and nowhere else; and `authored camera x head local
+  pose -> per-eye eye/at/roll + an asymmetric frustum`.
+* **`View` gains an optional per-eye frustum** (the four tangents). `RCamera`
+  is eye/at/hfov/roll (`o3de/raster.h` 71) - symmetric, so the per-eye
+  frustum is new. All three renderers honour it: the software reference too,
+  because the checks render headless through it.
+* **The seam**: at the end of `worldCamera()`, beside the `--eye`/`--at`
+  instrument override (line ~589), keep the authored view, then compose the
+  head. The CPU culling (`frustumFromFov`, `playframe_world_staged.cpp` 105)
+  takes ONE frustum covering both eyes.
+* **`omk-play --vr-sim`**: the head on the mouse and keys, the two eyes side
+  by side through `View`'s viewport (the one the letterbox already uses).
+* **Checks** (each shown to fail): `engine: vr camera rule` - an identity head
+  gives a frame byte-identical to the flat one; a head turned 30 degrees right
+  turns the picture right (the reflection's sign, mutated by flipping it); the
+  two eyes 2.52 inches apart for 64 mm.
+
+### Step 2 - the cameras, mode by mode (Mac; ~1-1.5 days)
+
+* **Authored cameras** (conversations, editings, world cameras, the slider
+  ride) become the origin as they are. Two flags, as §3 asked:
+  `vrcamera = level | full` (the authored roll and pitch dropped or kept;
+  level by default) and `vrrecentre = cut | scene`. The cuts are already
+  known where they happen: an editing's shot change, a dialogue camera pair
+  change.
+* **Adventure first person**: the eye where shoot mode's is - the pelvis plus
+  `player->headLift()` (`worldCamera()`'s shoot branch, ~line 470) - and the
+  body hidden by the same not-drawable flag `Shoot_Enter` sets (the port's
+  `sub_436CE0`, `playframe_world_scene.cpp` ~655). **Look-relative
+  movement** is done by TRANSLATING, not by new movement: the stick's
+  direction in the head's yaw becomes a wanted heading, and the existing
+  input bits (turn left / right, forward) drive the body toward it, so the
+  `.CTL` channel and the walker stay the engine's own. To read first: how
+  the adventure controller turns today (`playframe_control_adventure.cpp`
+  33: "the mouse turns the BODY in yaw and the CAMERA in pitch").
+* **The fight**: `FightCamera` (`actor/fight.h` 207, `Fight_TickCamera`) is
+  the origin, with a VR variant behind a flag - the orbit's distance FROZEN
+  at the fight's start (no zoom in or out), the eye's ease (0.25 m a frame)
+  and the heading's turn slowed, the throw swing and the steady orbit
+  (states 2 and 3) clamped to the same speed. Flags so playing can tune
+  them.
+* **Seated, behind one seam**: a `ReferenceSpace` setting where the eye
+  height and the floor origin are chosen; seated uses the head's LOCAL
+  offsets around the authored eye. Standing is a second value of it later.
+* **Checks**: an `OMK_CAMEYE`-style line per mode under `--vr-sim`, and a
+  headless run through dialogue 402 asserting the authored trajectory is
+  unchanged by a moving head while the drawn eye follows it.
+
+### Step 3 - shoot mode aims with the controller (Mac; ~1 day)
+
+* `HostInput` gains the controllers' poses (an aim ray each, in head space);
+  `--vr-sim` drives one from the mouse.
+* The engine already parts aim from body: the arm's aim angles
+  (`dword_6579A0/A4`, `actor/shootaim.h`) bend the upper body through
+  `S_AUTOLK`'s keys by bands of yaw (+-40 degrees) and pitch, and the
+  `--aim-at` harness (`playharness.cpp` 347) aims the player's shot at a world
+  point. The controller's ray gives the point, the angles follow from it,
+  and the body turns with the head. To read first: what the shot ray is
+  built from when the aim yaw is not 0 (the player arm sets its target to 0,
+  so this path has run only for the gunmen).
+* **Check**: headless, the head looking 30 degrees away while the simulated
+  controller points at a gunman in `--area 230 --scene-chunk 56`, and the
+  bolt hits him.
+
+### Step 4 - an Android build that boots on the Quest (device; ~1 day)
+
+* **What the reader does once**: developer mode on the Quest, the USB cable,
+  `adb devices` seeing it. **What is installed**: the Android NDK (absent on
+  the M1 on 2026-10-05; the SDK and `adb` are there), SDL's Android sources.
+* A CMake build modelled on `backends/vita/CMakeLists.txt` (`omk_engine` +
+  the viewer's sources + the GLES backend + SDL), an APK with the Quest's
+  manifest entries.
+* The data SIDELOADED to the app's folder (`/sdcard/Android/data/<package>/
+  files/`, `gamedata` and `tables`), found through `omk.conf`'s resolver;
+  `DataFs` is already case-insensitive.
+* **Milestone**: still FLAT - the game in the Quest's 2D panel, booting to the
+  start menu with sound, its log over `adb logcat`. It proves the build, the
+  data and GLES on the device before OpenXR is added.
+
+### Step 5 - the OpenXR frontend (device; ~1.5-2 days)
+
+* `backends/openxr/`: an instance with `XR_KHR_android_create_instance` and
+  `XR_KHR_opengl_es_enable`, a session, the LOCAL (seated) reference space,
+  one GLES swapchain per eye, and `xrWaitFrame` / `xrBeginFrame` /
+  `xrLocateViews` / `xrEndFrame` around one turn of the loop.
+* The GLES backend draws into the eye's swapchain image: it already renders
+  to its own framebuffer objects (`fbo_`, `windowFbo_`), so this is a target
+  it is handed.
+* **The frontend paces**: `xrWaitFrame` blocks, so the 30/60 pacer
+  (`playframe_present.cpp` ~84) is skipped when the frontend says it paces.
+  The simulation keeps stepping on the measured delta, which is what makes
+  72 or 90 Hz free.
+* The controllers into `pad::Pad` (sticks, A/B/X/Y, triggers, grips) as the
+  Vita pad does, so the four control schemes take them unchanged; their
+  poses into §3's aim rays. The headset taken off pauses the game (the
+  session leaving FOCUSED).
+* The sound listener follows the head - first find where the listener is
+  fed from the camera today (the mixer's `Sound_SetListener` port).
+
+### Step 6 - the interface, the films and the keyboard (device; ~0.5-1 day)
+
+* The composed 640x480 interface (menus, the sneak, subtitles, reply choices)
+  into its own texture, shown as an `XrCompositionLayerQuad` - the
+  compositor draws it sharp, at about 1.5 m. The FLIS films on the same quad.
+  On the Mac, `--vr-sim` keeps compositing it into each eye flat.
+* **The keyboard, tried first**: `startTextInput()` showing the system
+  keyboard through the `oculus.software.overlay_keyboard` manifest feature;
+  if a native app does not get it, `XR_META_virtual_keyboard`, which costs
+  drawing its model. The Vita's `backends/vita/ime.cpp` is the shape of the
+  frontend's half either way.
+
+### Step 7 - the first play pass (device; ~0.5-1 day)
+
+One route, at 72 Hz on a Quest 2, the frame log over `logcat`: boot, the
+films, the start menu with a name typed, the apartment, the street, one
+conversation (camera rule, recentre), a shoot phase (`--area 230
+--scene-chunk 56`, controller aim), a fight (`--fight-supermarket`, the
+slowed camera). What it decides is written back here: what lies outside
+the authored frame (§3b 5), the two camera flags' defaults, the fight
+camera's speeds, and which hitches §4's preload has to remove.
+
+**Not in this prototype**: §4's preload mode (after the play pass, which
+says which hitches matter), multiview (needs the GLES 3 shader prelude - the
+first optimisation after), standing play (the seam is there), menu pointing,
+comfort options.
+
+**Read before the step that needs it**, so no estimate rests on a guess:
+the adventure controller's turn (step 2); the shot ray when the aim yaw is
+not 0 (step 3); where the listener is fed (step 5); and whether anything
+besides the culling and the crowd's distance tests reads `view.cam` - those
+read the drawn camera today, and each one has to choose authored or head.
