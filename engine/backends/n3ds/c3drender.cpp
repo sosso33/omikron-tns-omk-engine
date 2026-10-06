@@ -259,6 +259,8 @@ public:
     }
 
     void begin(const View& v) override {
+        const u64 b0 = svcGetSystemTick();
+        passStart_ = b0;
         closeFrame();
         view_ = v;
         RCamera cam = v.cam;
@@ -303,6 +305,7 @@ public:
         C3D_FVUnifSet(GPU_VERTEX_SHADER, uMvp_ + 3, f[0], f[1], f[2], -fe);
         C3D_DepthMap(true, -1.0f, 0.0f);
         setShimmer();
+        rep_.beginTicks += svcGetSystemTick() - b0;
 
         cull_ = -1;
         stateValid_ = false;
@@ -397,6 +400,7 @@ public:
     }
 
     void end() override {
+        if (passStart_) { rep_.passTicks += svcGetSystemTick() - passStart_; passStart_ = 0; }
         // the frame stays open: `readback` reads it inside the frame (see
         // there), and the next `begin` closes one nobody read
     }
@@ -504,8 +508,9 @@ public:
                     static_cast<double>(posedGpu_ - rep_.gpu0) / f, static_cast<double>(posedCpu_ - rep_.cpu0) / f,
                     rep_.cpuPoseTicks * ms / f, rep_.waitTicks * ms / f, rep_.cmdMax * 100.0,
                     C3D_GetDrawingTime(), C3D_GetProcessingTime());
-        std::printf("frame %ld c3d CPU (ms a pass): submit %.2f, of it residency %.2f and pose uniforms "
-                    "%.2f; the straight present's dither loop %.2f\n", frame,
+        std::printf("frame %ld c3d CPU (ms a pass): begin %.2f, begin..end %.2f, submit %.2f, of it "
+                    "residency %.2f and pose uniforms %.2f; the straight present's dither loop %.2f\n", frame,
+                    rep_.beginTicks * ms / f, rep_.passTicks * ms / f,
                     rep_.submitTicks * ms / f, rep_.residentTicks * ms / f, rep_.uniformTicks * ms / f,
                     rep_.halfLoopTicks * ms / f);
         const long g = posedGpu_, c = posedCpu_;
@@ -687,6 +692,7 @@ private:
         long passes = 0, draws = 0;
         u64 cpuPoseTicks = 0, waitTicks = 0;
         u64 submitTicks = 0, residentTicks = 0, uniformTicks = 0, halfLoopTicks = 0;
+        u64 beginTicks = 0, passTicks = 0;
         float cmdMax = 0.0f;
         long gpu0 = 0, cpu0 = 0;
     };
@@ -967,7 +973,8 @@ private:
     std::vector<GpuPoseVert*> poseGrave_;
     long posedGpu_ = 0, posedCpu_ = 0;
     Report rep_;
-    bool rgb565_ = false;             // the 16-bit experiment (`sdmc:/omk/c3d-rgb565`)
+    bool rgb565_ = false;
+    u64 passStart_ = 0;             // the 16-bit experiment (`sdmc:/omk/c3d-rgb565`)
     std::vector<std::uint32_t> rowRgba_, rowPad_;     // a row in RGBA byte order (toRgb565Row)
     std::vector<std::uint16_t> row565_;
     std::unordered_map<const Geometry*, Res> res_;

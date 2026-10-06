@@ -523,6 +523,21 @@ original's framebuffer depth - and the transfers 565, no CPU conversion:
 default - only the console can show (Azahar cannot). The panel's redraw is
 ~7.5 ms twice a second, the frontend's copy 1.5 ms a frame (Azahar's CPU).
 
+### THE SIXTH CONSOLE RUN - the console's own CPU figures (the reader, 2026-10-06)
+
+The default pass (RGBA8 + CPU dither; the 16-bit pass not yet run): submit
+**3.3 ms**, the straight present's dither loop **5-6**, **the frontend's copy
+6-7.6** (1.5 in Azahar - the emulator does not model the cache), the panel's
+redraw 6-15 twice a second; sim+draw 38-48 in the street. **The copy was a
+cache fault**: the framebuffer runs in columns, so copying column by column
+read one pixel per 800-byte row. Now in 8x8 TILES (eight short rows read,
+eight short columns written) - proved 96000/96000 against the screen as
+written. And the "world begin..end (submit)" section (10-21 ms) holds more
+than the backend's 3.3 ms of submits - `drawWithMirror`'s `splitList` scan
+of every draw's `cornerMirror` before the pass, and whatever the frontend
+does between submits; the report now also times `begin` and the whole
+begin..end of a pass, so the next run separates them.
+
 ### Step 4 - the memory fit
 
 The `.cia`'s memory mode in the exheader; textures in the linear heap at 2

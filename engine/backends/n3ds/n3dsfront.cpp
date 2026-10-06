@@ -325,13 +325,30 @@ void N3dsFrontend::present(const Surface& fb) {
             for (int v = 0; v < oh; ++v, r += 2 * static_cast<std::size_t>(fb.w))
                 *o-- = box4(r[0], r[1], r[fb.w], r[fb.w + 1]);
         } else if (exact) {
-            const std::uint16_t* r = src + u;
-            for (int v = 0; v < oh; ++v, r += fb.w) *o-- = *r;
+            continue;                                   // below, in tiles
         } else {
             const int cu = colMap_[static_cast<std::size_t>(u)];
             for (int v = 0; v < oh; ++v)
                 *o-- = src[static_cast<std::size_t>(rowMap_[static_cast<std::size_t>(v)]) * fb.w + cu];
         }
+    }
+    // A FRAME THE SCREEN'S OWN SIZE, IN 8x8 TILES. The framebuffer runs in
+    // columns and the frame in rows, so a column-by-column copy reads one
+    // pixel per 800-byte row - a new cache line every read: 6-7.6 ms a frame
+    // on the console (the reader's sixth run, 2026-10-06) where Azahar showed
+    // 1.5. A tile reads eight short rows and writes eight short columns, each
+    // within a line or two.
+    if (exact) {
+        for (int tx = 0; tx < ow; tx += 8)
+            for (int ty = 0; ty < oh; ty += 8) {
+                const int nx = std::min(8, ow - tx), ny = std::min(8, oh - ty);
+                for (int i = 0; i < nx; ++i) {
+                    const int x = ox + tx + i;
+                    std::uint16_t* o = dst + x * 240 + 239 - (oy + ty);
+                    const std::uint16_t* r = src + static_cast<std::size_t>(ty) * fb.w + tx + i;
+                    for (int j = 0; j < ny; ++j, r += fb.w) *o-- = *r;
+                }
+            }
     }
     copyTicks_ += svcGetSystemTick() - pr0;
     if (captureAt_ >= 0 && stats_.frames == captureAt_) captureOwed_ = true;
