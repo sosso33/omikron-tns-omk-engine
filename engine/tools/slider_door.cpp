@@ -21,6 +21,8 @@
 #include "actor/pose.h"
 #include "platform/datafs.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -95,6 +97,40 @@ int main(int argc, char** argv) {
                 std::printf("\n");
                 break;
             }
+        }
+    }
+    // THE ROOT'S TURN: the first track with rotation keys, its quaternion at
+    // key 1 and at the last key, as the yaw of the -Z it turns (the +420
+    // convention `headingFromClipRoot` uses: atan2(z, x) + 90). For the
+    // exit and for the stand that follows it - `MDSLIDOU` writes +420 from
+    // the node's matrix as H_SLDOUT ends, so the turn the clip leaves him
+    // with is the facing he walks away on.
+    auto rootYaw = [&](int clip, int key) -> float {
+        if (clip < 0) return 0.0f;
+        const auto d = omk::animDescriptor(data, f.clips[(std::size_t)clip].offset);
+        if (!d) return 0.0f;
+        for (const auto& t : d->tracks) {
+            if (!t.rotOffset || t.rotKeys <= 0) continue;
+            const int k = key < 0 ? t.rotKeys - 1 : std::min(key, t.rotKeys - 1);
+            float q[4];
+            for (int c = 0; c < 4; ++c)
+                q[c] = omk::loadLE<float>(data.data() + t.rotOffset + 16u * (std::size_t)k + 4 * c);
+            // conjugate (the stored convention), then rotate (0, 0, -1)
+            const float x = -q[0], y = -q[1], z = -q[2], w = q[3];
+            const float vx = 0, vy = 0, vz = -1;
+            const float tx = 2 * (y * vz - z * vy), ty = 2 * (z * vx - x * vz), tz = 2 * (x * vy - y * vx);
+            const float rx = vx + w * tx + (y * tz - z * ty);
+            const float rz = vz + w * tz + (x * ty - y * tx);
+            return static_cast<float>(std::atan2(rz, rx) * 57.29577951308232 + 90.0);
+        }
+        return 0.0f;
+    };
+    for (const char* name : {"H_SLDOUT", "H_STAND", "H_SLDIN", "H_SLIDER"}) {
+        for (const auto& st : f.states) {
+            if (st.name != name) continue;
+            std::printf("root turn %s clip %d first %.1f last %.1f\n", name, st.clip,
+                        rootYaw(st.clip, 1), rootYaw(st.clip, -1));
+            break;
         }
     }
     return fails ? 1 : 0;

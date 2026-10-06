@@ -680,6 +680,8 @@ private:
     int   nSliderModels_ = 0, nMotoModels_ = 0;   // dword_539934 / dword_539930
     std::map<std::string, float> vehRadius_;      // `sub_438040` per vehicle model, once handed in
     int   lastSpawnSlot_ = -1;                // the slot `spawnVehicle` last filled
+    Pedestrian manualStart_{};               // the mover when Manuelle began (`dword_8F5E2C/28/30`)
+    bool  haveManualStart_ = false;
     int   level_ = kDefaultStreetActivity;
     int   talkTarget_ = -1;
     std::uint32_t rng_ = 1u;

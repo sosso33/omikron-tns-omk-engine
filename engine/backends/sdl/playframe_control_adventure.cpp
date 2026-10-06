@@ -470,7 +470,12 @@ void PlayState::adventureScreenInput() {
                 player->setChannelOnly(true);
                 boarding = true;
                 mountSpent = true;
-                boardCam = 60;
+                // `Camera_Request(9, {slider, slider}, 60.0)`: a 60-frame
+                // BLEND into preset 9, which then HOLDS - nothing requests
+                // another through H_SLDIN, the seat or screen 7 (drift
+                // audit A7: this counted 60 down as a hold and dropped to
+                // the follow camera mid-clip)
+                sliderCamRequest(9, 60.0f);
                 const bool got = player->enterGroupById(60);
                 std::printf("MDACTION: the slider's door at %.0f %.0f %.0f, "
                             "%.1f m away on the right side - snapped to "
@@ -1332,6 +1337,20 @@ void PlayState::adventureSeated() {
     // since a reader lost it at Qalisar's kerb: once it is
     // traffic again the ambient drive owns it, and where that
     // drive puts it on its first step is the question.
+    // THE CALLED SLIDER'S CAMERA REQUESTS, as `sub_456530` makes them:
+    //   case 2 (coming) and case 6 (driving him) - `if (mode != 8)
+    //     Camera_Request(8, slider)`, a cut, every tick;
+    //   case 2's arrival (2 -> 1) - `Camera_Request(0, player)` over 60,
+    //     unless the mode is 0 or 17.
+    // (Case 6's arrival is mode 10, in the journey's exit above.)
+    {
+        const int st = session.sliders().calledVehicle() >= 0
+                     ? session.sliders().callMachine().state : 0;
+        if ((st == 2 || st == 6) && !ride && sliderCamMode != 8) sliderCamRequest(8, 0.0f);
+        if (sliderPrevState == 2 && st == 1 && sliderCamMode >= 0 && sliderCamMode != 17)
+            sliderCamRequest(0, 60.0f);
+        sliderPrevState = st;
+    }
     static int  releasedSlot = -1;
     static long releasedAt = -1;
     if (session.sliders().calledVehicle() >= 0) releasedSlot = session.sliders().calledVehicle();
@@ -1409,63 +1428,51 @@ void PlayState::adventureSeated() {
             // entry's `slf_112.3da` - two different globals, and
             // measuring group 61 against 112 was wrong even though
             // the two clips' root keys turn out to be identical.
-            float at[3], ax[3], az[3];
-            bool out = false;
-            if (player && session.sliders().calledFrame(at, ax, az)) {
-                if (!exitOffState) {
-                    const auto ref = fs.read("ANIMS/slf_113.3da");
-                    exitOffState = (!ref.empty() &&
-                                    player->boardOffset(ref, 61, exitOff)) ? 1 : -1;
-                }
-                float o[3] = {at[0], at[1] - omk::kBoardSeatY, at[2]};
-                if (exitOffState == 1) {
-                    for (int k = 0; k < 3; ++k)
-                        o[k] += exitOff[0] * ax[k] + exitOff[2] * az[k];
-                    o[1] += exitOff[1];
-                }
-                o[1] += player->cameraLift();   // pelvis -> feet, as above
-                player->rideAt(o, player->facing());
-                player->setActorState(omk::ActorState::SliderRide, "sub_468FA0");
-                player->setRootFrame(ax, az);
-                player->setChannelOnly(true);
-                session.setPlayerPosition(o, player->facing());
-                // ...and the RELEASE test's rider, NOW. `case 7` is
-                // armed by `dismountCalled` below and tests "300
-                // clear and in front" on the next tick; after a
-                // load the rider it had was his position in the
-                // OLD city, nine kilometres away, so the slider was
-                // handed back to the traffic one frame after he
-                // got out and was gone before he stood up (traced:
-                // "the called vehicle is GONE at 0 0 0, ride state
-                // 0" at ARRIVED+1). The engine's ride writes +244
-                // before mode 7 is set; this is that write.
-                session.sliders().setRider(o, player->facing());
-                out = player->enterGroupById(61);
-                leaving = true;
-                std::printf("slider: ARRIVED - he gets OUT WHERE IT "
-                            "STOPPED, %.0f %.0f %.0f (offset %.1f %.1f "
-                            "%.1f in its frame%s), ACTOR_STATE 8, %s\n",
-                            o[0], o[1], o[2], exitOff[0], exitOff[1],
-                            exitOff[2],
-                            exitOffState == 1 ? "" : " - UNREAD",
-                            out ? "H_SLDOUT plays" : "but the bank has "
-                                  "no group 61");
-            }
-            // `Camera_Request(17, {player, player, 60.0f, 1, .., -1})`
-            // - `sub_4570F0`'s last act. Preset 17: eye
-            // (-39.3701, 78.7402, 0), target (0, 0, 0), fov 75,
-            // subjects 0/0 - a metre behind and two up, on him, over
-            // sixty frames. The same blend the take camera uses.
+            // The journey's end in `sub_456530` case 6: mode 4, then
+            // `sub_468FA0` - the same exit a manual stop takes.
+            const float journeyAddr = static_cast<float>(journeyTo);
+            float sat[3], sx[3], sz[3];
+            const bool haveFrame = session.sliders().calledFrame(sat, sx, sz);
+            beginSliderExit();
+            // ...and CAMERA 10, `g_CamActorA = sub_40E630(dword_6A17CC)` -
+            // the destination's ADDRESS record - and `g_CamActorB = the
+            // slider`, over 60 frames if the camera was on mode 8 and a CUT
+            // otherwise (`dword_930818 = 60; if (mode != 8) = 0`). Preset 10:
+            // eye (-314.96, 157.48, 0) on the slider - 8.00 m to its side,
+            // 4.00 m up - looking at the address. `sub_4141F0` puts the eye on
+            // the OTHER side when the address bears to the slider's left of
+            // its heading: `b - h > 0` with `b = atan2(dz, dx) + 90` toward
+            // the address and `h = atan2(dir.z, dir.x) + 90` the mover's
+            // direction (`sub_438390`), wrapped to (-180, 180].
+            // This said camera 17 until 2026-10-06 - `sub_4570F0`'s, the
+            // MANUAL stop's - and mode 10 was computed and never drawn.
             {
-                static constexpr float kExitEye[3] = {-39.3701f, 78.7402f, 0.0f};
-                static constexpr float kExitAt[3]  = {0.0f, 0.0f, 0.0f};
-                playerCamRequest(kExitEye, kExitAt, 75.0f, 60.0f);
-                std::printf("slider: camera 17 requested - preset 17 on him over 60 frames\n");
+                const omk::Address* ad = nullptr;
+                for (const auto& x : session.residentSlot(session.activeSlot()).addresses)
+                    if (x.id == static_cast<int>(journeyAddr)) ad = &x;
+                if (ad && haveFrame) {
+                    for (int k = 0; k < 3; ++k) sliderCamAddr[k] = ad->pos[k];
+                    const double b = std::atan2(ad->pos[2] - sat[2], ad->pos[0] - sat[0]) * 57.29577951308232 + 90.0;
+                    const double h = std::atan2(-sz[2], -sz[0]) * 57.29577951308232 + 90.0;
+                    double dd = b - h;
+                    if (dd > 180.0) dd -= 360.0;
+                    if (dd < -180.0) dd += 360.0;
+                    sliderCamEyeX10 = dd > 0.0 ? 314.9606f : -314.9606f;
+                    sliderCamRequest(10, sliderCamMode == 8 ? 60.0f : 0.0f);
+                    // which side of the slider the address lies on, along
+                    // its local X, against which side the eye goes to
+                    // (`out = subject - x * row0`, so the eye is at -x)
+                    const double addrSide = (ad->pos[0] - sat[0]) * sx[0] + (ad->pos[2] - sat[2]) * sx[2];
+                    std::printf("slider: camera 10 - on the slider, looking at address %d "
+                                "(bearing %+.0f of its heading, eye x %+.0f): the eye is %s "
+                                "the address\n", ad->id, dd, double(sliderCamEyeX10),
+                                (addrSide > 0.0) == (-sliderCamEyeX10 > 0.0f)
+                                    ? "on the SAME side as" : "ACROSS the slider from");
+                } else {
+                    std::printf("slider: camera 10 not requested - %s\n",
+                                ad ? "no slider frame" : "the address is not in the resident area");
+                }
             }
-            // `sub_468FA0`: mode 5 while H_SLDOUT plays; MDSLIDOU makes
-            // it 7 when the clip ends, and case 7 then lets it go
-            session.sliders().exitCalled();
-            boarded = false;
             journeyTo = -1;
             // `dword_6A17CC` is NOT cleared here: the sneak's own open does
             // that (`Ui_OpenSneakFamily`), and nothing at the dismount does
@@ -1506,8 +1513,36 @@ void PlayState::adventureRide() {
         const double dt = frameSec * 30.0 * 0.5;
         ride->fly(bits, dt, probe);
         ride->hover(dt, probe);
-        if (ride->stopped) {
-            // `sub_4570F0`: the ride ends, the slider is dropped
+        if (ride->stopped && session.sliders().calledVehicle() >= 0) {
+            // ---- `sub_4570F0`, THE MANUAL STOP (drift audit M1) ----
+            //
+            //   World_ProbePoint under the ride: y += the drop - the
+            //     slider is put down on the ground (`sub_438330`)
+            //   ACTOR_STATE and the slider mode restored, the ride off
+            //     (`dword_8F5E04 = 0`)
+            //   sub_468FA0 - the SAME exit as a journey's end: out at
+            //     the door, H_SLDOUT, ACTOR_STATE 8, mode 5
+            //   sub_438420(slider, 7); Camera_Request(17, {player,
+            //     player}, 60.0)
+            //
+            // This placed him beside the ride, set mode 7 and dropped
+            // the ride - and never cleared `boarded`, so the next frame
+            // sat him back in the seat for good.
+            double drop = 0.0; bool braking = false;
+            float land[3] = {static_cast<float>(ride->x), static_cast<float>(ride->y),
+                             static_cast<float>(ride->z)};
+            if (probe(ride->x, ride->y, ride->z, drop, braking)) land[1] += static_cast<float>(drop);
+            session.sliders().placeCalled(land, static_cast<float>(ride->yaw - 180.0));
+            std::printf("ride: stopped at %.0f %.0f %.0f - `sub_4570F0`: the slider "
+                        "put down at y %.0f, and he gets out\n",
+                        ride->x, ride->y, ride->z, double(land[1]));
+            ride.reset();
+            beginSliderExit();                       // `sub_468FA0`
+            session.sliders().dismountCalled();      // `sub_438420(slider, 7)`
+            sliderCamRequest(17, 60.0f);
+        } else if (ride->stopped) {
+            // `--ride` (the harness, no called slider): `sub_4570F0`'s
+            // ride ends, the slider is dropped
             // onto the ground and the camera hands back at mode
             // **17** with the PLAYER as both subjects - not mode
             // 0, which is why `sub_452570`'s arrive arm guards
@@ -2381,9 +2416,33 @@ void PlayState::adventureShot() {
             // ACTOR_STATE 8 ("bad mode getting out of the slider
             // !") and leaves the actor at 1.
             leaving = false;
+            // HIS FACING, written as H_SLDOUT ends (drift audit A6):
+            // `sub_442D70(0, 0, 1, node+5Ch)`, `fpatan`, `* 57.29... -
+            // -180.0` into +420 - the heading of the node's +Z. He is drawn
+            // in the slider's frame while the clip plays (`leaving` poses
+            // him at `atan2(-row2.x, row2.z)`) and H_SLDOUT's root ends at
+            // the very turn H_STAND starts on (`slider_door`'s `root turn`:
+            // 180.0 and 180.0), so the node's matrix at that moment IS the
+            // slider's and that yaw is the one he walks away on. Nothing
+            // wrote it before: he popped back to the seat's yaw - the pool's
+            // MIRRORED convention - and walked off that way.
+            {
+                float sat[3], sx[3], sz[3];
+                if (session.sliders().calledFrame(sat, sx, sz)) {
+                    const float was = player->facing();
+                    player->setFacing(static_cast<float>(std::atan2(-sz[0], sz[2]) * 57.29577951308232));
+                    std::printf("MDSLIDOU: his facing %.1f -> %.1f, the slider's frame "
+                                "H_SLDOUT ended in\n", double(was), double(player->facing()));
+                }
+            }
             session.sliders().slidOutCalled();   // 5 -> 7 (or 7 -> 5 -> 7)
             slidOutAt = n;
-            if (takeCam) takeCamRequest(3);      // back to the follow camera
+            // ...and the camera: `Camera_Request(0, {player, player},
+            // 60.0, type 1)` unless the mode is 0 or 17 - after a journey
+            // it is mode 10 and travels back to the follow camera; after a
+            // manual stop it is 17, which lets him walk out of it
+            if (sliderCamMode != 17 && (sliderCamMode >= 0 || takeCam))
+                sliderCamRequest(0, 60.0f);
             player->setActorState(omk::ActorState::Normal, "MDSLIDOU");
             player->setChannelOnly(false);
             player->clearRootFrame();
@@ -2715,4 +2774,67 @@ void PlayState::adventureAction() {
                         n, under, session.zones().registered().size());
         }
     }
+}
+
+// `sub_468FA0` (0x00468FA0), THE EXIT'S START - the journey's end (case 6)
+// and the manual stop (`sub_4570F0`) both call it:
+//
+//   o3de_EnableObject(node, 8)          he is drawn again (drift audit A1)
+//   slider mode 4, its speed zeroed, its node at the slider; then mode 5
+//   off = root0(group 61's clip) - root0(dword_9103D8 = slf_113.3da)
+//   actor = slider + M . off, y -= 33.149605
+//   +260 = FLT_MAX, o3de_MoveNodeBy, sub_437140(node, M)
+//   ACTOR_STATE 8 (both +404 and +408), SetPersoBankGroup(group 61) - H_SLDOUT
+//
+// The reference clip is `slf_113.3da` and NOT the entry's `slf_112.3da` - two
+// different globals. -> false when there is no slider frame or no player.
+bool PlayState::beginSliderExit() {
+    const auto& fs = *fs_;
+    auto& session = *session_;
+    float at[3], ax[3], az[3];
+    if (!player || !session.sliders().calledFrame(at, ax, az)) return false;
+    bool out = false;
+    {
+                if (!exitOffState) {
+                    const auto ref = fs.read("ANIMS/slf_113.3da");
+                    exitOffState = (!ref.empty() &&
+                                    player->boardOffset(ref, 61, exitOff)) ? 1 : -1;
+                }
+                float o[3] = {at[0], at[1] - omk::kBoardSeatY, at[2]};
+                if (exitOffState == 1) {
+                    for (int k = 0; k < 3; ++k)
+                        o[k] += exitOff[0] * ax[k] + exitOff[2] * az[k];
+                    o[1] += exitOff[1];
+                }
+                o[1] += player->cameraLift();   // pelvis -> feet, as above
+                player->rideAt(o, player->facing());
+                player->setActorState(omk::ActorState::SliderRide, "sub_468FA0");
+                player->setRootFrame(ax, az);
+                player->setChannelOnly(true);
+                session.setPlayerPosition(o, player->facing());
+                // ...and the RELEASE test's rider, NOW. `case 7` is
+                // armed by `dismountCalled` below and tests "300
+                // clear and in front" on the next tick; after a
+                // load the rider it had was his position in the
+                // OLD city, nine kilometres away, so the slider was
+                // handed back to the traffic one frame after he
+                // got out and was gone before he stood up (traced:
+                // "the called vehicle is GONE at 0 0 0, ride state
+                // 0" at ARRIVED+1). The engine's ride writes +244
+                // before mode 7 is set; this is that write.
+                session.sliders().setRider(o, player->facing());
+                out = player->enterGroupById(61);
+                leaving = true;
+                std::printf("slider: ARRIVED - he gets OUT WHERE IT "
+                            "STOPPED, %.0f %.0f %.0f (offset %.1f %.1f "
+                            "%.1f in its frame%s), ACTOR_STATE 8, %s\n",
+                            o[0], o[1], o[2], exitOff[0], exitOff[1],
+                            exitOff[2],
+                            exitOffState == 1 ? "" : " - UNREAD",
+                            out ? "H_SLDOUT plays" : "but the bank has "
+                                  "no group 61");
+            }
+    session.sliders().exitCalled();      // mode 5 while H_SLDOUT plays
+    boarded = false;
+    return out;
 }

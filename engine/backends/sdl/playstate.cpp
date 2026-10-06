@@ -75,6 +75,42 @@ void PlayState::takeCamRequest(int phase) {
     }
 }
 
+// `Camera_Request` as the slider's code issues it. Mode 0 is the follow
+// camera, reached by the take camera's own travel back (`takeCamRequest(3)`)
+// over the request's frames; the slider's own modes blend from the camera on
+// screen at the request - LINEARLY, as the take camera does, and with the
+// source FROZEN, which is `dword_930820 = 1`'s blend: the slider's requests
+// mostly leave it 0, where the old camera keeps ticking through the blend
+// (a LABELLED simplification; `sub_418410` is not transcribed).
+void PlayState::sliderCamRequest(int mode, float frames) {
+    std::printf("frame %ld: slider camera %d requested over %.0f frames (from %d)\n",
+                n, mode, double(frames), sliderCamMode);
+    if (mode == 0) {
+        sliderCamMode = -1;
+        takeCamRequest(3);
+        takeCamTravel = frames > 0.0f ? frames : 0.001f;
+        takeCam = true;
+        return;
+    }
+    takeCam = false;
+    takeCamPhase = 0;
+    sliderCamMode = mode;
+    sliderCamClock = 0.0f;
+    sliderCamDur = frames;
+    for (int k = 0; k < 3; ++k) { sliderCamFromEye[k] = lastEye[k]; sliderCamFromAt[k] = lastAt[k]; }
+    sliderCamFromFov = lastFov;
+    // MODE 17 FIXES ITS EYE (`sub_414520` case 0x11): the land camera
+    // resolves preset 17 against him once (`sub_415E60`), the eye is copied
+    // to +20 and its subject cut (`+140 = -1`) - so it stays where it was
+    // put while the target follows him with `f42` 5's lag
+    if (mode == 17 && player) {
+        static constexpr float kEye17[3] = {-39.3701f, 78.7402f, 0.0f};
+        static constexpr float kAt17[3]  = {0.0f, 0.0f, 0.0f};
+        const omk::FollowCamera c = player->resolveOffsets(kEye17, kAt17, 75.0f);
+        for (int k = 0; k < 3; ++k) { sliderCamEye17[k] = c.eye[k]; sliderCamAt17[k] = c.at[k]; }
+    }
+}
+
 void PlayState::playerCamRequest(const float eye[3], const float at[3], float fov, float frames) {
     takeCamRequest(1);
     for (int k = 0; k < 3; ++k) { takeCamEye[k] = eye[k]; takeCamAt[k] = at[k]; }

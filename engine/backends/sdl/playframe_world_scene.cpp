@@ -282,40 +282,34 @@ void PlayState::worldCamera() {
         view.cam.hfovDeg = lastFov;
         view.cam.rollDeg = lastRoll;
         view.cam.w = dispW; view.cam.h = dispH;
-    } else if (!haveDlgCam && !ride &&
-               session.sliders().calledVehicle() >= 0 &&
-               (session.sliders().callMachine().state == 2 ||
-                session.sliders().callMachine().state == 6 ||
-                (boarding && boardCam > 0) ||
-                (boarded && session.sliders().callMachine().state == 4))) {
-        // ---- THE CAMERA THAT WATCHES IT COME ------------------
+    } else if (!haveDlgCam && !ride && player && sliderCamMode >= 0) {
+        // ---- THE SLIDER'S OWN CAMERAS -------------------------------
         //
-        // `sub_456530` case 2 asks for **camera mode 8 on the
-        // SLIDER** the moment a call is armed, and the only guard on
-        // it is `if (sub_413360(C) != 8)` - which stops it RE-asking
-        // when it is already there, not from asking at all. So the
-        // camera cuts to the vehicle and follows it in every time,
-        // which is what a reader described as seeing the slider on
-        // its road; this port kept the follow camera on the player
-        // and showed none of it.
+        // The modes the slider's code requests (`sliderCamRequest`), each
+        // preset resolved on its own subject every frame and blended into
+        // from the camera on screen at the request:
         //
-        // Same preset and same resolution as the ride's, because it
-        // is the same mode - only the subject differs, and in both
-        // cases the subject is the VEHICLE.
-        // RESOLVED THROUGH THE NODE'S ROWS, as every subject-relative
-        // eye is (`out = subject - RotateVector(offset, node+140)`) and
-        // as preset 9 below already was. This rotated the offset by
-        // `calledYaw()`, the POOL's yaw, which is the mirror of the
-        // node's convention: right along +-X and reflected along +-Z, so
-        // the eye stood in front of or beside the slider on most roads
-        // (todo/slider-drift-audit.md A2). Row 2 is -forward, so preset
-        // 8's z of -275.59 puts the eye 7.00 m BEHIND it.
+        //   8   the SLIDER from behind - case 2 while it comes, case 6
+        //       while it drives him; preset 8, eye (0, 118.11, -275.59)
+        //   9   the BOARDING side - MDACTION, over 60, and HELD through
+        //       H_SLDIN, the seat and screen 7; preset 9, eye 4.00 m out
+        //       on the door side (-X), 1.50 m up, on the slider
+        //   10  the ARRIVAL - case 6's end; preset 10, eye 8.00 m to the
+        //       side (the side `sub_4141F0` picks) and 4.00 m up on the
+        //       slider, looking at the destination's ADDRESS
+        //   17  the MANUAL STOP - preset 17 resolved on him ONCE, the eye
+        //       then fixed in the world, the target following him with
+        //       `f42` 5's lag; released to mode 0 over 60 the moment he is
+        //       236.22 units (6.00 m) from that eye (`sub_4187B0`)
+        //
+        // Every slider-relative eye is resolved through the node's ROWS
+        // (`out = subject - RotateVector(offset, node+140)`), row 2 being
+        // -forward - which is what put the coming camera BEHIND the
+        // slider (drift audit A2).
+        float tEye[3] = {0, 0, 0}, tAt[3] = {0, 0, 0};
+        bool ok = true;
         float at[3], rx0[3], rz2[3];
-        if (!session.sliders().calledFrame(at, rx0, rz2)) {
-            session.sliders().calledAt(at);
-            rx0[0] = 1; rx0[1] = 0; rx0[2] = 0;
-            rz2[0] = 0; rz2[1] = 0; rz2[2] = 1;
-        }
+        const bool frame = session.sliders().calledFrame(at, rx0, rz2);
         const auto place = [&](const float off[3], float out[3]) {
             for (int k = 0; k < 3; ++k)
                 out[k] = at[k] - off[0] * rx0[k] - off[2] * rz2[k];
@@ -323,47 +317,100 @@ void PlayState::worldCamera() {
         };
         static constexpr float kComeEye[3] = {0.0f, 118.1102f, -275.5905f};
         static constexpr float kComeAt[3]  = {0.0f, 78.7402f, 0.0f};
-        // ...and preset 9 for the BOARDING, which is what
-        // `MDACTION`'s arm asks for over 60 frames
-        // (`dword_930818 = 42700000h`). Its eye is 157.4803 - 4.00 m,
-        // the same distance as the gate's reach - along the slider's
-        // -X, which is the door side and the side the man had to be
-        // standing on, and 59.0551 (1.50 m) up. Placed from the
-        // matrix ROWS and not from `calledYaw`, because the door
-        // geometry is what showed the pool's yaw and the actor's
-        // euler to be mirror conventions.
         static constexpr float kBoardEye[3] = {157.4803f, 59.0551f, 0.0f};
-        if (boarding && boardCam > 0) {
-            float bat[3], bx[3], bz[3];
-            if (session.sliders().calledFrame(bat, bx, bz)) {
-                for (int k = 0; k < 3; ++k) {
-                    view.cam.eye[k] = bat[k] - kBoardEye[0] * bx[k]
-                                             - kBoardEye[2] * bz[k];
-                    view.cam.at[k]  = bat[k];
-                }
-                view.cam.eye[1] -= kBoardEye[1];
+        static constexpr float kNoOff[3] = {0.0f, 0.0f, 0.0f};
+        if (sliderCamMode == 8 && frame) {
+            place(kComeEye, tEye);
+            place(kComeAt,  tAt);
+        } else if (sliderCamMode == 9 && frame) {
+            place(kBoardEye, tEye);
+            place(kNoOff, tAt);
+        } else if (sliderCamMode == 10 && frame) {
+            const float e10[3] = {sliderCamEyeX10, 157.4803f, 0.0f};
+            place(e10, tEye);
+            for (int k = 0; k < 3; ++k) tAt[k] = sliderCamAddr[k];
+        } else if (sliderCamMode == 17) {
+            static constexpr float kEye17[3] = {-39.3701f, 78.7402f, 0.0f};
+            static constexpr float kAt17[3]  = {0.0f, 0.0f, 0.0f};
+            const omk::FollowCamera c = player->resolveOffsets(kEye17, kAt17, 75.0f);
+            // `f42` = 5: the target closes a fifth of the gap a frame (by
+            // the delta) - the follow camera's lag form, a LABELLED reading
+            const float lag = std::min(1.0f, static_cast<float>(frameSec * 30.0) / 5.0f);
+            for (int k = 0; k < 3; ++k) {
+                sliderCamAt17[k] += (c.at[k] - sliderCamAt17[k]) * lag;
+                tEye[k] = sliderCamEye17[k];
+                tAt[k] = sliderCamAt17[k];
             }
-            boardCam -= frameSec * 30.0;   // by the delta (todo/sixty-fps.md 2)
         } else {
-            place(kComeEye, view.cam.eye);
-            place(kComeAt,  view.cam.at);
-            // ...and SAY where the eye ended up, from the camera this
-            // frame draws with and the vehicle's own heading (its mover
-            // direction, `-row 2`): behind > 0 is behind it
-            static long comeTold = -1000;
-            if (n - comeTold >= 30) {
-                comeTold = n;
-                const float ex = view.cam.eye[0] - at[0], ez = view.cam.eye[2] - at[2];
-                const float behind = -(ex * -rz2[0] + ez * -rz2[2]);
-                const float across = ex * rx0[0] + ez * rx0[2];
-                std::printf("slider: come camera frame %ld - the eye %.0f behind, "
-                            "%.0f across, heading %.2f %.2f\n", n, behind, across,
-                            -rz2[0], -rz2[2]);
-            }
+            ok = false;                    // the slider is gone: the follow camera
         }
-        view.cam.hfovDeg = 75.0f;      // the preset's own fov
-        view.cam.rollDeg = 0.0f;
-        view.cam.w = dispW; view.cam.h = dispH;
+        if (ok) {
+            float u = 1.0f;
+            if (sliderCamDur > 0.0f && haveLastDrawn) {
+                sliderCamClock += static_cast<float>(frameSec * 30.0);
+                u = std::min(1.0f, sliderCamClock / sliderCamDur);
+            }
+            for (int k = 0; k < 3; ++k) {
+                view.cam.eye[k] = sliderCamFromEye[k] + (tEye[k] - sliderCamFromEye[k]) * u;
+                view.cam.at[k]  = sliderCamFromAt[k]  + (tAt[k]  - sliderCamFromAt[k])  * u;
+            }
+            view.cam.hfovDeg = sliderCamFromFov + (75.0f - sliderCamFromFov) * u;
+            view.cam.rollDeg = 0.0f;
+            view.cam.w = dispW; view.cam.h = dispH;
+            if (sliderCamMode == 8 && u >= 1.0f) {
+            // ...and SAY where the eye ended up, from the camera this
+                // frame draws with and the vehicle's own heading (its mover
+                // direction, `-row 2`): behind > 0 is behind it
+                static long comeTold = -1000;
+                if (n - comeTold >= 30) {
+                    comeTold = n;
+                    const float ex = view.cam.eye[0] - at[0], ez = view.cam.eye[2] - at[2];
+                    const float behind = -(ex * -rz2[0] + ez * -rz2[2]);
+                    const float across = ex * rx0[0] + ez * rx0[2];
+                    std::printf("slider: come camera frame %ld - the eye %.0f behind, "
+                                "%.0f across, heading %.2f %.2f\n", n, behind, across,
+                                -rz2[0], -rz2[2]);
+                }
+            }
+            // ...one line per mode change and every 30 frames, from the
+            // camera this frame draws with: where the eye stands in the
+            // SLIDER's frame (side = along its local X, behind = along
+            // -forward, up) - or for 17, how far the target is from the
+            // fixed eye
+            static long camTold = -1000; static int camToldMode = -2;
+            if (n - camTold >= 30 || camToldMode != sliderCamMode) {
+                camTold = n; camToldMode = sliderCamMode;
+                if (frame) {
+                    const float ex = view.cam.eye[0] - at[0], ey = view.cam.eye[1] - at[1],
+                                ez = view.cam.eye[2] - at[2];
+                    std::printf("slider cam %d frame %ld blend %.2f - eye side %.0f behind %.0f "
+                                "up %.0f; at %.0f %.0f %.0f\n", sliderCamMode, n, double(u),
+                                double(ex * rx0[0] + ez * rx0[2]), double(ex * rz2[0] + ez * rz2[2]),
+                                double(-ey), double(view.cam.at[0]), double(view.cam.at[1]),
+                                double(view.cam.at[2]));
+                } else {
+                    const float dx = sliderCamAt17[0] - sliderCamEye17[0], dy = sliderCamAt17[1] - sliderCamEye17[1],
+                                dz = sliderCamAt17[2] - sliderCamEye17[2];
+                    std::printf("slider cam %d frame %ld blend %.2f - eye fixed at %.0f %.0f %.0f, "
+                                "target %.0f from it\n", sliderCamMode, n, double(u),
+                                double(sliderCamEye17[0]), double(sliderCamEye17[1]), double(sliderCamEye17[2]),
+                                double(std::sqrt(dx * dx + dy * dy + dz * dz)));
+                }
+            }
+            // mode 17's release, `sub_4187B0`: the target 236.22 from the eye
+            if (sliderCamMode == 17) {
+                const float dx = sliderCamAt17[0] - sliderCamEye17[0], dy = sliderCamAt17[1] - sliderCamEye17[1],
+                            dz = sliderCamAt17[2] - sliderCamEye17[2];
+                if (std::sqrt(dx * dx + dy * dy + dz * dz) > 236.22047f) sliderCamRequest(0, 60.0f);
+            }
+        } else {
+            sliderCamMode = -1;
+            const omk::FollowCamera& fc = player->followCamera();
+            for (int k = 0; k < 3; ++k) { view.cam.eye[k] = fc.eye[k]; view.cam.at[k] = fc.at[k]; }
+            view.cam.hfovDeg = fc.fov;
+            view.cam.rollDeg = 0.0f;
+            view.cam.w = dispW; view.cam.h = dispH;
+        }
     } else if (!haveDlgCam && ride) {
         // CAMERA MODE 8, the ride camera, and its subject is the
         // SLIDER and not the player: `camera_presets.json`'s row 8 is

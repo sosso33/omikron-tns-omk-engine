@@ -296,6 +296,11 @@ void Sliders::tickVehicles(float dt) {
             // vehicles on the road"* even once the mode-0 hand-back was
             // written: the hand-back ran and was immediately undone.
             if (callRide_.handedBack) {
+                // a MANUAL ride's release: `sub_438330(slider, &dword_8F5E2C)`
+                // - back where the drive began, on its own lane
+                if (callRide_.manual && haveManualStart_ && v.mover >= 0)
+                    movers_[static_cast<std::size_t>(v.mover)] = manualStart_;
+                haveManualStart_ = false;
                 v.state = 0;                  // `sub_438420(slider, 0)`
                 called_ = -1;                 // `sub_438250(0)`, dword_8F5E44
                 // so the viewer can SAY how: 1 nobody boarded it in 600
@@ -907,6 +912,13 @@ void Sliders::slidOutCalled() {
 void Sliders::setCalledManual() {
     if (called_ < 0) return;
     callRide_.manual = true;
+    // `sub_457270` keeps where the drive began (`dword_8F5E2C/28/30`), and
+    // case 7's manual release puts the vehicle back THERE before it rejoins
+    // the traffic - its lane never moved, only the node did. This pool's
+    // ride overwrites the mover itself (`placeCalled`), so the whole mover
+    // is kept and given back.
+    const Vehicle& v = vehicles_[static_cast<std::size_t>(called_)];
+    if (v.mover >= 0) { manualStart_ = movers_[static_cast<std::size_t>(v.mover)]; haveManualStart_ = true; }
 }
 
 // While he is aboard the vehicle IS the ride: `sub_457F50` writes the

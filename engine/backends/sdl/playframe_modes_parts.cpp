@@ -1504,6 +1504,10 @@ int PlayState::modesShoot() {
                     r.yaw = session.sliders().calledYaw() + 180.0;
                     ride = r;
                     session.sliders().setCalledManual();   // `sub_438200(slider, 1)`
+                    // `Slider_TickRide`: `Camera_Request(8, slider)` - a cut
+                    // (the ride branch draws it; the mode is what the stop's
+                    // camera 17 blends from)
+                    sliderCamRequest(8, 0.0f);
                     std::printf("slider: Manuelle - `sub_457040`, the controls "
                                 "are his\n");
                 }

@@ -617,6 +617,19 @@ struct PlayState {
     omk::Surface fb{};
     long n{};
     long slidOutAt{-1};        // the frame MDSLIDOU last fired, for the release line
+    // THE SLIDER'S CAMERA - `Camera_Request` as the slider's code makes it
+    // (todo/slider-drift-audit.md A3/A7/B11): the mode it asked for (8 the
+    // slider from behind, 9 the boarding side, 10 the arrival, 17 the fixed
+    // eye on him; -1 when the slider owns no camera, the mode-0 follow), the
+    // blend from the camera on screen at the request over `dword_930818`
+    // frames (0 a cut), mode 10's address and eye side, mode 17's fixed eye
+    // and its lagging target
+    int sliderCamMode{-1};
+    float sliderCamClock{}, sliderCamDur{};
+    float sliderCamFromEye[3]{}, sliderCamFromAt[3]{}, sliderCamFromFov{75.0f};
+    float sliderCamAddr[3]{}, sliderCamEyeX10{-314.9606f};
+    float sliderCamEye17[3]{}, sliderCamAt17[3]{};
+    int   sliderPrevState{0};      // the called slider's mode last frame
     // the sneak's echo-bar message, oscillator 0's 5000 ms (`sub_42B820(0,
     // -1, text)` into `byte_6A4CA0`): string 42 when a slider call is refused
     std::string sneakEcho{};
@@ -725,6 +738,8 @@ struct PlayState {
     bool actionFromMove{};
     bool actionTookObject{};
     void sliderRefused();  // `sub_452570` said no: string 42 on the echo bar
+    void sliderCamRequest(int mode, float frames);   // `Camera_Request` for the slider's modes
+    bool beginSliderExit();   // `sub_468FA0`: out at the door, H_SLDOUT, ACTOR_STATE 8, mode 5
     void adventureAim();   // the follow camera's offsets, first-person aim
     void adventurePathField();   // the path field
     void adventureDeath();   // the death's countdown

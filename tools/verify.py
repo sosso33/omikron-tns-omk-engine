@@ -8882,28 +8882,49 @@ def c_engine_slider_manual():
     env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_CAMEYE="1")
     r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
                         "--save", save, "--area", "0",
-                        "--stand", "1804,0,-6890,244", "--frames", "820", "--board",
+                        "--stand", "1804,0,-6890,244", "--frames", "1250", "--board",
+                        # ...then SPACE (0x20, the brake) until it stops, the
+                        # exit clip, and a walk away (drift audit M1)
                         "--hold", "0*40,k15*3,0*30,k205*4,0*10,k200*4,0*10,k28*4,0*30,"
-                                  "k203*4,0*10,k28*4,0*560,k205*4,0*10,k28*4,0*20,k200*150"],
+                                  "k203*4,0*10,k28*4,0*560,k205*4,0*10,k28*4,0*20,k200*150,"
+                                  "k57*200,0*150,k200*330"],
                        capture_output=True, text=True, env=env, errors="replace")
     o = r.stdout
-    rides = [(float(a), float(b)) for a, b in _re.findall(
-        r"slider: manual ride frame \d+ - moved (-?\d+) along its drawn nose, (-?\d+) across", o)]
-    along, across = rides[-1] if rides else (0.0, 0.0)
-    # the camera: over the last frames the TARGET moves with the ride, and the
-    # eye must trail it - (eye - at) against the target's own motion
-    cams = [tuple(map(float, m)) for m in _re.findall(
-        r"\[cameye\] frame \d+  eye (-?\d+) (-?\d+) (-?\d+)  at (-?\d+) (-?\d+) (-?\d+)", o)][-10:]
+    rides = [(int(f), float(a), float(b)) for f, a, b in _re.findall(
+        r"slider: manual ride frame (\d+) - moved (-?\d+) along its drawn nose, (-?\d+) across", o)]
+    # the drive under UP alone (the brake starts at frame ~860)
+    up = [(a, b) for f, a, b in rides if f <= 800]
+    along, across = up[-1] if up else (0.0, 0.0)
+    # the camera: over frames 780-790 the TARGET moves with the ride, and
+    # the eye must trail it - (eye - at) against the target's own motion
+    cams = [tuple(map(float, m[1:])) for m in _re.findall(
+        r"\[cameye\] frame (\d+)  eye (-?\d+) (-?\d+) (-?\d+)  at (-?\d+) (-?\d+) (-?\d+)", o)
+        if 780 <= int(m[0]) <= 790]
     trail = 0.0
     if len(cams) >= 2:
         mx, mz = cams[-1][3] - cams[0][3], cams[-1][5] - cams[0][5]
         ox, oz = cams[-1][0] - cams[-1][3], cams[-1][2] - cams[-1][5]
         n1, n2 = (mx * mx + mz * mz) ** 0.5, (ox * ox + oz * oz) ** 0.5
         if n1 > 0 and n2 > 0: trail = (mx * ox + mz * oz) / (n1 * n2)
+    # M1: the stop runs `sub_468FA0` - out at the door, H_SLDOUT - camera 17
+    # over 60 from the ride's 8, MDSLIDOU, 17 released at 6.00 m, and the
+    # manual release puts the slider back where the drive began
+    m_open = _re.search(r"slider: OPEN at (-?\d+) (-?\d+) (-?\d+)", o)
+    m_back = _re.search(r"the released vehicle \(slot \d+, '[^']*', state 0\) at (-?\d+) (-?\d+) (-?\d+)", o)
+    back = 1e9
+    if m_open and m_back:
+        back = ((float(m_open.group(1)) - float(m_back.group(1))) ** 2 +
+                (float(m_open.group(3)) - float(m_back.group(3))) ** 2) ** 0.5
+    cams17 = _sliderCams(o)
     return ("slider: Appel du slider - a slider is COMING" in o,
             "slider: Manuelle - `sub_457040`, the controls are his" in o,
-            along > 300, abs(across) < 10, trail < -0.95), \
-           (True,) * 5, \
+            along > 300, abs(across) < 10, trail < -0.95,
+            "`sub_4570F0`: the slider put down" in o and "H_SLDOUT plays" in o,
+            (17, 60, 8) in cams17 and (0, 60, 17) in cams17,
+            "MDSLIDOU: out and standing" in o,
+            "RELEASED - he is 300 clear and in front of it (case 7, a manual ride)" in o,
+            back < 60), \
+           (True,) * 10, \
         "Appel du slider, boarded, Manuelle, UP held: the slider moved %.0f " \
         "along the nose it is drawn with (%.0f across), and the ride camera's " \
         "eye trails the motion (cos %.3f)" % (along, across, trail)
@@ -9373,7 +9394,8 @@ def c_engine_slider_journey_area():
             "MDSLIDIN: aboard at" in o,
             "in area 0 - loaded, the slider relinked at the lane nearest address 0" in o,
             "ARRIVED - he gets OUT WHERE IT STOPPED" in o,
-            "camera 17 requested" in o,
+            # a journey ends on camera 10, not 17 (drift audit A3)
+            "slider: camera 10 - on the slider, looking at address" in o,
             "MDSLIDOU: out and standing" in o,
             "slider: RELEASED - the journey is over and he is out" in o), \
            (True,) * 7, \
@@ -9501,6 +9523,14 @@ def c_render_states():
         "HARDWARE: dither, filters LINEAR/LINEAR/NONE, ANTIALIAS not set; EDGEANTIALIAS never set"
 
 
+def _sliderCams(o):
+    """The slider's camera requests in order, `(mode, frames, from)`, read
+    from `sliderCamRequest`'s own line."""
+    import re as _re
+    return [(int(a), int(b), int(c)) for a, b, c in _re.findall(
+        r"slider camera (-?\d+) requested over (\d+) frames \(from (-?\d+)\)", o)]
+
+
 def _hiddenSeat(o):
     """The player is HIDDEN in the slider from MDSLIDIN to `sub_468FA0` and
     drawn again after (drift audit A1), read from the draw decision's own
@@ -9587,8 +9617,13 @@ def c_engine_slider_journey():
             bool(_re.search(r"slider: released [12] frame\(s\) after MDSLIDOU", o)),
             # A1: hidden from MDSLIDIN to the exit's start, drawn again after
             _hiddenSeat(o),
+            # A7/A3/A6: the boarding camera 9 BLENDS in over 60 and holds
+            # through the seat; the journey's end cuts to 10 from it;
+            # MDSLIDOU travels back to 0 over 60 and writes his facing
+            _sliderCams(o) == [(8, 0, -1), (0, 60, 8), (9, 60, -1), (10, 0, 9), (0, 60, 10)],
+            "MDSLIDOU: his facing" in o,
             _seatOf(o)), \
-           (True,) * 15, \
+           (True,) * 17, \
         "from the sneak's destination row: the call (he stays put), the " \
         "slider OPEN at the kerb, MDACTION's door snap and H_SLDIN, then " \
         "MDSLIDIN ONCE - it fired twice until the frontend stopped re-reading " \
