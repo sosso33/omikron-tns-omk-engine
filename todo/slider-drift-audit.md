@@ -40,6 +40,9 @@ Each with a check shown to fail on the old code (a mutation per commit):
 | B8 no call from inside a building beside the city | `ff51bc1` | `engine: city return` (inside refused, the street accepted) |
 | B10 MDSLIDOU's input-queue reset (the ground probe left to the walker) | `c7a0242` | none can tell it apart |
 | M5 `Actors_TickAll` not run while Manuelle drives - READ AND CONFIRMED (05_sys.c 2170), NOT PORTED: no single counterpart in the port (scene clocks, zone scan, head aim, shadows, effects are separate calls); exposure: scripted extras pause while you drive | - | - |
+| PLAY REPORT 2026-10-06: a call arriving on its first tick left him held; a reused slot drew the slider as a moto | `49dee1a` | `engine: slider second call` (new) |
+| PLAY REPORT: Kay'l too low in the seat during the door clips (rootDrop drawn twice) | `307e537` | `engine: slider journey` (rootDrop 0 on H_SLDIN/OUT) |
+| B12 (part) the slider cameras chase their place (modes 8 and 10, `sub_415E60`) - the reader's stutter | `292542e` | `engine: slider arrives` (largest eye step < 45) |
 
 The port's mode order is now the engine's: case 2 -> **1** (open, bit 4,
 600 frames) -> MDACTION sets **3** -> MDSLIDIN **4** -> a journey's case 6
