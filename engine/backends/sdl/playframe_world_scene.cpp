@@ -376,17 +376,22 @@ void PlayState::worldCamera() {
         // Resolved the way every subject-relative camera is:
         // `out = subject - rotateYaw(offset)`, with `out[1] =
         // subject[1] - offset[1]` (`o3de/worldcam.cpp`).
+        // ...through the node's ROWS, as the coming camera is (drift
+        // audit A2): the ride moves along `f = (-sin yaw, 0, -cos yaw)`
+        // (`x -= sin(yaw) * v`), and a node facing `f` has row 0 =
+        // `(-f.z, 0, f.x)` and row 2 = `-f` - so the eye is 7.00 m
+        // behind the way it flies. Rotating the offset by the yaw put it
+        // ahead or beside on every heading but one.
         const float t = static_cast<float>(ride->yaw) * 0.0174532925199433f;
-        const float cs = std::cos(t), sn = std::sin(t);
+        const float fx = -std::sin(t), fz = -std::cos(t);
+        const float r0[3] = {-fz, 0.0f, fx}, r2[3] = {-fx, 0.0f, -fz};
         const float sub[3] = {static_cast<float>(ride->x),
                               static_cast<float>(ride->y),
                               static_cast<float>(ride->z)};
         const auto place = [&](const float off[3], float out[3]) {
-            const float rx = off[0] * cs - off[2] * sn;
-            const float rz = off[0] * sn + off[2] * cs;
-            out[0] = sub[0] - rx;
-            out[1] = sub[1] - off[1];
-            out[2] = sub[2] - rz;
+            for (int k = 0; k < 3; ++k)
+                out[k] = sub[k] - off[0] * r0[k] - off[2] * r2[k];
+            out[1] -= off[1];
         };
         static constexpr float kRideEye[3] = {0.0f, 118.1102f, -275.5905f};
         static constexpr float kRideAt[3]  = {0.0f, 78.7402f, 0.0f};

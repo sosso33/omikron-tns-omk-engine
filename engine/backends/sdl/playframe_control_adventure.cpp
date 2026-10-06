@@ -1543,7 +1543,29 @@ void PlayState::adventureRide() {
             const float vp[3] = {static_cast<float>(ride->x),
                                  static_cast<float>(ride->y),
                                  static_cast<float>(ride->z)};
-            session.sliders().placeCalled(vp, static_cast<float>(ride->yaw));
+            // The pool draws its nose along `(sin t, cos t)`; the ride's
+            // yaw is that heading plus 180 (`sub_457270`), so the nose it
+            // flies along is the yaw minus 180.
+            session.sliders().placeCalled(vp, static_cast<float>(ride->yaw - 180.0));
+            // ...and SAY which way it went, against the nose the pool
+            // DRAWS (its mover heading, `-row 2` of `calledFrame`), from
+            // where the manual drive began: a slider driven forward moves
+            // along its nose, not tail-first (drift audit M2)
+            static long rideTold = -1000;
+            static float rideFrom[3] = {0, 0, 0};
+            static bool rideStarted = false;
+            if (!rideStarted) {
+                rideStarted = true;
+                for (int k = 0; k < 3; ++k) rideFrom[k] = vp[k];
+            }
+            float sat[3], sx[3], sz[3];
+            if (n - rideTold >= 30 && session.sliders().calledFrame(sat, sx, sz)) {
+                rideTold = n;
+                const float dx = vp[0] - rideFrom[0], dz = vp[2] - rideFrom[2];
+                std::printf("slider: manual ride frame %ld - moved %.0f along its "
+                            "drawn nose, %.0f across\n", n,
+                            dx * -sz[0] + dz * -sz[2], dx * sx[0] + dz * sx[2]);
+            }
         }
     }
 }

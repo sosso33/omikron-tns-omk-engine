@@ -8855,6 +8855,60 @@ def c_engine_slider_recall():
         "marked slot %d COMING - the same vehicle" % (dead, into, called)
 
 
+def c_engine_slider_manual():
+    r"""MANUELLE drives the slider NOSE FIRST, with the camera behind it
+    (todo/slider-drift-audit.md M2), through the real path: the sneak's
+    "Appel du slider" (LEFT then ENTER on the slider page), `--board` at the
+    door, screen 7's "Manuelle" (RIGHT then ENTER), then UP held.
+
+    `sub_457270` starts the ride's yaw at the lane heading PLUS 180
+    (`atan2(dir.x, dir.z) * 57.29... - -180.0`), because the flight model
+    moves by `x -= sin(yaw) * v`. The port took the heading as it was, so
+    forward thrust drove the slider TAIL-FIRST: shown to fail as `-481` along
+    its drawn nose. The viewer prints the ride's displacement against the nose
+    the pool DRAWS, and the camera's eye against the direction the ride
+    actually moved (both from what the frame used).
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr, tb = omkpaths.data_root(), os.path.join(ROOT, "tables")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(eng) or not os.path.exists(save):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return (True,) * 5, (True,) * 5, "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_CAMEYE="1")
+    r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
+                        "--save", save, "--area", "0",
+                        "--stand", "1804,0,-6890,244", "--frames", "820", "--board",
+                        "--hold", "0*40,k15*3,0*30,k205*4,0*10,k200*4,0*10,k28*4,0*30,"
+                                  "k203*4,0*10,k28*4,0*560,k205*4,0*10,k28*4,0*20,k200*150"],
+                       capture_output=True, text=True, env=env, errors="replace")
+    o = r.stdout
+    rides = [(float(a), float(b)) for a, b in _re.findall(
+        r"slider: manual ride frame \d+ - moved (-?\d+) along its drawn nose, (-?\d+) across", o)]
+    along, across = rides[-1] if rides else (0.0, 0.0)
+    # the camera: over the last frames the TARGET moves with the ride, and the
+    # eye must trail it - (eye - at) against the target's own motion
+    cams = [tuple(map(float, m)) for m in _re.findall(
+        r"\[cameye\] frame \d+  eye (-?\d+) (-?\d+) (-?\d+)  at (-?\d+) (-?\d+) (-?\d+)", o)][-10:]
+    trail = 0.0
+    if len(cams) >= 2:
+        mx, mz = cams[-1][3] - cams[0][3], cams[-1][5] - cams[0][5]
+        ox, oz = cams[-1][0] - cams[-1][3], cams[-1][2] - cams[-1][5]
+        n1, n2 = (mx * mx + mz * mz) ** 0.5, (ox * ox + oz * oz) ** 0.5
+        if n1 > 0 and n2 > 0: trail = (mx * ox + mz * oz) / (n1 * n2)
+    return ("slider: Appel du slider - a slider is COMING" in o,
+            "slider: Manuelle - `sub_457040`, the controls are his" in o,
+            along > 300, abs(across) < 10, trail < -0.95), \
+           (True,) * 5, \
+        "Appel du slider, boarded, Manuelle, UP held: the slider moved %.0f " \
+        "along the nose it is drawn with (%.0f across), and the ride camera's " \
+        "eye trails the motion (cos %.3f)" % (along, across, trail)
+
+
 def c_engine_slider_arrives():
     r"""A CALLED SLIDER ACTUALLY ARRIVES - the feature, not a harness.
 
@@ -44126,6 +44180,7 @@ CHECKS = [
     ("engine: slider ride", c_engine_slider_ride, "todo/slider"),
     ("engine: slider call", c_engine_slider_call, "todo/slider"),
     ("engine: slider arrives", c_engine_slider_arrives, "todo/slider"),
+    ("engine: slider manual", c_engine_slider_manual, "todo/slider-drift-audit M2"),
     ("engine: slider recall", c_engine_slider_recall, "todo/slider-drift-audit B1"),
     ("engine: slider journey", c_engine_slider_journey, "todo/slider"),
     ("ui open answer",     c_ui_open_answer,    "SCRIPT_VM 70"),

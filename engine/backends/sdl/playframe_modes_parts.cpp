@@ -1479,7 +1479,12 @@ int PlayState::modesShoot() {
                 if (session.sliders().calledAt(at)) {
                     omk::SliderRide r;
                     r.x = at[0]; r.y = at[1]; r.z = at[2];
-                    r.yaw = session.sliders().calledYaw();
+                    // `sub_457270`: `dword_8F5DD8 = atan2(dir.x, dir.z)
+                    // * 57.29... - -180.0` - the lane heading PLUS 180,
+                    // because the flight model moves by `x -= sin(yaw) *
+                    // v`. Without it forward thrust drove the slider
+                    // tail-first (drift audit M2: -481 along its nose).
+                    r.yaw = session.sliders().calledYaw() + 180.0;
                     ride = r;
                     session.sliders().setCalledManual();   // `sub_438200(slider, 1)`
                     std::printf("slider: Manuelle - `sub_457040`, the controls "
