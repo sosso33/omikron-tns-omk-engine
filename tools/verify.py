@@ -9756,7 +9756,7 @@ def c_engine_slider_journey():
     play = os.path.join(eng, "build", "omk-play")
     if mk.returncode != 0 or not os.path.exists(play):
         return (True,) * 5, (True,) * 5, "no SDL - the frontend is optional (PORTING A8)"
-    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_PLY="8")
     r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
                         "--save", save, "--area", "0",
                         "--stand", "1804,0,-6890,244", "--frames", "2100", "--board",
@@ -9775,6 +9775,7 @@ def c_engine_slider_journey():
                        capture_output=True, text=True, env=env, errors="replace")
     o = r.stdout
     import re as _re
+    _sld = [float(x) for x in _re.findall(r"DBG ply f\d+ H_SLD(?:IN|OUT)\s.*?rootDrop\s+([+-][\d.]+)", o)]
     return ("chosen - a slider is COMING to 1804 0 -6890" in o,
             "slider: OPEN at 1304 6 -6651" in o,
             "on the right side - snapped to" in o,
@@ -9800,8 +9801,12 @@ def c_engine_slider_journey():
             # A4: the journey holds him (`sub_452570`'s fetch arm) and the
             # exit's first tick lets him go (`sub_45C680` case 8)
             "slider: H_SLDOUT's first tick - Screen_Fade(0), the hold released" in o,
+            # the door clips' descent is his POSITION's (ACTOR_STATE 6/8),
+            # never a drawn drop as well: rootDrop 0 on every H_SLDIN and
+            # H_SLDOUT line (+11.5..11.9 before - "a bit low", 2026-10-06)
+            len(_sld) >= 6 and all(abs(d) < 0.01 for d in _sld),
             _seatOf(o)), \
-           (True,) * 18, \
+           (True,) * 19, \
         "from the sneak's destination row: the call (he stays put), the " \
         "slider OPEN at the kerb, MDACTION's door snap and H_SLDIN, then " \
         "MDSLIDIN ONCE - it fired twice until the frontend stopped re-reading " \

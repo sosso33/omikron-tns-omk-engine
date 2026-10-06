@@ -871,6 +871,15 @@ void PlayState::worldCrowd() {
                 const int ws = static_cast<int>(player->state());
                 if (ws >= 11 && ws <= 14) { rootDrop = 0.0f; rootAccum = 0.0f; }
             }
+            // ...AND NOT WHILE THE SLIDER CLIPS CARRY HIM, AFTER the looping
+            // rule as well as before it. The guard above zeroed the
+            // accumulator, but `H_SLDIN` and `H_SLDOUT` are single-variant
+            // clips, so the looping rule then put `cur - ref` straight back:
+            // +11.5..11.9 of descent drawn as a drop on top of the same
+            // descent moving his position (ACTOR_STATE 6/8, `Actor_MoveBy`).
+            // A reader, again (2026-10-06): *"Kay'l position is a bit low
+            // when he sits in the slider"*.
+            if (boarding || leaving) rootDrop = 0.0f;
             // MEASURING, not fixing: how far does the model's own
             // lowest point travel across a take? If the rotations
             // lower the body, a CONSTANT anchor is right and the
