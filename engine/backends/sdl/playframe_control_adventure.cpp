@@ -2378,6 +2378,12 @@ void PlayState::adventureShot() {
                                 "H_SLDOUT ended in\n", double(was), double(player->facing()));
                 }
             }
+            // `sub_45A9A0(actor+18Ch)`: the channel's input queue reset to
+            // the idle word, so nothing pressed through H_SLDOUT is carried
+            // into H_STAND (drift audit B10; MDSLIDOU's own ground probe,
+            // under a momentary `g_IgnoreLedges = 1`, is the walker's floor
+            // here and is not transcribed)
+            player->resetInputQueue();
             session.sliders().slidOutCalled();   // 5 -> 7 (or 7 -> 5 -> 7)
             slidOutAt = n;
             // ...and the camera: `Camera_Request(0, {player, player},
