@@ -503,6 +503,26 @@ the command buffer's peak, citro3d's drawing and processing times. In
 Azahar: ~80 draws a pass, 11-19 posed on the GPU, 0 on the CPU, the buffer
 3-5% at most (the emulator's GPU waits read 0 - the console's will not).
 
+### THE FIFTH CONSOLE RUN - CPU or GPU? (the reader, 2026-10-06)
+
+The backend's line answered it: **waiting on the GPU at the transfer 0.00
+ms**, citro3d's "drawing" 37-50 ms (it spans the recording - citro3d feeds the
+GPU as commands are recorded), the command buffer 6-9% at most, 22-54 posed
+draws a frame on the GPU and none on the CPU. **The GPU keeps up; the frame
+is CPU** - sim+draw 33-43, present 10.6. Finer timers (`c3d CPU` and
+`frontend:` lines) then showed, in Azahar, the straight present's per-pixel
+loop at 15.4 ms: `quantise888Dither` a pixel, whose `quantise888` divides by
+255 three times - software divisions on the ARM11. Moved to the
+table-driven `quantise888DitherRow` (bit for bit the same, `engine: pixel
+tables`; the transfer's word byte-swapped into its RGBA order) it fell only
+to 10.4 - touching every pixel on the CPU is the cost. **THE 16-BIT
+EXPERIMENT** (`sdmc:/omk/c3d-rgb565`, an instrument): the target RGB565 - the
+original's framebuffer depth - and the transfers 565, no CPU conversion:
+**0.9 ms**, the picture right. Whether the PICA DITHERS into a 16-bit buffer
+- section 3's open question, which decides whether this is the faithful
+default - only the console can show (Azahar cannot). The panel's redraw is
+~7.5 ms twice a second, the frontend's copy 1.5 ms a frame (Azahar's CPU).
+
 ### Step 4 - the memory fit
 
 The `.cia`'s memory mode in the exheader; textures in the linear heap at 2

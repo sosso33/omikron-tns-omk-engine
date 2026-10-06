@@ -103,6 +103,8 @@ private:
     bool panelDump_ = false;
     // the present's sampling tables, made once per frame size (no division a pixel)
     std::vector<int> colMap_, rowMap_;
+    std::uint64_t copyTicks_ = 0;       // the present's copy, since the last panel redraw
+    long winCopies_ = 0, reports_ = 0;
     int mapW_ = 0, mapH_ = 0;              // `sdmc:/omk/panel-dump` exists: each redraw also to panel.bin
     bool captureOwed_ = false;
     bool screenDumpOwed_ = false;         // with a capture: the top screen as written, too

@@ -281,6 +281,7 @@ inline std::uint16_t box4(std::uint16_t a, std::uint16_t b, std::uint16_t c, std
 // memory in order.
 void N3dsFrontend::present(const Surface& fb) {
     if (!opened_ || fb.w <= 0 || fb.h <= 0) return;
+    const u64 pr0 = svcGetSystemTick();
     u16 fw = 0, fh = 0;
     auto* dst = reinterpret_cast<std::uint16_t*>(gfxGetFramebuffer(GFX_TOP, GFX_LEFT, &fw, &fh));
     if (!dst || fw != 240 || fh != 400) return;
@@ -332,6 +333,7 @@ void N3dsFrontend::present(const Surface& fb) {
                 *o-- = src[static_cast<std::size_t>(rowMap_[static_cast<std::size_t>(v)]) * fb.w + cu];
         }
     }
+    copyTicks_ += svcGetSystemTick() - pr0;
     if (captureAt_ >= 0 && stats_.frames == captureAt_) captureOwed_ = true;
     if (captureOwed_) {
         captureOwed_ = false;
@@ -344,6 +346,7 @@ void N3dsFrontend::present(const Surface& fb) {
     const std::uint64_t interval = now - lastPresent_;
     lastPresent_ = now;
     winFrames_ += 1;
+    winCopies_ += 1;
     winSleep_ += std::min(sleepTicks_, interval);
     winWorst_ = std::max(winWorst_, interval);
     sleepTicks_ = 0;
@@ -357,6 +360,10 @@ void N3dsFrontend::present(const Surface& fb) {
         winStart_ = now;
         winFrames_ = 0;
         winSleep_ = winWorst_ = 0;
+        // the present's own CPU, once a second-half, into the log: the copy
+        // into the turned framebuffer and the panel's redraw
+        const double tms = 1000.0 / SYSCLOCK_ARM11;
+        const u64 pd0 = svcGetSystemTick();
         if (panelOk_) {
             panel_.draw(panelSurf_, stats_);
             n3ds::Panel::toScreen(panelSurf_);
@@ -369,6 +376,12 @@ void N3dsFrontend::present(const Surface& fb) {
                 writeWholeFile(std::string(n3ds::kHome) + "/panel.bin", le.data(), le.size());
             }
         }
+        if (++reports_ % 2 == 0)
+            std::printf("frontend: present copy %.2f ms a frame, the panel's redraw %.2f ms (twice a second)\n",
+                        copyTicks_ * tms / std::max<long>(winCopies_, 1),
+                        (svcGetSystemTick() - pd0) * tms);
+        copyTicks_ = 0;
+        winCopies_ = 0;
     }
     if (screenDumpOwed_) {
         // ...and what the SCREEN was given, as the hardware lays it out (240

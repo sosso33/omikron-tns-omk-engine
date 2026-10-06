@@ -161,7 +161,16 @@ public:
         // reference draws into anyway (`renderer.h`, View).
         tw_ = (w + 7) & ~7;
         th_ = (h + 7) & ~7;
-        target_ = C3D_RenderTargetCreate(tw_, th_, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
+        // THE 16-BIT EXPERIMENT (`sdmc:/omk/c3d-rgb565`, an instrument): the
+        // target in RGB565, the original's framebuffer depth, and the
+        // transfers in 565 too - no CPU conversion at all. What it is FOR is
+        // the open question of `todo/3ds-port.md` 3: whether the PICA
+        // dithers when it writes a 16-bit buffer (a capture of a dark
+        // gradient shows it); Azahar cannot say. Off, the target is RGBA8
+        // and the CPU dithers (the reference's 4x4 ordered).
+        if (std::FILE* f = std::fopen("sdmc:/omk/c3d-rgb565", "r")) { std::fclose(f); rgb565_ = true; }
+        target_ = C3D_RenderTargetCreate(tw_, th_, rgb565_ ? GPU_RB_RGB565 : GPU_RB_RGBA8,
+                                         GPU_RB_DEPTH24_STENCIL8);
         if (!target_) {
             std::printf("c3d: no %dx%d render target (VRAM)\n", w, h);
             return false;
@@ -172,9 +181,11 @@ public:
         w_ = w; h_ = h;
         fb_ = Surface(w, h, 0);
         readDone_ = false;
-        std::printf("c3d: citro3d on the PICA200, a %dx%d RGBA8 target (the %dx%d frame in it) with "
+        if (rgb565_) std::printf("c3d: c3d-rgb565 present - the target is RGB565, the transfers 565, no CPU "
+                                 "conversion (the 16-bit experiment)\n");
+        std::printf("c3d: citro3d on the PICA200, a %dx%d %s target (the %dx%d frame in it) with "
                     "24-bit depth in VRAM, %u KB of VRAM left; the GPU transforms (resident geometry)\n",
-                    tw_, th_, w, h, static_cast<unsigned>(vramSpaceFree() / 1024));
+                    tw_, th_, rgb565_ ? "RGB565" : "RGBA8", w, h, static_cast<unsigned>(vramSpaceFree() / 1024));
         return true;
     }
 
@@ -307,6 +318,12 @@ public:
     }
 
     void submit(const Draw& d) override {
+        const u64 s0 = svcGetSystemTick();
+        submitInner(d);
+        rep_.submitTicks += svcGetSystemTick() - s0;
+    }
+
+    void submitInner(const Draw& d) {
         if (!inFrame_ || !d.geo || d.count < 3) return;
         const Geometry& g = *d.geo;
         if (d.start + d.count > g.corners.size()) return;
@@ -322,7 +339,9 @@ public:
             if (pr && pr->meshOfSlot.size() <= kPoseSlots && !pr->shimmer &&
                 d.vertexLightCount <= kMaxLights) {
                 useProgram(1);
+                const u64 u0 = svcGetSystemTick();
                 setPoseUniforms(d, *pr);
+                rep_.uniformTicks += svcGetSystemTick() - u0;
                 buf = pr->buf;
                 stride = sizeof(GpuPoseVert);
                 ++posedGpu_;
@@ -339,7 +358,9 @@ public:
             // the corners on the GPU: the geometry's own buffer, or this
             // pass's ring when it changed after being drawn in it; `first` is
             // the buffer's index of the draw's first corner
+            const u64 r0 = svcGetSystemTick();
             buf = resident(g, d.start, d.count, first);
+            rep_.residentTicks += svcGetSystemTick() - r0;
             if (!buf) return;
             useProgram(0);
         }
@@ -391,9 +412,7 @@ public:
             C3D_SyncDisplayTransfer(static_cast<u32*>(target_->frameBuf.colorBuf), GX_BUFFER_DIM(tw_, th_),
                                     reinterpret_cast<u32*>(read_), GX_BUFFER_DIM(tw_, th_),
                                     GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) |
-                                    GX_TRANSFER_RAW_COPY(0) |
-                                    GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) |
-                                    GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) |
+                                    GX_TRANSFER_RAW_COPY(0) | transferFormats() |
                                     GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO));
             rep_.waitTicks += svcGetSystemTick() - w0;
             closeFrame();
@@ -403,14 +422,15 @@ public:
         // TOP-DOWN already (the first Azahar frame, 2026-10-06, read them
         // bottom-up and came out upside down, everything else right). Into
         // the frame dithered as the reference is.
-        for (int y = 0; y < h_; ++y) {
-            const std::uint32_t* row = read_ + static_cast<std::size_t>(y) * tw_;
-            for (int x = 0; x < w_; ++x) {
-                const std::uint32_t p = row[x];
-                const int r = static_cast<int>(p >> 24), g = static_cast<int>((p >> 16) & 0xFF),
-                          b = static_cast<int>((p >> 8) & 0xFF);
-                fb_.set(x, y, view_.dither ? quantise888Dither(r, g, b, x, y) : quantise888(r, g, b));
-            }
+        if (rgb565_) {
+            const auto* in = reinterpret_cast<const std::uint16_t*>(read_);
+            for (int y = 0; y < h_; ++y)
+                std::memcpy(fb_.px.data() + static_cast<std::size_t>(y) * w_,
+                            in + static_cast<std::size_t>(y) * tw_, static_cast<std::size_t>(w_) * 2);
+        } else {
+            for (int y = 0; y < h_; ++y)
+                toRgb565Row(read_ + static_cast<std::size_t>(y) * tw_, w_, 0, y,
+                            fb_.px.data() + static_cast<std::size_t>(y) * w_);
         }
         readDone_ = true;
         if (!toldRead_) {
@@ -441,13 +461,12 @@ public:
         C3D_SyncDisplayTransfer(static_cast<u32*>(target_->frameBuf.colorBuf), GX_BUFFER_DIM(tw_, th_),
                                 reinterpret_cast<u32*>(small_), GX_BUFFER_DIM(tw_, th_),
                                 GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) |
-                                GX_TRANSFER_RAW_COPY(0) |
-                                GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) |
-                                GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) |
+                                GX_TRANSFER_RAW_COPY(0) | transferFormats() |
                                 GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_XY));
         rep_.waitTicks += svcGetSystemTick() - w0;
         closeFrame();
-        GSPGPU_InvalidateDataCache(small_, static_cast<u32>(hw) * hh * 4);
+        GSPGPU_InvalidateDataCache(small_, static_cast<u32>(hw) * hh * (rgb565_ ? 2 : 4));
+        const u64 p0 = svcGetSystemTick();
         if (screen.w != 400 || screen.h != 240) screen = Surface(400, 240, 0);
         std::fill(screen.px.begin(), screen.px.end(), std::uint16_t(0));
         // the frame halved and centred; the picture is its rows vy..vy+vh,
@@ -457,15 +476,14 @@ public:
         for (int r = 0; r < ph && r < hh; ++r) {
             const int y = oy + py0 + r;
             if (y < 0 || y >= 240) continue;
-            const std::uint32_t* row = small_ + static_cast<std::size_t>(r) * hw;
             std::uint16_t* out = screen.px.data() + static_cast<std::size_t>(y) * 400 + ox;
-            for (int x = 0; x < pw; ++x) {
-                const std::uint32_t p = row[x];
-                const int cr = static_cast<int>(p >> 24), cg = static_cast<int>((p >> 16) & 0xFF),
-                          cb = static_cast<int>((p >> 8) & 0xFF);
-                out[x] = view_.dither ? quantise888Dither(cr, cg, cb, ox + x, y) : quantise888(cr, cg, cb);
-            }
+            if (rgb565_)
+                std::memcpy(out, reinterpret_cast<const std::uint16_t*>(small_) + static_cast<std::size_t>(r) * hw,
+                            static_cast<std::size_t>(pw) * 2);
+            else
+                toRgb565Row(small_ + static_cast<std::size_t>(r) * hw, pw, ox, y, out);
         }
+        rep_.halfLoopTicks += svcGetSystemTick() - p0;
         ++straight_;
         if (straight_ == 1)
             std::printf("c3d: the first frame presented STRAIGHT - the transfer's 2x2 average, %dx%d onto "
@@ -486,6 +504,10 @@ public:
                     static_cast<double>(posedGpu_ - rep_.gpu0) / f, static_cast<double>(posedCpu_ - rep_.cpu0) / f,
                     rep_.cpuPoseTicks * ms / f, rep_.waitTicks * ms / f, rep_.cmdMax * 100.0,
                     C3D_GetDrawingTime(), C3D_GetProcessingTime());
+        std::printf("frame %ld c3d CPU (ms a pass): submit %.2f, of it residency %.2f and pose uniforms "
+                    "%.2f; the straight present's dither loop %.2f\n", frame,
+                    rep_.submitTicks * ms / f, rep_.residentTicks * ms / f, rep_.uniformTicks * ms / f,
+                    rep_.halfLoopTicks * ms / f);
         const long g = posedGpu_, c = posedCpu_;
         rep_ = Report{};
         rep_.gpu0 = g; rep_.cpu0 = c;
@@ -515,6 +537,41 @@ private:
     struct Uploaded { std::unique_ptr<C3D_Tex> tex; PixelBuffer keep; long long bytes = 0; bool used = false; };
 
     static bool noCull() { static const bool n = std::getenv("OMK_NO_CULL") != nullptr; return n; }
+
+    u32 transferFormats() const {
+        return rgb565_ ? (GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGB565) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB565))
+                       : (GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8));
+    }
+
+    // A row of the transfer's words (0xRRGGBBAA) into 565, dithered as the
+    // reference is - through `quantise888DitherRow`'s tables, bit for bit
+    // `quantise888Dither` (`verify.py: engine: pixel tables`), and NOT that
+    // function a pixel: `quantise888` divides by 255 per channel, and with no
+    // divide instruction three per pixel cost the straight present ~15 ms a
+    // frame (Azahar, 2026-10-06). The word byte-swapped is the RGBA byte
+    // order the row function reads (`REV`, one instruction). `x0` is the
+    // row's first pixel's column on the output, where the dither cell is.
+    void toRgb565Row(const std::uint32_t* in, int n, int x0, int y, std::uint16_t* out) {
+        rowRgba_.resize(static_cast<std::size_t>(n) + 4);
+        for (int x = 0; x < n; ++x) rowRgba_[static_cast<std::size_t>(x)] = __builtin_bswap32(in[x]);
+        if (!view_.dither) {
+            const auto* b = reinterpret_cast<const unsigned char*>(rowRgba_.data());
+            for (int x = 0; x < n; ++x) out[x] = quantise888(b[4 * x], b[4 * x + 1], b[4 * x + 2]);
+            return;
+        }
+        // the dither's cell follows the OUTPUT column: start the row so that
+        // its pixel 0 sits at x0 (the row function's own x runs from 0)
+        if ((x0 & 3) == 0) {
+            quantise888DitherRow(reinterpret_cast<const unsigned char*>(rowRgba_.data()), n, y, out);
+        } else {
+            const int pad = x0 & 3;
+            rowPad_.assign(static_cast<std::size_t>(n + pad), 0);
+            for (int x = 0; x < n; ++x) rowPad_[static_cast<std::size_t>(pad + x)] = rowRgba_[static_cast<std::size_t>(x)];
+            row565_.resize(static_cast<std::size_t>(n + pad));
+            quantise888DitherRow(reinterpret_cast<const unsigned char*>(rowPad_.data()), n + pad, y, row565_.data());
+            std::memcpy(out, row565_.data() + pad, static_cast<std::size_t>(n) * sizeof(std::uint16_t));
+        }
+    }
 
     // ---- THE RESIDENT GEOMETRY (3b) ------------------------------------------
     // GLES's contract (`uploadGeometry`): cached by POINTER while the revision
@@ -629,6 +686,7 @@ private:
     struct Report {
         long passes = 0, draws = 0;
         u64 cpuPoseTicks = 0, waitTicks = 0;
+        u64 submitTicks = 0, residentTicks = 0, uniformTicks = 0, halfLoopTicks = 0;
         float cmdMax = 0.0f;
         long gpu0 = 0, cpu0 = 0;
     };
@@ -909,6 +967,9 @@ private:
     std::vector<GpuPoseVert*> poseGrave_;
     long posedGpu_ = 0, posedCpu_ = 0;
     Report rep_;
+    bool rgb565_ = false;             // the 16-bit experiment (`sdmc:/omk/c3d-rgb565`)
+    std::vector<std::uint32_t> rowRgba_, rowPad_;     // a row in RGBA byte order (toRgb565Row)
+    std::vector<std::uint16_t> row565_;
     std::unordered_map<const Geometry*, Res> res_;
     std::vector<GpuVert*> grave_;
     long pass_ = 0;
