@@ -9790,6 +9790,52 @@ def _hiddenSeat(o):
             "SHOWN again - sub_468FA0's o3de_EnableObject(node, 8); drawn: yes" in o)
 
 
+def c_engine_vehicle_sound():
+    r"""THE VEHICLES' ENGINE SOUND - `sub_456B40` (todo/slider-drift-audit.md
+    A9). Every vehicle loops `SOUNDS\\sliderm01.wav` (`word_4C8894`, the only
+    vehicle sound the engine loads) through `Sound_Play3D` with min and max
+    distances **39 and 585**: started inside 585 of the LISTENER, re-placed
+    while within it (`sub_46CFC0`), stopped beyond (`sub_46CD40`) - and only
+    from the drive step. The listener is the CAMERA'S EYE (`Game_Frame` hands
+    the camera block's `+20` to `sub_46D080`). The port's `vehicleSound`
+    measured against the PLAYER, and only after a `setPlayer` nothing called,
+    so no vehicle ever sounded. The gain is DirectSound's documented law over
+    the engine's two distances (39/d, a labelled reconstruction - the device's
+    law has no reachable tier). Read from the viewer's own voice lines on the
+    call route: the coming slider starts while the camera follows it, traffic
+    stops at the edge. Shown to fail measured against the player: no line.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr, tb = omkpaths.data_root(), os.path.join(ROOT, "tables")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(eng) or not os.path.exists(save):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return (True,) * 5, (True,) * 5, "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
+                        "--save", save, "--area", "0", "--stand", "1804,0,-6890,336",
+                        "--frames", "600",
+                        "--hold", "0*40,k15*3,0*30,k205*4,0*10,k200*4,0*10,k28*4,0*30,"
+                                  "k203*4,0*10,k208*4,0*10,k28*4,0*400"],
+                       capture_output=True, text=True, env=env, errors="replace")
+    o = r.stdout
+    import re as _re
+    loaded = "engine sound SOUNDS\\sliderm01.wav loaded" in o
+    starts = [(int(s), m, float(d), float(g)) for s, m, d, g in _re.findall(
+        r"vehicle sound STARTED - slot (\d+) \('(\w+)'\) at (\d+) from the listener, gain ([\d.]+)", o)]
+    stops = len(_re.findall(r"vehicle sound STOPPED - slot \d+", o))
+    within = all(d < 585.0 for _, _, d, _ in starts)
+    law = all(abs(g * max(d, 39.0) - 39.0) < 0.6 for _, _, d, g in starts)
+    return (loaded, len(starts) >= 2, stops >= 1, within, law), (True,) * 5, \
+        "sliderm01.wav loaded; %d starts (%s), %d stops on the call route, every " \
+        "start inside 585 of the eye at gain 39/d" % (
+            len(starts), ", ".join("slot %d %s at %.0f" % (s, m, d) for s, m, d, _ in starts[:3]), stops)
+
+
 def c_engine_slider_collider():
     r"""THE CALLED SLIDER'S BODY in the spatial index - a reader, 2026-10-06:
     *"I called the slider and then I just walk through it, and if I go to the
@@ -44681,6 +44727,7 @@ CHECKS = [
     ("engine: slider recall", c_engine_slider_recall, "todo/slider-drift-audit B1"),
     ("engine: slider placement", c_engine_slider_placement, "todo/slider-drift-audit B2"),
     ("engine: slider collider", c_engine_slider_collider, "a reader, 2026-10-06"),
+    ("engine: vehicle sound", c_engine_vehicle_sound, "todo/slider-drift-audit A9"),
     ("engine: slider journey", c_engine_slider_journey, "todo/slider"),
     ("ui open answer",     c_ui_open_answer,    "SCRIPT_VM 70"),
     ("ui confirm gate",    c_ui_confirm_gate,   "UI"),

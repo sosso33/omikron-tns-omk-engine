@@ -205,7 +205,7 @@ int main(int argc, char** argv) {
             if (!meshes.empty()) pool.setVehicleModelRadius(name, meshes.front().radius);
         }
     }
-    if (hasPlayer) pool.setPlayer(player, true);
+    if (hasPlayer) { pool.setPlayer(player, true); pool.setListener(player); }   // the listener stands there too
 
     // `--recall`: THE CALL AFTER A JOURNEY. A journey's `takeOverAt` killed (B2 ended that: 0)
     // the ambient vehicles in the way, which leaves DEAD slots in the pool;

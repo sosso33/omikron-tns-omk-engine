@@ -1416,8 +1416,71 @@ void PlayState::inputSounds() {
         }
     }
 
+    vehicleSounds();
     mark("sounds");
 }
+
+// THE VEHICLES' ENGINE SOUND - every frame, whether or not the world was drawn,
+// so a voice never outlives the pool (an area change, a transition).
+void PlayState::vehicleSounds() {
+    const auto& fs = *fs_;
+    auto& session = *session_;
+    // ---- THE ENGINE SOUND, `sub_456B40` ---------------------------
+    //
+    // The pool decides (`vehicleSound`: start inside 585 of the
+    // listener, update within it, stop beyond); this plays it. One
+    // looped `sliderm01.wav` per vehicle - motos included, it is the
+    // only vehicle sound the engine loads (`word_4C8894`). The GAIN is
+    // DirectSound's DOCUMENTED inverse-distance law (rolloff 1) over the
+    // engine's own min and max distances, 39 and 585 - the call site's
+    // literals: full inside 39, 39/d beyond. The law is the device's and
+    // has no reachable tier (PORTING's audio row); the velocity the
+    // engine passes, which DirectSound would turn into Doppler, is not
+    // applied - this mixer has no pitch. Then the listener for the NEXT
+    // frame's decision, the eye, as `Game_Frame` sets it last.
+    {
+        if (!vehSoundRead) {
+            vehSoundRead = true;
+            const auto w = fs.read("SOUNDS/sliderm01.wav");
+            if (!w.empty()) vehSound = wavToDeviceSound(w, kDeviceRate);
+            std::printf("audio: the vehicles' engine sound SOUNDS\\sliderm01.wav %s\n",
+                        vehSound && vehSound->size ? "loaded" : "NOT LOADED");
+        }
+        const auto& vs = session.sliders().vehicles();
+        for (auto it = vehVoices.begin(); it != vehVoices.end();) {
+            const std::size_t s = static_cast<std::size_t>(it->first);
+            if (s >= vs.size() || !vs[s].live || vs[s].sound == -1) {
+                front.stopSound(it->second);
+                ++vehSoundStops;
+                std::printf("frame %ld: vehicle sound STOPPED - slot %d (beyond 585 of the "
+                            "listener, or gone); %zu sounding\n", n, it->first,
+                            vehVoices.size() - 1);
+                it = vehVoices.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        for (std::size_t s = 0; s < vs.size(); ++s) {
+            const auto& vv = vs[s];
+            if (!vv.live || vv.sound == -1) continue;
+            const float d = vv.soundDist;
+            const float g = (d <= 39.0f ? 1.0f : 39.0f / std::min(d, 585.0f)) * fxGain();
+            const auto it = vehVoices.find(static_cast<int>(s));
+            if (it == vehVoices.end()) {
+                const int h = vehSound && vehSound->size ? front.playSound(vehSound, true, g) : -1;
+                vehVoices.emplace(static_cast<int>(s), h);
+                ++vehSoundStarts;
+                std::printf("frame %ld: vehicle sound STARTED - slot %zu ('%s') at %.0f from "
+                            "the listener, gain %.3f; %zu sounding\n", n, s, vv.model.c_str(),
+                            double(d), double(g), vehVoices.size());
+            } else {
+                front.setSoundGain(it->second, g);
+            }
+        }
+        session.sliders().setListener(view.cam.eye);
+    }
+}
+
 
 // ---- THE MOVING COLLISION, PLACED ON DEMAND (todo/cpu-vs-original.md tier C)
 //

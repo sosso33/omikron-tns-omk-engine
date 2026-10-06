@@ -43,6 +43,7 @@ Each with a check shown to fail on the old code (a mutation per commit):
 | PLAY REPORT 2026-10-06: a call arriving on its first tick left him held; a reused slot drew the slider as a moto | `49dee1a` | `engine: slider second call` (new) |
 | PLAY REPORT: Kay'l too low in the seat during the door clips (rootDrop drawn twice) | `307e537` | `engine: slider journey` (rootDrop 0 on H_SLDIN/OUT) |
 | B12 (part) the slider cameras chase their place (modes 8 and 10, `sub_415E60`) - the reader's stutter | `292542e` | `engine: slider arrives` (largest eye step < 45) |
+| A9 the vehicles' engine sound: `sliderm01.wav` looped per vehicle within 585 of the camera's EYE (the listener, `sub_46D080`), re-placed from the drive step, stopped beyond; gain 39/d (DirectSound's documented law, labelled); no Doppler | `git log --grep 'A9)'` | `engine: vehicle sound` (new) |
 | B2 `sub_452CC0` transcribed: carrot at the lane origin, body 39 behind (not 39 + 117), speeds 0/256, flat heading, the route drawn twice; the 40-slot scan SWAPS a vehicle in or sets back behind one, never kills (`takeOverAt` kept for the cross-area arrival only) | `git log --grep 'B2)'` | `engine: slider placement` (new; `veh_probe --place`); `slider arrives`/`journey` re-pinned to the new stop 1274 -6644, `slider recall` now asserts 0 killed |
 
 The port's mode order is now the engine's: case 2 -> **1** (open, bit 4,
@@ -50,7 +51,7 @@ The port's mode order is now the engine's: case 2 -> **1** (open, bit 4,
 -> 4, `sub_468FA0` **5**, MDSLIDOU **7** -> case 7 at once (no 0x200) or
 after 300-and-in-front (Manuelle). M1 and the exit are DONE (`5d4b439`); A4 DONE (`d875956`); D1 and the small rows DONE (M5 read, not ported); left: M3 (Manuelle's
 collisions and road-keeping, L), B12 (mode 8's lag and wall pass), A9
-(vehicle sound), ~~B2~~ (DONE 2026-10-06), M6's bank into the node matrix,
+~~(vehicle sound)~~ (DONE 2026-10-06), ~~B2~~ (DONE 2026-10-06), M6's bank into the node matrix,
 M5.
 
 **B3 DONE, and the reader was right** (`engine: slider forget`). The

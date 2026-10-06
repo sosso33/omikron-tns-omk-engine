@@ -67,6 +67,10 @@ public:
     int play(std::shared_ptr<const DeviceSound> s, bool loop, float gain,
              std::shared_ptr<const void>* dropped = nullptr);
     void stop(int handle);
+    // A playing shot's gain, changed in place - what `Sound_SetVoice3D`
+    // (`sub_46CFC0`) does to a moving source each frame through DirectSound's
+    // 3D buffer; this mixer has no position, so the caller hands it the gain.
+    void setGain(int handle, float gain);
     // How far a one-shot has PLAYED: the device samples (all channels) mixed
     // from it so far, or -1 once it is gone (ended, stopped or never). Mixed
     // is a device buffer ahead of heard - the nearest thing to the play

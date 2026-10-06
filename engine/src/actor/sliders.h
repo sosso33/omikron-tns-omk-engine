@@ -289,6 +289,7 @@ struct Vehicle {
     int   state = 0;                // +8: 0 ambient traffic, 1..7 the player's ride
     float speedCap = kVehSpeedCap;  // +12
     int   sound = -1;               // +20, the sliderm01 voice; -1 = not playing
+    float soundDist = 0.0f;         // its distance from the LISTENER at the last start/update
     bool  reserved = false;         // +22 == 1: slot 0, the player's own slider
     // Which sub-object of the model is the body. `sub_4544B0` hands ambient
     // traffic `v16[1]` (sub-object 0, the heaviest) and the reserved slider
@@ -587,6 +588,14 @@ public:
     // by `clear()`; a caller that never sets it gets traffic that neither
     // brakes nor bumps, and `bumped()` stays empty.
     void setPlayer(const float pos[3], bool onRoad);
+    // THE LISTENER, which `sub_456B40` measures every vehicle's engine sound
+    // against (`sub_46D200`): the CAMERA'S EYE - `Game_Frame` hands the camera
+    // block's `+20` to `sub_46D080` at the END of the frame, so the vehicles
+    // are judged against the eye of the frame before, as here.
+    void setListener(const float pos[3]) {
+        for (int k = 0; k < 3; ++k) listener_[k] = pos[k];
+        listenerKnown_ = true;
+    }
     // ...and his FACING, which `sub_456530` case 7 needs: the release tests
     // that he is not merely 300 clear but IN FRONT of the slider, against his
     // own Euler at +420. Defaulted rather than required, so a caller that
@@ -715,6 +724,8 @@ private:
     float riderFacing_ = 0.0f;       // his +420
     bool  riderKnown_ = false;
     bool  playerKnown_ = false, playerOnRoad_ = false;
+    float listener_[3] = {0, 0, 0};
+    bool  listenerKnown_ = false;
     float bumpHold_ = 0.0f;                  // `flt_536C28`, 90 frames
     int   bumpLatch_ = -1;                   // `dword_538E20`
     int   nSliderModels_ = 0, nMotoModels_ = 0;   // dword_539934 / dword_539930

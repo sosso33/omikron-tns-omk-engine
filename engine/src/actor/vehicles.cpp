@@ -439,17 +439,25 @@ void Sliders::vehicleSound(int vi) {
     // velocity, started inside 585 units of the listener and stopped outside.
     // The mixer is the Session's; this keeps the record's `+20` so a frontend
     // can start and stop the one voice the engine keeps per vehicle.
+    // Measured against the LISTENER (the camera's eye, `sub_46D200`), not the
+    // player - which is what this read until 2026-10-06, and only once a
+    // `setPlayer` nothing calls had run, so no vehicle ever sounded (drift
+    // audit A9). Start inside 585, update while within it, stop beyond; and
+    // only from the drive step, as `sub_456C70` calls it - a slider standing
+    // open keeps its voice at the last update.
     Vehicle& v = vehicles_[static_cast<std::size_t>(vi)];
-    if (!playerKnown_) return;
+    if (!listenerKnown_ || v.mover < 0) return;
     const Pedestrian& m = movers_[static_cast<std::size_t>(v.mover)];
-    const float dx = m.body[0] - playerPos_[0];
-    const float dy = m.body[1] - playerPos_[1];
-    const float dz = m.body[2] - playerPos_[2];
+    const float dx = m.body[0] - listener_[0];
+    const float dy = m.body[1] - listener_[1];
+    const float dz = m.body[2] - listener_[2];
     const float d = std::sqrt(dx * dx + dy * dy + dz * dz);
     if (v.sound == -1) {
-        if (d < kVehSoundRange) { v.sound = vi; ++v.soundOn; }
-    } else if (d > kVehSoundRange) {
-        v.sound = -1;
+        if (d < kVehSoundRange) { v.sound = vi; ++v.soundOn; v.soundDist = d; }
+    } else if (d <= kVehSoundRange) {
+        v.soundDist = d;                         // `sub_46CFC0`: the voice re-placed
+    } else {
+        v.sound = -1;                            // `sub_46CD40`: stopped
     }
 }
 

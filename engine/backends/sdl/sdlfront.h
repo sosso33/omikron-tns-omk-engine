@@ -83,6 +83,7 @@ public:
                   float gain = 1.0f) override;
 
     void stopSound(int handle) override;
+    void setSoundGain(int handle, float gain) override;
     double soundPlayedSeconds(int handle) override;
 
     void flushAudio() override;

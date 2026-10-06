@@ -60,6 +60,7 @@ public:
     int playSound(std::shared_ptr<const omk::DeviceSound> s, bool loop = false,
                   float gain = 1.0f) override;
     void stopSound(int handle) override { mix_.stop(handle); }
+    void setSoundGain(int handle, float gain) override { mix_.setGain(handle, gain); }
     double soundPlayedSeconds(int handle) override {
         const long long p = mix_.played(handle);
         return p < 0 || arate_ <= 0 ? -1.0 : static_cast<double>(p) / (arate_ * achan_);

@@ -604,6 +604,12 @@ void SdlFrontend::stopSound(int handle) {
     mix_.stop(handle);
 }
 
+void SdlFrontend::setSoundGain(int handle, float gain) {
+    if (handle < 0) return;
+    AudioLock lk(amx_);
+    mix_.setGain(handle, gain);
+}
+
 double SdlFrontend::soundPlayedSeconds(int handle) {
     if (handle < 0 || arate_ <= 0) return -1.0;
     AudioLock lk(amx_);

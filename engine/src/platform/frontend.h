@@ -165,6 +165,9 @@ public:
     // voice buffer (`sub_46CAE0`): a line cut short by NEXT falls silent at
     // once. A reader heard the previous line run on under the menu.
     virtual void stopSound(int /*handle*/) {}
+    // ...and change a playing one's gain - a looped source that moves (a
+    // vehicle's engine, `sub_456B40` -> `sub_46CFC0` every frame).
+    virtual void setSoundGain(int /*handle*/, float /*gain*/) {}
     // How many SECONDS of a one-shot have played, or a negative number once
     // it has ended or when there is no device - a headless run has none, so
     // nothing that follows an audio clock can make a `--frames` run differ.

@@ -584,7 +584,21 @@ Ambient is three calls — `sub_456C70`, the spatial-index update, `sub_456B40`:
   frames.
 * **The sound** is `SOUNDS\sliderm01.wav`, loaded by `Slider_Init` and played
   3D at the body with its velocity, started inside **585** units and stopped
-  outside; the handle is the record's `+20`.
+  outside; the handle is the record's `+20`. Measured from the LISTENER -
+  the CAMERA'S EYE, which `Game_Frame` hands to `sub_46D080` at the end of
+  the frame (camera block `+20`), so a vehicle is judged against the eye of
+  the frame before - with min and max distances **39** and **585** passed to
+  `Sound_Play3D`, the velocity `dir x (+52 x 30/256 / dt)`, zero when the
+  mover is blocked; re-placed while within 585 (`sub_46CFC0`), stopped
+  beyond (`sub_46CD40`). It is called from the DRIVE step (`sub_456C70`)
+  only, so a slider standing open keeps its voice as last placed. Motos
+  play it too: it is the only vehicle sound loaded. **Ported 2026-10-06**
+  (drift audit A9; the port measured against the player through a
+  `setPlayer` nothing called, so nothing ever sounded): the decision in
+  `Sliders::vehicleSound`, the voices in `PlayState::vehicleSounds`, the gain
+  DirectSound's documented inverse-distance law over 39 and 585 - a labelled
+  reconstruction, the device's law has no reachable tier - and no Doppler
+  (the host mixer has no pitch). `verify.py: engine: vehicle sound`.
 
 ### What the data says, and why the port shares one pool
 

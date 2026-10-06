@@ -49,6 +49,12 @@ void HostMixer::queue(std::span<const float> s) {
     count_ += s.size();
 }
 
+void HostMixer::setGain(int handle, float gain) {
+    if (handle < 0) return;
+    for (Shot& o : shots_)
+        if (o.id == handle) o.gain = gain;
+}
+
 void HostMixer::stop(int handle) {
     if (handle < 0) return;
     std::erase_if(shots_, [handle](const Shot& o) { return o.id == handle; });

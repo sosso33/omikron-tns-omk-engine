@@ -109,7 +109,13 @@ WALKING INTO the parked slider, not a seated rider shown.
 
 - **M3** Manuelle's collisions with vehicles and road-keeping (`sub_458880`,
   `sub_458C70`, `sub_459BD0` — the last unread). Large.
-- **A9** no vehicle sound (`sub_456B40`, `sliderm01.wav` looped within 585).
+- ~~**A9**~~ DONE 2026-10-06 (`engine: vehicle sound`): one looped
+  `sliderm01.wav` per vehicle within 585 of the camera's eye, gain 39/d.
+  NOT PLAYED - listen for it while the called slider comes (the camera
+  follows it ~300-400 behind, so it is quiet: 39/304 = 0.13) and for passing
+  traffic. Left: Doppler (the host mixer has no pitch), and the host mixer's
+  cap of 8 shots against the engine's 16 voices - a busy street can push the
+  oldest out.
 - ~~**B2**~~ DONE 2026-10-06 (`engine: slider placement`). Left from it:
   the CROSS-AREA arrival (`arriveAt`) still puts the slider at the lane
   POINT and kills what stands there (`takeOverAt`) - its original path

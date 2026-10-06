@@ -266,6 +266,12 @@ struct PlayState {
     omk::CityMaps cityMaps{};
     omk::ShootWeaponTable shootWeapons{};
     std::map<std::pair<int, int>, int> sceneVoices{};
+    // THE VEHICLES' ENGINE SOUND (`sub_456B40`): vehicle slot -> its looping
+    // voice, and `SOUNDS\sliderm01.wav` read once (drift audit A9)
+    std::map<int, int> vehVoices{};
+    std::shared_ptr<const omk::DeviceSound> vehSound{};
+    bool vehSoundRead = false;
+    int  vehSoundStarts = 0, vehSoundStops = 0;
     int takeCandidate{};   // `dword_53AF6C`, MDACTION's pick
     bool takeWasLow{};
     int heldInHand{};   // the object drawn on the left hand: from MDGETOBJ to the release
@@ -706,7 +712,8 @@ struct PlayState {
     void inputPause();   // ESC opens the pause screen; the last screen's close flushes the input
     void inputTick();   // the pause flag, one frame of the game, the Session under a screen
     void inputMotion();   // scripted object motion - the crates, the doors, the lifts
-    void inputSounds();   // adventure mode's and the scene's own sound effects
+    void inputSounds();
+    void vehicleSounds();          // sub_456B40's voices (playframe_input_parts.cpp)   // adventure mode's and the scene's own sound effects
 
     // ---- `phaseModes`'s PARTS (todo/play-split.md) and the state they share: each
     // was a local of the phase, and is assigned where it was declared, every turn
