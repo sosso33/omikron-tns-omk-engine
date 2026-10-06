@@ -896,6 +896,15 @@ public:
     float cameraShakeStep(float dt);
     bool  cameraShaking() const { return shakeDur_ > 0.0f; }
     long  cameraShakes() const { return shakes_; }
+    // ---- THE GREYSCALE BANK (ops 150/151, drift audit S11) -------------
+    //
+    // `render.grey.on` / `.off` (0x406050 / 0x406070): the dry-run test, then
+    // `sub_42FA00(1)` / `(0)` - the black-and-white render bank, which greys
+    // the whole 3D picture (`o3de/greybank.h`). Bank 0 again on a restart or a
+    // load (`sub_4193E0`). `greyBankSwaps` counts the CHANGES, which is what
+    // runs the activate hook.
+    bool  renderGrey() const { return greyBank_; }
+    long  greyBankSwaps() const { return greySwaps_; }
     // One frame of both, in FRAMES (the engine's `flt_4C30D8`).
     void tickFades(float dt = 1.0f);
     void tickBumpCooldown();
@@ -1780,6 +1789,8 @@ private:
     // ---- the world, as the shown slot describes it
     float shakeDur_ = 0.0f, shakeElapsed_ = 0.0f, shakeAmp_ = 0.0f;   // cam+196/+200/+204
     long  shakes_ = 0;
+    bool  greyBank_ = false;                                   // dword_52B8D8
+    long  greySwaps_ = 0;
     float playerPos_[3] = {0, 0, 0};
     float playerYaw_ = 0.0f;
     bool  playerPlaced_ = false;

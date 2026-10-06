@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "o3de/raster.h"
 #include "platform/profile.h"
+#include "o3de/greybank.h"
 #include "o3de/shimmer.h"
 #include "ui/surface.h"
 
@@ -197,7 +198,7 @@ ClipVert lerp(const ClipVert& a, const ClipVert& b, float f) {
 RasterStats drawGeometry(Surface& fb, std::vector<float>& depth,
                          const RCamera& cam, const Geometry& g,
                          std::span<const Texture> textures, const Fog& fog,
-                         float shimmerClock, bool dither) {
+                         float shimmerClock, bool dither, bool grey) {
     OMK_ZONE("raster: drawGeometry");   // the profiler (todo/debug-tools.md 6)
     RasterStats st;
     if (depth.size() != static_cast<std::size_t>(fb.w) * fb.h)
@@ -262,6 +263,10 @@ RasterStats drawGeometry(Surface& fb, std::vector<float>& depth,
                     in[k].r = src[k]->r + sh;
                     in[k].g = src[k]->g + sh;
                     in[k].b = src[k]->b + sh;
+                    // THE GREYSCALE BANK, after the shimmer as `sub_4947F0`
+                    // runs before the bucket walk that greys
+                    if (grey)
+                        in[k].r = in[k].g = in[k].b = omk::lumaGreyUnit(in[k].r, in[k].g, in[k].b);
                     in3[k] = in[k].v[2];
                 }
                 for (int k = 0; k < 3 && nPoly < 4; ++k) {

@@ -1257,6 +1257,8 @@ void Session::restart() {
     // slot: no held-object or weapon model here (issues 34/26)
     if (dialogState_ == 3) { dialog_.reset(); dialogState_ = 1; }
     speakerModel_.clear();
+    // `sub_4193E0`'s `sub_42FA00(0)`: a restart comes back in colour
+    if (greyBank_) { greyBank_ = false; ++greySwaps_; }
     // both slots' contexts and scenes freed, the blocks released
     for (int s = 0; s < 2; ++s) if (slots_[s].area != -1) evictSlot(s);
     // ...and BOTH object pools with them: the engine's pools are the slots'
@@ -2841,6 +2843,19 @@ void Session::onCall(int i, const Call& call) {
         if (call.fields.size() >= 2)
             cameraShake(static_cast<float>(call.fields[0]), call.fields[1]);
         break;
+    case 150: case 151: {
+        // `render.grey.on` / `.off` (0x406050 / 0x406070, read from the
+        // image): `if (!dword_6A05E0) sub_42FA00(op == 150)` - no operand.
+        // The bank swap calls the activate hook only on a CHANGE.
+        const bool on = call.op == 150;
+        if (on != greyBank_) {
+            greyBank_ = on;
+            ++greySwaps_;
+            std::printf("frame %ld: render.grey.%s - the %s bank (sub_42FA00(%d))\n",
+                        frameNo_, on ? "on" : "off", on ? "GREYSCALE" : "colour", on ? 1 : 0);
+        }
+        break;
+    }
     case 132: startBlackFade(true);  break;
     case 133: startBlackFade(false); break;
     case 103:

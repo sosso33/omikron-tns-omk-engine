@@ -121,9 +121,11 @@ public:
             uFog_ = shaderInstanceGetUniformLocation(vs, "fogp");
             uShim_ = shaderInstanceGetUniformLocation(vs, "shim");
             uWave_ = shaderInstanceGetUniformLocation(vs, "wave");
-            if (uMvp_ < 0 || uTexScale_ < 0 || uFog_ < 0 || uShim_ < 0 || uWave_ < 0) {
+            uGrey_ = shaderInstanceGetUniformLocation(vs, "greyw");
+            if (uMvp_ < 0 || uTexScale_ < 0 || uFog_ < 0 || uShim_ < 0 || uWave_ < 0 || uGrey_ < 0) {
                 std::printf("c3d: the vertex shader lacks a uniform (mvp %d texscale %d fogp %d "
-                            "shim %d wave %d)\n", uMvp_, uTexScale_, uFog_, uShim_, uWave_);
+                            "shim %d wave %d greyw %d)\n", uMvp_, uTexScale_, uFog_, uShim_, uWave_,
+                            uGrey_);
                 return false;
             }
             // THE POSING PROGRAM (3d). Its first three uniforms must sit in the
@@ -139,10 +141,11 @@ public:
                 pMisc_ = shaderInstanceGetUniformLocation(ps, "misc");
                 pLights_ = shaderInstanceGetUniformLocation(ps, "lights");
                 pPose_ = shaderInstanceGetUniformLocation(ps, "pose");
+                pGrey_ = shaderInstanceGetUniformLocation(ps, "greyw");
                 const bool shared = shaderInstanceGetUniformLocation(ps, "mvp") == uMvp_ &&
                                     shaderInstanceGetUniformLocation(ps, "texscale") == uTexScale_ &&
                                     shaderInstanceGetUniformLocation(ps, "fogp") == uFog_;
-                posing_ = shared && pMisc_ >= 0 && pLights_ >= 0 && pPose_ >= 0;
+                posing_ = shared && pMisc_ >= 0 && pLights_ >= 0 && pPose_ >= 0 && pGrey_ >= 0;
                 std::printf("c3d: bodies posed and lit %s\n", posing_
                             ? "by the GPU (posed.v.pica: 23 slots, 8 lights)"
                             : "on the CPU - the posing program's uniforms do not line up");
@@ -208,7 +211,9 @@ public:
         for (std::size_t i = 0; i < t.size(); ++i) {
             const Texture& x = t[i];
             if (!x.hasPixels()) continue;
-            const auto key = std::make_tuple(x.idx.data(), x.width, x.height);
+            // the PALETTE too: the greyscale bank (ops 150/151) hands the same
+            // indices over with a grey palette, and the colour one comes back
+            const auto key = std::make_tuple(x.idx.data(), x.pal.data(), x.width, x.height);
             auto hit = uploaded_.find(key);
             if (hit == uploaded_.end()) {
                 auto tex = std::make_unique<C3D_Tex>();
@@ -233,7 +238,7 @@ public:
                 C3D_TexSetWrap(tex.get(), GPU_REPEAT, GPU_REPEAT);
                 const GPU_TEXTURE_FILTER_PARAM f = filter_ ? GPU_LINEAR : GPU_NEAREST;
                 C3D_TexSetFilter(tex.get(), f, f);
-                hit = uploaded_.emplace(key, Uploaded{std::move(tex), x.idx, 2LL * x.width * x.height,
+                hit = uploaded_.emplace(key, Uploaded{std::move(tex), x.idx, x.pal, 2LL * x.width * x.height,
                                                       false}).first;
                 ++fresh;
             } else {
@@ -283,6 +288,10 @@ public:
         // it; the PICA's viewport origin is the bottom-left, as GL's
         C3D_SetViewport(0, static_cast<u32>(th_ - cam.h), static_cast<u32>(cam.w), static_cast<u32>(cam.h));
         shimClock_ = std::floor(std::floor(v.shimmerClock) / 4.0f);
+        grey_ = v.grey ? 1.0f : 0.0f;
+        // the posing program's register is its own (the scene's sit under
+        // `pose` and are re-set with the shimmer on a switch back)
+        if (pGrey_ >= 0) C3D_FVUnifSet(GPU_VERTEX_SHADER, pGrey_, 0.299f, 0.587f, 0.114f, grey_);
         boundProg_ = -1;
         useProgram(0);
         used_ = 0;
@@ -539,7 +548,7 @@ private:
     struct Slot { C3D_Tex* tex = nullptr; float w = 1, h = 1; };
     // An upload, kept across pools: the storage it was made from is held, so
     // the key's address stays this texture's.
-    struct Uploaded { std::unique_ptr<C3D_Tex> tex; PixelBuffer keep; long long bytes = 0; bool used = false; };
+    struct Uploaded { std::unique_ptr<C3D_Tex> tex; PixelBuffer keep, keepPal; long long bytes = 0; bool used = false; };
 
     static bool noCull() { static const bool n = std::getenv("OMK_NO_CULL") != nullptr; return n; }
 
@@ -860,6 +869,9 @@ private:
         C3D_FVUnifSet(GPU_VERTEX_SHADER, uShim_, shimClock_, 0.0f, 0.0f, 0.0f);
         for (int i = 0; i < 32; ++i)
             C3D_FVUnifSet(GPU_VERTEX_SHADER, uWave_ + i, kShimmerWave[i] / 255.0f, 0.0f, 0.0f, 0.0f);
+        // ...and the greyscale bank's word (`scene.v.pica`), which `pose`
+        // overwrites too
+        C3D_FVUnifSet(GPU_VERTEX_SHADER, uGrey_, 0.299f, 0.587f, 0.114f, grey_);
     }
 
     // THE PICA's TEXTURE LAYOUT: 8x8 tiles, the tiles row by row from the
@@ -958,14 +970,15 @@ private:
     bool ready_ = false, inFrame_ = false;
     DVLB_s* dvlb_ = nullptr;
     shaderProgram_s prog_{};
-    int uMvp_ = -1, uTexScale_ = -1, uFog_ = -1, uShim_ = -1, uWave_ = -1;
+    int uMvp_ = -1, uTexScale_ = -1, uFog_ = -1, uShim_ = -1, uWave_ = -1, uGrey_ = -1;
     C3D_RenderTarget* target_ = nullptr;
     GpuVert* ring_ = nullptr;
     std::size_t used_ = 0;
     const void* boundBuf_ = nullptr;
     DVLB_s* pdvlb_ = nullptr;
     shaderProgram_s pprog_{};
-    int pMisc_ = -1, pLights_ = -1, pPose_ = -1;
+    int pMisc_ = -1, pLights_ = -1, pPose_ = -1, pGrey_ = -1;
+    float grey_ = 0.0f;   // View::grey, the greyscale bank (ops 150/151)
     bool posing_ = false;
     int boundProg_ = -1;
     float shimClock_ = 0.0f;

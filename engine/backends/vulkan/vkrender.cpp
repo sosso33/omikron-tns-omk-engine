@@ -112,7 +112,8 @@ struct LightUbo {
     GpuLightStd140 l[8];
     int32_t count;
     float   base;      // View::litBase, in the std140 padding that was here
-    int32_t pad[2];
+    int32_t grey;      // View::grey, the greyscale bank (ops 150/151) - padding too
+    int32_t pad;
 };
 
 struct ShadowUbo {
@@ -2289,6 +2290,7 @@ void VulkanRenderer::begin(const omk::View& view) {
         }
         ub.count = n;
         ub.base = view.litBase;
+        ub.grey = view.grey ? 1 : 0;
         litCount_ = n;
         std::memcpy(litUboPtr_, &ub, sizeof ub);
     }

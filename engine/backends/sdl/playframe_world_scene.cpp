@@ -1260,7 +1260,8 @@ void PlayState::worldBolts() {
     // ennemy"* (`todo/fight-mode.md` 15.16).
     for (const auto& c : foeSprites) spriteWanted.insert(c.sprite);
     if (poolBuiltFor != poolComposition || poolHasSprites != wantSprites ||
-        poolHasPlayer != (drawPlayer || drawArm) || spritePooled != spriteWanted) {
+        poolHasPlayer != (drawPlayer || drawArm) || spritePooled != spriteWanted ||
+        poolGrey != session.renderGrey()) {
         pool = worldTex;
         for (auto& cm : charModels) {
             cm.second.texBase = pool.size();
@@ -1335,6 +1336,28 @@ void PlayState::worldBolts() {
         poolHasSprites = wantSprites;
         poolHasPlayer = drawPlayer || drawArm;   // the first-person arm needs them too
         spritePooled = spriteWanted;
+        // THE GREYSCALE BANK's textures (`o3de/greybank.h`): while it is on,
+        // every slot goes over with its palette greyed - `sub_42FE80` greys
+        // every resident texture when the bank comes on, and the uploads it
+        // installs grey every new one - and the colour pool goes back when
+        // it goes off, which is `sub_42FC10`'s re-upload from the source.
+        // The indices are shared; a grey palette is made once per source.
+        if (poolGrey != session.renderGrey())
+            std::printf("frame %ld: texture pool handed over %s (%zu slots)\n", n,
+                        session.renderGrey() ? "GREYED (sub_42FE80)" : "in colour (sub_42FC10)",
+                        pool.size());
+        poolGrey = session.renderGrey();
+        if (poolGrey)
+            for (auto& t : pool) {
+                if (t.pal.size() != 768) continue;
+                auto it = greyPalettes.find(t.pal.data());
+                if (it == greyPalettes.end())
+                    it = greyPalettes.emplace(t.pal.data(),
+                                              std::make_pair(t.pal, omk::greyPalette(t.pal))).first;
+                t.pal = it->second.second;
+            }
+        else
+            greyPalettes.clear();
         world.setTextures(pool);
         // The sprite section comes and goes with the effects, several
         // times a second; only a change of CAST is worth a line.

@@ -1117,7 +1117,19 @@ void PlayState::worldMirror() {
                          view.cam.at[0], view.cam.at[1], view.cam.at[2], view.cam.hfovDeg);
     }
     mark("shadows, hud models");
-    const auto mst = omk::drawWithMirror(world, draws, view,
+    // THE GREYSCALE BANK (ops 150/151, `o3de/greybank.h`): `sub_42FF80`
+    // greys the fog colour from the scene's `+336` and `sub_431410` the
+    // clear through `word_4EB8D8`; the vertex colours are the backend's
+    // (`View::grey`) and the textures went in greyed with the pool. On a
+    // COPY: the clear's table is not idempotent, and `view` lives on.
+    omk::View drawn = view;
+    if (session.renderGrey()) {
+        drawn.grey = true;
+        const int y = omk::lumaGrey(view.fogColour[0], view.fogColour[1], view.fogColour[2]);
+        for (int k = 0; k < 3; ++k) drawn.fogColour[k] = static_cast<std::uint8_t>(y);
+        omk::greyClear565(view.clearColour, drawn.clearColour);
+    }
+    const auto mst = omk::drawWithMirror(world, draws, drawn,
                                          noMirror ? omk::MirrorPlane{} : wmp);
     mark("world begin..end (submit, GL)");
     if (mst.active != mirrorLive || (mst.maskPixels > 0 && !mirrorSeen)) {

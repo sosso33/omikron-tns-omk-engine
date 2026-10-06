@@ -43,6 +43,7 @@
 #include "o3de/collision.h"
 #include "o3de/daynight.h"
 #include "o3de/geom3do.h"
+#include "o3de/greybank.h"
 #include "o3de/particles.h"
 #include "o3de/pointplace.h"
 #include "app/playhelpers.h"

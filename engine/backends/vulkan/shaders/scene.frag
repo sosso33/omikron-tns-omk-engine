@@ -77,7 +77,8 @@ layout(set = 1, binding = 2) uniform Lights {
     GpuLight l[8];
     int   count;
     float base;        // View::litBase - the scene's +416, what a lit batch starts from
-    int   pad1, pad2;
+    int   grey;        // View::grey - the greyscale bank, ops 150/151
+    int   pad2;
 } lg;
 
 vec3 litColour(vec3 n, vec3 w) {
@@ -168,6 +169,16 @@ void main() {
     vec3 shade = pc.lit == 1 ? min(vec3(lg.base) + litColour(normalize(vNrm), vWorld), vec3(1.0))
                : pc.lit == 2 ? min(vCol + litColour(normalize(vNrm), vWorld), vec3(1.0))
                              : vCol + vec3(wave);
+    // THE GREYSCALE BANK (ops 150/151, `o3de/greybank.h`): `sub_42FF80`
+    // writes each vertex colour as its luma, `(299 R + 587 G + 114 B) / 1000`
+    // on the BYTES, truncated - here on the colour the batch ends with, after
+    // its shimmer and lights. The texture came greyed (its palette); the fog
+    // colour too. `+ 0.5` keeps the floor exact under an approximate divide.
+    if (lg.grey != 0) {
+        float y = floor((dot(floor(clamp(shade, 0.0, 1.0) * 255.0 + 0.5),
+                             vec3(299.0, 587.0, 114.0)) + 0.5) / 1000.0);
+        shade = vec3(y / 255.0);
+    }
     vec3 c = clamp(t.rgb * shade * litness(), 0.0, 1.0);
     // THE FOG, and it is raster.cpp's line transcribed. Linear -
     // `FOGTABLEMODE` 3 at density 1.0, the only mode the engine sets - over

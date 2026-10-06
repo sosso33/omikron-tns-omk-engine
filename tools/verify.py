@@ -40416,6 +40416,99 @@ def c_engine_astaroth_tick():
            "his gauge"
 
 
+def c_engine_grey_bank():
+    r"""THE GREYSCALE BANK - ops 150/151, `render.grey.on` / `.off`, the
+    black-and-white cutscenes (drift audit S11; `engine/src/o3de/greybank.h`).
+
+    `sub_42FA00(1)` installs `bw.c`'s bank: the bucket walk `sub_42FF80`
+    writes every vertex colour as `(299 R + 587 G + 114 B) / 1000` (and the
+    fog colour), the clears go through `word_4EB8D8`, and the activate hook
+    `sub_42FE80` greys every resident texture; `sub_42FA00(0)` and its hook
+    `sub_42FC10` put the colour back. The port: the Session's bank flag, the
+    texture pool re-handed with grey palettes, the View's fog and clear
+    greyed, and each backend greying the colour a batch ends with.
+
+    Kay'l's flat (AREA 237, SCENE 57 - one of the 14 bracket sites is this
+    scene's), with `--op-at` running op 150 at frame 30 and op 151 at frame 60
+    through a real script context. Counted: pixels whose channels spread by
+    more than 16 - the software reference keeps a dozen, the character
+    shadows' multiply blobs drifting green on its 565 target (red and blue
+    truncate in steps of 8, green in 4), which a GPU blending in 8 bits does
+    not. Before and after the bracket the room is in colour; inside it, grey,
+    on the software reference, on Vulkan (`--world-vulkan`) and on GLES.
+    GL1 and the 3DS (`citro3d`) are not run here.
+
+    Shown to fail: the 150/151 arm removed (no line, every frame in colour);
+    the pool's grey palettes removed (the textures colour every frame); the
+    software raster's per-corner grey removed; GLES's and Vulkan's shader
+    grey removed (each backend's count, alone).
+    """
+    import subprocess, re as _re, struct, tempfile, glob
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not (os.path.isdir(eng) and os.path.isdir(fr)):
+        return ("skipped",), ("skipped",), "engine/ or gamedata/ absent"
+    b = subprocess.run(["make", "-s", "play", "play-gles"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    gles = os.path.join(eng, "build", "omk-play-gles")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+
+    def spread(path):
+        raw = open(path, "rb").read()
+        n = len(raw) // 2
+        if n == 0:
+            return None
+        c = 0
+        for p in struct.unpack("<%dH" % n, raw):
+            r, g, bb = ((p >> 11) & 31) << 3, ((p >> 5) & 63) << 2, (p & 31) << 3
+            if max(r, g, bb) - min(r, g, bb) > 16:
+                c += 1
+        return c
+
+    base = [fr, os.path.join(ROOT, "tables"), "--res", "640x480", "--nofmv",
+            "--no-crowd", "--filter", "nearest", "--save", save,
+            "--area", "237", "--scene-chunk", "57"]
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    with tempfile.TemporaryDirectory() as td:
+        snaps = os.path.join(td, "snaps")
+        os.mkdir(snaps)
+        v = subprocess.run([play] + base + ["--software", "--op-at", "30:150,60:151",
+                                            "--snaps", snaps, "--snap-every", "15",
+                                            "--frames", "90"],
+                           capture_output=True, encoding="latin-1", env=env).stdout
+        sw = {}
+        for f in glob.glob(os.path.join(snaps, "snap-*.bin")):
+            sw[int(f.rsplit("-", 1)[1][:-4])] = spread(f)
+        frames = [sw.get(k) for k in (16, 31, 46, 76)]
+        lines = (len(_re.findall(r"render\.grey\.on - the GREYSCALE bank", v)),
+                 len(_re.findall(r"render\.grey\.off - the colour bank", v)),
+                 len(_re.findall(r"texture pool handed over GREYED", v)),
+                 len(_re.findall(r"texture pool handed over in colour", v)))
+        vk = os.path.join(td, "vk.bin")
+        subprocess.run([play] + base + ["--world-vulkan", "--op-at", "30:150",
+                                        "--frames", "60", "--dump", vk],
+                       capture_output=True, env=env)
+        vkc = spread(vk) if os.path.exists(vk) else "no vulkan"
+        gl = os.path.join(td, "gles.bin")
+        if os.path.exists(gles):
+            subprocess.run(["caffeinate", "-d", "-u", "-i", gles] + base +
+                           ["--op-at", "30:150", "--frames", "60", "--dump", gl],
+                           capture_output=True,
+                           env=dict(os.environ, OMK_NO_GPU_PRESENT="1"))
+        glc = spread(gl) if os.path.exists(gl) else "no gles"
+    colour = lambda c: c is not None and c > 50000
+    grey = lambda c: isinstance(c, int) and c <= 50
+    return ((colour(frames[0]), grey(frames[1]), grey(frames[2]), colour(frames[3])),
+            lines, grey(vkc), grey(glc)), \
+           ((True, True, True, True), (1, 1, 1, 1), True, True), \
+           "software: colour before (frame 16), grey inside (31, 46), colour after (76) - " \
+           "%s; the bank's on/off lines and the pool re-handed grey / in colour; " \
+           "Vulkan grey (%s); GLES grey (%s)" % (frames, vkc, glc)
+
+
+
 def c_engine_camera_shake():
     r"""THE CAMERA SHAKE (`todo/astaroth.md` step 4; drift audit S11, op 136).
 
@@ -44118,6 +44211,7 @@ SLOW = [
     ("engine: astaroth back", c_engine_astaroth_back, "todo/astaroth.md 2; actor/astaroth.h"),
     ("engine: astaroth tick", c_engine_astaroth_tick, "todo/astaroth.md 3; actor/astaroth.h"),
     ("engine: camera shake", c_engine_camera_shake, "todo/astaroth.md 4; script/area.h"),
+    ("engine: grey bank", c_engine_grey_bank, "todo/drift-audit.md S11; o3de/greybank.h"),
     ("engine: shoot requests", c_engine_shoot_requests, "todo/drift-audit.md S13; actor/shootmode.h"),
     ("engine: address camera", c_engine_address_camera, "todo/drift-audit.md S14; o3de/worldcam.h"),
     ("engine: head camera", c_engine_head_camera, "todo/drift-audit.md; o3de/worldcam.h"),

@@ -175,13 +175,17 @@ struct Fog {
     float r = 0.0f, g = 0.0f, b = 0.0f;
 };
 
+// `grey` is the View's greyscale bank (`o3de/greybank.h`): each corner's
+// colour, after its shimmer, taken to its luma - `sub_42FF80`'s per-vertex
+// write. The fog colour and the textures are the caller's to grey.
 // `shimmerClock` is the View's - mesh flag 0x8000000's 32-step cycle
 // (`o3de/shimmer.h`). Defaulted, so every probe that does not care keeps
 // compiling and draws the still frame it always drew.
 RasterStats drawGeometry(Surface& fb, std::vector<float>& depth,
                          const RCamera& cam, const Geometry& g,
                          std::span<const Texture> textures, const Fog& fog = {},
-                         float shimmerClock = 0.0f, bool dither = false);
+                         float shimmerClock = 0.0f, bool dither = false,
+                         bool grey = false);
 
 // Clear a depth buffer to "nothing here yet".
 void clearDepth(std::vector<float>& depth, int w, int h);

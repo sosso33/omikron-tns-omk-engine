@@ -70,6 +70,7 @@
 #include "gl1render.h"
 #include "gl1host.h"
 
+#include "o3de/greybank.h"
 #include "o3de/shimmer.h"
 #include "platform/profile.h"
 #include "ui/surface.h"
@@ -355,6 +356,10 @@ public:
                 // the shimmer first, as the engine adds it into the bytes
                 const float sh = shimmerOffset(c.phase, view_.shimmerClock);
                 in[k].c[0] = c.r + sh; in[k].c[1] = c.g + sh; in[k].c[2] = c.b + sh;
+                // ...then the greyscale bank (ops 150/151, `o3de/greybank.h`)
+                if (view_.grey)
+                    in[k].c[0] = in[k].c[1] = in[k].c[2] =
+                        lumaGreyUnit(in[k].c[0], in[k].c[1], in[k].c[2]);
                 in[k].u = c.u; in[k].t = c.v;
             }
             Vtx poly[4];

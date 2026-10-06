@@ -176,7 +176,7 @@ int PlayOptions::parse(int argc, char** argv) {
 "                   (todo/drift-audit.md M1)\n"
 "  --game-restart N HARNESS: op 152 (game.restart) run as a context at frame N\n"
 "                   (todo/drift-audit.md S3)\n"
-"  --op-at F:OP     HARNESS: one opcode (106, 107, 116, 117 or 152) run as a\n"
+"  --op-at F:OP     HARNESS: one opcode (106, 107, 116, 117, 150, 151 or 152) run as a\n"
 "                   context at frame F; repeatable as a comma list\n"
 "  --shoot-end N    shoot.end 1 at frame N - the harness's way OUT of the mode\n"
 "  --water-cam preset  the swim camera's OLD fixed-offset reading, to lay\n"
@@ -549,19 +549,21 @@ int PlayOptions::parse(int argc, char** argv) {
         else if (a == "--game-restart" && i + 1 < argc) gameRestartAt = std::atol(argv[++i]);
         // A HARNESS FLAG: `--op-at F:OP,...` - an opcode that takes NO
         // operand bytes (106/107 the freeze, 116/117 the player's suspend,
-        // 152 the restart), run as a context at frame F through the arm a
-        // script reaches (todo/drift-audit.md S7). Anything else is refused.
+        // 150/151 the greyscale bank, 152 the restart), run as a context at
+        // frame F through the arm a script reaches (todo/drift-audit.md S7,
+        // S11). Anything else is refused.
         else if (a == "--op-at" && i + 1 < argc) {
             std::string t = argv[++i], cur;
             for (char c : t + ",") {
                 if (c != ',') { cur.push_back(c); continue; }
                 long f = -1; int op = -1;
                 if (std::sscanf(cur.c_str(), "%ld:%d", &f, &op) == 2 &&
-                    (op == 106 || op == 107 || op == 116 || op == 117 || op == 152))
+                    (op == 106 || op == 107 || op == 116 || op == 117 || op == 150 ||
+                     op == 151 || op == 152))
                     opAt.emplace_back(f, op);
                 else if (!cur.empty())
                     std::fprintf(stderr, "--op-at: '%s' refused (F:OP, OP one of "
-                                 "106 107 116 117 152)\n", cur.c_str());
+                                 "106 107 116 117 150 151 152)\n", cur.c_str());
                 cur.clear();
             }
         }

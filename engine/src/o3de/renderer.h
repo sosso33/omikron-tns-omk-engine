@@ -133,6 +133,12 @@ struct View {
     // or the clock's in a day/night area - which is what the engine's own lit
     // path starts every vertex from (`sub_494E80`). It was black.
     float litBase = 0.0f;
+    // THE GREYSCALE BANK (ops 150/151, `o3de/greybank.h`): the vertex colour
+    // a batch ends with - after its shimmer and its lights - is taken to its
+    // luma before the texture modulates it. The caller has already greyed
+    // the fog and clear colours above and handed greyed palettes in
+    // `setTextures`; this flag is the one part only a backend can do.
+    bool grey = false;
 
     // ------------------------------------------- THE SHADOW MAP's LIGHT
     //

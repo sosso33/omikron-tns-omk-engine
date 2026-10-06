@@ -549,6 +549,12 @@ struct PlayState {
     std::uint64_t poolTold{};
     bool poolHasSprites{};
     bool poolHasPlayer{};
+    // the pool was handed over GREYED (ops 150/151): a change of bank is a
+    // re-hand, as `sub_42FE80` / `sub_42FC10` re-grey or re-upload every slot
+    bool poolGrey{};
+    // source palette -> {the source, held so its address cannot be reused
+    // while the key names it; its grey}
+    std::map<const std::uint8_t*, std::pair<omk::PixelBuffer, omk::PixelBuffer>> greyPalettes{};
     std::size_t playerTexBase{};
     std::size_t spriteTexBase{};
     std::unordered_map<int, int> spriteSlot{};   // absent = -1, as an unassigned slot was

@@ -291,6 +291,7 @@ uniform int   uCutout;
 uniform float uFogStart;
 uniform float uFogEnd;
 uniform vec3  uFogColour;
+uniform float uGrey;       // View::grey
 varying vec2  vUV;
 varying vec3  vCol;
 varying float vDepth;
@@ -300,7 +301,13 @@ void main() {
         if (t.a < 0.5) discard;
         t.rgb /= t.a;
     }
-    vec3 c = clamp(t.rgb * vCol, 0.0, 1.0);
+    vec3 shade = vCol;
+    if (uGrey > 0.5) {   // the greyscale bank (ops 150/151): scene.frag's rule
+        float y = floor((dot(floor(clamp(shade, 0.0, 1.0) * 255.0 + 0.5),
+                             vec3(299.0, 587.0, 114.0)) + 0.5) / 1000.0);
+        shade = vec3(y / 255.0);
+    }
+    vec3 c = clamp(t.rgb * shade, 0.0, 1.0);
     if (uFogEnd > uFogStart && vDepth > uFogStart) {
         float f = clamp((uFogEnd - vDepth) / (uFogEnd - uFogStart), 0.0, 1.0);
         c = mix(uFogColour, c, f);
@@ -496,6 +503,7 @@ uniform float uFogEnd;
 uniform vec3  uFogColour;
 uniform float uLit;        // 0 the baked colour, 1 lit from the scene's +416 (uLitBase), 2 lit ADDED to it
 uniform float uLitBase;    // View::litBase
+uniform float uGrey;       // View::grey
 uniform float uCaster;     // a caster does not receive
 uniform vec4  uPL[24];     // 8 lights: (pos, outer radius), (dir, inner), (colour, intensity)
 uniform float uPLCount;
@@ -555,6 +563,11 @@ void main() {
     vec3 shade = vCol;
     if (uLit > 1.5) shade = min(vCol + litColour(normalize(vNrm), vWorld), vec3(1.0));
     else if (uLit > 0.5) shade = min(vec3(uLitBase) + litColour(normalize(vNrm), vWorld), vec3(1.0));
+    if (uGrey > 0.5) {   // the greyscale bank (ops 150/151): scene.frag's rule
+        float y = floor((dot(floor(clamp(shade, 0.0, 1.0) * 255.0 + 0.5),
+                             vec3(299.0, 587.0, 114.0)) + 0.5) / 1000.0);
+        shade = vec3(y / 255.0);
+    }
     vec3 c = clamp(t.rgb * shade * litness(), 0.0, 1.0);
     if (uFogEnd > uFogStart && vDepth > uFogStart) {
         float f = clamp((uFogEnd - vDepth) / (uFogEnd - uFogStart), 0.0, 1.0);
@@ -1024,7 +1037,7 @@ private:
     // keyed by the storage AND the size: two slots may share one storage at
     // different sizes, and a key on the storage alone let the second upload
     // delete the texture the first slot still drew with
-    std::map<std::tuple<const std::uint8_t*, int, int>, Uploaded> uploaded_;
+    std::map<std::tuple<const std::uint8_t*, const std::uint8_t*, int, int>, Uploaded> uploaded_;
     struct Vbo {
         GLuint id = 0; std::size_t n = 0; std::uint64_t rev = 0;
         // STREAMED (2026-09-30): this frame's corners live in the ring at
@@ -1142,6 +1155,7 @@ private:
         // the enhanced programs' (`kSceneFragX`); -1 in the default ones
         GLint lit = -1, caster = -1, pl = -1, plCount = -1, shadow = -1, lightMvp = -1,
               shadowP = -1, litBase = -1;
+        GLint grey = -1;   // View::grey, both scene fragment programs
     };
     SceneLoc mainLoc_, posedLoc_;
     GLuint curProg_ = 0;
@@ -1217,6 +1231,7 @@ private:
         int cutout = 0;
         float lit = -1, caster = -1;       // the enhanced programs'
         float litBase = -1;
+        float grey = -1;
         // the posed program's lights
         int lights = -1; float lightBlack = -1, lightBase = -1; std::vector<float> lightVals;
     };
@@ -1430,6 +1445,7 @@ bool GlesRenderer::init(int w, int h) {
         L.lightBase = glGetUniformLocation(p, "uLightBase");
         L.lit = glGetUniformLocation(p, "uLit");
         L.litBase = glGetUniformLocation(p, "uLitBase");
+        L.grey = glGetUniformLocation(p, "uGrey");
         L.caster = glGetUniformLocation(p, "uCaster");
         L.pl = glGetUniformLocation(p, "uPL");
         L.plCount = glGetUniformLocation(p, "uPLCount");
@@ -1844,7 +1860,9 @@ void GlesRenderer::setTextures(std::span<const Texture> t) {
         out.w = static_cast<float>(s.width);
         out.h = static_cast<float>(s.height);
         // already on the GPU from an earlier pool: the same storage, the same bytes
-        const auto key = std::make_tuple(s.idx.data(), s.width, s.height);
+        // - indices AND palette, since the greyscale bank (ops 150/151) hands
+        // the same indices over with a grey palette
+        const auto key = std::make_tuple(s.idx.data(), s.pal.data(), s.width, s.height);
         const auto hit = uploaded_.find(key);
         if (hit != uploaded_.end()) {
             hit->second.used = true;
@@ -2780,6 +2798,11 @@ void GlesRenderer::submit(const Draw& d) {
     if (set(!uv || U.cutout != cut)) {
         glUniform1i(L.cutout, cut);
         U.cutout = cut;
+    }
+    // the greyscale bank (ops 150/151) - the View's, set where a draw is
+    if (L.grey >= 0) {
+        const float g = view_.grey ? 1.0f : 0.0f;
+        if (set(!uv || U.grey != g)) { glUniform1f(L.grey, g); U.grey = g; }
     }
     // the enhanced programs' two per-draw words: how this batch is LIT, and
     // whether it CASTS (a caster does not receive - `scene.frag`)
