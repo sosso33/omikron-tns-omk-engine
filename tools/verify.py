@@ -41081,7 +41081,11 @@ def c_engine_actor_lighting():
     The cave's route to frame 760, from the lit corners themselves: Gandhar's
     first form (actor 17) at frame 0 and the snake (187) at 737, base, lights
     reaching, and the corners' mean; then `--no-actor-light`, no lit line.
-    SHOWN TO FAIL: the base forced back to 0 (the green and blue go to 0).
+    And a PROP (step 3): `Object_Load` calls `LightObject` too - the docks'
+    prop 361 at frame 0, base 76 (that set's ambient 0.3), lights reaching,
+    corners above the base.
+    SHOWN TO FAIL: the base forced back to 0 (the green and blue go to 0);
+    the props' lighting skipped (no prop line).
     """
     import subprocess, re as _re
     eng = os.path.join(ROOT, "engine")
@@ -41108,10 +41112,21 @@ def c_engine_actor_lighting():
         base, n, r, g, bl = (int(x) for x in m.groups())
         return (base, n > 0, r > 150, g, bl)
     off = run("--no-actor-light")
-    return (lit(17, o), lit(187, o), "LIT by the set" in off), \
-           ((63, True, True, 63, 63), (63, True, True, 63, 63), False), \
+    docks = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"), "--save",
+         os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "71",
+         "--frames", "5", "--nodelay", "--no-crowd"],
+        capture_output=True, encoding="latin-1",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    m = _re.search(r"prop at 10059 -1734 7068 LIT by the set \(sub_440CA0\) - base (\d+), (\d+) "
+                   r"lights reach, corners' mean (\d+) (\d+) (\d+)", docks)
+    prop = (int(m.group(1)), int(m.group(2)) > 0,
+            min(int(m.group(3)), int(m.group(4)), int(m.group(5))) > int(m.group(1))) if m else None
+    return (lit(17, o), lit(187, o), "LIT by the set" in off, prop), \
+           ((63, True, True, 63, 63), (63, True, True, 63, 63), False, (76, True, True)), \
            "Gandhar's first form and the snake: the base grey, lights reaching, red " \
-           "over 150, green and blue at the base; and nothing lit with --no-actor-light"
+           "over 150, green and blue at the base; nothing lit with --no-actor-light; " \
+           "the docks' prop 361: its base, lights reaching, every channel above the base"
 
 
 def c_engine_ambient_clamp():

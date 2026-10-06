@@ -147,7 +147,7 @@ int PlayOptions::parse(int argc, char** argv) {
 "  --sky 0|1        options row 4, Affichage du ciel\n"
 "  --fog 0|1        the linear fog (default on - the engine always fogs)\n"
 "  --no-crowd-light  do not light the crowd from the set's .3DO lights\n"
-"  --no-actor-light  do not light the characters (players, NPCs, bosses) from them\n"
+"  --no-actor-light  do not light the characters and props from them\n"
 "  --fog-colour r,g,b   override the scene's +336, which ships as 0,0,0\n"
 "  --no-crowd       no pedestrians at all\n"
 "  --invert-x       invert the mouse's X axis in shoot mode; --invert-y\n"

@@ -708,6 +708,41 @@ void PlayState::worldProps() {
     propGeo.batches.clear();
     propGeo.cornerMesh.clear();
     propBatchOwner.clear();
+    // THE SET'S LIGHTS ON A PROP (todo/drift-audit.md L1 step 3).
+    // `Object_Load` calls `LightObject` on the object's node as
+    // `Actor_LoadModel` does on a character's, so `sub_440CA0` lights it
+    // the same way: from the scene's `+416` - the set's ambient grey - plus
+    // every set light reaching its root, per vertex on its turned normal.
+    // A held prop rides the actor's hierarchy and is lit with it, from
+    // where it is drawn. Same per-body deviation as the crowd's.
+    const bool propLit = lightActors && lighting == 0;
+    const float propBase = static_cast<float>(std::clamp(
+        worldSlots[static_cast<std::size_t>(session.activeSlot() & 1)].ambientGrey, 0, 255)) / 255.0f;
+    const auto lightProp = [&](std::size_t first, const float at[3]) {
+        if (!propLit) return;
+        const std::size_t cnt = propGeo.corners.size() - first;
+        for (std::size_t c = first; c < propGeo.corners.size(); ++c) {
+            omk::Corner& w = propGeo.corners[c];
+            w.r = w.g = w.b = propBase;
+        }
+        int reached = 0;
+        for (const WorldSlot& ws2 : worldSlots)
+            if (!ws2.lights.empty()) reached += omk::applyLights(propGeo, first, cnt, at, ws2.lights);
+        // said once a prop position, from the corners the draw takes
+        static std::set<long> litTold;
+        const long key = static_cast<long>(at[0]) * 1000003L + static_cast<long>(at[2]);
+        if (cnt && litTold.insert(key).second) {
+            double m[3] = {0, 0, 0};
+            for (std::size_t c = first; c < propGeo.corners.size(); ++c) {
+                m[0] += propGeo.corners[c].r; m[1] += propGeo.corners[c].g; m[2] += propGeo.corners[c].b;
+            }
+            const double k = 255.0 / static_cast<double>(cnt);
+            std::printf("frame %ld: prop at %.0f %.0f %.0f LIT by the set (sub_440CA0) - base %.0f, "
+                        "%d lights reach, corners' mean %.0f %.0f %.0f\n", n, double(at[0]),
+                        double(at[1]), double(at[2]), double(propBase) * 255.0, reached,
+                        m[0] * k, m[1] * k, m[2] * k);
+        }
+    };
     {
         const auto shown = session.props();
         for (const auto& pr : shown) {
@@ -790,7 +825,20 @@ void PlayState::worldProps() {
                     w.x = o[0] + pp[0];
                     w.y = o[1] + pp[1] - playerFeet + lastRootDrop;
                     w.z = o[2] + pp[2];
+                    // ...and its normal on the same turn, for the light
+                    const float nl[3] = {c.nx, c.ny, c.nz};
+                    float nr[3], no[3];
+                    omk::qrot(hp.q, nl, nr);
+                    omk::rotateYaw(yaw, nr, no);
+                    w.nx = no[0]; w.ny = no[1]; w.nz = no[2];
                     propGeo.corners.push_back(w);
+                }
+                {
+                    float hin2[3] = {hp.pos[0] - playerRootXZ[0], hp.pos[1], hp.pos[2] - playerRootXZ[1]}, ho2[3];
+                    omk::rotateYaw(yaw, hin2, ho2);
+                    const float at[3] = {ho2[0] + pp[0], ho2[1] + pp[1] - playerFeet + lastRootDrop,
+                                         ho2[2] + pp[2]};
+                    lightProp(base, at);
                 }
                 for (const auto& b : pm->rest.batches) {
                     omk::Batch nb = b;
@@ -866,7 +914,15 @@ void PlayState::worldProps() {
                 w.x = static_cast<float>(lx * m00 + ly * m10 + lz * m20 + pr.pos[0]);
                 w.y = static_cast<float>(lx * m01 + ly * m11 + lz * m21 + pr.pos[1]);
                 w.z = static_cast<float>(lx * m02 + ly * m12 + lz * m22 + pr.pos[2]);
+                // its normal turned by the same matrix (no translation)
+                w.nx = static_cast<float>(c.nx * m00 + c.ny * m10 + c.nz * m20);
+                w.ny = static_cast<float>(c.nx * m01 + c.ny * m11 + c.nz * m21);
+                w.nz = static_cast<float>(c.nx * m02 + c.ny * m12 + c.nz * m22);
                 propGeo.corners.push_back(w);
+            }
+            {
+                const float at[3] = {pr.pos[0], pr.pos[1], pr.pos[2]};
+                lightProp(base, at);
             }
             for (const auto& b : pm->rest.batches) {
                 omk::Batch nb = b;
