@@ -1,0 +1,191 @@
+; SPDX-License-Identifier: GPL-3.0-or-later
+; THE 3DS POSING VERTEX SHADER (`c3drender.cpp`, `todo/3ds-port.md` 3d).
+;
+; A body posed and lit by the GPU - the GLES backend's `kPosedVert`
+; (`backends/gles/glesrender.cpp`, todo/gpu-skinning.md), law for law, in the
+; PICA200's 96 uniform registers:
+;
+;   * the REST corner moved by its mesh's affine: `slot` picks three rows of
+;     `pose` (row r = R[r][0..2], t[r]), the world position R * rest + t, the
+;     normal R * rest normal;
+;   * LIT as `vertexlight.cpp`'s `applyLights` lights a corner: from black's
+;     grey (`misc.y`, the scene's +416) when `misc.x` is 1, else from the baked
+;     colour; each light t = -(N . L) truncated and clamped to 0..255, the ramp
+;     floor(t * c / 256) / 255 added and clamped in turn. Eight lights, unused
+;     ones zero (they add nothing);
+;   * the fog and the texels as `scene.v.pica`.
+;
+; NO SHIMMER (the wave's 32 registers are the pose slots' here): a posed draw
+; with a shimmering corner, or more slots than `pose` holds, is posed on the
+; CPU instead (`c3drender.cpp`). The first three uniforms are declared in the
+; scene shader's order, so they share its registers across a program switch.
+
+.fvec mvp[4]
+.fvec texscale
+.fvec fogp
+.fvec misc            ; x = 1 to start from the grey, y = the grey (0..1)
+.fvec lights[16]      ; light i: [2i] = direction x strength, [2i+1] = colour bytes
+.fvec pose[69]        ; 23 slots x 3 rows
+
+.constf k(0.0039215686, 1.0, 0.00390625, 3.0)
+.constf k2(0.0, 255.0, 0.5, 0.0)
+
+.out outpos position
+.out outclr color
+.out outtc0 texcoord0
+
+.alias inpos  v0
+.alias inuv   v1
+.alias inclr  v2
+.alias inslot v3
+.alias innrm  v4
+
+.proc main
+	mov r10, k2
+	mov r11, k
+
+	; the slot's first row: floor(slot * 3 + 0.5) - an exact integer for mova
+	mul r0.x, r11.w, inslot.x
+	add r0.x, r0.x, r10.z
+	flr r0.x, r0.x
+	mova a0.x, r0.x
+
+	; the world position
+	mov r1.xyz, inpos
+	mov r1.w, r11.y
+	dp4 r2.x, pose[a0.x], r1
+	dp4 r2.y, pose[a0.x+1], r1
+	dp4 r2.z, pose[a0.x+2], r1
+	mov r2.w, r11.y
+	dp4 r3.x, mvp[0], r2
+	dp4 r3.y, mvp[1], r2
+	dp4 r3.z, mvp[2], r2
+	dp4 r3.w, mvp[3], r2
+	mov outpos, r3
+
+	; the texels
+	mul r4.xy, texscale.xy, inuv.xy
+	mov outtc0, r4
+
+	; the normal, turned by the slot's rotation
+	dp3 r5.x, pose[a0.x], innrm
+	dp3 r5.y, pose[a0.x+1], innrm
+	dp3 r5.z, pose[a0.x+2], innrm
+
+	; the colour it starts from: col + black * (grey - col)
+	mul r6, k.xxxx, inclr
+	mov r7, misc.yyyy
+	add r7, r7, -r6
+	mul r7, misc.xxxx, r7
+	add r6, r6, r7
+
+	; light 0
+	dp3 r8.x, lights[0], r5
+	mov r8.x, -r8.x
+	flr r8.x, r8.x
+	max r8.x, r8.x, r10.x
+	min r8.x, r8.x, r10.y
+	mul r9, lights[1], r8.xxxx
+	mul r9, r11.zzzz, r9
+	flr r9, r9
+	mul r9, r11.xxxx, r9
+	add r6.xyz, r6.xyz, r9.xyz
+	min r6.xyz, r6.xyz, r11.yyy
+	; light 1
+	dp3 r8.x, lights[2], r5
+	mov r8.x, -r8.x
+	flr r8.x, r8.x
+	max r8.x, r8.x, r10.x
+	min r8.x, r8.x, r10.y
+	mul r9, lights[3], r8.xxxx
+	mul r9, r11.zzzz, r9
+	flr r9, r9
+	mul r9, r11.xxxx, r9
+	add r6.xyz, r6.xyz, r9.xyz
+	min r6.xyz, r6.xyz, r11.yyy
+	; light 2
+	dp3 r8.x, lights[4], r5
+	mov r8.x, -r8.x
+	flr r8.x, r8.x
+	max r8.x, r8.x, r10.x
+	min r8.x, r8.x, r10.y
+	mul r9, lights[5], r8.xxxx
+	mul r9, r11.zzzz, r9
+	flr r9, r9
+	mul r9, r11.xxxx, r9
+	add r6.xyz, r6.xyz, r9.xyz
+	min r6.xyz, r6.xyz, r11.yyy
+	; light 3
+	dp3 r8.x, lights[6], r5
+	mov r8.x, -r8.x
+	flr r8.x, r8.x
+	max r8.x, r8.x, r10.x
+	min r8.x, r8.x, r10.y
+	mul r9, lights[7], r8.xxxx
+	mul r9, r11.zzzz, r9
+	flr r9, r9
+	mul r9, r11.xxxx, r9
+	add r6.xyz, r6.xyz, r9.xyz
+	min r6.xyz, r6.xyz, r11.yyy
+	; light 4
+	dp3 r8.x, lights[8], r5
+	mov r8.x, -r8.x
+	flr r8.x, r8.x
+	max r8.x, r8.x, r10.x
+	min r8.x, r8.x, r10.y
+	mul r9, lights[9], r8.xxxx
+	mul r9, r11.zzzz, r9
+	flr r9, r9
+	mul r9, r11.xxxx, r9
+	add r6.xyz, r6.xyz, r9.xyz
+	min r6.xyz, r6.xyz, r11.yyy
+	; light 5
+	dp3 r8.x, lights[10], r5
+	mov r8.x, -r8.x
+	flr r8.x, r8.x
+	max r8.x, r8.x, r10.x
+	min r8.x, r8.x, r10.y
+	mul r9, lights[11], r8.xxxx
+	mul r9, r11.zzzz, r9
+	flr r9, r9
+	mul r9, r11.xxxx, r9
+	add r6.xyz, r6.xyz, r9.xyz
+	min r6.xyz, r6.xyz, r11.yyy
+	; light 6
+	dp3 r8.x, lights[12], r5
+	mov r8.x, -r8.x
+	flr r8.x, r8.x
+	max r8.x, r8.x, r10.x
+	min r8.x, r8.x, r10.y
+	mul r9, lights[13], r8.xxxx
+	mul r9, r11.zzzz, r9
+	flr r9, r9
+	mul r9, r11.xxxx, r9
+	add r6.xyz, r6.xyz, r9.xyz
+	min r6.xyz, r6.xyz, r11.yyy
+	; light 7
+	dp3 r8.x, lights[14], r5
+	mov r8.x, -r8.x
+	flr r8.x, r8.x
+	max r8.x, r8.x, r10.x
+	min r8.x, r8.x, r10.y
+	mul r9, lights[15], r8.xxxx
+	mul r9, r11.zzzz, r9
+	flr r9, r9
+	mul r9, r11.xxxx, r9
+	add r6.xyz, r6.xyz, r9.xyz
+	min r6.xyz, r6.xyz, r11.yyy
+
+	; the fog: f = 1 + on * (clamp((end - w) / (end - start), 0, 1) - 1)
+	add r12.x, fogp.x, -r3.w
+	mul r12.x, fogp.y, r12.x
+	max r12.x, r12.x, r10.x
+	min r12.x, r12.x, r11.y
+	add r12.x, r12.x, -r11.y
+	mul r12.x, fogp.z, r12.x
+	add r12.x, r11.y, r12.x
+	mul r6.xyz, r6.xyz, r12.xxx
+	mov r6.w, r11.y
+	mov outclr, r6
+	end
+.end

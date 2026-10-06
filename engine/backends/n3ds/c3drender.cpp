@@ -30,6 +30,8 @@
 extern "C" {
 extern const u8 scene_shbin[];
 extern const u32 scene_shbin_size;
+extern const u8 posed_shbin[];
+extern const u32 posed_shbin_size;
 }
 
 namespace omk {
@@ -59,6 +61,22 @@ inline GpuVert gpuVert(const Corner& c) {
 // draw is recorded - so its corners go through this ring, one pass's worth.
 constexpr std::size_t kRingCorners = 96 * 1024;        // 2.6 MB
 
+// A REST corner of a body the GPU poses (3d): the scene's corner without the
+// shimmer phase, with its mesh's SLOT and its rest normal (`posed.v.pica`).
+struct GpuPoseVert {
+    float x, y, z;
+    float u, v;
+    std::uint8_t r, g, b, a;
+    float slot;
+    float nx, ny, nz;
+};
+static_assert(sizeof(GpuPoseVert) == 40, "the posed attribute stride below");
+
+// What `posed.v.pica` holds: 23 slots of three rows (its `pose[69]`), and
+// eight lights. A body over either is posed and lit on the CPU instead.
+constexpr std::size_t kPoseSlots = 23;
+constexpr int kMaxLights = 8;
+
 // WHICH WAY THE PICA CULLS the software rasterizer's back face under this
 // projection - MEASURED, as GLES's `kGlesCullBack` is (3b, Azahar): the wrong
 // value culls every front face, which no frame can hide.
@@ -73,11 +91,14 @@ public:
         removeGeometryListener(&C3dRenderer::geometryGone, this);
         for (auto& [g, r] : res_) if (r.buf) linearFree(r.buf);
         for (GpuVert* b : grave_) linearFree(b);
+        for (auto& [g, r] : pres_) if (r.buf) linearFree(r.buf);
+        for (GpuPoseVert* b : poseGrave_) linearFree(b);
         if (target_) C3D_RenderTargetDelete(target_);
         if (ring_) linearFree(ring_);
         if (read_) linearFree(read_);
         if (small_) linearFree(small_);
         if (dvlb_) { shaderProgramFree(&prog_); DVLB_Free(dvlb_); }
+        if (pdvlb_) { shaderProgramFree(&pprog_); DVLB_Free(pdvlb_); }
         C3D_Fini();
     }
 
@@ -104,6 +125,27 @@ public:
                 std::printf("c3d: the vertex shader lacks a uniform (mvp %d texscale %d fogp %d "
                             "shim %d wave %d)\n", uMvp_, uTexScale_, uFog_, uShim_, uWave_);
                 return false;
+            }
+            // THE POSING PROGRAM (3d). Its first three uniforms must sit in the
+            // scene program's registers - they carry across a switch - which
+            // the declaration order gives and this checks; otherwise bodies
+            // stay on the CPU, said.
+            pdvlb_ = DVLB_ParseFile(const_cast<u32*>(reinterpret_cast<const u32*>(posed_shbin)),
+                                    posed_shbin_size);
+            if (pdvlb_) {
+                shaderProgramInit(&pprog_);
+                shaderProgramSetVsh(&pprog_, &pdvlb_->DVLE[0]);
+                shaderInstance_s* ps = pprog_.vertexShader;
+                pMisc_ = shaderInstanceGetUniformLocation(ps, "misc");
+                pLights_ = shaderInstanceGetUniformLocation(ps, "lights");
+                pPose_ = shaderInstanceGetUniformLocation(ps, "pose");
+                const bool shared = shaderInstanceGetUniformLocation(ps, "mvp") == uMvp_ &&
+                                    shaderInstanceGetUniformLocation(ps, "texscale") == uTexScale_ &&
+                                    shaderInstanceGetUniformLocation(ps, "fogp") == uFog_;
+                posing_ = shared && pMisc_ >= 0 && pLights_ >= 0 && pPose_ >= 0;
+                std::printf("c3d: bodies posed and lit %s\n", posing_
+                            ? "by the GPU (posed.v.pica: 23 slots, 8 lights)"
+                            : "on the CPU - the posing program's uniforms do not line up");
             }
             ring_ = static_cast<GpuVert*>(linearAlloc(kRingCorners * sizeof(GpuVert)));
             if (!ring_) { std::printf("c3d: no linear memory for the vertex ring\n"); return false; }
@@ -219,19 +261,16 @@ public:
         // what a destroyed geometry left while the last pass could still read it
         for (GpuVert* b : grave_) linearFree(b);
         grave_.clear();
+        for (GpuPoseVert* b : poseGrave_) linearFree(b);
+        poseGrave_.clear();
         C3D_RenderTargetClear(target_, C3D_CLEAR_ALL, 0x000000FF, 0x00FFFFFF);
         C3D_FrameDrawOn(target_);
         // the picture in the TOP-LEFT cam.w x cam.h, as the reference draws
         // it; the PICA's viewport origin is the bottom-left, as GL's
         C3D_SetViewport(0, static_cast<u32>(th_ - cam.h), static_cast<u32>(cam.w), static_cast<u32>(cam.h));
-        C3D_BindProgram(&prog_);
-        C3D_AttrInfo* ai = C3D_GetAttrInfo();
-        AttrInfo_Init(ai);
-        AttrInfo_AddLoader(ai, 0, GPU_FLOAT, 3);             // position, world
-        AttrInfo_AddLoader(ai, 1, GPU_FLOAT, 2);             // texels
-        AttrInfo_AddLoader(ai, 2, GPU_UNSIGNED_BYTE, 4);     // the baked colour
-        AttrInfo_AddLoader(ai, 3, GPU_FLOAT, 1);             // the shimmer phase
-        boundBuf_ = nullptr;
+        shimClock_ = std::floor(std::floor(v.shimmerClock) / 4.0f);
+        boundProg_ = -1;
+        useProgram(0);
         used_ = 0;
 
         // THE VIEW-PROJECTION from the software rasterizer's own basis, as
@@ -251,11 +290,7 @@ public:
         C3D_FVUnifSet(GPU_VERTEX_SHADER, uMvp_ + 2, -f[0], -f[1], -f[2], fe + kNearCut);
         C3D_FVUnifSet(GPU_VERTEX_SHADER, uMvp_ + 3, f[0], f[1], f[2], -fe);
         C3D_DepthMap(true, -1.0f, 0.0f);
-        // the shimmer's clock and wave (`o3de/shimmer.h`)
-        C3D_FVUnifSet(GPU_VERTEX_SHADER, uShim_,
-                      std::floor(std::floor(v.shimmerClock) / 4.0f), 0.0f, 0.0f, 0.0f);
-        for (int i = 0; i < 32; ++i)
-            C3D_FVUnifSet(GPU_VERTEX_SHADER, uWave_ + i, kShimmerWave[i] / 255.0f, 0.0f, 0.0f, 0.0f);
+        setShimmer();
 
         cull_ = -1;
         stateValid_ = false;
@@ -274,17 +309,43 @@ public:
         if (!inFrame_ || !d.geo || d.count < 3) return;
         const Geometry& g = *d.geo;
         if (d.start + d.count > g.corners.size()) return;
-        // the corners on the GPU: the geometry's own buffer, or this pass's
-        // ring when it changed after being drawn in it; `first` is the
-        // buffer's index of the draw's first corner
+        // A BODY POSED BY THE GPU (3d): the rest geometry and one affine a
+        // mesh, through the posing program - or on the CPU when the program
+        // cannot hold it (too many slots, a shimmering corner, too many
+        // lights), into this pass's ring and through the scene program.
         std::size_t first = d.start;
-        const GpuVert* buf = resident(g, d.start, d.count, first);
-        if (!buf) return;
+        const void* buf = nullptr;
+        std::size_t stride = sizeof(GpuVert);
+        if (d.meshPose && d.meshPoses) {
+            PoseRes* pr = posing_ ? poseResident(g) : nullptr;
+            if (pr && pr->meshOfSlot.size() <= kPoseSlots && !pr->shimmer &&
+                d.vertexLightCount <= kMaxLights) {
+                useProgram(1);
+                setPoseUniforms(d, *pr);
+                buf = pr->buf;
+                stride = sizeof(GpuPoseVert);
+                ++posedGpu_;
+            } else {
+                buf = cpuPose(d);
+                first = 0;
+                if (!buf) return;
+                useProgram(0);
+                ++posedCpu_;
+            }
+        } else {
+            // the corners on the GPU: the geometry's own buffer, or this
+            // pass's ring when it changed after being drawn in it; `first` is
+            // the buffer's index of the draw's first corner
+            buf = resident(g, d.start, d.count, first);
+            if (!buf) return;
+            useProgram(0);
+        }
         setState(d);
         if (buf != boundBuf_) {
             C3D_BufInfo* bi = C3D_GetBufInfo();
             BufInfo_Init(bi);
-            BufInfo_Add(bi, buf, sizeof(GpuVert), 4, 0x3210);
+            if (stride == sizeof(GpuPoseVert)) BufInfo_Add(bi, buf, stride, 5, 0x43210);
+            else BufInfo_Add(bi, buf, stride, 4, 0x3210);
             boundBuf_ = buf;
         }
         st_.triangles += static_cast<long>(d.count / 3);
@@ -348,8 +409,9 @@ public:
         if (!toldRead_) {
             toldRead_ = true;
             const std::uint32_t m = read_[static_cast<std::size_t>(h_ / 2) * tw_ + w_ / 2];
-            std::printf("c3d: first readback %dx%d, %ld triangles, %zu geometries resident, centre "
-                        "pixel %u %u %u\n", w_, h_, st_.triangles, res_.size(),
+            std::printf("c3d: first readback %dx%d, %ld triangles, %zu geometries resident, %ld draws "
+                        "posed by the GPU and %ld on the CPU, centre pixel %u %u %u\n", w_, h_,
+                        st_.triangles, res_.size(), posedGpu_, posedCpu_,
                         static_cast<unsigned>(m >> 24), static_cast<unsigned>((m >> 16) & 0xFF),
                         static_cast<unsigned>((m >> 8) & 0xFF));
         }
@@ -403,6 +465,10 @@ public:
 
     RasterStats stats() const override { return st_; }
     const char* name() const override { return "citro3d (PICA200)"; }
+    // 3d: a draw may carry a `meshPose` - the frontend hands rest geometry
+    // and one affine a mesh - and up to eight lights with it.
+    bool posesBodies() const override { return posing_; }
+    int maxVertexLights() const override { return posing_ ? kMaxLights : 0; }
 
     // TEXTURE FILTERING (renderer.h): 0 nearest, 1 bilinear - the original's
     // hardware device (MAG/MIN LINEAR, MIP NONE). No mip chain yet, so
@@ -520,9 +586,182 @@ private:
     static void geometryGone(void* ctx, const Geometry* g) {
         auto* self = static_cast<C3dRenderer*>(ctx);
         auto it = self->res_.find(g);
-        if (it == self->res_.end()) return;
-        self->retire(it->second);
-        self->res_.erase(it);
+        if (it != self->res_.end()) {
+            self->retire(it->second);
+            self->res_.erase(it);
+        }
+        auto pt = self->pres_.find(g);
+        if (pt != self->pres_.end()) {
+            if (pt->second.buf) {
+                if (self->inFrame_ && pt->second.drawnPass == self->pass_) self->poseGrave_.push_back(pt->second.buf);
+                else linearFree(pt->second.buf);
+            }
+            self->pres_.erase(pt);
+        }
+    }
+
+    // ---- THE POSED BODIES (3d) -------------------------------------------------
+    // GLES's `uploadPosedGeometry`: a REST geometry changes only when the
+    // model does, so its buffer is filled once per revision; each corner
+    // carries its mesh's SLOT - the meshes it uses, numbered densely.
+    struct PoseRes {
+        GpuPoseVert* buf = nullptr;
+        std::size_t n = 0;
+        std::uint64_t rev = 0;
+        long drawnPass = -1;
+        std::vector<std::int32_t> meshOfSlot;
+        bool shimmer = false;         // a corner shimmers: the posing program cannot
+    };
+
+    PoseRes* poseResident(const Geometry& g) {
+        if (g.corners.empty() || g.cornerMesh.size() != g.corners.size()) return nullptr;
+        PoseRes& pr = pres_[&g];
+        if (pr.buf && pr.rev == g.revision && pr.n == g.corners.size()) {
+            pr.drawnPass = pass_;
+            return &pr;
+        }
+        const std::size_t n = g.corners.size();
+        if (pr.buf && (pr.n != n || pr.drawnPass == pass_)) {
+            if (inFrame_ && pr.drawnPass == pass_) poseGrave_.push_back(pr.buf);
+            else linearFree(pr.buf);
+            pr.buf = nullptr;
+        }
+        if (!pr.buf) {
+            pr.buf = static_cast<GpuPoseVert*>(linearAlloc(n * sizeof(GpuPoseVert)));
+            if (!pr.buf) return nullptr;
+        }
+        pr.meshOfSlot.clear();
+        pr.shimmer = false;
+        std::unordered_map<std::int32_t, int> slotOf;
+        for (std::size_t k = 0; k < n; ++k) {
+            const std::int32_t m = g.cornerMesh[k];
+            auto it = slotOf.find(m);
+            if (it == slotOf.end()) {
+                it = slotOf.emplace(m, static_cast<int>(pr.meshOfSlot.size())).first;
+                pr.meshOfSlot.push_back(m);
+            }
+            const Corner& c = g.corners[k];
+            pr.buf[k] = {c.x, c.y, c.z, c.u, c.v, toByte(c.r), toByte(c.g), toByte(c.b), 255,
+                         static_cast<float>(it->second), c.nx, c.ny, c.nz};
+            if (c.phase >= 0.0f) pr.shimmer = true;
+        }
+        GSPGPU_FlushDataCache(pr.buf, n * sizeof(GpuPoseVert));
+        pr.n = n;
+        pr.rev = g.revision;
+        pr.drawnPass = pass_;
+        g.resident.mark();
+        return &pr;
+    }
+
+    // One affine a slot - the mesh's, or the identity for a corner no mesh
+    // owns (`applyPose` leaves those at rest) - and the body's lights.
+    void setPoseUniforms(const Draw& d, const PoseRes& pr) {
+        for (std::size_t sl = 0; sl < pr.meshOfSlot.size(); ++sl) {
+            const std::int32_t m = pr.meshOfSlot[sl];
+            const int r = pPose_ + 3 * static_cast<int>(sl);
+            if (m >= 0 && static_cast<std::size_t>(m) < d.meshPoses) {
+                const float* a = d.meshPose + 12 * static_cast<std::size_t>(m);
+                C3D_FVUnifSet(GPU_VERTEX_SHADER, r + 0, a[0], a[1], a[2], a[3]);
+                C3D_FVUnifSet(GPU_VERTEX_SHADER, r + 1, a[4], a[5], a[6], a[7]);
+                C3D_FVUnifSet(GPU_VERTEX_SHADER, r + 2, a[8], a[9], a[10], a[11]);
+            } else {
+                C3D_FVUnifSet(GPU_VERTEX_SHADER, r + 0, 1, 0, 0, 0);
+                C3D_FVUnifSet(GPU_VERTEX_SHADER, r + 1, 0, 1, 0, 0);
+                C3D_FVUnifSet(GPU_VERTEX_SHADER, r + 2, 0, 0, 1, 0);
+            }
+        }
+        const int nl = d.vertexLights ? std::min(d.vertexLightCount, kMaxLights) : 0;
+        const bool black = d.lightsFromBlack;
+        C3D_FVUnifSet(GPU_VERTEX_SHADER, pMisc_, black ? 1.0f : 0.0f, d.lightBase, 0.0f, 0.0f);
+        for (int i = 0; i < kMaxLights; ++i) {
+            if (i < nl) {
+                const float* L = d.vertexLights + 8 * i;
+                C3D_FVUnifSet(GPU_VERTEX_SHADER, pLights_ + 2 * i, L[0], L[1], L[2], 0.0f);
+                C3D_FVUnifSet(GPU_VERTEX_SHADER, pLights_ + 2 * i + 1, L[4], L[5], L[6], 0.0f);
+            } else {
+                C3D_FVUnifSet(GPU_VERTEX_SHADER, pLights_ + 2 * i, 0, 0, 0, 0);
+                C3D_FVUnifSet(GPU_VERTEX_SHADER, pLights_ + 2 * i + 1, 0, 0, 0, 0);
+            }
+        }
+    }
+
+    // THE CPU FALLBACK: the draw's corners posed and lit here - the same law
+    // as `posed.v.pica` (and `vertexlight.cpp`) - into this pass's ring as
+    // scene corners, the shimmer phase kept for the scene program.
+    const GpuVert* cpuPose(const Draw& d) {
+        const Geometry& g = *d.geo;
+        if (used_ + d.count > kRingCorners) {
+            if (!toldFull_) {
+                toldFull_ = true;
+                std::printf("c3d: the vertex ring is full (%zu corners) - a body is skipped\n", kRingCorners);
+            }
+            return nullptr;
+        }
+        const bool haveMesh = g.cornerMesh.size() == g.corners.size();
+        const int nl = d.vertexLights ? d.vertexLightCount : 0;
+        const bool lit = nl > 0 || d.lightsFromBlack;
+        GpuVert* out = ring_ + used_;
+        for (std::size_t k = 0; k < d.count; ++k) {
+            const Corner& c = g.corners[d.start + k];
+            const std::int32_t m = haveMesh ? g.cornerMesh[d.start + k] : -1;
+            float px = c.x, py = c.y, pz = c.z, nx = c.nx, ny = c.ny, nz = c.nz;
+            if (m >= 0 && static_cast<std::size_t>(m) < d.meshPoses) {
+                const float* a = d.meshPose + 12 * static_cast<std::size_t>(m);
+                px = a[0] * c.x + a[1] * c.y + a[2] * c.z + a[3];
+                py = a[4] * c.x + a[5] * c.y + a[6] * c.z + a[7];
+                pz = a[8] * c.x + a[9] * c.y + a[10] * c.z + a[11];
+                nx = a[0] * c.nx + a[1] * c.ny + a[2] * c.nz;
+                ny = a[4] * c.nx + a[5] * c.ny + a[6] * c.nz;
+                nz = a[8] * c.nx + a[9] * c.ny + a[10] * c.nz;
+            }
+            float col[3] = {c.r, c.g, c.b};
+            if (lit) {
+                if (d.lightsFromBlack) col[0] = col[1] = col[2] = d.lightBase;
+                for (int i = 0; i < nl; ++i) {
+                    const float* L = d.vertexLights + 8 * i;
+                    const float t = -(nx * L[0] + ny * L[1] + nz * L[2]);
+                    const float ti = std::clamp(t < 0.0f ? std::ceil(t) : std::floor(t), 0.0f, 255.0f);
+                    for (int j = 0; j < 3; ++j)
+                        col[j] = std::min(col[j] + std::floor(ti * L[4 + j] / 256.0f) / 255.0f, 1.0f);
+                }
+            }
+            out[k] = {px, py, pz, c.u, c.v, toByte(col[0]), toByte(col[1]), toByte(col[2]), 255, c.phase};
+        }
+        GSPGPU_FlushDataCache(out, d.count * sizeof(GpuVert));
+        used_ += d.count;
+        return out;
+    }
+
+    // The program a draw needs, bound only when it changes. The two share
+    // their first three uniforms (the view-projection, the texel scale, the
+    // fog); what else each reads - the shimmer's wave here, the pose and the
+    // lights there - lives in registers the other overwrites, so the scene's
+    // is set again on the way back, and the attribute layout with it.
+    void useProgram(int which) {
+        if (which == boundProg_) return;
+        C3D_AttrInfo* ai = C3D_GetAttrInfo();
+        AttrInfo_Init(ai);
+        AttrInfo_AddLoader(ai, 0, GPU_FLOAT, 3);             // position
+        AttrInfo_AddLoader(ai, 1, GPU_FLOAT, 2);             // texels
+        AttrInfo_AddLoader(ai, 2, GPU_UNSIGNED_BYTE, 4);     // the baked colour
+        if (which == 1) {
+            C3D_BindProgram(&pprog_);
+            AttrInfo_AddLoader(ai, 3, GPU_FLOAT, 1);         // the mesh's slot
+            AttrInfo_AddLoader(ai, 4, GPU_FLOAT, 3);         // the rest normal
+        } else {
+            C3D_BindProgram(&prog_);
+            AttrInfo_AddLoader(ai, 3, GPU_FLOAT, 1);         // the shimmer phase
+            if (boundProg_ == 1) setShimmer();
+        }
+        boundProg_ = which;
+        boundBuf_ = nullptr;
+    }
+
+    // the shimmer's clock and wave (`o3de/shimmer.h`), into the scene program
+    void setShimmer() {
+        C3D_FVUnifSet(GPU_VERTEX_SHADER, uShim_, shimClock_, 0.0f, 0.0f, 0.0f);
+        for (int i = 0; i < 32; ++i)
+            C3D_FVUnifSet(GPU_VERTEX_SHADER, uWave_ + i, kShimmerWave[i] / 255.0f, 0.0f, 0.0f, 0.0f);
     }
 
     // THE PICA's TEXTURE LAYOUT: 8x8 tiles, the tiles row by row from the
@@ -625,7 +864,16 @@ private:
     C3D_RenderTarget* target_ = nullptr;
     GpuVert* ring_ = nullptr;
     std::size_t used_ = 0;
-    const GpuVert* boundBuf_ = nullptr;
+    const void* boundBuf_ = nullptr;
+    DVLB_s* pdvlb_ = nullptr;
+    shaderProgram_s pprog_{};
+    int pMisc_ = -1, pLights_ = -1, pPose_ = -1;
+    bool posing_ = false;
+    int boundProg_ = -1;
+    float shimClock_ = 0.0f;
+    std::unordered_map<const Geometry*, PoseRes> pres_;
+    std::vector<GpuPoseVert*> poseGrave_;
+    long posedGpu_ = 0, posedCpu_ = 0;
     std::unordered_map<const Geometry*, Res> res_;
     std::vector<GpuVert*> grave_;
     long pass_ = 0;

@@ -78,7 +78,7 @@ PLAY_SRC := $(filter-out $(addprefix $(ENGINE)/backends/sdl/,sdlfront.cpp playsc
 PLAY_OBJ := $(patsubst $(ENGINE)/backends/sdl/%.cpp,$(OUT)/obj/play/%.o,$(PLAY_SRC)) \
             $(OUT)/obj/play/n3ds_main.o $(OUT)/obj/play/n3dsfront.o $(OUT)/obj/play/playscene_off.o \
             $(OUT)/obj/play/n3dshost.o $(OUT)/obj/play/n3dspanel.o \
-            $(OUT)/obj/play/c3drender.o $(OUT)/obj/play/playgpu_citro3d.o $(OUT)/obj/play/scene_shbin.o
+            $(OUT)/obj/play/c3drender.o $(OUT)/obj/play/playgpu_citro3d.o $(OUT)/obj/play/scene_shbin.o $(OUT)/obj/play/posed_shbin.o
 BOOT_OBJ := $(OUT)/obj/boot/omk.o $(OUT)/obj/boot/n3ds_main.o $(OUT)/obj/boot/n3dshost.o
 
 ICON     := $(CTRULIB)/default_icon.png
@@ -119,13 +119,14 @@ $(OUT)/obj/play/n3ds_main.o: n3ds_main.cpp
 # the scene's vertex shader (`scene.v.pica`): assembled by picasso, embedded
 # by bin2s - run in the output directory, as it names its symbols after the
 # file (`scene_shbin`, `scene_shbin_size`)
-$(OUT)/scene.shbin: scene.v.pica
+# ...and the posing program (`posed.v.pica`, 3d), the same way
+$(OUT)/%.shbin: %.v.pica
 	@mkdir -p $(dir $@)
 	$(PICASSO) -o $@ $<
-$(OUT)/obj/play/scene_shbin.o: $(OUT)/scene.shbin
+$(OUT)/obj/play/%_shbin.o: $(OUT)/%.shbin
 	@mkdir -p $(dir $@)
-	cd $(OUT) && $(BIN2S) -a 4 scene.shbin > scene_shbin.s
-	$(CC) -x assembler-with-cpp $(ARCH) -c $(OUT)/scene_shbin.s -o $@
+	cd $(OUT) && $(BIN2S) -a 4 $*.shbin > $*_shbin.s
+	$(CC) -x assembler-with-cpp $(ARCH) -c $(OUT)/$*_shbin.s -o $@
 $(OUT)/obj/play/%.o: %.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(PLAY_FLAGS) -c $< -o $@

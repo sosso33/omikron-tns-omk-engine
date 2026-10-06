@@ -447,7 +447,24 @@ clock says 2017-06-14). What it established, ON HARDWARE:
   within 24 levels** (frame 100 against 120 - the crowd moved). Frames with
   the interface over the world keep the CPU path; the GLES overlay's way of
   blending them on the GPU is not ported.
-* 3d: bodies posed by the vertex shader - staged bodies 12-13.
+* **3d, DONE 2026-10-06 (Azahar): bodies posed and lit by the GPU** -
+  GLES's `kPosedVert` as `posed.v.pica`, fitted to the PICA's 96 uniform
+  registers: its first three uniforms declared in the scene shader's order
+  (so they carry across a program switch - checked at start-up, posing
+  refused if they do not line up), then `misc` (the lit-from-black flag and
+  the scene's grey, `Draw::lightBase`), eight lights of two rows, and **23
+  pose slots** of three rows; no shimmer wave (its 32 registers are the
+  slots'), so the scene's wave is set again on the way back from a posed
+  draw. The rest geometry is resident with its mesh-to-slot map (once per
+  revision); `applyLights`'s law per corner on the turned normal (eight
+  lights unrolled, unused ones zero). A body over 23 slots, with a
+  shimmering corner or over eight lights is posed and lit on the CPU into the
+  ring by the same law. The renderer answers `posesBodies()` and
+  `maxVertexLights()` 8, which moves five frontend sites onto it: the staged
+  bodies, the walkers, the player, the sky and the set's moving meshes. In
+  Azahar: **1960 posed draws on the GPU, 0 on the CPU** over the street run,
+  its frame 99.8% within 24 levels of the desktop (which poses on the CPU),
+  the Impasse at 800x448 96.1% with the letterbox exact.
 
 ### Step 4 - the memory fit
 
