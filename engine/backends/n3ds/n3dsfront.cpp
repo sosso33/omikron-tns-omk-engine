@@ -291,6 +291,21 @@ void N3dsFrontend::present(const Surface& fb) {
     const int ox = (kW - ow) / 2, oy = (kH - oh) / 2;
     const bool half = fb.w == ow * 2 && fb.h == oh * 2;
     const std::uint16_t* src = fb.px.data();
+    // NO DIVISION PER PIXEL: the ARM11 has no divide instruction, and the
+    // first version's nearest path (`v * fb.h / oh`, `u * fb.w / ow` for
+    // every pixel) cost ~190 000 software divisions a frame - 22-36 ms of a
+    // console frame once 3c handed it a 400x240 picture every frame (the
+    // reader's third run, 2026-10-06). A frame the screen's own size is a
+    // straight copy; anything else samples through row and column tables
+    // made once per size.
+    const bool exact = fb.w == ow && fb.h == oh;
+    if (!half && !exact && (mapW_ != fb.w || mapH_ != fb.h)) {
+        colMap_.resize(static_cast<std::size_t>(ow));
+        rowMap_.resize(static_cast<std::size_t>(oh));
+        for (int u = 0; u < ow; ++u) colMap_[static_cast<std::size_t>(u)] = u * fb.w / ow;
+        for (int v = 0; v < oh; ++v) rowMap_[static_cast<std::size_t>(v)] = v * fb.h / oh;
+        mapW_ = fb.w; mapH_ = fb.h;
+    }
     for (int x = 0; x < kW; ++x) {
         std::uint16_t* col = dst + x * 240;
         if (x < ox || x >= ox + ow) {
@@ -298,25 +313,30 @@ void N3dsFrontend::present(const Surface& fb) {
             continue;
         }
         const int u = x - ox;
-        for (int y = 0; y < kH; ++y) {
-            const int v = y - oy;
-            std::uint16_t p = 0;
-            if (v >= 0 && v < oh) {
-                if (half) {
-                    const std::uint16_t* r0 = src + static_cast<std::size_t>(2 * v) * fb.w + 2 * u;
-                    const std::uint16_t* r1 = r0 + fb.w;
-                    p = box4(r0[0], r0[1], r1[0], r1[1]);
-                } else {
-                    p = src[static_cast<std::size_t>(v * fb.h / oh) * fb.w + u * fb.w / ow];
-                }
-            }
-            col[239 - y] = p;
+        // the bands above and below the picture (screen rows oy-1 .. 0 and
+        // oy+oh .. 239 are column words 239-(oy-1) .. 239 and 0 .. 239-(oy+oh))
+        if (oy > 0) std::memset(col + 240 - oy, 0, static_cast<std::size_t>(oy) * sizeof(std::uint16_t));
+        if (oy + oh < kH)
+            std::memset(col, 0, static_cast<std::size_t>(kH - oy - oh) * sizeof(std::uint16_t));
+        std::uint16_t* o = col + 239 - oy;              // screen row oy, walking DOWN the column
+        if (half) {
+            const std::uint16_t* r = src + 2 * u;
+            for (int v = 0; v < oh; ++v, r += 2 * static_cast<std::size_t>(fb.w))
+                *o-- = box4(r[0], r[1], r[fb.w], r[fb.w + 1]);
+        } else if (exact) {
+            const std::uint16_t* r = src + u;
+            for (int v = 0; v < oh; ++v, r += fb.w) *o-- = *r;
+        } else {
+            const int cu = colMap_[static_cast<std::size_t>(u)];
+            for (int v = 0; v < oh; ++v)
+                *o-- = src[static_cast<std::size_t>(rowMap_[static_cast<std::size_t>(v)]) * fb.w + cu];
         }
     }
     if (captureAt_ >= 0 && stats_.frames == captureAt_) captureOwed_ = true;
     if (captureOwed_) {
         captureOwed_ = false;
         writeCapture(fb);
+        screenDumpOwed_ = true;
     }
     // THE FRAME, measured where it is presented: the interval since the last
     // present, and of it what the pacer slept. Over a window of a second.
@@ -349,6 +369,21 @@ void N3dsFrontend::present(const Surface& fb) {
                 writeWholeFile(std::string(n3ds::kHome) + "/panel.bin", le.data(), le.size());
             }
         }
+    }
+    if (screenDumpOwed_) {
+        // ...and what the SCREEN was given, as the hardware lays it out (240
+        // a column, 400 columns): the frontend's own output, which a capture
+        // of the frame it was handed cannot show
+        screenDumpOwed_ = false;
+        char name[96];
+        std::snprintf(name, sizeof name, "%s/screen-%ld.bin", n3ds::kCaptures, stats_.frames);
+        std::vector<unsigned char> le(240 * 400 * 2);
+        for (std::size_t i = 0; i < 240 * 400; ++i) {
+            le[2 * i] = static_cast<unsigned char>(dst[i] & 0xFF);
+            le[2 * i + 1] = static_cast<unsigned char>(dst[i] >> 8);
+        }
+        writeWholeFile(name, le.data(), le.size());
+        std::printf("panel: the top screen written to %s (240x400 a column, RGB565)\n", name);
     }
     gfxFlushBuffers();
     gfxSwapBuffers();

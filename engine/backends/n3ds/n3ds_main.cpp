@@ -41,6 +41,7 @@
 #include <malloc.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <ctime>
 #include <exception>
@@ -212,15 +213,32 @@ int main(int, char**) {
     std::vector<std::string> args = {"omk-play", kRoot, kTables, "--saves", kSaves};
     if (exists(kIni)) { args.push_back("--config"); args.push_back(kIni); }
 #endif
+    // args.txt: one argument a line as on the Vita, and a line may also hold
+    // several separated by spaces - `--profile sdmc:/omk/run.prof` is how a
+    // person types it (the reader's third run put `--profile` alone, which
+    // then took the next argument, the default `--res`, for its path). `#`
+    // starts a comment.
     if (std::FILE* f = std::fopen(kExtra, "r")) {
         char line[1024];
         while (std::fgets(line, sizeof line, f)) {
             std::string s(line);
-            while (!s.empty() && (s.back() == '\n' || s.back() == '\r' || s.back() == ' ')) s.pop_back();
-            if (!s.empty() && s[0] != '#') args.push_back(s);
+            if (const auto h = s.find('#'); h != std::string::npos) s.erase(h);
+            std::size_t i = 0;
+            while (i < s.size()) {
+                while (i < s.size() && std::isspace(static_cast<unsigned char>(s[i]))) ++i;
+                std::size_t j = i;
+                while (j < s.size() && !std::isspace(static_cast<unsigned char>(s[j]))) ++j;
+                if (j > i) args.push_back(s.substr(i, j - i));
+                i = j;
+            }
         }
         std::fclose(f);
     }
+    // `--profile` with no path after it: the card's default capture, rather
+    // than the next argument
+    for (std::size_t i = 0; i < args.size(); ++i)
+        if (args[i] == "--profile" && (i + 1 >= args.size() || args[i + 1].rfind("--", 0) == 0))
+            args.insert(args.begin() + static_cast<long>(i) + 1, std::string(kHome) + "/run.prof");
 #if !defined(OMK_3DS_TOOL)
     if (std::find(args.begin(), args.end(), std::string("--res")) == args.end()) {
         args.push_back("--res");

@@ -100,8 +100,12 @@ private:
     n3ds::PanelStats stats_;
     bool panelOk_ = false;
     long captureAt_ = -1;                 // `sdmc:/omk/capture-at`: CAPTURE this present (an instrument)
-    bool panelDump_ = false;              // `sdmc:/omk/panel-dump` exists: each redraw also to panel.bin
+    bool panelDump_ = false;
+    // the present's sampling tables, made once per frame size (no division a pixel)
+    std::vector<int> colMap_, rowMap_;
+    int mapW_ = 0, mapH_ = 0;              // `sdmc:/omk/panel-dump` exists: each redraw also to panel.bin
     bool captureOwed_ = false;
+    bool screenDumpOwed_ = false;         // with a capture: the top screen as written, too
     std::uint64_t lastPresent_ = 0;       // system ticks
     std::uint64_t winStart_ = 0, winSleep_ = 0, winWorst_ = 0;
     long winFrames_ = 0;

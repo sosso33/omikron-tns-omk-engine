@@ -466,6 +466,30 @@ clock says 2017-06-14). What it established, ON HARDWARE:
   its frame 99.8% within 24 levels of the desktop (which poses on the CPU),
   the Impasse at 800x448 96.1% with the letterbox exact.
 
+### THE THIRD CONSOLE RUN - 3a to 3d (the reader, 2026-10-06)
+
+* **The CPU work collapsed**: world submit 9-13 -> **2.7-3.9 ms**,
+  pedestrians/traffic 10-14 -> **3.1-3.6**, staged bodies 8-10; the
+  **sim+draw phase ~30 ms**, inside the 33 ms budget. The straight frames
+  were right on the console (captures).
+* **What was left was this port's own present: 22-36 ms.** 3c handed the
+  frontend a 400x240 picture every frame, and its general fitting loop did
+  two integer divisions a pixel - ~190 000 SOFTWARE divisions a frame, the
+  ARM11 having no divide instruction. Now a frame the screen's size is a
+  straight copy into the turned framebuffer and anything else samples
+  through row and column tables made once per size (the 2:1 path never
+  divided). Proved in Azahar against the screen itself - CAPTURE now also
+  writes the top screen as the hardware holds it (`screen-<n>.bin`): **the
+  exact path 96000 of 96000 pixels, the 2:1 path 89600 of 89600, the bands
+  6400 of 6400 black.**
+* **The run was 640x480, not 16:9**: args.txt held `--profile` alone, which
+  took the next argument - the default `--res` - for its path. args.txt
+  lines are now split on spaces (`--profile sdmc:/omk/run.prof` on one
+  line), and a `--profile` with no path gets `sdmc:/omk/run.prof`.
+* Still to measure: the frame with the present fixed, and the profiler's own
+  cost on the card (a chunk written every frame) - a run with `--profile` is
+  not the number to quote for speed.
+
 ### Step 4 - the memory fit
 
 The `.cia`'s memory mode in the exheader; textures in the linear heap at 2
