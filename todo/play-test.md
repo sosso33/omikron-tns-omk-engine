@@ -382,6 +382,21 @@ during his walking actions and stops at his floor's edge (sliding along it).
 Since step 3 he FIRES: a slow bolt from his tail once in each of his tail-attack animations (damage 20) and a rapid stream from his head (damage 10). Since 3b: he is drawn LOWER - his pelvis on his node (he had been drawn ~280 too high, his head above the cave ceiling, so nothing could hit him) - and he can be hurt only with the BATON (the cave gives it: zone 313, `Départ Shoot Grotte`), only through his HEAD, and only while he walks; a Waver bolt does nothing. To check by eye: does his height over the lava now look right, and do head hits flash (effect 19)? Since step 4 he STRIKES (11 damage, a shove) and GRABS when he reaches you - only from the edge of the walkway nearest his floor - and a grab plays one of the cave's four kill scenes (a ring spent, back to the entrance). To check by eye: the grab's kill scene, and whether his reach looks right. Headless: `--area 2 --stand 1811,-9,1216,0 --player-at 60:125,-9,401,0` (the cave's own baton start). Since step 5 the fight plays to its end headlessly: his death sinks him into the lava, the cave collapses, and the antechamber (AREA 43) follows. To check by eye: is he drawn at the right HEIGHT over the
 lava, and do the sink/rise look right?
 
+## 32. BODIES ANIMATED BY NAME, AND THE UNDRIVEN AT REST (2026-10-06, `todo/drift-audit.md` M2b / M2)
+
+A scene animation now finds the body it moves by its node NAME, as the
+original does, so a plain `scx.play` animates its character at last. To check
+by eye: in the lava cave, after the bridge meeting, **the snake RISES out of
+the lava by the bridge** (`4_D+Pont2`, about 200 frames) before the shoot
+starts - before, he stood frozen there; in the **Morgue** (AREA 35) the two
+bodies on the slabs (`M2_FN`, `MOOBJ_FN`) are posed by the `Cadavre`
+animation from the start. Note the snake's entry: drawn ~43 units lower one
+frame after the rise ends (his shoot entry snaps his node to y -147) - say
+whether the original pops there too. And an NPC nothing drives now holds his
+REST pose (or the last pose he was given) instead of his bank's first frame -
+nothing visible was found that changes (the AREA 71 mecaguards are out of
+sight before zone 1414 wakes them).
+
 ## HEADLESS PASS over 19-29 (2026-10-05)
 
 Each item driven through the viewer with its check's own command, frames
