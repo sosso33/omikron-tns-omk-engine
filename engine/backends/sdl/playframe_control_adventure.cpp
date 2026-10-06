@@ -362,11 +362,20 @@ void PlayState::adventureScreenInput() {
                             "within 4.00 m of that side (its -X, heading "
                             "%.2f %.2f) and press the action button\n",
                             door[0], door[1], door[2], az[0], az[2]);
-                harnessBoard(at, door);
+                if (boardAfter > 0) {
+                    boardAt = n + boardAfter;
+                    for (int k = 0; k < 3; ++k) { boardAtSlider[k] = at[k]; boardAtDoor[k] = door[k]; }
+                } else {
+                    harnessBoard(at, door);
+                }
             }
             std::printf("slider: OPEN at %.0f %.0f %.0f - walk to "
                         "it and press the action button\n",
                         at[0], at[1], at[2]);
+        }
+        if (boardAt >= 0 && n >= boardAt && session.sliders().calledIsOpen() && !walk) {
+            boardAt = -1;
+            harnessBoard(boardAtSlider, boardAtDoor);
         }
         // ---- MDACTION'S SLIDER ARM -----------------------
         //
@@ -1347,8 +1356,16 @@ void PlayState::adventureSeated() {
         const int st = session.sliders().calledVehicle() >= 0
                      ? session.sliders().callMachine().state : 0;
         if ((st == 2 || st == 6) && !ride && sliderCamMode != 8) sliderCamRequest(8, 0.0f);
-        if (sliderPrevState == 2 && st == 1 && sliderCamMode >= 0 && sliderCamMode != 17)
+        // ...and in the same arm, under the same guard, `Screen_Fade(0)`
+        // and `Actor_HoldAnimation(player, 0)`: the bands go and he is his
+        // own again (drift audit A4)
+        if (sliderPrevState == 2 && st == 1 && sliderCamMode >= 0 && sliderCamMode != 17) {
             sliderCamRequest(0, 60.0f);
+            session.startBlackFade(false);
+            session.holdPlayer(false);
+            std::printf("frame %ld: the slider has come - Screen_Fade(0), the hold "
+                        "released\n", n);
+        }
         sliderPrevState = st;
     }
     static int  releasedSlot = -1;
@@ -2835,6 +2852,14 @@ bool PlayState::beginSliderExit() {
                                   "no group 61");
             }
     session.sliders().exitCalled();      // mode 5 while H_SLDOUT plays
+    // `sub_45C680` case 8 - ACTOR_STATE 8's channel tick, H_SLDOUT's first
+    // frame - `Screen_Fade(0); Actor_HoldAnimation(player, 0)`: what a
+    // journey's `sub_452570` put on is taken off as he starts to get out
+    if (session.playerAnimHeld() || session.blackFade().mode == 3) {
+        session.startBlackFade(false);
+        session.holdPlayer(false);
+        std::printf("slider: H_SLDOUT's first tick - Screen_Fade(0), the hold released\n");
+    }
     boarded = false;
     return out;
 }

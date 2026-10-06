@@ -1478,6 +1478,7 @@ int PlayState::modesShoot() {
                 float me[3] = {session.playerPos()[0], session.playerPos()[1],
                                session.playerPos()[2]};
                 if (session.sliders().callSlider(me)) {
+                    sliderHold();                       // `sub_452570`: Screen_Fade(1), the hold
                     walk->closeScreen();                // `screen[+8] = 3`
                     std::printf("slider: Appel du slider - a slider is COMING "
                                 "to %.0f %.0f %.0f, no destination\n",
@@ -1534,6 +1535,7 @@ int PlayState::modesShoot() {
                     float me[3] = {session.playerPos()[0], session.playerPos()[1],
                                    session.playerPos()[2]};
                     if (session.sliders().callSlider(me)) {
+                        sliderHold();                       // `sub_452570`: Screen_Fade(1), the hold
                         // `dword_6A17CC = tag` - written only when the call
                         // is accepted (`sub_49BC60`, `loc_49BCFA`)
                         calledDestination = row;
@@ -1565,6 +1567,7 @@ int PlayState::modesShoot() {
                     const omk::Address* ad = nullptr;
                     for (const auto& x : rs.addresses) if (x.id == d->bit) ad = &x;
                     if (ad && session.sliders().sendCalledTo(ad->pos)) {
+                        sliderHold();                       // `sub_452570`: Screen_Fade(1), the hold
                         journeyTo = d->bit;
                         std::printf("slider: JOURNEY to '%s' - state 6, driving "
                                     "to the lane nearest address %d\n",
@@ -1600,6 +1603,7 @@ int PlayState::modesShoot() {
                         const omk::Address* ad2 = nullptr;
                         for (const auto& x : rs2.addresses) if (x.id == d->bit) ad2 = &x;
                         if (ad2 && session.sliders().arriveAt(ad2->pos)) {
+                            sliderHold();                       // `sub_452570`: Screen_Fade(1), the hold
                             journeyTo = d->bit;
                             arrived = true;
                             std::printf("slider: JOURNEY to '%s' in area %d - loaded, "
@@ -1993,4 +1997,17 @@ void PlayState::sliderRefused() {
     sneakEchoMs = static_cast<long>(front.ticksMs());
     std::printf("slider: the call is REFUSED (sub_452570 -> 0) - the page stays "
                 "up and flashes string 42 '%s'\n", sneakEcho.c_str());
+}
+
+// `sub_452570`'s accepting tail, for a call and for a journey alike:
+// `Screen_Fade(1); Actor_HoldAnimation(player, 1)` - the black fade's bands
+// and the player HELD (his input cut, his channel ticking with nothing
+// pressed) until the slider has come (`sub_456530` case 2) or he starts
+// getting out (`sub_45C680` case 8). The port did neither, so he walked
+// about blind while the camera watched the slider (drift audit A4).
+void PlayState::sliderHold() {
+    auto& session = *session_;
+    session.startBlackFade(true);
+    session.holdPlayer(true);
+    std::printf("frame %ld: sub_452570 - Screen_Fade(1) and the player HELD\n", n);
 }

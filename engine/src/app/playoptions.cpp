@@ -136,6 +136,7 @@ int PlayOptions::parse(int argc, char** argv) {
 "                   for reaching camera mode without playing the beat\n"
 "  --board          walk onto the called slider and press action once, so the\n"
 "                   engine\'s own boarding gate runs (todo/slider.md)\n"
+"  --board-after N  the same, N frames after the slider opens\n"
 "  --newgame-world  keep the save\'s PLAYER but take the world from IAM\\START,\n"
 "                   to try a flow against a new game\'s state without the intro\n"
 "  --var N=V,...    set world VARIABLES before the first frame, for a gate that\n"
@@ -411,6 +412,7 @@ int PlayOptions::parse(int argc, char** argv) {
         else if (a == "--fight-level" && i + 1 < argc) fightLevelArg = std::atoi(argv[++i]);
         else if (a == "--ride") rideArg = true;
         else if (a == "--board") boardArg = true;
+        else if (a == "--board-after" && i + 1 < argc) { boardArg = true; boardAfter = std::atoi(argv[++i]); }
         // A HARNESS FLAG, not a port: put an object into the carried list so
         // a flow can be exercised from a save that does not carry it. VM
         // opcode 50 `inventory.add` is what the game uses; this writes the

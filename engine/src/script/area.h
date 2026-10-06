@@ -1368,6 +1368,10 @@ public:
     // puts him in without playing the beat. `omk-play --anim-hold` uses it
     // to assert the letterbox over a held frame (UI 3j).
     void harnessHoldPlayer(bool on) { playerAnimHeld_ = on; }
+    // `Actor_HoldAnimation(player, on)` from the ENGINE's own code rather than
+    // a script - the slider's call and journey (`sub_452570`) hold him, its
+    // arrival and the exit's first tick release him
+    void holdPlayer(bool on) { playerAnimHeld_ = on; }
     const float* playerPos() const { return playerPos_; }
     // THE CAMERA SUBJECT IS +244..+252, THE PELVIS, not the feet. `sub_414F30`
     // (the subject resolver behind `sub_415A10`) reads the actor record's

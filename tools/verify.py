@@ -8995,8 +8995,10 @@ def c_engine_slider_refused():
     call = "k15*3,0*30,k205*4,0*10,k200*4,0*10,k28*4,0*30,k203*4,0*10,k28*4"
     r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
                         "--save", save, "--area", "0",
-                        "--stand", "1804,0,-6890,244", "--frames", "330",
-                        "--hold", "0*40," + call + ",0*40," + call + ",0*120"],
+                        "--stand", "1804,0,-6890,244", "--frames", "860",
+                        # the second call AFTER the first has come: while it
+                        # comes he is HELD and cannot open the sneak (A4)
+                        "--hold", "0*40," + call + ",0*450," + call + ",0*150"],
                        capture_output=True, text=True, env=env, errors="replace")
     o = r.stdout
     return ("slider: Appel du slider - a slider is COMING" in o,
@@ -9041,9 +9043,12 @@ def c_engine_slider_forget():
     env = dict(os.environ, SDL_VIDEODRIVER="dummy")
     r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
                         "--save", save, "--area", "0",
-                        "--stand", "1804,0,-6890,244", "--frames", "750", "--board",
+                        "--stand", "1804,0,-6890,244", "--frames", "1200",
+                        # the sneak opened and closed AFTER it has come (while
+                        # it comes he is held, A4), boarding 200 frames on
+                        "--board-after", "200",
                         "--hold", "0*40,k15*3,0*30,k205*4,0*10,k200*4,0*10,k28*4,0*30,"
-                                  "k203*4,0*10,k208*4,0*10,k28*4,0*40,k15*3,0*40,k15*3,0*500"],
+                                  "k203*4,0*10,k208*4,0*10,k28*4,0*340,k15*3,0*40,k15*3,0*700"],
                        capture_output=True, text=True, env=env, errors="replace")
     o = r.stdout
     return ("chosen - a slider is COMING" in o,
@@ -9120,7 +9125,9 @@ def c_engine_slider_arrives():
                         "--save", save, "--area", "0",
                         "--stand", "1804,0,-6890,336", "--frames", "1400",
                         "--hold", "0*40,k15*3,0*30,k205*4,0*10,k200*4,0*10,"
-                                  "k28*4,0*30,k203*4,0*10,k208*4,0*10,k28*4,0*1200"],
+                                  "k28*4,0*30,k203*4,0*10,k208*4,0*10,k28*4,0*40,"
+                                  # A4: UP held while it comes - he is HELD
+                                  "k200*200,0*960"],
                        capture_output=True, text=True, env=env, errors="replace")
     o = r.stdout
     called = "chosen - a slider is COMING to 1804 0 -6890" in o
@@ -9141,9 +9148,16 @@ def c_engine_slider_arrives():
         r"heading -?[\d.]+ (-?[\d.]+)", o)]
     turned = sum(1 for _, _, hz in cams if abs(hz) > 0.5)
     behind = all(270 <= b <= 282 and abs(c) <= 5 for b, c, _ in cams)
-    return (called, line, gone, len(cams) >= 5, turned >= 3, behind), \
+    # A4: `sub_452570` holds him and fades the bands in; case 2's arrival
+    # lets him go - and UP held meanwhile walked him nowhere
+    i_hold = o.find("sub_452570 - Screen_Fade(1) and the player HELD")
+    i_come = o.find("the slider has come - Screen_Fade(0), the hold released")
+    m_w = _re.search(r"walked (-?[\d.]+) over", o)
+    walked = float(m_w.group(1)) if m_w else 1e9
+    return (called, line, gone, len(cams) >= 5, turned >= 3, behind,
+            0 <= i_hold < i_come, walked < 5.0), \
            (True, "slider: OPEN at 1304 6 -6651 - walk to it and press the "
-                  "action button", True, True, True, True), \
+                  "action button", True, True, True, True, True, True), \
         "confirming a destination ROW on the sneak's slider page calls one " \
         "to where the player stands; it spawns at the top of lane 237, drives twenty-one " \
         "segments down the road and STOPS OPEN with its BODY at 1304 6 -6651 - " \
@@ -9622,8 +9636,11 @@ def c_engine_slider_journey():
             # MDSLIDOU travels back to 0 over 60 and writes his facing
             _sliderCams(o) == [(8, 0, -1), (0, 60, 8), (9, 60, -1), (10, 0, 9), (0, 60, 10)],
             "MDSLIDOU: his facing" in o,
+            # A4: the journey holds him (`sub_452570`'s fetch arm) and the
+            # exit's first tick lets him go (`sub_45C680` case 8)
+            "slider: H_SLDOUT's first tick - Screen_Fade(0), the hold released" in o,
             _seatOf(o)), \
-           (True,) * 17, \
+           (True,) * 18, \
         "from the sneak's destination row: the call (he stays put), the " \
         "slider OPEN at the kerb, MDACTION's door snap and H_SLDIN, then " \
         "MDSLIDIN ONCE - it fired twice until the frontend stopped re-reading " \

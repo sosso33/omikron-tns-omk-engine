@@ -103,6 +103,10 @@ struct PlayOptions {
     // whose park point moves with every call. The gate - `MDACTION`'s side
     // and reach - still runs for real on where he is put.
     bool boardArg = false;
+    // `--board-after N`: the same, N frames AFTER the slider opens - room to
+    // do something between its arrival and the boarding (the hold a call
+    // puts on him lifts only at the arrival)
+    int boardAfter = 0;
     // --config: the game's own ini (`[Preferences]`, 65 keys) plus this
     // port's `[Options]` for the two rows with no key. The SAVE's 3496-byte
     // header carries the same settings and is LATER, so it wins - see

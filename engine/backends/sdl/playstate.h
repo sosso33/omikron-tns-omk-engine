@@ -57,6 +57,7 @@ struct PlayState {
     int & fightLevelArg = opt.fightLevelArg;
     bool & rideArg = opt.rideArg;
     bool & boardArg = opt.boardArg;
+    int & boardAfter = opt.boardAfter;
     std::string & configFile = opt.configFile;
     bool & densityFlag = opt.densityFlag;
     bool & clipFlag = opt.clipFlag;
@@ -630,6 +631,8 @@ struct PlayState {
     float sliderCamAddr[3]{}, sliderCamEyeX10{-314.9606f};
     float sliderCamEye17[3]{}, sliderCamAt17[3]{};
     int   sliderPrevState{0};      // the called slider's mode last frame
+    long  boardAt{-1};             // `--board-after`: the frame to board on
+    float boardAtSlider[3]{}, boardAtDoor[3]{};
     // the sneak's echo-bar message, oscillator 0's 5000 ms (`sub_42B820(0,
     // -1, text)` into `byte_6A4CA0`): string 42 when a slider call is refused
     std::string sneakEcho{};
@@ -738,6 +741,7 @@ struct PlayState {
     bool actionFromMove{};
     bool actionTookObject{};
     void sliderRefused();  // `sub_452570` said no: string 42 on the echo bar
+    void sliderHold();     // `sub_452570` said yes: Screen_Fade(1) and the hold
     void sliderCamRequest(int mode, float frames);   // `Camera_Request` for the slider's modes
     bool beginSliderExit();   // `sub_468FA0`: out at the door, H_SLDOUT, ACTOR_STATE 8, mode 5
     void adventureAim();   // the follow camera's offsets, first-person aim
