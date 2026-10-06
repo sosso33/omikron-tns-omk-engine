@@ -689,7 +689,19 @@ heading the push starts exactly where it starts across (`push_probe`'s
 
 **Bump and talk.** `Sliders_Tick` reads each walker's entry flag 2 (touched
 by the last query) and, with no bump pending, posts message 15 (a man) or
-16 (a woman) with the player as sender, then holds 100 frames. The action
+16 (a woman) with the player as sender, then holds 100 frames.
+**Only a walker's**: that loop walks `dword_8F5E94`, the 200 walker records,
+and the vehicles' 40 (`dword_8F5E3C`) are never in it - a slider or a moto
+shoves him (it IS an instance entry: `sub_4544B0` registers it with
+`sub_45E040`, and `sub_452CC0`'s swap re-registers both nodes) and says
+nothing. Its push is `sub_45E690`'s ellipse per sphere of the VEHICLE
+model's own list - `sli_fn` three of r 42.9-44.1, `moto` three of 13-18 -
+centred on the vehicle. Until 2026-10-06 the port filled the index once at
+the load, so a vehicle spawned later (a called slider, when the pool had
+room) had no entry and could be walked through, one rebound from a moto to
+the slider model kept the moto's spheres (a push at the centre only), and
+every touched vehicle posted the walker's bump line - a reader's report.
+`verify.py: engine: slider collider`, `engine: slider journey`. The action
 press runs `sub_452280` from the `.CTL` action state's move callback (cases
 4/11 of the dispatcher at 0x46AEE2): the nearest walker within 117 units in
 front, **standing at an action point in its main phase**, posts 13/14 and

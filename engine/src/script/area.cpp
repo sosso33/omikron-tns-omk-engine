@@ -397,6 +397,7 @@ void Session::evictSlot(int slot) {
     if (trafficSlot_ == (slot & 1)) {
         for (const int s : pedSlots_) spatial_.remove(s);
         pedSlots_.clear();
+        pedSlotModel_.clear();
         sliders_.clear(); trafficSlot_ = -1;
     }
     if (s.sceneCtx >= 0) freeContext(s.sceneCtx);
@@ -4241,10 +4242,12 @@ void Session::loadTrafficFor(int slot) {
     // `sub_45E040` at every spawn: each walker an instance entry of the index
     for (const int s : pedSlots_) spatial_.remove(s);
     pedSlots_.assign(sliders_.movers().size(), -1);
+    pedSlotModel_.assign(sliders_.movers().size(), std::string());
     for (std::size_t i = 0; i < sliders_.movers().size(); ++i) {
         const auto& w = sliders_.movers()[i];
         if (!w.live) continue;
         pedSlots_[i] = spatial_.add(static_cast<int>(i), 1, modelReach(w.model), modelSpheres(w.model));
+        pedSlotModel_[i] = w.model;
     }
     refreshCrowdIndex();
 }
@@ -4253,9 +4256,31 @@ void Session::refreshCrowdIndex() {
     // `sub_454EF0` after each walker's step: `SpatialIndex_Update` from the
     // instance's position
     static int nanTold = 0;
+    // EVERY MOVER HAS ITS ENTRY, kept to its model. `sub_4544B0` registers a
+    // vehicle with `sub_45E040` when it spawns and `sub_452CC0`'s swap
+    // re-registers both nodes after rebinding their models. This index was
+    // filled once at the load, so a vehicle spawned LATER - the player's own
+    // slider, whenever the pool had room for the call - had no entry and he
+    // walked straight through it; one taken over and rebound from a moto kept
+    // the moto's three 13-18 spheres, an ellipse a third the size, so only its
+    // centre pushed; and a vehicle `takeOverAt` killed left its entry standing
+    // where it died (a reader, 2026-10-06: "I just walk through it").
+    if (pedSlots_.size() < sliders_.movers().size()) {
+        pedSlots_.resize(sliders_.movers().size(), -1);
+        pedSlotModel_.resize(sliders_.movers().size());
+    }
     for (std::size_t i = 0; i < pedSlots_.size() && i < sliders_.movers().size(); ++i) {
-        if (pedSlots_[i] < 0) continue;
         const auto& w = sliders_.movers()[i];
+        if (!w.live) {
+            if (pedSlots_[i] >= 0) { spatial_.remove(pedSlots_[i]); pedSlots_[i] = -1; }
+            continue;
+        }
+        if (pedSlots_[i] < 0 || pedSlotModel_[i] != w.model) {
+            if (pedSlots_[i] >= 0) spatial_.remove(pedSlots_[i]);
+            pedSlots_[i] = spatial_.add(static_cast<int>(i), 1, modelReach(w.model), modelSpheres(w.model));
+            pedSlotModel_[i] = w.model;
+            if (pedSlots_[i] < 0) continue;
+        }
         // A non-finite walker is never rejected by the reach test (every
         // comparison against NaN is false), so it reaches the push and takes
         // the player with it. Report the first one.
@@ -4364,6 +4389,21 @@ bool Session::crowdPush(const std::vector<CollisionSphere>& mine, float myReach,
             for (std::size_t i = 0; i < pedSlots_.size(); ++i) if (pedSlots_[i] == s) { w = static_cast<int>(i); break; }
             if (w < 0) continue;
             const auto& walker = sliders_.movers()[static_cast<std::size_t>(w)];
+            // A WALKER only: `Sliders_Tick`'s bump walks `dword_8F5E94`, the
+            // 200 walker records, and the vehicles' 40 (`dword_8F5E3C`) are
+            // never in it - a slider or a moto shoves him and says nothing.
+            // Every touched mover posted here, so walking into the parked
+            // slider played the "bumped a man" line (a reader, 2026-10-06).
+            if (walker.vehicle >= 0) {
+                static bool vehTold = false;
+                if (!vehTold) {
+                    vehTold = true;
+                    std::printf("frame %ld: crowd: the player touched VEHICLE %d's body - "
+                                "pushed, no bump message (Sliders_Tick walks only the walkers)\n",
+                                frameNo_, walker.vehicle);
+                }
+                continue;
+            }
             postMessage(walker.sex == 1 ? 15 : 16, playerActor());
             bumpCooldown_ = 100.0f;                  // `dword_538318 = 100.0f`
             break;

@@ -9790,6 +9790,54 @@ def _hiddenSeat(o):
             "SHOWN again - sub_468FA0's o3de_EnableObject(node, 8); drawn: yes" in o)
 
 
+def c_engine_slider_collider():
+    r"""THE CALLED SLIDER'S BODY in the spatial index - a reader, 2026-10-06:
+    *"I called the slider and then I just walk through it, and if I go to the
+    center I have the text I have when I collide with people"*.
+
+    `sub_4544B0` registers a vehicle with `sub_45E040` when it spawns, and
+    `sub_452CC0`'s swap re-registers both nodes after rebinding their models;
+    `sub_45E690` then pushes with an ellipse per sphere of the node's OWN
+    model (descriptor +244/+248; `sli_fn` carries three of r 42.9-44.1). The
+    port filled its index ONCE at the load: a vehicle spawned later had no
+    entry, and one taken over and rebound kept the spheres of the model it
+    was registered with. In Qalisar every ambient vehicle is a moto, so the
+    call takes one and rebinds it to row 0 - and its entry stayed the moto's
+    (reach 43.7, three spheres of 13-18): a body 30 across its centre or 70
+    along it was not pushed at all. Read from the entry the query uses, at
+    the moment the slider goes OPEN. Shown to fail on the old index: `reach
+    43.7 ... pushed 0.00, 70 along it 0.00`.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr, tb = omkpaths.data_root(), os.path.join(ROOT, "tables")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(eng) or not os.path.exists(save):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return (True,) * 4, (True,) * 4, "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
+                        "--save", save, "--area", "101", "--address", "335", "--frames", "900",
+                        "--hold", "0*40,k15*3,0*30,k205*4,0*10,k200*4,0*10,k28*4,0*30,"
+                                  "k203*4,0*10,k208*4,0*10,k28*4,0*700"],
+                       capture_output=True, text=True, env=env, errors="replace")
+    import re as _re
+    m = _re.search(r"slider: its index entry - mover (\d+), (\d+) sphere\(s\), reach ([\d.]+): a "
+                   r"body 30 across its centre is pushed ([\d.]+), 70 along it ([\d.]+)", r.stdout)
+    if not m:
+        none = "slider: its index entry - NONE" in r.stdout
+        return ("no entry line" if not none else "NO ENTRY",), ("an entry",), \
+            "the called slider in Qalisar must reach OPEN with an index entry"
+    n, reach, across, along = int(m.group(2)), float(m.group(3)), float(m.group(4)), float(m.group(5))
+    return (n, round(reach, 1), across > 5.0, along > 5.0), (3, 82.3, True, True), \
+        "Qalisar's called slider (a moto taken over and rebound to sli_fn): its index " \
+        "entry carries %d spheres at reach %.1f, and pushes a body 30 across its " \
+        "centre %.2f and 70 along it %.2f" % (n, reach, across, along)
+
+
 def c_engine_slider_journey():
     r"""THE WHOLE SLIDER, from the sneak to getting out at the destination.
 
@@ -9875,8 +9923,13 @@ def c_engine_slider_journey():
             # never a drawn drop as well: rootDrop 0 on every H_SLDIN and
             # H_SLDOUT line (+11.5..11.9 before - "a bit low", 2026-10-06)
             len(_sld) >= 6 and all(abs(d) < 0.01 for d in _sld),
-            _seatOf(o)), \
-           (True,) * 19, \
+            _seatOf(o),
+            # out beside it, he touches the slider's body: it SHOVES him and
+            # says nothing - `Sliders_Tick`'s bump walks only the walker
+            # records, so no message 15/16 (the "bumped a man" line a reader
+            # heard walking into a parked slider, 2026-10-06)
+            "crowd: the player touched VEHICLE" in o), \
+           (True,) * 20, \
         "from the sneak's destination row: the call (he stays put), the " \
         "slider OPEN at the kerb, MDACTION's door snap and H_SLDIN, then " \
         "MDSLIDIN ONCE - it fired twice until the frontend stopped re-reading " \
@@ -44627,6 +44680,7 @@ CHECKS = [
     ("engine: slider manual", c_engine_slider_manual, "todo/slider-drift-audit M2"),
     ("engine: slider recall", c_engine_slider_recall, "todo/slider-drift-audit B1"),
     ("engine: slider placement", c_engine_slider_placement, "todo/slider-drift-audit B2"),
+    ("engine: slider collider", c_engine_slider_collider, "a reader, 2026-10-06"),
     ("engine: slider journey", c_engine_slider_journey, "todo/slider"),
     ("ui open answer",     c_ui_open_answer,    "SCRIPT_VM 70"),
     ("ui confirm gate",    c_ui_confirm_gate,   "UI"),

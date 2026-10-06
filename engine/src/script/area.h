@@ -387,6 +387,13 @@ public:
     bool talkToPedestrian(const float pos[3], float facing);
     void releaseTalkTarget();
     const SpatialIndex& spatial() const { return spatial_; }
+    // The index entry of traffic mover `mover` (walker or vehicle), or null.
+    const SpatialEntry* moverEntry(int mover) const {
+        if (mover < 0 || static_cast<std::size_t>(mover) >= pedSlots_.size()) return nullptr;
+        const int s = pedSlots_[static_cast<std::size_t>(mover)];
+        if (s < 0 || static_cast<std::size_t>(s) >= spatial_.entries().size()) return nullptr;
+        return &spatial_.entries()[static_cast<std::size_t>(s)];
+    }
     // THE SHOOT GUNMEN'S BODIES in the same index (2026-09-11, a reader:
     // robbers walked into the player's own spot "like I had no collider").
     // `Actor_Attach` (0x0041CCA0) registers EVERY actor, and in shoot mode
@@ -1626,7 +1633,8 @@ private:
     std::map<std::string, std::vector<CollisionSphere>> modelSpheres_;
     std::map<std::string, float> modelReach_;
     std::map<std::string, float> modelFeetDrop_;
-    std::vector<int> pedSlots_;              // walker -> its index slot, -1 none
+    std::vector<int> pedSlots_;              // mover (walker or vehicle) -> its index slot, -1 none
+    std::vector<std::string> pedSlotModel_;  // ...and the model its spheres were taken from
     std::set<int> lookAtPlayer_;             // actors whose slot 100 is the player
     bool radarOn_ = false;                   // dword_4EB8C8, the radar's switch
     // Shoot mode: the opcodes' decisions and the actor->action map.

@@ -71,6 +71,32 @@ traffic`, `engine: run over`, the sneak family, the pause/restart/load panel.
 **Next for whoever picks this up: ask the reader to play 1, 2 and 4, and how 3
 was reached.**
 
+**The reader played them (2026-10-06, after `3dce361`)**: 1 (the camera) OK;
+2 (the seat) "better but it looks like it is a little too high" - look in the
+original, leave it if nothing is found; 4 (the route) OK; B2's new stop point
+OK. And 3 was reached like this: *"I called the slider and then I just walk
+through it, and, if I go to the center, I have the text I have when I
+collide with people - it looks like the slider has the colliders and the
+triggers of a pedestrian"*. So the standing-in-the-cockpit frame was him
+WALKING INTO the parked slider, not a seated rider shown.
+
+  * **The collider - FIXED** (`engine: slider collider`, new): the index was
+    filled once at the area load, so a called slider spawned later had no
+    entry, and one taken over and rebound to `sli_fn` (every call in
+    Qalisar, whose traffic is all motos) kept the moto's spheres - reach 43.7,
+    no push 30 across its centre or 70 along it. Now every mover's entry is
+    kept to its model each frame (dead movers' entries removed), and a touched
+    VEHICLE posts no bump (`Sliders_Tick` walks only the walkers). NOT YET
+    PLAYED.
+  * **The seat - read, LEFT AS IT IS** (the reader's instruction). `MDACTION`'s
+    snap is from the BODY (`sub_438310` reads mover `+36`, road level), pelvis
+    at body - 33.15 + the slf_112 offset - the port's; H_SLDIN's descent moves
+    his position once (`307e537`); the slider's own door clips carry no root
+    motion (0 over 72 and 51 frames), so the hull does not settle either. One
+    measured difference, invisible: H_SLDIN leaves his pelvis ~24 above the
+    road and `sub_457F50`'s hidden seat is node + 10, ~15 above it - but A1
+    hides him from MDSLIDIN, so nothing drawn uses the seat.
+
 ## What is left (the audit's order)
 
 - **M3** Manuelle's collisions with vehicles and road-keeping (`sub_458880`,

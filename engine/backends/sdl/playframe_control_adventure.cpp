@@ -372,6 +372,36 @@ void PlayState::adventureScreenInput() {
             std::printf("slider: OPEN at %.0f %.0f %.0f - walk to "
                         "it and press the action button\n",
                         at[0], at[1], at[2]);
+            // ...and what the spatial index holds for it: the entry's model,
+            // its spheres, and the push a body standing 30 across its centre
+            // and 70 along it would get - read from the entry the query uses
+            // (`sub_45E690`'s ellipse), so a vehicle with no entry, or one
+            // still carrying another model's spheres, says so here.
+            {
+                const int cv = session.sliders().calledVehicle();
+                const int mv = cv >= 0 ? session.sliders().vehicles()[static_cast<std::size_t>(cv)].mover : -1;
+                const omk::SpatialEntry* e = session.moverEntry(mv);
+                if (!e || !e->spheres) {
+                    std::printf("slider: its index entry - NONE (mover %d): nothing pushes him out of it\n", mv);
+                } else {
+                    // its heading exactly as `pushEllipse` turns it
+                    const float fwd[3] = {0.0f, 0.0f, -1.0f};
+                    float hd[3];
+                    omk::rotateYaw(e->facing, fwd, hd);
+                    const float hx = hd[0], hz = hd[2];
+                    auto pushAt = [&](float along, float across) {
+                        const float p[3] = {e->pos[0] + hx * along - hz * across, e->pos[1],
+                                            e->pos[2] + hz * along + hx * across};
+                        float out[3] = {0, 0, 0};
+                        omk::SpatialIndex::pushEllipse(playerSpheres, p, player->facing(), *e, out);
+                        return std::sqrt(out[0] * out[0] + out[2] * out[2]);
+                    };
+                    std::printf("slider: its index entry - mover %d, %zu sphere(s), reach %.1f: a "
+                                "body 30 across its centre is pushed %.2f, 70 along it %.2f\n",
+                                mv, e->spheres->size(), double(e->reach),
+                                double(pushAt(0.0f, 30.0f)), double(pushAt(70.0f, 0.0f)));
+                }
+            }
         }
         if (boardAt >= 0 && n >= boardAt && session.sliders().calledIsOpen() && !walk) {
             boardAt = -1;
