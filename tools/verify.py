@@ -9939,7 +9939,9 @@ def c_engine_slider_journey():
                        capture_output=True, text=True, env=env, errors="replace")
     o = r.stdout
     import re as _re
-    _sld = [float(x) for x in _re.findall(r"DBG ply f\d+ H_SLD(?:IN|OUT)\s.*?rootDrop\s+([+-][\d.]+)", o)]
+    _sld = [(c, float(g), float(d)) for c, g, d in _re.findall(
+        r"DBG ply f\d+ (H_SLD(?:IN|OUT))\s.*?ground\s+([+-][\d.]+).*?rootDrop\s+([+-][\d.]+)", o)]
+    _i_out = o.find("MDSLIDOU: out and standing")
     return ("chosen - a slider is COMING to 1804 0 -6890" in o,
             "slider: OPEN at 1274 6 -6644" in o,          # 1304 -6651 before B2
             "on the right side - snapped to" in o,
@@ -9965,10 +9967,21 @@ def c_engine_slider_journey():
             # A4: the journey holds him (`sub_452570`'s fetch arm) and the
             # exit's first tick lets him go (`sub_45C680` case 8)
             "slider: H_SLDOUT's first tick - Screen_Fade(0), the hold released" in o,
-            # the door clips' descent is his POSITION's (ACTOR_STATE 6/8),
-            # never a drawn drop as well: rootDrop 0 on every H_SLDIN and
-            # H_SLDOUT line (+11.5..11.9 before - "a bit low", 2026-10-06)
-            len(_sld) >= 6 and all(abs(d) < 0.01 for d in _sld),
+            # THE DOOR CLIPS' ROOT Y IS THE NODE'S, NOT HIS POSITION'S:
+            # `sub_45C680` cases 6/8 add the delta to +244/+252 only, the y
+            # reaching the node through `o3de_MoveNodeBy`. So his position
+            # (the line's `ground`) holds still through H_SLDIN and H_SLDOUT,
+            # the DRAWN drop carries the step into the seat (~12.5 on both
+            # clips - H_SLDOUT spends it on key 1, which this port lost by
+            # measuring from the start frame), and nothing LANDS after
+            # MDSLIDOU: moved in y, he stood 11.8 above the road when the
+            # stand-up ended and fell (a reader, 2026-10-06). Shown to fail on
+            # the old reading: ground spread 12.5, no drop, a landing.
+            len(_sld) >= 6 and
+            max(g for _, g, _ in _sld) - min(g for _, g, _ in _sld) < 0.5 and
+            max(d for c, _, d in _sld if c == "H_SLDIN") > 12.0 and
+            max(d for c, _, d in _sld if c == "H_SLDOUT") > 12.0 and
+            _i_out >= 0 and "the player LANDS" not in o[_i_out:],
             _seatOf(o),
             # out beside it, he touches the slider's body: it SHOVES him and
             # says nothing - `Sliders_Tick`'s bump walks only the walker

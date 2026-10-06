@@ -148,7 +148,29 @@ void PlayerController::rideAt(const float pos[3], float facing) {
 bool PlayerController::enterGroupById(int id) {
     const int g = rt_.channel().findGroupById(id);
     if (g < 0) return false;
+    // `SetPersoBankGroup` -> `GoToMove` -> `Actor_PlayClip`: the previous
+    // frame (+192) is ZEROED, so the next tick's delta runs from 0 and takes
+    // the clip's key 1 - which H_SLDOUT spends on its whole drop into the
+    // seat (+12.49). And the node is snapped onto the actor.
+    clipEntered_ = true;
+    nodeDrop_ = 0.0f;
     return rt_.channel().setBankGroup(g);
+}
+
+void PlayerController::primeClipEntry() {
+    if (!clipEntered_ || !channelOnly_) return;
+    clipEntered_ = false;
+    nodeDrop_ = 0.0f;
+    float local[3] = {0, 0, 0};
+    if (const RootTrack* rt = rootTrackOf(clip())) rootDelta(*rt, 0.0f, rt_.channel().frame(), local);
+    float world[3];
+    rotateByFacing(local, world);
+    nodeDrop_ += world[1];
+    const double* w = walker_.pos();
+    walker_.moveTo(w[0] + world[0], w[1], w[2] + world[2]);
+    pos_[0] = static_cast<float>(walker_.pos()[0]);
+    pos_[1] = static_cast<float>(walker_.pos()[1]);
+    pos_[2] = static_cast<float>(walker_.pos()[2]);
 }
 
 // ---- THE JUMP -----------------------------------------------------------
@@ -952,7 +974,21 @@ void PlayerController::tick(float dt, std::uint32_t word) {
     // the previous frame), so the advance that crossed it applies nothing -
     // which is what keeps a looping walk from jumping back on every wrap.
     float local[3] = {0, 0, 0};
-    if (s1 == s0 && f1 >= f0) {
+    // THE SLIDER CLIPS' ENTRY (ACTOR_STATE 6/8, `Actor_TickChannelOnly`):
+    // `Actor_PlayClip` zeroed the previous frame, so the first delta of the
+    // clip is (0, frame] and key 1 is in it - whether the clip was set from
+    // outside the tick (`enterGroupById`) or by a transition inside it. This
+    // port measured from the start frame, 1.0, and lost key 1: H_SLDOUT's
+    // +12.49 drop into the seat, so he was drawn seated at standing height,
+    // rose 13 more and fell 11.8 when the clip ended (a reader, 2026-10-06).
+    // Scoped to these two states; see todo/handoff-slider.md for the other
+    // states' transitions, which this does not change.
+    const bool slEntry = channelOnly_ && (clipEntered_ || s1 != s0);
+    clipEntered_ = false;
+    if (slEntry) {
+        nodeDrop_ = 0.0f;                          // `o3de_SetNodePos(+244..+252)`
+        if (const RootTrack* rt = rootTrackOf(clip())) rootDelta(*rt, 0.0f, f1, local);
+    } else if (s1 == s0 && f1 >= f0) {
         // A VARIANT-GRID CLIP MOVES BY THE CELL THE BLEND CHOSE, not by the
         // raw frame (omk-play 69). `H_ADJSTP`'s six cells are six DIRECTIONS
         // of one 50 cm step - 19.69 inches, measured:
@@ -1046,9 +1082,15 @@ void PlayerController::tick(float dt, std::uint32_t word) {
         // +244..+252 - and no `Actor_ApplyMotion` runs at all, so there is no
         // gravity, no ground probe and no collision slide. Ticking the walker
         // here made it fight a body climbing into a vehicle that hovers.
+        // ...and only x and z reach the POSITION (`sub_45C680` cases 6/8:
+        // +244/+252 and +232/+240, never +248); the y goes to the NODE,
+        // which the frontend draws through `nodeDrop()`. Moving his position
+        // in y, as this did, left him standing 12 units above the road when
+        // H_SLDOUT's stand-up ended, and he fell.
         const double* w = walker_.pos();
+        nodeDrop_ += world[1];
         walker_.moveTo(w[0] + dx,
-                       w[1] + static_cast<double>(world[1] + last_.shift[1]),
+                       w[1] + static_cast<double>(last_.shift[1]),
                        w[2] + dz);
     } else if (std::fabs(dx) > 1e-6 || std::fabs(dz) > 1e-6) {
         last_.stepped = true;

@@ -879,7 +879,12 @@ void PlayState::worldCrowd() {
             // descent moving his position (ACTOR_STATE 6/8, `Actor_MoveBy`).
             // A reader, again (2026-10-06): *"Kay'l position is a bit low
             // when he sits in the slider"*.
-            if (boarding || leaving) rootDrop = 0.0f;
+            // ...and what IS drawn there is the NODE's own drop: in ACTOR_STATE
+            // 6/8 the clip's root y moves the node and not his position
+            // (`sub_45C680` cases 6/8, `PlayerController::nodeDrop`), so the
+            // body steps into the seat and out of it on top of a position
+            // that stays where the arm put him (2026-10-06, the exit's fall).
+            if (boarding || leaving) rootDrop = player->nodeDrop();
             // MEASURING, not fixing: how far does the model's own
             // lowest point travel across a take? If the rotations
             // lower the body, a CONSTANT anchor is right and the

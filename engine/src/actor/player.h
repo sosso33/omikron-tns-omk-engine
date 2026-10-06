@@ -228,7 +228,25 @@ public:
     // delta still moves him, through `Actor_MoveBy`. Ticking the walker as
     // well makes the two fight over a body that is climbing into a vehicle
     // hovering 30 units off the road.
-    void setChannelOnly(bool on) { channelOnly_ = on; }
+    void setChannelOnly(bool on) { channelOnly_ = on; nodeDrop_ = 0.0f; }
+    // THE NODE'S OWN DROP while the slider clips play (ACTOR_STATE 6 / 8).
+    // `sub_45C680` cases 6 and 8 add the clip's root delta to the actor's x
+    // and z (+244/+252, +232/+240) and NOT to its y (+248): the y reaches
+    // only the NODE, through `o3de_MoveNodeBy` - so the drawn body steps
+    // down into the seat and up out of it while his position stays where the
+    // arm put him, and `Actor_PlayClip`'s `o3de_SetNodePos(+244..+252)` at
+    // the next clip snaps the node back onto it. This is that y, summed since
+    // the clip was entered, for the frontend to DRAW; 0 outside those states.
+    float nodeDrop() const { return channelOnly_ ? nodeDrop_ : 0.0f; }
+    // ...and the clip's FIRST delta, applied now, for a clip entered from
+    // outside the tick (`enterGroupById`). The engine enters both slider
+    // clips where the same frame's channel tick still follows - `sub_4570F0`
+    // / `sub_468FA0` from `Sliders_Tick`, which `Game_Tick` runs before
+    // `Actors_TickAll` - so (0, start frame] (key 1) is on the node before
+    // the frame is drawn. This frontend sets them after the player's tick;
+    // without this the first frame of H_SLDOUT showed the seated pose 12.5
+    // units high for a frame. x and z to the position, y to the node.
+    void primeClipEntry();
 
     // ...and where the arm PUTS him before the clip plays. The engine snaps
     // the actor to
@@ -762,6 +780,8 @@ private:
     float rootFrameX_[3] = {1, 0, 0};  // the matrix's row 0 and row 2
     float rootFrameZ_[3] = {0, 0, 1};
     bool  channelOnly_ = false;        // Actor_TickChannelOnly: no motion pass
+    float nodeDrop_ = 0.0f;            // ...the node's y since the clip began (nodeDrop())
+    bool  clipEntered_ = false;        // a clip set from outside the tick: its first delta is from 0
     int matched_ = 0, total_ = 0;
 
     // the camera block's live state

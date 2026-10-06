@@ -2812,6 +2812,7 @@ bool PlayState::beginSliderExit() {
                 // before mode 7 is set; this is that write.
                 session.sliders().setRider(o, player->facing());
                 out = player->enterGroupById(61);
+                if (out) player->primeClipEntry();      // key 1, this frame - see there
                 leaving = true;
                 std::printf("slider: ARRIVED - he gets OUT WHERE IT "
                             "STOPPED, %.0f %.0f %.0f (offset %.1f %.1f "
@@ -2926,6 +2927,7 @@ bool PlayState::tryBoardSlider() {
         // the follow camera mid-clip)
         sliderCamRequest(9, 60.0f);
         const bool got = player->enterGroupById(60);
+        if (got) player->primeClipEntry();
         std::printf("MDACTION: the slider's door at %.0f %.0f %.0f, "
                     "%.1f m away on the right side - snapped to "
                     "%.0f %.0f %.0f (offset %.1f %.1f %.1f in its "

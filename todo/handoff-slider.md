@@ -105,6 +105,38 @@ WALKING INTO the parked slider, not a seated rider shown.
     H_SLDIN are start + the summed root deltas in the original and the port
     alike. Nothing found; LEFT, as the reader asked.
 
+**The reader, 2026-10-06 (after `1b64713`)**: *"when Kay'l leaves the
+slider, he is a bit too high, so he falls when the animation is finished"*.
+(The journey route's log already showed it: `the player LANDS ... dropped
+11.8 (0.30 m)` right after MDSLIDOU.)
+
+**FIXED** (`engine: slider journey` re-aimed, shown to fail). Two readings,
+both from `sub_45C680` and `Actor_PlayClip`:
+* in ACTOR_STATE **6 and 8** the clip's root delta goes to the actor's x and
+  z only (+244/+252, +232/+240); the **y moves only the NODE**
+  (`o3de_MoveNodeBy`), and `Actor_PlayClip`'s `o3de_SetNodePos(+244..+252)`
+  snaps the node back at the next clip. The port moved his position in y
+  (`307e537` chose that over a drawn drop: the right total, the wrong owner);
+* `Actor_PlayClip` ZEROES the previous frame (+192), so a clip's first delta
+  is (0, frame] and includes **key 1** - and H_SLDOUT's key 1 is its whole
+  drop into the seat, **+12.49** (net over the clip +0.68). The port measured
+  from the start frame 1.0 and lost it: seated pose at standing height, then
+  the stand-up's 13 more, then the 11.8 fall.
+Now `PlayerController::nodeDrop()` carries the y and the viewer draws it;
+`primeClipEntry()` applies key 1 on the frame the clip is set, as the
+original's same-frame channel tick does (`Sliders_Tick` runs before
+`Actors_TickAll`). Measured: position y 5.87 throughout, H_SLDOUT drawn
++12.49 from its first frame, +0.68 at its last, then H_STAND on the road
+(+0.01), no landing. NOT YET PLAYED.
+
+**OPEN, and wider than the slider**: the same `Actor_PlayClip` reading says
+EVERY clip change applies (0, frame] of the new clip on its first tick. The
+port's channel tick applies NOTHING on a transition in every other state
+("a transition resets both frames", `player.cpp`), so it drops each new
+clip's key 1 - for a looping walk one frame of stride per cycle. Not changed
+here (it moves every walk and every check that pins a position); measure it
+and decide.
+
 ## What is left (the audit's order)
 
 - **M3** Manuelle's collisions with vehicles and road-keeping (`sub_458880`,
