@@ -258,6 +258,7 @@ public:
         C3D_FrameBegin(0);                       // waits for the GPU's last pass, not for a VBlank
         inFrame_ = true;
         ++pass_;
+        ++rep_.passes;
         // what a destroyed geometry left while the last pass could still read it
         for (GpuVert* b : grave_) linearFree(b);
         grave_.clear();
@@ -326,7 +327,9 @@ public:
                 stride = sizeof(GpuPoseVert);
                 ++posedGpu_;
             } else {
+                const u64 c0 = svcGetSystemTick();
                 buf = cpuPose(d);
+                rep_.cpuPoseTicks += svcGetSystemTick() - c0;
                 first = 0;
                 if (!buf) return;
                 useProgram(0);
@@ -349,6 +352,7 @@ public:
             boundBuf_ = buf;
         }
         st_.triangles += static_cast<long>(d.count / 3);
+        ++rep_.draws;
         // THE BACK-FACE CULL, one draw per run of `cornerCull` (`geom3do.h`),
         // GLES's way: the engine culls in software (`Render_SubmitMesh`), here
         // the PICA culls the face the reference calls back - the mirror's
@@ -379,6 +383,8 @@ public:
     const Surface& readback() override {
         if (readDone_) return fb_;               // idempotent (renderer.h)
         if (inFrame_) {
+            noteCmdBuf();
+            const u64 w0 = svcGetSystemTick();
             // INSIDE the frame: `C3D_SyncDisplayTransfer` then splits it,
             // waits for the GPU to finish what was queued, and transfers -
             // out of the frame it would wait on citro3d's frame pacer first
@@ -389,6 +395,7 @@ public:
                                     GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) |
                                     GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) |
                                     GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO));
+            rep_.waitTicks += svcGetSystemTick() - w0;
             closeFrame();
         }
         GSPGPU_InvalidateDataCache(read_, static_cast<u32>(tw_) * th_ * 4);
@@ -426,6 +433,8 @@ public:
             small_ = static_cast<std::uint32_t*>(linearAlloc(static_cast<std::size_t>(hw) * hh * 4));
             if (!small_) return false;
         }
+        noteCmdBuf();
+        const u64 w0 = svcGetSystemTick();
         // the OUTPUT dimensions are given as the input's: with SCALE_XY the
         // transfer halves what it is told (Azahar, 2026-10-06 - told the
         // halved size, it wrote a quarter-size picture, 200x112)
@@ -436,6 +445,7 @@ public:
                                 GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) |
                                 GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) |
                                 GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_XY));
+        rep_.waitTicks += svcGetSystemTick() - w0;
         closeFrame();
         GSPGPU_InvalidateDataCache(small_, static_cast<u32>(hw) * hh * 4);
         if (screen.w != 400 || screen.h != 240) screen = Surface(400, 240, 0);
@@ -465,6 +475,22 @@ public:
 
     RasterStats stats() const override { return st_; }
     const char* name() const override { return "citro3d (PICA200)"; }
+    // the counts since the last report, as one line (`c3dReport`)
+    void report(long frame) {
+        const double ms = 1000.0 / SYSCLOCK_ARM11;
+        const long f = rep_.passes ? rep_.passes : 1;
+        std::printf("frame %ld c3d (mean a pass, %ld passes): %.0f draws, %.1f posed on the GPU and %.1f "
+                    "on the CPU (%.2f ms), %.2f ms waiting on the GPU at a transfer, command buffer "
+                    "%.0f%% at most; citro3d's last frame: drawing %.2f ms, processing %.2f ms\n",
+                    frame, rep_.passes, static_cast<double>(rep_.draws) / f,
+                    static_cast<double>(posedGpu_ - rep_.gpu0) / f, static_cast<double>(posedCpu_ - rep_.cpu0) / f,
+                    rep_.cpuPoseTicks * ms / f, rep_.waitTicks * ms / f, rep_.cmdMax * 100.0,
+                    C3D_GetDrawingTime(), C3D_GetProcessingTime());
+        const long g = posedGpu_, c = posedCpu_;
+        rep_ = Report{};
+        rep_.gpu0 = g; rep_.cpu0 = c;
+    }
+
     // 3d: a draw may carry a `meshPose` - the frontend hands rest geometry
     // and one affine a mesh - and up to eight lights with it.
     bool posesBodies() const override { return posing_; }
@@ -599,6 +625,14 @@ private:
             self->pres_.erase(pt);
         }
     }
+
+    struct Report {
+        long passes = 0, draws = 0;
+        u64 cpuPoseTicks = 0, waitTicks = 0;
+        float cmdMax = 0.0f;
+        long gpu0 = 0, cpu0 = 0;
+    };
+    void noteCmdBuf() { rep_.cmdMax = std::max(rep_.cmdMax, C3D_GetCmdBufUsage()); }
 
     // ---- THE POSED BODIES (3d) -------------------------------------------------
     // GLES's `uploadPosedGeometry`: a REST geometry changes only when the
@@ -874,6 +908,7 @@ private:
     std::unordered_map<const Geometry*, PoseRes> pres_;
     std::vector<GpuPoseVert*> poseGrave_;
     long posedGpu_ = 0, posedCpu_ = 0;
+    Report rep_;
     std::unordered_map<const Geometry*, Res> res_;
     std::vector<GpuVert*> grave_;
     long pass_ = 0;
@@ -900,6 +935,10 @@ private:
 }  // namespace
 
 Renderer* makeC3dRenderer() { return new C3dRenderer(); }
+
+void c3dReport(Renderer* r, long frame) {
+    if (r) static_cast<C3dRenderer*>(r)->report(frame);
+}
 
 bool c3dPresentHalf(Renderer* r, int vy, int vh, Surface& screen) {
     return r && static_cast<C3dRenderer*>(r)->presentHalf(vy, vh, screen);

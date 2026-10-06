@@ -45,4 +45,12 @@ Renderer* makeC3dRenderer();
 // (its halves not multiples of 8, or larger than the screen), and the caller
 // reads back and composites as before. `r` is `makeC3dRenderer`'s.
 bool c3dPresentHalf(Renderer* r, int vy, int vh, Surface& screen);
+
+// THE BACKEND'S OWN COUNTS over the frames since the last call - draws, posed
+// draws on the GPU and on the CPU, the CPU's posing time, the time waited on
+// the GPU at a transfer, the fullest the command buffer got and citro3d's GPU
+// times - as one log line, then reset. The frame's "world submit" section
+// holds all of the first three and can hold a GPU wait, which only these
+// separate (the reader's fourth console run, 2026-10-06).
+void c3dReport(Renderer* r, long frame);
 }  // namespace omk

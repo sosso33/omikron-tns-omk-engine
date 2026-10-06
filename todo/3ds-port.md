@@ -490,6 +490,19 @@ clock says 2017-06-14). What it established, ON HARDWARE:
   cost on the card (a chunk written every frame) - a run with `--profile` is
   not the number to quote for speed.
 
+### THE FOURTH CONSOLE RUN - the present fixed (the reader, 2026-10-06)
+
+16:9 at last (800x448). **present, swap 22-36 -> 11 ms.** But "world begin..end
+(submit)" read **16-21 ms** where the 640x480 run had 2.7-3.9, and sim+draw
+47-56 in the street; 171 slow frames against 1001. The section cannot say
+why - it holds the CPU posing fallback, the uniform writes into the command
+buffer, and any wait on the GPU should the buffer fill - so the backend now
+logs its own line every 60 frames (`c3dReport`): draws, posed on the GPU and
+on the CPU with the CPU's time, the time waited on the GPU at a transfer,
+the command buffer's peak, citro3d's drawing and processing times. In
+Azahar: ~80 draws a pass, 11-19 posed on the GPU, 0 on the CPU, the buffer
+3-5% at most (the emulator's GPU waits read 0 - the console's will not).
+
 ### Step 4 - the memory fit
 
 The `.cia`'s memory mode in the exheader; textures in the linear heap at 2

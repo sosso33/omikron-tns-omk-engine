@@ -49,7 +49,8 @@ bool PlayState::gpuWorldOnWindow() { return worldVk && world_ == worldVk; }
 void PlayState::gpuOverlayDecision(const char*&) {}
 void PlayState::gpuResize(int, int, bool&) {}
 bool PlayState::gpuDriverRow(std::vector<std::string>&) { return false; }
-void PlayState::gpuReportTimings() {}
+// every 60 frames, beside the phases line: the backend's own counts
+void PlayState::gpuReportTimings() { if (worldVk) omk::c3dReport(worldVk, n); }
 void PlayState::gpuSlowFrameReport() {}
 void PlayState::gpuFinishReport() {}
 void PlayState::gpuVerifyWorldPicture() {}
