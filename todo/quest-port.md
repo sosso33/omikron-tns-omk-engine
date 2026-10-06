@@ -267,6 +267,27 @@ aim, look-relative movement, the fight camera and the keyboard.
   default and stays selectable on every build - the Quest build included.
   None of them rewrites `worldCamera()`'s branches, `Fight_TickCamera`'s
   port, the walker's input or the pacer in place; each wraps or follows them.
+* **VR code lives in its OWN files** (the reader, 2026-10-06: keep it in
+  specific files "instead of making the current ones heavier"). The viewer's
+  split (`todo/play-split.md`: `playsetup_<section>`, `playframe_<phase>`,
+  state as `PlayState` members) is what makes this cheap:
+  * `engine/src/vr/` - the pure, platform-free half: `xrspace.*` (units, the
+    Y-down reflection, the per-eye composition), `vrcamera.*` (the camera
+    rules, the recentring), `vrfight.*` (the frozen and slowed fight camera
+    as a wrapper over `FightCamera`), `vrmove.*` (the stick in the head's yaw
+    into the existing input bits), `vraim.*` (a controller ray into the
+    arm's aim angles);
+  * `engine/backends/sdl/playvr_<part>.cpp` - the viewer's half, one file per
+    part (`playvr_camera.cpp`, `playvr_input.cpp`, `playvr_sim.cpp` for
+    `--vr-sim`), with ALL its state in one `VrState` struct declared in
+    `playvr.h`, so `playstate.h` gains one member and not twenty;
+  * `engine/backends/openxr/` - the OpenXR frontend, as `sdlfront.*` and
+    `carbonfront.cpp` are frontends;
+  * **an existing file gains only a CALL at its seam** - one line where
+    `worldCamera()` ends, one where the pacer decides to sleep, one where the
+    adventure input is read - and `playvr_off.cpp` stubs them, as
+    `playharness_off.cpp` stubs the instruments, so a build without VR
+    (`make play VR=0`, the Vita, the classic Mac) links none of it.
   It is this project's own work - there is no original to be faithful to -
   and each slice says so in PORTING B2's three places.
 
