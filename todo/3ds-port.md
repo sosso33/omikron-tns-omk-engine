@@ -509,7 +509,8 @@ The backend's line answered it: **waiting on the GPU at the transfer 0.00
 ms**, citro3d's "drawing" 37-50 ms (it spans the recording - citro3d feeds the
 GPU as commands are recorded), the command buffer 6-9% at most, 22-54 posed
 draws a frame on the GPU and none on the CPU. **The GPU keeps up; the frame
-is CPU** - sim+draw 33-43, present 10.6. Finer timers (`c3d CPU` and
+is CPU** (**REFUTED by the seventh run below**: the 0.00 ms was a timer
+around a call that never waits) - sim+draw 33-43, present 10.6. Finer timers (`c3d CPU` and
 `frontend:` lines) then showed, in Azahar, the straight present's per-pixel
 loop at 15.4 ms: `quantise888Dither` a pixel, whose `quantise888` divides by
 255 three times - software divisions on the ARM11. Moved to the
@@ -537,6 +538,57 @@ than the backend's 3.3 ms of submits - `drawWithMirror`'s `splitList` scan
 of every draw's `cornerMirror` before the pass, and whatever the frontend
 does between submits; the report now also times `begin` and the whole
 begin..end of a pass, so the next run separates them.
+
+### THE SEVENTH CONSOLE RUN - the GPU's wait found, and a present that read too early (the reader, 2026-10-06)
+
+`omk-play-20170614-164918.log` (the console's clock says 2017): the films,
+the restaurant (AREA 217), Anekbah's street; ~1225 frames, RGBA8, no capture,
+at `102b751` (the M3's first 3DS build).
+
+* **The tiled copy: 6-7.6 -> 1.5-2.9 ms a frame.** The films and the menu
+  still read 7.7: the frontend's 2:1 average (an 800x448 frame onto the
+  400x240 screen) was the same column-by-column walk, untiled. Now tiled too
+  (proved on the host against the old loop: 480000 of 480000 words over five
+  frame sizes, and 438672 differing with the source one row off).
+* **The "waiting on the GPU at a transfer" figure never measured anything.**
+  Inside a frame citro3d's `C3D_SyncDisplayTransfer` only QUEUES the
+  transfer and returns (citro3d 1.7.1, `renderqueue.c:417`); only out of a
+  frame does it wait for the queue and the transfer. So the timer around it
+  reads 0.00 whatever the GPU does, and the fifth run's verdict rested on it.
+  The wait is in the NEXT pass's `C3D_FrameBegin`, which waits for the whole
+  queue - and this run's new `begin` timer caught it:
+
+  | where | draws a pass | `begin` | citro3d drawing |
+  |---|---|---|---|
+  | the restaurant | 8-14 | 0.0-0.2 ms | 5-15 ms |
+  | the street, frames 419-1079 | 61-149 | 0.2-10 | 17-43 |
+  | the dense street, frames 1139-1199 | 217-224 | **13-16** | **52** |
+
+  So in the dense street the GPU is as long as the CPU, both over the
+  33 ms budget: the PICA200's side has to come down too, not only the CPU's.
+* **And the same misreading was a CORRECTNESS bug.** `readback()` and
+  `presentHalf()` read their buffer straight after queuing the transfer into
+  it - before the GPU had written it. Azahar finishes every command as it is
+  queued, so every emulator capture was exact; on the console the present
+  showed the previous frame's picture, or a tear where the GPU was writing
+  the new one as the CPU read. Fixed both ways the callers need:
+  `readback()` (an interface composited over the picture, the mirror's
+  passes of one frame) is SYNCHRONOUS - the transfer out of the frame, which
+  waits; `presentHalf()` (nothing over the world) runs ONE FRAME BEHIND by
+  the reader's decision ("a 1 frame delay is acceptable for this kind of
+  game it allows better performances"): two buffers, this pass's transfer
+  queued into one while the CPU shows the other, which the last pass filled
+  and this pass's `begin` waited for. Only when the last pass was a straight
+  present too; otherwise that frame waits for its own. `sdmc:/omk/c3d-sync`
+  forces every one synchronous, for laying the two side by side. The `c3d`
+  line now reads the wait at begin and at a synchronous transfer apart, and
+  counts the presents each way. NOT YET RUN on the console or in Azahar.
+* The rest: the dither loop 5.2-6.2 ms, unchanged; submit 1.1-3.4 with 5-6 ms
+  spikes where textures go resident; the panel's redraw grew 6 -> 15 ms in
+  the street (twice a second); 109 slow frames, the worst 4.8 s at
+  Anekbah's load; `pump` 39 ms over the last 60 frames only (most likely the
+  HOME button on the way out - unconfirmed). GAME.MPG still "not
+  decodable".
 
 ### Step 4 - the memory fit
 

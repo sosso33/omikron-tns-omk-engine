@@ -26,11 +26,18 @@ specific code").
   (96000/96000, 89600/89600).
 * **Speed, on the console** (street, mean of 60 frames; `3ds-port.md` has
   every run): first light ~10 fps (median slow frame 99 ms) -> after 3a-3d
-  the game side (sim+draw) **~30-48 ms**, the GPU **keeping up** (0.00 ms
-  waited at the end of a frame), the frame **CPU-bound**. The present went
-  22-36 -> 10 ms; what is left of it is the per-pixel dither loop (5-6 ms) and
-  the frontend's copy (6-7.6 ms - a cache fault, FIXED in `b6c0016`, **not
-  yet run on the console**).
+  the game side (sim+draw) **~30-48 ms**. **The GPU does NOT simply keep
+  up** (the seventh run corrected the fifth): in the dense street (~220
+  draws) the CPU waits 13-16 ms for it at `C3D_FrameBegin` and citro3d's
+  drawing reads 52 ms, so both sides are over the budget there. The present
+  went 22-36 -> 10 ms; what is left of it is the dither loop (5-6 ms) and the
+  frontend's copy (1.5-2.9 ms tiled; the 2:1 path for films and menus, 7.7,
+  tiled since and **not yet run**).
+* **The straight present runs ONE FRAME BEHIND** (the reader's decision,
+  2026-10-06): the GPU draws frame N while the CPU shows N-1. It read its
+  buffer too early before - a stale or torn picture on the console that
+  Azahar could never show - and `readback()` is now truly synchronous.
+  **Not yet run** on the console or in Azahar.
 * **16:9 by default** (`--res 800x448`, the reader's decision), halved to
   400x224 on the top screen.
 
@@ -104,7 +111,8 @@ Its timings are not the console's (no cache model, a different CPU speed).
 | `omk/capture-at` (a number) | CAPTURE that present: `captures/frame-*.bin` (the frame handed over) and `screen-*.bin` (the top screen as the hardware holds it, 240 a column) |
 | `omk/panel-dump` | each panel redraw also to `omk/panel.bin` (320x240 RGB565) |
 | `omk/c3d-rgb565` | THE 16-BIT EXPERIMENT: RGB565 target, 565 transfers, no CPU conversion |
-| `frame N c3d (...)` | draws, posed on GPU/CPU, GPU wait at a transfer, command buffer peak, citro3d's times |
+| `omk/c3d-sync` | every straight present SYNCHRONOUS (waits for its own picture) - to lay beside the default one-frame-behind present |
+| `frame N c3d (...)` | draws, posed on GPU/CPU, the GPU wait at begin and at a synchronous transfer, the straight presents behind / synchronous, command buffer peak, citro3d's times |
 | `frame N c3d CPU (...)` | begin, begin..end, submit (residency, pose uniforms), the dither loop |
 | `frontend: present copy ...` | the frontend's copy a frame, the panel's redraw |
 
@@ -118,15 +126,22 @@ Decode a capture: raw little-endian RGB565, the size in the log line.
    the 16-bit capture means the PICA dithers - then 16-bit is the original's
    arrangement exactly and the default; bands mean it does not, and the reader
    chooses.
-2. **The new timers**: the tiled copy (expected far below 6-7.6 ms), and the
-   `begin..end` line, which splits the 10-21 ms "world submit" section into
-   the backend's submits (3.3 ms) and what is not them.
-3. GAME.MPG is missing from the reader's card (an incomplete copy).
+2. **The one-frame-behind present** (the seventh run's fix): a run as
+   before, then the same with `sdmc:/omk/c3d-sync` - the frame time and the
+   `c3d` line's wait at begin, side by side; and whether the street still
+   tears or lags to the eye. And the films' copy (7.7 ms before the 2:1
+   tiling).
+3. GAME.MPG is still "not decodable" on the reader's card (an incomplete
+   copy).
 
 ## 4. What to do next, in order
 
-1. **Read the next log** (section 3) and decide the 16-bit default with the
-   reader.
+1. **Read the next log** (section 3): the pipelined present against
+   `c3d-sync`, and decide the 16-bit default with the reader.
+1b. **The GPU's side** in the dense street (52 ms drawing at ~220 draws):
+   what the PICA spends it on - fill (800x448 is 2.6x the screen's pixels;
+   a 400x224 target would be the screen's own) or vertices - before any CPU
+   work, since the CPU now waits for it there.
 2. **Zero-copy present**: render the world ROTATED (the screens' own
    orientation) so the display transfer writes straight into the top
    framebuffer - no dither loop, no frontend copy. Needs the 16-bit decision
@@ -184,5 +199,13 @@ Decode a capture: raw little-endian RGB565, the size in the log line.
   not at the map's declaration, so the 3DS did not compile from that commit
   until the M3 got a toolchain (fixed the same day). Run the check on a
   machine that HAS the toolchain after touching anything the 3DS shares.
+* **`C3D_SyncDisplayTransfer` INSIDE a frame does not wait** - it queues
+  the transfer and returns (citro3d 1.7.1, `renderqueue.c:417`); out of a
+  frame it waits for the queue and the transfer. A timer around the
+  in-frame call reads 0 whatever the GPU does - the fifth run's "the GPU
+  keeps up" rested on one - and the CPU reading the buffer next reads it
+  before the GPU wrote it. Azahar finishes every command as it is queued, so
+  it shows neither. Read citro3d's source (`~/.cache/omk-3ds-toolchain/src/
+  citro3d-*/source/`) before trusting a call's name.
 * **zsh heredocs**: an inner `EOF` line ends an outer `<<'EOF'`; patch
   scripts went to files with every anchor asserted before writing.

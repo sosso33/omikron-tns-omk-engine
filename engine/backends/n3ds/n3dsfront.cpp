@@ -320,11 +320,7 @@ void N3dsFrontend::present(const Surface& fb) {
         if (oy + oh < kH)
             std::memset(col, 0, static_cast<std::size_t>(kH - oy - oh) * sizeof(std::uint16_t));
         std::uint16_t* o = col + 239 - oy;              // screen row oy, walking DOWN the column
-        if (half) {
-            const std::uint16_t* r = src + 2 * u;
-            for (int v = 0; v < oh; ++v, r += 2 * static_cast<std::size_t>(fb.w))
-                *o-- = box4(r[0], r[1], r[fb.w], r[fb.w + 1]);
-        } else if (exact) {
+        if (half || exact) {
             continue;                                   // below, in tiles
         } else {
             const int cu = colMap_[static_cast<std::size_t>(u)];
@@ -338,15 +334,27 @@ void N3dsFrontend::present(const Surface& fb) {
     // on the console (the reader's sixth run, 2026-10-06) where Azahar showed
     // 1.5. A tile reads eight short rows and writes eight short columns, each
     // within a line or two.
-    if (exact) {
+    //
+    // A FRAME TWICE THE SCREEN'S SIZE (the films, the menu, every frame the
+    // interface is composited into at 800x448) had the same fault in its
+    // 2x2 average: 7.7 ms a frame on the console against 1.5-2.9 for the
+    // tiled exact copy (the seventh run, 2026-10-06). Tiled the same way,
+    // a tile reading sixteen short rows.
+    if (exact || half) {
+        const std::size_t step = static_cast<std::size_t>(fb.w) * (half ? 2 : 1);
         for (int tx = 0; tx < ow; tx += 8)
             for (int ty = 0; ty < oh; ty += 8) {
                 const int nx = std::min(8, ow - tx), ny = std::min(8, oh - ty);
                 for (int i = 0; i < nx; ++i) {
                     const int x = ox + tx + i;
                     std::uint16_t* o = dst + x * 240 + 239 - (oy + ty);
-                    const std::uint16_t* r = src + static_cast<std::size_t>(ty) * fb.w + tx + i;
-                    for (int j = 0; j < ny; ++j, r += fb.w) *o-- = *r;
+                    if (half) {
+                        const std::uint16_t* r = src + static_cast<std::size_t>(2 * ty) * fb.w + 2 * (tx + i);
+                        for (int j = 0; j < ny; ++j, r += step) *o-- = box4(r[0], r[1], r[fb.w], r[fb.w + 1]);
+                    } else {
+                        const std::uint16_t* r = src + static_cast<std::size_t>(ty) * fb.w + tx + i;
+                        for (int j = 0; j < ny; ++j, r += step) *o-- = *r;
+                    }
                 }
             }
     }

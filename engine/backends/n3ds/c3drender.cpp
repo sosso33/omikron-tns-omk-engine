@@ -96,7 +96,7 @@ public:
         if (target_) C3D_RenderTargetDelete(target_);
         if (ring_) linearFree(ring_);
         if (read_) linearFree(read_);
-        if (small_) linearFree(small_);
+        for (std::uint32_t* b : small_) if (b) linearFree(b);
         if (dvlb_) { shaderProgramFree(&prog_); DVLB_Free(dvlb_); }
         if (pdvlb_) { shaderProgramFree(&pprog_); DVLB_Free(pdvlb_); }
         C3D_Fini();
@@ -157,7 +157,8 @@ public:
         }
         if (target_) { C3D_RenderTargetDelete(target_); target_ = nullptr; }
         if (read_) { linearFree(read_); read_ = nullptr; }
-        if (small_) { linearFree(small_); small_ = nullptr; }
+        for (std::uint32_t*& b : small_) if (b) { linearFree(b); b = nullptr; }
+        lastHalfPass_ = -10;
         // THE PICA's SIDES ARE MULTIPLES OF 8 (its 8x8 tiles), and a frame
         // need not be (800x450, say): the target is rounded up and
         // the picture drawn in its top `h` rows - the top-left rectangle the
@@ -172,6 +173,10 @@ public:
         // gradient shows it); Azahar cannot say. Off, the target is RGBA8
         // and the CPU dithers (the reference's 4x4 ordered).
         if (std::FILE* f = std::fopen("sdmc:/omk/c3d-rgb565", "r")) { std::fclose(f); rgb565_ = true; }
+        // THE STRAIGHT PRESENT ONE FRAME BEHIND (`presentHalf`), unless
+        // `sdmc:/omk/c3d-sync` is on the card - an instrument, to lay the
+        // synchronous present beside the pipelined one on the console
+        if (std::FILE* f = std::fopen("sdmc:/omk/c3d-sync", "r")) { std::fclose(f); syncPresent_ = true; }
         target_ = C3D_RenderTargetCreate(tw_, th_, rgb565_ ? GPU_RB_RGB565 : GPU_RB_RGBA8,
                                          GPU_RB_DEPTH24_STENCIL8);
         if (!target_) {
@@ -184,6 +189,9 @@ public:
         w_ = w; h_ = h;
         fb_ = Surface(w, h, 0);
         readDone_ = false;
+        std::printf("c3d: the straight present %s\n", syncPresent_
+                    ? "SYNCHRONOUS (c3d-sync present): each frame waits for its own picture"
+                    : "one frame behind: the GPU draws frame N while the CPU shows N-1 and builds N+1");
         if (rgb565_) std::printf("c3d: c3d-rgb565 present - the target is RGB565, the transfers 565, no CPU "
                                  "conversion (the 16-bit experiment)\n");
         std::printf("c3d: citro3d on the PICA200, a %dx%d %s target (the %dx%d frame in it) with "
@@ -273,7 +281,12 @@ public:
         cam.h = v.letterboxed() ? v.vh : h_;
         flipX_ = cam.flipX;
 
-        C3D_FrameBegin(0);                       // waits for the GPU's last pass, not for a VBlank
+        // WAITS FOR THE GPU'S LAST PASS (the whole queue: its draws and the
+        // transfer that ended it), not for a VBlank - so THIS is where a GPU
+        // slower than the CPU shows, and nowhere else (2026-10-06)
+        const u64 fb0 = svcGetSystemTick();
+        C3D_FrameBegin(0);
+        rep_.frameWaitTicks += svcGetSystemTick() - fb0;
         inFrame_ = true;
         ++pass_;
         ++rep_.passes;
@@ -418,17 +431,23 @@ public:
         if (readDone_) return fb_;               // idempotent (renderer.h)
         if (inFrame_) {
             noteCmdBuf();
+            // SYNCHRONOUS, and it has to be: an interface is composited over
+            // this picture and the mirror differences two passes of ONE
+            // frame (`drawWithMirror`). OUT of the frame, because INSIDE it
+            // `C3D_SyncDisplayTransfer` only QUEUES the transfer and returns
+            // (citro3d 1.7.1, renderqueue.c) - this read the buffer before
+            // the GPU had written it, which Azahar, finishing every command
+            // as it is queued, never showed (the seventh console run,
+            // 2026-10-06). Out of it, the call waits for the queue - the
+            // pass's draws - then for the transfer itself.
+            closeFrame();
             const u64 w0 = svcGetSystemTick();
-            // INSIDE the frame: `C3D_SyncDisplayTransfer` then splits it,
-            // waits for the GPU to finish what was queued, and transfers -
-            // out of the frame it would wait on citro3d's frame pacer first
             C3D_SyncDisplayTransfer(static_cast<u32*>(target_->frameBuf.colorBuf), GX_BUFFER_DIM(tw_, th_),
                                     reinterpret_cast<u32*>(read_), GX_BUFFER_DIM(tw_, th_),
                                     GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) |
                                     GX_TRANSFER_RAW_COPY(0) | transferFormats() |
                                     GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO));
             rep_.waitTicks += svcGetSystemTick() - w0;
-            closeFrame();
         }
         GSPGPU_InvalidateDataCache(read_, static_cast<u32>(tw_) * th_ * 4);
         // A pixel is a word 0xRRGGBBAA, and the transfer hands the rows
@@ -462,23 +481,50 @@ public:
     bool presentHalf(int vy, int vh, Surface& screen) {
         const int hw = tw_ / 2, hh = th_ / 2;           // the target halved
         if (!inFrame_ || hw % 8 || hh % 8 || w_ / 2 > 400 || h_ / 2 > 240) return false;
-        if (!small_) {
-            small_ = static_cast<std::uint32_t*>(linearAlloc(static_cast<std::size_t>(hw) * hh * 4));
-            if (!small_) return false;
-        }
+        for (std::uint32_t*& b : small_)
+            if (!b) {
+                b = static_cast<std::uint32_t*>(linearAlloc(static_cast<std::size_t>(hw) * hh * 4));
+                if (!b) return false;
+            }
         noteCmdBuf();
-        const u64 w0 = svcGetSystemTick();
+        // ONE FRAME BEHIND (the reader's decision, 2026-10-06: "a 1 frame
+        // delay is acceptable for this kind of game"). This pass's transfer
+        // is QUEUED into one buffer and the CPU shows the OTHER, which the
+        // last pass's transfer filled - finished, since this pass's
+        // `C3D_FrameBegin` waited for the whole queue. So the GPU draws frame
+        // N while the CPU presents N-1 and builds N+1, instead of each
+        // waiting for the other. Only when the LAST PASS was a straight
+        // present too: after a composited frame, or between the mirror's
+        // passes, the other buffer holds an older picture or another pass's,
+        // and this frame waits for its own (as with `sdmc:/omk/c3d-sync`).
+        // Nothing is composited over a straight present, so the interface
+        // cannot fall a frame out of step with the world.
+        const int wr = halfCur_;
+        const bool piped = !syncPresent_ && lastHalfPass_ == pass_ - 1;
         // the OUTPUT dimensions are given as the input's: with SCALE_XY the
         // transfer halves what it is told (Azahar, 2026-10-06 - told the
         // halved size, it wrote a quarter-size picture, 200x112)
-        C3D_SyncDisplayTransfer(static_cast<u32*>(target_->frameBuf.colorBuf), GX_BUFFER_DIM(tw_, th_),
-                                reinterpret_cast<u32*>(small_), GX_BUFFER_DIM(tw_, th_),
-                                GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) |
-                                GX_TRANSFER_RAW_COPY(0) | transferFormats() |
-                                GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_XY));
-        rep_.waitTicks += svcGetSystemTick() - w0;
-        closeFrame();
-        GSPGPU_InvalidateDataCache(small_, static_cast<u32>(hw) * hh * (rgb565_ ? 2 : 4));
+        const u32 flags = GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) | GX_TRANSFER_RAW_COPY(0) |
+                          transferFormats() | GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_XY);
+        if (piped) {
+            // inside the frame: queued behind the pass's draws, not waited for
+            C3D_SyncDisplayTransfer(static_cast<u32*>(target_->frameBuf.colorBuf), GX_BUFFER_DIM(tw_, th_),
+                                    reinterpret_cast<u32*>(small_[wr]), GX_BUFFER_DIM(tw_, th_), flags);
+            closeFrame();
+            ++rep_.piped;
+        } else {
+            // out of it: waits for the draws, then the transfer (`readback`)
+            closeFrame();
+            const u64 w0 = svcGetSystemTick();
+            C3D_SyncDisplayTransfer(static_cast<u32*>(target_->frameBuf.colorBuf), GX_BUFFER_DIM(tw_, th_),
+                                    reinterpret_cast<u32*>(small_[wr]), GX_BUFFER_DIM(tw_, th_), flags);
+            rep_.waitTicks += svcGetSystemTick() - w0;
+            ++rep_.synced;
+        }
+        const std::uint32_t* const shown = small_[piped ? wr ^ 1 : wr];
+        lastHalfPass_ = pass_;
+        halfCur_ = wr ^ 1;
+        GSPGPU_InvalidateDataCache(const_cast<std::uint32_t*>(shown), static_cast<u32>(hw) * hh * (rgb565_ ? 2 : 4));
         const u64 p0 = svcGetSystemTick();
         if (screen.w != 400 || screen.h != 240) screen = Surface(400, 240, 0);
         std::fill(screen.px.begin(), screen.px.end(), std::uint16_t(0));
@@ -491,10 +537,10 @@ public:
             if (y < 0 || y >= 240) continue;
             std::uint16_t* out = screen.px.data() + static_cast<std::size_t>(y) * 400 + ox;
             if (rgb565_)
-                std::memcpy(out, reinterpret_cast<const std::uint16_t*>(small_) + static_cast<std::size_t>(r) * hw,
+                std::memcpy(out, reinterpret_cast<const std::uint16_t*>(shown) + static_cast<std::size_t>(r) * hw,
                             static_cast<std::size_t>(pw) * 2);
             else
-                toRgb565Row(small_ + static_cast<std::size_t>(r) * hw, pw, ox, y, out);
+                toRgb565Row(shown + static_cast<std::size_t>(r) * hw, pw, ox, y, out);
         }
         rep_.halfLoopTicks += svcGetSystemTick() - p0;
         ++straight_;
@@ -511,11 +557,13 @@ public:
         const double ms = 1000.0 / SYSCLOCK_ARM11;
         const long f = rep_.passes ? rep_.passes : 1;
         std::printf("frame %ld c3d (mean a pass, %ld passes): %.0f draws, %.1f posed on the GPU and %.1f "
-                    "on the CPU (%.2f ms), %.2f ms waiting on the GPU at a transfer, command buffer "
+                    "on the CPU (%.2f ms), waiting on the GPU %.2f ms at begin and %.2f at a synchronous "
+                    "transfer, straight presents %ld a frame behind and %ld synchronous, command buffer "
                     "%.0f%% at most; citro3d's last frame: drawing %.2f ms, processing %.2f ms\n",
                     frame, rep_.passes, static_cast<double>(rep_.draws) / f,
                     static_cast<double>(posedGpu_ - rep_.gpu0) / f, static_cast<double>(posedCpu_ - rep_.cpu0) / f,
-                    rep_.cpuPoseTicks * ms / f, rep_.waitTicks * ms / f, rep_.cmdMax * 100.0,
+                    rep_.cpuPoseTicks * ms / f, rep_.frameWaitTicks * ms / f, rep_.waitTicks * ms / f,
+                    rep_.piped, rep_.synced, rep_.cmdMax * 100.0,
                     C3D_GetDrawingTime(), C3D_GetProcessingTime());
         std::printf("frame %ld c3d CPU (ms a pass): begin %.2f, begin..end %.2f, submit %.2f, of it "
                     "residency %.2f and pose uniforms %.2f; the straight present's dither loop %.2f\n", frame,
@@ -699,7 +747,8 @@ private:
 
     struct Report {
         long passes = 0, draws = 0;
-        u64 cpuPoseTicks = 0, waitTicks = 0;
+        u64 cpuPoseTicks = 0, waitTicks = 0, frameWaitTicks = 0;
+        long piped = 0, synced = 0;     // straight presents a frame behind / waited for
         u64 submitTicks = 0, residentTicks = 0, uniformTicks = 0, halfLoopTicks = 0;
         u64 beginTicks = 0, passTicks = 0;
         float cmdMax = 0.0f;
@@ -994,7 +1043,10 @@ private:
     std::vector<GpuVert*> grave_;
     long pass_ = 0;
     std::uint32_t* read_ = nullptr;
-    std::uint32_t* small_ = nullptr;      // the halved picture (3c), linear
+    std::uint32_t* small_[2] = {nullptr, nullptr};   // the halved picture (3c), linear: two, the pipeline's
+    int halfCur_ = 0;                   // the one the next straight present's transfer writes
+    long lastHalfPass_ = -10;           // the pass the last straight present ended
+    bool syncPresent_ = false;          // `sdmc:/omk/c3d-sync`: every straight present waited for
     long straight_ = 0;
     int w_ = 0, h_ = 0;          // the frame
     int tw_ = 0, th_ = 0;        // the target: the frame rounded up to multiples of 8
