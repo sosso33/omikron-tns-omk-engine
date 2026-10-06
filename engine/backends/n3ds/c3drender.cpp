@@ -999,7 +999,7 @@ private:
     int w_ = 0, h_ = 0;          // the frame
     int tw_ = 0, th_ = 0;        // the target: the frame rounded up to multiples of 8
     std::vector<Slot> tex_;
-    std::map<std::tuple<const std::uint8_t*, int, int>, Uploaded> uploaded_;
+    std::map<std::tuple<const std::uint8_t*, const std::uint8_t*, int, int>, Uploaded> uploaded_;
     View view_;
     bool flipX_ = false;
     Surface fb_{1, 1, 0};

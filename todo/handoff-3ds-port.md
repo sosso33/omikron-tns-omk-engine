@@ -57,11 +57,15 @@ What is done, by the plan's numbering (details in `3ds-port.md`):
 
 ```
 scripts/3ds-toolchain.sh            # builds what is missing; --check reports
+OMK_GNU_MIRROR=https://mirrors.kernel.org/gnu scripts/3ds-toolchain.sh   # the M3: ftp.gnu.org does not answer it
 ```
+
+**Installed on BOTH machines** since 2026-10-06 (the M1 first, the M3 the
+same day, `~/devkitpro` on each).
 
 devkitPro's download hosts answer 403 to this machine (Cloudflare), so the
 script feeds devkitPro's own buildscripts with the sources from their
-upstreams; six macOS fixes are commented in it. A pacman install
+upstreams; eight macOS fixes are commented in it. A pacman install
 (`/opt/devkitpro`) works as well - the Makefile takes `$DEVKITPRO`.
 
 **Build** (both programs, ~1 min fresh):
@@ -163,5 +167,22 @@ Decode a capture: raw little-endian RGB565, the size in the log line.
 * **The licence census** counts every new `.h/.cpp` under `engine/backends`
   and `.sh` under `scripts/` - re-pin `licence headers` in `tools/verify.py`
   with each new file (572 as of `b6c0016`).
+* **The M3 needed three more toolchain fixes than the M1** (2026-10-06,
+  all in the script now): `ftp.gnu.org` refuses connections from it
+  (`OMK_GNU_MIRROR`); Homebrew's zstd is found by binutils' configure and not
+  linked - "Undefined symbols `_ZSTD_compress`" (`--without-zstd`); and an
+  INTEL Homebrew left in `/usr/local` by a migration put an x86_64
+  `libgmp.dylib` first on devkitPro's hard-coded `-L/usr/local/lib`, the
+  linker ignored it and never reached GCC's in-tree gmp - "libgmp not found
+  or uses a different ABI" (the `/usr/local` paths are dropped). A failed
+  stage leaves its build directory stamped `configured-*`: delete
+  `~/.cache/omk-3ds-toolchain/src/buildscripts-*/.devkitARM/arm-none-eabi/<stage>`
+  before re-running, or the fix never reaches configure.
+* **A machine without devkitARM reports `engine: 3ds build` SKIPPED, and
+  shared-code changes break the 3DS unseen.** The drift audit's `3603df2`
+  widened the texture-cache key in `c3drender.cpp` at its two use sites but
+  not at the map's declaration, so the 3DS did not compile from that commit
+  until the M3 got a toolchain (fixed the same day). Run the check on a
+  machine that HAS the toolchain after touching anything the 3DS shares.
 * **zsh heredocs**: an inner `EOF` line ends an outer `<<'EOF'`; patch
   scripts went to files with every anchor asserted before writing.

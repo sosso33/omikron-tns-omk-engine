@@ -54,6 +54,10 @@ CITRO3D=v1.7.1                 # devkitPro/citro3d
 export DEVKITPRO="$PREFIX"
 export DEVKITARM="$PREFIX/devkitARM"
 export PATH="$DEVKITARM/bin:$PREFIX/tools/bin:$PATH"
+# Where GNU's tarballs come from. ftp.gnu.org refused connections from the M3
+# on 2026-10-06 while every mirror answered; `OMK_GNU_MIRROR=https://
+# mirrors.kernel.org/gnu` (or any mirror of /gnu) fetches the same files.
+GNU_MIRROR="${OMK_GNU_MIRROR:-https://ftp.gnu.org/gnu}"
 JOBS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 
 have() { [ -e "$1" ]; }
@@ -130,6 +134,35 @@ EOF
              "on a line of its own - read it and update this script" >&2
         exit 1
     fi
+    # NO ZSTD. binutils' and GCC's configure find a zstd through pkg-config
+    # when the host has one (Homebrew's, on the M3, 2026-10-06), put its
+    # headers in, and then link `as` without the library: "Undefined symbols
+    # _ZSTD_compress". zstd only compresses debug sections, which nothing here
+    # needs, so both configures are told `--without-zstd` through the
+    # scripts' own CROSS_PARAMS - and the toolchain then depends on nothing
+    # the host happens to have installed.
+    sed -i.bak 's|^CROSS_PARAMS="--build=`./config.guess`"$|CROSS_PARAMS="--build=`./config.guess` --without-zstd"|' \
+        build-devkit.omk.sh
+    rm -f build-devkit.omk.sh.bak
+    # NOTHING FROM /usr/local. On macOS the scripts add `-I/usr/local/include
+    # -L/usr/local/lib` to every host compile and link. On an Apple-silicon
+    # Mac that is where an Intel Homebrew left from a migration lives: its
+    # x86_64 `libgmp.dylib` comes first on the search path, the linker
+    # IGNORES it as the wrong architecture and never reaches GCC's in-tree
+    # gmp, and mpfr's configure stops on "libgmp not found or uses a
+    # different ABI" (the M3, 2026-10-06) - and its 6.3.0 `gmp.h` would shadow
+    # the in-tree 6.2.1 headers too. The prerequisites are built in GCC's
+    # tree (above), so the host's directory is only ever a hazard: the two
+    # paths are dropped and `-mmacosx-version-min` kept.
+    sed -i.bak -e 's| -I/usr/local/include"$|"|' -e 's| -L/usr/local/lib"$|"|' build-devkit.omk.sh
+    rm -f build-devkit.omk.sh.bak
+    if grep -q '/usr/local/' build-devkit.omk.sh; then
+        echo "3ds-toolchain: build-devkit.sh ($DKA_TAG) still names /usr/local -" \
+             "read it and update this script" >&2; exit 1
+    fi
+    grep -q -- '--without-zstd"$' build-devkit.omk.sh || {
+        echo "3ds-toolchain: build-devkit.sh ($DKA_TAG) no longer sets CROSS_PARAMS as expected" \
+             "- read it and update this script" >&2; exit 1; }
     chmod +x build-devkit.omk.sh
     # THE SOURCES, FROM WHERE THEY ARE PUBLISHED. The buildscripts fetch every
     # archive from downloads.devkitpro.org, which redirects to a host behind
@@ -153,8 +186,8 @@ EOF
     echo "devkitARM $DKA_TAG: gcc $GCC_VER, binutils $BINUTILS_VER, newlib $NEWLIB_VER," \
          "rules $RULES_VER, crtls $CRTLS_VER"
     A="$WORK/archives"
-    fetch "https://ftp.gnu.org/gnu/binutils/binutils-$BINUTILS_VER.tar.xz" "$A/binutils-$BINUTILS_VER.tar.xz"
-    fetch "https://ftp.gnu.org/gnu/gcc/gcc-$GCC_VER/gcc-$GCC_VER.tar.xz" "$A/gcc-$GCC_VER.tar.xz"
+    fetch "$GNU_MIRROR/binutils/binutils-$BINUTILS_VER.tar.xz" "$A/binutils-$BINUTILS_VER.tar.xz"
+    fetch "$GNU_MIRROR/gcc/gcc-$GCC_VER/gcc-$GCC_VER.tar.xz" "$A/gcc-$GCC_VER.tar.xz"
     fetch "https://sourceware.org/pub/newlib/newlib-$NEWLIB_VER.tar.gz" "$A/newlib-$NEWLIB_VER.tar.gz"
     fetch "https://github.com/devkitPro/devkitarm-rules/archive/refs/tags/v$RULES_VER.tar.gz" \
           "$A/devkitarm-rules-$RULES_VER.tar.gz"
