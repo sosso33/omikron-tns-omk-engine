@@ -8930,9 +8930,19 @@ def c_engine_slider_arrives():
     # counts its 600 frames down and hands it back - where the port forced
     # mode 3 and it stood at the kerb for ever
     gone = "slider: RELEASED - nobody boarded it in 600 frames (case 1)" in o
-    return (called, line, gone), \
+    # A2: the coming camera (mode 8) sits BEHIND the slider at every heading
+    # - preset 8's eye resolved through the node's rows. Rotated by the pool's
+    # yaw it was right along +-X and reflected along +-Z, so the lines with a
+    # large z heading are the ones that discriminate.
+    import re as _re
+    cams = [(float(b), float(c), float(hz)) for b, c, hz in _re.findall(
+        r"slider: come camera frame \d+ - the eye (-?\d+) behind, (-?\d+) across, "
+        r"heading -?[\d.]+ (-?[\d.]+)", o)]
+    turned = sum(1 for _, _, hz in cams if abs(hz) > 0.5)
+    behind = all(270 <= b <= 282 and abs(c) <= 5 for b, c, _ in cams)
+    return (called, line, gone, len(cams) >= 5, turned >= 3, behind), \
            (True, "slider: OPEN at 1304 6 -6651 - walk to it and press the "
-                  "action button", True), \
+                  "action button", True, True, True, True), \
         "confirming a destination ROW on the sneak's slider page calls one " \
         "to where the player stands; it spawns at the top of lane 237, drives twenty-one " \
         "segments down the road and STOPS OPEN with its BODY at 1304 6 -6651 - " \

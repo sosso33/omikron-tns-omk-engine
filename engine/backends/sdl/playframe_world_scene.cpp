@@ -302,16 +302,24 @@ void PlayState::worldCamera() {
         // Same preset and same resolution as the ride's, because it
         // is the same mode - only the subject differs, and in both
         // cases the subject is the VEHICLE.
-        float at[3];
-        session.sliders().calledAt(at);
-        const float t = session.sliders().calledYaw() * 0.0174532925199433f;
-        const float cs = std::cos(t), sn = std::sin(t);
+        // RESOLVED THROUGH THE NODE'S ROWS, as every subject-relative
+        // eye is (`out = subject - RotateVector(offset, node+140)`) and
+        // as preset 9 below already was. This rotated the offset by
+        // `calledYaw()`, the POOL's yaw, which is the mirror of the
+        // node's convention: right along +-X and reflected along +-Z, so
+        // the eye stood in front of or beside the slider on most roads
+        // (todo/slider-drift-audit.md A2). Row 2 is -forward, so preset
+        // 8's z of -275.59 puts the eye 7.00 m BEHIND it.
+        float at[3], rx0[3], rz2[3];
+        if (!session.sliders().calledFrame(at, rx0, rz2)) {
+            session.sliders().calledAt(at);
+            rx0[0] = 1; rx0[1] = 0; rx0[2] = 0;
+            rz2[0] = 0; rz2[1] = 0; rz2[2] = 1;
+        }
         const auto place = [&](const float off[3], float out[3]) {
-            const float rx = off[0] * cs - off[2] * sn;
-            const float rz = off[0] * sn + off[2] * cs;
-            out[0] = at[0] - rx;
-            out[1] = at[1] - off[1];
-            out[2] = at[2] - rz;
+            for (int k = 0; k < 3; ++k)
+                out[k] = at[k] - off[0] * rx0[k] - off[2] * rz2[k];
+            out[1] -= off[1];
         };
         static constexpr float kComeEye[3] = {0.0f, 118.1102f, -275.5905f};
         static constexpr float kComeAt[3]  = {0.0f, 78.7402f, 0.0f};
@@ -339,6 +347,19 @@ void PlayState::worldCamera() {
         } else {
             place(kComeEye, view.cam.eye);
             place(kComeAt,  view.cam.at);
+            // ...and SAY where the eye ended up, from the camera this
+            // frame draws with and the vehicle's own heading (its mover
+            // direction, `-row 2`): behind > 0 is behind it
+            static long comeTold = -1000;
+            if (n - comeTold >= 30) {
+                comeTold = n;
+                const float ex = view.cam.eye[0] - at[0], ez = view.cam.eye[2] - at[2];
+                const float behind = -(ex * -rz2[0] + ez * -rz2[2]);
+                const float across = ex * rx0[0] + ez * rx0[2];
+                std::printf("slider: come camera frame %ld - the eye %.0f behind, "
+                            "%.0f across, heading %.2f %.2f\n", n, behind, across,
+                            -rz2[0], -rz2[2]);
+            }
         }
         view.cam.hfovDeg = 75.0f;      // the preset's own fov
         view.cam.rollDeg = 0.0f;
