@@ -1794,6 +1794,13 @@ private:
     int          camSubjectAddress_ = -1;
     bool startPlayerMove(int groupId, int ctx);
     bool beginFight(int opponentId, int level);
+public:
+    // `Fight_Engage`'s `Actor_Attach(opponent)` (0x0041A3B0): the opponent is
+    // ATTACHED - linked into the scene and drawn - when his fight starts,
+    // whatever his `ObjectShown` bit says, and the bit is not written (op 78
+    // writes it; this is not op 78). todo/drift-audit.md S6.
+    void attachForFight(int actor) { showCharacter(actor, false); }
+private:
     bool         objWait_ = false;
     bool         haveCam_ = false;
     WorldCamera  camFrom_, camTo_, camNow_;

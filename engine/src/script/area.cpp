@@ -3375,7 +3375,21 @@ void Session::execute(int i) {
             // frames. **Camera mode 14 is not modelled** - the travel is
             // recorded and the camera left alone rather than pointed somewhere
             // invented. Field 1 is 0 at all 108 shipped sites.
-            if (!beginFight(r.fightOpponent, r.fightLevel)) break;
+            //
+            // AND IT PARKS UNCONDITIONALLY (todo/drift-audit.md S6). The
+            // handler does `Fight_Engage(opponent, level)` and then
+            // `mov word ptr [esi+16h], 3` with no test between - the engine
+            // has no way for a fight to fail to begin - so the script waits
+            // for event 2 whatever the frontend could do. Until 2026-10-06 a
+            // fight the frontend could not stage ran the script on, as if it
+            // had been WON (AREA 5 then counts no life lost, raises the
+            // adaptive difficulty and opens the next zone). With no hook at
+            // all - a headless tool, where nothing could ever raise event 2 -
+            // it still runs on, as the `ObjectWait` rule does.
+            if (!fightHook_) break;
+            if (!beginFight(r.fightOpponent, r.fightLevel))
+                std::printf("fight.begin %d: the frontend could not start it - the script "
+                            "waits for event 2 all the same, as op 62 does\n", r.fightOpponent);
             fightCamTravel_ = r.fightCamTravel;
             c->status = 3;
             c->fightOpponent = r.fightOpponent;

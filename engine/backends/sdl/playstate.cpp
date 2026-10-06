@@ -1565,11 +1565,49 @@ bool PlayState::beginMelee(int opponentId, int level) {
     auto& in = *in_;
     auto& session = *session_;
     if (!player || fightRun.active) return false;
+    // AN INSTRUMENT, not the engine: `OMK_FIGHT_REFUSE=1` makes the frontend
+    // refuse every fight, so `engine: fight park` can show that a script
+    // waits for event 2 whatever the frontend does (op 62 parks with no test)
+    static const bool refuse = omk::envSet("OMK_FIGHT_REFUSE");
+    if (refuse) {
+        std::printf("fight.begin %d: REFUSED by OMK_FIGHT_REFUSE (an instrument)\n", opponentId);
+        return false;
+    }
     Staged* s = nullptr;
     for (auto& up : staged) if (up->actor == opponentId) { s = up.get(); break; }
+    // NOT SHOWN YET: `Fight_Engage` ATTACHES him (`Actor_Attach`), so the
+    // fight's own start puts him on screen - attached without his
+    // `ObjectShown` bit, as the engine does - and he is staged here, now,
+    // from the record the attach made, rather than refusing the fight
+    // (todo/drift-audit.md S6). The shipped scripts always show their
+    // opponent first, so this is said aloud when it is used.
+    if (!s) {
+        session.attachForFight(opponentId);
+        for (const auto& sh : session.shown()) {
+            if (sh.actor != opponentId) continue;
+            staged.push_back(std::make_unique<Staged>());
+            s = staged.back().get();
+            s->actor = sh.actor;
+            s->model = sh.model;
+            s->bank  = sh.bank;
+            s->placeSeqSeen = sh.placeSeq;
+            s->mo = charModelFor(sh.model);
+            s->bk = charBankFor(sh.bank);
+            for (int k = 0; k < 3; ++k) s->at[k] = sh.pos[k];
+            s->facing = sh.facing;
+            s->placed = sh.fromTable;
+            s->pelvis = false;
+            ++stagedEver;
+            stagedIds.push_back(sh.actor);
+            std::printf("fight.begin %d: not shown - ATTACHED by the fight (Fight_Engage's "
+                        "Actor_Attach) and staged %s at %.0f %.0f %.0f\n", opponentId,
+                        sh.model.c_str(), sh.pos[0], sh.pos[1], sh.pos[2]);
+            break;
+        }
+    }
     if (!s || !s->mo || s->mo->meshes.empty()) {
-        std::printf("fight.begin %d: no staged body for that character, "
-                    "the script runs on\n", opponentId);
+        std::printf("fight.begin %d: no body for that character even attached - "
+                    "no record places him\n", opponentId);
         return false;
     }
     // Both fighters' `.CTL` slot 2. The opponent's comes off his record;
@@ -1594,7 +1632,7 @@ bool PlayState::beginMelee(int opponentId, int level) {
     CharBank* pb = charBankFor(myBankName);
     if (!fb || !fb->ready || !pb || !pb->ready) {
         std::printf("fight.begin %d: combat bank missing (player '%s' %s, "
-                    "opponent '%s' %s), the script runs on\n", opponentId,
+                    "opponent '%s' %s) - the script waits for event 2 all the same\n", opponentId,
                     myBankName.c_str(), (pb && pb->ready) ? "ok" : "MISSING",
                     foeBankName.c_str(), (fb && fb->ready) ? "ok" : "MISSING");
         return false;

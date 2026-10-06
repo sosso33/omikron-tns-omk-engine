@@ -41303,6 +41303,57 @@ def c_engine_underwater():
            "view handed on - fog colour and range, clear colour, the fov inside the sway's 50..90"
 
 
+def c_engine_fight_park():
+    r"""A `fight.begin` ALWAYS begins and the script ALWAYS waits for it
+    (`todo/drift-audit.md` S6).
+
+    Op 62 (0x004035D0) looks the opponent up, calls `Fight_Engage(opponent,
+    level)` and does `mov word ptr [esi+16h], 3` with no test between: the
+    engine has no way for a fight to fail to begin, so the script waits for
+    event 2 (`sub_445AC0`'s) whatever happened. And `Fight_Engage` (0x0041A3B0)
+    ATTACHES the opponent (`Actor_Attach`), so he is on screen when his fight
+    starts whether or not a script showed him - without his `ObjectShown` bit.
+    The port refused a fight it could not stage and ran the script on, as if
+    it had been WON. (A census, recorded in the drift audit: all 108 shipped
+    opponents are placed, carry a shipped bank and are shown by script first,
+    so this was reachable only through a divergence of the port's own.)
+
+    Two runs: AREA 5 with `--fight 572` - a melee opponent hidden at the
+    load - is attached and staged by the fight and the fight begins; and the
+    supermarket's scripted fight with `OMK_FIGHT_REFUSE=1` (an instrument that
+    makes the frontend refuse) WAITS - the voice line its script plays after
+    the fight (`media.play 251`) never comes. SHOWN TO FAIL: the old
+    `if (!beginFight(...)) break;` restored - the line plays.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    o = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"), "--save",
+         os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "5",
+         "--fight", "572", "--frames", "30", "--nodelay", "--no-crowd"],
+        capture_output=True, encoding="latin-1",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    attached = "fight.begin 572: not shown - ATTACHED by the fight" in o
+    begins = "FIGHT BEGINS against CHARACTERS 572" in o
+    r = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"), "--save",
+         os.path.join(ROOT, "traces", "save-appart.bin"),
+         "--fight-supermarket", "--frames", "700", "--nodelay"],
+        capture_output=True, encoding="latin-1",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_FIGHT_REFUSE="1")).stdout
+    refused = "fight.begin 48: REFUSED by OMK_FIGHT_REFUSE" in r
+    waits = "the script waits for event 2 all the same" in r
+    ranOn = "media.play 251" in r
+    return (attached, begins, refused, waits, ranOn), (True, True, True, True, False), \
+           "AREA 5: opponent 572 attached by the fight, the fight begins; the supermarket " \
+           "refused: the refusal, the wait, and whether the post-fight line played anyway"
+
+
 def c_engine_undriven_rest_pose():
     r"""AN NPC NOTHING DRIVES HOLDS HIS REST POSE (`todo/drift-audit.md` M2).
 
@@ -44064,6 +44115,7 @@ SLOW = [
     ("engine: gandhar head", c_engine_gandhar_head, "todo/gandhar.md 3b; actor/shoothit.h"),
     ("engine: gandhar grab", c_engine_gandhar_grab, "todo/gandhar.md 4; actor/gandhar.h"),
     ("engine: gandhar play", c_engine_gandhar_play, "todo/gandhar.md 5; actor/gandhar.h"),
+    ("engine: fight park", c_engine_fight_park, "todo/drift-audit.md S6; script/area.cpp"),
     ("engine: underwater", c_engine_underwater, "todo/drift-audit.md L1; backends/sdl/playframe_world_scene.cpp"),
     ("engine: day night", c_engine_day_night, "todo/drift-audit.md L1; o3de/daynight.h"),
     ("engine: ambient clamp", c_engine_ambient_clamp, "todo/drift-audit.md L1; o3de/geom3do.h"),
