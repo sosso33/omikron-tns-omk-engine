@@ -258,6 +258,15 @@ aim, look-relative movement, the fight camera and the keyboard.
   gateway`).
 * **Off unless asked, and the flat game unchanged.** With no head pose the
   frame is byte-identical to today's; every check below asserts that first.
+* **A VR option ADDS a path; it never removes the original's** (the reader,
+  2026-10-06: "the quest options should not remove the original behaviour
+  from the code"). The level horizon, the recentring, the first-person
+  adventure view, look-relative movement, the frozen and slowed fight
+  camera, controller aim, the host-paced loop: each is a second path chosen
+  by its option, beside the original one, which stays in the code, stays the
+  default and stays selectable on every build - the Quest build included.
+  None of them rewrites `worldCamera()`'s branches, `Fight_TickCamera`'s
+  port, the walker's input or the pacer in place; each wraps or follows them.
   It is this project's own work - there is no original to be faithful to -
   and each slice says so in PORTING B2's three places.
 
