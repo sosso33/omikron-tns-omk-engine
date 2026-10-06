@@ -821,7 +821,7 @@ void Session::clearTransition() {
     const int  program = tr_.program;     // an object already started still ends
     const bool outPool = tr_.outPool;     // ...in the pool it was started in
     tr_ = Transition{};
-    tr_.startedFrame = frameNo_;
+    tr_.startedFrame = frameNo_; tr_.startedMs = wallMs_;
     tr_.program = program;
     tr_.outPool = outPool;
 }
@@ -1078,7 +1078,7 @@ int Session::areaTransition(int mode, int ctxIdx, int slot, int area, int f1, in
             tr_.dest = area;
             loadIntoSlot(1 - slot, area);
             setStatus(ctxIdx, 10);
-            tr_.startedFrame = frameNo_;
+            tr_.startedFrame = frameNo_; tr_.startedMs = wallMs_;
             deferred_ = ctxIdx;                           // dword_4C0130 = ctx index
             return 1;
         case 1:
@@ -1099,7 +1099,7 @@ int Session::areaTransition(int mode, int ctxIdx, int slot, int area, int f1, in
             loadIntoSlot(1 - slot, area);
             setStatus(ctxIdx, 10);
             tr_.state = 3;
-            tr_.startedFrame = frameNo_;
+            tr_.startedFrame = frameNo_; tr_.startedMs = wallMs_;
             deferred_ = ctxIdx;
             return 1;
         case 8:
@@ -1116,7 +1116,7 @@ int Session::areaTransition(int mode, int ctxIdx, int slot, int area, int f1, in
                     tr_.state == 3 ? "   <- DURING the load: completes as state 4" : "");
         if (tr_.state == 3) {
             tr_.state = 4;
-            tr_.startedFrame = frameNo_;
+            tr_.startedFrame = frameNo_; tr_.startedMs = wallMs_;
             return 0;
         }
         if (tr_.state != 8) return 0;
@@ -1152,13 +1152,13 @@ int Session::areaTransition(int mode, int ctxIdx, int slot, int area, int f1, in
             return 1;
         }
         switch (tr_.state) {
-        case 1: tr_.state = 2; setStatus(ctxIdx, 10); tr_.startedFrame = frameNo_; return 1;
-        case 5: tr_.state = 6; setStatus(ctxIdx, 10); tr_.startedFrame = frameNo_; return 1;
+        case 1: tr_.state = 2; setStatus(ctxIdx, 10); tr_.startedFrame = frameNo_; tr_.startedMs = wallMs_; return 1;
+        case 5: tr_.state = 6; setStatus(ctxIdx, 10); tr_.startedFrame = frameNo_; tr_.startedMs = wallMs_; return 1;
         case 7:
             startTransitionObject(tr_.f2);
             setStatus(ctxIdx, 10);
             tr_.state = 9;
-            tr_.startedFrame = frameNo_;
+            tr_.startedFrame = frameNo_; tr_.startedMs = wallMs_;
             return 1;
         default:
             return 0;
@@ -1172,7 +1172,7 @@ int Session::areaTransition(int mode, int ctxIdx, int slot, int area, int f1, in
             startTransitionObject(tr_.f1);
             tr_.state = 5;
             setStatus(tr_.ctx, 10);
-            tr_.startedFrame = frameNo_;
+            tr_.startedFrame = frameNo_; tr_.startedMs = wallMs_;
             return 0;
         case 2:
             clearTransition();
@@ -1183,7 +1183,7 @@ int Session::areaTransition(int mode, int ctxIdx, int slot, int area, int f1, in
             ++entered_;
             tr_.state = 8;
             setStatus(tr_.ctx, 1);                        // the caller resumes
-            tr_.startedFrame = frameNo_;
+            tr_.startedFrame = frameNo_; tr_.startedMs = wallMs_;
             finishScene();
             return 0;
         case 4:
@@ -1199,7 +1199,7 @@ int Session::areaTransition(int mode, int ctxIdx, int slot, int area, int f1, in
         case 5:
             tr_.state = 7;
             setStatus(ctxIdx, 10);
-            tr_.startedFrame = frameNo_;
+            tr_.startedFrame = frameNo_; tr_.startedMs = wallMs_;
             // **RECONSTRUCTION** (area.h `queueLeave`), narrowed: a caller
             // whose zone the scan ARMED gets its leave from the scan when the
             // player's feet leave the quad; one in no prompt slot (a probe's
@@ -1217,7 +1217,7 @@ int Session::areaTransition(int mode, int ctxIdx, int slot, int area, int f1, in
             startTransitionObject(tr_.f2);
             tr_.state = 9;
             setStatus(ctxIdx, 10);
-            tr_.startedFrame = frameNo_;
+            tr_.startedFrame = frameNo_; tr_.startedMs = wallMs_;
             return 0;
         case 9:
             hideOutgoing();
@@ -1281,7 +1281,7 @@ void Session::restart() {
     sceneOutArea_ = -1;
     // the transition block
     tr_ = Transition{};
-    tr_.startedFrame = frameNo_;
+    tr_.startedFrame = frameNo_; tr_.startedMs = wallMs_;
     deferred_ = -1;
     load_ = Load{};
     // ---- Script_Pump(2): Game_NewGame
@@ -2719,7 +2719,12 @@ void Session::runContext(int i) {
 void Session::processActions(int i) {
     Ctx* c = ctxs_[static_cast<std::size_t>(i)].get();
     // the 60-second transition watchdog, on the transition's own caller
-    if (tr_.ctx == i && tr_.state != 0 && frameNo_ - tr_.startedFrame > kWatchdogFrames) {
+    // `a1[7]` is `Sys_GetTimeMs`: 60 WALL seconds, whatever the frame rate
+    // (todo/drift-audit.md S12) - frames at 30 fps only when no frontend
+    // hands the Session a wall clock, which is every frame-bounded run
+    const bool watchdog = wallMsSet_ ? wallMs_ - tr_.startedMs > 60000
+                                     : frameNo_ - tr_.startedFrame > kWatchdogFrames;
+    if (tr_.ctx == i && tr_.state != 0 && watchdog) {
         if (c->status == 10) c->status = 1;
         if (tr_.f2 != -1 && tr_.state != 5 && tr_.state != 6 && tr_.state != 9) {
             startTransitionObject(tr_.f2);

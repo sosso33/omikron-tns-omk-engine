@@ -307,6 +307,10 @@ public:
     // counts thirtieths (docs/BOOT.md 4); a voice is counted in seconds
     // because it is audio, and 1/30 is what `Game_Frame` gives at 30 fps.
     void setFrameSeconds(double s) { frameSeconds_ = s; }
+    // The host's millisecond tick, every paced frame - what `Sys_GetTimeMs`
+    // is to the transition watchdog (S12). Never set in a frame-bounded run,
+    // which then counts frames at 30 fps as it always has.
+    void setWallMs(long long ms) { wallMs_ = ms; wallMsSet_ = true; }
 
     // STREET LIFE - the procedural pedestrians (docs/STREET_LIFE.md 2,
     // `actor/sliders.h`). `Area_TickLoad` case 8 hands an area's `.OPT`
@@ -645,7 +649,8 @@ public:
         int  slot = -1, ctx = -1, state = 0;
         int  outArea = -1;                      // a1[3], identified by area id
         int  dest = -1, f1 = -1, f2 = -1;
-        long startedFrame = 0;                  // a1[7], in frames here
+        long startedFrame = 0;                  // a1[7], in frames here...
+        long long startedMs = 0;                // ...or in wall ms (`setWallMs`)
         int  program = -1;                      // the object started by ScriptObject_Start:
                                                 // -1 none, -2 "not resident, ends next frame"
         bool outPool = false;                   // which pool owns `program` -
@@ -1621,6 +1626,8 @@ private:
     int         streetActivity_ = kDefaultStreetActivity;
     void loadTrafficFor(int slot);
     std::uint32_t sessionSeed_ = 0;
+    long long wallMs_ = 0;
+    bool wallMsSet_ = false;
     std::uint32_t crowdLoads_ = 0;
     // The AREA whose `.SCX` `scene_` holds. The file is the area's (`+97`),
     // so a scene loaded over the same area keeps the runner - and every

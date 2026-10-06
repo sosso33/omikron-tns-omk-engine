@@ -298,7 +298,15 @@ void PlayState::inputPause() {
     // the pose forward by however long the window was dragged.
     if (!frames) {
         const std::uint32_t nowMs = front.ticksMs();
-        double dt = (nowMs - lastMs) / 1000.0;
+        // THE SMOOTHING (`Game_Frame`, todo/drift-audit.md T6): the delta is
+        // made from `dword_4E9700 = (dword_4E9700 + raw) >> 1`, integer
+        // milliseconds, 1 if that comes out 0 - the raw interval only feeds
+        // the fps readout `flt_90E174` - so a hitch is spread over the next
+        // frames rather than taken whole. This used the raw interval.
+        const std::uint32_t rawMs = nowMs - lastMs;
+        smoothMs = (smoothMs + rawMs) >> 1;
+        if (smoothMs == 0) smoothMs = 1;
+        double dt = smoothMs / 1000.0;
         lastMs = nowMs;
         // THE ENGINE'S OWN CLAMP (docs/BOOT.md 4): `flt_4C30D8 = 30 / fps`,
         // capped at 3.0 - three frames, 0.1 s - so below 10 fps the game
@@ -332,6 +340,7 @@ void PlayState::inputPause() {
         dt = lineSync.step(clock, frameSec, dt);       // `script/linesync.h`
         if (clock >= 0.0) session.setLineClock(clock);   // `sub_42D120` reads the same clock
         session.setFrameSeconds(dt);
+        session.setWallMs(nowMs);      // the watchdog's `Sys_GetTimeMs` (S12)
         frameSec = dt;
     } else {
         // A frame-bounded run keeps the fixed 1/30 so the headless checks
