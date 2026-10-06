@@ -9278,7 +9278,7 @@ def c_engine_slider_arrives():
     play = os.path.join(eng, "build", "omk-play")
     if mk.returncode != 0 or not os.path.exists(play):
         return (True,) * 3, (True,) * 3, "no SDL - the frontend is optional (PORTING A8)"
-    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_CAMEYE="1")
     # A ROW, not the header: the sneak's slider page calls on a destination
     # row (screen 9's `param` is 0), and the header confirm this once used
     # was an invention of the port's, removed 2026-09-08.
@@ -9308,7 +9308,18 @@ def c_engine_slider_arrives():
         r"slider: come camera frame \d+ - the eye (-?\d+) behind, (-?\d+) across, "
         r"heading -?[\d.]+ (-?[\d.]+)", o)]
     turned = sum(1 for _, _, hz in cams if abs(hz) > 0.5)
-    behind = all(270 <= b <= 282 and abs(c) <= 5 for b, c, _ in cams)
+    # ...BEHIND it, not at 276 exactly: since B12 (2026-10-06) the eye CHASES
+    # its place at dt/8 and the yaw at dt/8, as `sub_415E60` does - so at
+    # speed it trails (~412) and swings wide through a turn before catching up
+    behind = all(b >= 200 and abs(c) <= 260 for b, c, _ in cams)
+    # B12, the stutter: the eye's largest single-frame step while the
+    # slider comes. Rigid, a lane change swung it 112-194 units in one frame
+    # against ~20 between; chased, it stays near the slider's own pace
+    eyes = [tuple(map(float, m)) for m in _re.findall(
+        r"\[cameye\] frame (\d+)  eye (-?\d+) (-?\d+) (-?\d+)", o)]
+    on8 = [(f, x, z) for f, x, _, z in eyes if 170 <= f <= 470]
+    step = max((((x2 - x1) ** 2 + (z2 - z1) ** 2) ** 0.5
+                for (_, x1, z1), (_, x2, z2) in zip(on8, on8[1:])), default=1e9)
     # A4: `sub_452570` holds him and fades the bands in; case 2's arrival
     # lets him go - and UP held meanwhile walked him nowhere
     i_hold = o.find("sub_452570 - Screen_Fade(1) and the player HELD")
@@ -9316,9 +9327,9 @@ def c_engine_slider_arrives():
     m_w = _re.search(r"walked (-?[\d.]+) over", o)
     walked = float(m_w.group(1)) if m_w else 1e9
     return (called, line, gone, len(cams) >= 5, turned >= 3, behind,
-            0 <= i_hold < i_come, walked < 5.0), \
+            0 <= i_hold < i_come, walked < 5.0, step < 45.0), \
            (True, "slider: OPEN at 1304 6 -6651 - walk to it and press the "
-                  "action button", True, True, True, True, True, True), \
+                  "action button", True, True, True, True, True, True, True), \
         "confirming a destination ROW on the sneak's slider page calls one " \
         "to where the player stands; it spawns at the top of lane 237, drives twenty-one " \
         "segments down the road and STOPS OPEN with its BODY at 1304 6 -6651 - " \

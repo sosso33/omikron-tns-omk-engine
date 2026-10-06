@@ -319,16 +319,55 @@ void PlayState::worldCamera() {
         static constexpr float kComeAt[3]  = {0.0f, 78.7402f, 0.0f};
         static constexpr float kBoardEye[3] = {157.4803f, 59.0551f, 0.0f};
         static constexpr float kNoOff[3] = {0.0f, 0.0f, 0.0f};
+        // THE LAG, `sub_415D10` / `sub_415E60` as the player's follow
+        // camera transcribes them: the subject's yaw chased at dt/f46
+        // (snapping inside 0.1 degrees), the preset resolved on THAT, then
+        // the target chasing at dt/f42 and the eye at dt/f44 (1 reads as 2).
+        // Rows 8 and 10 lag 0/8/8 and 0/8/16; row 9 is rigid. Without it the
+        // eye 276 behind swung with every change of the slider's heading -
+        // 112, 118, 194 units in ONE frame at a lane change, against 10 a
+        // frame between: a reader's "the camera stutters sometimes when
+        // following the slider".
+        const auto lagged = [&](const float eyeOff[3], const float atOff[3], int f42, int f44, int f46) {
+            const float fx = -rz2[0], fz = -rz2[2];
+            const float yawNow = static_cast<float>(std::atan2(fx, fz) * 57.29577951308232);
+            const float dtl = static_cast<float>(frameSec * 30.0);
+            const auto wrap = [](float d) { while (d > 180.0f) d -= 360.0f; while (d < -180.0f) d += 360.0f; return d; };
+            const int k46 = f46 == 1 ? 2 : f46, k44 = f44 == 1 ? 2 : f44, k42 = f42 == 1 ? 2 : f42;
+            if (sliderCamFresh || !k46) sliderCamLagYaw = yawNow;
+            else {
+                const float d = wrap(yawNow - sliderCamLagYaw);
+                if (std::fabs(d) <= 0.1f) sliderCamLagYaw = yawNow;
+                else sliderCamLagYaw += d * std::min(1.0f, dtl / static_cast<float>(k46));
+            }
+            const float t = sliderCamLagYaw * 0.0174532925199433f;
+            const float gx = std::sin(t), gz = std::cos(t);
+            const float r0[3] = {-gz, 0.0f, gx}, r2[3] = {-gx, 0.0f, -gz};
+            float e[3], a[3];
+            for (int k = 0; k < 3; ++k) {
+                e[k] = at[k] - eyeOff[0] * r0[k] - eyeOff[2] * r2[k];
+                a[k] = at[k] - atOff[0] * r0[k] - atOff[2] * r2[k];
+            }
+            e[1] -= eyeOff[1]; a[1] -= atOff[1];
+            for (int k = 0; k < 3; ++k) {
+                if (sliderCamFresh || !k44) sliderCamLagEye[k] = e[k];
+                else sliderCamLagEye[k] += (e[k] - sliderCamLagEye[k]) * std::min(1.0f, dtl / static_cast<float>(k44));
+                if (sliderCamFresh || !k42) sliderCamLagAt[k] = a[k];
+                else sliderCamLagAt[k] += (a[k] - sliderCamLagAt[k]) * std::min(1.0f, dtl / static_cast<float>(k42));
+                tEye[k] = sliderCamLagEye[k];
+                tAt[k] = sliderCamLagAt[k];
+            }
+            sliderCamFresh = false;
+        };
         if (sliderCamMode == 8 && frame) {
-            place(kComeEye, tEye);
-            place(kComeAt,  tAt);
+            lagged(kComeEye, kComeAt, 0, 8, 8);
         } else if (sliderCamMode == 9 && frame) {
             place(kBoardEye, tEye);
             place(kNoOff, tAt);
         } else if (sliderCamMode == 10 && frame) {
             const float e10[3] = {sliderCamEyeX10, 157.4803f, 0.0f};
-            place(e10, tEye);
-            for (int k = 0; k < 3; ++k) tAt[k] = sliderCamAddr[k];
+            lagged(e10, kNoOff, 0, 8, 16);
+            for (int k = 0; k < 3; ++k) tAt[k] = sliderCamAddr[k];   // subject 9, the address
         } else if (sliderCamMode == 17) {
             static constexpr float kEye17[3] = {-39.3701f, 78.7402f, 0.0f};
             static constexpr float kAt17[3]  = {0.0f, 0.0f, 0.0f};

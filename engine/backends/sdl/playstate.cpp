@@ -94,6 +94,7 @@ void PlayState::sliderCamRequest(int mode, float frames) {
     }
     takeCam = false;
     takeCamPhase = 0;
+    sliderCamFresh = true;          // `Camera_LoadParams`' flag 1: the first frame snaps
     sliderCamMode = mode;
     sliderCamClock = 0.0f;
     sliderCamDur = frames;

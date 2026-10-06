@@ -631,6 +631,11 @@ struct PlayState {
     float sliderCamFromEye[3]{}, sliderCamFromAt[3]{}, sliderCamFromFov{75.0f};
     float sliderCamAddr[3]{}, sliderCamEyeX10{-314.9606f};
     float sliderCamEye17[3]{}, sliderCamAt17[3]{};
+    // the LAG (`sub_415D10`/`sub_415E60`, drift audit B12): the slider's yaw
+    // chased at dt/f46, the eye at dt/f44 and the target at dt/f42 - seeded
+    // on the request's first frame
+    bool  sliderCamFresh{true};
+    float sliderCamLagYaw{}, sliderCamLagEye[3]{}, sliderCamLagAt[3]{};
     int   sliderPrevState{0};      // the called slider's mode last frame
     long  boardAt{-1};             // `--board-after`: the frame to board on
     float boardAtSlider[3]{}, boardAtDoor[3]{};
