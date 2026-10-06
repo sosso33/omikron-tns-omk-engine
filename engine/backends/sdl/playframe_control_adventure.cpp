@@ -1514,6 +1514,20 @@ void PlayState::adventureRide() {
                     rw.walkers.push_back({m.body[0], m.body[1], m.body[2], m.dir[0], m.dir[2]});
         }
         rw.setSpeed = [&](int slot, double s) { session.sliders().setVehicleSpeed(slot, static_cast<float>(s)); };
+        // `sub_444810`, the bolts' world ray: the shown set's `shotSoup`
+        const omk::TriangleSoup* rideShot = nullptr;
+        for (const auto& ws : worldSlots)
+            if (!ws.stem.empty() && ws.stem == worldSet) rideShot = &ws.shotSoup;
+        if (rideShot)
+            rw.ray = [rideShot](double ax, double az, double bx, double bz, double py, double hit[3]) {
+                const double p0[3] = {ax, py, az};
+                const double d[3] = {bx - ax, 0.0, bz - az};
+                const auto h = omk::sweepSphere(*rideShot, p0, d, 0.0);
+                if (!h) return false;
+                for (int k = 0; k < 3; ++k) hit[k] = p0[k] + h->t * d[k];
+                return true;
+            };
+        const int wallsWas = ride->wallHits;
         const int hitsWas = ride->vehicleHits, stepsWas = ride->walkerSteps;
         ride->hover(dt, rw);
         if (ride->vehicleHits != hitsWas)
@@ -1523,10 +1537,13 @@ void PlayState::adventureRide() {
             double dr = 0.0; char nm[2] = {0, 0};
             const bool on = rw.surface(ride->x, ride->y, ride->z, dr, nm);
             std::printf("frame %ld: slider ride at %.0f %.0f, speed %.2f, road-edge pushes %d, "
-                        "vehicle hits %d, surface '%c%c'%s\n", n, ride->x, ride->z, ride->speed,
-                        ride->edgeHits, ride->vehicleHits, nm[0] ? nm[0] : '-', nm[1] ? nm[1] : '-',
+                        "vehicle hits %d, wall slides %d, surface '%c%c'%s\n", n, ride->x, ride->z, ride->speed,
+                        ride->edgeHits, ride->vehicleHits, ride->wallHits, nm[0] ? nm[0] : '-', nm[1] ? nm[1] : '-',
                         on ? "" : " (none)");
         }
+        if (ride->wallHits != wallsWas && (ride->wallHits == 1 || ride->wallHits % 20 == 0))
+            std::printf("frame %ld: slider: Manuelle SLIDES along a wall (sub_459BD0), %d so far "
+                        "(%d single-edge hits left alone)\n", n, ride->wallHits, ride->wallSingles);
         if (ride->walkerSteps != stepsWas && ride->walkerSteps == 1)
             std::printf("frame %ld: slider: Manuelle steps round a walker on a crossing (sub_459970)\n", n);
         // `Slider_TickRide`, after its three helpers: `if (dword_8F5E08)

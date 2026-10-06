@@ -146,7 +146,7 @@ authored to meet, H_TAK031's +19.58 into H_PUT032's key 1 of +19.58).
 
 ## What is left (the audit's order)
 
-- **M3** Manuelle's collisions - READ WHOLE 2026-10-06, three steps:
+- **M3** Manuelle's collisions - DONE 2026-10-06 in three steps, NONE PLAYED (try: drive Manuelle into a parked slider, off the road's edge, into a building; the viewer logs `Manuelle HIT a vehicle`, `SLIDES along a wall` and a `slider ride at` line every 30 frames naming the surface):
   1. DONE: `sub_458880` the vehicle push and `sub_458490`/`sub_459970` the
      walker on a crossing (`SliderRide::hover(dt, RideWorld)`; the viewer
      fills the world with the named-surface probe, the vehicles, the walkers;
@@ -161,7 +161,7 @@ authored to meet, H_TAK031's +19.58 into H_PUT032's key 1 of +19.58).
      `dword_8F5E18` clamped +-2.5. All four off-road: back by -2v and a
      quarter of the speed. Decompile has two undefined flags (v17, v21)
      - read the asm at 0x4594D0 / 0x459580.
-  3. `sub_459BD0` (312): the WALL pass - the four hull edges (+-60 on the
+  3. DONE (NOT PLAYED): `sub_459BD0` (312): the WALL pass - the four hull edges (+-60 on the
      node's own axes) cast both ways with `sub_444810` (the port's
      `WorldRay`), the hit pair chosen, the slider moved half back out along
      the wall, the velocity laid along it at 95% of |speed|, the yaw nudged

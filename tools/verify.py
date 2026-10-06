@@ -8631,6 +8631,11 @@ def c_engine_slider_fly():
         # past x 76.3 (the hull's front corners at +-60.37 meet the edge
         # first) while it runs 10209 down the road, turned to +17.3
         "road edges 18 max_x 76.3 yaw 17.3 z -10209".split(),
+        # M3 step 3, `sub_459BD0`: a wall along z -400 met at 20 degrees with
+        # UP held - the hull's front corners stop on it (centre at -341.5,
+        # 60 behind them) and it slides 1917 along it, 270 slides; no
+        # single-edge hit (the original's undefined case) on this approach
+        "wall slides 270 singles 0 min_z -341.5 x 1917 speed 39.19".split(),
     ]
     return got, want, \
         "the six-value thrust LADDER by input and by the direction of travel " \
@@ -8702,13 +8707,15 @@ def c_engine_slider_ride():
     facing, walked, ticks = float(m.group(4)), float(m.group(5)), int(m.group(6))
     return ("ride: mounted at 4839 -103 -677" in o,
             round(z), round(facing), walked, ticks), \
-           (True, -1795, 49, 0.0, 0), \
+           (True, -673, 47, 0.0, 0), \
         "mounted where the address put him and flown 120 frames of UP then " \
-        "20 of RIGHT: he ends at z -1795 (re-pinned 2026-10-06 from -3238, drift " \
-        "audit M3 step 2: the harness mounts him on the PAVEMENT - a `Ba` mesh - " \
-        "and the street he flies up is `YX`, which is not road to `sub_458C70`'s " \
-        "`X`/`OP` test, so its road edges hold him there as the original's would; " \
-        "-3238 was the port with no road-keeping), turned 49 " \
+        "20 of RIGHT: he is HELD at z -673 (re-pinned 2026-10-06, drift audit M3: " \
+        "-3238 with no collisions at all, -1795 with the road edges, -673 with " \
+        "the wall pass - the harness mounts him at the apartment's address, where " \
+        "the hull's +-60 edges already cross the building and the ground is " \
+        "`YX`, not road, so `sub_459BD0` and `sub_458C70` hold him every frame; " \
+        "a real Manuelle ride starts from a called slider on an `X` road, " \
+        "`engine: slider manual`), turned 47 " \
         "degrees, and the WALKER never ticked - 0 ticks and 0 walked, which " \
         "is what ACTOR_STATE 7 and 8 mean by `walks` false. Ticking it beside " \
         "the ride made the two fight and the walker win"

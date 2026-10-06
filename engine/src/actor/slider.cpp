@@ -352,7 +352,7 @@ void SliderRide::roadEdges(const RideWorld& w) {
         return true;
     };
     int oA = 0, oB = 0, oC = 0, oD = 0;               // v56, v57, v7, v6
-    if (!off(A, oA) || !off(B, oB)) return;           // (the wall pass: step 3)
+    if (!off(A, oA) || !off(B, oB)) { wallPass(w); return; }   // LABEL_121
     double P[2][2] = {{0, 0}, {0, 0}};                // v64/v65 and v66[0..1]
     int npt = 0;                                      // v1
     bool abCrossed = false;                           // v59
@@ -360,7 +360,7 @@ void SliderRide::roadEdges(const RideWorld& w) {
         if (oA) edgeCrossing(*this, w, A, B, P[0]); else edgeCrossing(*this, w, B, A, P[0]);
         npt = 1; abCrossed = true;
     }
-    if (!off(C, oC) || !off(D, oD)) return;
+    if (!off(C, oC) || !off(D, oD)) { wallPass(w); return; }
     if (!(oA | oB | oC | oD)) {                       // all four on the road
         edgeX -= edgeX * 0.125;
         edgeZ -= edgeZ * 0.125;
@@ -459,6 +459,96 @@ void SliderRide::roadEdges(const RideWorld& w) {
     settle = 0;                                       // dword_8F5E08
 }
 
+// `sub_459BD0` (0x00459BD0), 312 lines, transcribed. The corners are the
+// node matrix's own rows - `sub_442160(0, -yaw, -(360 - roll))`, so its Z is
+// (sin yaw, cos yaw) and its X (cos roll cos yaw, -sin yaw cos roll), both
+// x60. The flags the decompiler lost (0x45A365) are the yaw wrap.
+//
+// ONE EDGE ALONE IS UNDEFINED IN THE ORIGINAL: that path (`LABEL_38`,
+// loc_45A042) loads `esi` - the pair code 1..4 - from `[ebp-4Ch]`, a slot
+// nothing in the function has written yet, and leaves the second hit point's
+// x (`[ebp-28h]`) unwritten too, so the wall direction it then uses is stack
+// left over from an earlier call. This port gives that case NO response
+// (counted in `wallSingles`) - with a code outside 1..4 only a corner over no
+// ground could have moved it, and in a direction nobody can reproduce.
+void SliderRide::wallPass(const RideWorld& w) {
+    if (!w.ray || !w.surface) return;
+    const double yr = yaw * kDeg, rr = roll * kDeg;
+    const double Zx = std::sin(yr) * 60.0, Zz = std::cos(yr) * 60.0;
+    const double Xx = std::cos(rr) * std::cos(yr) * 60.0, Xz = -std::sin(yr) * std::cos(rr) * 60.0;
+    const double P[4][2] = {{x - Xx - Zx, z - Xz - Zz}, {x + Xx - Zx, z + Xz - Zz},
+                            {x + Xx + Zx, z + Xz + Zz}, {x - Xx + Zx, z - Xz + Zz}};
+    bool e[4] = {false, false, false, false};
+    double h[4][3] = {};
+    for (int i = 0; i < 4; ++i) {                 // P1->P2, P2->P3, P3->P4, P4->P1
+        const int j = (i + 1) & 3;
+        if (w.ray(P[i][0], P[i][1], P[j][0], P[j][1], y, h[i])) e[i] = true;
+    }
+    for (int i = 0; i < 4; ++i) {                 // ...and back, the later hit kept
+        const int j = (i + 1) & 3;
+        double t[3];
+        if (w.ray(P[j][0], P[j][1], P[i][0], P[i][1], y, t)) {
+            e[i] = true; h[i][0] = t[0]; h[i][1] = t[1]; h[i][2] = t[2];
+        }
+    }
+    auto farFromP1 = [&](const double q[3]) {
+        const double dx = q[0] - P[0][0], dz = q[2] - P[0][1];
+        return std::sqrt(dx * dx + dz * dz) > 60.0;
+    };
+    int code = 0;                                 // esi, v6
+    const double* Ha = nullptr; const double* Hb = nullptr;
+    bool single = false;
+    if (e[1]) {
+        Ha = h[1];
+        if (e[0])      { Hb = h[0]; code = 2; }
+        else if (e[2]) { Hb = h[2]; code = 3; }
+        else if (e[3]) { Hb = h[3]; code = farFromP1(h[3]) ? 3 : 2; }
+        else single = true;
+    } else if (!e[2]) {
+        if (e[3]) { Ha = h[3]; if (e[0]) { Hb = h[0]; code = 1; } else single = true; }
+        else { if (!e[0]) return; Ha = h[0]; single = true; }
+    } else {
+        Ha = h[2];
+        if (e[3])      { Hb = h[3]; code = 4; }
+        else if (e[0]) { Hb = h[0]; code = farFromP1(h[0]) ? 2 : 1; }
+        else single = true;
+    }
+    if (single) { ++wallSingles; return; }
+    // the corners' ground, 39.370079 under the ride (any surface)
+    bool g[4];
+    for (int i = 0; i < 4; ++i) {
+        double drop = 0.0; char nm[2] = {0, 0};
+        g[i] = w.surface(P[i][0], y - 39.370079, P[i][1], drop, nm);
+    }
+    int q = -1;
+    for (int i = 0; i < 4 && q < 0; ++i)
+        if (!g[i] || code == i + 1) q = i;
+    if (q < 0) return;
+    const double rx = P[q][0] - Ha[0], rz = P[q][1] - Ha[2];
+    if (speed == 0.0) speed = 0.0099999998;       // `dword_8F5DBC = 0.01f`
+    const double mx = -vx / std::fabs(speed), mz = -vz / std::fabs(speed);
+    double ux = Hb[0] - Ha[0], uz = Hb[2] - Ha[2];
+    double L = std::sqrt(ux * ux + uz * uz);
+    if (L == 0.0) L = 0.0099999998;
+    ux /= L; uz /= L;
+    const double t = uz * rz + ux * rx;
+    x -= (ux * t + Ha[0] - P[q][0]) * -0.5;
+    z -= (uz * t + Ha[2] - P[q][1]) * -0.5;
+    const double pm = uz * mz + ux * mx;
+    const double px = ux * pm, pz = uz * pm;
+    if ((g[0] || !g[1]) && (g[2] || !g[3])) {
+        if ((g[0] && !g[1]) || (g[2] && !g[3])) { yawRate = 2.0; yaw += 2.0; }
+    } else {
+        yawRate = -2.0; yaw -= 2.0;
+    }
+    if (yaw > 360.0) yaw -= 360.0;
+    else if (yaw < 0.0) yaw += 360.0;
+    const double as = std::fabs(speed);
+    vx = -(px * as) * 95.0 * 0.0099999998;
+    vz = -(pz * as) * 95.0 * 0.0099999998;
+    ++wallHits;
+}
+
 namespace {
 // `sub_458490`: the first walker (record order) within 300 of the ride and
 // AHEAD of its motion (`x -= v`, so ahead is `-cos > 0.5`) whose own surface
@@ -528,9 +618,11 @@ void SliderRide::hover(double dt, const RideWorld& w) {
         } else {
             y += gap * dt * 0.33333334;
         }
+        wallPass(w);                              // `sub_459BD0`, both arms
     } else {
         double d2 = 0.0; char n2[2] = {0, 0};
         if (w.surface(x, y - 39.0, z, d2, n2)) y -= 39.0;
+        wallPass(w);
     }
 }
 

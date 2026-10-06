@@ -80,6 +80,10 @@ struct RideWorld {
     std::vector<RideWalker>  walkers;
     double radius = 0.0;
     std::function<void(int slot, double speed)> setSpeed;
+    // `sub_444810(a, b, &hit, -1, ...)`: the segment a..b (both at height y)
+    // against the shown set - the bolts' world ray (`WorldRay`) - and the
+    // hit point when it meets a face
+    std::function<bool(double ax, double az, double bx, double bz, double y, double hit[3])> ray;
 };
 
 // One ride, as the engine's own globals. Named for what they hold; the
@@ -104,6 +108,8 @@ struct SliderRide {
     double edgeNX = 0, edgeNZ = 0;     // flt_8F5DE8 / EC - the last edge normal
     double yawRate = 0;                // 8F5E18 - the edge's turn, +-2.5, damped 1/16 a frame
     int    edgeHits = 0;               // instruments: `sub_458C70`'s pushes
+    int    wallHits = 0;               //              `sub_459BD0`'s slides
+    int    wallSingles = 0;            //              ...one edge alone met a wall (see wallPass)
     int    vehicleHits = 0;            // instruments: `sub_458880`'s bounces
     int    walkerSteps = 0;            //              `sub_459970`'s side-steps
     bool   stopped = false;            // `sub_4570F0` was reached
@@ -172,6 +178,12 @@ struct SliderRide {
     // disagree `sub_459810` finds the crossing on that hull edge, and the
     // ride is shoved back off the boundary and turned along it.
     void roadEdges(const RideWorld& world);
+    // `sub_459BD0`: the WALL pass - the four hull edges (+-60 on the node's
+    // own axes) cast both ways against the set; with two edges met, the
+    // corner off the ground (or the one the pair names) is drawn half back to
+    // the wall line, the motion laid along the wall at 95% and the yaw
+    // nudged +-2.
+    void wallPass(const RideWorld& world);
 
     // `sub_457F50`: where the RIDER sits - the slider's x and z, and its y
     // plus `kRiderUp`. The actor's own `+248` takes `kNodeUp` instead, which

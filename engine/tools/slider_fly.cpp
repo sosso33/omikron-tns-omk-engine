@@ -216,5 +216,39 @@ int main() {
         double yw = s.yaw > 180.0 ? s.yaw - 360.0 : s.yaw;
         std::printf("road edges %d max_x %.1f yaw %.1f z %.0f\n", s.edgeHits, maxX, yw, s.z);
     }
+
+    // ---- `sub_459BD0`, THE WALL PASS (drift audit M3 step 3) -------------
+    // A wall along z = -400 (all road, so only the walls act), the ride
+    // heading 20 degrees off straight into it with UP held: once two hull
+    // edges cross the wall it is drawn back toward the wall line and its
+    // motion laid along it. The deepest the centre gets past the wall, the
+    // slides, the single-edge hits (the engine's undefined case, left
+    // alone), and how far it slid along x.
+    {
+        omk::RideWorld w;
+        w.surface = [](double, double y, double, double& drop, char nm[2]) {
+            drop = 0.0 - y; nm[0] = 'X'; nm[1] = 0; return true;
+        };
+        w.radius = 82.3;
+        w.ray = [](double ax, double az, double bx, double bz, double y, double hit[3]) {
+            const double wz = -400.0;
+            if ((az - wz) * (bz - wz) > 0.0 || az == bz) return false;
+            const double t = (wz - az) / (bz - az);
+            hit[0] = ax + t * (bx - ax); hit[1] = y; hit[2] = wz;
+            return true;
+        };
+        omk::SliderRide s;
+        s.yaw = 340.0;                    // toward -z, a little toward +x
+        const auto p = flat();
+        double minZ = 1e9;
+        for (int k = 0; k < 300; ++k) {
+            s.fly(omk::SliderRide::kThrustUp, dt, p);
+            s.hover(dt, w);
+            if (s.settle) --s.settle;
+            minZ = std::min(minZ, s.z);
+        }
+        std::printf("wall slides %d singles %d min_z %.1f x %.0f speed %.2f\n",
+                    s.wallHits, s.wallSingles, minZ, s.x, s.speed);
+    }
     return 0;
 }
