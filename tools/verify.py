@@ -8600,7 +8600,17 @@ def c_engine_slider_fly():
     r = subprocess.run([binp], capture_output=True, text=True, errors="replace")
     got = [ln.split() for ln in r.stdout.strip().splitlines()]
     want = [
-        "thrust up 1.845 down -3.690 rev_up 3.690 rev_down -1.845 none 0.000".split(),
+        # M6 (2026-10-06): a sideways skid at 30 is pulled toward the nose
+        # (vz 7.28) only with NO thrust key; UP held keeps it in the hard
+        # arm (1.84, the thrust along the nose) - `if (v58 == 0)`
+        "skid recover free_vz 7.28 held_vz 1.84".split(),
+        # `none` re-pinned 0.000 -> -0.120 on 2026-10-06 (drift audit M6):
+        # the probe's state - speed 10 with zero velocity - reads as a skid,
+        # and with no thrust key `sub_4573E0` CANCELS a skid under |speed| 16
+        # and runs the simple arm, whose drag comes off the thrust (10^2 x
+        # 0.1538 / 128). The port lacked the cancel and fell into the hard
+        # arm, which leaves the thrust alone - 0.000 recorded the omission
+        "thrust up 1.845 down -3.690 rev_up 3.690 rev_down -1.845 none -0.120".split(),
         "accel speed 29.17 z -171.2 y -29.95".split(),
         "bank roll 11.00 limit 11.00 yaw 50.00".split(),
         "steer right 50.00 left 310.00".split(),

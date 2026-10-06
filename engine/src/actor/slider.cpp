@@ -145,7 +145,25 @@ void SliderRide::fly(std::uint32_t input, double dt, const Probe& probe) {
     }
 
     // ---- THE SKID RECOVERY --------------------------------------------
-    if (slide != 0.0 && std::fabs(speed) > 16.0 && speed > 0.0) {
+    //
+    // ONLY WITH NO THRUST KEY DRIVING (`if (v58 == 0)`, drift audit M6) -
+    // holding thrust through a hard turn keeps the slide and takes the hard
+    // arm - and inside it two things this skipped: under |speed| 16 the
+    // skid is simply CANCELLED (`v0 = 0`, the steer term zeroed) and the
+    // simple arm runs; over 16 the steer term is zeroed as the velocity is
+    // pulled back toward the nose:
+    //
+    //     if (!v58) {
+    //         if (|speed| < 16 && v0 && speed > 0) { v0 = 0; DD0 = 0; }
+    //         if (v0 && |speed| > 16 && speed > 0) { DD0 = 0; ...0.2...;
+    //                                                 goto LABEL_135; }
+    //     }
+    bool recover = false;
+    if (!driving) {
+        if (std::fabs(speed) < 16.0 && slide != 0.0 && speed > 0.0) { slide = 0.0; steerTerm = 0.0; }
+        if (slide != 0.0 && std::fabs(speed) > 16.0 && speed > 0.0) { steerTerm = 0.0; recover = true; }
+    }
+    if (recover) {
         const double r = yaw * kDeg;
         vx += (std::sin(r) * lastSpeed - vx) * 0.2;
         vz += (std::cos(r) * lastSpeed - vz) * 0.2;

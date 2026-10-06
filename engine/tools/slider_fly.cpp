@@ -51,6 +51,20 @@ double runThrust(std::uint32_t input, double speed) {
 int main() {
     const double dt = 0.5;                     // one frame, halved
 
+    // THE SKID RECOVERY'S GATE (`if (v58 == 0)`, drift audit M6): a slider
+    // skidding sideways at 30 - the nose on +Z, the velocity on X - pulled
+    // back toward its nose (vx shrinking by a fifth) only when NO thrust key
+    // drives; with UP held it keeps the slide and takes the hard arm
+    {
+        auto skid = [&](std::uint32_t in) {
+            omk::SliderRide s;
+            s.speed = 30.0; s.lastSpeed = 30.0; s.vx = 30.0; s.vz = 0.0; s.yaw = 0.0;
+            s.fly(in, dt, nullptr);
+            return s.vz;                     // the velocity turning onto the nose
+        };
+        std::printf("skid recover free_vz %.2f held_vz %.2f\n", skid(0u),
+                    skid(omk::SliderRide::kThrustUp));
+    }
     std::printf("thrust up %.3f down %.3f rev_up %.3f rev_down %.3f none %.3f\n",
                 runThrust(omk::SliderRide::kThrustUp, 10.0),
                 runThrust(omk::SliderRide::kThrustDown, 10.0),
