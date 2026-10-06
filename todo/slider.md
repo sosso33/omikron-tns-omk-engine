@@ -163,7 +163,7 @@ gates its three helpers on — place the player at the seat height
 slider's mode to **7**, and
 
     Camera_Request(17, ...)   with the PLAYER as both subjects,
-                              dword_930818 = 56.0, dword_93081C = 1
+                              dword_930818 = 60.0 (a 60-frame BLEND; "56" until 2026-10-06), dword_93081C = 1
 
 so a ride hands back at **camera mode 17**, not mode 0 — which is exactly why
 `sub_452570`'s arrive arm guards its own `Camera_Request(0, ...)` on the mode
