@@ -1481,6 +1481,7 @@ int PlayState::modesShoot() {
                     r.x = at[0]; r.y = at[1]; r.z = at[2];
                     r.yaw = session.sliders().calledYaw();
                     ride = r;
+                    session.sliders().setCalledManual();   // `sub_438200(slider, 1)`
                     std::printf("slider: Manuelle - `sub_457040`, the controls "
                                 "are his\n");
                 }

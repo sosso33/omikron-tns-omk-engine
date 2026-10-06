@@ -283,11 +283,13 @@ void Sliders::tickVehicles(float dt) {
             // the traffic. That is why a reader saw it *"blocked all the
             // vehicles on the road"* even once the mode-0 hand-back was
             // written: the hand-back ran and was immediately undone.
-            if (was == 7 && callRide_.released && callRide_.state == 0) {
+            if (callRide_.handedBack) {
                 v.state = 0;                  // `sub_438420(slider, 0)`
                 called_ = -1;                 // `sub_438250(0)`, dword_8F5E44
+                // so the viewer can SAY how: 1 nobody boarded it in 600
+                // frames, 2 a journey's end, 3 a manual ride he walked away from
+                releasedTold_ = was == 1 ? 1 : (callRide_.manual ? 3 : 2);
                 callRide_ = RideMachine{};
-                releasedTold_ = true;         // so the viewer can SAY it happened
                 vehicleDrive(vi, dt);
                 vehicleSound(vi);
                 continue;
@@ -297,14 +299,12 @@ void Sliders::tickVehicles(float dt) {
                 // vehicle stops here; the caller lets the rider out.
                 journeyDone_ = true;
                 v.state = 4;
-            } else if (was != callRide_.state && callRide_.state != 2 &&
-                       callRide_.state != 6) {
-                // It stopped where it arrived. `sub_456530` leaves state 1
-                // (the 600-frame idle) on the transport arm; a slider CALLED
-                // to be boarded goes OPEN instead, which is mode 3 - what
-                // `MDSLIDIN` demands.
-                callRide_.state = 3;
-                v.state = 3;
+            } else if (was == 2 && callRide_.state == 1) {
+                // It stopped where it arrived: mode 1, OPEN (bit 4), and the
+                // 600-frame idle running. This forced mode 3 until
+                // 2026-10-06, which nothing in the engine waits in - MDACTION
+                // SETS 3 itself - so an ignored slider stood there for ever.
+                v.state = 1;
             }
             if (callRide_.state == 2 || callRide_.state == 6) {
                 vehicleDrive(vi, dt);
@@ -537,11 +537,14 @@ void RideMachine::tick(float dt, float toTarget, float toPlayer, bool ahead) {
     camera = -1;
     fadeIn = false;
     released = false;
+    handedBack = false;
     switch (state) {
     case 1:
-        // `flt_8F5E90 -= dt`, and on expiry the assignment is dropped.
+        // OPEN AND WAITING. `flt_8F5E90 -= dt`, and on expiry `u32(a1, 8) =
+        // 0`, bit 4 cleared and `dword_8F5E44 = 0`: nobody boarded it in 600
+        // frames (twenty seconds) and it goes back to the traffic.
         idleClock -= dt;
-        if (idleClock <= 0.0f) { state = 0; released = true; }
+        if (idleClock <= 0.0f) { state = 0; open = false; handedBack = true; }
         return;
     case 2:
         // Camera 8 on the SLIDER while it comes...
@@ -551,6 +554,7 @@ void RideMachine::tick(float dt, float toTarget, float toPlayer, bool ahead) {
             // 0, the fade comes in and the hold is released.
             state = 1;
             idleClock = kIdle;
+            open = true;                      // `u32i(v9, 45) |= 4u`
             camera = 0;
             fadeIn = true;
             released = true;
@@ -562,6 +566,7 @@ void RideMachine::tick(float dt, float toTarget, float toPlayer, bool ahead) {
     case 5:
         return;                       // aboard: `Slider_TickRide` owns it
     case 6:
+        open = false;                         // `u32(v2, 180) = v3 & ~4`
         if (toTarget < kArrive) {
             // The departure shot: mode 10, framed between the destination's
             // own address record and the vehicle.
@@ -572,8 +577,15 @@ void RideMachine::tick(float dt, float toTarget, float toPlayer, bool ahead) {
         }
         return;
     case 7:
-        // It drives off only once he is clear of it AND in front of it.
-        if (toPlayer > kLeave && ahead) { state = 0; released = true; }
+        // `if ((v3 & 0x200) == 0)`: NOT a manual ride - a journey - and it
+        // goes back to the traffic at once, the tick after `MDSLIDOU` sets
+        // this mode, as he stands up. Only a MANUAL ride waits for him to be
+        // 300 clear AND in front of it, re-opening it every tick (`v3 | 4`)
+        // so he can get back in. (Until 2026-10-06 every ride waited, and a
+        // journey's slider stood at the kerb ~800 frames after he got out.)
+        if (!manual) { state = 0; open = false; handedBack = true; return; }
+        open = true;
+        if (toPlayer > kLeave && ahead) { state = 0; open = false; handedBack = true; }
         return;
     default:
         return;                       // 0: ambient traffic, the ordinary drive
@@ -847,6 +859,34 @@ void Sliders::dismountCalled() {
     if (called_ < 0) return;
     callRide_.state = 7;                        // LEAVING
     vehicles_[static_cast<std::size_t>(called_)].state = 7;
+}
+
+void Sliders::boardCalled() {
+    if (called_ < 0) return;
+    if (callRide_.state == 7) callRide_.manual = false;   // `sub_438200(slider, 0)`
+    callRide_.state = 3;                        // `sub_438420(slider, 3)`
+    vehicles_[static_cast<std::size_t>(called_)].state = 3;
+}
+
+void Sliders::exitCalled() {
+    if (called_ < 0) return;
+    callRide_.state = 5;                        // `sub_468FA0`: `sub_438420(v2, 5)`
+    vehicles_[static_cast<std::size_t>(called_)].state = 5;
+}
+
+void Sliders::slidOutCalled() {
+    if (called_ < 0) return;
+    // 7 -> 5 -> 7 without recording; 5 -> 7 recording the place, which only
+    // a manual ride's release reads back (`sub_456530` case 7), so the record
+    // is not kept here; anything else is "bad mode for slider !"
+    if (callRide_.state != 5 && callRide_.state != 7) return;
+    callRide_.state = 7;
+    vehicles_[static_cast<std::size_t>(called_)].state = 7;
+}
+
+void Sliders::setCalledManual() {
+    if (called_ < 0) return;
+    callRide_.manual = true;
 }
 
 // While he is aboard the vehicle IS the ride: `sub_457F50` writes the

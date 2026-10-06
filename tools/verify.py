@@ -8799,9 +8799,12 @@ def c_engine_slider_call():
         "nearest 3 of 3 addresses, median 12.4 m worst 13.4 m".split(),
         "route area 101 lane 254 key 0 -> 334 333 334".split(),
         "call area 101 lane 254 route 334 at 10481 6 -9602 dir 1.00 -0.00 node -25".split(),
-        "coming 96 frames -> state 1 camera 0 fade 1 hold 1".split(),
-        "idle 600 frames -> state 0".split(),
+        "coming 96 frames -> state 1 camera 0 fade 1 hold 1 open 1".split(),
+        "idle 600 frames -> state 0 open 0".split(),
         "fetching away 8 arrived state 4 camera 10".split(),
+        # case 7 with no 0x200 (a journey): at once; with it (Manuelle): the
+        # 300-and-in-front test (todo/slider-drift-audit.md A5, 2026-10-06)
+        "journey leaving state 0 handed_back 1".split(),
         "leaving behind 7 close 7 clear 0 latch 90".split(),
     ]
     return got, want, \
@@ -8914,18 +8917,22 @@ def c_engine_slider_arrives():
     # was an invention of the port's, removed 2026-09-08.
     r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
                         "--save", save, "--area", "0",
-                        "--stand", "1804,0,-6890,336", "--frames", "700",
+                        "--stand", "1804,0,-6890,336", "--frames", "1400",
                         "--hold", "0*40,k15*3,0*30,k205*4,0*10,k200*4,0*10,"
-                                  "k28*4,0*30,k203*4,0*10,k208*4,0*10,k28*4,0*500"],
+                                  "k28*4,0*30,k203*4,0*10,k208*4,0*10,k28*4,0*1200"],
                        capture_output=True, text=True, env=env, errors="replace")
     o = r.stdout
     called = "chosen - a slider is COMING to 1804 0 -6890" in o
     line = ""
     for ln in o.splitlines():
         if ln.startswith("slider: OPEN at"): line = ln.strip()
-    return (called, line), \
+    # B4 (todo/slider-drift-audit.md): nobody boards it, and case 2's mode 1
+    # counts its 600 frames down and hands it back - where the port forced
+    # mode 3 and it stood at the kerb for ever
+    gone = "slider: RELEASED - nobody boarded it in 600 frames (case 1)" in o
+    return (called, line, gone), \
            (True, "slider: OPEN at 1304 6 -6651 - walk to it and press the "
-                  "action button"), \
+                  "action button", True), \
         "confirming a destination ROW on the sneak's slider page calls one " \
         "to where the player stands; it spawns at the top of lane 237, drives twenty-one " \
         "segments down the road and STOPS OPEN with its BODY at 1304 6 -6651 - " \
@@ -9178,7 +9185,7 @@ def c_engine_slider_journey_area():
             "ARRIVED - he gets OUT WHERE IT STOPPED" in o,
             "camera 17 requested" in o,
             "MDSLIDOU: out and standing" in o,
-            "slider: RELEASED - he is 300 clear" in o), \
+            "slider: RELEASED - the journey is over and he is out" in o), \
            (True,) * 7, \
         "boarded in Jaunpur, the Anekbah row chosen from aboard: area 0 " \
         "loaded, the slider relinked at the lane nearest address 0 with him " \
@@ -9358,6 +9365,7 @@ def c_engine_slider_journey():
                                   "k200*250,0*550"],
                        capture_output=True, text=True, env=env, errors="replace")
     o = r.stdout
+    import re as _re
     return ("chosen - a slider is COMING to 1804 0 -6890" in o,
             "slider: OPEN at 1304 6 -6651" in o,
             "on the right side - snapped to" in o,
@@ -9369,9 +9377,12 @@ def c_engine_slider_journey():
             "ARRIVED - he gets OUT WHERE IT STOPPED" in o,
             "MDSLIDOU: out and standing" in o,
             "slider: ARRIVED - out at address" not in o,
-            "slider: RELEASED - he is 300 clear" in o,
+            "slider: RELEASED - the journey is over and he is out" in o,
+            # A5: case 7 with no 0x200 hands it back the tick after MDSLIDOU,
+            # where it waited ~800 frames for "300 clear and in front"
+            bool(_re.search(r"slider: released [12] frame\(s\) after MDSLIDOU", o)),
             _seatOf(o)), \
-           (True,) * 13, \
+           (True,) * 14, \
         "from the sneak's destination row: the call (he stays put), the " \
         "slider OPEN at the kerb, MDACTION's door snap and H_SLDIN, then " \
         "MDSLIDIN ONCE - it fired twice until the frontend stopped re-reading " \

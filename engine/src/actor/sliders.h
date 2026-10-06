@@ -188,23 +188,30 @@ SliderCall planSliderCall(const OptTrack& t, const float target[3],
 //   2  COMING    the TRANSPORT arm. Camera mode 8 on the SLIDER while it
 //                drives to the pickup point; within **117 units** of it
 //                (2.97 m, so three metres) the camera hands back to mode 0 on
-//                the PLAYER with parameter 56, `Screen_Fade(0)` fades in and
+//                the PLAYER over 60 frames (`dword_930818` = 0x42700000 =
+//                60.0, a BLEND DURATION - it was written "56" here until
+//                2026-10-06), `Screen_Fade(0)` fades in and
 //                `Actor_HoldAnimation(player, 0)` releases the hold that
 //                `sub_452570` put on. The slot then goes to 1 with the 600
 //                on its clock
-//   3  OPEN      it publishes the assignment (`dword_538E20`) and waits -
-//                and this is the mode `MDSLIDIN` demands before it will let
-//                the player in ("slider is not in open mode !")
-//   4/5 ABOARD   nothing but the fov: `Slider_TickRide` owns the body now
+//   3  BOARDING  it publishes the assignment (`dword_538E20`). MDACTION
+//                SETS this mode once its side and reach tests pass - its
+//                gate is bit 4, not mode 3 - and `MDSLIDIN` demands it at
+//                the end of the door clip ("slider is not in open mode !")
+//   4/5 ABOARD   nothing but the latch: `Slider_TickRide` owns the body now.
+//                5 is `sub_468FA0`'s - the exit clip playing
 //   6  FETCHING  the arm `sub_452570` takes when a slider was ALREADY
 //                assigned. The same 117-unit arrival test, and on arrival the
 //                slot goes to **4**, the player is probed onto the ground,
 //                the slider's node is re-parented, and the camera goes to
 //                **mode 10** framed between the DESTINATION's own address
 //                record and the vehicle
-//   7  LEAVING   once the player is more than **300 units** away AND in front
-//                of the slider (a dot product against his facing), it is put
-//                back where it was parked and released
+//   7  LEAVING   set by MDSLIDOU (from 5) or `sub_4570F0`. With the mover's
+//                0x200 bit clear - a JOURNEY - it is released at once. Only a
+//                MANUAL ride (`sub_457040` sets 0x200) waits for the player to
+//                be more than **300 units** away AND in front of it (a dot
+//                product against his facing), and is then put back where the
+//                manual drive began and released
 //
 // So the cameras a ride passes through are 8 while it comes, 0 when it
 // arrives, 10 when it leaves with you, and 17 when you get off
@@ -218,6 +225,21 @@ struct RideMachine {
     int   camera = -1;            // the mode this tick asked for, -1 for none
     bool  fadeIn = false;         // `Screen_Fade(0)` fired this tick
     bool  released = false;       // the hold was released this tick
+    // The mover's `+180` bits the machine reads, kept here because the
+    // pool's movers carry the walkers' flag word for other things:
+    //   open     bit 4 - "may be boarded". Set by case 2's arrival and by
+    //            case 7 on a manual ride; cleared by case 1's expiry and by
+    //            case 6. It is what `MDACTION` tests (`sub_438290`); MDACTION
+    //            then SETS mode 3 itself, so 3 is never something the slider
+    //            waits in for the player
+    //   manual   bit 0x200 - `sub_457040` (Manuelle) sets it through
+    //            `sub_438200(slider, 1)`, and nothing else does; MDACTION
+    //            clears it when it boards a slider still in mode 7. Case 7
+    //            reads it: clear (a journey) releases AT ONCE, set (a manual
+    //            ride) waits for 300 clear and in front
+    bool  open = false;
+    bool  manual = false;
+    bool  handedBack = false;     // this tick gave the vehicle back to traffic
 
     static constexpr float kArrive = 117.0f;   // 2.97 m
     static constexpr float kIdle   = 600.0f;
@@ -461,12 +483,16 @@ public:
     bool calledAt(float out[3]) const;
     // ...and which way it points, for the camera that watches it come.
     float calledYaw() const;
-    bool calledIsOpen() const { return called_ >= 0 && callRide_.state == 3; }
+    // OPEN is the mover's bit 4, `sub_438290` - what MDACTION tests. Not mode
+    // 3: MDACTION SETS 3 itself.
+    bool calledIsOpen() const { return called_ >= 0 && callRide_.open; }
     // One-shot: the called slider has just been handed back to the ordinary
     // traffic (`sub_456530` case 7's `sub_438420(slider, 0)`). Consumed by the
     // viewer so a reader can see it happen rather than infer it from a slider
     // that stopped blocking the lane.
-    bool takeReleasedNotice() { const bool r = releasedTold_; releasedTold_ = false; return r; }
+    // -> 0 none, 1 nobody boarded it (case 1's 600 frames), 2 a journey's end
+    // (case 7, no 0x200), 3 a manual ride he walked clear of (case 7, 0x200).
+    int takeReleasedNotice() { const int r = releasedTold_; releasedTold_ = 0; return r; }
     // The slider's own FRAME: where it is, and the rows of the 3x3 that
     // `sub_438450(slider)` hands `Matrix3x3_RotateVector` - the local +X and
     // the forward. `Matrix3x3_FromEulerAngles(0, y, 0)` is
@@ -494,9 +520,22 @@ public:
     // The player got on: the slot goes to 4 (aboard) and the vehicle stops
     // being driven, because `Slider_TickRide` owns the body from here.
     void mountCalled();
-    // ...and off, which is `sub_4570F0`'s slot state 7 - it drives away once
-    // he is 300 clear and in front of it.
+    // ...and off, which is `sub_4570F0`'s slot state 7 - the MANUAL ride's
+    // stop, after which it drives away once he is 300 clear and in front of
+    // it. (A journey's end is `exitCalled` + `slidOutCalled`.)
     void dismountCalled();
+    // MDACTION's slider arm, once both of its geometric tests pass: `if
+    // (mode == 7) sub_438200(slider, 0)` - the manual bit cleared - then
+    // `sub_438420(slider, 3)`.
+    void boardCalled();
+    // `sub_468FA0`, the exit's start: `sub_438420(slider, 5)`.
+    void exitCalled();
+    // MDSLIDOU at the end of H_SLDOUT: from 5 it records where the slider
+    // stands (`dword_8F5E2C/28/30`) and from 7 it does not, and either way
+    // the mode becomes 7 - "bad mode for slider !" and nothing otherwise.
+    void slidOutCalled();
+    // `sub_457040` (Manuelle): `sub_438200(slider, 1)`, the 0x200 bit.
+    void setCalledManual();
     // THE JOURNEY: send the called (and boarded) vehicle to the lane nearest
     // `target` - `sub_452570`'s arm when a slider is ALREADY assigned, which
     // sets its state to **6** rather than 2. `sub_456530` then drives it and
@@ -551,7 +590,7 @@ public:
 private:
     // THE PLAYER'S SLIDER - the one `sub_452570` reserves out of the 40.
     int         called_ = -1;
-    bool        releasedTold_ = false;   // case 7 handed it back this tick
+    int         releasedTold_ = 0;       // handed back this tick, and how (see takeReleasedNotice)
     bool        forCall_ = false;        // spawning the player's own slider: row 0, a slider whatever the mask
     RideMachine callRide_;
     float       callTarget_[3] = {0, 0, 0};

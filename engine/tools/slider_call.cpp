@@ -126,12 +126,12 @@ int main(int argc, char** argv) {
             m.tick(1.0f, d, 0.0f, false);
             d -= 20.0f;                       // it drives in at 20 a frame
         }
-        std::printf("coming %d frames -> state %d camera %d fade %d hold %d\n",
+        std::printf("coming %d frames -> state %d camera %d fade %d hold %d open %d\n",
                     frames, m.state, m.camera, m.fadeIn ? 1 : 0,
-                    m.released ? 1 : 0);
+                    m.released ? 1 : 0, m.open ? 1 : 0);
         int idle = 0;
         for (; idle < 1000 && m.state == 1; ++idle) m.tick(1.0f, 0.0f, 0.0f, false);
-        std::printf("idle %d frames -> state %d\n", idle, m.state);
+        std::printf("idle %d frames -> state %d open %d\n", idle, m.state, m.open ? 1 : 0);
     }
     {
         omk::RideMachine m;
@@ -143,8 +143,16 @@ int main(int argc, char** argv) {
                     away, m.state, m.camera);
     }
     {
+        // a JOURNEY's end (no 0x200): case 7 lets it go at once, near or not
         omk::RideMachine m;
         m.state = 7;
+        m.tick(1.0f, 0.0f, 0.0f, false);
+        std::printf("journey leaving state %d handed_back %d\n", m.state, m.handedBack ? 1 : 0);
+    }
+    {
+        omk::RideMachine m;
+        m.state = 7;
+        m.manual = true;                          // `sub_457040`'s 0x200
         m.tick(1.0f, 0.0f, 400.0f, false);        // far, but behind it
         const int behind = m.state;
         m.tick(1.0f, 0.0f, 200.0f, true);         // ahead, but too close

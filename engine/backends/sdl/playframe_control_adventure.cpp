@@ -418,10 +418,11 @@ void PlayState::adventureScreenInput() {
                 const bool side = dot < 0.0f;
                 const bool far_ = len >= omk::kBoardReach;
                 const int  st   = session.sliders().callMachine().state;
+                const bool shut = !session.sliders().calledIsOpen();
                 std::printf("MDACTION: the slider refuses - %s%s%s%s (dot %+.0f, "
                             "%.2f m of the 4.00 it allows, ride state %d)\n",
-                            st != 3 ? "it is not standing OPEN" : "",
-                            (st != 3 && (side || far_)) ? "; " : "",
+                            shut ? "it is not standing OPEN" : "",
+                            (shut && (side || far_)) ? "; " : "",
                             side ? "he is on the WRONG SIDE; its door is on "
                                    "its own -X" : "",
                             (side && far_) ? ", and he is too far away"
@@ -463,6 +464,7 @@ void PlayState::adventureScreenInput() {
                 // position and the root frame are - so he keeps
                 // the way he was facing and the clip turns him.
                 player->rideAt(door, player->facing());
+                session.sliders().boardCalled();     // mode 3, the 0x200 bit off from 7
                 player->setActorState(omk::ActorState::ChannelOnly6, "MDACTION");
                 player->setRootFrame(ax, az);
                 player->setChannelOnly(true);
@@ -1333,11 +1335,17 @@ void PlayState::adventureSeated() {
     static int  releasedSlot = -1;
     static long releasedAt = -1;
     if (session.sliders().calledVehicle() >= 0) releasedSlot = session.sliders().calledVehicle();
-    if (session.sliders().takeReleasedNotice()) {
+    if (const int how = session.sliders().takeReleasedNotice()) {
         releasedAt = n;
-        std::printf("slider: RELEASED - he is 300 clear and in front of it, "
-                    "so it goes back to mode 0 and drives as ordinary "
-                    "traffic again\n");
+        std::printf("slider: RELEASED - %s, so it goes back to mode 0 and "
+                    "drives as ordinary traffic again\n",
+                    how == 1 ? "nobody boarded it in 600 frames (case 1)"
+                    : how == 2 ? "the journey is over and he is out (case 7, no "
+                                 "0x200: at once)"
+                               : "he is 300 clear and in front of it (case 7, "
+                                 "a manual ride)");
+        if (how != 1 && slidOutAt >= 0)
+            std::printf("slider: released %ld frame(s) after MDSLIDOU\n", n - slidOutAt);
     }
     if (releasedAt >= 0 && n - releasedAt <= 300 && (n - releasedAt) % 30 == 0 &&
         releasedSlot >= 0 && static_cast<std::size_t>(releasedSlot) < session.sliders().vehicles().size()) {
@@ -1454,7 +1462,9 @@ void PlayState::adventureSeated() {
                 playerCamRequest(kExitEye, kExitAt, 75.0f, 60.0f);
                 std::printf("slider: camera 17 requested - preset 17 on him over 60 frames\n");
             }
-            session.sliders().dismountCalled();
+            // `sub_468FA0`: mode 5 while H_SLDOUT plays; MDSLIDOU makes
+            // it 7 when the clip ends, and case 7 then lets it go
+            session.sliders().exitCalled();
             boarded = false;
             journeyTo = -1;
             calledDestination = -1;
@@ -2348,6 +2358,8 @@ void PlayState::adventureShot() {
             // ACTOR_STATE 8 ("bad mode getting out of the slider
             // !") and leaves the actor at 1.
             leaving = false;
+            session.sliders().slidOutCalled();   // 5 -> 7 (or 7 -> 5 -> 7)
+            slidOutAt = n;
             if (takeCam) takeCamRequest(3);      // back to the follow camera
             player->setActorState(omk::ActorState::Normal, "MDSLIDOU");
             player->setChannelOnly(false);

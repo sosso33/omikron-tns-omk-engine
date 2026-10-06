@@ -616,6 +616,7 @@ struct PlayState {
     omk::HostInput host{};
     omk::Surface fb{};
     long n{};
+    long slidOutAt{-1};        // the frame MDSLIDOU last fired, for the release line
     std::uint32_t lastMs{};
     std::uint32_t fpsSince{};
     std::uint32_t fpsLastMs{};
