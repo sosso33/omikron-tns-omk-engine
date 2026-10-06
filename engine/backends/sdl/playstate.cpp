@@ -1960,6 +1960,8 @@ void PlayState::prepareSet(SetLoad& L) {
     w.mirror = omk::mirrorPlane(d);
     if (const auto mh = omk::readHeader(d)) {
         w.lights = omk::readLights(d, *mh);
+        w.ambientGrey = static_cast<int>(static_cast<std::int64_t>(
+            static_cast<double>(mh->ambient) * 255.0));
         w.meshes = omk::readMeshes(d, *mh);
         w.meshHidden.clear();        // a fresh set: flag 2 as shipped
     }

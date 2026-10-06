@@ -239,6 +239,14 @@ struct Staged {
     std::vector<omk::MeshPose> idlePose;
     const CharModel* idlePoseFor = nullptr;   // ...for this model (an evicted one's
     std::string idlePoseModel;                // address can be reused: the name too)
+    // THE SET'S LIGHTS ON HIM (todo/drift-audit.md L1): for the GPU path the
+    // lights that reach him (`omk::lightReach`, 8 floats each) and whether
+    // his corners start BLACK, as the crowd's do
+    std::vector<float> lights;
+    int   lightCount = 0;
+    bool  lightsBlack = false;
+    float lightBase = 0.0f;      // ...from this grey, the set's ambient (L1)
+    bool  litTold = false;       // the first lit frame said in the log
     float drawAt[3] = {0, 0, 0};   // where he was actually put, for a set piece
     bool  drawAtKnown = false;     // ...and whether a frame has put him yet
     std::vector<float> poseWas;    // OMK_BODYLOG: last frame's posed corners
@@ -437,6 +445,7 @@ struct PedStaged {
     std::vector<float> lights;
     int   lightCount = 0;
     bool  lightsBlack = false;
+    float lightBase = 0.0f;      // ...from this grey, the set's ambient (L1)
     // THE WALKER'S OWN POSE BUFFER, kept across frames: `composePose`
     // fills it in place (todo/optimization.md step 18's leftovers) where
     // it built a fresh vector for every body every frame.
@@ -707,6 +716,10 @@ struct WorldSlot {
     // them and the street's moving population receives them - the static
     // set is shaded by a colour baked into every vertex and needs none.
     std::vector<omk::Light3do> lights;
+    // ...and its AMBIENT grey, the byte `Read3DO_Init` writes into the
+    // scene's `+416` (`(int64)(desc+184 * 255.0)`): what a lit vertex starts
+    // from (todo/drift-audit.md L1)
+    int ambientGrey = 0;
     // its `0x40000000` meshes, the candidates `Sfx_BindAmbientEffects`
     // matches against the resident `.sfx` - kept, because that file can
     // arrive after the set does (the frame loop binds them)

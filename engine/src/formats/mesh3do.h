@@ -46,6 +46,14 @@ struct Mesh3doHeader {
     // ...and the field the engine throws away, kept because it is the one a
     // reader will find first and wonder about. Meaning unknown.
     std::int32_t lightsDeclared = 0;
+    // desc+184, a float: the set's AMBIENT. `Read3DO_Init` (0x0044DF10) turns
+    // it into the scene's `+416`, `65793 * (int64)(f * 255.0)` - a GREY dword
+    // - beside `+420 = 0xFFFFFF`, and those two are the floor and ceiling of
+    // every unlit vertex colour (`sub_4947F0`) and the colour a LIT vertex
+    // starts from (`sub_494E80`). 0 to 0.64 over the shipped sets (ACSgrot
+    // 0.25, Aapkayl 0.2, Anekbah 0.1); 1.0 in 176 of the character models,
+    // whose own value nothing reads. todo/drift-audit.md L1.
+    float        ambient = 0.0f;
 };
 
 // -> the header, or nothing if `d` is not a .3DO ("OD3X") or is truncated.

@@ -86,6 +86,7 @@ struct PlayState {
     bool & enhanceAll = opt.enhanceAll;
     bool & drawFog = opt.drawFog;
     bool & lightCrowd = opt.lightCrowd;
+    bool & lightActors = opt.lightActors;
     std::uint8_t (&fogRGB)[3] = opt.fogRGB;
     std::string & giveList = opt.giveList;
     int & moneyArg = opt.moneyArg;
@@ -305,6 +306,13 @@ struct PlayState {
     omk::Geometry playerRest{};
     omk::Geometry playerPosed{};
     std::vector<float> playerAffine{};
+    // the set's lights on the PLAYER (todo/drift-audit.md L1): `Actor_LoadModel`
+    // lights his node as it does every character's - the GPU path's list, and
+    // the grey his corners start from
+    std::vector<float> playerLights{};
+    int   playerLightCount{};
+    bool  playerLightsBlack{};
+    float playerLightBase{};
     long playerPosedFrame{};
     std::vector<omk::CollisionSphere> playerSpheres{};   // the crowd push tests these
     float playerReach{};   // his model's +88

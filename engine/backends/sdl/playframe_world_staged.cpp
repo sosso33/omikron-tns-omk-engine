@@ -3292,6 +3292,56 @@ void PlayState::worldStaged() {
                     s.meshRot[mi * 9 + static_cast<std::size_t>(ax * 3 + k)] = wv[k];
             }
         }
+        // ---- THE SET'S LIGHTS ON A CHARACTER (todo/drift-audit.md L1)
+        //
+        // `Actor_LoadModel` (and `Object_Load`) call `LightObject`
+        // (0x00436F80), which registers the model in the lights' spatial
+        // structure and keeps the slot at `node+180`; the scene walk
+        // `sub_48D3B0` then hands every top-level object to `sub_440CA0`,
+        // whose lit arm is the crowd's own sequence - `sub_494E80` writes
+        // the scene's `+416` (0) into every runtime vertex's colour,
+        // `sub_48E590` gathers the lights reaching the root's world point
+        // and `+88` radius, and `sub_493E40` adds each per vertex. So a
+        // CHARACTER is lit exactly as a walker is: from the set's ambient
+        // grey, by the set's lights - his model's baked colour is not kept
+        // (characters ship a flat white). The port lit the crowd alone until 2026-10-06 (a
+        // reader's frame of the cave: Gandhar tinted the lava's red, the
+        // port's white). Same declared deviation as the crowd: reach and
+        // falloff per BODY, from his root's world point, where the engine
+        // tests per mesh. A body the GPU cannot light (more lights reach
+        // than its program takes) goes the CPU way, as a walker does.
+        //
+        // NOT FROM BLACK: `sub_494E80` writes the SCENE's `+416` into every
+        // lit vertex, and `Read3DO_Init` sets that from the set's ambient
+        // (`.3DO` desc+184 x 255, a grey: 63 in the cave, 51 in Kay'l's
+        // flat). The crowd's first port took it for 0. The body's scene is
+        // the active slot's - `Actor_Attach` links him to `dword_93076C`.
+        const bool actorLit = lightActors && lighting == 0;
+        float litAt[3] = {0, 0, 0};
+        const int baseGrey = std::clamp(
+            worldSlots[static_cast<std::size_t>(session.activeSlot() & 1)].ambientGrey, 0, 255);
+        s.lightCount = 0;
+        s.lightsBlack = false;
+        s.lightBase = static_cast<float>(baseGrey) / 255.0f;
+        if (actorLit) {
+            const std::size_t ri = s.mo->root >= 0 &&
+                static_cast<std::size_t>(s.mo->root) * 3 + 2 < s.meshAt.size()
+                ? static_cast<std::size_t>(s.mo->root) : 0;
+            if (ri * 3 + 2 < s.meshAt.size())
+                for (int k = 0; k < 3; ++k) litAt[k] = s.meshAt[ri * 3 + static_cast<std::size_t>(k)];
+            s.lights.clear();
+            int reachN = 0;
+            for (const WorldSlot& ws2 : worldSlots)
+                if (!ws2.lights.empty()) reachN += omk::lightReach(litAt, ws2.lights, s.lights);
+            if (s.gpu && reachN > world.maxVertexLights()) {
+                s.gpu = false;
+                spanned("staged skin", [&] {
+                    omk::applyPose(s.posed, restUsed, s.mo->meshes, pose, &s.mo->face, &fv);
+                });
+                s.lastSkinned = n;
+            }
+            if (s.gpu) { s.lightCount = reachN; s.lightsBlack = true; }
+        }
         const bool turn = spins;
         const double stagedPlace0 = phaseNow();
         if (s.gpu) {
@@ -3323,6 +3373,27 @@ void PlayState::worldStaged() {
             c.x += off[0]; c.y += off[1]; c.z += off[2];
         }
         phSpan["staged place"] += phaseNow() - stagedPlace0;
+        // ...and on the CPU path the corners themselves: black, then every
+        // light that reaches him (`o3de/vertexlight.h`), from both resident
+        // slots, as the crowd's are
+        if (actorLit && !s.gpu) {
+            for (auto& c : s.posed.corners) c.r = c.g = c.b = s.lightBase;
+            int reached = 0;
+            for (const WorldSlot& ws2 : worldSlots)
+                if (!ws2.lights.empty())
+                    reached += omk::applyLights(s.posed, 0, s.posed.corners.size(), litAt, ws2.lights);
+            // said ONCE a body, from the corners the draw will take - the
+            // consumer's value, not the decision's
+            if (!s.litTold && reached > 0 && !s.posed.corners.empty()) {
+                s.litTold = true;
+                double m[3] = {0, 0, 0};
+                for (const auto& c : s.posed.corners) { m[0] += c.r; m[1] += c.g; m[2] += c.b; }
+                const double k = 255.0 / static_cast<double>(s.posed.corners.size());
+                std::printf("frame %ld: actor %d %s LIT by the set (sub_440CA0) - base %d, "
+                            "%d lights reach, corners' mean %.0f %.0f %.0f\n", n, s.actor,
+                            s.model.c_str(), baseGrey, reached, m[0] * k, m[1] * k, m[2] * k);
+            }
+        }
         // Where he ENDED UP, which is the placement plus the clip's
         // root motion - not the offset, which carries the model's own
         // authoring origin.

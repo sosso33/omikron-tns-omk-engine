@@ -217,10 +217,11 @@ struct Draw {
     Blend           blend     = Blend::Opaque;
     bool            cutout    = false;
     // Row 7: this batch is LIT per pixel, so its baked vertex colour is not
-    // its shading. A lit instance starts from BLACK - `sub_494E80` writes
-    // `instance[+416]` into every runtime vertex's colour and every site that
-    // sets +416 sets it to 0 - and the crowd models ship pure white, so there
-    // is no baked light in them to keep.
+    // its shading. A lit instance starts from the SCENE's `+416` -
+    // `sub_494E80` writes it into every runtime vertex's colour, and
+    // `Read3DO_Init` sets it to the set's ambient grey (`Draw::lightBase`;
+    // read as 0 until 2026-10-06) - and the crowd models ship pure white, so
+    // there is no baked light in them to keep.
     // 0 not lit; 1 lit from BLACK (the engine's own rule, for the bodies it
     // lights - their models ship white); 2 lit ADDED to the baked colour, for
     // the bodies it does not, whose models carry real baked shading.
@@ -252,6 +253,12 @@ struct Draw {
     const float*    vertexLights     = nullptr;
     int             vertexLightCount = 0;
     bool            lightsFromBlack  = false;
+    // ...and NOT quite black: the grey they start from, 0..1 - the scene's
+    // `+416`, which `Read3DO_Init` sets from the set's AMBIENT (`.3DO`
+    // desc+184 x 255) and `sub_494E80` writes into every lit vertex. The name
+    // `lightsFromBlack` stays for the flag; this is its value
+    // (todo/drift-audit.md L1).
+    float           lightBase        = 0.0f;
 };
 
 class Renderer {

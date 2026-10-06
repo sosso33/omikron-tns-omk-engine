@@ -41050,6 +41050,62 @@ def c_engine_gandhar_play():
            "antechamber"
 
 
+def c_engine_actor_lighting():
+    r"""EVERY CHARACTER IS LIT BY THE SET, FROM ITS AMBIENT GREY
+    (`todo/drift-audit.md` L1).
+
+    A reader, with a frame of the original: Gandhar is tinted the lava's red
+    all over, where the port drew him white. `Actor_LoadModel` (and
+    `Object_Load`) call `LightObject` (0x00436F80) on the model's node, which
+    registers it in the lights' structure (`node+180`); the scene walk
+    `sub_48D3B0` hands each top-level object to `sub_440CA0`, whose lit arm is
+    the street crowd's own sequence: `sub_494E80` writes the SCENE's `+416`
+    into every runtime vertex, `sub_48E590` gathers the lights reaching the
+    root, `sub_493E40` adds each per vertex. The port lit the crowd alone.
+
+    And `+416` is not 0: `Read3DO_Init` sets it to `65793 * (int64)(desc+184 *
+    255.0)`, the set's AMBIENT grey - 0.25 in the cave, so 63. The crowd's
+    port read "every site that sets +416 sets it to 0", and those sites are
+    ACTOR records' `+416`, the Euler. The cave's 50 lights are all pure red,
+    so a lit body there is exactly (red, 63, 63): the pink of the reader's
+    frame, where black plus red would be pure red.
+
+    The cave's route to frame 760, from the lit corners themselves: Gandhar's
+    first form (actor 17) at frame 0 and the snake (187) at 737, base, lights
+    reaching, and the corners' mean; then `--no-actor-light`, no lit line.
+    SHOWN TO FAIL: the base forced back to 0 (the green and blue go to 0).
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+
+    def run(*extra):
+        return subprocess.run(
+            [play, fr, os.path.join(ROOT, "tables"), "--save",
+             os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "2",
+             "--stand", "1811,-9,1216,0", "--player-at", "60:125,-9,401,0",
+             "--frames", "760", "--nodelay", "--no-crowd"] + list(extra),
+            capture_output=True, encoding="latin-1",
+            env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    o = run()
+    def lit(actor, text):
+        m = _re.search(r"actor %d \S+ LIT by the set \(sub_440CA0\) - base (\d+), (\d+) lights "
+                       r"reach, corners' mean (\d+) (\d+) (\d+)" % actor, text)
+        if not m:
+            return None
+        base, n, r, g, bl = (int(x) for x in m.groups())
+        return (base, n > 0, r > 150, g, bl)
+    off = run("--no-actor-light")
+    return (lit(17, o), lit(187, o), "LIT by the set" in off), \
+           ((63, True, True, 63, 63), (63, True, True, 63, 63), False), \
+           "Gandhar's first form and the snake: the base grey, lights reaching, red " \
+           "over 150, green and blue at the base; and nothing lit with --no-actor-light"
+
+
 def c_engine_undriven_rest_pose():
     r"""AN NPC NOTHING DRIVES HOLDS HIS REST POSE (`todo/drift-audit.md` M2).
 
@@ -43811,6 +43867,7 @@ SLOW = [
     ("engine: gandhar head", c_engine_gandhar_head, "todo/gandhar.md 3b; actor/shoothit.h"),
     ("engine: gandhar grab", c_engine_gandhar_grab, "todo/gandhar.md 4; actor/gandhar.h"),
     ("engine: gandhar play", c_engine_gandhar_play, "todo/gandhar.md 5; actor/gandhar.h"),
+    ("engine: actor lighting", c_engine_actor_lighting, "todo/drift-audit.md L1; backends/sdl/playframe_world_staged.cpp"),
     ("engine: undriven rest pose", c_engine_undriven_rest_pose, "todo/drift-audit.md M2; backends/sdl/playframe_world_staged.cpp"),
     ("character shows resolve", c_character_shows_resolve, "todo/drift-audit.md T4; script/area.cpp"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),

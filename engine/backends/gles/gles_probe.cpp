@@ -369,6 +369,10 @@ int poseMode(int argc, char** argv) {
             l.radiusA = 900.0f; l.radiusB = 200.0f; l.f32 = f32[i]; l.colour = col[i];
         }
         omk::glesSetDepthTie(gl, true);
+        // the lit start is the scene's AMBIENT grey, not black (`Draw::
+        // lightBase`, todo/drift-audit.md L1): the cave's 63, so a base
+        // the GPU ignored would show
+        const float base = 63.0f / 255.0f;
         for (int black = 1; black >= 0; --black) {
             for (int step = 0; step < 2; ++step) {
                 const auto poseN = omk::composePose(meshes, tracks, frame + 11 * step, false);
@@ -382,7 +386,7 @@ int poseMode(int argc, char** argv) {
                     k.nx = place[0] * nx + place[1] * ny + place[2] * nz;
                     k.ny = place[4] * nx + place[5] * ny + place[6] * nz;
                     k.nz = place[8] * nx + place[9] * ny + place[10] * nz;
-                    if (black) { k.r = 0.0f; k.g = 0.0f; k.b = 0.0f; }
+                    if (black) { k.r = base; k.g = base; k.b = base; }
                 }
                 const int litCpu = omk::applyLights(posed, 0, posed.corners.size(), at, lights);
                 omk::meshAffines(meshes, poseN, place, aff);
@@ -393,6 +397,7 @@ int poseMode(int argc, char** argv) {
                     dr.vertexLights = lv.data();
                     dr.vertexLightCount = litGpu;
                     dr.lightsFromBlack = black != 0;
+                    dr.lightBase = base;
                 }
                 const omk::Surface cpu = run(drawsOf(posed, nullptr, 0));
                 const omk::Surface gpu = run(ds);

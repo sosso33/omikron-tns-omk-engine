@@ -163,6 +163,12 @@ void PlayState::worldCrowd() {
         // a serial one does.
         const bool gpuPoseOn = !cpuBodiesFlag && world.posesBodies();
         const int gpuMaxLights = world.maxVertexLights();
+        // THE GREY A LIT WALKER STARTS FROM: the scene's `+416`, which
+        // `Read3DO_Init` sets from the set's ambient (desc+184 x 255) - not
+        // 0, which is what this file read until 2026-10-06 (todo/drift-audit.md
+        // L1). The active slot's scene, the one the walkers are linked to.
+        const float crowdBase = static_cast<float>(std::clamp(
+            worldSlots[static_cast<std::size_t>(session.activeSlot() & 1)].ambientGrey, 0, 255)) / 255.0f;
         {
             static bool told = false;
             if (!told) {
@@ -211,6 +217,7 @@ void PlayState::worldCrowd() {
                         p.gpu = true;
                         p.lightCount = reachN;
                         p.lightsBlack = lit;
+                        p.lightBase = crowdBase;
                     }
                 }
                 if (!p.gpu) { OMK_MEM_TAG("crowd: posed slots"); omk::applyPose(p.posed, rest, p.mo->meshes, pose); }
@@ -319,18 +326,24 @@ void PlayState::worldCrowd() {
                 const double pedLight0 = phaseNow();
                 if (p.gpu) j.lit += p.lightCount;
                 if (!p.gpu && lightCrowd && lighting == 0) {
-                    // THE BASE IS BLACK, and that is the part that had to
-                    // be read rather than assumed. A lit instance does not
-                    // start from the model's baked vertex colour: the lit
-                    // path `sub_494E80` writes `instance[+416]` into every
-                    // runtime vertex's colour, and every site that sets
-                    // +416 sets it to 0. The crowd models ship pure white
+                    // THE BASE IS THE SET'S AMBIENT GREY, and that is the
+                    // part that had to be read rather than assumed - twice.
+                    // A lit instance does not start from the model's baked
+                    // vertex colour: the lit path `sub_494E80` writes its
+                    // FIRST ARGUMENT's `+416` into every runtime vertex's
+                    // colour. That argument is the SCENE (`sub_48D3B0`'s,
+                    // and `sub_440CA0`'s for a character), and
+                    // `Read3DO_Init` sets the scene's `+416` to the set's
+                    // ambient grey (`.3DO` desc+184 x 255). This read
+                    // "every site that sets +416 sets it to 0" until
+                    // 2026-10-06 - those are actor records, a different
+                    // `+416` (todo/drift-audit.md L1). The crowd models ship pure white
                     // (all 446 of PSH_FN's vertices are 255,255,255), so
                     // there is no baked light in them to keep - the .3DO
                     // lights ARE their lighting, and adding to white is
                     // what made this port's first attempt change exactly
                     // zero pixels.
-                    for (auto& c : p.posed.corners) { c.r = 0.0f; c.g = 0.0f; c.b = 0.0f; }
+                    for (auto& c : p.posed.corners) c.r = c.g = c.b = crowdBase;
                     const float at[3] = {w.body[0], w.body[1], w.body[2]};
                     for (const WorldSlot& ws2 : worldSlots)
                         if (!ws2.lights.empty())
@@ -935,6 +948,43 @@ void PlayState::worldCrowd() {
         // swimmer by - and the shove's lean - reach the drawn body as
         // they reach his root motion (`todo/swimming.md` step 3b).
         const float drawEuler[3] = {player->euler()[0], yaw, player->euler()[2]};
+        // ---- THE SET'S LIGHTS ON HIM (todo/drift-audit.md L1): he is an
+        // actor `Actor_LoadModel` loaded, so `LightObject` registered him and
+        // `sub_440CA0` lights him as it does every character - from the
+        // scene's ambient grey (`+416`), by every set light reaching his
+        // root. His root's world point on the transform his corners get
+        // below; a list longer than the renderer's program takes sends him
+        // the CPU way, before his corners are placed.
+        const bool playerLit = lightActors && lighting == 0 && drawPlayer && !playerOffView;
+        float playerLitAt[3] = {pp[0], pp[1], pp[2]};
+        playerLightCount = 0;
+        playerLightsBlack = false;
+        playerLightBase = static_cast<float>(std::clamp(
+            worldSlots[static_cast<std::size_t>(session.activeSlot() & 1)].ambientGrey, 0, 255)) / 255.0f;
+        if (playerLit) {
+            std::size_t ri = 0;
+            for (std::size_t i = 0; i < playerMeshes.size(); ++i)
+                if (playerMeshes[i].parent < 0) { ri = i; break; }
+            if (ri < pose.size()) {
+                const float in[3] = {pose[ri].pos[0] - playerRootXZ[0], pose[ri].pos[1],
+                                     pose[ri].pos[2] - playerRootXZ[1]};
+                float r[3];
+                omk::rotateEuler(drawEuler, in, r);
+                playerLitAt[0] = r[0] + pp[0];
+                playerLitAt[1] = r[1] + pp[1] - playerFeet + rootDrop;
+                playerLitAt[2] = r[2] + pp[2];
+            }
+            playerLights.clear();
+            int reachN = 0;
+            for (const WorldSlot& ws2 : worldSlots)
+                if (!ws2.lights.empty()) reachN += omk::lightReach(playerLitAt, ws2.lights, playerLights);
+            if (playerGpu && reachN > world.maxVertexLights()) {
+                playerGpu = false;
+                omk::applyPose(playerPosed, playerRest, playerMeshes, pose);
+                playerPosedFrame = n;
+            }
+            if (playerGpu) { playerLightCount = reachN; playerLightsBlack = true; }
+        }
         // ROTATE ABOUT THE PELVIS, not the model's origin. A `.3DO`'s
         // meshes carry ABSOLUTE positions and the body is not built
         // around (0,0,0): `HO1_FN`'s root `UBassin` sits at
@@ -1026,6 +1076,12 @@ void PlayState::worldCrowd() {
         }
         playerMeshAtKnown = true;
         lastRootDrop = rootDrop;
+        if (playerLit && !playerGpu) {
+            for (auto& c : playerPosed.corners) c.r = c.g = c.b = playerLightBase;
+            for (const WorldSlot& ws2 : worldSlots)
+                if (!ws2.lights.empty())
+                    omk::applyLights(playerPosed, 0, playerPosed.corners.size(), playerLitAt, ws2.lights);
+        }
         if (!playerOffView && !playerGpu) playerPosed.revision = ++worldGeoRev;
         for (int k = 0; k < 3; ++k) actorAt[k] = pp[k];
         actorAt[1] -= playerFeet;

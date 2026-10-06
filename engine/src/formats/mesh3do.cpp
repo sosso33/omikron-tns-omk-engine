@@ -59,6 +59,11 @@ std::optional<Mesh3doHeader> readHeader(std::span<const std::byte> d) {
     // +240, not +232: `Read3DO_Init` overwrites +232 from +240 before using it
     h.lightsDeclared = i32(d, desc + 232);
     h.lights         = fits(d, desc + 240, 4) ? i32(d, desc + 240) : 0;
+    {
+        // bit-cast, as `f32` below does (it is declared after this function)
+        const std::uint32_t u = static_cast<std::uint32_t>(i32(d, desc + 184));
+        std::memcpy(&h.ambient, &u, 4);
+    }
     return h;
 }
 

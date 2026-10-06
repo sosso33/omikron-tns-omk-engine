@@ -171,6 +171,10 @@ struct PlayOptions {
     // default because that is what the engine does; `--no-crowd-light` is the
     // before/after.
     bool lightCrowd = true;
+    // ...and the CHARACTERS' - every body `Actor_LoadModel` loads, which
+    // `LightObject` registers for the same lights (`sub_440CA0`;
+    // todo/drift-audit.md L1). `--no-actor-light` is the before/after.
+    bool lightActors = true;
     std::uint8_t fogRGB[3] = {0, 0, 0};   // the scene's +336, which ships as 0
     // --give: object ids for the carried list, comma-separated. A LIST
     // rather than one id because the flows worth driving need a bagful - row

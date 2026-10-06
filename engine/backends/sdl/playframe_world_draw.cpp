@@ -911,6 +911,10 @@ void PlayState::worldDrawLists() {
                                  litStaged, castShadows});
                 draws.back().meshPose = up->affine.data();
                 draws.back().meshPoses = up->mo->meshes.size();
+                draws.back().vertexLights = up->lightCount ? up->lights.data() : nullptr;
+                draws.back().vertexLightCount = up->lightCount;
+                draws.back().lightsFromBlack = up->lightsBlack;
+                draws.back().lightBase = up->lightBase;
             }
             continue;
         }
@@ -935,6 +939,7 @@ void PlayState::worldDrawLists() {
                 dr.vertexLights = up->lightCount ? up->lights.data() : nullptr;
                 dr.vertexLightCount = up->lightCount;
                 dr.lightsFromBlack = up->lightsBlack;
+                dr.lightBase = up->lightBase;
             }
             continue;
         }
@@ -990,6 +995,10 @@ void PlayState::worldDrawLists() {
                              litStaged, castShadows});
             draws.back().meshPose = playerAffine.data();
             draws.back().meshPoses = playerMeshes.size();
+            draws.back().vertexLights = playerLightCount ? playerLights.data() : nullptr;
+            draws.back().vertexLightCount = playerLightCount;
+            draws.back().lightsFromBlack = playerLightsBlack;
+            draws.back().lightBase = playerLightBase;
         }
     } else if (drawPlayer && !playerOffView)
         for (const auto& b : playerPosed.batches)

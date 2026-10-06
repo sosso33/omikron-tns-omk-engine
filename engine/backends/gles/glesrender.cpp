@@ -239,6 +239,8 @@ attribute vec3  aNormal;
 uniform vec4  uLight[16];
 uniform float uLightCount;
 uniform float uLightBlack;
+// the grey a lit corner starts from: the scene's `+416` (`sub_494E80`)
+uniform float uLightBase;
 varying vec2  vUV;
 varying vec3  vCol;
 varying float vDepth;
@@ -264,7 +266,7 @@ void main() {
     // clamped in turn
     vec3 nrm = vec3(dot(uPose[s].xyz, aNormal), dot(uPose[s + 1].xyz, aNormal),
                     dot(uPose[s + 2].xyz, aNormal));
-    vec3 lit = uLightBlack > 0.5 ? vec3(0.0) : aCol;
+    vec3 lit = uLightBlack > 0.5 ? vec3(uLightBase) : aCol;
     for (int i = 0; i < 8; ++i) {
         if (float(i) >= uLightCount) break;
         float t = -dot(nrm, uLight[2 * i].xyz);
@@ -443,6 +445,8 @@ attribute vec3  aNormal;
 uniform vec4  uLight[16];
 uniform float uLightCount;
 uniform float uLightBlack;
+// the grey a lit corner starts from: the scene's `+416` (`sub_494E80`)
+uniform float uLightBase;
 varying vec2  vUV;
 varying vec3  vCol;
 varying float vDepth;
@@ -459,7 +463,7 @@ void main() {
     int s = int(floor(aSlot + 0.5)) * 4;
     vec3 nrm = vec3(dot(uPose[s].xyz, aNormal), dot(uPose[s + 1].xyz, aNormal),
                     dot(uPose[s + 2].xyz, aNormal));
-    vec3 lit = uLightBlack > 0.5 ? vec3(0.0) : aCol;
+    vec3 lit = uLightBlack > 0.5 ? vec3(uLightBase) : aCol;
     for (int i = 0; i < 8; ++i) {
         if (float(i) >= uLightCount) break;
         float t = -dot(nrm, uLight[2 * i].xyz);
@@ -1132,7 +1136,7 @@ private:
     struct SceneLoc {
         GLint mvp = -1, texSize = -1, clock = -1, tex = -1, cutout = -1,
               fogStart = -1, fogEnd = -1, fogColour = -1, pose = -1,
-              light = -1, lightCount = -1, lightBlack = -1;
+              light = -1, lightCount = -1, lightBlack = -1, lightBase = -1;
         GLint wave[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
         // the enhanced programs' (`kSceneFragX`); -1 in the default ones
         GLint lit = -1, caster = -1, pl = -1, plCount = -1, shadow = -1, lightMvp = -1,
@@ -1212,7 +1216,7 @@ private:
         int cutout = 0;
         float lit = -1, caster = -1;       // the enhanced programs'
         // the posed program's lights
-        int lights = -1; float lightBlack = -1; std::vector<float> lightVals;
+        int lights = -1; float lightBlack = -1, lightBase = -1; std::vector<float> lightVals;
     };
     struct DrawState {
         int blend = -1;                    // a `Blend`, -1 unknown
@@ -1421,6 +1425,7 @@ bool GlesRenderer::init(int w, int h) {
         L.light = glGetUniformLocation(p, "uLight");
         L.lightCount = glGetUniformLocation(p, "uLightCount");
         L.lightBlack = glGetUniformLocation(p, "uLightBlack");
+        L.lightBase = glGetUniformLocation(p, "uLightBase");
         L.lit = glGetUniformLocation(p, "uLit");
         L.caster = glGetUniformLocation(p, "uCaster");
         L.pl = glGetUniformLocation(p, "uPL");
@@ -1747,6 +1752,7 @@ gpuBuffer("posed bodies", vb, static_cast<long long>(v.size() * sizeof(GpuPoseVe
     glUniform3f(posedLoc_.fogColour, 0.0f, 0.0f, 0.0f);
     glUniform1f(posedLoc_.lightCount, 0.0f);
     glUniform1f(posedLoc_.lightBlack, 0.0f);
+    glUniform1f(posedLoc_.lightBase, 0.0f);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, white_.id);
     const GLsizei st = sizeof(GpuPoseVert);
@@ -2726,6 +2732,10 @@ void GlesRenderer::submit(const Draw& d) {
         if (set(!uv || U.lightBlack != black)) {
             glUniform1f(L.lightBlack, black);
             U.lightBlack = black;
+        }
+        if (set(!uv || U.lightBase != d.lightBase)) {
+            glUniform1f(L.lightBase, d.lightBase);
+            U.lightBase = d.lightBase;
         }
     }
 

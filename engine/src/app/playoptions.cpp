@@ -147,6 +147,7 @@ int PlayOptions::parse(int argc, char** argv) {
 "  --sky 0|1        options row 4, Affichage du ciel\n"
 "  --fog 0|1        the linear fog (default on - the engine always fogs)\n"
 "  --no-crowd-light  do not light the crowd from the set's .3DO lights\n"
+"  --no-actor-light  do not light the characters (players, NPCs, bosses) from them\n"
 "  --fog-colour r,g,b   override the scene's +336, which ships as 0,0,0\n"
 "  --no-crowd       no pedestrians at all\n"
 "  --invert-x       invert the mouse's X axis in shoot mode; --invert-y\n"
@@ -513,6 +514,7 @@ int PlayOptions::parse(int argc, char** argv) {
         }
         else if (a == "--fog" && i + 1 < argc) drawFog = std::atoi(argv[++i]) != 0;
         else if (a == "--no-crowd-light") lightCrowd = false;
+        else if (a == "--no-actor-light") lightActors = false;
         else if (a == "--fog-colour" && i + 1 < argc) {
             int rr = 0, gg = 0, bb = 0;
             if (std::sscanf(argv[++i], "%d,%d,%d", &rr, &gg, &bb) == 3) {
