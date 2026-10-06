@@ -392,7 +392,7 @@ starts - before, he stood frozen there; in the **Morgue** (AREA 35) the two
 bodies on the slabs (`M2_FN`, `MOOBJ_FN`) are posed by the `Cadavre`
 animation from the start. Note the snake's entry: drawn ~43 units lower one
 frame after the rise ends (his shoot entry snaps his node to y -147) - say
-whether the original pops there too. And an NPC nothing drives now holds his
+whether the original pops there too. **The reader (2026-10-06): in the original, after the cutscene, his head is WAY ABOVE the player** - which the port's frames 945 and 990 show too (his head at the top of the view, the player's at the bottom); the 43-unit drop at the entry has not been compared by eye. And an NPC nothing drives now holds his
 REST pose (or the last pose he was given) instead of his bank's first frame -
 nothing visible was found that changes (the AREA 71 mecaguards are out of
 sight before zone 1414 wakes them).

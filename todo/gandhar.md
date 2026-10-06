@@ -39,7 +39,9 @@ the first form; the `D3` model (`D3Bassin`, `D3Tete` - character 187, the one
 object HANDLE 20, `4_D+Pont2`, which animates `D3Bassin` - the snake coming out
 by the bridge. The port starts that object but binds no body to a plain
 `scx.play`, so for those ~200 frames the snake stands in a default frame:
-`todo/drift-audit.md` M2b.
+`todo/drift-audit.md` M2b - DONE 2026-10-06: the rise now plays.
+The reader, the same day: *after the cutscene, his head is way above the
+player* - as the port draws him from his entry on.
 
 ## What the engine does (read 2026-10-05, `readable/src/24_sys.c` 6100-7450)
 
