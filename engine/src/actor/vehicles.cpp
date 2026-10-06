@@ -215,7 +215,10 @@ void Sliders::setVehicleModelRadius(const std::string& model, float radius) {
 void Sliders::setPlayer(const float pos[3], bool onRoad) {
     playerPos_[0] = pos[0]; playerPos_[1] = pos[1]; playerPos_[2] = pos[2];
     playerKnown_ = true;
-    playerOnRoad_ = onRoad;                 // `dword_8F5E38`
+    // `dword_8F5E38`, and `Sliders_Tick` never raises it while the player's
+    // own slider carries him on a journey (`if (dword_8F5E44 && +8 == 6) v12
+    // = 0`): nothing brakes for a passenger
+    playerOnRoad_ = onRoad && !(called_ >= 0 && callRide_.state == 6);
 }
 
 // ------------------------------------------------------------ the tick
@@ -228,6 +231,15 @@ void Sliders::tickVehicles(float dt) {
     if (bumpHold_ > 0.0f) {
         bumpHold_ -= dt;
         if (bumpHold_ < 0.0f) { bumpHold_ = 0.0f; bumpLatch_ = -1; }
+    }
+    // ...and while a call is out every arm of `sub_456530` writes
+    // `flt_536C28 = 90.0` again, so a latch held then is not let go, and
+    // case 3 (boarding) latches the player's own slider (`dword_538E20 =
+    // dword_8F5E44`). (`RideMachine::kLatchFrames` was declared for this and
+    // never used until 2026-10-06.)
+    if (called_ >= 0 && callRide_.state >= 1 && callRide_.state <= 7) {
+        bumpHold_ = RideMachine::kLatchFrames;
+        if (callRide_.state == 3) bumpLatch_ = called_;
     }
     for (int vi = 0; vi < static_cast<int>(vehicles_.size()); ++vi) {
         Vehicle& v = vehicles_[static_cast<std::size_t>(vi)];
@@ -345,7 +357,11 @@ void Sliders::vehicleDrive(int vi, float dt) {
     // index's own touch flag; the port has no index here, so the test is the
     // reach box the index would have applied - `max(|d|) <= r + r` over the
     // two radii, which is `SpatialIndex_Query`'s own gate (actor/spatial.*).
-    if (playerKnown_ && bumpLatch_ < 0 && m.baseSpeed > kVehRunOver) {
+    // `v10`: no run-over at all while the player's own slider is in 3..6 -
+    // boarding, aboard, getting out, or carrying him on a journey
+    // (`sub_456C70`: `if (v11 >= 3 && v11 <= 6) v10 = 0`).
+    const bool ownRide = called_ >= 0 && callRide_.state >= 3 && callRide_.state <= 6;
+    if (playerKnown_ && bumpLatch_ < 0 && !ownRide && m.baseSpeed > kVehRunOver) {
         const float dx = std::fabs(m.body[0] - playerPos_[0]);
         const float dy = std::fabs(m.body[1] - playerPos_[1]);
         const float dz = std::fabs(m.body[2] - playerPos_[2]);

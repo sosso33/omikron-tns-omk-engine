@@ -8909,6 +8909,39 @@ def c_engine_slider_manual():
         "eye trails the motion (cos %.3f)" % (along, across, trail)
 
 
+def c_engine_slider_runover():
+    r"""NO RUN-OVER WHILE HE RIDES HIS OWN SLIDER (todo/slider-drift-audit.md
+    A8; engine/tools/veh_probe --runover).
+
+    `sub_456C70` raises event 43 / message 17 only when no latch is held
+    (`dword_538E20`), the vehicle is above 1706.67 with its spatial entry
+    touched, AND the player's own slider is not in modes 3..6 (`v10 = 0` -
+    boarding, aboard, getting out, on a journey). Every arm of `sub_456530`
+    also re-arms the 90-frame hold, so a latch taken while a call is out is
+    kept. The port had no state gate: a seated player could be run over by
+    passing traffic. The probe stands him just ahead of one ambient vehicle,
+    off the road so nothing brakes, and counts run-overs over 300 frames with
+    no call, with his slider COMING (mode 2 - still allowed) and with him
+    ABOARD (mode 4 - none). Shown to fail without the gate: `aboard 1`.
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s", "build/veh_probe"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "veh_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "veh_probe must build"
+    import re as _re
+    r = subprocess.run([binp, omkpaths.data_root(), "0", "--runover"],
+                       capture_output=True, text=True)
+    m = _re.search(r"^runover none (-?\d+) coming (-?\d+) aboard (-?\d+)", r.stdout, _re.M)
+    if not m:
+        return ("no runover line",), ("a runover line",), "veh_probe --runover must report"
+    none, coming, aboard = (int(x) for x in m.groups())
+    return (none >= 1, coming >= 1, aboard), (True, True, 0), \
+        "run over %d time(s) with no call, %d with his slider coming, %d aboard" % (none, coming, aboard)
+
+
 def c_engine_slider_arrives():
     r"""A CALLED SLIDER ACTUALLY ARRIVES - the feature, not a harness.
 
@@ -44180,6 +44213,7 @@ CHECKS = [
     ("engine: slider ride", c_engine_slider_ride, "todo/slider"),
     ("engine: slider call", c_engine_slider_call, "todo/slider"),
     ("engine: slider arrives", c_engine_slider_arrives, "todo/slider"),
+    ("engine: slider runover", c_engine_slider_runover, "todo/slider-drift-audit A8"),
     ("engine: slider manual", c_engine_slider_manual, "todo/slider-drift-audit M2"),
     ("engine: slider recall", c_engine_slider_recall, "todo/slider-drift-audit B1"),
     ("engine: slider journey", c_engine_slider_journey, "todo/slider"),

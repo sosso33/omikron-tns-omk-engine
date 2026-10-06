@@ -1277,7 +1277,7 @@ void PlayState::adventureSeated() {
         // exactly and case-sensitively. A vehicle brakes for a player
         // on the road and runs over one it touches. `setPlayer` had
         // no caller in this tree, so traffic did neither. The ride
-        // exception (`dword_8F5E44 +8 == 6`) is not modelled.
+        // exception (`dword_8F5E44 +8 == 6`) is `Sliders::setPlayer`'s.
         if (player) {
             const float* pp = player->pos();
             bool onRoad = false;

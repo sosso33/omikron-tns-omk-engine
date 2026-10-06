@@ -153,12 +153,13 @@ int main(int argc, char** argv) {
     const std::string root = argv[1];
     const int area = std::atoi(argv[2]);
     int frames = 600;
-    bool list = false, hasPlayer = false, recall = false;
+    bool list = false, hasPlayer = false, recall = false, runover = false;
     float player[3] = {0, 0, 0};
     for (int i = 3; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--vehicles") list = true;
         else if (a == "--recall") recall = true;
+        else if (a == "--runover") runover = true;
         else if (a == "--player" && i + 1 < argc) {
             hasPlayer = (std::sscanf(argv[++i], "%f,%f,%f", &player[0], &player[1], &player[2]) == 3);
         } else if (i == 3) frames = std::atoi(argv[i]);
@@ -210,6 +211,45 @@ int main(int argc, char** argv) {
     // slot it took). Prints the slot the spawn filled against the slot the
     // call marked; `recall dead 0` means no journey killed anything and the
     // line says nothing.
+    // `--runover`: THE RUN-OVER AND THE PLAYER'S OWN RIDE. One ambient
+    // vehicle; the player stands just ahead of its body every frame, off the
+    // road (so nothing brakes for him), and the run-overs it raises are
+    // counted over 300 frames - with no call out, with his slider COMING
+    // (state 2) and with him ABOARD (state 4). `sub_456C70` raises none while
+    // the called slider is in 3..6 (`v10 = 0`), and `sub_456530`'s arms keep
+    // the 90-frame latch re-armed while a call is out.
+    if (runover) {
+        auto count = [&](int mode) {
+            omk::Sliders p2;
+            p2.load(track, clips, menMask, womenMask, omk::kDefaultStreetActivity, 1u,
+                    static_cast<std::uint32_t>(sliMask), static_cast<std::uint32_t>(motoMask));
+            for (const std::string& name : {std::string("sli_fn"), std::string("moto")}) {
+                const auto d = fs.read("MESHES/PERSOS/" + name + ".3DO");
+                if (const auto h = omk::readHeader(d)) {
+                    const auto meshes = omk::readMeshes(d, *h);
+                    if (!meshes.empty()) p2.setVehicleModelRadius(name, meshes.front().radius);
+                }
+            }
+            const float home[3] = {1804.0f, 0.0f, -6890.0f};
+            if (mode >= 1 && !p2.callSlider(home)) return -1;
+            if (mode == 2) p2.mountCalled();
+            int victim = -1;
+            for (std::size_t i = 0; i < p2.vehicles().size(); ++i)
+                if (p2.vehicles()[i].live && static_cast<int>(i) != p2.calledVehicle()) { victim = static_cast<int>(i); break; }
+            if (victim < 0) return -1;
+            int bumps = 0;
+            for (int f = 0; f < 300; ++f) {
+                const auto& m = p2.movers()[static_cast<std::size_t>(p2.vehicles()[static_cast<std::size_t>(victim)].mover)];
+                const float at[3] = {m.body[0] + m.dir[0] * 30.0f, m.body[1], m.body[2] + m.dir[2] * 30.0f};
+                p2.setPlayer(at, false);
+                p2.tick(1.0f);
+                bumps += static_cast<int>(p2.bumped().size());
+            }
+            return bumps;
+        };
+        std::printf("runover none %d coming %d aboard %d\n", count(0), count(1), count(2));
+        return 0;
+    }
     if (recall) {
         const float home[3] = {1804.0f, 0.0f, -6890.0f};
         if (!pool.callSlider(home)) { std::printf("recall first call failed\n"); return 1; }
