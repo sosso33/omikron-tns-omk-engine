@@ -101,6 +101,7 @@ int main(int argc, char** argv) {
     s.setObjectWait(true);
     s.loadScene(fr + "/SCPTDATA", omk::ChunkKind::Area, 0);
     s.loadArea(0);
+    s.loadTraffic(fr);                       // the circuit, as the viewer loads it
     for (int f = 0; f < 200; ++f) s.frame();
     // THE SET'S OWN EMITTERS, which the viewer binds when it builds a decor
     // slot: every mesh flagged 0x40000000 whose name matches a section-D tag -
@@ -123,12 +124,26 @@ int main(int argc, char** argv) {
     const auto zones0 = omk::zonesOf(chunk0, omk::ChunkKind::Area);
     runZoneScript(s, 0, chunk0, zones0.at(3), 400);   // Anekbah is in slot 0
     report("inside (Hall 43)", s);
+    // A SLIDER CALL FROM INSIDE, the city only resident (drift audit B8):
+    // `sub_452570` refuses while the circuit's set is not the drawn one
+    {
+        const float at[3] = {1804.0f, 0.0f, -6890.0f};
+        std::printf("slider call inside: traffic loaded %d active %d -> %s\n",
+                    s.sliders().loaded() ? 1 : 0, s.trafficActive() ? 1 : 0,
+                    s.callSlider(at) ? "CALLED" : "refused");
+    }
 
     // ...and back out: AREA 201's zone 2, `area.goto 0`
     const auto chunk201 = areas.chunk(201);
     const auto zones201 = omk::zonesOf(chunk201, omk::ChunkKind::Area);
     runZoneScript(s, 1, chunk201, zones201.at(2), 400);  // Hall 43 landed in slot 1
     report("back in the city", s);
+    {
+        const float at[3] = {1804.0f, 0.0f, -6890.0f};
+        std::printf("slider call outside: traffic loaded %d active %d -> %s\n",
+                    s.sliders().loaded() ? 1 : 0, s.trafficActive() ? 1 : 0,
+                    s.callSlider(at) ? "CALLED" : "refused");
+    }
     for (int f = 0; f < 200; ++f) s.frame();
     report("...200 frames later", s);
     return 0;

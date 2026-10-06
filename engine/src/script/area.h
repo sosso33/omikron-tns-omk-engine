@@ -343,6 +343,18 @@ public:
     // ...and writable, for the player's own slider: a CALL puts a vehicle on
     // the circuit and the ride moves it (`todo/slider.md`).
     Sliders& sliders() { return sliders_; }
+    // Is the circuit's set the one being DRAWN? `sub_452570` opens `if
+    // (!dword_8F5E44 && dword_8F5E34 != dword_93076C) return 0` - the node the
+    // traffic hangs under against the active scene - so with the city only
+    // RESIDENT (he has walked into one of its buildings) a call is refused
+    bool trafficActive() const { return trafficSlot_ >= 0 && trafficSlot_ == (active_ & 1); }
+    // ...and the call itself, through that gate (drift audit B8): from inside
+    // a building beside the city this called a slider to a street nobody
+    // could see
+    bool callSlider(const float pos[3]) {
+        if (sliders_.calledVehicle() < 0 && !trafficActive()) return false;
+        return sliders_.callSlider(pos);
+    }
     // Options row 6, "Niveau d'activite dans les rues", 0..4 - the density
     // `Slider_Init` reads from `dword_90E724+2`. Spawning happens once, at
     // the load, so a change applies to the next circuit loaded. Default:

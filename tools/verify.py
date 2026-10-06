@@ -12657,14 +12657,22 @@ def c_engine_city_return():
     inside = rows["inside (Hall 43)"]
     after  = rows["back in the city"]
     later  = rows["...200 frames later"]
+    # ...and a SLIDER CALL from inside, the city's circuit only RESIDENT:
+    # `sub_452570` refuses while `dword_8F5E34 != dword_93076C` (drift audit
+    # B8); back on the street the same call goes through
+    m_in = re.search(r"^slider call inside: traffic loaded (\d) active (\d) -> (\w+)", r.stdout, re.M)
+    m_out = re.search(r"^slider call outside: traffic loaded (\d) active (\d) -> (\w+)", r.stdout, re.M)
+    calls = (m_in.groups() if m_in else None, m_out.groups() if m_out else None)
     return (before[:2] + before[2:4], inside[0], inside[4],
-            after[:2] + after[2:4], later[2], later[3]), \
+            after[:2] + after[2:4], later[2], later[3], calls), \
            ((0, "anekbah.SCX", 32, 153), 201, 0,
-            (0, "anekbah.SCX", 32, 153), 32, 153), \
+            (0, "anekbah.SCX", 32, 153), 32, 153,
+            (("1", "0", "refused"), ("1", "1", "CALLED"))), \
            ("Anekbah's 32 scene programs and 153 ambient emitters before " \
             "stepping into Hall 43, its pool kept as the outgoing one while " \
             "inside, and the SAME pool back - not a fresh one with nothing " \
-            "running")
+            "running; and a slider call from inside the hall refused, the " \
+            "same call from the street accepted")
 
 
 def c_engine_beat_handover():

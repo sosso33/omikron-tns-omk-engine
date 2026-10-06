@@ -1477,7 +1477,7 @@ int PlayState::modesShoot() {
             if (walk->takeCallHere()) {
                 float me[3] = {session.playerPos()[0], session.playerPos()[1],
                                session.playerPos()[2]};
-                if (session.sliders().callSlider(me)) {
+                if (session.callSlider(me)) {
                     sliderHold();                       // `sub_452570`: Screen_Fade(1), the hold
                     walk->closeScreen();                // `screen[+8] = 3`
                     std::printf("slider: Appel du slider - a slider is COMING "
@@ -1534,7 +1534,7 @@ int PlayState::modesShoot() {
                     const auto* d = known[static_cast<std::size_t>(row)];
                     float me[3] = {session.playerPos()[0], session.playerPos()[1],
                                    session.playerPos()[2]};
-                    if (session.sliders().callSlider(me)) {
+                    if (session.callSlider(me)) {
                         sliderHold();                       // `sub_452570`: Screen_Fade(1), the hold
                         // `dword_6A17CC = tag` - written only when the call
                         // is accepted (`sub_49BC60`, `loc_49BCFA`)
