@@ -28,7 +28,7 @@ Each with a check shown to fail on the old code (a mutation per commit):
 | A8 no run-over on his own ride, the on-road flag off in mode 6 | `9cb7515` | `engine: slider runover` (new; `veh_probe --runover`) |
 | B5 a refused call keeps the sneak up, string 42 | `2181e2c` | `engine: slider refused` (new) |
 | A1 the rider hidden while seated (the reader: the door shuts over him) | `d11d0cf` | `engine: slider journey` |
-| B3 the sneak's open forgets the destination | (this commit) | `engine: slider forget` (new) |
+| B3 the sneak's open forgets the destination | `6942ef9` | `engine: slider forget` (new) |
 
 The port's mode order is now the engine's: case 2 -> **1** (open, bit 4,
 600 frames) -> MDACTION sets **3** -> MDSLIDIN **4** -> a journey's case 6
