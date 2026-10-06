@@ -40969,8 +40969,18 @@ def c_engine_gandhar_play():
     `D3BassinD1` - he sinks into the lava - then the collapse (camera 365, the
     set pieces hidden) and `area.goto 43`, the cave's antechamber.
 
+    And BEFORE his entry, the window the bridge zone opens with `character.show
+    187, 1` and `scx.play.wait obj 0x0014`: object HANDLE 20, `4_D+Pont2`, a
+    PLAIN start (op 58) whose steps name `D3Bassin` - the snake rising out of
+    the lava, `CONCLUG4.3DA` on `D3BassinP4`. The engine finds that node BY
+    NAME (`Script_SelectRelativeBodyAnimation` param 0 through the object's
+    table, `o3de_FindNodeByName`); the port bound no body to a plain start and
+    he stood still for the ~200 frames (`todo/drift-audit.md` M2b).
+
     Asserted in that order, from the viewer's own lines. SHOWN TO FAIL: his
-    brain never posting message 3 (nothing after the last hit).
+    brain never posting message 3 (nothing after the last hit); and the name
+    lookup skipped in `playframe_world_staged.cpp` (the two window steps go,
+    the pose line reads the last pose instead).
     """
     import subprocess, re as _re
     eng = os.path.join(ROOT, "engine")
@@ -40985,12 +40995,20 @@ def c_engine_gandhar_play():
          "--stand", "1811,-9,1216,0", "--player-at", "60:125,-9,401,0",
          "--shoot-health", "50000", "--gandhar-health", "12",
          "--keys", ",".join(["54"] * 60), "--keydelay", "25", "--aim-at", "90,-150,545",
-         "--frames", "1450", "--nodelay", "--no-crowd"],
+         # 1700 (was 1450 until 2026-10-06): once his rise plays he enters the
+         # shoot where it leaves him (224, 593) and not on his frozen
+         # placement (202, 798), so the fixed aim point's second hit lands
+         # ~frame 1258 and `area.goto 43` comes at 1614
+         "--frames", "1700", "--nodelay", "--no-crowd"],
         capture_output=True, encoding="latin-1",
         env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
     steps = []
     for label, pat in (
             ("baton", r"SHOOT MODE ENTER \(Shoot_Enter\) - weapon slot \d+ \(object 40\)"),
+            ("snake by name", r"node 'D3Bassin' of object 20 '4_D\+Pont2' \(scene start\) "
+                              r"resolves BY NAME to actor 187"),
+            ("snake rises", r"actor 187 DE3_FN - clip \d+ 'CONCLUG4\.3DA' \(\d+ frames\) on path "
+                            r"\d+ 'D3BassinP4'"),
             ("enters", r"GANDHAR ENTERS \(sub_47DFD0\)"),
             ("head 1", r"hit: damage 6, health 12 -> 6"),
             ("head 2", r"hit: damage 6, health 6 -> 0"),
@@ -41004,9 +41022,46 @@ def c_engine_gandhar_play():
     found = [l for l, at in steps if at >= 0]
     ordered = [l for l, _ in sorted((x for x in steps if x[1] >= 0), key=lambda x: x[1])]
     return (found, ordered == found), ([l for l, _ in steps], True), \
-           "the fight's beats found, and found in this order: the baton, his entry, two " \
-           "head hits, message 3, the shoot's end, his death clip, the collapse, the " \
+           "the fight's beats found, and found in this order: the baton, the snake's " \
+           "node found by name and his rise played, his entry, two head hits, message 3, the shoot's end, his death clip, the collapse, the " \
            "antechamber"
+
+
+def c_engine_undriven_rest_pose():
+    r"""AN NPC NOTHING DRIVES HOLDS HIS REST POSE (`todo/drift-audit.md` M2).
+
+    The engine gives a character a channel only through `SetPersoBankList`,
+    whose callers are the PLAYER's and a melee OPPONENT's; `Actor_LoadModel`
+    leaves ACTOR_STATE 0 (`nullsub_6`, no tick) and neither it nor
+    `Actors_SpawnFromTables` applies a clip. So an NPC no scene program, line
+    or shoot gate drives stands in his model's REST pose, bank or not - where
+    the port posed every banked NPC on frame 0 of his bank's default entry.
+    AREA 71's mecaguard 110 (`MCG_FN`, bank `MECA`) is the case: attached at
+    the load, inert until zone 1414 enters him into the shoot. The player
+    keeps his idle - his channel runs.
+
+    15 frames at AREA 71. SHOWN TO FAIL: the idle branch restored to every
+    banked body (the guard reads the bank's default entry).
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    o = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"), "--save",
+         os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "71",
+         "--frames", "15", "--nodelay", "--no-crowd"],
+        capture_output=True, encoding="latin-1",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
+    staged = bool(_re.search(r"staged actor 110 MCG_FN \(bank MECA,", o))
+    src = _re.search(r"frame 0: actor 110 MCG_FN - pose source: (.*)$", o, _re.M)
+    player = _re.search(r"ADVENTURE MODE - the player is (\S+)", o)
+    return (staged, src.group(1) if src else None, bool(player)), \
+           (True, "the rest pose (no bank clip)", True), \
+           "mecaguard 110 staged with his bank; his first pose source; the player in adventure mode"
 
 
 def c_character_shows_resolve():
@@ -43733,6 +43788,7 @@ SLOW = [
     ("engine: gandhar head", c_engine_gandhar_head, "todo/gandhar.md 3b; actor/shoothit.h"),
     ("engine: gandhar grab", c_engine_gandhar_grab, "todo/gandhar.md 4; actor/gandhar.h"),
     ("engine: gandhar play", c_engine_gandhar_play, "todo/gandhar.md 5; actor/gandhar.h"),
+    ("engine: undriven rest pose", c_engine_undriven_rest_pose, "todo/drift-audit.md M2; backends/sdl/playframe_world_staged.cpp"),
     ("character shows resolve", c_character_shows_resolve, "todo/drift-audit.md T4; script/area.cpp"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),

@@ -173,6 +173,31 @@ float Program::animClock() const {
     return it == entryAt_.end() ? 0.0f : clock_ - it->second;
 }
 
+int Program::animFnsAt(int* out, int cap) const {
+    int n = 0;
+    if (!running_ || obj_->nfn <= 0) return 0;
+    for (int k : chain(pc_)) {
+        const auto& f = obj_->functions[static_cast<std::size_t>(k)];
+        if (f.repeat != -1 && runs_[static_cast<std::size_t>(k)] >= f.repeat) continue;
+        if (isAnim(k) && n < cap) out[n++] = k;
+    }
+    return n;
+}
+
+float Program::animClockOf(int k) const {
+    const auto it = entryAt_.find(k);
+    return it == entryAt_.end() ? 0.0f : clock_ - it->second;
+}
+
+int Program::pinnedTableIndex() const {
+    for (int i = 0; i < obj_->nfn; ++i)
+        for (int k : chain(i)) {
+            const auto& f = obj_->functions[static_cast<std::size_t>(k)];
+            if (isAnim(k) && !f.params.empty()) return f.params[0];
+        }
+    return -1;
+}
+
 // The `+12` sync field is an index into the object's SYNC array, not into the
 // flattened function list - `scene_read_objects` (0x00449750) resolves it as
 // `obj->syncFunctions + fn->sync` and refuses the file when that lands past

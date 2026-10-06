@@ -400,6 +400,30 @@ public:
     // when the FUNCTION was entered, not from when the program started. The
     // program clock is the wrong number to sample a second step's clip with.
     float animClock() const;
+    // EVERY body-animation function in the chain at the pc with runs left -
+    // the steps that write a node this tick, at most `cap` of them, in chain
+    // order (`animFn` is the first). An object that animates TWO bodies runs
+    // one per node in parallel: 69 of the 1451 shipped body objects name more
+    // than one node, `Grotte.SCX`'s `2_K+G_Dial` (`UBassin` and `GDBassin`)
+    // among them, and reading the first alone gave the second body's steps
+    // to the first (todo/drift-audit.md M2b).
+    int animFnsAt(int* out, int cap) const;
+    // Function `k`'s own frame (`animClock`'s rule, for any function).
+    float animClockOf(int k) const;
+    // THE NAME `ScriptObject_StartOnActor` PINS TO ITS ACTOR. It does
+    //
+    //     v10 = sub_44B6D0(obj, 0x2000000);            // the first function
+    //                                                  // of family 0x0200
+    //     Script_ModifyObject1(obj, v10, actor+8);     // its param 0's table
+    //                                                  // slot := his node
+    //
+    // `sub_44B6D0` walks the main steps in order and each one's sync chain
+    // (`result[3]`), testing `id & 0xFFFF0000`. The family holds exactly the
+    // two body animations in the shipped files (545 + 2398 functions, no
+    // other id), so this is the object-table index of the first body
+    // animation in that walk; -1 when the object has none. Every other index
+    // is resolved BY NAME (`o3de_FindNodeByName`) when its step first runs.
+    int pinnedTableIndex() const;
 
 private:
     // A program step's SYNC CHAIN, in order. Returned by value, and it was a

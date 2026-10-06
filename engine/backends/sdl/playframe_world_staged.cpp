@@ -59,6 +59,22 @@ void PlayState::worldStaged() {
         if (t.how == "player") return actorId == playerId;
         return false;
     };
+    // WHO WEARS A NODE NAME - `o3de_FindNodeByName(scene, name)` over the
+    // attached bodies (todo/drift-audit.md M2b). The engine's traversal
+    // (`o3de_TraverseNodes` with `sub_436C90`, a `strcmp` on every node's
+    // mesh name) keeps the LAST match, and `Actor_Attach` links a body as
+    // the scene's FIRST child (`o3de_LinkObjectToParent` with no parent
+    // prepends), so of several bodies wearing the name the one found is the
+    // one attached EARLIEST - the first in `staged`, which is filled in
+    // attach order and re-appends a re-shown body.
+    const auto nodeOwner = [&](const std::string& name) -> int {
+        for (const auto& up : staged) {
+            if (!up || !up->mo) continue;
+            for (const auto& m : up->mo->meshes)
+                if (name == m.name) return up->actor;
+        }
+        return omk::SceneRunner::kNodeUnset;
+    };
     int loneProg = -1, loneProgs = 0;
     for (std::size_t k = 0; k < sc.started().size(); ++k) {
         const auto& t = sc.started()[k];
@@ -164,6 +180,56 @@ void PlayState::worldStaged() {
             }
             if (prog >= 0) break;
         }
+        // A BODY STEP THAT NAMES ONE OF HIS MESHES (todo/drift-audit.md
+        // M2b). Every body step finds its node through the object's table
+        // (`ObjectTable_Cached`, else `o3de_FindNodeByName`, then cached),
+        // whichever opcode started the object; the actor start's pinned
+        // index is the `drivenBy` case above, and this is every other one -
+        // all of a plain `scx.play`'s (the snake on Grotte's bridge, the
+        // Morgue's `Cadavre`), and the second body of a two-body object
+        // (`2_K+G_Dial`'s Gandhar). The slot is filled the first time a
+        // body wearing the name is attached and stays filled, as the
+        // engine's cache does. LABELLED: the engine looks once, when the
+        // step first runs, and a miss fails that step; this retries every
+        // frame until the name resolves. The PLAYER is not taken by a name:
+        // his channel owns his body, and no shipped case was measured.
+        const omk::SceneRunner::Started::Drive* nameDrive = nullptr;
+        if (prog < 0) {
+            for (const omk::SceneRunner* cand : {&sc, &session.sceneOut()}) {
+                if (activeOnly && cand != &sc) break;
+                if (!cand->loaded()) continue;
+                for (std::size_t k = 0; k < cand->started().size(); ++k) {
+                    const auto& t = cand->started()[k];
+                    if (!cand->programRunning(static_cast<int>(k))) continue;
+                    for (const auto& d : t.drives) {
+                        if (!d.reached || (d.pinned && t.how != "scene")) continue;
+                        int who = cand->cachedNode(t.objectIndex, d.table);
+                        if (who == omk::SceneRunner::kNodeUnset) {
+                            who = nodeOwner(d.node);
+                            if (who == omk::SceneRunner::kNodeUnset) continue;
+                            cand->cacheNode(t.objectIndex, d.table, who);
+                            std::printf("frame %ld: node '%s' of object %d '%s' (%s start) "
+                                        "resolves BY NAME to actor %d\n", n, d.node.c_str(),
+                                        t.object, t.name.c_str(), t.how.c_str(), who);
+                        }
+                        if (who == omk::SceneRunner::kNodePlayer) who = playerId;
+                        if (who != s.actor) continue;
+                        if (who == playerId) {
+                            static bool said = false;
+                            if (!said) std::printf("frame %ld: node '%s' of object '%s' names the "
+                                                   "PLAYER - not taken (his channel owns him)\n",
+                                                   n, d.node.c_str(), t.name.c_str());
+                            said = true;
+                            continue;
+                        }
+                        prog = static_cast<int>(k);
+                        run = cand;
+                        nameDrive = &d;
+                    }
+                }
+                if (prog >= 0) break;
+            }
+        }
         // ...AND THE FALLBACK IS THE PLAYER'S ALONE.
         //
         // It used to fire for whoever the frame's one body was, on the
@@ -208,8 +274,27 @@ void PlayState::worldStaged() {
         int sceneClip = -1, scenePath = -1;
         float sceneFrame = 0.0f;
         const omk::SceneRunner::Started* stt = nullptr;
+        omk::SceneRunner::Started driveView;
+        const omk::SceneRunner::Started::Drive* drv = nameDrive;
         if (prog >= 0) {
             stt = &run->started()[static_cast<std::size_t>(prog)];
+            // The node this body IS: a name's drive, or the pinned one of
+            // an object that animates more than one - whose own step, and
+            // own clock, is his (the fields of `Started` follow it).
+            if (!drv && stt->drives.size() > 1)
+                for (const auto& d : stt->drives) if (d.pinned) drv = &d;
+            if (drv) {
+                driveView = *stt;
+                driveView.clip = drv->clip;
+                driveView.path = drv->path;
+                driveView.relative = drv->relative;
+                driveView.animReached = drv->reached;
+                for (int k = 0; k < 3; ++k) {
+                    driveView.offset[k] = drv->offset[k];
+                    driveView.euler[k] = drv->euler[k];
+                }
+                stt = &driveView;
+            }
             // Nothing is posed or placed before the program's first
             // body-animation step RUNS (`Started::animReached`): an
             // object that opens with a wait leaves its actor where
@@ -221,7 +306,7 @@ void PlayState::worldStaged() {
             // walks its steps and each may name a different animation,
             // so the clock the pose is sampled at counts from the step
             // (`SceneRunner::programAnimClock`).
-            sceneFrame = run->programAnimClock(prog);
+            sceneFrame = drv ? drv->clock : run->programAnimClock(prog);
             // THE FACING, from the step the pc is on - and from BOTH
             // kinds of body animation, because both end in
             // `Actor_SetEuler(node, p4, p5, p6)`. It is not sticky:
@@ -352,16 +437,18 @@ void PlayState::worldStaged() {
             } else if (sceneClip < 0 && s.progRan) {
                 // The program ended. `Script_SelectBodyAnimation` never
                 // resets the node, so the accumulated offset STANDS
-                // (CLAUDE.md 6): he stays where the clip left him and
-                // falls back to the bank's idle there.
+                // (CLAUDE.md 6): he stays where the clip left him, and in
+                // the pose it left him in - the node keeps its last frame
+                // (the player alone falls back to his channel's idle;
+                // todo/drift-audit.md M2).
                 s.progPlaced = false;
                 if (s.placed) {  // drawAt is last frame's; `drawn` was just cleared
                     for (int k = 0; k < 3; ++k) s.at[k] = s.drawAt[k];
                     for (float& w : s.walkMove) w = 0.0f;   // drawAt carries it
                 }
                 std::printf("  pose: actor %d %s - its program ended; he stays where "
-                            "it left him (%.0f %.0f %.0f) and falls back to the "
-                            "bank's idle\n", s.actor, s.model.c_str(),
+                            "it left him (%.0f %.0f %.0f), in the pose it left\n",
+                            s.actor, s.model.c_str(),
                             s.at[0], s.at[1], s.at[2]);
             } else if (sceneClip < 0) {
                 // NO program ever drove this body. `drawAt` is not
@@ -2551,10 +2638,10 @@ void PlayState::worldStaged() {
             // a reader saw once the camera stopped cutting away at the
             // same moment (todo/omk-play.md 78).
             //
-            // Scoped to the gap deliberately: a body with a bank and
-            // NOTHING coming IS driven by its channel
-            // (`Cef_TickChannel`), so the idle below stays the right
-            // answer everywhere else.
+            // Scoped to the gap deliberately: with NOTHING coming the
+            // PLAYER is driven by his channel (`Cef_TickChannel`) and
+            // takes his idle below; an NPC holds his last pose there
+            // anyway (todo/drift-audit.md M2).
             pose = s.lastPose;
             poseHeld = true;
             src = "the pose the last beat left (the chain is mid-flight)";
@@ -2578,7 +2665,17 @@ void PlayState::worldStaged() {
         } else if (s.inertAfterFight && !s.lastPose.empty()) {
             pose = s.lastPose;
             src = "the fight's last pose (ACTOR_STATE 0 after sub_445AC0 - no tick)";
-        } else if (s.idle.valid()) {
+        } else if (s.idle.valid() && s.actor == playerId) {
+            // THE PLAYER'S IDLE ALONE (todo/drift-audit.md M2). His
+            // channel runs (`SetPersoBankList` - the player's and a melee
+            // opponent's are the only ones the engine ever gives a bank),
+            // so his default entry stands. An NPC no program drives gets
+            // NO clip in the original - `Actor_LoadModel` leaves ACTOR_STATE
+            // 0, which does not tick, and neither the spawn nor the load
+            // applies one - so he holds the last pose he was given, or the
+            // model's REST pose when he was never given one: the branches
+            // below. Until 2026-10-06 every NPC with a bank stood on frame
+            // 0 of its default entry here.
             if (s.idlePoseFor != s.mo || s.idlePoseModel != s.model) {
                 omk::composePose(s.mo->meshes, s.idle, 0, false, s.idlePose);
                 s.idlePoseFor = s.mo;

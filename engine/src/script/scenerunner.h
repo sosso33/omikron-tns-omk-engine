@@ -308,8 +308,56 @@ public:
         // at frame 0 showed him floating in the portal before his jump (a
         // reader's report, 2026-09-05).
         bool        animReached = false;
+        // ---- ONE ENTRY PER NODE THE OBJECT ANIMATES (todo/drift-audit.md M2b)
+        //
+        // `Script_SelectRelativeBodyAnimation` (0x004A3AD0) and
+        // `Script_SelectBodyAnimation` find the node they animate from param
+        // 0, an index into the object's own table:
+        //
+        //     node = ObjectTable_Cached(tables, p0);
+        //     if (!node) { node = o3de_FindNodeByName(scene, ObjectTable_Name(tables, p0));
+        //                  ObjectTable_SetCached(tables, p0, node); }
+        //
+        // whichever opcode started the object. An actor start pins ONE index
+        // to its actor (`Program::pinnedTableIndex`); everything else is a
+        // NAME. The fields above mirror the PINNED drive, which is what they
+        // always meant; a plain `scx.play` (57/58) pins nothing, so before
+        // this its body steps animated nobody - the snake on Grotte's bridge,
+        // the Morgue's `Cadavre`, the planks under Kay'l on the roofs.
+        struct Drive {
+            int         table = -1;          // param 0
+            std::string node;                // the name that index holds
+            bool        pinned = false;      // the actor start's index
+            bool        reached = false;     // a step on it has run
+            int         fn = -1;             // the function on it THIS tick, -1 none
+            int         clip = -1, path = -1;
+            float       offset[3] = {0, 0, 0};
+            float       euler[3]  = {0, 0, 0};
+            bool        relative = false;
+            // its clip's frame: the function's own clock while it runs, the
+            // clip's END once it has run out (`Program::animClock`'s rule)
+            float       clock = 0.0f;
+        };
+        std::vector<Drive> drives;
+        int objectIndex = -1;                // into the scene's object array
     };
     const std::vector<Started>& started() const { return started_; }
+    // THE OBJECT TABLE'S NODE CACHE, per object and per index, as the engine
+    // keeps it (`ObjectTable_SetCached` writes the slot the lookup filled,
+    // `Script_ModifyObject1` the slot an actor start pins). The value is a
+    // CHARACTERS id, or `kNodePlayer` for the player's own node; it lives as
+    // long as the scene's tables do. `cachedNode` answers `kNodeUnset` for a
+    // slot nothing has filled. Mutable because the frontend fills a NAME slot
+    // the first time it can resolve it - it is the one that knows which
+    // bodies are attached and what their meshes are called.
+    static constexpr int kNodeUnset = -1000000, kNodePlayer = -2;
+    int  cachedNode(int objectIndex, int table) const {
+        const auto it = nodeCache_.find({objectIndex, table});
+        return it == nodeCache_.end() ? kNodeUnset : it->second;
+    }
+    void cacheNode(int objectIndex, int table, int actor) const {
+        nodeCache_[{objectIndex, table}] = actor;
+    }
     // DOES PROGRAM `idx` OWN A BODY?
     //
     // The question `Session::parkedOnProgram` needs, and the answer is the
@@ -420,6 +468,7 @@ private:
     std::string name_;
     std::vector<std::unique_ptr<Program>> programs_;
     std::vector<Started> started_;
+    mutable std::map<std::pair<int, int>, int> nodeCache_;   // see `cachedNode`
     std::vector<int>     missed_;
     CamFile              cam_;
     std::vector<ActiveEditing> editings_;

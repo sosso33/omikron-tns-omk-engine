@@ -36,6 +36,7 @@ bool SceneRunner::load(const std::string& scptDataDir, const std::string& iamDir
     sprites_.clear();        // `Scene_LoadSCX` respawns every row's instance
     nodeScales_.clear();     // the set's nodes come back at 1/1/1
     placements_.clear();     // ...and at their authored positions
+    nodeCache_.clear();      // the object tables are the new scene's, unfilled
     const auto st = readScxStream(d);
     if (st.valid && st.camSize && d.size() >= st.camOffset + st.camSize)
         cam_ = readCamFile(std::span<const std::byte>(d).subspan(st.camOffset, st.camSize));
@@ -163,6 +164,29 @@ int SceneRunner::start(int oid, const char* how, bool waiting) {
     programs_.push_back(std::make_unique<Program>(*scx_, *obj));
     Started st{oid, obj->name, how, waiting, -1, clipOf(*obj), pathOf(*obj, scx_->paths())};
     st.relative = placementOf(*obj, st.offset, st.euler);
+    st.objectIndex = objectIndex;
+    // One drive per table index the body steps name, in first-use order.
+    // 57/58 (`ScriptObject_Start`) pin none; 46/90/59/60
+    // (`ScriptObject_StartOnActor`) pin the first body step's, and write the
+    // actor into that slot of the object's cache - so a later plain start of
+    // the same object finds him there too, as the engine's would.
+    {
+        const Program& pg = *programs_.back();
+        const int pin = how[0] == 's' ? -1 : pg.pinnedTableIndex();
+        for (const auto& f : obj->functions) {
+            if ((f.id != kFnSelectBodyAnimation && f.id != kFnSelectRelativeAnim) ||
+                f.params.empty())
+                continue;
+            bool have = false;
+            for (const auto& d : st.drives) have = have || d.table == f.params[0];
+            if (have) continue;
+            Started::Drive d;
+            d.table = f.params[0];
+            d.node = ScxRuntime::objectName(*obj, d.table);
+            d.pinned = d.table == pin;
+            st.drives.push_back(std::move(d));
+        }
+    }
     started_.push_back(std::move(st));
     const int idx = static_cast<int>(programs_.size()) - 1;
     // `ScriptObject_HasCamEditing`: does starting this object take the
@@ -382,6 +406,14 @@ int SceneRunner::handle(const std::vector<Call>& calls) {
         // this program drives is field 0 - which is how a frontend knows whose
         // pose it is.
         if (idx >= 0 && actorFirst) started_[static_cast<std::size_t>(idx)].actor = c.fields[0];
+        // ...and `Script_ModifyObject1` writes him into the pinned slot of
+        // the object's node cache: 59/60 the named actor, 46/90 the player.
+        if (idx >= 0 && how[0] != 's') {
+            const auto& st = started_[static_cast<std::size_t>(idx)];
+            for (const auto& d : st.drives)
+                if (d.pinned)
+                    cacheNode(st.objectIndex, d.table, actorFirst ? c.fields[0] : kNodePlayer);
+        }
         // ...and the set pieces keyed to it. A scene object passes a1 = 0; an
         // actor one passes the caller's own value, which is not modelled, so
         // only the a1 = 0 form fires here.
@@ -502,10 +534,46 @@ void SceneRunner::tick(float dt) {
     // its last frame - 267 units up the wall - for the whole 132-frame shot,
     // and the descent `sautdemon`'s last 41 frames are filmed to show never
     // happens. Refreshed here, from the function the pc is actually on.
+    //
+    // AND EACH NODE HAS ITS OWN STEP (todo/drift-audit.md M2b): every body
+    // function in the chain at the pc writes the node ITS param 0 names, so
+    // a two-body object runs one per node. The `Started` fields follow the
+    // PINNED node for an actor start - before this they followed whichever
+    // body step came first, and a two-body object gave the second body's
+    // clip to the first - and the first body step for a scene start, which
+    // pins nothing and whose fields no body reads.
     for (std::size_t i = 0; i < programs_.size() && i < started_.size(); ++i) {
-        const ScxFunction* fn = programs_[i]->animFunction();
-        if (!fn) continue;                    // this step plays no body animation
         auto& st = started_[i];
+        const Program& pg = *programs_[i];
+        int act[16];
+        const int na = pg.animFnsAt(act, 16);
+        for (auto& d : st.drives) {
+            d.fn = -1;
+            for (int j = 0; j < na; ++j) {
+                const ScxFunction& f = scx_->scene().objects[static_cast<std::size_t>(
+                    st.objectIndex)].functions[static_cast<std::size_t>(act[j])];
+                if (f.params.empty() || f.params[0] != d.table) continue;
+                d.fn = act[j];
+                d.reached = true;
+                d.clip = clipOfFn(f);
+                d.path = pathOfFn(f, scx_->paths());
+                d.relative = placementOfFn(f, d.offset, d.euler);
+                break;
+            }
+            d.clock = d.fn >= 0 ? pg.animClockOf(d.fn)
+                    : d.reached && d.clip >= 0 ? static_cast<float>(scx_->clipFrames(d.clip))
+                    : 0.0f;
+        }
+        const ScxFunction* fn = nullptr;
+        if (st.how == "scene") {
+            fn = pg.animFunction();
+        } else {
+            for (const auto& d : st.drives)
+                if (d.pinned && d.fn >= 0)
+                    fn = &scx_->scene().objects[static_cast<std::size_t>(st.objectIndex)]
+                              .functions[static_cast<std::size_t>(d.fn)];
+        }
+        if (!fn) continue;                    // this step plays no body animation
         st.animReached = true;                // the engine touches the actor from here on
         st.clip     = clipOfFn(*fn);
         st.path     = pathOfFn(*fn, scx_->paths());
