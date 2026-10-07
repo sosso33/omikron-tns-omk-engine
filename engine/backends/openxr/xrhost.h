@@ -71,6 +71,10 @@ void setQuadOverEyes(bool on);
 // Both eyes went to the headset this frame: a flat present is then the
 // INTERFACE as a transparent layer over them (step 6a).
 bool eyesDrawn();
+// THE PANEL PLACED WHERE THE HEAD LOOKS (step 6b): level, `kScreenDistance`
+// ahead along the head's heading, facing it - and FIXED there in the world
+// until the next call. Called when a screen opens or a conversation starts.
+void anchorQuad();
 
 // The headset's frame for a FLAT present: begins it if `headPose` did not,
 // acquires the quad's image. Idempotent until `submit`. False when no frame is

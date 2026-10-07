@@ -71,6 +71,11 @@ struct Host {
     // this frame
     bool begun = false;
     bool quadOverEyes = false;      // a screen is open: the composed frame over the eyes
+    XrPosef head{{0, 0, 0, 1}, {0, 0, 0}};   // the head this frame (LOCAL), for `anchorQuad`
+    bool headValid = false;
+    // WHERE THE PANEL STANDS (LOCAL): 1.2 m ahead of the session's start until
+    // `anchorQuad` places it where the head looks (step 6b)
+    XrPosef quadPose{{0, 0, 0, 1}, {0, 0, -1.2f}};
     XrFrameState frame{XR_TYPE_FRAME_STATE};
     XrView views[2]{{XR_TYPE_VIEW}, {XR_TYPE_VIEW}};
     bool viewsValid = false;
@@ -550,8 +555,11 @@ bool headPose(vr::HeadPose& out) {
         out.fov[e].down = g.views[e].fov.angleDown;
     }
     XrSpaceLocation loc{XR_TYPE_SPACE_LOCATION};
-    if (XR_SUCCEEDED(xrLocateSpace(g.view, g.local, g.frame.predictedDisplayTime, &loc)))
+    if (XR_SUCCEEDED(xrLocateSpace(g.view, g.local, g.frame.predictedDisplayTime, &loc))) {
         toPose(loc.pose, out.head);
+        g.head = loc.pose;
+        g.headValid = true;
+    }
     for (int h = 0; h < 2; ++h) {
         out.handValid[h] = false;
         XrSpaceLocation hl{XR_TYPE_SPACE_LOCATION};
@@ -568,6 +576,23 @@ bool headPose(vr::HeadPose& out) {
 }
 
 void setQuadOverEyes(bool on) { g.quadOverEyes = on; }
+
+void anchorQuad() {
+    if (!g.headValid) return;
+    // the head's forward (-Z) made level; looking straight up or down keeps
+    // the last heading
+    const XrQuaternionf q = g.head.orientation;
+    const float fx = -2.0f * (q.x * q.z + q.w * q.y);
+    const float fz = -(1.0f - 2.0f * (q.x * q.x + q.y * q.y));
+    const float len = std::sqrt(fx * fx + fz * fz);
+    if (len < 0.2f) return;
+    const float yaw = std::atan2(-fx / len, -fz / len);   // 0 = straight down -Z
+    g.quadPose.orientation = {0.0f, std::sin(yaw * 0.5f), 0.0f, std::cos(yaw * 0.5f)};
+    g.quadPose.position = {g.head.position.x + fx / len * kScreenDistance, g.head.position.y,
+                           g.head.position.z + fz / len * kScreenDistance};
+    std::printf("openxr: the panel placed where the head looks - yaw %.0f deg, %.1f m ahead\n",
+                static_cast<double>(yaw * 57.29578f), static_cast<double>(kScreenDistance));
+}
 bool eyesDrawn() { return g.eye[0].drawn && g.eye[1].drawn; }
 
 bool eyeTarget(int e, unsigned& fbo, int& w, int& h) {
@@ -626,8 +651,7 @@ void submit() {
         quad.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
         quad.subImage.swapchain = g.quad.sc;
         quad.subImage.imageRect = {{0, 0}, {g.quad.w, g.quad.h}};
-        quad.pose.orientation.w = 1.0f;
-        quad.pose.position = {0.0f, 0.0f, -kScreenDistance};
+        quad.pose = g.quadPose;
         quad.size = {kScreenWidth, kScreenWidth * static_cast<float>(g.quad.h) / static_cast<float>(g.quad.w)};
         layers[nLayers++] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quad);
     }

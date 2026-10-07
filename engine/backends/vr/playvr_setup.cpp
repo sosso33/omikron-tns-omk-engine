@@ -7,6 +7,7 @@
 
 #include "../sdl/playframe.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -30,6 +31,8 @@ void vrUsage() {
         "  --vr-sim=mono        one eye over the whole frame (the frame check's form)\n"
         "  --vr-flat            a headset build: the game on a flat screen, no eyes\n"
         "  --vr-scale=S         a headset build: each eye at S x the runtime's size (1.0)\n"
+        "  --vr-shade=K         a headset build: the world behind a screen that hides it,\n"
+        "                       drawn at K of its brightness (0.45; 1 = not darkened)\n"
         "  --vr-camera=level|full  the authored camera's pitch and roll dropped\n"
         "                       (level, the default) or kept\n"
         "  --vr-head=Y,P,R      the fake head in degrees: yaw right, pitch up, roll\n"
@@ -71,6 +74,8 @@ void PlayState::vrSetup(int argc, char** argv) {
         else if (a == "--vr-sim=mono") { vr.on = vr.sim = vr.mono = true; }
         else if (a == "--vr-flat") { vr.on = vr.sim = vr.mono = false; }
         else if (a.compare(0, 11, "--vr-scale=") == 0) vr.resScale = static_cast<float>(std::atof(a.c_str() + 11));
+        else if (a.compare(0, 11, "--vr-shade=") == 0)
+            vr.shade = std::max(0.0f, std::min(1.0f, static_cast<float>(std::atof(a.c_str() + 11))));
         else if (a == "--vr-camera=level") vr.orient = omk::vr::CameraOrientation::Level;
         else if (a == "--vr-camera=full") vr.orient = omk::vr::CameraOrientation::Full;
         else if (a == "--vr-fov=quest2") vr.questFov = true;

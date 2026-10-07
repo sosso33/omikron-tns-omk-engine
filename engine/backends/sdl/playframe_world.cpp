@@ -924,7 +924,11 @@ int PlayState::phaseWorld() {
         (void)softGate;
         gpuVy = 0, gpuVh = 0;
         gpuKeep = "no world";   // the first gate that kept the frame on the CPU path
-        drawWorld = (screenKeepsWorld || vpItem) &&
+        // ...and a HEADSET draws it behind every screen, darkened (backends/vr).
+        // Asked EVERY frame, outside the `||`: it also clears the shade, and
+        // short-circuited it kept the world dark after the sneak closed
+        const bool vrBehind = vrDrawsBehindScreen(screenKeepsWorld);
+        drawWorld = (screenKeepsWorld || vpItem || vrBehind) &&
                                worldReady && anyWorld &&
                                (haveDlgCam || haveEdit || holdEditCam ||
                                 (wc && (wc->absolute() || haveRelCam)));

@@ -1010,11 +1010,15 @@ public:
     bool presentSurface(const Surface& s, int winW, int winH);
     // AN EYE (`todo/quest-port.md` §5 step 5b): the world target's top-left
     // `ew x eh` - where the eye's pass drew - over the whole window target
-    bool presentEye(int ew, int eh, int winW, int winH) {
+    // `shade` < 1 darkens it (step 6b: the world behind an open screen),
+    // through the blend - the picture times a constant - so no program changes
+    bool presentEye(int ew, int eh, int winW, int winH, float shade = 1.0f) {
         notePresent();
         if (ew <= 0 || eh <= 0 || ew > w_ || eh > h_ || ss_ > 1) return false;
         const float dst[4] = {-1.0f, -1.0f, 2.0f, 2.0f};
+        shade_ = shade;
         drawPresent(colour_, ew, eh, w_, h_, true, true, dst, winW, winH);
+        shade_ = 1.0f;
         return true;
     }
     bool presentOverlay(const Surface& s, const unsigned char* mask, const unsigned char* maskRows,
@@ -1332,6 +1336,7 @@ private:
     int  anisoOn_ = 1;       // what `init` found the context grants (1: none)
     GLuint windowFbo_ = 0;
     bool overlayLayer_ = false;
+    float shade_ = 1.0f;     // `presentEye`'s darkening, 1 = none
 
     View view_;
     bool flipX_ = false;   // the CURRENT view's screen-X flip - the mirror pass sets it
@@ -3099,11 +3104,17 @@ void GlesRenderer::drawPresent(GLuint tex, int picW, int picH, int texW, int tex
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, tex);
     glUniform1i(pPic_, 0);
+    if (shade_ < 1.0f) {
+        glEnable(GL_BLEND);
+        glBlendColor(shade_, shade_, shade_, 1.0f);
+        glBlendFunc(GL_CONSTANT_COLOR, GL_ZERO);
+    }
     glBindBuffer(GL_ARRAY_BUFFER, quad_);
     for (GLuint a = 1; a <= kAttrPhase; ++a) glDisableVertexAttribArray(a);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    if (shade_ < 1.0f) glDisable(GL_BLEND);
     glEnable(GL_DEPTH_TEST);
 }
 
@@ -3497,8 +3508,8 @@ void glesWindowPicture(Renderer* r, int w, int h, std::vector<unsigned char>& ou
 }
 void glesSetStretch(Renderer* r, bool on) { static_cast<GlesRenderer*>(r)->setStretch(on); }
 void glesSetDepthTie(Renderer* r, bool on) { static_cast<GlesRenderer*>(r)->setDepthTie(on); }
-bool glesPresentEye(Renderer* r, int ew, int eh, int winW, int winH) {
-    return static_cast<GlesRenderer*>(r)->presentEye(ew, eh, winW, winH);
+bool glesPresentEye(Renderer* r, int ew, int eh, int winW, int winH, float shade) {
+    return static_cast<GlesRenderer*>(r)->presentEye(ew, eh, winW, winH, shade);
 }
 void glesSetOverlayAsLayer(Renderer* r, bool on) {
     static_cast<GlesRenderer*>(r)->setOverlayAsLayer(on);

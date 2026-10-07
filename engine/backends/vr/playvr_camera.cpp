@@ -18,6 +18,9 @@
 #if OMK_VR
 
 #include "../sdl/playframe.h"
+#if OMK_OPENXR
+#include "../openxr/xrhost.h"
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -170,6 +173,17 @@ void PlayState::vrAfterWorldCamera() {
         simPose(vr, raw);
     }
     if (!raw.valid) return;
+#if OMK_OPENXR
+    // THE PANEL PLACED WHERE THE HEAD LOOKS (step 6b): when a screen opens
+    // and when a conversation starts - fixed in the world until the next
+    {
+        const bool dlg = session_->dialogOpen();
+        if ((openScreen >= 0 && openScreen != vr.lastScreen) || (dlg && !vr.lastDialog))
+            omk::xr::anchorQuad();
+        vr.lastScreen = openScreen;
+        vr.lastDialog = dlg;
+    }
+#endif
 
     // ---- THE KIND, from what the frame's camera code chose
     VrKind kind = VrKind::World;
@@ -184,6 +198,10 @@ void PlayState::vrAfterWorldCamera() {
     else if (vr.adventureFirst && adventure && player && playerReady && !playerProgram &&
              !boarded && !leaving && !session_->dialogOpen())
         kind = VrKind::FirstPerson;
+    // UNDER A SCREEN the kind is the one it opened over (step 6b): the world
+    // drawn behind the sneak must not switch first person to the authored
+    // camera, and recentre, because the screen took `adventure` away
+    if (openScreen >= 0 && vr.haveKind) kind = vr.kind;
     const bool kindChanged = !vr.haveKind || kind != vr.kind;
 
     // ---- THE ORIGIN for the kind
@@ -345,6 +363,22 @@ void PlayState::vrAfterWorldCamera() {
 }
 
 bool PlayState::vrHidesPlayer() const { return vr.on && vr.hidePlayer; }
+
+// THE WORLD BEHIND A SCREEN THAT HIDES IT (step 6b, the reader's request,
+// 2026-10-07: "a small shade filter on the background when a ui is open").
+// The original turns the 3D view off behind every screen but three
+// (`UI_LoadScreen`'s `sub_466B30`, `playframe_world.cpp`); in a headset
+// that leaves the window in a void. A HEADSET build - the frontend pacing,
+// not the desktop's fake one - draws it on, darkened to `--vr-shade`. Only
+// the DRAWING: Kay'l stays held and the sound suspended as the screen set
+// them. A screen that keeps the world (or a panel that dims it itself)
+// changes nothing here and gets no extra shade.
+bool PlayState::vrDrawsBehindScreen(bool screenKeepsWorld) {
+    vr.shadeWorld = false;
+    if (!vr.on || vr.sim || !front.paces() || openScreen < 0 || screenKeepsWorld) return false;
+    vr.shadeWorld = true;
+    return true;
+}
 
 // THE LOOK-RELATIVE WALK (§3b 7): in first person, the four direction bits
 // the bindings produced (`Tourner a gauche/droite`, `Avancer`, `Reculer` -

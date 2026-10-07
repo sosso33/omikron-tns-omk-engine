@@ -32,6 +32,7 @@ struct VrState {
     float ipdMm = 64.0f;        // --vr-ipd=MM
     bool questFov = false;      // --vr-fov=quest2: a nominal asymmetric eye
     float resScale = 1.0f;      // --vr-scale=S: a headset's eye size, times its recommended
+    float shade = 0.45f;        // --vr-shade=K: the world's brightness behind a screen that hides it
     // the fake head: degrees, yaw RIGHT, pitch UP, roll toward the RIGHT
     // shoulder (--vr-head=Y,P,R; the numpad moves it), and metres (--vr-headpos)
     float yaw = 0.0f, pitch = 0.0f, roll = 0.0f;
@@ -88,6 +89,14 @@ struct VrState {
     bool haveOrigin = false;
     float aimYaw = 0.0f, aimPitch = 0.0f;   // shoot mode: what the controller last aimed
     bool aimed = false;
+    // STEP 6b: the screens. `shadeWorld` - this frame's world is drawn behind
+    // a screen the original hides it behind, and is darkened to `shade`; a
+    // panel that dims the world itself (bank B 0x800: the shops, SAVE GAME,
+    // PAUSE GAME) keeps its own dim and gets none. And the edges that place
+    // the panel where the head looks.
+    bool shadeWorld = false;
+    int lastScreen = -1;
+    bool lastDialog = false;
 };
 
 #endif  // OMK_VR

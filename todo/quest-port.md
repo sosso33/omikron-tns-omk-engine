@@ -807,6 +807,21 @@ The reader's play:
   looked, or a depth that follows the scene).
 
 
+**STEP 6b RUN ON THE QUEST 2 (2026-10-07): the screens.** A headset build
+draws the world on behind a screen the original hides it behind
+(`vrDrawsBehindScreen`, asked every frame - short-circuited behind `||` it
+never cleared its shade and the world stayed dark after the sneak closed),
+darkened to `--vr-shade` (0.45, the reader: "put more shade"), the frame
+starting BLACK there as the flat game's does so the panel is opaque (the
+sneak's sheet has key holes, the device's 3D view, which on the key let the
+world through). A panel that dims the world itself (bank B 0x800: shops,
+SAVE GAME, PAUSE GAME) keeps its own dim and no extra shade (the reader's
+rule). The VR kind is held under a screen (no switch, no recentre). The
+panel is placed 1.2 m along the head's level heading when a screen opens or
+a conversation starts (`xr::anchorQuad`) and stays fixed in the world. The
+reader: "Better". Only the drawing - Kay'l held, the sound suspended, as the
+screen set them.
+
 ### Step 7 - the first play pass (device; ~0.5-1 day)
 
 One route, at 72 Hz on a Quest 2, the frame log over `logcat`: boot, the

@@ -17,7 +17,7 @@
 #if OMK_OPENXR
 #include "../openxr/xrhost.h"
 namespace omk {
-bool glesPresentEye(Renderer*, int ew, int eh, int winW, int winH);
+bool glesPresentEye(Renderer*, int ew, int eh, int winW, int winH, float shade);
 void glesSetWindowTarget(Renderer*, unsigned fbo);
 }
 #endif
@@ -44,7 +44,7 @@ bool PlayState::vrWorldDraw(const omk::View& drawn, const omk::MirrorPlane& plan
             int w = 0, h = 0;
             if (omk::xr::eyeTarget(e, fbo, w, h)) {
                 omk::glesSetWindowTarget(&world, fbo);
-                omk::glesPresentEye(&world, vr.eyeW, vr.eyeH, w, h);
+                omk::glesPresentEye(&world, vr.eyeW, vr.eyeH, w, h, vr.shadeWorld ? vr.shade : 1.0f);
                 omk::glesSetWindowTarget(&world, 0);
                 omk::xr::eyeDone(e);
                 continue;
@@ -65,10 +65,16 @@ bool PlayState::vrWorldDraw(const omk::View& drawn, const omk::MirrorPlane& plan
     // OVERLAY frame - every pixel the KEY, "the world shows here", the alpha
     // passes recorded in the planes - and the present lays it over the eyes
     // as a transparent layer (`glesSetOverlayAsLayer`)
+    // ...BUT BEHIND A SCREEN THE ORIGINAL HIDES THE WORLD BEHIND, the frame
+    // starts BLACK, as the flat game's does (the world off): the panel is
+    // opaque and the world shows only AROUND it, shaded. The sneak's sheet has
+    // deliberate key holes - the device's own 3D view - which on the key let
+    // the world through the panel (the reader, 2026-10-07: "do not put
+    // transparency on the sneak main section's background").
     if (omk::xr::eyesDrawn()) {
         overlayFrame = true;
         g_ov.begin(fb.w, fb.h);
-        std::fill(fb.px.begin(), fb.px.end(), kOverlayKey);
+        std::fill(fb.px.begin(), fb.px.end(), vr.shadeWorld ? std::uint16_t(0) : kOverlayKey);
     }
 #endif
     phRb1 = phaseNow();
