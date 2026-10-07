@@ -295,11 +295,17 @@ public:
         grave_.clear();
         for (GpuPoseVert* b : poseGrave_) linearFree(b);
         poseGrave_.clear();
-        // the clear value is the TARGET's format: citro3d hands it to
-        // GX_MemoryFill unconverted, and a 16-bit fill keeps the low half -
-        // 0x000000FF on the RGB565 target was 0x00FF, a saturated blue in
-        // every pixel nothing draws (the reader's run E, 2026-10-07)
-        C3D_RenderTargetClear(target_, C3D_CLEAR_ALL, rgb565_ ? 0x0000u : 0x000000FFu, 0x00FFFFFF);
+        // cleared to the view's clear colour - the fog's, so the horizon past
+        // the clip distance is what the fog fades into (View::clearColour) -
+        // in the TARGET's format: citro3d hands the value to GX_MemoryFill
+        // unconverted and a 16-bit fill keeps the low half, so 0x000000FF on
+        // the RGB565 target was 0x00FF, a saturated blue in every pixel
+        // nothing draws (the reader's run E, 2026-10-07)
+        const unsigned cr = v.clearColour[0], cg = v.clearColour[1], cb = v.clearColour[2];
+        C3D_RenderTargetClear(target_, C3D_CLEAR_ALL,
+                              rgb565_ ? ((cr >> 3) << 11 | (cg >> 2) << 5 | cb >> 3)
+                                      : (cr << 24 | cg << 16 | cb << 8 | 0xFFu),
+                              0x00FFFFFF);
         C3D_FrameDrawOn(target_);
         // the picture in the TOP-LEFT cam.w x cam.h, as the reference draws
         // it; the PICA's viewport origin is the bottom-left, as GL's
@@ -338,11 +344,27 @@ public:
         boundTex_ = ~0u;
         st_ = RasterStats{};
         readDone_ = false;
+        // THE FOG'S COLOUR (View::fog): stage 1 blends stage 0's textured
+        // colour toward it by the factor the vertex shader puts in the
+        // primary colour's alpha - r * f + fog * (1 - f), as the reference
+        // does after the texture. Alpha passes through (the colour key).
+        {
+            C3D_TexEnv* env = C3D_GetTexEnv(1);
+            C3D_TexEnvInit(env);
+            C3D_TexEnvSrc(env, C3D_RGB, GPU_PREVIOUS, GPU_CONSTANT, GPU_PRIMARY_COLOR);
+            C3D_TexEnvOpRgb(env, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_COLOR,
+                            GPU_TEVOP_RGB_SRC_ALPHA);
+            C3D_TexEnvFunc(env, C3D_RGB, GPU_INTERPOLATE);
+            C3D_TexEnvSrc(env, C3D_Alpha, GPU_PREVIOUS, GPU_PREVIOUS, GPU_PREVIOUS);
+            C3D_TexEnvFunc(env, C3D_Alpha, GPU_REPLACE);
+            C3D_TexEnvColor(env, 0xFF000000u | static_cast<u32>(v.fogColour[2]) << 16
+                                 | static_cast<u32>(v.fogColour[1]) << 8 | v.fogColour[0]);
+        }
         if ((v.fogColour[0] | v.fogColour[1] | v.fogColour[2]) && v.fog && !toldFogColour_) {
-            // the shipped game's fog is BLACK (renderer.h, View::fog); one
-            // mode colours it, and this backend keeps its fade, not its colour
             toldFogColour_ = true;
-            std::printf("c3d: a coloured fog - drawn as its fade toward black\n");
+            std::printf("c3d: a coloured fog (%u %u %u) - fading into it, the picture cleared to %u %u %u\n",
+                        v.fogColour[0], v.fogColour[1], v.fogColour[2],
+                        v.clearColour[0], v.clearColour[1], v.clearColour[2]);
         }
     }
 
@@ -1018,8 +1040,11 @@ private:
                 C3D_TexEnvSrc(env, C3D_Alpha, GPU_TEXTURE0, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
                 C3D_TexEnvFunc(env, C3D_Alpha, GPU_REPLACE);  // the key, for the alpha test
             } else {
-                C3D_TexEnvSrc(env, C3D_Both, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
-                C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);   // no texture: the colour alone
+                C3D_TexEnvSrc(env, C3D_RGB, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
+                C3D_TexEnvFunc(env, C3D_RGB, GPU_REPLACE);    // no texture: the colour alone
+                // ...and an opaque alpha (the primary's carries the fog factor)
+                C3D_TexEnvSrc(env, C3D_Alpha, GPU_CONSTANT, GPU_CONSTANT, GPU_CONSTANT);
+                C3D_TexEnvFunc(env, C3D_Alpha, GPU_REPLACE);
             }
             boundTex_ = want;
         }

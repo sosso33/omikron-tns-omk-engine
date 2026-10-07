@@ -200,8 +200,7 @@
 	add r12.x, r12.x, -r11.y
 	mul r12.x, fogp.z, r12.x
 	add r12.x, r11.y, r12.x
-	mul r6.xyz, r6.xyz, r12.xxx
-	mov r6.w, r11.y
+	mov r6.w, r12.x
 	mov outclr, r6
 	end
 .end

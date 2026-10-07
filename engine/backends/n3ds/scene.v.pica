@@ -11,10 +11,12 @@
 ;   * the SHIMMER (mesh flag 0x8000000, `o3de/shimmer.h`): the 32-entry wave
 ;     at ((int(clock) >> 2) + int(phase)) & 31, added to all three channels;
 ;     a phase below zero does not shimmer;
-;   * the FOG, linear on the view depth, toward BLACK (the shipped fog's
-;     colour, `renderer.h`): the colour scaled by
-;     clamp((end - w) / (end - start), 0, 1), the bucket key's exclusions
-;     chosen on the CPU per draw (`fogp.z` 0 = none);
+;   * the FOG, linear on the view depth: its factor
+;     clamp((end - w) / (end - start), 0, 1) out in the colour's ALPHA, which
+;     texture combiner stage 1 reads to blend the textured colour toward the
+;     fog colour (`renderer.h`, View::fog - black only where the chunk is);
+;     the bucket key's exclusions chosen on the CPU per draw (`fogp.z` 0 =
+;     none, a factor of 1);
 ;   * the texture coordinates from texels by the bound texture's size;
 ;   * the GREYSCALE BANK (ops 150/151, `o3de/greybank.h`): after the shimmer,
 ;     the colour's bytes to their luma, (299 R + 587 G + 114 B) / 1000,
@@ -104,8 +106,7 @@
 	add r8.x, r8.x, -r11.y
 	mul r8.x, fogp.z, r8.x
 	add r8.x, r11.y, r8.x
-	mul r7.xyz, r7.xyz, r8.xxx
-	mov r7.w, r11.y
+	mov r7.w, r8.x
 	mov outclr, r7
 	end
 .end

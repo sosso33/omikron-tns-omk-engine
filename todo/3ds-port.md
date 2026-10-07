@@ -658,6 +658,19 @@ the present (ms, mean of the bin):
   `c3d-rgb565` and a capture at present 60: **5187 pixels of `0x00FF`
   before, 0 after**, black up by about as many. The default RGBA8 target
   never had it. Not run on the console yet.
+* **...and the picture now clears to the FOG's colour, which the fog fades
+  into** (the reader's go, 2026-10-07). The backend cleared to black and
+  faded toward black ("keeps its fade, not its colour"), from the reading
+  that the shipped fog is black - corrected 2026-10-06 (`renderer.h`,
+  View::fog: the AREA's colours lerped by the clock). The vertex shaders now
+  put the fog factor in the colour's alpha and texture combiner stage 1
+  blends the textured colour toward the fog colour by it (`r f + fog (1 -
+  f)`, the reference's order); the untextured stage 0 takes an opaque
+  constant alpha, the colour key's alpha passes through. In Azahar (the same
+  `--clip 10` start, capture at present 60, against the desktop software
+  reference's frames 59-62 halved): **99.90% within 24 levels on the RGBA8
+  target, 99.91% on RGB565, 44.2% before**; the band past the clip distance
+  is 12 25 35 (`0x08C4` in 565) on both. Not on the console yet.
 * The rest: the frontend's copy 2.7 ms median (1.4 in B), the panel's redraw
   ~13.5 ms median twice a second (8 in B) - larger than the seventh run's
   6-15 and still a CPU cost worth cutting (section 4 of the handoff, item 4).
