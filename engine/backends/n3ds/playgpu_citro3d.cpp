@@ -73,7 +73,7 @@ void PlayState::gpuPresentOverlay(bool& presentedWorld) {
     if (omk::N3dsFrontend* f = omk::liveN3dsFrontend()) {
         std::uint16_t* dst = f->topFramebuffer();
         if (dst && omk::c3dPresentOverlay(worldVk, fb, ovMask.data(), g_ov.rowInit.data(), ovFade, gpuVy, gpuVh,
-                                          dst)) {
+                                          dst, f->topFramebufferRight())) {
             f->presentWritten();
             presentedWorld = true;
             return;
@@ -121,7 +121,7 @@ void PlayState::gpuPresentWorld(bool& presentedWorld) {
     // framebuffer in one pass; the two passes below when it cannot
     if (omk::N3dsFrontend* f = omk::liveN3dsFrontend()) {
         std::uint16_t* dst = f->topFramebuffer();
-        if (dst && omk::c3dPresentHalfDirect(worldVk, gpuVy, gpuVh, dst)) {
+        if (dst && omk::c3dPresentHalfDirect(worldVk, gpuVy, gpuVh, dst, f->topFramebufferRight())) {
             f->presentWritten();
             presentedWorld = true;
             return;

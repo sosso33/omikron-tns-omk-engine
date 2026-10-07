@@ -43123,9 +43123,10 @@ def c_licence_headers():
     # 575 the same day: + `engine/src/o3de/greybank.h` (ops 150/151); 577: +
     # `engine/src/script/linesync.h` and `engine/tools/linesync_probe.cpp` (T2);
     # 579 on 2026-10-07: + `engine/src/o3de/camobstruct.h` / `.cpp` (the
-    # camera obstruction pass shared by modes 0 and 8, drift audit B12)
+    # camera obstruction pass shared by modes 0 and 8, drift audit B12); 580
+    # the same day: + `engine/backends/n3ds/c3dstereo.h` (the 3DS's stereo 3D)
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (579, [], 1, []), \
+           (580, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \

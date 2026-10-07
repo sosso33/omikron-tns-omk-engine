@@ -54,7 +54,8 @@ bool c3dPresentHalf(Renderer* r, int vy, int vh, Surface& screen);
 // black bands. -> false, having done nothing, when it cannot go that way
 // (`sdmc:/omk/c3d-surface` asks for the two passes, or the tables failed
 // their check) - and then `c3dPresentHalf` as before.
-bool c3dPresentHalfDirect(Renderer* r, int vy, int vh, std::uint16_t* dst);
+// `dstR`: the right eye's framebuffer on a 3D screen (step 8), or null.
+bool c3dPresentHalfDirect(Renderer* r, int vy, int vh, std::uint16_t* dst, std::uint16_t* dstR = nullptr);
 // THE INTERFACE OVER THE WORLD ON THE GPU (`todo/3ds-port.md` 6.7) - the GLES
 // window's overlay (`ui/overlay.h`) in fixed function, as GL1 does it: `fb` is
 // the composed frame whose world rows are the KEY (0xF81F) or the planes' C,
@@ -72,7 +73,7 @@ bool c3dOverlayReady(Renderer* r);
 // `maskRows` (one a frame row, may be null): 0 where the mask row is all
 // zero - the rows no plane touched - so it need not be compared.
 bool c3dPresentOverlay(Renderer* r, const Surface& fb, const std::uint8_t* mask, const std::uint8_t* maskRows,
-                       const float fade[4], int vy, int vh, std::uint16_t* dst);
+                       const float fade[4], int vy, int vh, std::uint16_t* dst, std::uint16_t* dstR = nullptr);
 
 // THE BACKEND'S OWN COUNTS over the frames since the last call - draws, posed
 // draws on the GPU and on the CPU, the CPU's posing time, the time waited on

@@ -7,6 +7,7 @@
 // of `cornerCull`), because the first console run spent 44-48 ms a street
 // frame doing that work per vertex on the CPU, GL1's way.
 #include "c3drender.h"
+#include "c3dstereo.h"
 
 #include "o3de/shimmer.h"
 #include "platform/profile.h"
@@ -161,6 +162,8 @@ public:
         for (void* b : poseGrave_) linearFree(b);
         if (target_) C3D_RenderTargetDelete(target_);
         if (ovTex_.data) C3D_TexDelete(&ovTex_);
+        if (stTarget_) C3D_RenderTargetDelete(stTarget_);
+        for (std::uint32_t* b : stShown_) if (b) linearFree(b);
         if (ring_) linearFree(ring_);
         if (read_) linearFree(read_);
         for (std::uint32_t* b : small_) if (b) linearFree(b);
@@ -278,6 +281,20 @@ public:
         if (!target_) {
             std::printf("c3d: no %dx%d render target (VRAM)\n", w, h);
             return false;
+        }
+        // STEREOSCOPIC 3D (step 8, `c3dstereo.h`): both eyes stacked in a
+        // target half the frame's width - made here, before the textures
+        // fill the VRAM - only when the card asks for it
+        if (stTarget_) { C3D_RenderTargetDelete(stTarget_); stTarget_ = nullptr; }
+        stereoCard_.read();
+        if (stereoCard_.on && (tw_ / 2) % 8 == 0 && th_ % 16 == 0) {
+            stTarget_ = C3D_RenderTargetCreate(tw_ / 2, th_, rgb565_ ? GPU_RB_RGB565 : GPU_RB_RGBA8,
+                                               GPU_RB_DEPTH24_STENCIL8);
+            std::printf("c3d: stereo3d present - STEREOSCOPIC 3D, both eyes %dx%d in one pass (%s), "
+                        "%.0f px at infinity at full depth; %s\n", tw_ / 2, th_ / 2,
+                        stTarget_ ? "a target of their own" : "NO VRAM for their target - mono",
+                        n3ds::kStereoParallax, stereoCard_.slider >= 0.0f ? "the depth fixed by the card file"
+                                                                     : "the depth the console's slider");
         }
         read_ = static_cast<std::uint32_t*>(linearAlloc(static_cast<std::size_t>(tw_) * th_ * 4));
         if (!read_) { std::printf("c3d: no linear memory for the readback\n"); return false; }
@@ -403,11 +420,16 @@ public:
         // the RGB565 target was 0x00FF, a saturated blue in every pixel
         // nothing draws (the reader's run E, 2026-10-07)
         const unsigned cr = v.clearColour[0], cg = v.clearColour[1], cb = v.clearColour[2];
-        C3D_RenderTargetClear(target_, C3D_CLEAR_ALL,
+        // the eyes this pass, or none: the slider at 0 draws mono
+        const float depth = stTarget_ ? stereoCard_.depth() : 0.0f;
+        stereo_ = stTarget_ && depth > 0.01f && !scissor_ && cam.w % 2 == 0 && cam.h % 2 == 0 &&
+                  cam.h / 2 <= th_ / 2;
+        C3D_RenderTarget* const tgt = stereo_ ? stTarget_ : target_;
+        C3D_RenderTargetClear(tgt, C3D_CLEAR_ALL,
                               rgb565_ ? ((cr >> 3) << 11 | (cg >> 2) << 5 | cb >> 3)
                                       : (cr << 24 | cg << 16 | cb << 8 | 0xFFu),
                               0x00FFFFFF);
-        C3D_FrameDrawOn(target_);
+        C3D_FrameDrawOn(tgt);
         // the picture in the TOP-LEFT cam.w x cam.h, as the reference draws
         // it; the PICA's viewport origin is the bottom-left, as GL's
         C3D_SetViewport(0, static_cast<u32>(th_ - cam.h), static_cast<u32>(cam.w), static_cast<u32>(cam.h));
@@ -438,6 +460,23 @@ public:
         C3D_FVUnifSet(GPU_VERTEX_SHADER, uMvp_ + 2, -f[0], -f[1], -f[2], fe + kNearCut);
         C3D_FVUnifSet(GPU_VERTEX_SHADER, uMvp_ + 3, f[0], f[1], f[2], -fe);
         C3D_DepthMap(true, -1.0f, 0.0f);
+        if (stereo_) {
+            // the eyes about the centre camera, converging at its look-at
+            // point's depth (the player's, behind the follow camera)
+            const float row0[4] = {s[0] / tanH, s[1] / tanH, s[2] / tanH, -se / tanH};
+            const float row3[4] = {f[0], f[1], f[2], -fe};
+            std::copy(row0, row0 + 4, stRow0_);
+            std::copy(row3, row3 + 4, stRow3_);
+            const float c = f[0] * (cam.at[0] - e[0]) + f[1] * (cam.at[1] - e[1]) + f[2] * (cam.at[2] - e[2]);
+            stC_ = c > 30.0f ? c : 30.0f;
+            stTanH_ = tanH;
+            eyeW_ = cam.w / 2;
+            eyeH_ = cam.h / 2;
+            stH_ = n3ds::stereoHalfSeparation(n3ds::kStereoParallax * depth, tanH, stC_, eyeW_);
+            eye_ = -1;
+            setEye(0);
+            ++rep_.stereoPasses;
+        }
         setShimmer();
         rep_.beginTicks += svcGetSystemTick() - b0;
 
@@ -535,6 +574,8 @@ public:
         // screen-X flip swapping it, as it swaps the area `raster.cpp` tests.
         const bool haveCull = g.cornerCull.size() == g.corners.size() && !noCull();
         const std::size_t e = d.start + d.count - d.count % 3;
+        for (int eye = 0; eye < (stereo_ ? 2 : 1); ++eye) {
+        if (stereo_) setEye(eye);
         std::size_t i = d.start;
         while (i < e) {
             const std::uint8_t c = haveCull ? g.cornerCull[i] : 0u;
@@ -553,6 +594,7 @@ public:
             }
             ++rep_.calls;
             i = j;
+        }
         }
         st_.drawn += static_cast<long>(d.count / 3);
     }
@@ -578,6 +620,34 @@ public:
             // pass's draws - then for the transfer itself.
             closeFrame();
             const u64 w0 = svcGetSystemTick();
+            if (stereo_) {
+                // A STEREO pass read back (an interface the GPU could not
+                // blend, the CPU mirror): the left eye doubled stands for the
+                // frame - those frames are mono on a 3D screen
+                C3D_SyncDisplayTransfer(static_cast<u32*>(stTarget_->frameBuf.colorBuf),
+                                        GX_BUFFER_DIM(tw_ / 2, th_), reinterpret_cast<u32*>(read_),
+                                        GX_BUFFER_DIM(tw_ / 2, th_),
+                                        GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) |
+                                        GX_TRANSFER_RAW_COPY(0) | transferFormats() |
+                                        GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO));
+                rep_.waitTicks += svcGetSystemTick() - w0;
+                GSPGPU_InvalidateDataCache(read_, static_cast<u32>(tw_ / 2) * th_ * 4);
+                const int sw = tw_ / 2;
+                std::vector<std::uint32_t> row(static_cast<std::size_t>(w_));
+                for (int y = 0; y < h_; ++y) {
+                    if (rgb565_) {
+                        const auto* in = reinterpret_cast<const std::uint16_t*>(read_) +
+                                         static_cast<std::size_t>(y / 2) * sw;
+                        for (int x = 0; x < w_; ++x) fb_.px[static_cast<std::size_t>(y) * w_ + x] = in[x / 2];
+                        continue;
+                    }
+                    const std::uint32_t* in = read_ + static_cast<std::size_t>(y / 2) * sw;
+                    for (int x = 0; x < w_; ++x) row[static_cast<std::size_t>(x)] = in[x / 2];
+                    toRgb565Row(row.data(), w_, 0, y, fb_.px.data() + static_cast<std::size_t>(y) * w_);
+                }
+                readDone_ = true;
+                return fb_;
+            }
             C3D_SyncDisplayTransfer(static_cast<u32*>(target_->frameBuf.colorBuf), GX_BUFFER_DIM(tw_, th_),
                                     reinterpret_cast<u32*>(read_), GX_BUFFER_DIM(tw_, th_),
                                     GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) |
@@ -614,8 +684,9 @@ public:
     }
 
     // 3c: see `c3dPresentHalf` (c3drender.h).
-    bool presentHalf(int vy, int vh, Surface* screen, std::uint16_t* dst) {
+    bool presentHalf(int vy, int vh, Surface* screen, std::uint16_t* dst, std::uint16_t* dstR = nullptr) {
         if (dst && !direct_) return false;             // before any work: the caller goes the other way
+        if (stereo_) return presentStereo(vy, vh, screen, dst, dstR);
         // A FRAME THE SCREEN'S OWN SIZE (`--res 400x224` in args.txt, the
         // GPU-fill experiment of 2026-10-06: a quarter of the pixels to fill,
         // and no 2x2 average - so no anti-aliasing either) goes over 1:1;
@@ -643,7 +714,7 @@ public:
         // Nothing is composited over a straight present, so the interface
         // cannot fall a frame out of step with the world.
         const int wr = halfCur_;
-        const bool piped = !syncPresent_ && lastHalfPass_ == pass_ - 1;
+        const bool piped = !syncPresent_ && lastHalfPass_ == pass_ - 1 && !lastHalfStereo_;
         // the OUTPUT dimensions are given as the input's: with SCALE_XY the
         // transfer halves what it is told (Azahar, 2026-10-06 - told the
         // halved size, it wrote a quarter-size picture, 200x112)
@@ -666,6 +737,7 @@ public:
         }
         const std::uint32_t* const shown = small_[piped ? wr ^ 1 : wr];
         lastHalfPass_ = pass_;
+        lastHalfStereo_ = false;
         halfCur_ = wr ^ 1;
         GSPGPU_InvalidateDataCache(const_cast<std::uint32_t*>(shown), static_cast<u32>(hw) * hh * (rgb565_ ? 2 : 4));
         const u64 p0 = svcGetSystemTick();
@@ -675,6 +747,9 @@ public:
         const int py0 = vy / k, ph = vh / k, pw = std::min(w_ / k, hw);
         if (dst) {
             presentDirect(shown, hw, hh, ox, oy + py0, pw, ph, dst);
+            // a mono frame on a 3D screen: the right eye sees what the left does
+            if (dstR) std::memcpy(dstR, dst, 240 * 400 * sizeof(std::uint16_t));
+            lastHalfStereo_ = false;
             rep_.halfLoopTicks += svcGetSystemTick() - p0;
             ++straight_;
             if (straight_ == 1)
@@ -708,7 +783,7 @@ public:
     bool overlayReady() const { return inFrame_ && direct_ && !noOverlay_; }
 
     bool presentOverlay(const Surface& fb, const std::uint8_t* mask, const std::uint8_t* maskRows,
-                        const float fade[4], int vy, int vh, std::uint16_t* dst) {
+                        const float fade[4], int vy, int vh, std::uint16_t* dst, std::uint16_t* dstR) {
         const bool one = w_ <= 400 && h_ <= 240;
         const int k = one ? 1 : 2;
         if (!overlayReady() || fb.w != w_ || fb.h != h_ || vh <= 0 || vy < 0 || vy + vh > h_ || vh > th_ ||
@@ -723,18 +798,90 @@ public:
         // the bands: built now, shown with the picture they belong to - this
         // frame's when the present waits for it, the last frame's when it is
         // one behind (and black when that frame had none)
-        const bool piped = !syncPresent_ && lastHalfPass_ == pass_ - 1;
+        const bool piped = !syncPresent_ && lastHalfPass_ == pass_ - 1 && lastHalfStereo_ == stereo_;
         const int cur = bandsCur_;
         buildBands(fb, fade, vy, vh, k, bands_[cur]);
         rep_.overlayTicks += svcGetSystemTick() - o0;
-        if (!presentHalf(vy, vh, nullptr, dst)) return false;
+        if (!presentHalf(vy, vh, nullptr, dst, dstR)) return false;
         const u64 b0 = svcGetSystemTick();
-        if (!piped) writeBands(bands_[cur], dst);
-        else if (bandsPass_ == pass_ - 1) writeBands(bands_[cur ^ 1], dst);
+        for (std::uint16_t* d : {dst, dstR}) {
+            if (!d) continue;
+            if (!piped) writeBands(bands_[cur], d);
+            else if (bandsPass_ == pass_ - 1) writeBands(bands_[cur ^ 1], d);
+        }
         bandsPass_ = pass_;
         bandsCur_ = cur ^ 1;
         rep_.overlayTicks += svcGetSystemTick() - b0;
         ++rep_.overlays;
+        return true;
+    }
+
+    // THE STEREO PRESENT (step 8): the eyes' target transferred whole and
+    // unscaled (each eye is the screen's own size already), one frame behind
+    // as the mono present is, then each eye dithered straight into its own
+    // framebuffer (`presentDirect`, 6.4). Without a right framebuffer, or on
+    // the two-pass path, the left eye stands for both.
+    bool presentStereo(int vy, int vh, Surface* screen, std::uint16_t* dst, std::uint16_t* dstR) {
+        const int sw = tw_ / 2, sh = th_;                   // the eyes' target
+        if (!inFrame_ || vy % 2 || vh % 2) return false;
+        for (std::uint32_t*& b : stShown_)
+            if (!b) {
+                b = static_cast<std::uint32_t*>(linearAlloc(static_cast<std::size_t>(sw) * sh * 4));
+                if (!b) return false;
+            }
+        noteCmdBuf();
+        const int wr = halfCur_;
+        const bool piped = !syncPresent_ && lastHalfPass_ == pass_ - 1 && lastHalfStereo_;
+        const u32 flags = GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) | GX_TRANSFER_RAW_COPY(0) |
+                          transferFormats() | GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO);
+        if (piped) {
+            C3D_SyncDisplayTransfer(static_cast<u32*>(stTarget_->frameBuf.colorBuf), GX_BUFFER_DIM(sw, sh),
+                                    reinterpret_cast<u32*>(stShown_[wr]), GX_BUFFER_DIM(sw, sh), flags);
+            closeFrame();
+            ++rep_.piped;
+        } else {
+            closeFrame();
+            const u64 w0 = svcGetSystemTick();
+            C3D_SyncDisplayTransfer(static_cast<u32*>(stTarget_->frameBuf.colorBuf), GX_BUFFER_DIM(sw, sh),
+                                    reinterpret_cast<u32*>(stShown_[wr]), GX_BUFFER_DIM(sw, sh), flags);
+            rep_.waitTicks += svcGetSystemTick() - w0;
+            ++rep_.synced;
+        }
+        const std::uint32_t* const shown = stShown_[piped ? wr ^ 1 : wr];
+        lastHalfPass_ = pass_;
+        lastHalfStereo_ = true;
+        halfCur_ = wr ^ 1;
+        GSPGPU_InvalidateDataCache(const_cast<std::uint32_t*>(shown), static_cast<u32>(sw) * sh * (rgb565_ ? 2 : 4));
+        const u64 p0 = svcGetSystemTick();
+        const int ox = (400 - w_ / 2) / 2, oy = (240 - h_ / 2) / 2;
+        const int py0 = vy / 2, ph = vh / 2, pw = std::min(w_ / 2, sw);
+        const std::uint32_t* right = shown + static_cast<std::size_t>(sh / 2) * (rgb565_ ? sw / 2 : sw);
+        if (dst) {
+            presentDirect(shown, sw, sh / 2, ox, oy + py0, pw, ph, dst);
+            if (dstR) presentDirect(right, sw, sh / 2, ox, oy + py0, pw, ph, dstR);
+        } else if (screen) {
+            Surface& sc = *screen;
+            if (sc.w != 400 || sc.h != 240) sc = Surface(400, 240, 0);
+            std::fill(sc.px.begin(), sc.px.end(), std::uint16_t(0));
+            for (int r = 0; r < ph && r < sh / 2; ++r) {
+                const int y = oy + py0 + r;
+                if (y < 0 || y >= 240) continue;
+                std::uint16_t* out = sc.px.data() + static_cast<std::size_t>(y) * 400 + ox;
+                if (rgb565_)
+                    std::memcpy(out, reinterpret_cast<const std::uint16_t*>(shown) + static_cast<std::size_t>(r) * sw,
+                                static_cast<std::size_t>(pw) * 2);
+                else
+                    toRgb565Row(shown + static_cast<std::size_t>(r) * sw, pw, ox, y, out);
+            }
+        }
+        rep_.halfLoopTicks += svcGetSystemTick() - p0;
+        ++straight_;
+        if (!toldStereo_) {
+            toldStereo_ = true;
+            std::printf("c3d: the first STEREO frame - two eyes %dx%d onto the top screen at %d,%d, "
+                        "converging %.0f units ahead, the eyes %.2f units apart\n", pw, ph, ox, oy + py0,
+                        stC_, 2.0f * stH_);
+        }
         return true;
     }
 
@@ -756,12 +903,12 @@ public:
         std::printf("frame %ld c3d CPU (ms a pass): begin %.2f, begin..end %.2f, submit %.2f, of it "
                     "residency %.2f and pose uniforms %.2f; the straight present's dither loop %.2f; "
                     "%.0f GPU draw calls, %.0f indexed; %ld interface frames by the GPU (%ld rows sent, "
-                    "%.2f ms a frame of CPU)\n", frame,
+                    "%.2f ms a frame of CPU); %ld passes in stereo\n", frame,
                     rep_.beginTicks * ms / f, rep_.passTicks * ms / f,
                     rep_.submitTicks * ms / f, rep_.residentTicks * ms / f, rep_.uniformTicks * ms / f,
                     rep_.halfLoopTicks * ms / f, static_cast<double>(rep_.calls) / f,
                     static_cast<double>(rep_.indexed) / f, rep_.overlays, rep_.overlayRows,
-                    rep_.overlays ? rep_.overlayTicks * ms / rep_.overlays : 0.0);
+                    rep_.overlays ? rep_.overlayTicks * ms / rep_.overlays : 0.0, rep_.stereoPasses);
         const long g = posedGpu_, c = posedCpu_;
         rep_ = Report{};
         rep_.gpu0 = g; rep_.cpu0 = c;
@@ -799,6 +946,23 @@ private:
     u32 transferFormats() const {
         return rgb565_ ? (GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGB565) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB565))
                        : (GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8));
+    }
+
+    // ---- THE EYES (step 8) ----------------------------------------------------
+    // An eye's view-projection (row 0 off-axis, `c3dstereo.h`) and viewport:
+    // the left eye in the target's top half, the right in its bottom half,
+    // each picture at the top-left of its half as the mono one is.
+    void setEye(int e) {
+        if (e == eye_) return;
+        eye_ = e;
+        float r0[4];
+        n3ds::stereoEyeRow0(stRow0_, stRow3_, e == 0 ? -stH_ : stH_, stTanH_, stC_, r0);
+        C3D_FVUnifSet(GPU_VERTEX_SHADER, uMvp_ + 0, r0[0], r0[1], r0[2], r0[3]);
+        setEyeViewport(e);
+    }
+    void setEyeViewport(int e) {
+        const int top = e == 0 ? th_ : th_ / 2;          // the half's top, in the PICA's bottom-up rows
+        C3D_SetViewport(0, static_cast<u32>(top - eyeH_), static_cast<u32>(eyeW_), static_cast<u32>(eyeH_));
     }
 
     // THE OVERLAY TEXTURE: RGBA8 at the frame's size rounded up to powers of
@@ -927,13 +1091,24 @@ private:
         BufInfo_Init(bi);
         BufInfo_Add(bi, q, sizeof(GpuVert), 4, 0x3210);
         C3D_TexEnv* env = C3D_GetTexEnv(0);
+        const int eyes = stereo_ ? 2 : 1;
         if (tex) {
+            // in stereo the frame's 800x448 interface lands on 400x224 eyes:
+            // LINEAR at exactly 2x samples between four texels, their mean
+            if (ovLinear_ != stereo_) {
+                const GPU_TEXTURE_FILTER_PARAM fl = stereo_ ? GPU_LINEAR : GPU_NEAREST;
+                C3D_TexSetFilter(&ovTex_, fl, fl);
+                ovLinear_ = stereo_;
+            }
             C3D_TexBind(0, &ovTex_);
             C3D_TexEnvInit(env);
             C3D_TexEnvSrc(env, C3D_Both, GPU_TEXTURE0, GPU_TEXTURE0, GPU_TEXTURE0);
             C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
             C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_SRC_ALPHA, GPU_ZERO, GPU_ONE);
-            C3D_DrawArrays(GPU_TRIANGLES, 0, 6);
+            for (int e = 0; e < eyes; ++e) {
+                if (stereo_) setEyeViewport(e);
+                C3D_DrawArrays(GPU_TRIANGLES, 0, 6);
+            }
         }
         if (fading) {
             C3D_TexBind(0, nullptr);
@@ -944,9 +1119,13 @@ private:
             C3D_TexEnvFunc(env, C3D_Alpha, GPU_REPLACE);
             C3D_TexEnvColor(env, static_cast<u32>(fb8(fade[3] > 1.0f ? 1.0f : fade[3])) << 24);
             C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_ZERO, GPU_ONE);
-            C3D_DrawArrays(GPU_TRIANGLES, 6, 6);
+            for (int e = 0; e < eyes; ++e) {
+                if (stereo_) setEyeViewport(e);
+                C3D_DrawArrays(GPU_TRIANGLES, 6, 6);
+            }
         }
         used_ += 12;
+        eye_ = -1;                            // the matrix is the identity now
         // the draw state the cache assumed is gone
         stateValid_ = false;
         boundTex_ = ~0u;
@@ -1333,6 +1512,7 @@ private:
         long gpu0 = 0, cpu0 = 0;
         long calls = 0, indexed = 0;    // GPU draw calls, and of them indexed
         long overlays = 0, overlayRows = 0;   // interface frames by the GPU (6.7), rows sent
+        long stereoPasses = 0;                // passes drawn for two eyes (step 8)
         u64 overlayTicks = 0;
     };
     void noteCmdBuf() { rep_.cmdMax = std::max(rep_.cmdMax, C3D_GetCmdBufUsage()); }
@@ -1715,6 +1895,15 @@ private:
     std::vector<int> bandRows_, bandRowsFor_[2];
     int bandsCur_ = 0;
     long bandsPass_ = -10;
+    // stereoscopic 3D (step 8)
+    n3ds::StereoCard stereoCard_;
+    C3D_RenderTarget* stTarget_ = nullptr;
+    bool stereo_ = false;                 // this pass draws two eyes
+    bool lastHalfStereo_ = false;         // the last straight present was
+    bool ovLinear_ = false, toldStereo_ = false;
+    float stRow0_[4] = {}, stRow3_[4] = {}, stH_ = 0, stTanH_ = 1, stC_ = 1;
+    int eyeW_ = 0, eyeH_ = 0, eye_ = -1;
+    std::uint32_t* stShown_[2] = {nullptr, nullptr};
     std::uint8_t q5_[17][256] = {}, q6_[17][256] = {};   // its tables: cells 0..15, 16 undithered
     std::vector<std::uint16_t> tiled_;  // a texture's tiled texels, staged
     std::vector<std::uint8_t> markC_;   // a partial update's scratch: corners seen
@@ -1757,15 +1946,15 @@ bool c3dPresentHalf(Renderer* r, int vy, int vh, Surface& screen) {
     return r && static_cast<C3dRenderer*>(r)->presentHalf(vy, vh, &screen, nullptr);
 }
 
-bool c3dPresentHalfDirect(Renderer* r, int vy, int vh, std::uint16_t* dst) {
-    return r && dst && static_cast<C3dRenderer*>(r)->presentHalf(vy, vh, nullptr, dst);
+bool c3dPresentHalfDirect(Renderer* r, int vy, int vh, std::uint16_t* dst, std::uint16_t* dstR) {
+    return r && dst && static_cast<C3dRenderer*>(r)->presentHalf(vy, vh, nullptr, dst, dstR);
 }
 
 bool c3dOverlayReady(Renderer* r) { return r && static_cast<C3dRenderer*>(r)->overlayReady(); }
 
 bool c3dPresentOverlay(Renderer* r, const Surface& fb, const std::uint8_t* mask, const std::uint8_t* maskRows,
-                       const float fade[4], int vy, int vh, std::uint16_t* dst) {
-    return r && dst && static_cast<C3dRenderer*>(r)->presentOverlay(fb, mask, maskRows, fade, vy, vh, dst);
+                       const float fade[4], int vy, int vh, std::uint16_t* dst, std::uint16_t* dstR) {
+    return r && dst && static_cast<C3dRenderer*>(r)->presentOverlay(fb, mask, maskRows, fade, vy, vh, dst, dstR);
 }
 
 }  // namespace omk

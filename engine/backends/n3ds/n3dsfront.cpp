@@ -183,6 +183,14 @@ bool N3dsFrontend::open(int, int, const std::string&) {
     winStart_ = lastPresent_ = svcGetSystemTick();
     opened_ = true;
     live_ = this;
+    // STEREOSCOPIC 3D (step 8): the top screen's two framebuffers, only when
+    // the card asks for it - the renderer reads the same file
+    if (std::FILE* f = std::fopen("sdmc:/omk/stereo3d", "r")) {
+        std::fclose(f);
+        gfxSet3D(true);
+        stereo3d_ = true;
+        std::printf("frontend: the top screen in 3D (stereo3d present)\n");
+    }
     return true;
 }
 
@@ -361,6 +369,8 @@ void N3dsFrontend::present(const Surface& fb) {
                 }
             }
     }
+    // a frame composed on the CPU is mono: on a 3D screen both eyes see it
+    if (std::uint16_t* r = topFramebufferRight()) std::memcpy(r, dst, 240 * 400 * sizeof(std::uint16_t));
     copyTicks_ += svcGetSystemTick() - pr0;
     finishPresent(&fb, dst);
 }
@@ -439,6 +449,15 @@ void N3dsFrontend::finishPresent(const Surface* fb, std::uint16_t* dst) {
         }
         writeWholeFile(name, le.data(), le.size());
         std::printf("panel: the top screen written to %s (240x400 a column, RGB565)\n", name);
+        if (const std::uint16_t* r = topFramebufferRight()) {
+            std::snprintf(name, sizeof name, "%s/screen-%ld-right.bin", n3ds::kCaptures, stats_.frames);
+            for (std::size_t i = 0; i < 240 * 400; ++i) {
+                le[2 * i] = static_cast<unsigned char>(r[i] & 0xFF);
+                le[2 * i + 1] = static_cast<unsigned char>(r[i] >> 8);
+            }
+            writeWholeFile(name, le.data(), le.size());
+            std::printf("panel: the right eye written to %s\n", name);
+        }
     }
     gfxFlushBuffers();
     gfxSwapBuffers();
@@ -516,6 +535,13 @@ std::uint16_t* N3dsFrontend::topFramebuffer() {
     if (!opened_) return nullptr;
     u16 fw = 0, fh = 0;
     auto* dst = reinterpret_cast<std::uint16_t*>(gfxGetFramebuffer(GFX_TOP, GFX_LEFT, &fw, &fh));
+    return dst && fw == 240 && fh == 400 ? dst : nullptr;
+}
+
+std::uint16_t* N3dsFrontend::topFramebufferRight() {
+    if (!opened_ || !stereo3d_) return nullptr;
+    u16 fw = 0, fh = 0;
+    auto* dst = reinterpret_cast<std::uint16_t*>(gfxGetFramebuffer(GFX_TOP, GFX_RIGHT, &fw, &fh));
     return dst && fw == 240 && fh == 400 ? dst : nullptr;
 }
 

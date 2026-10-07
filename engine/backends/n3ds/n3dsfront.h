@@ -56,6 +56,8 @@ public:
     // or null; and `presentWritten` once it has: `present` less its copy
     // (the capture, the frame's stats, the panel, the swap).
     std::uint16_t* topFramebuffer();
+    // ...and the RIGHT eye's, when the top screen is in 3D (step 8), else null
+    std::uint16_t* topFramebufferRight();
     void presentWritten();
 
     std::uint32_t ticksMs() override;
@@ -120,6 +122,7 @@ private:
     long winCopies_ = 0, reports_ = 0;
     int mapW_ = 0, mapH_ = 0;              // `sdmc:/omk/panel-dump` exists: each redraw also to panel.bin
     bool captureOwed_ = false;
+    bool stereo3d_ = false;               // `sdmc:/omk/stereo3d`: the top screen in 3D (step 8)
     bool screenDumpOwed_ = false;         // with a capture: the top screen as written, too
     std::uint64_t lastPresent_ = 0;       // system ticks
     std::uint64_t winStart_ = 0, winSleep_ = 0, winWorst_ = 0;

@@ -1007,6 +1007,53 @@ the 2D layers at the screen plane, one pass at slider 0. The convergence
 distance per camera mode is a decision made by watching. A toggle on the
 panel and a key under `[Enhancements]`.
 
+**FIRST VERSION BUILT 2026-10-07** (the reader's go), Azahar-proved, NOT on
+the console. `sdmc:/omk/stereo3d` on the card turns it on (the frontend
+calls `gfxSet3D`, the renderer makes the eyes' target); a number in the file
+(0..1) stands for the slider, which Azahar starts at 0. `c3dstereo.h` holds
+the eye arithmetic.
+
+* **One pass, each draw twice**, not two passes: each eye at the screen's
+  own 400x224 (no 2x2 average), stacked in a 400x448 target of its own
+  (made at `init`, before the textures fill the VRAM), so the GPU fills no
+  more pixels than the mono 800x448 picture - twice the draws and vertices.
+  Each eye: its viewport (the left the target's top half) and row 0 of the
+  view-projection made OFF-AXIS - the eye moved `o` along the camera's
+  right vector, `row0 - (0,0,0, o/tanH) + o/(tanH c) row3`, which leaves
+  depth `c` without parallax.
+* **The convergence plane is the camera's look-at point's depth** - the
+  player, behind the follow camera - and the separation puts **8 px** between
+  the eyes at infinity at full slider: first figures, for the reader to
+  judge by watching (the plan's "decision made by watching").
+* **The present**: the eyes' target transferred whole and unscaled, one
+  frame behind as the mono present is, each eye dithered into its own
+  framebuffer (6.4's pass). **The interface** (6.7's overlay) is drawn into
+  both eyes at zero parallax, its 800x448 texture LINEAR-sampled at exactly
+  2x (the mean of four texels); the bands to both eyes.
+* **The slider at 0 draws mono**, the right eye a copy of the left; a frame
+  composed on the CPU (the frontend's `present`) is mono on the 3D screen
+  too; a STEREO pass READ BACK (an interface the GPU path refused, the CPU
+  mirror) hands the left eye, doubled, as the frame.
+
+*Proved in Azahar*: with no `stereo3d` on the card the new build is
+byte-identical to the build before it (the street at present 200, the
+fight at 650); with it and the slider at 1, 60 of 60 passes in stereo, the
+eyes converging 119 units ahead 3.64 apart, and the measured disparity
+(luminance correlation per region) is **+8 px on the far buildings** (the
+design's figure, uncrossed - behind the screen), **0 on the player** (the
+convergence plane), +1 on the ground just in front of him; the fight's
+subtitle drawn into both eyes by the GPU overlay (60 interface frames, 60
+stereo passes, no fallback); the slider at 0: no pass in stereo, the eyes
+byte-identical and the left byte-identical to the mono build.
+
+**Not done, and why**: a per-eye visible set and cull (the centre camera's
+are used - an eye 1.8 units off it can lose a sliver at the frame's edge);
+the mirror's reflected pass in stereo (its eye offset is not reflected -
+untested); the panel's toggle and an `[Enhancements]` key (the ini is
+shared code); the convergence per camera mode (one rule for all, until the
+reader has watched it). Twice the draws is a GPU cost the console must
+measure against the mono frame.
+
 ### Step 9 - packaging and the handoff
 
 `.cia` and `.3dsx`, the layout on the card, a `handoff-3ds-port.md` in the
