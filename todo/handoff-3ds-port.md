@@ -304,6 +304,15 @@ log; the `.elf` of that build names its line (section 5).
   and `.sh` under `scripts/` - re-pin `licence headers` in `tools/verify.py`
   with each new file (its docstring has the current count; other sessions
   move it too).
+* **Azahar runs drift between sessions** (2026-10-07): two identical runs an
+  hour apart differed by 257 bytes while back-to-back runs are identical
+  (the `--frames` seed is fixed; the cause is not chased). Compare a build
+  only against a baseline run NEXT to it - a cross-session difference was
+  once taken for a shared-code bug and refuted that way (`3ds-port.md` 6.1).
+* **`args.txt` lines persist**: a `NAME=value` (an environment instrument,
+  e.g. `OMK_CPU_MOTION=1`) or a card file like `c3d-arrays` left on the card
+  silently changes every later run - the reader's 6.1 runs both carried
+  `OMK_CPU_MOTION=1`. Read the log's `args.txt:` and `c3d:` lines first.
 * **zsh**: an unquoted `$A` holding several addresses is ONE argument -
   `${=A}` (a loop over it ran once and "resolved" every address to one
   function); and an inner `EOF` line ends an outer `<<'EOF'` heredoc - patch

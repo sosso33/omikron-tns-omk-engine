@@ -775,7 +775,7 @@ one card session can lay each beside the build without it:
 
 | # | what | the original | state |
 |---|---|---|---|
-| 6.1 | **indexed draws** - a vertex shaded once | faces index the file's vertices, `sub_4947F0` transforms each once | **DONE 2026-10-07**, Azahar-exact; console owed (`c3d-arrays` is the switch) |
+| 6.1 | **indexed draws** - a vertex shaded once | faces index the file's vertices, `sub_4947F0` transforms each once | **DONE 2026-10-07**, Azahar-exact; on the console **no measurable GPU gain** (<= ~5%): the vertex program is not the lever |
 | 6.2 | the GPU's halves attributed: a scissored run (fill ~0) and an untextured one | - (instruments) | proposed |
 | 6.3 | textures in VRAM where they fit | the card's own memory (`SetMaterialsMemory`'s pages uploaded to it) | proposed, after 6.2 |
 | 6.4 | the zero-copy present: the world drawn rotated, the transfer into the framebuffer, the dither on the GPU (an additive 4x4 pass before the truncating transfer) | `Flip` | proposed |
@@ -810,6 +810,43 @@ now indexed too), so the set's partial update is reached only with
 vertex 40 units moves 234 bytes. A mutation SKIPPING the patch's writes was
 caught by the guard instead (re-indexed whole four times, then unindexed,
 the picture right) - the guard working, and the reason the shift was needed.
+
+**6.1 ON THE CONSOLE (the reader, 2026-10-07)**: two runs from the
+restaurant save out into Anekbah, `with_c3d-arrays.log` / `without_c3d-
+arrays.log` - both with `OMK_CPU_MOTION=1` left in `args.txt`, so the 33
+moving meshes were patched into the set's corners every frame (not normal
+play, but the same for both). Matched by draws a pass (the routes differ):
+
+| draws a pass | unindexed: citro3d drawing | indexed |
+|---|---|---|
+| 70-100 | ~31 ms | ~30 ms |
+| 107-150 | ~46 | ~46 |
+| 170-190 | ~53 | ~50 |
+
+**At most ~5%, inside what the routes alone could explain: shading a vertex
+once does not move the GPU's time** - the non-fill half is not the vertex
+program. Kept, as the original's arrangement and for the linear memory
+(2.2x fewer set vertices), but not the lever. The console indexed the set in
+**172 ms** at load.
+
+**And the run found a fault, fixed the same day**: a revision naming no
+dirty corners (a WHOLE rewrite) re-indexed the set from scratch - four times
+in that run, 172 ms each, after which the backstop left it unindexed (from
+frame ~2441). A whole rewrite now goes THROUGH the existing index with the
+same agreement check (`patchIndexed(..., all)`), re-indexing only when two
+corners on one vertex really disagree. Azahar: every update forced whole,
+indexed against unindexed forced whole - **byte-identical**, under
+`OMK_CPU_MOTION=1` at present 90; normal play at 200 byte-identical too.
+
+**A trap found on the way: Azahar runs drift between sessions.** Two
+`c3d-arrays` runs an hour apart differ by 257 bytes at present 200 (and 103
+under CPU motion at 90) while runs back to back are byte-identical - the
+`--frames` seed is fixed (`playsetup_session.cpp`), so something else
+follows the wall clock (perhaps the timestep under the emulator's varying
+speed; not chased). A difference read across two sessions was first taken
+for the shared motion patch's dirty list missing corners - **refuted** by
+re-running the baseline next to it. **Compare only runs taken back to
+back.**
 
 **`args.txt` sets the environment** (2026-10-07): a word `NAME=value` whose
 first letter is upper-case is `setenv`'d instead of passed on, so every

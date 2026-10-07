@@ -806,20 +806,26 @@ private:
         return true;
     }
 
-    // A partial update of an indexed geometry: each dirty corner's vertex
-    // rewritten, and refused (false: re-index whole) when two corners on one
-    // vertex would disagree - two dirty ones with different values, or a
-    // dirty one changing a vertex a clean corner still reads.
-    bool patchIndexed(const Geometry& g, Res& r) {
+    // An update of an indexed geometry through its index: each changed
+    // corner's vertex rewritten - the corners `dirtyCorners` names (`all`
+    // false) or every corner (`all`: a revision that names none) - and
+    // refused (false: re-index whole) when two corners on one vertex would
+    // disagree - two changed ones with different values, or a changed one
+    // moving a vertex an unchanged corner still reads. A whole rewrite used
+    // to re-index from scratch, 172 ms on the console a time (the reader's
+    // run of 2026-10-07): the index holds as long as the corners agree.
+    bool patchIndexed(const Geometry& g, Res& r, bool all) {
         const auto& dc = g.dirtyCorners;
         if (markC_.size() < r.n) markC_.resize(r.n, 0);
         if (seenV_.size() < r.nv) seenV_.resize(r.nv, 0);
         touched_.clear();
         olds_.clear();
         bool conflict = false;
-        for (const std::uint32_t k : dc) {
-            if (k >= r.n || markC_[k]) continue;
-            markC_[k] = 1;
+        const std::size_t count = all ? r.n : dc.size();
+        for (std::size_t q = 0; q < count; ++q) {
+            const std::uint32_t k = all ? static_cast<std::uint32_t>(q) : dc[q];
+            if (k >= r.n || (!all && markC_[k])) continue;
+            if (!all) markC_[k] = 1;
             const std::uint16_t v = r.idx[k];
             const GpuVert val = gpuVert(g.corners[k]);
             if (seenV_[v] == 0) {
@@ -837,8 +843,12 @@ private:
                 conflict = true;
             seenV_[v] = 0;
         }
-        for (const std::uint32_t k : dc) if (k < r.n) markC_[k] = 0;
+        if (!all) for (const std::uint32_t k : dc) if (k < r.n) markC_[k] = 0;
         if (conflict) return false;
+        if (all) {
+            GSPGPU_FlushDataCache(r.buf, r.nv * sizeof(GpuVert));
+            return true;
+        }
         // flushed in runs: the touched vertices sorted, a gap of 32 or less bridged
         std::sort(touched_.begin(), touched_.end());
         std::size_t i = 0;
@@ -883,9 +893,9 @@ private:
             // INDEXED: the dirty corners' vertices, or the whole re-indexed
             Res& r = it->second;
             const bool partial = g.dirtyTo != 0 && g.dirtyTo == g.revision && r.rev == g.dirtyFrom;
-            if (!(partial && patchIndexed(g, r))) {
+            if (!patchIndexed(g, r, !partial)) {
                 if (++r.rebuilds > 3 && !r.unindexed) {
-                    r.unindexed = true;   // rewritten whole too often: corners from now on
+                    r.unindexed = true;   // its corners keep disagreeing: corners from now on
                     std::printf("c3d: a geometry of %zu corners re-indexed whole %d times - left unindexed\n",
                                 n, r.rebuilds);
                 }
