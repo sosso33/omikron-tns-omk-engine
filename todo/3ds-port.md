@@ -776,8 +776,8 @@ one card session can lay each beside the build without it:
 | # | what | the original | state |
 |---|---|---|---|
 | 6.1 | **indexed draws** - a vertex shaded once | faces index the file's vertices, `sub_4947F0` transforms each once | **DONE 2026-10-07**, Azahar-exact; on the console **no measurable GPU gain** (<= ~5%): the vertex program is not the lever |
-| 6.2 | the GPU's halves attributed: a scissored run (fill ~0) and an untextured one | - (instruments) | proposed |
-| 6.3 | textures in VRAM where they fit | the card's own memory (`SetMaterialsMemory`'s pages uploaded to it) | proposed, after 6.2 |
+| 6.2 | the GPU's halves attributed: a scissored run (fill ~0) and an untextured one | - (instruments) | **BUILT 2026-10-07** (`c3d-scissor`, `c3d-notex`); console owed |
+| 6.3 | textures in VRAM where they fit | the card's own memory (`SetMaterialsMemory`'s pages uploaded to it) | **DONE 2026-10-07**, Azahar-exact; console owed (`c3d-texlinear` is the switch) |
 | 6.4 | the zero-copy present: the world drawn rotated, the transfer into the framebuffer, the dither on the GPU (an additive 4x4 pass before the truncating transfer) | `Flip` | proposed |
 | 6.5 | the panel's redraw (13.5 ms twice a second) only when its text changes | - | proposed |
 | 6.6 | the second core (`OMK_THREADS`) | - | the reader's decision on threads first |
@@ -847,6 +847,31 @@ speed; not chased). A difference read across two sessions was first taken
 for the shared motion patch's dirty list missing corners - **refuted** by
 re-running the baseline next to it. **Compare only runs taken back to
 back.**
+
+**6.2 and 6.3 (2026-10-07), built for one card session.** Since 6.1 ruled
+the vertex program out, the GPU's non-fill half is triangle setup, the
+attribute fetch or the texturing:
+
+* **6.2, two instruments** (pictures nobody plays, card files read at
+  start): `c3d-scissor` sets the PICA's scissor to an 8x8 corner every pass -
+  the fill all but gone, so what citro3d's drawing still takes is the
+  geometry's (vertices, setup, the attribute fetch, the per-draw cost);
+  `c3d-notex` draws untextured - `C3D_TexBind(0, nullptr)` turns the unit
+  off, so nothing is fetched - and the difference from a textured run is the
+  texturing's share. Azahar: both run 210 frames; the scissored capture holds
+  only the cleared fog colour, the untextured one the street in its vertex
+  colours alone.
+* **6.3, the textures in VRAM where they fit**, as the original's lived in
+  the card's memory: the CPU cannot write VRAM, so each goes through a linear
+  staging block and a GPU copy (`C3D_SyncTextureCopy`, which waits out of a
+  frame - `setTextures` closes it first), and 64 KB stays free. The pool now
+  drops what no slot uses BEFORE uploading, so the VRAM it held is there for
+  the new ones; a second `init` (none on the 3DS today) moves every VRAM
+  texture back to linear memory in its own `C3D_Tex` first. The street:
+  **3200 of 3968 KB in VRAM** (144 KB left - the 800x448 colour and depth
+  targets take the rest). Azahar, back to back: VRAM against `c3d-texlinear`
+  **byte-identical** at present 200. Whether the PICA samples VRAM faster is
+  the console's to say.
 
 **`args.txt` sets the environment** (2026-10-07): a word `NAME=value` whose
 first letter is upper-case is `setenv`'d instead of passed on, so every

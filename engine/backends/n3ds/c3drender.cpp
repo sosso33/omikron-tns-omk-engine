@@ -245,6 +245,17 @@ public:
         // THE VERTEX INDEX (step 6), unless `sdmc:/omk/c3d-arrays` is on the
         // card - an instrument, every draw from the corners as before
         if (std::FILE* f = std::fopen("sdmc:/omk/c3d-arrays", "r")) { std::fclose(f); noIndex_ = true; }
+        // THE TEXTURES IN VRAM (step 6.3) unless `sdmc:/omk/c3d-texlinear`;
+        // and the two GPU ATTRIBUTION instruments (6.2), each a picture
+        // nobody plays: `c3d-scissor` draws every pass into an 8x8 corner
+        // (the fill all but gone - what is left is the geometry's), and
+        // `c3d-notex` draws untextured (the texture fetch gone)
+        if (std::FILE* f = std::fopen("sdmc:/omk/c3d-texlinear", "r")) { std::fclose(f); vramTex_ = false; }
+        if (std::FILE* f = std::fopen("sdmc:/omk/c3d-scissor", "r")) { std::fclose(f); scissor_ = true; }
+        if (std::FILE* f = std::fopen("sdmc:/omk/c3d-notex", "r")) { std::fclose(f); noTex_ = true; }
+        // a texture in VRAM leaves first if the target is made again
+        // (`init` runs once on the 3DS; this keeps a second one safe)
+        evictVramTextures();
         target_ = C3D_RenderTargetCreate(tw_, th_, rgb565_ ? GPU_RB_RGB565 : GPU_RB_RGBA8,
                                          GPU_RB_DEPTH24_STENCIL8);
         if (!target_) {
@@ -262,6 +273,10 @@ public:
                     : "one frame behind: the GPU draws frame N while the CPU shows N-1 and builds N+1");
         if (rgb565_) std::printf("c3d: c3d-rgb565 present - the target is RGB565, the transfers 565, no CPU "
                                  "conversion (the 16-bit experiment)\n");
+        std::printf("c3d: textures %s%s%s\n", vramTex_ ? "in VRAM where they fit, as the original's card held them"
+                                                    : "in linear memory (c3d-texlinear present)",
+                    scissor_ ? "; c3d-scissor present - every pass drawn into an 8x8 corner (an instrument)" : "",
+                    noTex_ ? "; c3d-notex present - drawn untextured (an instrument)" : "");
         std::printf("c3d: %s\n", noIndex_ ? "c3d-arrays present - every draw from the corners, unindexed"
                                           : "indexed draws - a vertex shaded once, as the original transforms it "
                                             "(the bodies, and scene geometry from 4096 corners)");
@@ -285,8 +300,21 @@ public:
         const u64 t0 = svcGetSystemTick();
         for (auto& [key, u] : uploaded_) u.used = false;
         tex_.assign(t.size(), Slot{});
-        int reused = 0, fresh = 0, failed = 0;
-        std::vector<std::uint16_t> tiled;
+        int reused = 0, fresh = 0, failed = 0, dropped = 0;
+        // what no slot of the new pool uses leaves FIRST, so the VRAM it held
+        // is there for the new ones (6.3)
+        for (std::size_t i = 0; i < t.size(); ++i) {
+            const Texture& x = t[i];
+            if (!x.hasPixels()) continue;
+            auto hit = uploaded_.find(std::make_tuple(x.idx.data(), x.pal.data(), x.width, x.height));
+            if (hit != uploaded_.end()) hit->second.used = true;
+        }
+        for (auto it = uploaded_.begin(); it != uploaded_.end(); ) {
+            if (it->second.used) { ++it; continue; }
+            C3D_TexDelete(it->second.tex.get());
+            it = uploaded_.erase(it);
+            ++dropped;
+        }
         for (std::size_t i = 0; i < t.size(); ++i) {
             const Texture& x = t[i];
             if (!x.hasPixels()) continue;
@@ -296,29 +324,15 @@ public:
             auto hit = uploaded_.find(key);
             if (hit == uploaded_.end()) {
                 auto tex = std::make_unique<C3D_Tex>();
-                if (!C3D_TexInit(tex.get(), static_cast<u16>(x.width), static_cast<u16>(x.height),
-                                 GPU_RGBA5551)) {
+                bool onVram = false;
+                if (!uploadTex(*tex, x.idx.data(), x.pal.data(), x.width, x.height, vramTex_, onVram)) {
                     std::printf("c3d: texture %zu (%s, %dx%d) has no memory - drawn untextured\n",
                                 i, x.name.c_str(), x.width, x.height);
                     ++failed;
                     continue;
                 }
-                // the palette as RGBA5551 once - the colour key on black as alpha 0
-                std::uint16_t pal[256];
-                for (int k = 0; k < 256; ++k) {
-                    const std::uint8_t* p = x.pal.data() + 3 * k;
-                    const unsigned r = p[0], g = p[1], b = p[2];
-                    pal[k] = static_cast<std::uint16_t>((r >> 3) << 11 | (g >> 3) << 6 | (b >> 3) << 1 |
-                                                        ((r | g | b) ? 1u : 0u));
-                }
-                tile(x, pal, tiled);
-                C3D_TexUpload(tex.get(), tiled.data());
-                C3D_TexFlush(tex.get());
-                C3D_TexSetWrap(tex.get(), GPU_REPEAT, GPU_REPEAT);
-                const GPU_TEXTURE_FILTER_PARAM f = filter_ ? GPU_LINEAR : GPU_NEAREST;
-                C3D_TexSetFilter(tex.get(), f, f);
                 hit = uploaded_.emplace(key, Uploaded{std::move(tex), x.idx, x.pal, 2LL * x.width * x.height,
-                                                      false}).first;
+                                                      false, x.width, x.height, onVram}).first;
                 ++fresh;
             } else {
                 ++reused;
@@ -326,17 +340,16 @@ public:
             hit->second.used = true;
             tex_[i] = Slot{hit->second.tex.get(), static_cast<float>(x.width), static_cast<float>(x.height)};
         }
-        int dropped = 0;
-        long long bytes = 0;
-        for (auto it = uploaded_.begin(); it != uploaded_.end(); ) {
-            if (it->second.used) { bytes += it->second.bytes; ++it; continue; }
-            C3D_TexDelete(it->second.tex.get());
-            it = uploaded_.erase(it);
-            ++dropped;
+        long long bytes = 0, vramBytes = 0;
+        for (const auto& [key, u] : uploaded_) {
+            bytes += u.bytes;
+            if (u.vram) vramBytes += u.bytes;
         }
         std::printf("c3d: texture pool of %zu - %d kept on the GPU, %d uploaded, %d dropped%s; "
-                    "%lld KB as RGBA5551, %u KB of linear memory left, %.1f ms\n",
+                    "%lld KB as RGBA5551, %lld KB of it in VRAM (%u KB of VRAM left), %u KB of linear "
+                    "memory left, %.1f ms\n",
                     t.size(), reused, fresh, dropped, failed ? " (some failed)" : "", bytes / 1024,
+                    vramBytes / 1024, static_cast<unsigned>(vramSpaceFree() / 1024),
                     static_cast<unsigned>(linearSpaceFree() / 1024),
                     (svcGetSystemTick() - t0) * 1000.0 / SYSCLOCK_ARM11);
         boundTex_ = ~0u;
@@ -381,6 +394,7 @@ public:
         // the picture in the TOP-LEFT cam.w x cam.h, as the reference draws
         // it; the PICA's viewport origin is the bottom-left, as GL's
         C3D_SetViewport(0, static_cast<u32>(th_ - cam.h), static_cast<u32>(cam.w), static_cast<u32>(cam.h));
+        C3D_SetScissor(scissor_ ? GPU_SCISSOR_NORMAL : GPU_SCISSOR_DISABLE, 0, 0, 8, 8);
         shimClock_ = std::floor(std::floor(v.shimmerClock) / 4.0f);
         grey_ = v.grey ? 1.0f : 0.0f;
         // the posing program's register is its own (the scene's sit under
@@ -709,7 +723,11 @@ private:
     struct Slot { C3D_Tex* tex = nullptr; float w = 1, h = 1; };
     // An upload, kept across pools: the storage it was made from is held, so
     // the key's address stays this texture's.
-    struct Uploaded { std::unique_ptr<C3D_Tex> tex; PixelBuffer keep, keepPal; long long bytes = 0; bool used = false; };
+    struct Uploaded {
+        std::unique_ptr<C3D_Tex> tex; PixelBuffer keep, keepPal; long long bytes = 0; bool used = false;
+        int w = 0, h = 0;
+        bool vram = false;            // in VRAM (6.3), else linear memory
+    };
 
     static bool noCull() { static const bool n = std::getenv("OMK_NO_CULL") != nullptr; return n; }
 
@@ -1162,13 +1180,71 @@ private:
         C3D_FVUnifSet(GPU_VERTEX_SHADER, uGrey_, 0.299f, 0.587f, 0.114f, grey_);
     }
 
+    // ONE TEXTURE UP (`tex` initialised here): its palette as RGBA5551 - the
+    // colour key on black as alpha 0 - its texels tiled, and the result in
+    // VRAM when `tryVram` and it fits, else in linear memory (6.3). THE
+    // ORIGINAL's textures lived in the card's own memory (`SetMaterialsMemory`'s
+    // pages uploaded to it, `ram-vs-original.md`); the PICA reads linear
+    // memory over the bus it shares with the CPU. The CPU cannot write VRAM:
+    // the texels go through a linear staging block and a GPU copy, which
+    // `C3D_SyncTextureCopy` waits for out of a frame (`setTextures` closes
+    // the frame first). `kVramKeep` stays free for a render target made again.
+    static constexpr std::size_t kVramKeep = 64 * 1024;
+    bool uploadTex(C3D_Tex& tex, const std::uint8_t* idx, const std::uint8_t* palRgb, int w, int h,
+                   bool tryVram, bool& onVram) {
+        std::uint16_t pal[256];
+        for (int k = 0; k < 256; ++k) {
+            const std::uint8_t* p = palRgb + 3 * k;
+            const unsigned r = p[0], g = p[1], b = p[2];
+            pal[k] = static_cast<std::uint16_t>((r >> 3) << 11 | (g >> 3) << 6 | (b >> 3) << 1 |
+                                                ((r | g | b) ? 1u : 0u));
+        }
+        tile(idx, w, h, pal, tiled_);
+        const std::size_t bytes = tiled_.size() * sizeof(std::uint16_t);
+        onVram = false;
+        if (tryVram && vramSpaceFree() >= bytes + kVramKeep &&
+            C3D_TexInitVRAM(&tex, static_cast<u16>(w), static_cast<u16>(h), GPU_RGBA5551)) {
+            if (void* stage = linearAlloc(bytes)) {
+                std::memcpy(stage, tiled_.data(), bytes);
+                GSPGPU_FlushDataCache(stage, bytes);
+                C3D_TexUpload(&tex, stage);              // a GPU copy, waited for out of a frame
+                linearFree(stage);
+                onVram = true;
+            } else {
+                C3D_TexDelete(&tex);
+            }
+        }
+        if (!onVram) {
+            if (!C3D_TexInit(&tex, static_cast<u16>(w), static_cast<u16>(h), GPU_RGBA5551)) return false;
+            C3D_TexUpload(&tex, tiled_.data());
+            C3D_TexFlush(&tex);
+        }
+        C3D_TexSetWrap(&tex, GPU_REPEAT, GPU_REPEAT);
+        const GPU_TEXTURE_FILTER_PARAM f = filter_ ? GPU_LINEAR : GPU_NEAREST;
+        C3D_TexSetFilter(&tex, f, f);
+        return true;
+    }
+
+    // Every texture in VRAM moved to linear memory, in its own `C3D_Tex` so
+    // the pool's slots stay valid - before a render target is made again.
+    void evictVramTextures() {
+        for (auto& [key, u] : uploaded_) {
+            if (!u.vram) continue;
+            C3D_TexDelete(u.tex.get());
+            bool onVram = false;
+            if (!uploadTex(*u.tex, u.keep.data(), u.keepPal.data(), u.w, u.h, false, onVram))
+                std::printf("c3d: a %dx%d texture lost leaving VRAM\n", u.w, u.h);
+            u.vram = false;
+        }
+        boundTex_ = ~0u;
+    }
+
     // THE PICA's TEXTURE LAYOUT: 8x8 tiles, the tiles row by row from the
     // BOTTOM of the image (t = 0 is the last row, as in GL), the 64 texels of
     // a tile in Morton (Z) order - x and y bits interleaved, x lowest.
-    static void tile(const Texture& x, const std::uint16_t pal[256], std::vector<std::uint16_t>& out) {
-        const int w = x.width, h = x.height;
+    static void tile(const std::uint8_t* idx, int w, int h, const std::uint16_t pal[256],
+                     std::vector<std::uint16_t>& out) {
         out.assign(static_cast<std::size_t>(w) * h, 0);
-        const std::uint8_t* idx = x.idx.data();
         for (int y = 0; y < h; ++y) {
             const int ty = h - 1 - y;                       // the image's row y at t = ty
             for (int xx = 0; xx < w; ++xx) {
@@ -1200,7 +1276,7 @@ private:
     // here only when they differ from the last draw's.
     void setState(const Draw& d) {
         const unsigned slot = d.bucketKey & 0x3F;   // ASSETS 4b: the key's low six bits
-        const bool hasTex = slot < tex_.size() && tex_[slot].tex;
+        const bool hasTex = !noTex_ && slot < tex_.size() && tex_[slot].tex;
         if (!stateValid_ || d.blend != blend_) {
             switch (d.blend) {
             case Blend::Opaque:
@@ -1247,6 +1323,7 @@ private:
                 C3D_TexEnvSrc(env, C3D_Alpha, GPU_TEXTURE0, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
                 C3D_TexEnvFunc(env, C3D_Alpha, GPU_REPLACE);  // the key, for the alpha test
             } else {
+                C3D_TexBind(0, nullptr);                      // the unit off: nothing fetched
                 C3D_TexEnvSrc(env, C3D_RGB, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
                 C3D_TexEnvFunc(env, C3D_RGB, GPU_REPLACE);    // no texture: the colour alone
                 // ...and an opaque alpha (the primary's carries the fog factor)
@@ -1284,6 +1361,10 @@ private:
     std::unordered_map<const Geometry*, Res> res_;
     std::vector<void*> grave_;
     bool noIndex_ = false;              // `sdmc:/omk/c3d-arrays`: every draw from the corners
+    bool vramTex_ = true;               // textures in VRAM where they fit (6.3); `c3d-texlinear` off
+    bool scissor_ = false;              // `c3d-scissor`: every pass into an 8x8 corner (6.2)
+    bool noTex_ = false;                // `c3d-notex`: untextured (6.2)
+    std::vector<std::uint16_t> tiled_;  // a texture's tiled texels, staged
     std::vector<std::uint8_t> markC_;   // a partial update's scratch: corners seen
     std::vector<std::uint16_t> seenV_;  // ...and the corners seen on a vertex
     std::vector<std::uint32_t> touched_;
