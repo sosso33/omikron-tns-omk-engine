@@ -769,4 +769,10 @@ not react in the original either. AREA 157 (the well) does the same as
 cutscenes (`1_/2_Meca_Nv0`, with a camera); `qchaud.SCX` (Qalisar) carries ten
 `1MecaNa/b_*` objects that nothing starts - cut. The port runs all of it:
 `verify.py: engine: meca react` walks into zone 269 and back out.
+**Confirmed against the original 2026-10-07**: the reader, playing the real
+game under CrossOver, walked up to the security centre's guard in the well
+(AREA 157, zone 2576 'Mecaguard Entrée', guard 163): the alert animation and
+the mechanical sound, and NO voice line - the voice is the zone's ACTIVATE
+(press action), as the data says. The port's walk into the same zone: sound
+6 and `10MEHA1.3DA` on entering, sound 7 and `10MEHA5.3DA` on leaving.
 
