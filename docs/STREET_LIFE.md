@@ -581,7 +581,18 @@ Ambient is three calls — `sub_456C70`, the spatial-index update, `sub_456B40`:
   close the distance takes `768 * dt` off, floored at 256. And above
   **1706.6666** (6.67 units a frame), one whose spatial entry touches him
   raises event 43 with game message **17**, latched by `dword_538E20` for 90
-  frames.
+  frames. "Touches" is `sub_45DF30(mover +184)`: flag 2 of the vehicle's
+  spatial-index entry, set only by the player's own crowd query - the
+  vehicle's ellipse (`sub_45E690`) against his spheres, ~90 units out along
+  its heading - and read by `Sliders_Tick` a frame later (it runs before
+  `Actors_TickAll`). So the brake WINS against a player standing on the road:
+  from 5000 it is under the limit in five frames and ~70 units, and it
+  touches him at a crawl. He is run over when it cannot see him in time: off
+  a road mesh (no brake), stepping into its path inside the brake distance,
+  or walking into one already past him (the brake needs the step to close the
+  distance). The port tested a ~170-unit box about the body until 2026-10-07,
+  and standing in a lane always got him run over (`todo/falls.md` 4;
+  `engine: run over`, `engine: run over contact`).
 * **The sound** is `SOUNDS\sliderm01.wav`, loaded by `Slider_Init` and played
   3D at the body with its velocity, started inside **585** units and stopped
   outside; the handle is the record's `+20`. Measured from the LISTENER -

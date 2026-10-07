@@ -947,6 +947,17 @@ void Session::postRunOvers() {
     }
 }
 
+// The flag is the index's (`SpatialIndex_Query` marks every entry it hits
+// and clears the rest), read per mover through its slot - the mover's `+184`.
+// `Sliders_Tick` runs before `Actors_TickAll`, so what it reads is the
+// player's query of the frame before, as here.
+void Session::handPlayerTouches() {
+    std::vector<int> movers;
+    for (std::size_t i = 0; i < pedSlots_.size(); ++i)
+        if (pedSlots_[i] >= 0 && spatial_.touched(pedSlots_[i])) movers.push_back(static_cast<int>(i));
+    sliders_.setPlayerTouched(movers);
+}
+
 bool Session::startPlayerMove(int groupId, int ctx) {
     return moveHook_ && moveHook_(groupId, ctx);
 }
@@ -2592,6 +2603,7 @@ void Session::frame() {
         // transition may be waiting on one of them (omk-play 70)
         if (sceneOutArea_ >= 0)
             sceneOut_.tick(static_cast<float>(frameSeconds_ * 30.0));
+        handPlayerTouches();
         sliders_.tick(static_cast<float>(frameSeconds_ * 30.0));   // `Sliders_Tick`, no dialogue gate either
         releaseTalkTarget();
         postRunOvers();
@@ -2675,6 +2687,7 @@ void Session::frame() {
     if (sceneOutArea_ >= 0)
         sceneOut_.tick(static_cast<float>(frameSeconds_ * 30.0));
     // `Sliders_Tick`: the traffic and the pedestrians, every frame
+    handPlayerTouches();
     sliders_.tick(static_cast<float>(frameSeconds_ * 30.0));
     releaseTalkTarget();
     postRunOvers();

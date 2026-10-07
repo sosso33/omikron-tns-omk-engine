@@ -211,6 +211,7 @@ void Sliders::clear() {
     groupBusyVeh_.clear(); crossWaitVeh_ = crossWaitPed_ = 0;
     vehicles_.clear(); bumped_.clear();
     playerKnown_ = playerOnRoad_ = false; bumpHold_ = 0.0f; bumpLatch_ = -1;
+    playerTouched_.clear();
     nSliderModels_ = nMotoModels_ = 0;
     talkTarget_ = -1; counter_ = 0; nameNext_[1] = nameNext_[2] = 0;
     // ...and THE CALL. A load into another city rebuilds the whole pool, but

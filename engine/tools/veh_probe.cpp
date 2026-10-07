@@ -23,6 +23,7 @@
 // `--player x,y,z` stands the player there ON THE ROAD, which is what turns
 // the brake and the run-over on.
 #include "actor/sliders.h"
+#include "actor/spatial.h"
 #include "formats/iam.h"
 #include "formats/opt.h"
 #include "formats/mesh3do.h"
@@ -154,7 +155,7 @@ int main(int argc, char** argv) {
     const int area = std::atoi(argv[2]);
     int frames = 600;
     bool list = false, hasPlayer = false, recall = false, runover = false, defer = false,
-         place = false;
+         place = false, contact = false;
     float player[3] = {0, 0, 0};
     for (int i = 3; i < argc; ++i) {
         const std::string a = argv[i];
@@ -162,6 +163,7 @@ int main(int argc, char** argv) {
         else if (a == "--recall") recall = true;
         else if (a == "--place") place = true;
         else if (a == "--runover") runover = true;
+        else if (a == "--contact") contact = true;
         else if (a == "--defer") defer = true;
         else if (a == "--player" && i + 1 < argc) {
             hasPlayer = (std::sscanf(argv[++i], "%f,%f,%f", &player[0], &player[1], &player[2]) == 3);
@@ -331,6 +333,101 @@ int main(int argc, char** argv) {
                     calls, stopped, deferred, onConnector);
         return 0;
     }
+    // `--contact`: THE BRAKE AGAINST THE RUN-OVER, through the real contact.
+    // One ambient vehicle, its spatial-index entry carrying its model's own
+    // push spheres and the player Kay'l's (HO1_FN), in `Game_Tick`'s order:
+    // `Sliders_Tick` reads the touch flag the player's query left the frame
+    // before (`sub_45DF30`), then the player's query (`Actor_TickNpc`) marks
+    // the entries it hits and shoves him. Three cases, each 120 frames:
+    //   stand  he waits on the ROAD 400 ahead of it (`dword_8F5E38` = 1);
+    //   kerb   the same spot with the flag down - he is not on a road mesh;
+    //   late   he waits on the road 300 to one side, outside the 195 brake
+    //          sphere, and steps into its path when it is 110 away.
+    // Per case: frames it braked, run-overs, its speed at the first touch.
+    if (contact) {
+        auto run = [&](int mode) {
+            omk::Sliders p2;
+            p2.load(track, clips, menMask, womenMask, omk::kDefaultStreetActivity, 1u,
+                    static_cast<std::uint32_t>(sliMask), static_cast<std::uint32_t>(motoMask));
+            for (const std::string& name : {std::string("sli_fn"), std::string("moto")}) {
+                const auto d = fs.read("MESHES/PERSOS/" + name + ".3DO");
+                if (const auto h = omk::readHeader(d)) {
+                    const auto meshes = omk::readMeshes(d, *h);
+                    if (!meshes.empty()) p2.setVehicleModelRadius(name, meshes.front().radius);
+                }
+            }
+            // the fastest straight runner: tick until one is at its cap
+            int victim = -1;
+            for (int f = 0; f < 600 && victim < 0; ++f) {
+                p2.tick(1.0f);
+                for (std::size_t i = 0; i < p2.vehicles().size(); ++i) {
+                    const auto& v = p2.vehicles()[i];
+                    if (!v.live || v.mover < 0) continue;
+                    if (p2.movers()[static_cast<std::size_t>(v.mover)].baseSpeed >= v.speedCap - 1.0f) {
+                        victim = static_cast<int>(i); break;
+                    }
+                }
+            }
+            if (victim < 0) { std::printf("contact: no vehicle reached its cap\n"); return; }
+            const auto& vv = p2.vehicles()[static_cast<std::size_t>(victim)];
+            const std::size_t mi = static_cast<std::size_t>(vv.mover);
+            auto spheresOf = [&](const std::string& model, float& reach) {
+                const auto d = fs.read("MESHES/PERSOS/" + model + ".3DO");
+                std::vector<omk::CollisionSphere> sp = omk::pushSpheresOf(d);
+                reach = 0.0f;
+                if (const auto h = omk::readHeader(d)) {
+                    const auto meshes = omk::readMeshes(d, *h);
+                    if (!meshes.empty()) reach = meshes.front().radius;
+                    if (sp.empty()) sp = omk::collisionSpheresOf(meshes);
+                }
+                return sp;
+            };
+            float vehReach = 0.0f, plReach = 0.0f;
+            const auto vehSpheres = spheresOf(vv.model, vehReach);
+            const auto plSpheres = spheresOf("HO1_FN", plReach);
+            omk::SpatialIndex idx;
+            const int slot = idx.add(victim, 1, vehReach, &vehSpheres);
+            const auto& m0 = p2.movers()[mi];
+            const float side[3] = {-m0.dir[2], 0.0f, m0.dir[0]};
+            float pl[3], path[3];
+            for (int k = 0; k < 3; ++k) path[k] = m0.body[k] + m0.dir[k] * 400.0f;
+            for (int k = 0; k < 3; ++k) pl[k] = mode == 2 ? path[k] + side[k] * 300.0f : path[k];
+            bool stepped = mode != 2;
+            int brakes0 = vv.brakes, overs = 0;
+            float firstTouch = -1.0f;
+            std::vector<int> touched;
+            idx.update(slot, m0.body, m0.facing);
+            for (int f = 0; f < 120; ++f) {
+                const auto& m = p2.movers()[mi];
+                if (!stepped) {
+                    const float dx = m.body[0] - path[0], dz = m.body[2] - path[2];
+                    if (std::sqrt(dx * dx + dz * dz) <= 110.0f) {
+                        stepped = true;
+                        for (int k = 0; k < 3; ++k) pl[k] = path[k];
+                    }
+                }
+                p2.setPlayer(pl, mode != 1);
+                p2.setPlayerTouched(touched);
+                p2.tick(1.0f);
+                for (const int b : p2.bumped()) if (b == victim) ++overs;
+                const auto& m2 = p2.movers()[mi];
+                idx.update(slot, m2.body, m2.facing);
+                float push[3];
+                touched.clear();
+                if (idx.query(plSpheres, plReach, pl, 0.0f, push) && idx.touched(slot)) {
+                    touched.push_back(vv.mover);
+                    if (firstTouch < 0.0f) firstTouch = m2.baseSpeed;
+                }
+                pl[0] += push[0]; pl[2] += push[2];
+            }
+            static const char* names[] = {"stand", "kerb", "late"};
+            std::printf("contact %s braked %d run_overs %d speed_at_touch %.0f\n", names[mode],
+                        p2.vehicles()[static_cast<std::size_t>(victim)].brakes - brakes0, overs,
+                        double(firstTouch));
+        };
+        run(0); run(1); run(2);
+        return 0;
+    }
     if (runover) {
         auto count = [&](int mode) {
             omk::Sliders p2;
@@ -355,6 +452,10 @@ int main(int argc, char** argv) {
                 const auto& m = p2.movers()[static_cast<std::size_t>(p2.vehicles()[static_cast<std::size_t>(victim)].mover)];
                 const float at[3] = {m.body[0] + m.dir[0] * 30.0f, m.body[1], m.body[2] + m.dir[2] * 30.0f};
                 p2.setPlayer(at, false);
+                // standing 30 ahead of its body he is inside its ellipse; the
+                // probe has no index, so it says so for the victim alone -
+                // what is tested here is the GATING, not the contact
+                p2.setPlayerTouched({p2.vehicles()[static_cast<std::size_t>(victim)].mover});
                 p2.tick(1.0f);
                 bumps += static_cast<int>(p2.bumped().size());
             }

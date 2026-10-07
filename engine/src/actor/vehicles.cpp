@@ -221,6 +221,13 @@ void Sliders::setPlayer(const float pos[3], bool onRoad) {
     playerOnRoad_ = onRoad && !(called_ >= 0 && callRide_.state == 6);
 }
 
+void Sliders::setPlayerTouched(const std::vector<int>& movers) {
+    playerTouched_.assign(movers_.size(), 0);
+    for (const int m : movers)
+        if (m >= 0 && static_cast<std::size_t>(m) < playerTouched_.size())
+            playerTouched_[static_cast<std::size_t>(m)] = 1;
+}
+
 // ------------------------------------------------------------ the tick
 
 void Sliders::tickVehicles(float dt) {
@@ -369,20 +376,21 @@ void Sliders::vehicleDrive(int vi, float dt) {
     }
 
     // the run-over: above 1706.6666 a vehicle whose spatial entry touches the
-    // player raises event 43 with game message 17. `sub_45DF30` is the
-    // index's own touch flag; the port has no index here, so the test is the
-    // reach box the index would have applied - `max(|d|) <= r + r` over the
-    // two radii, which is `SpatialIndex_Query`'s own gate (actor/spatial.*).
+    // player raises event 43 with game message 17. `sub_45DF30(+184)` is the
+    // index's own touch flag, set by the player's last crowd query when the
+    // vehicle's ELLIPSE (`sub_45E690`, two radii along its heading) overlaps
+    // his spheres - the same contact that shoves him (`setPlayerTouched`).
+    // Until 2026-10-07 this was a stand-in, a reach box of the body radius
+    // + 20 about the body point, from before the vehicles were in the index.
     // `v10`: no run-over at all while the player's own slider is in 3..6 -
     // boarding, aboard, getting out, or carrying him on a journey
     // (`sub_456C70`: `if (v11 >= 3 && v11 <= 6) v10 = 0`).
     const bool ownRide = called_ >= 0 && callRide_.state >= 3 && callRide_.state <= 6;
+    const bool touchedNow = static_cast<std::size_t>(v.mover) < playerTouched_.size() &&
+                            playerTouched_[static_cast<std::size_t>(v.mover)];
+    if (touchedNow) ++v.touches;
     if (playerKnown_ && bumpLatch_ < 0 && !ownRide && m.baseSpeed > kVehRunOver) {
-        const float dx = std::fabs(m.body[0] - playerPos_[0]);
-        const float dy = std::fabs(m.body[1] - playerPos_[1]);
-        const float dz = std::fabs(m.body[2] - playerPos_[2]);
-        const float reach = m.bodyRadius + 20.0f;
-        if (dx <= reach && dy <= reach && dz <= reach) {
+        if (touchedNow) {
             bumpLatch_ = vi;
             bumpHold_ = 90.0f;
             bumped_.push_back(vi);

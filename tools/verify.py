@@ -13974,25 +13974,29 @@ def c_engine_fall_reaction():
             "catacombs' 5 m: group 5, message 11, camera 19, and camera 0 on the get-up")
 
 def c_engine_run_over():
-    r"""`omk-play`: the traffic brakes for a player on the road - and still runs him over.
+    r"""`omk-play`: the traffic brakes for a player standing on the road, and STOPS IN TIME.
 
     `todo/falls.md` 4. `Sliders_Tick` probes the player's ground every frame
     and raises `dword_8F5E38` on a mesh whose name starts 'X' or "OP" - the
     road. A vehicle within 195 units closing on him takes 768 a frame off its
-    speed; one still above 1706.67 whose spatial entry touches him raises
-    message 17, the RUN-OVER. A vehicle arriving at 5000 is still well above
-    the limit two frames into its braking, so standing in a lane gets him run
-    over all the same. Anekbah's own handler answers: a red flash, a shake,
-    `Vie` -15 (or 5 below 16) and `player.move.wait 118`, `H_IMPACT`. The port
-    had the vehicle half since the traffic was ported - but `Sliders::setPlayer`
-    had NO caller, so nothing braked for him, and the run-overs it recorded
-    were never posted.
+    speed, floored at 256; one still above 1706.67 whose spatial-index entry
+    the player's last query TOUCHED (`sub_45DF30`, flag 2) raises message 17,
+    the RUN-OVER. From 5000 the brake is under the limit in five frames and
+    about 70 units, and the contact is ~90 units out, so a vehicle that sees
+    him from 195 never runs him over: it pushes him at a crawl.
+
+    Until 2026-10-07 the port's touch was a stand-in - a box of the body
+    radius + 20 about the body point, ~170 units - and this check asserted the
+    opposite: standing in the lane got him run over, `H_IMPACT`, `Vie` 10 -> 5.
+    The real touch is the index's own flag, the vehicle's ellipse against his
+    spheres, handed to the pool by `Session::handPlayerTouches`. The run-over
+    itself is `engine: run over contact`.
 
     One run in Anekbah's lane at x 5466: he is on the road, the traffic brakes
-    for him (> 0 frames), a vehicle runs him over, message 17 reaches its
-    handler, `H_IMPACT` plays, and `Vie` goes 10 -> 5.
-    SHOWN TO FAIL: drop `postRunOvers()` from the Session's tick - no message,
-    no `H_IMPACT`, `Vie` stays 10.
+    for him (> 0 frames), the contact reaches the pool (> 0 frames touched),
+    nobody runs him over and `Vie` stays 10.
+    SHOWN TO FAIL: drop `handPlayerTouches()` from the Session's tick -
+    touched 0 frames.
     """
     import subprocess
     eng = os.path.join(ROOT, "engine")
@@ -14012,16 +14016,55 @@ def c_engine_run_over():
          "--frames", "320"],
         capture_output=True, text=True, errors="replace",
         env=dict(os.environ, SDL_VIDEODRIVER="dummy")).stdout
-    br = re.search(r"frame 300: traffic - .*braked for the player (\d+) frames", out)
+    br = re.search(r"frame 300: traffic - .*braked for the player (\d+) frames, "
+                   r"touched him (\d+) frames, ran him over (\d+) times", out)
     vie = re.search(r"player: Vie (-?\d+)", out)
     if not br or not vie:
         return (bool(br), bool(vie)), (True, True), "the run must print its traffic and Vie lines"
-    return ("ON THE ROAD" in out, int(br.group(1)) > 0,
-            "RUNS OVER the player - message 17 to its handler" in out,
-            "'H_IMPACT'" in out, int(vie.group(1))), \
-           (True, True, True, True, 5), \
-           ("on the road the traffic brakes for him and still runs him over - message 17, " \
-            "H_IMPACT, Vie 10 -> 5")
+    return ("ON THE ROAD" in out, int(br.group(1)) > 0, int(br.group(2)) > 0, int(br.group(3)),
+            "RUNS OVER the player" in out, int(vie.group(1))), \
+           (True, True, True, 0, False, 10), \
+           ("on the road the traffic brakes for him (%s frames) and stops in time - touched %s " \
+            "frames at a crawl, no message 17, Vie 10" % (br.group(1), br.group(2)))
+
+def c_engine_run_over_contact():
+    r"""THE BRAKE AGAINST THE RUN-OVER, through the real contact (`todo/falls.md`
+    4; `engine/tools/veh_probe --contact`).
+
+    `sub_456C70`: while the player is on a road mesh (`dword_8F5E38`) a
+    vehicle within 195 closing on him brakes 768 a frame to 256; above
+    1706.67, a touch of its spatial-index entry by his last query
+    (`sub_45DF30`) is message 17. The probe gives one ambient vehicle at its
+    5000 cap an index entry with its model's own push spheres, and Kay'l's
+    (HO1_FN) the query, in `Game_Tick`'s order (the pool reads the flag the
+    query of the frame before left), 120 frames per case:
+      stand  on the road 400 ahead of it: it brakes and touches him at 648 -
+             no run-over;
+      kerb   the same spot, NOT on a road mesh: no brake, hit at 5000;
+      late   on the road 300 to its side, stepping into its path when it is
+             110 away: it brakes too late and hits him at 4232.
+    SHOWN TO FAIL: drop the brake (`if (playerOnRoad_ && playerKnown_)` ->
+    `if (false)`) - stand is run over at 5000.
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s", "build/veh_probe"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "veh_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "veh_probe must build"
+    r = subprocess.run([binp, omkpaths.data_root(), "0", "--contact"],
+                       capture_output=True, text=True)
+    got = {m.group(1): (int(m.group(2)), int(m.group(3)), int(m.group(4)))
+           for m in re.finditer(r"^contact (\w+) braked (\d+) run_overs (\d+) speed_at_touch (-?\d+)",
+                                r.stdout, re.M)}
+    if len(got) != 3:
+        return (len(got),), (3,), "veh_probe --contact must print three cases"
+    st, kb, lt = got["stand"], got["kerb"], got["late"]
+    return (st[0] > 0, st[1], st[2] < 1706, kb[0], kb[1], kb[2] > 1706, lt[1], lt[2] > 1706), \
+           (True, 0, True, 0, 1, True, 1, True), \
+           ("standing in the lane it brakes %d frames and touches him at %d, no run-over; " \
+            "off the road it hits him at %d; stepping in late at %d" % (st[0], st[2], kb[2], lt[2]))
 
 def c_engine_gandhar_door():
     r"""`omk-play`: GANDHAR'S DOOR - a 6x6 grid, four symbols, and it opens.
@@ -45016,6 +45059,7 @@ CHECKS = [
     ("engine: slider forget", c_engine_slider_forget, "todo/slider-drift-audit B3"),
     ("engine: slider refused", c_engine_slider_refused, "todo/slider-drift-audit B5"),
     ("engine: slider runover", c_engine_slider_runover, "todo/slider-drift-audit A8"),
+    ("engine: run over contact", c_engine_run_over_contact, "todo/falls.md 4"),
     ("engine: slider manual", c_engine_slider_manual, "todo/slider-drift-audit M2"),
     ("engine: slider recall", c_engine_slider_recall, "todo/slider-drift-audit B1"),
     ("engine: slider placement", c_engine_slider_placement, "todo/slider-drift-audit B2"),

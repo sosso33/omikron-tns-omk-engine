@@ -298,6 +298,7 @@ struct Vehicle {
     int   lodBase = 0;
     // counters for the checks
     int   stops = 0, brakes = 0, bumps = 0, soundOn = 0;
+    int   touches = 0;              // frames the player's query touched its index entry
 };
 
 // One clip of the pedestrian library (ANIMS\PASSANTH.ANI) as the pool needs
@@ -595,6 +596,13 @@ public:
     // by `clear()`; a caller that never sets it gets traffic that neither
     // brakes nor bumps, and `bumped()` stays empty.
     void setPlayer(const float pos[3], bool onRoad);
+    // `sub_45DF30(mover +184)`: flag 2 of the mover's SPATIAL-INDEX entry -
+    // whether the player's last crowd query (`SpatialIndex_Query`, from
+    // `Actor_TickNpc`) touched it, i.e. whether the vehicle's ellipse
+    // (`sub_45E690`) overlapped his spheres. The run-over reads it. The
+    // Session hands it over before each tick, from the index; a caller that
+    // never does gets no run-over at all.
+    void setPlayerTouched(const std::vector<int>& movers);
     // THE LISTENER, which `sub_456B40` measures every vehicle's engine sound
     // against (`sub_46D200`): the CAMERA'S EYE - `Game_Frame` hands the camera
     // block's `+20` to `sub_46D080` at the END of the frame, so the vehicles
@@ -607,12 +615,9 @@ public:
     // that he is not merely 300 clear but IN FRONT of the slider, against his
     // own Euler at +420. Defaulted rather than required, so a caller that
     // never sets it simply never releases - which is what happened.
-    // NOTE `setPlayer` above is DEAD - nothing in the tree calls it, so
-    // `playerKnown_` is always false and every player-aware arm of this class
-    // (the run-over latch, the on-road test) has never run. Found while
-    // wiring the release, and deliberately NOT woken here: switching it on
-    // changes crowd behaviour that has nothing to do with the slider. The
-    // release therefore takes its own input.
+    // (`setPlayer` above had no caller when the release was wired, so the
+    // release took its own input; the viewer has fed `setPlayer` since
+    // 2026-09-17, `todo/falls.md` 4.)
     //
     // `sub_456530` case 7 needs the rider AFTER he is out: it releases the
     // slider back to the traffic only once he is 300 clear AND in front of
@@ -728,6 +733,7 @@ private:
     float riderFacing_ = 0.0f;       // his +420
     bool  riderKnown_ = false;
     bool  playerKnown_ = false, playerOnRoad_ = false;
+    std::vector<char> playerTouched_;        // per mover: `sub_45DF30` - flag 2 of its index entry
     float listener_[3] = {0, 0, 0};
     bool  listenerKnown_ = false;
     float bumpHold_ = 0.0f;                  // `flt_536C28`, 90 frames

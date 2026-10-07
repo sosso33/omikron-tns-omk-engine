@@ -375,6 +375,9 @@ public:
     // conversation is up (state 16 skips the push).
     // Message 17 for each vehicle `Sliders_Tick` saw touch the player (`todo/falls.md` 4).
     void postRunOvers();
+    // `sub_45DF30` for the run-over: which movers' index entries the player's
+    // last crowd query touched, handed to the Sliders before their tick.
+    void handPlayerTouches();
     long runOvers() const { return runOvers_; }
     bool crowdPush(const std::vector<CollisionSphere>& mine, float myReach,
                    const float pos[3], float facing, float out[3]);

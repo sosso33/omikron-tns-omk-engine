@@ -621,20 +621,20 @@ void PlayState::worldCrowd() {
         releaseIdleCrowd();
         if (vehLive && (vehTold < 0 || n - vehTold >= 300)) {
             vehTold = n;
-            int brakes = 0, bumps = 0;
+            int brakes = 0, bumps = 0, touches = 0;
             float closest = 1e9f;
             const float* ppos = player ? player->pos() : session.playerPos();
             for (const auto& vv : session.sliders().vehicles()) {
-                brakes += vv.brakes; bumps += vv.bumps;
+                brakes += vv.brakes; bumps += vv.bumps; touches += vv.touches;
                 if (!vv.live || vv.mover < 0) continue;
                 const auto& mm = session.sliders().movers()[static_cast<std::size_t>(vv.mover)];
                 const float dx = mm.body[0] - ppos[0], dz = mm.body[2] - ppos[2];
                 closest = std::min(closest, std::sqrt(dx * dx + dz * dz));
             }
             std::printf("frame %ld: traffic - %d live, %d drawn within %.0f of the eye, "
-                        "%d stopped; braked for the player %d frames, touched him %d times, "
-                        "nearest now %.0f\n", n, vehLive, vehDrawn, vreach, vehStopped,
-                        brakes, bumps, double(closest));
+                        "%d stopped; braked for the player %d frames, touched him %d frames, "
+                        "ran him over %d times, nearest now %.0f\n", n, vehLive, vehDrawn, vreach,
+                        vehStopped, brakes, touches, bumps, double(closest));
         }
     }
     player0 = phaseNow();

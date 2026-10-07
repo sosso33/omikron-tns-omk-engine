@@ -110,9 +110,33 @@ Session posts 17.
 **Who answers 17**: not IAM\GLOBAL - only AREAs 0 (Anekbah), 1 (Jaunpur), 64
 and 101. Anekbah's handler: `Vie` read, a red flash, `camera.shake 20, 30`,
 `Vie -= 15` (or 5 below 16), `actor.stat.set`, `player.move.wait 118` -
-`H_IMPACT`, knocked flat. Braking does not save a player standing in a lane: a
-vehicle arriving at 5000 is still far above the limit when it reaches him.
-Measured in Anekbah's lane at x 5466: 1 run-over, `H_IMPACT`, `Vie` 10 -> 5.
+`H_IMPACT`, knocked flat.
+
+**Corrected 2026-10-07: braking DOES save a player standing in a lane** (a
+reader: "they slow down if they see you soon enough"). What this paragraph
+said - a vehicle at 5000 still far above the limit when it reaches him - was
+the port's stand-in touch speaking: a box of the body radius + 20 about the
+body point, ~170 units, written before the vehicles were in the spatial
+index. The engine's touch is `sub_45DF30(mover +184)`, flag 2 of the
+vehicle's INDEX ENTRY, which only the player's own crowd query
+(`SpatialIndex_Query` from `Actor_TickNpc`) sets - the vehicle's ellipse
+(`sub_45E690`) against his spheres, ~90 units out along its heading. From
+5000 the brake is under 1706.67 in five frames and ~70 units, so a vehicle
+that has him inside 195 stops in time and shoves him at 256. It still runs him
+over when it cannot see him in time: when he is NOT on a road mesh (a kerb, a
+crossing named other than `X`/`OP` - no brake at all), when he steps into its
+path inside the brake distance, or when he walks into one already past him
+(the brake needs the step to CLOSE the distance). `Sliders_Tick` runs before
+`Actors_TickAll`, so the flag it reads is the query of the frame before.
+Ported as `Session::handPlayerTouches` -> `Sliders::setPlayerTouched`.
+
+Measured: in Anekbah's lane at x 5466 (`engine: run over`) the traffic brakes
+251 frames, touches him 100 frames at a crawl, no message 17, `Vie` stays 10.
+Through the probe (`engine: run over contact`, `veh_probe --contact`): on
+the road 400 ahead it touches him at 648 - no run-over; the same spot off
+the road, hit at 5000; stepping in at 110, hit at 4232. Not ported: the
+handler's `UI_CloseAllScreens()` when the player is in ACTOR_STATE 9 (an
+interface screen holding the body) at the moment of the hit.
 
 ## 5. Health at 0 outside a fight or a shoot phase
 
