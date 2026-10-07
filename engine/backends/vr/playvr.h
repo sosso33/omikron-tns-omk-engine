@@ -31,6 +31,7 @@ struct VrState {
     omk::vr::CameraOrientation orient = omk::vr::CameraOrientation::Level;
     float ipdMm = 64.0f;        // --vr-ipd=MM
     bool questFov = false;      // --vr-fov=quest2: a nominal asymmetric eye
+    float resScale = 1.0f;      // --vr-scale=S: a headset's eye size, times its recommended
     // the fake head: degrees, yaw RIGHT, pitch UP, roll toward the RIGHT
     // shoulder (--vr-head=Y,P,R; the numpad moves it), and metres (--vr-headpos)
     float yaw = 0.0f, pitch = 0.0f, roll = 0.0f;

@@ -52,6 +52,9 @@ struct HeadPose {
     // the head - 0 left, 1 right - each with its own validity
     Pose   hand[2];
     bool   handValid[2]{false, false};
+    // the size each eye's picture is drawn at, when the frontend has one (a
+    // headset's swapchain, step 5b); 0 = the frame's halves, as the fake one
+    int    eyeW = 0, eyeH = 0;
 };
 
 // How the authored camera's orientation is taken (§3: a flag).

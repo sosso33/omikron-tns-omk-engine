@@ -92,6 +92,10 @@ class Frontend {
 public:
     virtual ~Frontend() = default;
 
+    // Does the HOST pace the frame? A headset's `xrWaitFrame` does (step 5b):
+    // the game's own 30/60 deadline is then skipped, and the simulation steps
+    // on the measured delta as it always does.
+    virtual bool paces() const { return false; }
 #if OMK_VR
     // THE HEADSET, for a frontend that has one (`todo/quest-port.md` §5): the
     // head and each eye's pose and field of view this frame. false = none, and

@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// THE OPENXR HOST - see `xrhost.h`. `todo/quest-port.md` §5 step 5a.
+// THE OPENXR HOST - see `xrhost.h`. `todo/quest-port.md` §5 step 5.
 #include "xrhost.h"
 
 #include "input/pad.h"
 #include "platform/frontend.h"
+#include "vr/xrspace.h"
 
 #include <SDL.h>
 #include <SDL_system.h>
@@ -36,36 +37,46 @@ constexpr std::int64_t kSrgb8Alpha8 = 0x8C43, kRgba8 = 0x8058;
 // began (LOCAL space), 2.4 m wide at the frame's own aspect.
 constexpr float kScreenDistance = 2.0f, kScreenWidth = 2.4f;
 
-struct Hand {
-    XrPath path = XR_NULL_PATH;
+// One swapchain and an FBO per image: the quad's, or an eye's.
+struct Chain {
+    XrSwapchain sc = XR_NULL_HANDLE;
+    int w = 0, h = 0;
+    std::vector<XrSwapchainImageOpenGLESKHR> images;
+    std::vector<GLuint> fbos;
+    bool held = false;      // an image acquired this frame and not yet released
+    bool drawn = false;     // released this frame: it goes in a layer
+    GLuint fbo = 0;         // the held image's framebuffer
 };
 
 struct Host {
     XrInstance instance = XR_NULL_HANDLE;
     XrSystemId system = XR_NULL_SYSTEM_ID;
     XrSession session = XR_NULL_HANDLE;
-    XrSpace local = XR_NULL_HANDLE;
+    XrSpace local = XR_NULL_HANDLE, view = XR_NULL_HANDLE;
     XrSessionState state = XR_SESSION_STATE_UNKNOWN;
     bool running = false, exitRequested = false;
-
-    // the quad's swapchain, an FBO per image
-    XrSwapchain quad = XR_NULL_HANDLE;
-    int quadW = 0, quadH = 0;
-    std::vector<XrSwapchainImageOpenGLESKHR> images;
-    std::vector<GLuint> fbos;
+    std::int64_t format = 0;
     bool srgb = false, srgbWriteControl = false;
 
+    Chain quad, eye[2];
+    int recW = 0, recH = 0, maxW = 0, maxH = 0;   // the runtime's eye sizes
+
     // this frame
-    bool begun = false, imageHeld = false;
-    GLuint fbo = 0;                 // the held image's framebuffer
+    bool begun = false;
+    bool quadOverEyes = false;      // a screen is open: the composed frame over the eyes
     XrFrameState frame{XR_TYPE_FRAME_STATE};
+    XrView views[2]{{XR_TYPE_VIEW}, {XR_TYPE_VIEW}};
+    bool viewsValid = false;
+    long frames = 0, eyeFrames = 0;
 
     // the controllers
     XrActionSet set = XR_NULL_HANDLE;
     XrAction stick = XR_NULL_HANDLE, a = XR_NULL_HANDLE, b = XR_NULL_HANDLE,
              x = XR_NULL_HANDLE, y = XR_NULL_HANDLE, trigger = XR_NULL_HANDLE,
-             grip = XR_NULL_HANDLE, menu = XR_NULL_HANDLE, thumbClick = XR_NULL_HANDLE;
-    Hand hand[2];
+             grip = XR_NULL_HANDLE, menu = XR_NULL_HANDLE, thumbClick = XR_NULL_HANDLE,
+             aim = XR_NULL_HANDLE;
+    XrPath hand[2]{XR_NULL_PATH, XR_NULL_PATH};
+    XrSpace aimSpace[2]{XR_NULL_HANDLE, XR_NULL_HANDLE};
     bool actionsAttached = false;
 };
 Host g;
@@ -89,9 +100,8 @@ XrAction makeAction(const char* name, const char* label, XrActionType type) {
     std::snprintf(ci.actionName, sizeof ci.actionName, "%s", name);
     std::snprintf(ci.localizedActionName, sizeof ci.localizedActionName, "%s", label);
     ci.actionType = type;
-    XrPath subs[2] = {g.hand[0].path, g.hand[1].path};
     ci.countSubactionPaths = 2;
-    ci.subactionPaths = subs;
+    ci.subactionPaths = g.hand;
     XrAction act = XR_NULL_HANDLE;
     ok(xrCreateAction(g.set, &ci, &act), name);
     return act;
@@ -104,8 +114,8 @@ bool makeActions() {
     std::snprintf(si.actionSetName, sizeof si.actionSetName, "omk");
     std::snprintf(si.localizedActionSetName, sizeof si.localizedActionSetName, "OMK");
     if (!ok(xrCreateActionSet(g.instance, &si, &g.set), "xrCreateActionSet")) return false;
-    g.hand[0].path = path("/user/hand/left");
-    g.hand[1].path = path("/user/hand/right");
+    g.hand[0] = path("/user/hand/left");
+    g.hand[1] = path("/user/hand/right");
     g.stick      = makeAction("stick", "Thumbstick", XR_ACTION_TYPE_VECTOR2F_INPUT);
     g.a          = makeAction("a", "A", XR_ACTION_TYPE_BOOLEAN_INPUT);
     g.b          = makeAction("b", "B", XR_ACTION_TYPE_BOOLEAN_INPUT);
@@ -115,6 +125,7 @@ bool makeActions() {
     g.grip       = makeAction("grip", "Grip", XR_ACTION_TYPE_FLOAT_INPUT);
     g.menu       = makeAction("menu", "Menu", XR_ACTION_TYPE_BOOLEAN_INPUT);
     g.thumbClick = makeAction("thumbclick", "Thumbstick click", XR_ACTION_TYPE_BOOLEAN_INPUT);
+    g.aim        = makeAction("aim", "Aim", XR_ACTION_TYPE_POSE_INPUT);
     const XrActionSuggestedBinding b[] = {
         {g.stick, path("/user/hand/left/input/thumbstick")},
         {g.stick, path("/user/hand/right/input/thumbstick")},
@@ -129,6 +140,8 @@ bool makeActions() {
         {g.menu, path("/user/hand/left/input/menu/click")},
         {g.thumbClick, path("/user/hand/left/input/thumbstick/click")},
         {g.thumbClick, path("/user/hand/right/input/thumbstick/click")},
+        {g.aim, path("/user/hand/left/input/aim/pose")},
+        {g.aim, path("/user/hand/right/input/aim/pose")},
     };
     XrInteractionProfileSuggestedBinding sb{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
     sb.interactionProfile = path("/interaction_profiles/oculus/touch_controller");
@@ -137,47 +150,73 @@ bool makeActions() {
     return ok(xrSuggestInteractionProfileBindings(g.instance, &sb), "xrSuggestInteractionProfileBindings");
 }
 
-bool makeQuad(int screenW, int screenH) {
+void pickFormat() {
     std::uint32_t n = 0;
     xrEnumerateSwapchainFormats(g.session, 0, &n, nullptr);
     std::vector<std::int64_t> formats(n);
     xrEnumerateSwapchainFormats(g.session, n, &n, formats.data());
-    std::int64_t format = 0;
-    if (std::find(formats.begin(), formats.end(), kSrgb8Alpha8) != formats.end()) format = kSrgb8Alpha8;
-    else if (std::find(formats.begin(), formats.end(), kRgba8) != formats.end()) format = kRgba8;
-    else if (n) format = formats[0];
-    g.srgb = format == kSrgb8Alpha8;
+    if (std::find(formats.begin(), formats.end(), kSrgb8Alpha8) != formats.end()) g.format = kSrgb8Alpha8;
+    else if (std::find(formats.begin(), formats.end(), kRgba8) != formats.end()) g.format = kRgba8;
+    else if (n) g.format = formats[0];
+    g.srgb = g.format == kSrgb8Alpha8;
     const char* ext = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
     g.srgbWriteControl = ext && std::strstr(ext, "GL_EXT_sRGB_write_control");
+}
 
-    g.quadW = screenW;
-    g.quadH = screenH;
+bool makeChain(Chain& c, int w, int h, const char* what) {
+    c.w = w;
+    c.h = h;
     XrSwapchainCreateInfo ci{XR_TYPE_SWAPCHAIN_CREATE_INFO};
     ci.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_SAMPLED_BIT;
-    ci.format = format;
+    ci.format = g.format;
     ci.sampleCount = 1;
-    ci.width = static_cast<std::uint32_t>(g.quadW);
-    ci.height = static_cast<std::uint32_t>(g.quadH);
+    ci.width = static_cast<std::uint32_t>(w);
+    ci.height = static_cast<std::uint32_t>(h);
     ci.faceCount = 1;
     ci.arraySize = 1;
     ci.mipCount = 1;
-    if (!ok(xrCreateSwapchain(g.session, &ci, &g.quad), "xrCreateSwapchain (quad)")) return false;
-    xrEnumerateSwapchainImages(g.quad, 0, &n, nullptr);
-    g.images.assign(n, XrSwapchainImageOpenGLESKHR{XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR});
-    xrEnumerateSwapchainImages(g.quad, n, &n, reinterpret_cast<XrSwapchainImageBaseHeader*>(g.images.data()));
-    g.fbos.assign(n, 0);
-    glGenFramebuffers(static_cast<GLsizei>(n), g.fbos.data());
+    if (!ok(xrCreateSwapchain(g.session, &ci, &c.sc), what)) return false;
+    std::uint32_t n = 0;
+    xrEnumerateSwapchainImages(c.sc, 0, &n, nullptr);
+    c.images.assign(n, XrSwapchainImageOpenGLESKHR{XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR});
+    xrEnumerateSwapchainImages(c.sc, n, &n, reinterpret_cast<XrSwapchainImageBaseHeader*>(c.images.data()));
+    c.fbos.assign(n, 0);
+    glGenFramebuffers(static_cast<GLsizei>(n), c.fbos.data());
     for (std::uint32_t i = 0; i < n; ++i) {
-        glBindFramebuffer(GL_FRAMEBUFFER, g.fbos[i]);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g.images[i].image, 0);
+        glBindFramebuffer(GL_FRAMEBUFFER, c.fbos[i]);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, c.images[i].image, 0);
         if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-            std::printf("openxr: quad image %u framebuffer incomplete\n", i);
+            std::printf("openxr: %s image %u framebuffer incomplete\n", what, i);
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    std::printf("openxr: quad %dx%d, %u images, format 0x%llx (%s), sRGB write control %s\n",
-                g.quadW, g.quadH, n, static_cast<unsigned long long>(format),
-                g.srgb ? "sRGB" : "UNORM", g.srgbWriteControl ? "yes" : "NO");
+    std::printf("openxr: %s %dx%d, %u images\n", what, w, h, n);
     return true;
+}
+
+// Acquire `c`'s next image and bind its framebuffer; idempotent in a frame.
+bool acquire(Chain& c) {
+    if (!c.held) {
+        if (c.drawn) return false;   // one image a frame
+        std::uint32_t idx = 0;
+        XrSwapchainImageAcquireInfo ai{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
+        XrSwapchainImageWaitInfo wi{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
+        wi.timeout = XR_INFINITE_DURATION;
+        if (!ok(xrAcquireSwapchainImage(c.sc, &ai, &idx), "xrAcquireSwapchainImage")) return false;
+        if (!ok(xrWaitSwapchainImage(c.sc, &wi), "xrWaitSwapchainImage")) return false;
+        c.held = true;
+        c.fbo = c.fbos[idx];
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, c.fbo);
+    if (g.srgb && g.srgbWriteControl) glDisable(kFramebufferSrgb);
+    return true;
+}
+
+void release(Chain& c) {
+    if (!c.held) return;
+    XrSwapchainImageReleaseInfo ri{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+    ok(xrReleaseSwapchainImage(c.sc, &ri), "xrReleaseSwapchainImage");
+    c.held = false;
+    c.drawn = true;
 }
 
 void pollEvents() {
@@ -206,9 +245,32 @@ void pollEvents() {
     }
 }
 
+// The headset's frame begun - waited for (this is what paces) and begun -
+// once per game frame, by whichever of headPose / frameTarget comes first.
+bool ensureFrame() {
+    if (!g.session) return false;
+    if (g.begun) return true;
+    pollEvents();
+    if (!g.running) return false;
+    g.frame = XrFrameState{XR_TYPE_FRAME_STATE};
+    XrFrameWaitInfo wi{XR_TYPE_FRAME_WAIT_INFO};
+    if (!ok(xrWaitFrame(g.session, &wi, &g.frame), "xrWaitFrame")) return false;
+    XrFrameBeginInfo bi{XR_TYPE_FRAME_BEGIN_INFO};
+    if (!ok(xrBeginFrame(g.session, &bi), "xrBeginFrame")) return false;
+    g.begun = true;
+    g.viewsValid = false;
+    return true;
+}
+
+void toPose(const XrPosef& p, vr::Pose& out) {
+    out.pos[0] = p.position.x; out.pos[1] = p.position.y; out.pos[2] = p.position.z;
+    out.quat[0] = p.orientation.x; out.quat[1] = p.orientation.y;
+    out.quat[2] = p.orientation.z; out.quat[3] = p.orientation.w;
+}
+
 }  // namespace
 
-bool start(int screenW, int screenH) {
+bool start(int screenW, int screenH, float scale) {
     JNIEnv* env = static_cast<JNIEnv*>(SDL_AndroidGetJNIEnv());
     jobject activity = static_cast<jobject>(SDL_AndroidGetActivity());
     JavaVM* vm = nullptr;
@@ -262,6 +324,33 @@ bool start(int screenW, int screenH) {
                 XR_VERSION_MAJOR(req.maxApiVersionSupported), XR_VERSION_MINOR(req.maxApiVersionSupported),
                 reinterpret_cast<const char*>(glGetString(GL_VERSION)));
 
+    // what the runtime would render an eye at - said, for the resolution choice
+    std::uint32_t nv = 0;
+    xrEnumerateViewConfigurationViews(g.instance, g.system, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, 0, &nv, nullptr);
+    std::vector<XrViewConfigurationView> vcv(nv, {XR_TYPE_VIEW_CONFIGURATION_VIEW});
+    xrEnumerateViewConfigurationViews(g.instance, g.system, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, nv, &nv, vcv.data());
+    // THE EYE'S SIZE, the runtime's recommendation (2026-10-07: half the
+    // 1280x720 frame, 640x720, was "too low" in the street on a Quest 2,
+    // which recommends 1440x1584 - and the GPU had the time, ~5 ms a frame)
+    int eyeW = screenW / 2, eyeH = screenH;
+    if (nv) {
+        g.recW = static_cast<int>(vcv[0].recommendedImageRectWidth);
+        g.recH = static_cast<int>(vcv[0].recommendedImageRectHeight);
+        g.maxW = static_cast<int>(vcv[0].maxImageRectWidth);
+        g.maxH = static_cast<int>(vcv[0].maxImageRectHeight);
+        // ...times `--vr-scale` (the reader, the same day: "maybe a little
+        // higher, it is an old game"; at 1.0 the GPU took 6.7 of 13.9 ms),
+        // capped at the runtime's own maximum
+        const float s = std::max(0.25f, scale);
+        eyeW = std::min(static_cast<int>(std::lround(vcv[0].recommendedImageRectWidth * s)),
+                        static_cast<int>(vcv[0].maxImageRectWidth));
+        eyeH = std::min(static_cast<int>(std::lround(vcv[0].recommendedImageRectHeight * s)),
+                        static_cast<int>(vcv[0].maxImageRectHeight));
+        std::printf("openxr: the runtime recommends %ux%u an eye - drawn at %dx%d (--vr-scale %.2f)\n",
+                    vcv[0].recommendedImageRectWidth, vcv[0].recommendedImageRectHeight, eyeW, eyeH,
+                    static_cast<double>(s));
+    }
+
     if (!makeActions()) return false;
 
     // the session, on SDL's own EGL context
@@ -283,76 +372,183 @@ bool start(int screenW, int screenH) {
     rs.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
     rs.poseInReferenceSpace.orientation.w = 1.0f;
     if (!ok(xrCreateReferenceSpace(g.session, &rs, &g.local), "xrCreateReferenceSpace (LOCAL)")) return false;
+    rs.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_VIEW;
+    if (!ok(xrCreateReferenceSpace(g.session, &rs, &g.view), "xrCreateReferenceSpace (VIEW)")) return false;
 
+    for (int h = 0; h < 2; ++h) {
+        XrActionSpaceCreateInfo as{XR_TYPE_ACTION_SPACE_CREATE_INFO};
+        as.action = g.aim;
+        as.subactionPath = g.hand[h];
+        as.poseInActionSpace.orientation.w = 1.0f;
+        ok(xrCreateActionSpace(g.session, &as, &g.aimSpace[h]), "xrCreateActionSpace (aim)");
+    }
     XrSessionActionSetsAttachInfo at{XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO};
     at.countActionSets = 1;
     at.actionSets = &g.set;
     g.actionsAttached = ok(xrAttachSessionActionSets(g.session, &at), "xrAttachSessionActionSets");
 
-    if (!makeQuad(screenW, screenH)) return false;
-    std::printf("openxr: session created - the frame goes to a %.1f m screen %.1f m ahead\n",
-                kScreenWidth, kScreenDistance);
+    pickFormat();
+    std::printf("openxr: format 0x%llx (%s), sRGB write control %s\n",
+                static_cast<unsigned long long>(g.format), g.srgb ? "sRGB" : "UNORM",
+                g.srgbWriteControl ? "yes" : "NO");
+    if (!makeChain(g.quad, screenW, screenH, "quad")) return false;
+    if (!makeChain(g.eye[0], eyeW, eyeH, "left eye")) return false;
+    if (!makeChain(g.eye[1], eyeW, eyeH, "right eye")) return false;
+    std::printf("openxr: session created - a flat frame goes to a %.1f m screen %.1f m ahead, "
+                "a world frame to the eyes\n", kScreenWidth, kScreenDistance);
     pollEvents();
     return true;
 }
 
 bool running() { return g.session != XR_NULL_HANDLE && g.running; }
 
-bool frameTarget(unsigned& fbo, int& w, int& h) {
-    if (!g.session) return false;
-    if (!g.begun) {
-        pollEvents();
-        if (!g.running) return false;
-        g.frame = XrFrameState{XR_TYPE_FRAME_STATE};
-        XrFrameWaitInfo wi{XR_TYPE_FRAME_WAIT_INFO};
-        if (!ok(xrWaitFrame(g.session, &wi, &g.frame), "xrWaitFrame")) return false;
-        XrFrameBeginInfo bi{XR_TYPE_FRAME_BEGIN_INFO};
-        if (!ok(xrBeginFrame(g.session, &bi), "xrBeginFrame")) return false;
-        g.begun = true;
-        if (g.frame.shouldRender) {
-            std::uint32_t idx = 0;
-            XrSwapchainImageAcquireInfo ai{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
-            XrSwapchainImageWaitInfo wi2{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
-            wi2.timeout = XR_INFINITE_DURATION;
-            if (ok(xrAcquireSwapchainImage(g.quad, &ai, &idx), "xrAcquireSwapchainImage") &&
-                ok(xrWaitSwapchainImage(g.quad, &wi2), "xrWaitSwapchainImage")) {
-                g.imageHeld = true;
-                g.fbo = g.fbos[idx];
-            }
+void eyeSize(int& w, int& h) {
+    w = g.eye[0].w;
+    h = g.eye[0].h;
+}
+
+namespace {
+void destroyChain(Chain& c) {
+    if (!c.fbos.empty()) glDeleteFramebuffers(static_cast<GLsizei>(c.fbos.size()), c.fbos.data());
+    if (c.sc) xrDestroySwapchain(c.sc);
+    c = Chain{};
+}
+}  // namespace
+
+int eyeModes(std::vector<std::string>& names) {
+    names.clear();
+    if (!g.recW || !g.recH) return -1;
+    static const float kScales[] = {0.8f, 0.9f, 1.0f, 1.1f, 1.2f, 1.3f, 1.4f, 1.5f};
+    int cur = -1, lastW = 0, lastH = 0;
+    for (float s : kScales) {
+        const int w = std::min(static_cast<int>(std::lround(g.recW * s)), g.maxW ? g.maxW : 1 << 14);
+        const int h = std::min(static_cast<int>(std::lround(g.recH * s)), g.maxH ? g.maxH : 1 << 14);
+        if (w == lastW && h == lastH) continue;   // capped twice
+        lastW = w;
+        lastH = h;
+        if (w == g.eye[0].w && h == g.eye[0].h) cur = static_cast<int>(names.size());
+        // the SCALE beside the size (the reader: "use the resolution line for
+        // the scale"); the row parses only the leading "W x H"
+        char n[48];
+        std::snprintf(n, sizeof n, "%d x %d (%.1fx)", w, h, static_cast<double>(s));
+        names.push_back(n);
+    }
+    if (cur < 0) {   // a size from --vr-scale that is not on the ladder
+        cur = static_cast<int>(names.size());
+        names.push_back(std::to_string(g.eye[0].w) + " x " + std::to_string(g.eye[0].h));
+    }
+    return cur;
+}
+
+bool setEyeSize(int w, int h) {
+    if (!g.session || g.begun || w < 64 || h < 64) return false;
+    if (w == g.eye[0].w && h == g.eye[0].h) return true;
+    if ((g.maxW && w > g.maxW) || (g.maxH && h > g.maxH)) return false;
+    for (Chain& c : g.eye) destroyChain(c);
+    const bool ok = makeChain(g.eye[0], w, h, "left eye") && makeChain(g.eye[1], w, h, "right eye");
+    std::printf("openxr: the eyes remade at %dx%d (options row 2)%s\n", w, h, ok ? "" : " - FAILED");
+    return ok;
+}
+
+bool headPose(vr::HeadPose& out) {
+    out.valid = false;
+    if (!ensureFrame()) return false;
+    XrViewLocateInfo li{XR_TYPE_VIEW_LOCATE_INFO};
+    li.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
+    li.displayTime = g.frame.predictedDisplayTime;
+    li.space = g.local;
+    XrViewState vs{XR_TYPE_VIEW_STATE};
+    std::uint32_t n = 0;
+    g.views[0] = g.views[1] = XrView{XR_TYPE_VIEW};
+    if (!ok(xrLocateViews(g.session, &li, &vs, 2, &n, g.views), "xrLocateViews") || n != 2) return false;
+    const XrViewStateFlags need = XR_VIEW_STATE_POSITION_VALID_BIT | XR_VIEW_STATE_ORIENTATION_VALID_BIT;
+    if ((vs.viewStateFlags & need) != need) return false;
+    g.viewsValid = true;
+    for (int e = 0; e < 2; ++e) {
+        toPose(g.views[e].pose, out.eye[e]);
+        out.fov[e].left = g.views[e].fov.angleLeft;
+        out.fov[e].right = g.views[e].fov.angleRight;
+        out.fov[e].up = g.views[e].fov.angleUp;
+        out.fov[e].down = g.views[e].fov.angleDown;
+    }
+    XrSpaceLocation loc{XR_TYPE_SPACE_LOCATION};
+    if (XR_SUCCEEDED(xrLocateSpace(g.view, g.local, g.frame.predictedDisplayTime, &loc)))
+        toPose(loc.pose, out.head);
+    for (int h = 0; h < 2; ++h) {
+        out.handValid[h] = false;
+        XrSpaceLocation hl{XR_TYPE_SPACE_LOCATION};
+        if (g.aimSpace[h] && XR_SUCCEEDED(xrLocateSpace(g.aimSpace[h], g.local, g.frame.predictedDisplayTime, &hl)) &&
+            (hl.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT)) {
+            toPose(hl.pose, out.hand[h]);
+            out.handValid[h] = true;
         }
     }
-    if (!g.imageHeld) {
-        // a frame the runtime does not want drawn: end it empty, at once
-        submit();
-        return false;
-    }
-    fbo = g.fbo;
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-    if (g.srgb && g.srgbWriteControl) glDisable(kFramebufferSrgb);
-    w = g.quadW;
-    h = g.quadH;
+    out.eyeW = g.eye[0].w;
+    out.eyeH = g.eye[0].h;
+    out.valid = true;
+    return true;
+}
+
+void setQuadOverEyes(bool on) { g.quadOverEyes = on; }
+
+bool eyeTarget(int e, unsigned& fbo, int& w, int& h) {
+    if (e < 0 || e > 1 || !g.begun || !g.viewsValid || !g.frame.shouldRender) return false;
+    if (!acquire(g.eye[e])) return false;
+    fbo = g.eye[e].fbo;
+    w = g.eye[e].w;
+    h = g.eye[e].h;
+    return true;
+}
+
+void eyeDone(int e) {
+    if (e < 0 || e > 1) return;
+    release(g.eye[e]);
+}
+
+bool frameTarget(unsigned& fbo, int& w, int& h) {
+    if (!ensureFrame()) return false;
+    if (!g.frame.shouldRender) return false;
+    if ((g.eye[0].drawn || g.eye[1].drawn) && !g.quadOverEyes) return false;
+    if (!acquire(g.quad)) return false;
+    fbo = g.quad.fbo;
+    w = g.quad.w;
+    h = g.quad.h;
     return true;
 }
 
 void submit() {
     if (!g.begun) return;
-    XrCompositionLayerQuad quad{XR_TYPE_COMPOSITION_LAYER_QUAD};
-    const XrCompositionLayerBaseHeader* layers[1] = {};
+    glFlush();
+    for (Chain* c : {&g.quad, &g.eye[0], &g.eye[1]}) release(*c);
+    const XrCompositionLayerBaseHeader* layers[2] = {};
     std::uint32_t nLayers = 0;
-    if (g.imageHeld) {
-        glFlush();
-        XrSwapchainImageReleaseInfo ri{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
-        ok(xrReleaseSwapchainImage(g.quad, &ri), "xrReleaseSwapchainImage");
-        g.imageHeld = false;
+
+    XrCompositionLayerProjection proj{XR_TYPE_COMPOSITION_LAYER_PROJECTION};
+    XrCompositionLayerProjectionView pv[2]{{XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW},
+                                           {XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW}};
+    if (g.eye[0].drawn && g.eye[1].drawn && g.viewsValid) {
+        for (int e = 0; e < 2; ++e) {
+            pv[e].pose = g.views[e].pose;   // the pose the eye was drawn from, raw
+            pv[e].fov = g.views[e].fov;
+            pv[e].subImage.swapchain = g.eye[e].sc;
+            pv[e].subImage.imageRect = {{0, 0}, {g.eye[e].w, g.eye[e].h}};
+        }
+        proj.space = g.local;
+        proj.viewCount = 2;
+        proj.views = pv;
+        layers[nLayers++] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&proj);
+        if (++g.eyeFrames == 1) std::printf("openxr: the first frame drawn per eye\n");
+    }
+    XrCompositionLayerQuad quad{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    if (g.quad.drawn) {
         quad.space = g.local;
         quad.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
-        quad.subImage.swapchain = g.quad;
-        quad.subImage.imageRect = {{0, 0}, {g.quadW, g.quadH}};
+        quad.subImage.swapchain = g.quad.sc;
+        quad.subImage.imageRect = {{0, 0}, {g.quad.w, g.quad.h}};
         quad.pose.orientation.w = 1.0f;
         quad.pose.position = {0.0f, 0.0f, -kScreenDistance};
-        quad.size = {kScreenWidth, kScreenWidth * static_cast<float>(g.quadH) / static_cast<float>(g.quadW)};
-        layers[0] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quad);
-        nLayers = 1;
+        quad.size = {kScreenWidth, kScreenWidth * static_cast<float>(g.quad.h) / static_cast<float>(g.quad.w)};
+        layers[nLayers++] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quad);
     }
     XrFrameEndInfo ei{XR_TYPE_FRAME_END_INFO};
     ei.displayTime = g.frame.predictedDisplayTime;
@@ -361,6 +557,8 @@ void submit() {
     ei.layers = layers;
     ok(xrEndFrame(g.session, &ei), "xrEndFrame");
     g.begun = false;
+    g.quad.drawn = g.eye[0].drawn = g.eye[1].drawn = false;
+    ++g.frames;
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
@@ -386,31 +584,41 @@ void readControllers(HostInput& out) {
         for (int k : out.held) std::printf(" 0x%x", k);
         std::printf("\n");
     }
-    if (!g.session || !g.actionsAttached || g.state != XR_SESSION_STATE_FOCUSED) return;
+    // VISIBLE as well as FOCUSED: on 2026-10-07 the reader walked the menus
+    // while the log had the session at VISIBLE only. A runtime that does not
+    // give the app input there reports the actions inactive.
+    if (!g.session || !g.actionsAttached ||
+        (g.state != XR_SESSION_STATE_FOCUSED && g.state != XR_SESSION_STATE_VISIBLE)) return;
     XrActiveActionSet active{g.set, XR_NULL_PATH};
     XrActionsSyncInfo si{XR_TYPE_ACTIONS_SYNC_INFO};
     si.countActiveActionSets = 1;
     si.activeActionSets = &active;
-    if (!ok(xrSyncActions(g.session, &si), "xrSyncActions")) return;
+    const XrResult sync = xrSyncActions(g.session, &si);
+    if (sync != XR_SUCCESS) {
+        static int said = 0;
+        if (said++ < 3) std::printf("openxr: xrSyncActions -> %d (state %d)\n", static_cast<int>(sync),
+                                    static_cast<int>(g.state));
+        if (XR_FAILED(sync)) return;
+    }
 
     const auto boolean = [](XrAction a, int hand) {
         XrActionStateGetInfo gi{XR_TYPE_ACTION_STATE_GET_INFO};
         gi.action = a;
-        gi.subactionPath = g.hand[hand].path;
+        gi.subactionPath = g.hand[hand];
         XrActionStateBoolean s{XR_TYPE_ACTION_STATE_BOOLEAN};
         return XR_SUCCEEDED(xrGetActionStateBoolean(g.session, &gi, &s)) && s.isActive && s.currentState;
     };
     const auto value = [](XrAction a, int hand) {
         XrActionStateGetInfo gi{XR_TYPE_ACTION_STATE_GET_INFO};
         gi.action = a;
-        gi.subactionPath = g.hand[hand].path;
+        gi.subactionPath = g.hand[hand];
         XrActionStateFloat s{XR_TYPE_ACTION_STATE_FLOAT};
         return XR_SUCCEEDED(xrGetActionStateFloat(g.session, &gi, &s)) && s.isActive ? s.currentState : 0.0f;
     };
     const auto stick = [](int hand, int& sx, int& sy) {
         XrActionStateGetInfo gi{XR_TYPE_ACTION_STATE_GET_INFO};
         gi.action = g.stick;
-        gi.subactionPath = g.hand[hand].path;
+        gi.subactionPath = g.hand[hand];
         XrActionStateVector2f s{XR_TYPE_ACTION_STATE_VECTOR2F};
         if (XR_SUCCEEDED(xrGetActionStateVector2f(g.session, &gi, &s)) && s.isActive) {
             // OpenXR's +y is UP, the pad's is DOWN
@@ -430,6 +638,11 @@ void readControllers(HostInput& out) {
     if (value(g.trigger, 1) > 0.5f) b |= pad::RightStickSide;
     if (value(g.trigger, 0) > 0.5f || boolean(g.thumbClick, 0) || boolean(g.thumbClick, 1)) b |= pad::Back;
     if (boolean(g.menu, 0)) b |= pad::Start;
+    // the controllers' own buttons, logged the first times they are pressed:
+    // which path a press took is a measurement (the 2026-10-07 question)
+    static int pressed = 0;
+    if (b && pressed < 20) { ++pressed; std::printf("[in] openxr: pad buttons 0x%x (state %d)\n", b,
+                                                    static_cast<int>(g.state)); }
     out.pad.buttons |= b;
     stick(0, out.pad.lx, out.pad.ly);
     stick(1, out.pad.rx, out.pad.ry);

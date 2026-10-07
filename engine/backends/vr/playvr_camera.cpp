@@ -209,7 +209,8 @@ void PlayState::vrAfterWorldCamera() {
             for (int k : st.keyboard) if (k == dik) return true;
             return false;
         };
-        const bool l = down(0x4F), r = down(0x51);
+        // ...and the RIGHT STICK pushed sideways past 600 (the Quest, 2026-10-07)
+        const bool l = down(0x4F) || host.pad.rx < -600, r = down(0x51) || host.pad.rx > 600;
         if ((l || r) && !vr.snapHeld) {
             const float a = (r ? 30.0f : -30.0f) * kDegToRad;
             float rt[3];
@@ -299,15 +300,16 @@ void PlayState::vrAfterWorldCamera() {
         vr.eye[0] = vr.eye[1] = omk::vr::composeEye(origin, vr.pose.head, fov, vr.eyeW, vr.eyeH);
         view.cam = vr.eye[0];
     } else {
-        // both eyes, side by side over the whole frame: no letterbox
-        vr.eyeW = fb.w / 2;
-        vr.eyeH = fb.h;
+        // both eyes, side by side over the whole frame: no letterbox - or, on
+        // a headset, at the size its swapchain asks for (`HeadPose::eyeW`)
+        vr.eyeW = raw.eyeW > 0 ? raw.eyeW : fb.w / 2;
+        vr.eyeH = raw.eyeH > 0 ? raw.eyeH : fb.h;
         for (int e = 0; e < 2; ++e) {
             const omk::vr::EyeFov* fov = vr.pose.fov[e].set() ? &vr.pose.fov[e] : nullptr;
             vr.eye[e] = omk::vr::composeEye(origin, vr.pose.eye[e], fov, vr.eyeW, vr.eyeH);
         }
         view.vx = view.vy = view.vw = view.vh = 0;
-        view.cam = omk::vr::cullCamera(vr.eye[0], vr.eye[1], fb.w, fb.h);
+        view.cam = omk::vr::cullCamera(vr.eye[0], vr.eye[1], 2 * vr.eyeW, vr.eyeH);
     }
     // where the head looks, for the look-relative walk (`vrAdventureInput`)
     for (int k = 0; k < 3; ++k) vr.headFwd[k] = vr.eye[0].at[k] - vr.eye[0].eye[k];
@@ -351,34 +353,56 @@ bool PlayState::vrHidesPlayer() const { return vr.on && vr.hidePlayer; }
 // turn toward that direction, walk while it is within 70 degrees. Nothing new
 // moves him - the `.CTL` channel and the walker take the word they always take.
 void PlayState::vrAdventureInput(std::uint32_t& word) {
+    // NOT WHILE A SCREEN IS UP: `vr.kind` is the last WORLD frame's, and the
+    // world camera does not run under a screen, so the sneak opened from first
+    // person still read as first person - and every stick push reached its
+    // rows as `Avancer`, "up", while turning him (the Quest, 2026-10-07: "stick
+    // input was not recognized" in the sneak, confirm was)
+    if (openScreen >= 0) return;
     if (vr.on && vr.kind == VrKind::Shoot && player) { vrShootAim(word); return; }
-    if (!vr.on || vr.kind != VrKind::FirstPerson || !vr.haveHeadFwd || !player) return;
+    if (!vr.on || !adventure || vr.kind != VrKind::FirstPerson || !vr.haveHeadFwd || !player) return;
     if (word & 0x40000000u) return;   // the idle word: nothing held
+    // THE RIGHT STICK IS THE SNAP TURN in first person (`vrAfterWorldCamera`),
+    // and the head does the looking: its three button slots - 8 sideways, 9
+    // up, 12 down (`input/pad.h`) - are taken out of the word, or pushing it
+    // to turn pressed `Regarder` and the shoot group's Action as well
+    word &= ~(0x100u | 0x200u | 0x1000u);
     const std::uint32_t dirBits = word & 0xFu;
-    if (!dirBits) return;
-    const float x = ((dirBits & 2u) ? 1.0f : 0.0f) - ((dirBits & 1u) ? 1.0f : 0.0f);
-    const float y = ((dirBits & 4u) ? 1.0f : 0.0f) - ((dirBits & 8u) ? 1.0f : 0.0f);
     word &= ~0xFu;
+    // THE DIRECTION: the stick's own, analog, when a pad is pushed past the
+    // dead zone - else the keys' eight. x right, y forward, both relative to
+    // where the head looks.
+    float x = 0.0f, y = 0.0f;
+    const float px = static_cast<float>(host.pad.lx) / 1000.0f, py = -static_cast<float>(host.pad.ly) / 1000.0f;
+    if (std::sqrt(px * px + py * py) * 1000.0f > static_cast<float>(omk::pad::kDeadZone)) {
+        x = px;
+        y = py;
+    } else {
+        x = ((dirBits & 2u) ? 1.0f : 0.0f) - ((dirBits & 1u) ? 1.0f : 0.0f);
+        y = ((dirBits & 4u) ? 1.0f : 0.0f) - ((dirBits & 8u) ? 1.0f : 0.0f);
+    }
     if (x == 0.0f && y == 0.0f) {
         if (!(word & 0x3FFFu)) word = 0x40000000u;
         return;
     }
+    // HE FACES WHERE THE STICK POINTS AND WALKS: the facing set outright, as
+    // the controller sets it in shoot mode (`vrShootAim`), and `Avancer`. It
+    // replaced turning his body toward the direction with the tank controls'
+    // own `Tourner` bits and walking only within 70 degrees of it (step 2),
+    // which on the Quest (2026-10-07) walked forward, turned on the spot
+    // before any sideways step, and never went backward: at 180 degrees the
+    // turn's sign flipped from frame to frame.
     float hr[3];
     rightOf(vr.headFwd, hr);
     float want[3] = {vr.headFwd[0] * y + hr[0] * x, 0.0f, vr.headFwd[2] * y + hr[2] * x};
-    normH(want);
-    // his body's heading, by the same resolve the first-person eye uses
+    if (!normH(want)) return;
     const float eyeOff[3] = {0.0f, 0.0f, 0.0f}, atOff[3] = {0.0f, 0.0f, 100.0f};
     const omk::FollowCamera fc = player->resolveOffsetsYaw(eyeOff, atOff, 75.0f);
-    float body[3] = {fc.at[0] - fc.eye[0], 0.0f, fc.at[2] - fc.eye[2]};
-    if (!normH(body)) return;
-    float br[3];
-    rightOf(body, br);
-    const float ang = std::atan2(dot3(want, br), dot3(want, body)) * 180.0f / kPi;
-    if (ang > 12.0f) word |= 2u;           // Tourner a droite
-    else if (ang < -12.0f) word |= 1u;     // Tourner a gauche
-    if (std::fabs(ang) < 70.0f) word |= 4u;   // Avancer
-    if (!(word & 0x3FFFu)) word = 0x40000000u;
+    float far[3];
+    for (int k = 0; k < 3; ++k) far[k] = fc.eye[k] + want[k] * 10000.0f;
+    const int k0[3] = {0, 0, 0};
+    player->setFacing(omk::shootGunmanAim(far, fc.eye, 0.0f, k0).yawDeg);
+    word |= 4u;   // Avancer
 }
 
 #endif  // OMK_VR

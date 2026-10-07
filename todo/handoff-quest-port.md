@@ -27,7 +27,7 @@ by the shell. The reader chose to go to step 5 rather than map touch.
 | 2 the cameras, mode by mode | done | `94c1987`, `54178a4` |
 | 3 shoot mode aims with the controller | done | `d4a8bb4`, `93a7c66` |
 | 4 an Android build booting FLAT on the Quest | done - runs on a Quest 2 to the start menu; no controller input in a 2D panel | `3d63f43`, `b679f0e` |
-| 5 the OpenXR frontend | not started | |
+| 5 the OpenXR frontend | 5a (the screen) and 5b (the eyes, the walk, the scale row) run on a Quest 2 | `4a25630` and the next |
 | 6 the interface on a quad, the films, the keyboard | not started; the screen analysis is written (§5 step 6) | |
 | 7 the first play pass | not started | |
 

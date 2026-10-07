@@ -54,6 +54,11 @@ public:
     bool open(int w, int h, const std::string& title) override;
 
     bool pump(omk::HostInput& out) override;
+#if OMK_OPENXR
+    // the headset's (`backends/openxr`, step 5b)
+    bool headPose(omk::vr::HeadPose& out) override;
+    bool paces() const override;
+#endif
 
     void readPad(omk::HostInput& out);
 
@@ -95,9 +100,7 @@ public:
     std::uint64_t perfCounter() override;
     std::uint64_t perfFrequency() override;
     void delayMs(std::uint32_t ms) override;
-    int displayModes(int curW, int curH, std::vector<std::string>& names) override {
-        return optionDisplayModes(curW, curH, names);
-    }
+    int displayModes(int curW, int curH, std::vector<std::string>& names) override;
     const void* windowId() const override { return active(); }
     std::string windowTitle() const override;
     void setWindowTitle(const std::string& t) override;

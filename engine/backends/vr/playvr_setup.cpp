@@ -28,6 +28,8 @@ void vrUsage() {
         "VR (a VR build: the main Makefile's VR=1; todo/quest-port.md):\n"
         "  --vr-sim             the desktop's fake headset: both eyes side by side\n"
         "  --vr-sim=mono        one eye over the whole frame (the frame check's form)\n"
+        "  --vr-flat            a headset build: the game on a flat screen, no eyes\n"
+        "  --vr-scale=S         a headset build: each eye at S x the runtime's size (1.0)\n"
         "  --vr-camera=level|full  the authored camera's pitch and roll dropped\n"
         "                       (level, the default) or kept\n"
         "  --vr-head=Y,P,R      the fake head in degrees: yaw right, pitch up, roll\n"
@@ -54,6 +56,12 @@ void vrUsage() {
 }  // namespace
 
 void PlayState::vrSetup(int argc, char** argv) {
+#if OMK_OPENXR
+    // A HEADSET BUILD (the Quest, `todo/quest-port.md` §5 step 5b) is in VR
+    // unless told otherwise: the frontend's head pose drives the eyes, and
+    // `--vr-flat` keeps the game on step 5a's screen
+    vr.on = true;
+#endif
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         if (a.compare(0, 4, "--vr") != 0) continue;
@@ -61,6 +69,8 @@ void PlayState::vrSetup(int argc, char** argv) {
         if (a == "--vr-help") { vrUsage(); std::exit(0); }
         else if (a == "--vr-sim") { vr.on = vr.sim = true; }
         else if (a == "--vr-sim=mono") { vr.on = vr.sim = vr.mono = true; }
+        else if (a == "--vr-flat") { vr.on = vr.sim = vr.mono = false; }
+        else if (a.compare(0, 11, "--vr-scale=") == 0) vr.resScale = static_cast<float>(std::atof(a.c_str() + 11));
         else if (a == "--vr-camera=level") vr.orient = omk::vr::CameraOrientation::Level;
         else if (a == "--vr-camera=full") vr.orient = omk::vr::CameraOrientation::Full;
         else if (a == "--vr-fov=quest2") vr.questFov = true;

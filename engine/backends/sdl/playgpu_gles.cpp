@@ -107,14 +107,23 @@ void PlayState::gpuOpenWindow() {
             // what `drawsPixelLights` / `drawsShadowMap` answer later
             if (lighting > 0 || shadowQuality >= 2)
                 omk::glesSetEnhancedLighting(gr, lighting > 0, shadowQuality >= 2);
-            if (gr->init(dispW, dispH)) {
+            // THE HEADSET'S SESSION on this context (step 5), before the
+            // renderer: an eye is drawn at the size the runtime asks for, so
+            // the world target must hold the frame AND an eye. False keeps the
+            // game flat on a target of the frame's size, as before.
+            int targetW = dispW, targetH = dispH;
+#if OMK_OPENXR
+            if (omk::xr::start(dispW, dispH, vr.resScale)) {
+                int ew = 0, eh = 0;
+                omk::xr::eyeSize(ew, eh);
+                targetW = std::max(targetW, ew);
+                targetH = std::max(targetH, eh);
+            }
+#endif
+            if (gr->init(targetW, targetH)) {
                 glRen = gr;
                 omk::sdlFrontend(front).attachWindow(glWin);   // F11 and row 2 act on it
-                std::printf("renderer: GLES2 - %s\n", gr->name());
-#if OMK_OPENXR
-                // the headset's session on this context (step 5); false keeps the game flat
-                omk::xr::start(dispW, dispH);
-#endif
+                std::printf("renderer: GLES2 - %s (world target %dx%d)\n", gr->name(), targetW, targetH);
                 // G4 (todo/vita-port.md): the tie is ~1 ms of CPU on an M1 and
                 // ~50 in a console's city; whether the Vita's 16-bit depth
                 // shows the coincident faces without it is to be LOOKED at

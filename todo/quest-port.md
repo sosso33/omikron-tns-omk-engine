@@ -641,6 +641,51 @@ VISIBLE (5), never FOCUSED (6), so `xr::readControllers` read nothing; SDL's
 pad and keyboard handed over nothing (`[in] sdl state` never printed) and the
 raw event log has no key. To settle before 5b relies on the controllers.
 
+**STEP 5b RUN ON THE QUEST 2 (2026-10-07): the eyes.** `xr::headPose` begins
+the headset's frame (`xrWaitFrame`, so the pose is predicted for this frame's
+display) and returns `xrLocateViews`' eyes and FOVs, the VIEW space's head and
+the controllers' aim poses; `playvr_camera.cpp` composes them exactly as it
+does the fake headset's. Each eye's pass presents straight into that eye's
+swapchain image (`glesPresentEye`, the target's top-left `eyeW x eyeH`), no
+readback, and the frame submits a PROJECTION layer with the RAW eye poses (the
+recentre is in the picture, not the layer). A headset build is in VR by
+default (`--vr-flat` for 5a's screen). The reader's play, in order:
+
+* "resolution in the street is too low": the eyes were the 1280x720 frame's
+  halves, 640x720. They are now the RUNTIME'S size (1440x1584 on a Quest 2),
+  the world target sized to hold the frame and an eye (`xr::start` moved
+  BEFORE the renderer's `init`), and `--vr-scale=S` multiplies it.
+* "the stick does not respond correctly ... depending on the direction":
+  step 2's first-person walk turned his body toward the stick's direction
+  with the tank `Tourner` bits and walked only within 70 degrees - forward
+  worked, sideways turned first, backward flipped the turn's sign each frame.
+  Now the stick's ANALOG direction relative to the head SETS his facing
+  (`setFacing` through `shootGunmanAim`, as shoot mode's controller does) and
+  `Avancer` walks; the right stick is the 30-degree snap turn and its slots
+  (8, 9, 12) are out of the word in first person. `engine: vr modes` green.
+* The game's 30/60 pacer is skipped when the frontend paces
+  (`Frontend::paces()`, true while an OpenXR session runs): 72/72 fps.
+  The reader: "Moves are smooth".
+* OPTIONS ROW 2 IS THE EYE SCALE in a headset (the reader's request): the
+  list is the recommended size x 0.8 .. 1.5 labelled `W x H (S x)`
+  (`xr::eyeModes`), applied LIVE between frames (`xr::setEyeSize`, the world
+  target re-`init`ed); the interface frame keeps 1280x720. Default 1.0x.
+* A screen open (`openScreen >= 0`) puts the composed frame on the quad OVER
+  the eyes, opaque - the sneak was invisible behind the eyes otherwise.
+* "stick input was not recognized" in the sneak: `vrAdventureInput` ran under
+  a screen with the last world frame's kind and turned every push into
+  `Avancer`; it now returns while a screen is up, and first person also
+  needs `adventure`. Confirmed: the reader walked the Video page with it.
+
+**Measured, 1.3x (1872x2059 an eye), every option at its top, Anekbah's
+street:** 72/72 fps in 11 of 12 one-second samples (one at 54); the app's GPU
+8.1-8.5 ms of 13.9, the runtime raising the GPU level from 2 to 3 of 4. At
+1.0x it was 6.7 ms at level 2. The game thread's sections sum to ~13.7 ms but
+`world begin, set` (6.6) now CONTAINS the `xrWaitFrame` wait (`headPose` runs
+inside it) - measure the wait apart before any 90 Hz decision. THREE SLOW
+FRAMES of 190-278 ms at one spot (3388, -5540), ~15 s apart, standing: not a
+load - an open hitch to find.
+
 ### Step 6 - the interface, the films and the keyboard (device; ~0.5-1 day)
 
 * The composed 640x480 interface (menus, the sneak, subtitles, reply choices)

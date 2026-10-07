@@ -1001,6 +1001,15 @@ public:
     // frame's aspect, or stretched, and the rest is black.
     bool presentWorld(int vy, int vh, int frameW, int frameH, int winW, int winH);
     bool presentSurface(const Surface& s, int winW, int winH);
+    // AN EYE (`todo/quest-port.md` §5 step 5b): the world target's top-left
+    // `ew x eh` - where the eye's pass drew - over the whole window target
+    bool presentEye(int ew, int eh, int winW, int winH) {
+        notePresent();
+        if (ew <= 0 || eh <= 0 || ew > w_ || eh > h_ || ss_ > 1) return false;
+        const float dst[4] = {-1.0f, -1.0f, 2.0f, 2.0f};
+        drawPresent(colour_, ew, eh, w_, h_, true, true, dst, winW, winH);
+        return true;
+    }
     bool presentOverlay(const Surface& s, const unsigned char* mask, const unsigned char* maskRows,
                         const float fade[4], int vy, int vh, int winW, int winH);
     void setStretch(bool on) { stretch_ = on; }
@@ -3435,6 +3444,9 @@ void glesWindowPicture(Renderer* r, int w, int h, std::vector<unsigned char>& ou
 }
 void glesSetStretch(Renderer* r, bool on) { static_cast<GlesRenderer*>(r)->setStretch(on); }
 void glesSetDepthTie(Renderer* r, bool on) { static_cast<GlesRenderer*>(r)->setDepthTie(on); }
+bool glesPresentEye(Renderer* r, int ew, int eh, int winW, int winH) {
+    return static_cast<GlesRenderer*>(r)->presentEye(ew, eh, winW, winH);
+}
 void glesSetWindowTarget(Renderer* r, unsigned fbo) {
     static_cast<GlesRenderer*>(r)->setWindowTarget(static_cast<GLuint>(fbo));
 }

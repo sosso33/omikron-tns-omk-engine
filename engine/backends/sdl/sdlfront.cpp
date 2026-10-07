@@ -379,6 +379,20 @@ bool SdlFrontend::pump(omk::HostInput& out) {
 // engine's JOYSTICK device. The subsystem is started HERE, lazily, rather
 // than in `open`, because a Vulkan window never calls `open`. The first
 // pad found is used and a pad plugged in later is picked up.
+#if OMK_OPENXR
+bool SdlFrontend::headPose(omk::vr::HeadPose& out) { return omk::xr::headPose(out); }
+bool SdlFrontend::paces() const { return omk::xr::running(); }
+#endif
+
+// Options row 2's list: the host's display modes - or, with a headset session
+// running, the EYE sizes (`xr::eyeModes`)
+int SdlFrontend::displayModes(int curW, int curH, std::vector<std::string>& names) {
+#if OMK_OPENXR
+    if (omk::xr::running()) return omk::xr::eyeModes(names);
+#endif
+    return optionDisplayModes(curW, curH, names);
+}
+
 void SdlFrontend::readPad(omk::HostInput& out) {
     out.pad = {};
     if (!padInit_) {

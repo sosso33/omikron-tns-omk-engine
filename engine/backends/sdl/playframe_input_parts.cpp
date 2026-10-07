@@ -3,6 +3,9 @@
 // Parts of `PlayState::phaseInput`, moved byte for byte by `todo/play-split.md`
 // (2026-10-02); the phase calls them in this order.
 #include "playframe.h"
+#if OMK_OPENXR
+#include "../openxr/xrhost.h"
+#endif
 
 const std::array<float, 3> * PlayState::motionAtFind(const std::string& name) {
     for (const auto& kv : motionAt) if (kv.first == name) return &kv.second;
@@ -34,6 +37,16 @@ int PlayState::inputPump() {
         if (pendingDisplay.first > 0) {
             const auto [nw, nh] = pendingDisplay;
             pendingDisplay = {0, 0};
+#if OMK_OPENXR
+            // A HEADSET: the size is the EYES' (`xr::eyeModes`), remade here
+            // between frames with the world target that holds them; the
+            // interface frame keeps its own
+            if (omk::xr::running()) {
+                if (omk::xr::setEyeSize(nw, nh) && glRen)
+                    glRen->init(std::max(dispW, nw), std::max(dispH, nh));
+            } else
+#endif
+            {
             bool ok = true;
             gpuResize(nw, nh, ok);
             if (!ok) {
@@ -49,6 +62,7 @@ int PlayState::inputPump() {
                 front.resize(dispW, dispH);
                 std::printf("options: resolution %dx%d - framebuffer, interface scale "
                             "and 3D target remade\n", dispW, dispH);
+            }
             }
         }
         // ---- one line when the mouse first moves in shoot mode -----------
