@@ -311,6 +311,32 @@ aimed at the carrot ahead of it, and its speed factor (0.75..1.20) scales the
 clock. The mover's base speed is the same clip's xz travel over frames
 1..frames−1, ×256, per frame (`sub_453D80`).
 
+### The crowd is drawn WITH ITS STREET, and not while the street is hidden (read 2026-10-07)
+
+Every instance of the circuit - walkers and vehicles - is linked into ONE
+scene's instance list at `+388`: `Area_LoadSliderTrack` (0x0041B420) finds
+the `g_DecorSlots` row of the circuit's area and hands its `+4`, the decor's
+SCENE, to `Slider_Init`, which keeps it in `dword_8F5E34`; every spawn and
+relink (`sub_454860`, `sub_4544B0`, `sub_456530`) calls `sub_437E80(dword_8F5E34,
+instance)`. `sub_48D7F0` draws exactly the list of the scene it is given, and
+`Render_Frame` (0x00441030) gives it that scene alone - the object walk
+`sub_48D3B0` does not follow the scene chain either.
+
+Which scenes are drawn is `sub_479C20`'s choice, from `Game_Frame`: the
+render chain's head `dword_93076C` and the next scene in it (`+380`), each
+submitted as its own 3D view (`I2D_Submit3DView`). Showing and hiding a
+decor (`sub_419AF0` / `sub_419A90`) inserts its scene into that chain or
+takes it out (`o3de_InsertScene` / `sub_441200`). **So while the street's
+slot is hidden - the player indoors, the street in state 1 - the street's
+crowd is not drawn at all**, and at a doorway, where both slots are shown,
+it is drawn with the street around it. Nothing here says whether
+`Sliders_Tick` still MOVES it while hidden; only the draw is read.
+
+The port drew it whatever the slot's state: inside Qalisar's temple, with
+Qalisar's slot hidden, 44 walkers were drawn (the Quest, 2026-10-07: "through
+the small gap between doors I see the npc in the streets still there and
+moving").
+
 ### The crowd is LIT, and that is what a set's light table is for
 
 Added 2026-09-05 (`todo/mesh-lights.md`). A decor `.3DO` carries a table of

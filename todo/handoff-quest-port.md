@@ -324,7 +324,12 @@ Read against the run's log:
 * **the street's walkers keep walking and are DRAWN while he is indoors**
   (the temple: 44 drawn with Qalisar's slot hidden). Whether the original
   draws a hidden slot's crowd is not read - `sub_48D7F0`'s caller is the
-  place to look; recorded, not changed.
+  place to look; recorded, not changed. **READ 2026-10-07: the original
+  does NOT** - the circuit's instances live in the street decor's own scene
+  (`dword_8F5E34`), and a hidden decor's scene is out of the render chain
+  `sub_479C20` submits (`docs/STREET_LIFE.md`, "The crowd is drawn WITH ITS
+  STREET"). The port's fix is to draw the crowd only while its slot is
+  shown - proposed, not made.
 * **two programs drive one actor** at frame 98359: actors 147 CMH_FN and 458
   CWH_FN each have a pose on a sewer path AND on an Anekbah path 20 m apart
   in the same frame - two resident scenes naming the same actors. One body,
