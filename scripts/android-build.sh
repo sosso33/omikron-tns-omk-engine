@@ -30,6 +30,8 @@ API=34                     # compileSdk: the android.jar SDL's Java needs
 mkdir -p "$OUT"
 
 shopt -s nullglob
+# bash 3.2 (macOS /bin/bash) calls an EMPTY array unbound under `set -u`, so
+# every expansion of one that may be empty is written ${a[@]+"${a[@]}"}
 unity=(/Applications/Unity/Hub/Editor/*/PlaybackEngines/AndroidPlayer)
 
 # ---- the NDK
@@ -42,18 +44,18 @@ if [[ -z $NDK ]]; then
     done
 fi
 if [[ -z $NDK ]]; then
-    for u in "${unity[@]}"; do [[ -f $u/NDK/build/cmake/android.toolchain.cmake ]] && NDK=$u/NDK; done
+    for u in ${unity[@]+"${unity[@]}"}; do [[ -f $u/NDK/build/cmake/android.toolchain.cmake ]] && NDK=$u/NDK; done
 fi
 [[ -n $NDK && -f $NDK/build/cmake/android.toolchain.cmake ]] || {
     echo "no Android NDK found: set ANDROID_NDK_HOME, or install one (sdkmanager 'ndk;27.2.12479018')" >&2; exit 1; }
 
 # ---- the SDK: an android.jar at $API (or newer) and build-tools
 SDK=""; JAR=""; BT=""
-for sdk in "${ANDROID_SDK:-${ANDROID_HOME:-}}" "$HOME/Library/Android/sdk" "${unity[@]/%//SDK}"; do
+for sdk in "${ANDROID_SDK:-${ANDROID_HOME:-}}" "$HOME/Library/Android/sdk" ${unity[@]+"${unity[@]/%//SDK}"}; do
     [[ -n $sdk && -d $sdk ]] || continue
     jars=("$sdk"/platforms/android-*/android.jar)
     bts=("$sdk"/build-tools/*/apksigner)
-    for j in "${jars[@]}"; do
+    for j in ${jars[@]+"${jars[@]}"}; do
         v=${j%/android.jar}; v=${v##*-}
         [[ $v =~ ^[0-9]+$ ]] && (( v >= API )) && { JAR=$j; break; }
     done
@@ -66,12 +68,21 @@ done
 JAVA_BIN=""
 [[ -n ${JAVA_HOME:-} && -x $JAVA_HOME/bin/javac ]] && JAVA_BIN=$JAVA_HOME/bin
 if [[ -z $JAVA_BIN ]]; then
-    for u in "${unity[@]}"; do [[ -x $u/OpenJDK/bin/javac ]] && JAVA_BIN=$u/OpenJDK/bin; done
+    for u in ${unity[@]+"${unity[@]}"}; do [[ -x $u/OpenJDK/bin/javac ]] && JAVA_BIN=$u/OpenJDK/bin; done
+fi
+# build-tools 34's d8 (R8 8.2) dies with a NullPointerException on JDK 23 (the
+# M1's default java, 2026-10-07), so a macOS JDK it was built for comes first
+if [[ -z $JAVA_BIN && -x /usr/libexec/java_home ]]; then
+    for v in 17 21 11; do
+        h=$(/usr/libexec/java_home -F -v $v 2>/dev/null) && [[ -x $h/bin/javac ]] && { JAVA_BIN=$h/bin; break; }
+    done
 fi
 [[ -n $JAVA_BIN ]] || JAVA_BIN=$(dirname "$(command -v javac)")
+# d8 and apksigner are shell scripts that run the FIRST `java` on PATH
+export PATH="$JAVA_BIN:$PATH"
 
 CMAKE=$(command -v cmake || true)
-[[ -n $CMAKE ]] || for u in "${unity[@]}"; do c=("$u"/SDK/cmake/*/bin/cmake); (( ${#c[@]} )) && CMAKE=${c[0]}; done
+[[ -n $CMAKE ]] || for u in ${unity[@]+"${unity[@]}"}; do c=("$u"/SDK/cmake/*/bin/cmake); (( ${#c[@]} )) && CMAKE=${c[0]}; done
 GEN=(); command -v ninja >/dev/null && GEN=(-G Ninja)
 
 echo "NDK   $NDK ($(grep Pkg.Revision "$NDK/source.properties" | cut -d' ' -f3))"
@@ -96,7 +107,7 @@ if [[ ! -f $XR/prefab/modules/headers/include/openxr/openxr.h ]]; then
 fi
 
 # ---- the native libraries
-"$CMAKE" -S "$ENGINE/backends/android" -B "$OUT/cmake" "${GEN[@]}" \
+"$CMAKE" -S "$ENGINE/backends/android" -B "$OUT/cmake" ${GEN[@]+"${GEN[@]}"} \
     -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-29 -DANDROID_STL=c++_static \
     -DCMAKE_BUILD_TYPE=Release -DOMK_SDL2_SRC="$SDL" -DOMK_OPENXR_DIR="$XR" >/dev/null

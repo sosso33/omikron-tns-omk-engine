@@ -167,7 +167,11 @@ headset; the reader's play is its evidence.
 The toolchain differs PER MACHINE and `android-build.sh` finds it: the M3's
 Unity installs each bundle NDK r27c, the SDK platforms, build-tools and a
 JDK; the M1 had no NDK (install the command-line tools and
-`sdkmanager 'ndk;27.2.12479018'`, ~3 GB, or set `ANDROID_NDK_HOME`). `adb` is
+`sdkmanager 'ndk;27.2.12479018'`, ~3 GB, or set `ANDROID_NDK_HOME`). **Done on the M1 2026-10-07**: the
+command-line tools are in `~/Library/Android/sdk/cmdline-tools/latest`, NDK
+r27c beside them; build-tools 34's `d8` dies with a NullPointerException on
+the M1's default JDK 23, so the script now picks a JDK 17/21/11 through
+`java_home` (it found 11) and puts it first on PATH. `adb` is
 `/opt/local/bin/adb` on the M3, `/opt/homebrew/bin/adb` on the M1. Push with
 the credentials file, as on every push from this machine.
 
