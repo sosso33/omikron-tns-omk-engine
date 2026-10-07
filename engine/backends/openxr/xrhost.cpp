@@ -60,6 +60,9 @@ struct Host {
 
     Chain quad, eye[2];
     int recW = 0, recH = 0, maxW = 0, maxH = 0;   // the runtime's eye sizes
+    // XR_EXT_performance_settings: the clocks asked for, when the runtime has it
+    PFN_xrPerfSettingsSetPerformanceLevelEXT setPerf = nullptr;
+    int perfGpu = -1, perfCpu = -1;   // the levels last asked (XrPerfSettingsLevelEXT)
 
     // this frame
     bool begun = false;
@@ -219,6 +222,42 @@ void release(Chain& c) {
     c.drawn = true;
 }
 
+// THE CLOCKS (the reader, 2026-10-07: "can a perf request be sent at run
+// time, when the scale is modified?"). At 1.3x with 4x MSAA a Quest 2 ran
+// 62-65 of 72 fps, GPU-bound, while the runtime held the GPU at level 2 of 4.
+// The CPU asks SUSTAINED_HIGH always (the game thread is the nearer budget
+// with the costly enhancements); the GPU asks SUSTAINED_HIGH above 1.0x the
+// recommended eye, and is left at SUSTAINED_LOW - the runtime's own range -
+// at or below it. Hints, not orders: the VrApi line says what was granted.
+const char* perfName(int l) {
+    switch (l) {
+    case XR_PERF_SETTINGS_LEVEL_POWER_SAVINGS_EXT:  return "POWER_SAVINGS";
+    case XR_PERF_SETTINGS_LEVEL_SUSTAINED_LOW_EXT:  return "SUSTAINED_LOW";
+    case XR_PERF_SETTINGS_LEVEL_SUSTAINED_HIGH_EXT: return "SUSTAINED_HIGH";
+    case XR_PERF_SETTINGS_LEVEL_BOOST_EXT:          return "BOOST";
+    default:                                        return "?";
+    }
+}
+void applyPerf() {
+    if (!g.setPerf || !g.session || !g.running) return;
+    const bool above = g.recW > 0 && g.eye[0].w > g.recW;
+    const int gpu = above ? XR_PERF_SETTINGS_LEVEL_SUSTAINED_HIGH_EXT : XR_PERF_SETTINGS_LEVEL_SUSTAINED_LOW_EXT;
+    const int cpu = XR_PERF_SETTINGS_LEVEL_SUSTAINED_HIGH_EXT;
+    if (gpu != g.perfGpu &&
+        ok(g.setPerf(g.session, XR_PERF_SETTINGS_DOMAIN_GPU_EXT, static_cast<XrPerfSettingsLevelEXT>(gpu)),
+           "xrPerfSettingsSetPerformanceLevelEXT (GPU)")) {
+        g.perfGpu = gpu;
+        std::printf("openxr: GPU asked %s (eyes %dx%d, %s the recommended)\n", perfName(gpu),
+                    g.eye[0].w, g.eye[0].h, above ? "above" : "at or below");
+    }
+    if (cpu != g.perfCpu &&
+        ok(g.setPerf(g.session, XR_PERF_SETTINGS_DOMAIN_CPU_EXT, static_cast<XrPerfSettingsLevelEXT>(cpu)),
+           "xrPerfSettingsSetPerformanceLevelEXT (CPU)")) {
+        g.perfCpu = cpu;
+        std::printf("openxr: CPU asked %s\n", perfName(cpu));
+    }
+}
+
 void pollEvents() {
     XrEventDataBuffer ev{XR_TYPE_EVENT_DATA_BUFFER};
     while (g.instance && xrPollEvent(g.instance, &ev) == XR_SUCCESS) {
@@ -230,6 +269,8 @@ void pollEvents() {
                 XrSessionBeginInfo bi{XR_TYPE_SESSION_BEGIN_INFO};
                 bi.primaryViewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
                 g.running = ok(xrBeginSession(g.session, &bi), "xrBeginSession");
+                g.perfGpu = g.perfCpu = -1;   // a new session asks again
+                applyPerf();
             } else if (g.state == XR_SESSION_STATE_STOPPING) {
                 ok(xrEndSession(g.session), "xrEndSession");
                 g.running = false;
@@ -237,6 +278,20 @@ void pollEvents() {
                 g.running = false;
                 g.exitRequested = true;
             }
+        } else if (ev.type == XR_TYPE_EVENT_DATA_PERF_SETTINGS_EXT) {
+            // the runtime's own word on the clocks: a domain warming, throttled
+            const auto& pe = *reinterpret_cast<XrEventDataPerfSettingsEXT*>(&ev);
+            static const char* kSub[] = {"?", "compositing", "rendering", "thermal"};
+            // the notification levels are 0 / 25 / 75 (XrPerfSettingsNotificationLevelEXT)
+            const auto note = [](XrPerfSettingsNotificationLevelEXT l) {
+                return l == XR_PERF_SETTINGS_NOTIF_LEVEL_NORMAL_EXT ? "normal"
+                     : l == XR_PERF_SETTINGS_NOTIF_LEVEL_WARNING_EXT ? "WARNING"
+                     : l == XR_PERF_SETTINGS_NOTIF_LEVEL_IMPAIRED_EXT ? "IMPAIRED" : "?";
+            };
+            std::printf("openxr: perf event - %s %s: %s -> %s\n",
+                        pe.domain == XR_PERF_SETTINGS_DOMAIN_CPU_EXT ? "CPU" : "GPU",
+                        pe.subDomain >= 1 && pe.subDomain <= 3 ? kSub[pe.subDomain] : "?",
+                        note(pe.fromLevel), note(pe.toLevel));
         } else if (ev.type == XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING) {
             g.running = false;
             g.exitRequested = true;
@@ -291,7 +346,19 @@ bool start(int screenW, int screenH, float scale) {
             return false;
     }
 
-    const char* exts[] = {XR_KHR_ANDROID_CREATE_INSTANCE_EXTENSION_NAME, XR_KHR_OPENGL_ES_ENABLE_EXTENSION_NAME};
+    // XR_EXT_performance_settings where the runtime lists it (the clocks,
+    // `applyPerf`); the two the session cannot do without, always
+    bool havePerf = false;
+    {
+        std::uint32_t ne = 0;
+        xrEnumerateInstanceExtensionProperties(nullptr, 0, &ne, nullptr);
+        std::vector<XrExtensionProperties> props(ne, {XR_TYPE_EXTENSION_PROPERTIES});
+        xrEnumerateInstanceExtensionProperties(nullptr, ne, &ne, props.data());
+        for (const auto& p : props)
+            if (!std::strcmp(p.extensionName, XR_EXT_PERFORMANCE_SETTINGS_EXTENSION_NAME)) havePerf = true;
+    }
+    const char* exts[] = {XR_KHR_ANDROID_CREATE_INSTANCE_EXTENSION_NAME, XR_KHR_OPENGL_ES_ENABLE_EXTENSION_NAME,
+                          XR_EXT_PERFORMANCE_SETTINGS_EXTENSION_NAME};
     XrInstanceCreateInfoAndroidKHR ai{XR_TYPE_INSTANCE_CREATE_INFO_ANDROID_KHR};
     ai.applicationVM = vm;
     ai.applicationActivity = activity;
@@ -301,13 +368,19 @@ bool start(int screenW, int screenH, float scale) {
     ci.applicationInfo.applicationVersion = 1;
     std::snprintf(ci.applicationInfo.engineName, sizeof ci.applicationInfo.engineName, "OMK");
     ci.applicationInfo.apiVersion = XR_MAKE_VERSION(1, 0, 34);
-    ci.enabledExtensionCount = 2;
+    ci.enabledExtensionCount = havePerf ? 3 : 2;
     ci.enabledExtensionNames = exts;
     if (!ok(xrCreateInstance(&ci, &g.instance), "xrCreateInstance")) return false;
     XrInstanceProperties ip{XR_TYPE_INSTANCE_PROPERTIES};
     xrGetInstanceProperties(g.instance, &ip);
     std::printf("openxr: runtime %s %u.%u.%u\n", ip.runtimeName, XR_VERSION_MAJOR(ip.runtimeVersion),
                 XR_VERSION_MINOR(ip.runtimeVersion), XR_VERSION_PATCH(ip.runtimeVersion));
+
+    if (havePerf)
+        xrGetInstanceProcAddr(g.instance, "xrPerfSettingsSetPerformanceLevelEXT",
+                              reinterpret_cast<PFN_xrVoidFunction*>(&g.setPerf));
+    std::printf("openxr: performance settings %s\n",
+                g.setPerf ? "available - the clocks follow the eye scale" : "NOT available - the runtime's own clocks");
 
     XrSystemGetInfo sg{XR_TYPE_SYSTEM_GET_INFO};
     sg.formFactor = XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
@@ -447,6 +520,7 @@ bool setEyeSize(int w, int h) {
     for (Chain& c : g.eye) destroyChain(c);
     const bool ok = makeChain(g.eye[0], w, h, "left eye") && makeChain(g.eye[1], w, h, "right eye");
     std::printf("openxr: the eyes remade at %dx%d (options row 2)%s\n", w, h, ok ? "" : " - FAILED");
+    applyPerf();   // the GPU's level follows the scale
     return ok;
 }
 

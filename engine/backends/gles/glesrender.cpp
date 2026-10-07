@@ -70,6 +70,11 @@
 #  define GL_SILENCE_DEPRECATION 1
 #  include <OpenGL/gl.h>
 #  include <OpenGL/glext.h>
+#elif defined(__ANDROID__)
+// the Quest's context is GLES 3 (an OpenXR runtime takes no less,
+// `playgpu_gles.cpp`), whose header carries MSAA's calls; the shaders stay
+// `#version 100`, which a 3.x context runs unchanged
+#  include <GLES3/gl3.h>
 #else
 #  include <GLES2/gl2.h>
 #endif
@@ -81,7 +86,9 @@
 // target this backend can resolve. So MSAA is built where the calls exist and
 // refused, and said, everywhere else; supersampling is the anti-aliasing a
 // Vita has.
-#if defined(__APPLE__)
+// ...and GLES 3 has them as core (Android, 2026-10-07: the Quest asked for
+// them as a VR enhancement - edges crawl when the head moves)
+#if defined(__APPLE__) || defined(__ANDROID__)
 #  define OMK_GLES_MSAA 1
 #else
 #  define OMK_GLES_MSAA 0

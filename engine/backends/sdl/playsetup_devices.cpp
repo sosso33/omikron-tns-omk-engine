@@ -81,6 +81,7 @@ int PlayState::setupDevices() {
             std::printf("filter: trilinear%s - an ENHANCEMENT the original never had (it shipped "
                         "one level, MIP NONE); %s\n", texAniso > 1 ? " with anisotropy" : "",
                         vkRen || (worldVk && worldVulkan) ? "drawn by the Vulkan backend"
+                        : glRen ? "drawn by the GLES backend, a mip chain built at upload"
                         : gpu ? "this backend has no mip chain and draws it bilinear"
                               : "the software reference point-samples, --vulkan for it");
         else

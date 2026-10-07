@@ -14,7 +14,8 @@
 //     saves/GAMES      where saves go (never into the data tree - CLAUDE.md §1)
 //     omk.ini          the game's own config file, when present
 //     args.txt         EXTRA arguments, one per line, AFTER the defaults (the
-//                      viewer keeps the last `--res`), '#' starts a comment
+//                      viewer keeps the last `--res`, and the last of each
+//                      enhancement flag), '#' starts a comment
 //     omk-play-YYYYMMDD-HHMMSS.log / .err   each run's output, dated
 //
 // stdout and stderr go nowhere on Android, so both are piped: every line
@@ -162,7 +163,16 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int, char**) {
 
     Run run;
     run.args = {"omk-play", home + "/gamedata", home + "/tables",
-                "--saves", home + "/saves/GAMES", "--res", "1280x720"};
+                "--saves", home + "/saves/GAMES", "--res", "1280x720",
+                // THE HEADSET'S ENHANCEMENTS (the reader, 2026-10-07: "choose
+                // only enhancement you find useful on VR"): what fights the
+                // aliasing that CRAWLS as the head moves - 4x MSAA, trilinear
+                // with 16x anisotropy - and a smooth interface on the quad.
+                // Not the costly ones: per-pixel light, mapped shadows and the
+                // unlimited draw distance took the game thread from ~6 to
+                // ~13.6 ms of a 13.9 ms frame on a Quest 2. args.txt still wins.
+                "--aa", "4", "--filter", "trilinear", "--anisotropy", "16",
+                "--ui-scaling", "linear", "--text-scaling", "fit"};
     const std::string ini = home + "/omk.ini";
     if (std::ifstream(ini)) { run.args.push_back("--config"); run.args.push_back(ini); }
     if (std::ifstream extra{home + "/args.txt"}) {

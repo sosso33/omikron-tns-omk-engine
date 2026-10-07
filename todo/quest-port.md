@@ -686,6 +686,37 @@ inside it) - measure the wait apart before any 90 Hz decision. THREE SLOW
 FRAMES of 190-278 ms at one spot (3388, -5540), ~15 s apart, standing: not a
 load - an open hitch to find.
 
+**THE HEADSET'S ENHANCEMENTS AND CLOCKS (2026-10-07, Quest 2).**
+`--enhance-all` at 1.0x held 64-72 fps: the game thread went from ~6 to
+~13.6 ms (both eyes 7.4, crowd 2.7 - the unlimited draw distance and the
+per-pixel light), the GPU 9.2-11 ms - and two of its enhancements were not
+there: MSAA was compiled only on the Mac, and the "no mip chain" line was the
+viewer's WORDING (GLES has built one at upload all along; the line now says
+so). The reader asked for the useful ones only. Now:
+
+* `OMK_GLES_MSAA` on Android too, against `GLES3/gl3.h` (multisampled
+  renderbuffers and `glBlitFramebuffer` are core in GLES 3).
+* `android_main.cpp`'s defaults: `--aa 4 --filter trilinear --anisotropy 16
+  --ui-scaling linear --text-scaling fit` - what fights the aliasing that
+  crawls with the head; args.txt still wins. Per-pixel light, mapped shadows
+  and the unlimited distance stay off.
+* `XR_EXT_performance_settings` (enabled when the runtime lists it): the CPU
+  asks SUSTAINED_HIGH, the GPU SUSTAINED_HIGH above 1.0x and SUSTAINED_LOW at
+  or below it, re-asked when options row 2 changes the scale; perf events
+  are logged. **Measured: the CPU went from level 2-3 (1171-1382 MHz) to 5
+  (1478-1862); the GPU did NOT move - it was ALREADY at level 4, 525 MHz, in
+  the 1.3x runs.** (`CPU4/GPU=a/b` in the VrApi line: `a` is the CPU level,
+  `b` the GPU's - read the other way round at first, which made "the runtime
+  holds the GPU at 2 of 4" a wrong claim, corrected the same day.)
+* 1.3x with 4x MSAA: 60-65 fps, the GPU at 11-12 ms - more than a Quest 2
+  draws at 72 Hz. **1.1x (1584x1742) with 4x MSAA: 72 fps in 11 of 12
+  seconds** (the twelfth a slow frame), the GPU 7.3-9.7 ms.
+
+**THE SLOW FRAMES are now the most visible fault**: 74-278 ms, a few a minute
+in Anekbah's street, at varying places, some repeating at one spot while
+standing. Not set loads (those are prepared on their own thread, "the frame
+waited 0.0 ms"). Open.
+
 ### Step 6 - the interface, the films and the keyboard (device; ~0.5-1 day)
 
 * The composed 640x480 interface (menus, the sneak, subtitles, reply choices)
