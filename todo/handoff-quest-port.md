@@ -35,7 +35,7 @@ keyboard not started), step 7 not started.
 | 6a the interface as a transparent layer | done, played | `f1d1d28` |
 | 6b the screens: world-fixed window, shaded world | done, played | `16dca15` |
 | 6b the videophone's MONITOR (the caller's picture) | **built, installed, NOT yet played** | `7382903` |
-| 6c the system keyboard (the name field) | not started | |
+| 6c the system keyboard (the name field) | **built, installed 2026-10-07 22:47, NOT yet played** | this commit |
 | 7 the first play pass | not started | |
 
 **On the headset (Quest 2, Horizon OS / Android 14, runtime Oculus 201.124.0):**
@@ -349,11 +349,27 @@ into the strafe bits. Flat play unchanged. `engine: vr strafe` (flat 30 MDRG
 + 30 MDRD; `--vr-sim` 30 MDDG + 30 MDDD and two sideways moves; red with the
 two lines removed: no move at all).
 
+**Report 5, the keyboard - step 6c BUILT, installed 2026-10-07 22:47, NOT yet
+played.** The system keyboard, the cheapest route: the manifest declares
+`oculus.software.overlay_keyboard` (not required), and a new frontend call,
+`Frontend::fieldKeyboard(bool)`, said every frame with "the name field has
+the focus", is `SDL_StartTextInput` / `SDL_StopTextInput` on Android only -
+SDLActivity focuses its dummy edit and calls `showSoftInput`. Boot no longer
+matters: text input is ON only while the field is focused (it opened the
+keyboard under the panel at boot when it was on all the time). Letters come
+back as `SDL_TEXTINPUT`, BACKSPACE / RETURN as key events, the desktop's own
+path. Every other frontend: a no-op. **What to look for**: the log's
+`[in] the name field has the focus - the system keyboard asked for`; if the
+line is there and NO keyboard shows over the eyes, the overlay keyboard does
+not reach an OpenXR app this way, and the next candidate is
+`XR_META_virtual_keyboard` (a keyboard the app renders itself). Checks:
+`frontend gateway`, `start menu`, the Vita / 3DS / GL1 builds.
+
 **The order for the rest** (one at a time, each played before the next):
 2. ~~the menu stick~~ - done above;
 3. ~~the street after an interior~~ - above;
 4. ~~the shoot strafe~~ - above;
-5. the keyboard (6c).
+5. ~~the keyboard (6c)~~ - above, waiting on play.
 
 **Open since steps 2-3** (recorded in the step blocks): shoot-mode movement
 follows the gun, not the head; the body turns instantly with the controller;

@@ -230,6 +230,12 @@ public:
     virtual void setWindowTitle(const std::string&) {}
     // Ask the host for typed characters (`HostInput::text`).
     virtual void startTextInput() {}
+    // The interface's NAME FIELD has the focus (true) or not, said every
+    // frame: a host with no keyboard of its own shows its system one while it
+    // does (the Quest's overlay keyboard, `todo/quest-port.md` step 6c).
+    // Everywhere else typing is already on (`startTextInput`) or the field
+    // asks for itself (the Vita's modal IME), and this does nothing.
+    virtual void fieldKeyboard(bool) {}
     // The host library's last error, for a message - "" when it has none.
     virtual std::string lastError() const { return {}; }
 

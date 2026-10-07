@@ -191,6 +191,26 @@ void SdlFrontend::startTextInput() {
     SDL_StartTextInput();
 #endif
 }
+// THE NAME FIELD'S KEYBOARD ON ANDROID (the Quest, step 6c): SDL's text
+// input there IS the soft keyboard - `SDL_StartTextInput` makes SDLActivity
+// focus its dummy edit and call `InputMethodManager.showSoftInput` - so it is
+// started only while the field has the focus and stopped when the focus
+// leaves, which is what kept it off at boot. The manifest's
+// `oculus.software.overlay_keyboard` lets an immersive app show the system
+// keyboard over the eyes. The letters come back as `SDL_TEXTINPUT`, BACKSPACE
+// and RETURN as key events (`charmap`), so the field sees what a desktop sends.
+void SdlFrontend::fieldKeyboard(bool on) {
+#if defined(__ANDROID__)
+    static int was = -1;
+    if (was == (on ? 1 : 0)) return;
+    was = on ? 1 : 0;
+    if (on) SDL_StartTextInput(); else SDL_StopTextInput();
+    std::printf("[in] the name field %s - the system keyboard %s\n", on ? "has the focus" : "lost the focus",
+                on ? "asked for (SDL_StartTextInput)" : "put away (SDL_StopTextInput)");
+#else
+    (void)on;
+#endif
+}
 std::string SdlFrontend::lastError() const {
     const char* e = SDL_GetError();
     return e ? e : "";

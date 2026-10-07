@@ -105,6 +105,7 @@ public:
     std::string windowTitle() const override;
     void setWindowTitle(const std::string& t) override;
     void startTextInput() override;
+    void fieldKeyboard(bool on) override;
     std::string lastError() const override;
 
     void close() override;

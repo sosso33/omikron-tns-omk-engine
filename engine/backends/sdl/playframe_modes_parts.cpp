@@ -1016,6 +1016,9 @@ int PlayState::modesShoot() {
             }
         }
 
+        // a host keyboard while the name field has the focus (the Quest's;
+        // a no-op on every other frontend - `Frontend::fieldKeyboard`)
+        front.fieldKeyboard(walk && walk->nameFieldFocused());
         if (walk) {
             // What the person typed goes to the field before the navigation
             // bits, because `Confirmer` opens by testing the field's cursor

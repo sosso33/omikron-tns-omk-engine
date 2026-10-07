@@ -15,6 +15,8 @@
     <uses-feature android:glEsVersion="0x00020000" android:required="true" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.hardware.gamepad" android:required="false" />
+    <!-- the system keyboard over an immersive app (the name field, quest-port.md 6c) -->
+    <uses-feature android:name="oculus.software.overlay_keyboard" android:required="false" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-feature android:name="android.hardware.vr.headtracking" android:required="true" android:version="1" />
     <uses-permission android:name="org.khronos.openxr.permission.OPENXR" />
