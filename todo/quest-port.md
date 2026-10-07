@@ -1,4 +1,7 @@
-# Meta Quest - a VR prototype, planned and not started
+# Meta Quest - a VR prototype, steps 1-3 of 7 done
+
+**State and recipes: [`handoff-quest-port.md`](handoff-quest-port.md).** The
+paragraph below is the record as first written.
 
 Asked 2026-10-04..06, in one conversation: a Meta Quest port - on this code
 or by moving the VM and the file readers to Unity; what performance to
