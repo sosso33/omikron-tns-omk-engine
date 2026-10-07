@@ -282,6 +282,27 @@ struct Draw {
     float           lightBase        = 0.0f;
 };
 
+// THE TEXTURE A DRAW BINDS. The engine's is the key's low six bits and
+// nothing else (ASSETS 4b), and its material cache has 58 slots
+// (`SetMaterialsMemory(58, 0)`), so in the original those six bits never
+// wrap. This port's pool is its OWN composition - both resident sets, every
+// character model staged, the props, the sprites - and runs past 64 in a
+// city after an interior (the Quest, 2026-10-07: 72 slots, the three effect
+// sprites wrapping onto set textures 5..7 - a street light's glow drawn in
+// stone). So the full pool index rides ABOVE the 14-bit key, as `slot + 1`
+// in bits 16..31 (`kKeySlotShift`), and a backend binds that when it is
+// there; the low fourteen bits - the sort, the fog's bits, the six-bit slot
+// itself - stay the engine's. A draw whose maker sets only the low bits
+// (the interface's models, `splitDraws`) binds the six bits as before.
+inline constexpr unsigned kKeySlotShift = 16;
+inline std::uint32_t withPoolSlot(std::uint32_t key14, std::uint32_t slot) {
+    return key14 | ((slot + 1u) << kKeySlotShift);
+}
+inline std::size_t drawTextureSlot(const Draw& d) {
+    const std::uint32_t full = d.bucketKey >> kKeySlotShift;
+    return full ? static_cast<std::size_t>(full - 1u) : static_cast<std::size_t>(d.bucketKey & 0x3Fu);
+}
+
 class Renderer {
 public:
     virtual ~Renderer() = default;

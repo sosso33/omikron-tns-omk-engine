@@ -1854,6 +1854,19 @@ if (i != 58) {                       /* CACHE HIT                          */
 }
 ```
 
+**So in the original the six bits never wrap**: 58 slots, and a 59th texture
+is refused ("no free textures") rather than aliased. **The port's pool is its
+own composition** - both resident sets, every staged character model, the
+props, the shadow, the player, the effect sprites, in that order - and it can
+run past 64: a long session on the Quest (2026-10-07) reached 72 in Anekbah,
+and the three sprites at 69..71 bound set textures 5..7 - a street light's
+glow drawn in stone. The port therefore carries the pool's FULL index above the
+14-bit key (`slot + 1` in bits 16..31, `omk::withPoolSlot`) and every backend
+binds it through `omk::drawTextureSlot`; the low fourteen bits, and so the
+sort, stay the engine's. `verify.py: engine: pool past 64` renders a street
+with 64 spare slots padded in (`OMK_POOL_PAD=64`) and requires the frame
+unchanged on the software reference and on GLES.
+
 Smaller textures are packed several to a page and take a sub-slot index in the
 **high** half of `+64`; palettes run the identical dance over `g_PaletteSlots`
 (32-byte records) into `+68`. `Materials_ReleaseSlots` (0x00441840) is the

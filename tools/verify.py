@@ -28879,6 +28879,64 @@ def c_engine_lazy_collision():
         "log are those of the eager placement"
 
 
+def c_engine_pool_past_64():
+    r"""A TEXTURE POOL PAST 64 BINDS EVERY TEXTURE ITS OWN (`drawTextureSlot`,
+    o3de/renderer.h). The engine binds the bucket key's low six bits and its
+    material cache has 58 slots, so in the original they never wrap; this
+    port's pool is its own composition and, after a long session on the Quest
+    (2026-10-07), reached 72 - and the three effect sprites at 69..71 drew set
+    textures 5..7: a street light's glow in stone. The full index now rides
+    above the 14-bit key and the backends bind it.
+
+    `OMK_POOL_PAD=64` puts 64 spare copies of slot 0 ahead of the shadow, the
+    player and the sprites (79 -> 103 slots on this street), and the frame
+    must be the unpadded one byte for byte, on the software reference AND the
+    GLES build (the Quest's). A pad of 64 and not 40: the low six bits are
+    part of the SORT key, and a pad that changes them reorders draws inside a
+    bucket - one GLES pixel moved at 40, from blending order alone.
+
+    SHOWN TO FAIL, 2026-10-07: `drawTextureSlot` returning the low six bits
+    alone moves 58082 bytes (software) and 58247 (GLES) of the padded frame.
+    """
+    import subprocess, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    sw = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(sw):
+        return ("build failed",), ("built",), "engine/ must build omk-play"
+    mg = subprocess.run(["make", "-s", "play-gles"], cwd=eng, capture_output=True, text=True)
+    gl = os.path.join(eng, "build", "omk-play-gles")
+    builds = [("software", sw, {"SDL_VIDEODRIVER": "dummy"})]
+    if mg.returncode == 0 and os.path.exists(gl):
+        builds.append(("gles", gl, {"OMK_NO_GPU_PRESENT": "1"}))
+    tmp = tempfile.mkdtemp()
+    got = []
+    try:
+        for name, binp, extra in builds:
+            dumps, pools = [], []
+            for pad in ("0", "64"):
+                out = os.path.join(tmp, f"{name}-{pad}.bin")
+                r = subprocess.run([binp, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                                    "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+                                    "--area", "0", "--stand", "1804,0,-6890,336",
+                                    "--res", "640x480", "--frames", "60", "--dump", out],
+                                   capture_output=True, text=True, errors="replace",
+                                   env=dict(os.environ, OMK_POOL_PAD=pad, **extra))
+                m = re.findall(r"texture pool - .*= (\d+) slots", r.stdout)
+                pools.append(int(m[-1]) if m else -1)
+                dumps.append(open(out, "rb").read() if os.path.exists(out) else b"")
+            if not dumps[0] or len(dumps[0]) != len(dumps[1]):
+                return (name, "dumps", len(dumps[0]), len(dumps[1])), (name, "dumps", "equal"), \
+                    "both runs must dump a frame"
+            diff = sum(1 for a, b in zip(dumps[0], dumps[1]) if a != b)
+            # the pad must have APPLIED: the padded pool is the plain one + 64, past 64
+            got.append((name, pools[1] - pools[0], pools[1] > 64, diff))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return tuple(got), tuple((n, 64, True, 0) for n, _, _ in builds), \
+        "per build: the pad applied (pool + 64, past 64) and the padded frame's bytes that differ"
+
+
 def c_engine_gles_overlay():
     r"""THE GLES OVERLAY DRAWS WHAT THE CPU COMPOSITE DRAWS (2026-10-05).
     A frame with something over the world - a fade, a subtitle, the fight's
@@ -45937,6 +45995,7 @@ SLOW = [
     ("engine: particle gate", c_engine_particle_gate, "todo/cpu-vs-original.md tier C; o3de/particles.h"),
     ("engine: lazy collision", c_engine_lazy_collision, "todo/cpu-vs-original.md tier C; o3de/collision.h"),
     ("engine: gles overlay", c_engine_gles_overlay, "todo/vita-port.md G6; backends/gles/glesrender.cpp"),
+    ("engine: pool past 64", c_engine_pool_past_64, "todo/handoff-quest-port.md; o3de/renderer.h"),
     ("engine: profiler control", c_engine_profiler_control, "todo/debug-tools.md step 3"),
     ("engine: profiler gpu", c_engine_profiler_gpu, "todo/debug-tools.md step 5"),
     ("engine: release build", c_engine_release_build, "todo/debug-tools.md"),

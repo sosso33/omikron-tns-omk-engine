@@ -1795,7 +1795,7 @@ private:
     // The D3D render states the original changed between buckets, changed
     // here only when they differ from the last draw's.
     void setState(const Draw& d) {
-        const unsigned slot = d.bucketKey & 0x3F;   // ASSETS 4b: the key's low six bits
+        const std::size_t slot = drawTextureSlot(d);   // ASSETS 4b; past 64 the pool's index
         const bool hasTex = !noTex_ && slot < tex_.size() && tex_[slot].tex;
         if (!stateValid_ || d.blend != blend_) {
             switch (d.blend) {

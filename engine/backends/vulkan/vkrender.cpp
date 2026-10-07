@@ -2358,8 +2358,9 @@ void VulkanRenderer::submit(const omk::Draw& d) {
                                     : pipe_[k];
     vkCmdBindPipeline(cb_, VK_PIPELINE_BIND_POINT_GRAPHICS, use);
 
-    // The texture is the key's LOW SIX BITS and nothing else (ASSETS 4b).
-    const std::size_t slot = d.bucketKey & 0x3Fu;
+    // The texture is the key's LOW SIX BITS and nothing else (ASSETS 4b) -
+    // or the pool's full index above them, past 64 (`drawTextureSlot`).
+    const std::size_t slot = omk::drawTextureSlot(d);
     const VkDescriptorSet ds =
         (slot < tex_.size() && tex_[slot].ds != VK_NULL_HANDLE) ? tex_[slot].ds
                                                                 : white_.ds;

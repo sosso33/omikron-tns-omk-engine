@@ -64,7 +64,7 @@ void SoftwareRenderer::submit(const Draw& d) {
     // reason a backend is handed a key. Resolving it any other way here would
     // make this renderer disagree with the engine about which atlas a material
     // samples, which is the Anekbah mechanism.
-    b.material = static_cast<std::int32_t>(d.bucketKey & 0x3F);
+    b.material = static_cast<std::int32_t>(drawTextureSlot(d));
     b.blend = d.blend;
     b.cutout = d.cutout;
     b.start = 0;

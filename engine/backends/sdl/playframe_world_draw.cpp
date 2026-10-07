@@ -210,7 +210,7 @@ void PlayState::worldDrawLists() {
         if (bl == omk::Blend::Add)      state = 0x2100;
         else if (bl == omk::Blend::Mul) state = 0x2200;
         else if (cutout)                state = 0x400;
-        return state | (slot & 0x3Fu);
+        return omk::withPoolSlot(state | (slot & 0x3Fu), slot);   // past 64: `drawTextureSlot`
     };
     // THE SKY, placed and submitted before anything else.
     //

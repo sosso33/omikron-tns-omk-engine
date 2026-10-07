@@ -2849,8 +2849,9 @@ void GlesRenderer::submit(const Draw& d) {
         ds_.blend = static_cast<int>(d.blend);
     }
 
-    // The texture is the key's LOW SIX BITS and nothing else (ASSETS 4b).
-    const std::size_t slot = d.bucketKey & 0x3Fu;
+    // The texture is the key's LOW SIX BITS and nothing else (ASSETS 4b) -
+    // or the pool's full index above them, past 64 (`drawTextureSlot`).
+    const std::size_t slot = drawTextureSlot(d);
     const Tex& t = (slot < tex_.size() && tex_[slot].id) ? tex_[slot] : white_;
     if (set(!ds_.texValid || ds_.tex != t.id)) {
         glBindTexture(GL_TEXTURE_2D, t.id);

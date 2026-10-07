@@ -1474,6 +1474,18 @@ void PlayState::worldBolts() {
         // section: a batch's slot is its material plus its own base
         sky.texBase = pool.size();
         pool.insert(pool.end(), sky.tex.begin(), sky.tex.end());
+        // `OMK_POOL_PAD=N` (a TEST instrument, `verify.py: engine: pool past
+        // 64`): N spare copies of slot 0 here, so the shadow, the player and
+        // the sprites land past the 64 a six-bit slot reaches - the shape a
+        // long session on the Quest reached by itself (2026-10-07, 72 slots).
+        // A padded frame must be the unpadded one, pixel for pixel.
+        {
+            static const int poolPad = [] {
+                const char* e = std::getenv("OMK_POOL_PAD");
+                return e ? std::max(0, std::atoi(e)) : 0;
+            }();
+            for (int k = 0; k < poolPad && !pool.empty(); ++k) pool.push_back(pool[0]);
+        }
         // THE SHADOW's one texture, on the same rule. It is resident
         // for the whole run rather than per set, because the engine
         // loads the model once at game start and never frees it.
