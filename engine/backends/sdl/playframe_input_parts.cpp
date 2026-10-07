@@ -163,6 +163,13 @@ void PlayState::inputPause() {
     // (`input/pad.h`): buttons 48 + k, the stick on slots 0..3 through
     // `Input_Poll`'s hardwired axes. Zero when there is no pad.
     omk::pad::toDevices(host.pad, st);
+    // ...and under a SCREEN the stick is one direction with hysteresis, so a
+    // held push is one press (`pad::MenuStick`, the Quest's report)
+    {
+        static omk::pad::MenuStick menuStick;
+        if (walk) menuStick.apply(st.joyX, st.joyY);
+        else menuStick.reset();
+    }
     // the `--hold` stream: held, not tapped, and only once he can walk
     // ...and it keeps feeding while a SCREEN is up. Gated on `adventure`
     // alone it stopped the moment the sneak opened - opening a screen is

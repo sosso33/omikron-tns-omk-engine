@@ -103,4 +103,37 @@ inline void toDevices(const Pad& p, DeviceState& st) {
     st.joyY = y;
 }
 
+// THE STICK UNDER A SCREEN: ONE DIRECTION, WITH HYSTERESIS. A CHOICE, like
+// the dead zone, and a frontend's, not the engine's: a 1999 DirectInput
+// stick through `Input_Poll` sets a bit on each side of 0 per axis, and the
+// interface's 0x203F mask turns a HELD bit into one press. An analog thumb
+// does not hold a bit steady: pushed "down" it drifts 0.3-0.4 sideways, and
+// a component hovering at the 250 dead zone turns its bit on and off frame
+// after frame - each return a fresh edge, so a held stick kept moving the
+// selection (the Quest, 2026-10-07: "the stick changes the selected option as
+// long as it is maintained, not only when pushed down"). Under a screen only
+// the DOMINANT axis counts, entered past `kMenuPress` and held until its
+// magnitude falls under `kMenuRelease`; the d-pad's +-1000 passes unchanged.
+// The world keeps both axes - a diagonal walk is two bits there.
+inline constexpr int kMenuPress = 500;
+inline constexpr int kMenuRelease = 300;
+
+struct MenuStick {
+    int dir = 0;   // 0 none, 1 left, 2 right, 3 up, 4 down (+y is DOWN)
+
+    void reset() { dir = 0; }
+    void apply(int& x, int& y) {
+        const int ax = x < 0 ? -x : x, ay = y < 0 ? -y : y;
+        // the held direction survives until its own axis lets go
+        const int held = (dir == 1 || dir == 2) ? ax : (dir ? ay : 0);
+        if (dir && held < kMenuRelease) dir = 0;
+        if (!dir) {
+            if (ax >= ay && ax >= kMenuPress) dir = x < 0 ? 1 : 2;
+            else if (ay > ax && ay >= kMenuPress) dir = y < 0 ? 3 : 4;
+        }
+        x = dir == 1 ? -1000 : dir == 2 ? 1000 : 0;
+        y = dir == 3 ? -1000 : dir == 4 ? 1000 : 0;
+    }
+};
+
 }  // namespace omk::pad

@@ -16202,6 +16202,58 @@ def c_engine_input_poll():
         "control / alt-tab fixes, the hardwired axes, and the button codes"
 
 
+def c_engine_menu_stick():
+    r"""THE STICK UNDER A SCREEN is one direction with hysteresis
+    (`pad::MenuStick`, input/pad.h; the Quest's report of 2026-10-07: "the
+    stick changes the selected option as long as it is maintained").
+
+    `Input_Poll` sets a bit on each side of 0 per axis and `Ui_BeginScreen`'s
+    0x203F mask makes a HELD bit one press - but an analog thumb does not hold
+    a bit steady: a component hovering at the 250 dead zone turns it on and off
+    and each return is a new edge. `menu_stick` feeds eight runs of stick
+    frames through `toDevices` and the engine's own edge filter, raw and
+    through the filter, and counts the presses of slots 0..3 (left, right,
+    up, down). RAW is the fault, asserted too so the cases keep reproducing
+    it: a push held down with the thumb drifting sideways presses RIGHT 22
+    and 23 times, a stick hovering at the dead zone presses DOWN 23 times.
+    THROUGH THE FILTER each is the one press a person made, a push sagging
+    about the press line stays one, a diagonal held mostly down is DOWN, while
+    three real pushes stay three, the d-pad one, and a roll from left to up two.
+
+    SHOWN TO FAIL, 2026-10-07, each restored from a copy and touched:
+    `kMenuRelease` at 500 (no hysteresis) turns `push-then-sag` from 1 down
+    press to 21; the dominant-axis test removed (`ax >= kMenuPress` alone)
+    turns `held-down-diagonal` from DOWN into RIGHT. The first version of the
+    probe passed BOTH mutations - its sag fell under the release line and its
+    diagonal never reached the press - so neither case reached the rule.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    tb = os.path.join(ROOT, "tables", "key_bindings.json")
+    if not (os.path.isdir(eng) and os.path.exists(tb)):
+        return ("skipped",), ("skipped",), "engine/ or tables/ absent"
+    b = subprocess.run(["make", "-s", "build/menu_stick"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "menu_stick")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, tb], capture_output=True, text=True)
+    rows = re.findall(r"^case (\S+) +raw (\d+ \d+ \d+ \d+) menu (\d+ \d+ \d+ \d+)$",
+                      r.stdout, re.M)
+    if len(rows) != 8:
+        return (len(rows),), (8,), "menu_stick output parsed - the tool's format changed"
+    return tuple(rows), \
+        (("held-down-drift", "0 22 0 1", "0 0 0 1"),
+         ("held-down-wobble", "0 23 0 1", "0 0 0 1"),
+         ("hover-at-dead-zone", "0 0 0 23", "0 0 0 0"),
+         ("push-then-sag", "0 0 0 1", "0 0 0 1"),
+         ("held-down-diagonal", "0 1 0 1", "0 0 0 1"),
+         ("three-pushes-up", "0 0 3 0", "0 0 3 0"),
+         ("dpad-right", "0 1 0 0", "0 1 0 0"),
+         ("left-roll-to-up", "1 0 1 0", "1 0 1 0")), \
+        "each case's presses of left/right/up/down, raw and under a screen's filter"
+
+
 def c_engine_vita_bench():
     r"""The Vita bench's per-body work gives the SAME BYTES inline and through
     the thread pool (todo/vita-port.md §0, P1).
@@ -43130,9 +43182,10 @@ def c_licence_headers():
     # `_setup` / `_camera` / `_draw.cpp`, `engine/backends/sdl/playvr_off.cpp`,
     # `engine/tools/vr_probe.cpp`; 590 on 2026-10-07: + the Quest's step 4,
     # `engine/backends/android/android_main.cpp`, `scripts/android-build.sh`;
-    # 592 the same day: + step 5's `engine/backends/openxr/xrhost.h` / `.cpp`
+    # 592 the same day: + step 5's `engine/backends/openxr/xrhost.h` / `.cpp`;
+    # 593 the same day: + `engine/tools/menu_stick.cpp` (the Quest's menu stick)
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (592, [], 1, []), \
+           (593, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -45804,6 +45857,7 @@ SLOW = [
     ("engine: airlock walk", c_engine_airlock_walk, "todo/collision-scenes-transitions 3a"),
     ("engine: input",      c_engine_input,      "PORTING B6"),
     ("engine: input poll", c_engine_input_poll, "todo/vita-port.md F3; input/bindings.h"),
+    ("engine: menu stick", c_engine_menu_stick, "todo/handoff-quest-port.md; input/pad.h"),
     ("engine: audio",      c_engine_audio,      "PORTING B6"),
     ("engine: shoot AI",   c_engine_shoot_ai,   "engine/README"),
     ("engine: I2D",        c_engine_i2d,        "engine/README"),

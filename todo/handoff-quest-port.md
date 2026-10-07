@@ -159,7 +159,7 @@ build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
 **Checks**: `python3 tools/verify.py --only "engine: vr" "licence headers"
 "play usage"`; after a GLES or text change also `"engine: gles overlay"
 "engine: text scaling" "subtitle box" "engine: texture filter"
-"engine: mipmaps"`. `licence headers` counts **592**. No check runs the
+"engine: mipmaps"`. `licence headers` counts **593**. No check runs the
 headset; the reader's play is its evidence.
 
 ## 4. The machines
@@ -229,8 +229,25 @@ conversations' ~10 ms upload is `presentSurface`'s, already one call.
 CMake lists its sources by hand without `playvr_off.cpp`, so `PlayState::vr*`
 did not link. `engine: vita build` green.
 
+**Report 4, the menu stick - FIXED, installed 2026-10-07 20:33, NOT yet
+played.** The interface's 0x203F mask already turns a held bit into one
+press, and `vrAdventureInput` stands aside under a screen - so a held stick
+repeats only if its BIT flickers. It does: `Input_Poll` sets a bit per axis
+on each side of 0, the frontend's dead zone is 250 a component, and a thumb
+pushed down drifts 0.2-0.35 sideways, crossing it frame after frame (the
+log could not show this - the `[in]` lines stop after 40 presses and do not
+carry the stick; it is the mechanism the probe reproduces, 22-23 presses
+from one held push). Under a screen the stick is now ONE direction, the
+dominant axis, entered past 500 and held to 300 (`pad::MenuStick`,
+`input/pad.h`, applied in `playframe_input_parts.cpp` while `walk`) - every
+pad (Vita, SDL, Quest) gets it; the world keeps both axes.
+`engine: menu stick` (new; `engine/tools/menu_stick.cpp`): eight cases raw
+and filtered, shown to fail by both rules removed. NOT covered: the
+conversation's reply list, which is not a `walk` screen - if a held stick
+runs down the replies too, that is where.
+
 **The order for the rest** (one at a time, each played before the next):
-2. the menu stick - act once per push, not every frame it is held;
+2. ~~the menu stick~~ - done above;
 3. the street after an interior (T-poses, effect textures, extra npcs) -
    first whether the flat game does it too;
 4. the shoot strafe - first what the original's shoot scheme binds;
