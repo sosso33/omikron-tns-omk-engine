@@ -765,6 +765,56 @@ profiler's captures. In the order the measurement points to, but expected:
 * the crowd's density default for the device (options row 6, the original's
   own knob).
 
+**THE PLAN, 2026-10-07** (the reader's go: "start the optimisations"; the
+yardstick above says the port, not the hardware). The eighth run puts the
+dense frame at ~52 ms of GPU against ~44 of CPU, so the GPU binds first and a
+CPU cut alone moves little there. Each step is the ORIGINAL's mechanism where
+it has one (`cpu-vs-original.md`, `ram-vs-original.md`), exact unless said,
+proved in Azahar, measured on the console with its own card-file switch so
+one card session can lay each beside the build without it:
+
+| # | what | the original | state |
+|---|---|---|---|
+| 6.1 | **indexed draws** - a vertex shaded once | faces index the file's vertices, `sub_4947F0` transforms each once | **DONE 2026-10-07**, Azahar-exact; console owed (`c3d-arrays` is the switch) |
+| 6.2 | the GPU's halves attributed: a scissored run (fill ~0) and an untextured one | - (instruments) | proposed |
+| 6.3 | textures in VRAM where they fit | the card's own memory (`SetMaterialsMemory`'s pages uploaded to it) | proposed, after 6.2 |
+| 6.4 | the zero-copy present: the world drawn rotated, the transfer into the framebuffer, the dither on the GPU (an additive 4x4 pass before the truncating transfer) | `Flip` | proposed |
+| 6.5 | the panel's redraw (13.5 ms twice a second) only when its text changes | - | proposed |
+| 6.6 | the second core (`OMK_THREADS`) | - | the reader's decision on threads first |
+
+**6.1 - INDEXED DRAWS (2026-10-07).** The scene geometry from 4096 corners
+and every body's rest (the posed program) keep their corners as the shared
+code's address and gain an index BENEATH them in the backend
+(`VertexIndex`): corners share a vertex only within ONE mesh and only where
+every byte the GPU reads is equal, so a moving mesh's corners - moved by one
+transform - stay equal. Anekbah's set: **139245 corners -> 63058 vertices**
+(244 ms once at load, in Azahar); ~94% of the street's GPU draw calls go
+through `C3D_DrawElements`. A moving set mesh's PARTIAL update rewrites its
+corners' vertices and refuses - re-indexing whole - when two corners on one
+vertex would disagree (two dirty ones differing, or a dirty one changing a
+vertex a clean corner still reads); a geometry re-indexed whole more than
+three times stays unindexed. The small geometries rewritten most frames
+(the sky, particles, shadow quads) keep their corners. Whether the PICA's
+post-vertex cache (`GPUREG_POST_VERTEX_CACHE_NUM`, size undocumented;
+citro3d clears it after each `C3D_DrawElements`) turns the 2.2x fewer
+vertices (6x for a body) into GPU time is the console's to say - the `c3d
+CPU` line now counts the draw calls and how many were indexed.
+
+*Proved in Azahar* (the street start, the save's settings): two `c3d-arrays`
+runs byte-identical at present 200 (the comparison is deterministic);
+indexed against arrays **byte-identical** at 200. On the 3DS the 33 moving
+meshes are drawn by the RENDERER (`optimization.md` 37 - the posed program,
+now indexed too), so the set's partial update is reached only with
+`OMK_CPU_MOTION=1`: under it, indexed against arrays byte-identical at present
+90, and the view does see the patch - a mutation shifting every patched
+vertex 40 units moves 234 bytes. A mutation SKIPPING the patch's writes was
+caught by the guard instead (re-indexed whole four times, then unindexed,
+the picture right) - the guard working, and the reason the shift was needed.
+
+**`args.txt` sets the environment** (2026-10-07): a word `NAME=value` whose
+first letter is upper-case is `setenv`'d instead of passed on, so every
+`OMK_*` instrument is reachable on the card (`OMK_CPU_MOTION=1` above).
+
 ### Step 7 - the Old 3DS, decided
 
 Steps 1, 4 and 6 measured on a 268 MHz console. Either a supported target

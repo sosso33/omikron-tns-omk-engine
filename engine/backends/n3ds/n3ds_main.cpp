@@ -22,7 +22,10 @@
 //   sdmc:/omk/omk.ini        the game's own config file, when present
 //   sdmc:/omk/args.txt       EXTRA arguments, one per line, when present
 //                            (`#` starts a comment) - how a run is given
-//                            `--area`, `--save` or `--nofmv` without a rebuild
+//                            `--area`, `--save` or `--nofmv` without a rebuild;
+//                            a word `NAME=value` (an upper-case letter first)
+//                            is set in the ENVIRONMENT instead - how a run
+//                            reaches an `OMK_*` instrument (`OMK_CPU_MOTION=1`)
 //   sdmc:/omk/<program>-YYYYMMDD-HHMMSS.log / .err   each run's log, dated,
 //                            so the runs sort by name and none overwrites
 //                            the one before (the Vita's rule)
@@ -42,6 +45,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <cstdio>
 #include <ctime>
 #include <exception>
@@ -228,7 +232,16 @@ int main(int, char**) {
                 while (i < s.size() && std::isspace(static_cast<unsigned char>(s[i]))) ++i;
                 std::size_t j = i;
                 while (j < s.size() && !std::isspace(static_cast<unsigned char>(s[j]))) ++j;
-                if (j > i) args.push_back(s.substr(i, j - i));
+                if (j > i) {
+                    const std::string w = s.substr(i, j - i);
+                    const auto eq = w.find('=');
+                    if (std::isupper(static_cast<unsigned char>(w[0])) && eq != std::string::npos) {
+                        setenv(w.substr(0, eq).c_str(), w.substr(eq + 1).c_str(), 1);
+                        std::printf("args.txt: %s set in the environment\n", w.c_str());
+                    } else {
+                        args.push_back(w);
+                    }
+                }
                 i = j;
             }
         }

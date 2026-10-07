@@ -20,6 +20,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <initializer_list>
 #include <map>
 #include <memory>
 #include <tuple>
@@ -61,6 +62,69 @@ inline GpuVert gpuVert(const Corner& c) {
 // draw is recorded - so its corners go through this ring, one pass's worth.
 constexpr std::size_t kRingCorners = 96 * 1024;        // 2.6 MB
 
+// THE VERTEX INDEX (3ds-port.md step 6, 2026-10-07) - the original's own
+// arrangement: `Scene_Load3DO` keeps the file's vertices and its faces INDEX
+// them, and `sub_4947F0` transforms each unique vertex ONCE into a shared
+// pool (todo/ram-vs-original.md, cpu-vs-original.md). The port's geometry is
+// three corners a triangle - Anekbah's set 139245 corners on 63079 vertices,
+// Kay'l 1626 on 272 - so a GPU fed the corners runs its vertex program once
+// a corner. Here the corners stay the shared code's address and an index is
+// built BENEATH them: corners share a vertex only within ONE MESH (the motion
+// patch moves a mesh's corners by one transform, so equal corners stay equal)
+// and only where every byte the GPU reads is equal. The PICA reuses a shaded
+// vertex through its post-vertex cache (`GPUREG_POST_VERTEX_CACHE_NUM`;
+// citro3d clears it after every `C3D_DrawElements`), so how much of the
+// saving reaches the GPU is the console's to say. Indices are 16-bit (the
+// PICA's widest), so a geometry over 65535 vertices stays unindexed.
+template <class V>
+struct VertexIndex {
+    std::vector<V> verts;
+    std::vector<std::uint16_t> idx;      // a corner's vertex
+    std::vector<std::uint16_t> refs;     // the corners on a vertex
+    // `value(k)` is corner k's vertex, `mesh` its mesh (or null: one mesh).
+    // False when the vertices do not fit 16 bits.
+    template <class F>
+    bool build(std::size_t n, const std::int32_t* mesh, F&& value) {
+        verts.clear(); refs.clear(); idx.assign(n, 0);
+        std::vector<std::int32_t> vmesh;
+        std::size_t cap = 64;
+        while (cap < 2 * n) cap <<= 1;
+        std::vector<std::int32_t> table(cap, -1);
+        for (std::size_t k = 0; k < n; ++k) {
+            const V v = value(k);
+            const std::int32_t m = mesh ? mesh[k] : 0;
+            std::uint32_t h = 2166136261u ^ static_cast<std::uint32_t>(m);
+            const auto* b = reinterpret_cast<const unsigned char*>(&v);
+            for (std::size_t i = 0; i < sizeof(V); ++i) h = (h ^ b[i]) * 16777619u;
+            std::size_t slot = h & (cap - 1);
+            for (;;) {
+                const std::int32_t e = table[slot];
+                if (e < 0) {
+                    if (verts.size() >= 65536) return false;
+                    table[slot] = static_cast<std::int32_t>(verts.size());
+                    idx[k] = static_cast<std::uint16_t>(verts.size());
+                    verts.push_back(v);
+                    vmesh.push_back(m);
+                    refs.push_back(1);
+                    break;
+                }
+                if (vmesh[static_cast<std::size_t>(e)] == m &&
+                    std::memcmp(&verts[static_cast<std::size_t>(e)], &v, sizeof(V)) == 0) {
+                    idx[k] = static_cast<std::uint16_t>(e);
+                    ++refs[static_cast<std::size_t>(e)];
+                    break;
+                }
+                slot = (slot + 1) & (cap - 1);
+            }
+        }
+        return true;
+    }
+};
+// A scene geometry is indexed from this many corners: the sets and the large
+// props. Smaller ones - the sky, the particles, the shadow quads, rewritten
+// whole most frames - keep their corners (an index would be rebuilt as often).
+constexpr std::size_t kIndexMinCorners = 4096;
+
 // A REST corner of a body the GPU poses (3d): the scene's corner without the
 // shimmer phase, with its mesh's SLOT and its rest normal (`posed.v.pica`).
 struct GpuPoseVert {
@@ -90,9 +154,10 @@ public:
         freeTextures();
         removeGeometryListener(&C3dRenderer::geometryGone, this);
         for (auto& [g, r] : res_) if (r.buf) linearFree(r.buf);
-        for (GpuVert* b : grave_) linearFree(b);
-        for (auto& [g, r] : pres_) if (r.buf) linearFree(r.buf);
-        for (GpuPoseVert* b : poseGrave_) linearFree(b);
+        for (auto& [g, r] : res_) if (r.idx) linearFree(r.idx);
+        for (void* b : grave_) linearFree(b);
+        for (auto& [g, r] : pres_) { if (r.buf) linearFree(r.buf); if (r.idx) linearFree(r.idx); }
+        for (void* b : poseGrave_) linearFree(b);
         if (target_) C3D_RenderTargetDelete(target_);
         if (ring_) linearFree(ring_);
         if (read_) linearFree(read_);
@@ -177,6 +242,9 @@ public:
         // `sdmc:/omk/c3d-sync` is on the card - an instrument, to lay the
         // synchronous present beside the pipelined one on the console
         if (std::FILE* f = std::fopen("sdmc:/omk/c3d-sync", "r")) { std::fclose(f); syncPresent_ = true; }
+        // THE VERTEX INDEX (step 6), unless `sdmc:/omk/c3d-arrays` is on the
+        // card - an instrument, every draw from the corners as before
+        if (std::FILE* f = std::fopen("sdmc:/omk/c3d-arrays", "r")) { std::fclose(f); noIndex_ = true; }
         target_ = C3D_RenderTargetCreate(tw_, th_, rgb565_ ? GPU_RB_RGB565 : GPU_RB_RGBA8,
                                          GPU_RB_DEPTH24_STENCIL8);
         if (!target_) {
@@ -194,6 +262,9 @@ public:
                     : "one frame behind: the GPU draws frame N while the CPU shows N-1 and builds N+1");
         if (rgb565_) std::printf("c3d: c3d-rgb565 present - the target is RGB565, the transfers 565, no CPU "
                                  "conversion (the 16-bit experiment)\n");
+        std::printf("c3d: %s\n", noIndex_ ? "c3d-arrays present - every draw from the corners, unindexed"
+                                          : "indexed draws - a vertex shaded once, as the original transforms it "
+                                            "(the bodies, and scene geometry from 4096 corners)");
         std::printf("c3d: citro3d on the PICA200, a %dx%d %s target (the %dx%d frame in it) with "
                     "24-bit depth in VRAM, %u KB of VRAM left; the GPU transforms (resident geometry)\n",
                     tw_, th_, rgb565_ ? "RGB565" : "RGBA8", w, h, static_cast<unsigned>(vramSpaceFree() / 1024));
@@ -291,9 +362,9 @@ public:
         ++pass_;
         ++rep_.passes;
         // what a destroyed geometry left while the last pass could still read it
-        for (GpuVert* b : grave_) linearFree(b);
+        for (void* b : grave_) linearFree(b);
         grave_.clear();
-        for (GpuPoseVert* b : poseGrave_) linearFree(b);
+        for (void* b : poseGrave_) linearFree(b);
         poseGrave_.clear();
         // cleared to the view's clear colour - the fog's, so the horizon past
         // the clip distance is what the fog fades into (View::clearColour) -
@@ -384,6 +455,7 @@ public:
         // lights), into this pass's ring and through the scene program.
         std::size_t first = d.start;
         const void* buf = nullptr;
+        const std::uint16_t* idx = nullptr;   // a corner's vertex, when the buffer is indexed
         std::size_t stride = sizeof(GpuVert);
         if (d.meshPose && d.meshPoses) {
             PoseRes* pr = posing_ ? poseResident(g) : nullptr;
@@ -394,6 +466,7 @@ public:
                 setPoseUniforms(d, *pr);
                 rep_.uniformTicks += svcGetSystemTick() - u0;
                 buf = pr->buf;
+                idx = pr->idx;
                 stride = sizeof(GpuPoseVert);
                 ++posedGpu_;
             } else {
@@ -410,7 +483,7 @@ public:
             // pass's ring when it changed after being drawn in it; `first` is
             // the buffer's index of the draw's first corner
             const u64 r0 = svcGetSystemTick();
-            buf = resident(g, d.start, d.count, first);
+            buf = resident(g, d.start, d.count, first, idx);
             rep_.residentTicks += svcGetSystemTick() - r0;
             if (!buf) return;
             useProgram(0);
@@ -441,7 +514,13 @@ public:
                 C3D_CullFace(mode == 0 ? GPU_CULL_NONE : mode == 1 ? kCullBack : kCullFront);
                 cull_ = mode;
             }
-            C3D_DrawArrays(GPU_TRIANGLES, static_cast<int>(first + (i - d.start)), static_cast<int>(j - i));
+            if (idx) {
+                C3D_DrawElements(GPU_TRIANGLES, static_cast<int>(j - i), C3D_UNSIGNED_SHORT, idx + i);
+                ++rep_.indexed;
+            } else {
+                C3D_DrawArrays(GPU_TRIANGLES, static_cast<int>(first + (i - d.start)), static_cast<int>(j - i));
+            }
+            ++rep_.calls;
             i = j;
         }
         st_.drawn += static_cast<long>(d.count / 3);
@@ -598,10 +677,12 @@ public:
                     rep_.piped, rep_.synced, rep_.cmdMax * 100.0,
                     C3D_GetDrawingTime(), C3D_GetProcessingTime());
         std::printf("frame %ld c3d CPU (ms a pass): begin %.2f, begin..end %.2f, submit %.2f, of it "
-                    "residency %.2f and pose uniforms %.2f; the straight present's dither loop %.2f\n", frame,
+                    "residency %.2f and pose uniforms %.2f; the straight present's dither loop %.2f; "
+                    "%.0f GPU draw calls, %.0f indexed\n", frame,
                     rep_.beginTicks * ms / f, rep_.passTicks * ms / f,
                     rep_.submitTicks * ms / f, rep_.residentTicks * ms / f, rep_.uniformTicks * ms / f,
-                    rep_.halfLoopTicks * ms / f);
+                    rep_.halfLoopTicks * ms / f, static_cast<double>(rep_.calls) / f,
+                    static_cast<double>(rep_.indexed) / f);
         const long g = posedGpu_, c = posedCpu_;
         rep_ = Report{};
         rep_.gpu0 = g; rep_.cpu0 = c;
@@ -679,13 +760,105 @@ private:
         std::size_t n = 0;
         std::uint64_t rev = 0;
         long drawnPass = -1;          // the pass that last drew from it
+        std::uint16_t* idx = nullptr; // a corner's vertex in `buf`, when indexed
+        std::size_t nv = 0;           // ...and the vertices in `buf`
+        std::vector<std::uint16_t> refs;
+        int rebuilds = 0;             // whole re-indexes; past a few, left unindexed
+        bool unindexed = false;
     };
 
-    const GpuVert* resident(const Geometry& g, std::size_t start, std::size_t count, std::size_t& first) {
+    // Corners `buf`/`idx` for a geometry: indexed when it can be, else n
+    // corners. The old blocks to the grave. False with no linear memory.
+    bool fillResident(const Geometry& g, Res& r) {
+        const std::size_t n = g.corners.size();
+        VertexIndex<GpuVert> vi;
+        const u64 t0 = svcGetSystemTick();
+        const bool indexed = !noIndex_ && !r.unindexed && n >= kIndexMinCorners &&
+                             g.cornerMesh.size() == n &&
+                             vi.build(n, g.cornerMesh.data(), [&](std::size_t k) { return gpuVert(g.corners[k]); });
+        const std::size_t nv = indexed ? vi.verts.size() : n;
+        auto* buf = static_cast<GpuVert*>(linearAlloc(nv * sizeof(GpuVert)));
+        auto* idx = indexed ? static_cast<std::uint16_t*>(linearAlloc(n * sizeof(std::uint16_t))) : nullptr;
+        if (!buf || (indexed && !idx)) {
+            if (buf) linearFree(buf);
+            if (idx) linearFree(idx);
+            if (!toldNoMem_) {
+                toldNoMem_ = true;
+                std::printf("c3d: no linear memory for a geometry of %zu corners (%u KB left) - not "
+                            "drawn\n", n, static_cast<unsigned>(linearSpaceFree() / 1024));
+            }
+            return false;
+        }
+        if (indexed) {
+            std::memcpy(buf, vi.verts.data(), nv * sizeof(GpuVert));
+            std::memcpy(idx, vi.idx.data(), n * sizeof(std::uint16_t));
+            GSPGPU_FlushDataCache(idx, n * sizeof(std::uint16_t));
+            if (n >= 20000)
+                std::printf("c3d: a geometry of %zu corners indexed - %zu vertices, %.1f ms\n", n, nv,
+                            (svcGetSystemTick() - t0) * 1000.0 / SYSCLOCK_ARM11);
+        } else {
+            for (std::size_t k = 0; k < n; ++k) buf[k] = gpuVert(g.corners[k]);
+        }
+        GSPGPU_FlushDataCache(buf, nv * sizeof(GpuVert));
+        retire(r);
+        r.buf = buf; r.idx = idx; r.n = n; r.nv = nv;
+        r.refs = indexed ? std::move(vi.refs) : std::vector<std::uint16_t>{};
+        return true;
+    }
+
+    // A partial update of an indexed geometry: each dirty corner's vertex
+    // rewritten, and refused (false: re-index whole) when two corners on one
+    // vertex would disagree - two dirty ones with different values, or a
+    // dirty one changing a vertex a clean corner still reads.
+    bool patchIndexed(const Geometry& g, Res& r) {
+        const auto& dc = g.dirtyCorners;
+        if (markC_.size() < r.n) markC_.resize(r.n, 0);
+        if (seenV_.size() < r.nv) seenV_.resize(r.nv, 0);
+        touched_.clear();
+        olds_.clear();
+        bool conflict = false;
+        for (const std::uint32_t k : dc) {
+            if (k >= r.n || markC_[k]) continue;
+            markC_[k] = 1;
+            const std::uint16_t v = r.idx[k];
+            const GpuVert val = gpuVert(g.corners[k]);
+            if (seenV_[v] == 0) {
+                touched_.push_back(v);
+                olds_.push_back(r.buf[v]);
+                r.buf[v] = val;
+            } else if (std::memcmp(&r.buf[v], &val, sizeof val) != 0) {
+                conflict = true;
+            }
+            ++seenV_[v];
+        }
+        for (std::size_t t = 0; t < touched_.size(); ++t) {
+            const std::uint32_t v = touched_[t];
+            if (seenV_[v] < r.refs[v] && std::memcmp(&r.buf[v], &olds_[t], sizeof(GpuVert)) != 0)
+                conflict = true;
+            seenV_[v] = 0;
+        }
+        for (const std::uint32_t k : dc) if (k < r.n) markC_[k] = 0;
+        if (conflict) return false;
+        // flushed in runs: the touched vertices sorted, a gap of 32 or less bridged
+        std::sort(touched_.begin(), touched_.end());
+        std::size_t i = 0;
+        while (i < touched_.size()) {
+            std::size_t j = i;
+            while (j + 1 < touched_.size() && touched_[j + 1] - touched_[j] <= 32) ++j;
+            GSPGPU_FlushDataCache(r.buf + touched_[i], (touched_[j] - touched_[i] + 1) * sizeof(GpuVert));
+            i = j + 1;
+        }
+        return true;
+    }
+
+    const GpuVert* resident(const Geometry& g, std::size_t start, std::size_t count, std::size_t& first,
+                            const std::uint16_t*& idx) {
+        idx = nullptr;
         auto it = res_.find(&g);
         if (it != res_.end() && it->second.buf && it->second.rev == g.revision &&
             it->second.n == g.corners.size()) {
             it->second.drawnPass = pass_;
+            idx = it->second.idx;
             return it->second.buf;
         }
         if (it != res_.end() && it->second.buf && it->second.drawnPass == pass_) {
@@ -706,6 +879,23 @@ private:
             return out;
         }
         const std::size_t n = g.corners.size();
+        if (it != res_.end() && it->second.buf && it->second.n == n && it->second.idx) {
+            // INDEXED: the dirty corners' vertices, or the whole re-indexed
+            Res& r = it->second;
+            const bool partial = g.dirtyTo != 0 && g.dirtyTo == g.revision && r.rev == g.dirtyFrom;
+            if (!(partial && patchIndexed(g, r))) {
+                if (++r.rebuilds > 3 && !r.unindexed) {
+                    r.unindexed = true;   // rewritten whole too often: corners from now on
+                    std::printf("c3d: a geometry of %zu corners re-indexed whole %d times - left unindexed\n",
+                                n, r.rebuilds);
+                }
+                if (!fillResident(g, r)) return nullptr;
+            }
+            r.rev = g.revision;
+            r.drawnPass = pass_;
+            idx = r.idx;
+            return r.buf;
+        }
         if (it != res_.end() && it->second.buf && it->second.n == n) {
             Res& r = it->second;
             const bool partial = g.dirtyTo != 0 && g.dirtyTo == g.revision && r.rev == g.dirtyFrom;
@@ -733,31 +923,24 @@ private:
             return r.buf;
         }
         // new, or a new size
-        auto* buf = static_cast<GpuVert*>(linearAlloc(n * sizeof(GpuVert)));
-        if (!buf) {
-            if (!toldNoMem_) {
-                toldNoMem_ = true;
-                std::printf("c3d: no linear memory for a geometry of %zu corners (%u KB left) - not "
-                            "drawn\n", n, static_cast<unsigned>(linearSpaceFree() / 1024));
-            }
-            return nullptr;
-        }
-        for (std::size_t k = 0; k < n; ++k) buf[k] = gpuVert(g.corners[k]);
-        GSPGPU_FlushDataCache(buf, n * sizeof(GpuVert));
-        if (it != res_.end()) retire(it->second);
         Res& r = res_[&g];
-        r.buf = buf; r.n = n; r.rev = g.revision; r.drawnPass = pass_;
+        if (!fillResident(g, r)) return nullptr;
+        r.rev = g.revision; r.drawnPass = pass_;
         g.resident.mark();
-        return buf;
+        idx = r.idx;
+        return r.buf;
     }
 
     // A buffer let go: at once when no recorded draw of this pass reads it,
     // else when the next pass begins (`begin` waits for the GPU first).
     void retire(Res& r) {
-        if (!r.buf) return;
-        if (inFrame_ && r.drawnPass == pass_) grave_.push_back(r.buf);
-        else linearFree(r.buf);
+        for (void* b : {static_cast<void*>(r.buf), static_cast<void*>(r.idx)}) {
+            if (!b) continue;
+            if (inFrame_ && r.drawnPass == pass_) grave_.push_back(b);
+            else linearFree(b);
+        }
         r.buf = nullptr;
+        r.idx = nullptr;
     }
 
     static void geometryGone(void* ctx, const Geometry* g) {
@@ -769,10 +952,7 @@ private:
         }
         auto pt = self->pres_.find(g);
         if (pt != self->pres_.end()) {
-            if (pt->second.buf) {
-                if (self->inFrame_ && pt->second.drawnPass == self->pass_) self->poseGrave_.push_back(pt->second.buf);
-                else linearFree(pt->second.buf);
-            }
+            self->retirePose(pt->second);
             self->pres_.erase(pt);
         }
     }
@@ -785,6 +965,7 @@ private:
         u64 beginTicks = 0, passTicks = 0;
         float cmdMax = 0.0f;
         long gpu0 = 0, cpu0 = 0;
+        long calls = 0, indexed = 0;    // GPU draw calls, and of them indexed
     };
     void noteCmdBuf() { rep_.cmdMax = std::max(rep_.cmdMax, C3D_GetCmdBufUsage()); }
 
@@ -794,6 +975,7 @@ private:
     // carries its mesh's SLOT - the meshes it uses, numbered densely.
     struct PoseRes {
         GpuPoseVert* buf = nullptr;
+        std::uint16_t* idx = nullptr;   // a corner's vertex in `buf`, when indexed
         std::size_t n = 0;
         std::uint64_t rev = 0;
         long drawnPass = -1;
@@ -809,18 +991,11 @@ private:
             return &pr;
         }
         const std::size_t n = g.corners.size();
-        if (pr.buf && (pr.n != n || pr.drawnPass == pass_)) {
-            if (inFrame_ && pr.drawnPass == pass_) poseGrave_.push_back(pr.buf);
-            else linearFree(pr.buf);
-            pr.buf = nullptr;
-        }
-        if (!pr.buf) {
-            pr.buf = static_cast<GpuPoseVert*>(linearAlloc(n * sizeof(GpuPoseVert)));
-            if (!pr.buf) return nullptr;
-        }
+        retirePose(pr);
         pr.meshOfSlot.clear();
         pr.shimmer = false;
         std::unordered_map<std::int32_t, int> slotOf;
+        std::vector<GpuPoseVert> rest(n);
         for (std::size_t k = 0; k < n; ++k) {
             const std::int32_t m = g.cornerMesh[k];
             auto it = slotOf.find(m);
@@ -829,16 +1004,38 @@ private:
                 pr.meshOfSlot.push_back(m);
             }
             const Corner& c = g.corners[k];
-            pr.buf[k] = {c.x, c.y, c.z, c.u, c.v, toByte(c.r), toByte(c.g), toByte(c.b), 255,
-                         static_cast<float>(it->second), c.nx, c.ny, c.nz};
+            rest[k] = {c.x, c.y, c.z, c.u, c.v, toByte(c.r), toByte(c.g), toByte(c.b), 255,
+                       static_cast<float>(it->second), c.nx, c.ny, c.nz};
             if (c.phase >= 0.0f) pr.shimmer = true;
         }
-        GSPGPU_FlushDataCache(pr.buf, n * sizeof(GpuPoseVert));
+        // the slot is in the vertex, so equal bytes are one mesh's (VertexIndex)
+        VertexIndex<GpuPoseVert> vi;
+        const bool indexed = !noIndex_ && vi.build(n, nullptr, [&](std::size_t k) { return rest[k]; });
+        const std::size_t nv = indexed ? vi.verts.size() : n;
+        pr.buf = static_cast<GpuPoseVert*>(linearAlloc(nv * sizeof(GpuPoseVert)));
+        pr.idx = indexed ? static_cast<std::uint16_t*>(linearAlloc(n * sizeof(std::uint16_t))) : nullptr;
+        if (!pr.buf || (indexed && !pr.idx)) { retirePose(pr); return nullptr; }
+        std::memcpy(pr.buf, indexed ? vi.verts.data() : rest.data(), nv * sizeof(GpuPoseVert));
+        GSPGPU_FlushDataCache(pr.buf, nv * sizeof(GpuPoseVert));
+        if (indexed) {
+            std::memcpy(pr.idx, vi.idx.data(), n * sizeof(std::uint16_t));
+            GSPGPU_FlushDataCache(pr.idx, n * sizeof(std::uint16_t));
+        }
         pr.n = n;
         pr.rev = g.revision;
         pr.drawnPass = pass_;
         g.resident.mark();
         return &pr;
+    }
+
+    void retirePose(PoseRes& pr) {
+        for (void* b : {static_cast<void*>(pr.buf), static_cast<void*>(pr.idx)}) {
+            if (!b) continue;
+            if (inFrame_ && pr.drawnPass == pass_) poseGrave_.push_back(b);
+            else linearFree(b);
+        }
+        pr.buf = nullptr;
+        pr.idx = nullptr;
     }
 
     // One affine a slot - the mesh's, or the identity for a corner no mesh
@@ -1067,7 +1264,7 @@ private:
     int boundProg_ = -1;
     float shimClock_ = 0.0f;
     std::unordered_map<const Geometry*, PoseRes> pres_;
-    std::vector<GpuPoseVert*> poseGrave_;
+    std::vector<void*> poseGrave_;
     long posedGpu_ = 0, posedCpu_ = 0;
     Report rep_;
     bool rgb565_ = false;
@@ -1075,7 +1272,12 @@ private:
     std::vector<std::uint32_t> rowRgba_, rowPad_;     // a row in RGBA byte order (toRgb565Row)
     std::vector<std::uint16_t> row565_;
     std::unordered_map<const Geometry*, Res> res_;
-    std::vector<GpuVert*> grave_;
+    std::vector<void*> grave_;
+    bool noIndex_ = false;              // `sdmc:/omk/c3d-arrays`: every draw from the corners
+    std::vector<std::uint8_t> markC_;   // a partial update's scratch: corners seen
+    std::vector<std::uint16_t> seenV_;  // ...and the corners seen on a vertex
+    std::vector<std::uint32_t> touched_;
+    std::vector<GpuVert> olds_;
     long pass_ = 0;
     std::uint32_t* read_ = nullptr;
     std::uint32_t* small_[2] = {nullptr, nullptr};   // the halved picture (3c), linear: two, the pipeline's
