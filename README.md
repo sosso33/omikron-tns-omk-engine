@@ -8,8 +8,12 @@ established.
 Open source under [GPL-3.0-or-later](LICENSE); the game itself is not
 included and not ours to give — OMK reads the data files from your own copy.
 
-**Where it is up to:** OMK plays the opening and then hands you the player.
-From a cold start it steps the three intro movies, shows the splash, draws the
+**Where it is up to:** OMK runs every major part of the game — the films
+and menus, adventure mode, the conversations and cutscenes, the interface,
+both combat modes and saving — and a new game plays from the opening into the
+city; it is not yet the whole game, and more of it has been measured than
+played through. In detail: OMK plays the opening and then hands you the
+player. From a cold start it steps the three intro movies, shows the splash, draws the
 start menu and takes your answer, runs the Kay'l intro conversation with its
 dialogue cameras and voice-over, plays the camera editings of the Impasse
 arrival, and then gives you **adventure mode**: a follow camera, a floor that
@@ -34,7 +38,8 @@ set's own lights and casts the engine's blob shadows.
 What the original never did is there too, and **off unless asked for**:
 anti-aliasing, trilinear filtering, fitted and mapped shadows, per-pixel
 lighting, supersampling, enlarged text and 60 fps with the bodies smoothed
-between keys (`todo/enhancements.md`; `--enhance-all` turns them on).
+between keys (`todo/enhancements.md`; `--enhance-all` turns them on;
+[pictured below](#what-it-looks-like), each with its limits).
 
 It is not a finished game, and no claim is made about anything a reader has
 not confirmed in play: [`todo/play-test.md`](todo/play-test.md) lists what is
@@ -76,6 +81,114 @@ Two halves, and the split is the point:
 Plus `tools/` (Python readers, four web viewers and the test suite) and
 `tables/` (the tables compiled *into* the executable, lifted to JSON — the one
 thing a replica cannot read out of the game's data files).
+
+## What it looks like
+
+Every picture below is OMK's own output (`omk-play --dump`: RGB565 with the
+original's ordered dither), drawn through the Vulkan backend with the default
+bilinear filter — what the original drew on a 3D card. The files are in
+[`docs/images/`](docs/images/).
+
+### The original against OMK
+
+![The original game and OMK on the same frame of dialogue 402](docs/images/original-vs-port-402.png)
+
+**Left: the original game**, its own framebuffer captured under CrossOver
+(`traces/frames/dlg402-44.png`). **Right: OMK** at the same moment, reached
+from a save with no input: dialogue 402, Telis greeting Kay'l, camera 4555
+parked at the end of its travel, 640x480 letterboxed. The set, the lighting,
+the camera, the subtitle and its font match; Telis's head is turned slightly
+differently, and the plant on the left is lit differently.
+
+### OMK as it draws by default
+
+<p>
+<img src="docs/images/port-street.png" width="49%" alt="Anekbah's street in adventure mode">
+<img src="docs/images/port-traffic.png" width="49%" alt="Traffic by the bank in Anekbah">
+<img src="docs/images/port-astaroth.png" width="49%" alt="The Astaroth boss fight in shoot mode">
+<img src="docs/images/port-gandhar.png" width="49%" alt="Gandhar's lava cave">
+<img src="docs/images/port-fight.png" width="49%" alt="A melee fight">
+</p>
+
+In order: **Anekbah** in adventure mode — the follow camera, the crowd, the
+set's lamps and the engine's blob shadows; **traffic** — a slider parked by
+the bank, walkers on the circuit, steam from the set's emitters;
+**Astaroth** in first-person shoot mode, with his souls, the HUD and the
+inventory slot; **Gandhar's lava cave**, from the meeting's camera editing;
+and **melee**, the fight after the supermarket, with both health bars.
+
+### Faithful against enhanced
+
+The enhancements are everything the original never did, and all of them are
+off unless asked for (`todo/enhancements.md`). In each pair **the left is the
+faithful default and the right the enhancement**; crops are enlarged with
+nearest-neighbour scaling.
+
+![Default against --enhance-all](docs/images/enh-all.png)
+
+**Everything on** (`--enhance-all`): 4x MSAA (the most an M1 offers when 8x is
+asked for), trilinear filtering with 16x anisotropy, mapped shadows, per-pixel
+lighting, text scaling, a filtered interface and no draw-distance cap. The
+shadow is the biggest change. Supersampling is not part of `--enhance-all`; it
+is asked for by name.
+
+![Blob shadows against mapped shadows](docs/images/enh-mapped.png)
+
+**Mapped shadows** (`--shadow-quality mapped`). The original lays soft discs
+under a fixed set of bones; this is a real shadow map, cast from the set's own
+lamp nearest the player, characters only. *Limits:* the set casts nothing,
+because its shadows are already painted into its vertex colours; one light at
+a time; a 220-unit slab around the player, outside which bodies cast nothing.
+The crowd keeps its blob.
+
+![No anti-aliasing against 4x MSAA](docs/images/enh-aa.png)
+
+**Anti-aliasing** (`--aa 4`, MSAA), crop x3: geometry edges are smoothed — the
+roof line and the lamp post. *Limits:* MSAA samples only triangle edges, so
+cut-out textures (grilles, railings) and texture detail stay aliased; that is
+what supersampling is for. Not on the Vita, whose vitaGL refuses it.
+
+![No anti-aliasing against 4x supersampling](docs/images/enh-ssaa.png)
+
+**Supersampling** (`--ssaa 4`), crop x3. The frame is drawn 4x larger each way
+and averaged down, which reaches the cut-out edges and texture shimmer MSAA
+cannot: compare the window bars and the grille. *Limits:* by far the most
+costly — 16 times the pixels at 4x, which is why `--enhance-all` leaves it
+out — and it softens the artists' own texture detail.
+
+![Bilinear against trilinear with 16x anisotropy](docs/images/enh-tri.png)
+
+**Trilinear filtering and 16x anisotropy** (`--filter trilinear --anisotropy
+16`), crop x2. The original shipped one texture level and no mipmaps, so
+distant walls shimmer as the camera moves; mipmaps steady them. *Limits:*
+distant detail goes softer, and small bright sprites lose intensity with
+distance — the lamp flares on the left are visibly dimmer. A still frame
+cannot show the shimmer it removes. Anisotropy is refused on the Vita.
+
+![Per-vertex against per-pixel lighting](docs/images/enh-pp.png)
+
+**Per-pixel lighting** (`--lighting perpixel`), crop x3. The engine's own light
+law — the set's lamps falling on a body — evaluated per pixel instead of per
+vertex, so a lamp's pool no longer bends across a low-polygon arm in flat
+facets. *Limits:* subtle by design; the law is unchanged, so it matters only
+where a light's edge crosses a body. The sets are not relit: their light is
+painted in, and adding the lamps again would double it.
+
+![Native glyphs against scaled text at 1600x1200](docs/images/enh-text.png)
+
+**Text scaling** (`--text-scaling fit --ui-scaling linear`), whole frames at
+1600x1200. The original moves the interface's coordinates with the resolution
+but draws every glyph at its native size, so the subtitle shrinks as the
+display grows (left); `fit` scales the glyphs with the layout and sharpens the
+filtered edges. *Limits:* the glyphs are the 1999 bitmaps, enlarged and
+sharpened, not redrawn.
+
+**Not pictured, because a still cannot show them:** 60 fps (`--framerate 60`)
+and bodies smoothed between keys (`--smooth-anim`); an unlimited draw distance
+(`--clip 0`), which buys nothing measurable at the option's 200 m maximum,
+since no shipped set has a sightline past it; fitted shadows
+(`--shadow-quality fitted`), identical on a flat street and different only on
+stairs and slopes; and the shoot radar in every arena (`--radar always`).
 
 ## You need your own copy of the game
 

@@ -43,6 +43,10 @@ Interactive. In particular:
   mechanically derived from it (`clean/`, `readable/src/`) is a derivative
   work of the game's binary. Not distributed here, and putting a licence on
   this repository would not change that if it were.
+* **pictures of the game** — the original's captured frames in
+  `traces/frames/` and OMK's renders in `docs/images/` — show the game's own
+  sets, characters, textures and fonts. They are here as illustration and
+  evidence; the CC-BY-4.0 on `docs/` does not extend to them.
 
 A licence cannot launder provenance. That is the whole reason those two are
 excluded rather than merely gitignored for size.
