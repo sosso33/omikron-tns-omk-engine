@@ -71,6 +71,26 @@ void PlayState::worldCrowd() {
         pedFootOffMax = 0.0f;
         pedJobs.clear();
         const double pedSerial0 = phaseNow();
+        // THE CROWD IS DRAWN WITH ITS STREET (docs/STREET_LIFE.md, read
+        // 2026-10-07). Every instance of the circuit is linked into the
+        // street decor's own scene (`Slider_Init`'s `dword_8F5E34`, the slot's
+        // +4), `sub_48D7F0` draws the list of the scene it is handed, and
+        // `sub_479C20` hands it only the scenes in the render chain - which a
+        // hidden decor (state 1, `sub_419A90`) is not. `Sliders_Tick` has no
+        // such test: the crowd goes on WALKING indoors, and only its drawing
+        // stops. The port drew it whatever the slot (the Quest: 44 walkers
+        // inside Qalisar's temple, seen through a door's gap).
+        const bool circuitShown = session.trafficSlot() >= 0 &&
+                                  session.slotShown(session.trafficSlot());
+        {
+            static int shownWas = -1;
+            if (session.sliders().loaded() && shownWas != (circuitShown ? 1 : 0)) {
+                shownWas = circuitShown ? 1 : 0;
+                std::printf("frame %ld: crowd library - the circuit's slot %d is %s: its walkers and "
+                            "traffic %s\n", n, session.trafficSlot(), circuitShown ? "SHOWN" : "HIDDEN",
+                            circuitShown ? "drawn" : "not drawn (they keep moving)");
+            }
+        }
         int pedRebound = 0;   // walkers whose clip pointer survived a library change
         int pedModelSwapped = 0;   // walkers whose slot was drawn last as ANOTHER model
         for (std::size_t i = 0; i < ws.size(); ++i) {
@@ -81,6 +101,7 @@ void PlayState::worldCrowd() {
             ++pedLive;
             if (w.flags & 0x80u) ++pedInAction;
             if (w.flags & 0x100u) ++pedIdle;
+            if (!circuitShown) continue;   // its street is out of the render chain
             const float dx = w.body[0] - view.cam.eye[0], dy = w.body[1] - view.cam.eye[1],
                         dz = w.body[2] - view.cam.eye[2];
             const float d2 = dx * dx + dy * dy + dz * dz;
@@ -481,6 +502,13 @@ void PlayState::worldCrowd() {
             const auto& m = pd.movers()[static_cast<std::size_t>(v.mover)];
             ++vehLive;
             if (m.flags & 0x100u) ++vehStopped;
+            // ...and the traffic the same way - but NOT the player's own slider
+            // while he rides it: `Slider_TickRide` relinks it into the head
+            // scene `dword_93076C` every tick, so it draws wherever he goes
+            if (!circuitShown && !(mine && (ride || boarded))) {
+                skipMine(4, "its street's slot is hidden (out of the render chain)");
+                continue;
+            }
             const float vx = m.body[0] - view.cam.eye[0], vy = m.body[1] - view.cam.eye[1],
                         vz = m.body[2] - view.cam.eye[2];
             const float vd2 = vx * vx + vy * vy + vz * vz;

@@ -348,6 +348,9 @@ public:
     // traffic hangs under against the active scene - so with the city only
     // RESIDENT (he has walked into one of its buildings) a call is refused
     bool trafficActive() const { return trafficSlot_ >= 0 && trafficSlot_ == (active_ & 1); }
+    // the slot whose circuit `sliders_` holds (-1: none) - `Slider_Init`'s
+    // `dword_8F5E34` is that decor's SCENE, and the crowd draws with it
+    int trafficSlot() const { return trafficSlot_; }
     // ...and the call itself, through that gate (drift audit B8): from inside
     // a building beside the city this called a slider to a street nobody
     // could see

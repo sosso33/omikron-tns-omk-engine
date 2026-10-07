@@ -329,13 +329,25 @@ decor (`sub_419AF0` / `sub_419A90`) inserts its scene into that chain or
 takes it out (`o3de_InsertScene` / `sub_441200`). **So while the street's
 slot is hidden - the player indoors, the street in state 1 - the street's
 crowd is not drawn at all**, and at a doorway, where both slots are shown,
-it is drawn with the street around it. Nothing here says whether
-`Sliders_Tick` still MOVES it while hidden; only the draw is read.
+it is drawn with the street around it.
 
-The port drew it whatever the slot's state: inside Qalisar's temple, with
-Qalisar's slot hidden, 44 walkers were drawn (the Quest, 2026-10-07: "through
-the small gap between doors I see the npc in the streets still there and
-moving").
+**And it goes on MOVING.** `Game_Tick` (0x004200F0) calls `Sliders_Tick` every
+frame with no condition, and `Sliders_Tick` is gated only on `dword_8F5E48`
+(the circuit loaded); neither it nor the mover `sub_454F40` nor the body
+`sub_455830` tests a decor's state or the render chain - its one scene
+reference is `dword_8F5E34`, for the walkers' shadows. A circuit is replaced
+only by an area that names its own (`Area_LoadSliderTrack` frees the old one
+first), so indoors with no circuit of its own, the street's crowd walks on
+unseen. **The one exception is the player's own slider during a ride**:
+`Slider_TickRide` relinks it into the head scene `dword_93076C` every tick,
+so it draws wherever he is.
+
+The port drew the crowd whatever the slot's state: inside Qalisar's temple,
+with Qalisar's slot hidden, 44 walkers were drawn (the Quest, 2026-10-07:
+"through the small gap between doors I see the npc in the streets still
+there and moving"). **Ported the same day**: the walkers and the traffic
+are drawn only while `Session::trafficSlot()` is shown, the ridden slider
+excepted; the simulation is untouched. `verify.py: engine: crowd indoors`.
 
 ### The crowd is LIT, and that is what a set's light table is for
 

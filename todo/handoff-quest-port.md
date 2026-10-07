@@ -328,8 +328,12 @@ Read against the run's log:
   does NOT** - the circuit's instances live in the street decor's own scene
   (`dword_8F5E34`), and a hidden decor's scene is out of the render chain
   `sub_479C20` submits (`docs/STREET_LIFE.md`, "The crowd is drawn WITH ITS
-  STREET"). The port's fix is to draw the crowd only while its slot is
-  shown - proposed, not made.
+  STREET"). And `Sliders_Tick` has no such gate: the crowd keeps WALKING
+  unseen. FIXED the same day, like the original: drawn only while the
+  circuit's slot is shown, the ridden slider excepted (`engine: crowd
+  indoors`, red with the gate removed: 32 drawn); BUILT, NOT installed (the
+  headset had dropped off USB) - `scripts/android-build.sh install`. The log says `crowd library - the circuit's slot N is HIDDEN` /
+  `SHOWN` at each change.
 * **two programs drive one actor** at frame 98359: actors 147 CMH_FN and 458
   CWH_FN each have a pose on a sewer path AND on an Anekbah path 20 m apart
   in the same frame - two resident scenes naming the same actors. One body,

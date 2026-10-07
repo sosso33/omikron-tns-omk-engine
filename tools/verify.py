@@ -28879,6 +28879,52 @@ def c_engine_lazy_collision():
         "log are those of the eager placement"
 
 
+def c_engine_crowd_indoors():
+    r"""THE STREET'S CROWD IS NOT DRAWN WHILE ITS STREET IS HIDDEN, and goes on
+    walking (docs/STREET_LIFE.md, "The crowd is drawn WITH ITS STREET", read
+    2026-10-07). The circuit's instances live in the street decor's own scene
+    (`Slider_Init`'s `dword_8F5E34`); `sub_479C20` submits only the scenes in
+    the render chain, which a hidden decor has left; `Sliders_Tick` runs in
+    `Game_Tick` with no such test. The port drew the crowd whatever the slot -
+    32 walkers inside Qalisar's temple on this route, 44 in the Quest's run.
+
+    Qalisar (AREA 101), walking east into the temple (AREA 117): the street's
+    slot goes HIDDEN at frame 237, and the frames after it must draw no walker
+    and no vehicle while all of them stay live.
+
+    SHOWN TO FAIL, 2026-10-07: the walkers' gate removed draws up to 32
+    walkers after the hide (the check reads `(True, True, 32, True, 0)`).
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build omk-play"
+    r = subprocess.run([binp, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                        "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+                        "--area", "101", "--stand", "20800,0,-5220,90", "--hold", "k200*400",
+                        "--res", "640x480", "--frames", "700"],
+                       capture_output=True, text=True, errors="replace",
+                       env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+    hid = re.search(r"^frame (\d+): crowd library - the circuit's slot \d+ is HIDDEN", r.stdout, re.M)
+    if not hid:
+        return ("no HIDDEN line",), ("hidden",), "the street's slot never went hidden - the route changed"
+    after = int(hid.group(1))
+    peds = [(int(f), int(l), int(d)) for f, l, d in
+            re.findall(r"^frame (\d+): pedestrians - (\d+) live, (\d+) drawn", r.stdout, re.M)
+            if int(f) > after]
+    vehs = [(int(f), int(l), int(d)) for f, l, d in
+            re.findall(r"^frame (\d+): traffic - (\d+) live, (\d+) drawn", r.stdout, re.M)
+            if int(f) > after]
+    if len(peds) < 2 or len(vehs) < 2:
+        return (len(peds), len(vehs)), (">= 2", ">= 2"), "the crowd and traffic lines after the hide"
+    return (after < 300, min(l for _, l, _ in peds) > 0, max(d for _, _, d in peds),
+            min(l for _, l, _ in vehs) > 0, max(d for _, _, d in vehs)), \
+        (True, True, 0, True, 0), \
+        "hidden before frame 300; walkers live after it, the most drawn; vehicles live, the most drawn"
+
+
 def c_engine_pool_past_64():
     r"""A TEXTURE POOL PAST 64 BINDS EVERY TEXTURE ITS OWN (`drawTextureSlot`,
     o3de/renderer.h). The engine binds the bucket key's low six bits and its
@@ -45996,6 +46042,7 @@ SLOW = [
     ("engine: lazy collision", c_engine_lazy_collision, "todo/cpu-vs-original.md tier C; o3de/collision.h"),
     ("engine: gles overlay", c_engine_gles_overlay, "todo/vita-port.md G6; backends/gles/glesrender.cpp"),
     ("engine: pool past 64", c_engine_pool_past_64, "todo/handoff-quest-port.md; o3de/renderer.h"),
+    ("engine: crowd indoors", c_engine_crowd_indoors, "docs/STREET_LIFE.md; todo/handoff-quest-port.md"),
     ("engine: profiler control", c_engine_profiler_control, "todo/debug-tools.md step 3"),
     ("engine: profiler gpu", c_engine_profiler_gpu, "todo/debug-tools.md step 5"),
     ("engine: release build", c_engine_release_build, "todo/debug-tools.md"),
