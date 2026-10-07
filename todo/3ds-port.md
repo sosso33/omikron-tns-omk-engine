@@ -676,6 +676,62 @@ the present (ms, mean of the bin):
   6-15 and still a CPU cost worth cutting (section 4 of the handoff, item 4).
   The film copy was not measured (every run `--nofmv`).
 
+### THE YARDSTICK - the original's machine against the New 3DS (2026-10-07)
+
+The reader's question: does the 3DS have to draw LESS than the original, or
+does the port lack optimisation? Sources are thin and partly disagree, and
+the table says so.
+
+| | the original, minimum | the original, recommended | New 3DS |
+|---|---|---|---|
+| CPU | Pentium 200 or 233 MMX (sources differ; SPECint95 7.12 at 233) | Pentium II 266 or 300 | ARM11 MPCore 804 MHz (the app's core), in-order ARMv6K, VFPv2 - no NEON, no divide |
+| RAM | 32 MB | 64 MB | 124 MB to the application |
+| video | a 4 MB DirectX 6.1 card | an 8 MB 3D card | PICA200 at 268 MHz, 6 MB VRAM; DMP quotes 800 Mpixel/s peak at 200 MHz |
+| picture | 640x480, 16-bit (`engine-spec-1999.md`) - 307 200 pixels | same | the port draws 800x448 RGBA8 (358 400), the screen shows 400x240 |
+
+Sources: the minimum - dvd-fever's review quoting the box (233) and
+gamepressure/vgtimes listings (200; recommended PII 266, or 300); the
+Pentium MMX 233's SPEC - cpushack; the 3DS - 3dbrew.org Hardware and
+Memory map; the PICA200 rate - Wikipedia "PICA200" (DMP's figure); the
+period cards - Tom's Hardware (Voodoo2 90 Mpixel/s a TMU, TNT ~180
+delivered). On period hardware the original was NOT smooth outdoors: the
+dvd-fever reviewer's Pentium 200 MMX "slows to a crawl" in the street with
+pedestrians and cars, and reviews cite the frame rate as a fault
+(Wikipedia). The engine has no frame cap (`sixty-fps.md`).
+
+**The runs used the HEAVIEST settings the game has.** `save-appart.bin` (the
+card's copy byte-identical to `traces/`) carries: clip 200 m (the largest of
+25/50/100/150/200), crowd 4 (0..4), sky on, shadows on, level of detail 2
+(0..2, `ASSETS` - the street models' whole LOD chain and every shadow).
+
+**What the eighth run's numbers say against that:**
+
+* **The GPU is the port's, not the chip's.** The fill-dependent half of
+  citro3d's drawing is ~28 ms a dense frame at 800x448 (the two-size fit
+  above). At an overdraw of 3 to 5 that is ~40-65 Mpixel/s actually
+  delivered - a 1999 card's rate, from a chip quoted several times faster.
+  And run E rules one suspect OUT: halving the colour target's bytes (RGB565)
+  did not shorten the drawing (41/48 ms against 41/51), so colour bandwidth
+  is not it. Left to measure, none established: the textures in linear
+  (FCRAM) memory rather than VRAM, no mipmaps (a distant surface sampling a
+  large texture thrashes the texture cache - the original had none either,
+  but on a card with its own memory), the 24-bit depth buffer's traffic,
+  and the vertex half (corner soups, 3 vertices a triangle; the posed
+  shader's eight lights a vertex).
+* **The CPU is the port's too.** With the GPU's wait taken out a dense frame
+  is ~33 ms of CPU plus ~11 of present - while the original's CPU did all of
+  that AND the transform, the lighting and the skinning (pre-transformed
+  vertices) on a 233-300 MHz Pentium, and the port has moved those to the
+  GPU. The present (dither loop 6 ms, copy 2.7) is pure port cost - the
+  original flipped. The instrumented spans cover ~15-18 ms of the 33; the
+  rest is unattributed. (No sourced per-clock comparison of an ARM11 with a
+  Pentium was found; none is claimed.)
+* **So the answer is optimisation first.** Lowering the settings is not
+  lowering the original's quality - they are the original's own options,
+  which its minimum machine needed - but choosing 3DS defaults is the
+  reader's call and should come AFTER the port's own costs, measured: a run
+  at a lower clip / crowd says what the options buy.
+
 ### Step 4 - the memory fit
 
 The `.cia`'s memory mode in the exheader; textures in the linear heap at 2
