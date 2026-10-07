@@ -779,7 +779,7 @@ one card session can lay each beside the build without it:
 | 6.2 | the GPU's halves attributed: a scissored run (fill ~0) and an untextured one | - (instruments) | **BUILT 2026-10-07** (`c3d-scissor`, `c3d-notex`); console owed |
 | 6.3 | textures in VRAM where they fit | the card's own memory (`SetMaterialsMemory`'s pages uploaded to it) | **DONE 2026-10-07**, Azahar-exact; console owed (`c3d-texlinear` is the switch) |
 | 6.4 | the present in ONE pass: the dither written straight into the top screen's framebuffer (the GPU-side zero-copy - the world drawn rotated, the dither before a truncating transfer - stays proposed: its dither could not be shown bit for bit the reference's) | `Flip` | **DONE 2026-10-07** (the CPU pass), Azahar-exact; console owed (`c3d-surface` is the switch) |
-| 6.5 | the panel's redraw (13.5 ms twice a second) only when its text changes | - | proposed |
+| 6.5 | the panel's redraw (13.5 ms twice a second) only where its text changes | - | **DONE 2026-10-07**, self-checked in Azahar; console owed |
 | 6.6 | the second core (`OMK_THREADS`) | - | the reader's decision on threads first |
 
 **6.1 - INDEXED DRAWS (2026-10-07).** The scene geometry from 4096 corners
@@ -895,6 +895,25 @@ direct against two-pass **byte-identical** dithered, undithered
 mutation moving its cell a column: 90843 bytes). Azahar's CPU (no cache
 model): 10.44 + 1.93 ms -> 8.53. The console owes its figure - the smaller
 tables are aimed at its cache, which Azahar does not model.
+
+**6.5 - THE PANEL DRAWS WHAT CHANGED (2026-10-07).** The bottom screen's
+redraw cost ~13.5 ms twice a second on the console - a hitch every fifteenth
+frame. Timed in Azahar by part (a scratch build): the log's text 3.5 ms,
+the copy onto the screen 2.0, the rest under 1 each. Now a redraw builds
+the lines it wants and draws only the ones that differ from what the surface
+holds (a line's band of 13 rows cleared and drawn again); a log whose tail
+only MOVED up k lines has its pixel rows moved up k bands and its last k
+lines drawn; the first draw, a note line coming or going, a log of another
+length, redraw whole. The fill is a row fill and the copy onto the screen
+goes in 8x8 tiles, as the top screen's does. `OMK_PANEL_CHECK=1` (an
+`args.txt` word) redraws whole beside every incremental redraw and counts
+the pixels that differ.
+
+*Azahar*: **0 pixels of 30 incremental redraws** differed from the whole;
+the check sees a fault - the scroll skipped, 29 of 38 redraws flagged. The
+redraw 7-8.5 ms -> 3.7-4.1 (Azahar's clock, against the build before it,
+back to back). The console owes its figure; the tiled copy should gain more
+there, where the untiled one met the cache.
 
 **`args.txt` sets the environment** (2026-10-07): a word `NAME=value` whose
 first letter is upper-case is `setenv`'d instead of passed on, so every

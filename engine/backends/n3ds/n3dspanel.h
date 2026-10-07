@@ -44,6 +44,7 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace omk::n3ds {
 
@@ -78,6 +79,26 @@ public:
 private:
     void text(Surface& s, int x, int y, const std::string& t,
               std::uint8_t r, std::uint8_t g, std::uint8_t b) const;
+    // A line of the panel: where, what, in which colour.
+    struct Line {
+        int y = 0;
+        std::string t;
+        std::uint8_t r = 0, g = 0, b = 0;
+        bool operator==(const Line& o) const { return y == o.y && t == o.t && r == o.r && g == o.g && b == o.b; }
+    };
+    // What the panel wants this redraw: the lines above the log, the log's
+    // first row and its lines.
+    void wanted(const PanelStats& st, std::vector<Line>& head, int& logY, std::vector<Line>& log) const;
+    // The whole panel from scratch into `s`.
+    void drawAll(Surface& s, const std::vector<Line>& head, int logY, const std::vector<Line>& log) const;
+    // WHAT `s` HOLDS (`todo/3ds-port.md` 6.5): the lines last drawn into it,
+    // so a redraw draws only the lines that changed and SCROLLS the log's
+    // pixel rows when its tail only moved - ~13.5 ms twice a second on the
+    // console redrawn whole.
+    mutable const Surface* held_ = nullptr;
+    mutable std::vector<Line> heldHead_, heldLog_;
+    mutable int heldLogY_ = -1;
+    mutable Surface check_;           // OMK_PANEL_CHECK: the whole redraw, to compare
     FontTable fonts_;
     std::optional<TextLayout> layout_;
     bool ok_ = false;
