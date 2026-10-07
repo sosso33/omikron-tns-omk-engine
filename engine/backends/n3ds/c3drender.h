@@ -55,6 +55,24 @@ bool c3dPresentHalf(Renderer* r, int vy, int vh, Surface& screen);
 // (`sdmc:/omk/c3d-surface` asks for the two passes, or the tables failed
 // their check) - and then `c3dPresentHalf` as before.
 bool c3dPresentHalfDirect(Renderer* r, int vy, int vh, std::uint16_t* dst);
+// THE INTERFACE OVER THE WORLD ON THE GPU (`todo/3ds-port.md` 6.7) - the GLES
+// window's overlay (`ui/overlay.h`) in fixed function, as GL1 does it: `fb` is
+// the composed frame whose world rows are the KEY (0xF81F) or the planes' C,
+// `mask` the planes' M (how much of the world shows through a pixel, 0..255),
+// `fade` the colour fade (rgb + weight). The world rows go into a texture -
+// only the rows that changed - blended OVER the world in its own GPU frame,
+// `C + world * M` (`ONE, SRC_ALPHA`), the fade a second quad; the frame then
+// leaves as a straight present does (the transfer's 2x2 average, the one-pass
+// dither into `dst`, one frame behind), and the rows outside the world (the
+// letterbox bands) are written from `fb` on the CPU, delayed with the picture
+// they belong to. -> false, having changed nothing on screen, when it cannot
+// (the caller then reads back and composites). `c3dOverlayReady` says before
+// the frame is composed whether a frame may go this way.
+bool c3dOverlayReady(Renderer* r);
+// `maskRows` (one a frame row, may be null): 0 where the mask row is all
+// zero - the rows no plane touched - so it need not be compared.
+bool c3dPresentOverlay(Renderer* r, const Surface& fb, const std::uint8_t* mask, const std::uint8_t* maskRows,
+                       const float fade[4], int vy, int vh, std::uint16_t* dst);
 
 // THE BACKEND'S OWN COUNTS over the frames since the last call - draws, posed
 // draws on the GPU and on the CPU, the CPU's posing time, the time waited on

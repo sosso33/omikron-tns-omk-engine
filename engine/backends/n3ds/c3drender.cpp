@@ -10,6 +10,7 @@
 
 #include "o3de/shimmer.h"
 #include "platform/profile.h"
+#include "ui/overlay.h"
 #include "ui/surface.h"
 
 #include <3ds.h>
@@ -159,6 +160,7 @@ public:
         for (auto& [g, r] : pres_) { if (r.buf) linearFree(r.buf); if (r.idx) linearFree(r.idx); }
         for (void* b : poseGrave_) linearFree(b);
         if (target_) C3D_RenderTargetDelete(target_);
+        if (ovTex_.data) C3D_TexDelete(&ovTex_);
         if (ring_) linearFree(ring_);
         if (read_) linearFree(read_);
         for (std::uint32_t* b : small_) if (b) linearFree(b);
@@ -258,6 +260,11 @@ public:
         direct_ = makeDirectTables();
         if (!direct_) std::printf("c3d: the direct present's tables disagree with quantise888Dither - "
                                   "presented in two passes\n");
+        if (std::FILE* f = std::fopen("sdmc:/omk/c3d-nooverlay", "r")) {
+            std::fclose(f);
+            noOverlay_ = true;
+            std::printf("c3d: c3d-nooverlay present - interface frames read back and composited on the CPU\n");
+        }
         if (std::FILE* f = std::fopen("sdmc:/omk/c3d-surface", "r")) {
             std::fclose(f);
             direct_ = false;
@@ -697,6 +704,40 @@ public:
         return true;
     }
 
+    // ---- THE INTERFACE OVER THE WORLD (6.7) ----------------------------------
+    bool overlayReady() const { return inFrame_ && direct_ && !noOverlay_; }
+
+    bool presentOverlay(const Surface& fb, const std::uint8_t* mask, const std::uint8_t* maskRows,
+                        const float fade[4], int vy, int vh, std::uint16_t* dst) {
+        const bool one = w_ <= 400 && h_ <= 240;
+        const int k = one ? 1 : 2;
+        if (!overlayReady() || fb.w != w_ || fb.h != h_ || vh <= 0 || vy < 0 || vy + vh > h_ || vh > th_ ||
+            vy % k || vh % k)
+            return false;
+        if (!ovTex_.data && !makeOverlayTexture()) return false;
+        const u64 o0 = svcGetSystemTick();
+        const bool any = sendOverlayRows(fb, mask, maskRows, vy, vh);
+        const bool fading = fade[3] > 0.0f;
+        vyOv_ = vy;
+        if (any || fading) drawOverlay(any, fading, fade, vh);
+        // the bands: built now, shown with the picture they belong to - this
+        // frame's when the present waits for it, the last frame's when it is
+        // one behind (and black when that frame had none)
+        const bool piped = !syncPresent_ && lastHalfPass_ == pass_ - 1;
+        const int cur = bandsCur_;
+        buildBands(fb, fade, vy, vh, k, bands_[cur]);
+        rep_.overlayTicks += svcGetSystemTick() - o0;
+        if (!presentHalf(vy, vh, nullptr, dst)) return false;
+        const u64 b0 = svcGetSystemTick();
+        if (!piped) writeBands(bands_[cur], dst);
+        else if (bandsPass_ == pass_ - 1) writeBands(bands_[cur ^ 1], dst);
+        bandsPass_ = pass_;
+        bandsCur_ = cur ^ 1;
+        rep_.overlayTicks += svcGetSystemTick() - b0;
+        ++rep_.overlays;
+        return true;
+    }
+
     RasterStats stats() const override { return st_; }
     const char* name() const override { return "citro3d (PICA200)"; }
     // the counts since the last report, as one line (`c3dReport`)
@@ -714,11 +755,13 @@ public:
                     C3D_GetDrawingTime(), C3D_GetProcessingTime());
         std::printf("frame %ld c3d CPU (ms a pass): begin %.2f, begin..end %.2f, submit %.2f, of it "
                     "residency %.2f and pose uniforms %.2f; the straight present's dither loop %.2f; "
-                    "%.0f GPU draw calls, %.0f indexed\n", frame,
+                    "%.0f GPU draw calls, %.0f indexed; %ld interface frames by the GPU (%ld rows sent, "
+                    "%.2f ms a frame of CPU)\n", frame,
                     rep_.beginTicks * ms / f, rep_.passTicks * ms / f,
                     rep_.submitTicks * ms / f, rep_.residentTicks * ms / f, rep_.uniformTicks * ms / f,
                     rep_.halfLoopTicks * ms / f, static_cast<double>(rep_.calls) / f,
-                    static_cast<double>(rep_.indexed) / f);
+                    static_cast<double>(rep_.indexed) / f, rep_.overlays, rep_.overlayRows,
+                    rep_.overlays ? rep_.overlayTicks * ms / rep_.overlays : 0.0);
         const long g = posedGpu_, c = posedCpu_;
         rep_ = Report{};
         rep_.gpu0 = g; rep_.cpu0 = c;
@@ -756,6 +799,209 @@ private:
     u32 transferFormats() const {
         return rgb565_ ? (GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGB565) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB565))
                        : (GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8));
+    }
+
+    // THE OVERLAY TEXTURE: RGBA8 at the frame's size rounded up to powers of
+    // two, in linear memory, every texel the world's own (rgb 0, alpha 255 -
+    // `0 + world * 1`) until a row is sent. Stored as `tile` stores a
+    // material (8x8 Morton tiles, texel row y at t = h - 1 - y), sampled by
+    // the scene program at frame pixel units, NEAREST.
+    bool makeOverlayTexture() {
+        int tw = 8, th = 8;
+        while (tw < w_) tw <<= 1;
+        while (th < h_) th <<= 1;
+        if (!C3D_TexInit(&ovTex_, static_cast<u16>(tw), static_cast<u16>(th), GPU_RGBA8)) {
+            ovTex_.data = nullptr;
+            std::printf("c3d: no linear memory for the overlay texture (%dx%d) - interface frames read back\n",
+                        tw, th);
+            noOverlay_ = true;
+            return false;
+        }
+        auto* t = static_cast<std::uint32_t*>(ovTex_.data);
+        std::fill(t, t + static_cast<std::size_t>(tw) * th, 0x000000FFu);
+        GSPGPU_FlushDataCache(t, static_cast<u32>(tw) * th * 4);
+        C3D_TexSetFilter(&ovTex_, GPU_NEAREST, GPU_NEAREST);
+        C3D_TexSetWrap(&ovTex_, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+        ovW_ = tw; ovH_ = th;
+        ovRowSent_.clear();
+        std::printf("c3d: the interface over the world on the GPU - a %dx%d RGBA8 overlay texture\n", tw, th);
+        return true;
+    }
+
+    // The world rows of `fb` into the texture, ONLY the rows whose pixels or
+    // mask changed since they were sent - found by comparing with a kept copy
+    // of what was sent (`memcmp`, a word at a time; a hash a pixel, GL1's way,
+    // cost ~30 ms a frame in Azahar with nothing to send). -> whether any
+    // world row holds something other than the world.
+    bool sendOverlayRows(const Surface& fb, const std::uint8_t* mask, const std::uint8_t* maskRows, int vy, int vh) {
+        auto* tex = static_cast<std::uint32_t*>(ovTex_.data);
+        const std::size_t n = static_cast<std::size_t>(fb.w) * fb.h;
+        if (ovPrevPx_.size() != n) {
+            ovPrevPx_.assign(n, 0);
+            ovPrevMask_.assign(n, 0);
+            ovRowSent_.assign(static_cast<std::size_t>(fb.h), 0);
+            ovRowNonKey_.assign(static_cast<std::size_t>(fb.h), 0);
+            ovPrevMaskZero_.assign(static_cast<std::size_t>(fb.h), 1);
+        }
+        if (ovKeyRow_.size() != static_cast<std::size_t>(fb.w)) ovKeyRow_.assign(static_cast<std::size_t>(fb.w), kOverlayKey);
+        if (ovZeroRow_.size() != static_cast<std::size_t>(fb.w)) ovZeroRow_.assign(static_cast<std::size_t>(fb.w), 0);
+        static constexpr std::uint8_t mx[8] = {0, 1, 4, 5, 16, 17, 20, 21};   // x's Morton bits
+        static constexpr std::uint8_t my[8] = {0, 2, 8, 10, 32, 34, 40, 42};  // y's
+        int loTile = 1 << 30, hiTile = -1;
+        bool any = false;
+        const std::size_t rowPx = static_cast<std::size_t>(fb.w) * sizeof(std::uint16_t);
+        for (int y = vy; y < vy + vh; ++y) {
+            const std::size_t o = static_cast<std::size_t>(y) * fb.w;
+            const std::uint16_t* src = fb.px.data() + o;
+            const std::size_t yy = static_cast<std::size_t>(y);
+            // a mask row no plane touched is all zero: compared only when it
+            // may not be, or when the row sent last held one that was not
+            const bool maskZero = !mask || (maskRows && !maskRows[yy]);
+            const std::uint8_t* msk = maskZero ? ovZeroRow_.data() : mask + o;
+            const bool maskSame = maskZero ? ovPrevMaskZero_[yy] != 0
+                                           : std::memcmp(msk, ovPrevMask_.data() + o, static_cast<std::size_t>(fb.w)) == 0;
+            if (ovRowSent_[yy] && maskSame && std::memcmp(src, ovPrevPx_.data() + o, rowPx) == 0) {
+                any |= ovRowNonKey_[yy] != 0;
+                continue;
+            }
+            std::memcpy(ovPrevPx_.data() + o, src, rowPx);
+            std::memcpy(ovPrevMask_.data() + o, msk, static_cast<std::size_t>(fb.w));
+            ovPrevMaskZero_[yy] = maskZero ? 1 : 0;
+            ovRowSent_[yy] = 1;
+            const bool nonKey = std::memcmp(src, ovKeyRow_.data(), rowPx) != 0;
+            ovRowNonKey_[yy] = nonKey ? 1 : 0;
+            any |= nonKey;
+            ++rep_.overlayRows;
+            const int ty = ovH_ - 1 - y, tileRow = ty >> 3, ly = ty & 7;
+            std::uint32_t* base = tex + static_cast<std::size_t>(tileRow) * (ovW_ >> 3) * 64 + my[ly];
+            for (int xx = 0; xx < fb.w; ++xx) {
+                const std::uint16_t p = src[xx];
+                std::uint32_t v = 0x000000FFu;                     // the KEY: the world as it is
+                if (p != kOverlayKey) {
+                    const unsigned r5 = (p >> 11) & 31, g6 = (p >> 5) & 63, b5 = p & 31;
+                    v = (r5 << 3 | r5 >> 2) << 24 | (g6 << 2 | g6 >> 4) << 16 | (b5 << 3 | b5 >> 2) << 8 | msk[xx];
+                }
+                base[static_cast<std::size_t>(xx >> 3) * 64 + mx[xx & 7]] = v;
+            }
+            loTile = std::min(loTile, tileRow);
+            hiTile = std::max(hiTile, tileRow);
+        }
+        if (hiTile >= loTile) {
+            const std::size_t rowBytes = static_cast<std::size_t>(ovW_ >> 3) * 64 * 4;
+            GSPGPU_FlushDataCache(reinterpret_cast<unsigned char*>(tex) + static_cast<std::size_t>(loTile) * rowBytes,
+                                  static_cast<u32>((hiTile - loTile + 1) * rowBytes));
+        }
+        return any;
+    }
+
+    // The blend, in the open frame over the world's viewport (the world rows
+    // of the frame exactly): the texture `C + world * M`, then the fade
+    // `world * (1 - f) + fade * f` - GL1's two quads.
+    void drawOverlay(bool tex, bool fading, const float fade[4], int vh) {
+        if (used_ + 12 > kRingCorners) return;
+        useProgram(0);
+        C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_COLOR);
+        C3D_CullFace(GPU_CULL_NONE);
+        C3D_AlphaTest(false, GPU_ALWAYS, 0);
+        C3D_FVUnifSet(GPU_VERTEX_SHADER, uFog_, 0.0f, 0.0f, 0.0f, 0.0f);   // the fog's factor 1
+        C3D_FVUnifSet(GPU_VERTEX_SHADER, uMvp_ + 0, 1, 0, 0, 0);
+        C3D_FVUnifSet(GPU_VERTEX_SHADER, uMvp_ + 1, 0, 1, 0, 0);
+        C3D_FVUnifSet(GPU_VERTEX_SHADER, uMvp_ + 2, 0, 0, 1, 0);
+        C3D_FVUnifSet(GPU_VERTEX_SHADER, uMvp_ + 3, 0, 0, 0, 1);
+        C3D_FVUnifSet(GPU_VERTEX_SHADER, uTexScale_, 1.0f / ovW_, 1.0f / ovH_, 0.0f, 0.0f);
+        // two triangles over the viewport: clip y +1 is the frame's row vy
+        // (the top of the world's rows), -1 the row vy + vh; texels in frame
+        // pixels from vy
+        const float v0 = static_cast<float>(vyOv_), v1 = static_cast<float>(vyOv_ + vh), u1 = static_cast<float>(w_);
+        const auto quad = [&](GpuVert* q, std::uint8_t r, std::uint8_t g, std::uint8_t b) {
+            const GpuVert tl{-1, 1, -0.5f, 0, v0, r, g, b, 255, -1}, tr{1, 1, -0.5f, u1, v0, r, g, b, 255, -1},
+                          bl{-1, -1, -0.5f, 0, v1, r, g, b, 255, -1}, br{1, -1, -0.5f, u1, v1, r, g, b, 255, -1};
+            q[0] = tl; q[1] = bl; q[2] = tr; q[3] = tr; q[4] = bl; q[5] = br;
+        };
+        GpuVert* q = ring_ + used_;
+        quad(q, 255, 255, 255);
+        const auto fb8 = [](float c) { return static_cast<std::uint8_t>(c <= 0 ? 0 : c >= 1 ? 255 : c * 255.0f + 0.5f); };
+        quad(q + 6, fb8(fade[0]), fb8(fade[1]), fb8(fade[2]));
+        GSPGPU_FlushDataCache(q, 12 * sizeof(GpuVert));
+        C3D_BufInfo* bi = C3D_GetBufInfo();
+        BufInfo_Init(bi);
+        BufInfo_Add(bi, q, sizeof(GpuVert), 4, 0x3210);
+        C3D_TexEnv* env = C3D_GetTexEnv(0);
+        if (tex) {
+            C3D_TexBind(0, &ovTex_);
+            C3D_TexEnvInit(env);
+            C3D_TexEnvSrc(env, C3D_Both, GPU_TEXTURE0, GPU_TEXTURE0, GPU_TEXTURE0);
+            C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
+            C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_SRC_ALPHA, GPU_ZERO, GPU_ONE);
+            C3D_DrawArrays(GPU_TRIANGLES, 0, 6);
+        }
+        if (fading) {
+            C3D_TexBind(0, nullptr);
+            C3D_TexEnvInit(env);
+            C3D_TexEnvSrc(env, C3D_RGB, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
+            C3D_TexEnvFunc(env, C3D_RGB, GPU_REPLACE);
+            C3D_TexEnvSrc(env, C3D_Alpha, GPU_CONSTANT, GPU_CONSTANT, GPU_CONSTANT);
+            C3D_TexEnvFunc(env, C3D_Alpha, GPU_REPLACE);
+            C3D_TexEnvColor(env, static_cast<u32>(fb8(fade[3] > 1.0f ? 1.0f : fade[3])) << 24);
+            C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_ZERO, GPU_ONE);
+            C3D_DrawArrays(GPU_TRIANGLES, 6, 6);
+        }
+        used_ += 12;
+        // the draw state the cache assumed is gone
+        stateValid_ = false;
+        boundTex_ = ~0u;
+        boundBuf_ = q;
+        cull_ = -1;
+        fogKind_ = -1;
+    }
+
+    // The rows of `fb` outside the world - the letterbox bands, nothing of the
+    // world in them - as the screen will show them: the colour fade's CPU law
+    // (the shared code's, `playframe_screens_huds.cpp`) then the frontend's 2:1
+    // average (`box4`), or 1:1. `out` is the 400x240 screen, only band rows set.
+    void buildBands(const Surface& fb, const float fade[4], int vy, int vh, int k, std::vector<std::uint16_t>& out) {
+        if (out.size() != 400 * 240) out.assign(400 * 240, 0);   // only the band rows are ever read
+        bandRows_.clear();
+        const int ox = (400 - w_ / k) / 2, oy = (240 - h_ / k) / 2;
+        const bool fading = fade[3] > 0.0f;
+        const float f = fade[3];
+        const int cr = static_cast<int>(fade[0] * 255.0f + 0.5f), cg = static_cast<int>(fade[1] * 255.0f + 0.5f),
+                  cb = static_cast<int>(fade[2] * 255.0f + 0.5f);
+        const auto faded = [&](std::uint16_t px) -> std::uint16_t {
+            if (!fading) return px;
+            int r = ((px >> 11) & 31) << 3, g = ((px >> 5) & 63) << 2, b = (px & 31) << 3;
+            r += static_cast<int>((cr - r) * f);
+            g += static_cast<int>((cg - g) * f);
+            b += static_cast<int>((cb - b) * f);
+            return static_cast<std::uint16_t>(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+        };
+        const auto spread = [](std::uint16_t p) {
+            return (static_cast<std::uint32_t>(p) | (static_cast<std::uint32_t>(p) << 16)) & 0x07E0F81Fu;
+        };
+        for (int sy = 0; sy < h_ / k; ++sy) {
+            const int fy = sy * k;
+            if (fy >= vy && fy < vy + vh) continue;                   // the world's: the GPU's
+            const int y = oy + sy;
+            if (y < 0 || y >= 240) continue;
+            bandRows_.push_back(y);
+            std::uint16_t* o = out.data() + static_cast<std::size_t>(y) * 400 + ox;
+            const std::uint16_t* r0 = fb.px.data() + static_cast<std::size_t>(fy) * fb.w;
+            for (int sx = 0; sx < w_ / k; ++sx) {
+                if (k == 1) { o[sx] = faded(r0[sx]); continue; }
+                const std::uint16_t* r1 = r0 + fb.w;
+                const std::uint32_t s = ((spread(faded(r0[2 * sx])) + spread(faded(r0[2 * sx + 1])) +
+                                          spread(faded(r1[2 * sx])) + spread(faded(r1[2 * sx + 1]))) >> 2) &
+                                        0x07E0F81Fu;
+                o[sx] = static_cast<std::uint16_t>(s | (s >> 16));
+            }
+        }
+        bandRowsFor_[&out == &bands_[0] ? 0 : 1] = bandRows_;
+    }
+
+    void writeBands(const std::vector<std::uint16_t>& b, std::uint16_t* dst) {
+        const auto& rows = bandRowsFor_[&b == &bands_[0] ? 0 : 1];
+        for (const int y : rows)
+            for (int x = 0; x < 400; ++x) dst[x * 240 + 239 - y] = b[static_cast<std::size_t>(y) * 400 + x];
     }
 
     // THE DIRECT PRESENT'S PASS (6.4). The two-pass present spent ~6 ms a
@@ -1086,6 +1332,8 @@ private:
         float cmdMax = 0.0f;
         long gpu0 = 0, cpu0 = 0;
         long calls = 0, indexed = 0;    // GPU draw calls, and of them indexed
+        long overlays = 0, overlayRows = 0;   // interface frames by the GPU (6.7), rows sent
+        u64 overlayTicks = 0;
     };
     void noteCmdBuf() { rep_.cmdMax = std::max(rep_.cmdMax, C3D_GetCmdBufUsage()); }
 
@@ -1457,6 +1705,16 @@ private:
     bool scissor_ = false;              // `c3d-scissor`: every pass into an 8x8 corner (6.2)
     bool noTex_ = false;                // `c3d-notex`: untextured (6.2)
     bool direct_ = false;               // the direct present (6.4); `c3d-surface` off
+    // the interface over the world (6.7); `c3d-nooverlay` off
+    bool noOverlay_ = false;
+    C3D_Tex ovTex_{};
+    int ovW_ = 0, ovH_ = 0, vyOv_ = 0;
+    std::vector<std::uint16_t> ovPrevPx_, ovKeyRow_;   // what each world row last sent; a row of the key
+    std::vector<std::uint8_t> ovPrevMask_, ovZeroRow_, ovRowSent_, ovRowNonKey_, ovPrevMaskZero_;
+    std::vector<std::uint16_t> bands_[2];
+    std::vector<int> bandRows_, bandRowsFor_[2];
+    int bandsCur_ = 0;
+    long bandsPass_ = -10;
     std::uint8_t q5_[17][256] = {}, q6_[17][256] = {};   // its tables: cells 0..15, 16 undithered
     std::vector<std::uint16_t> tiled_;  // a texture's tiled texels, staged
     std::vector<std::uint8_t> markC_;   // a partial update's scratch: corners seen
@@ -1501,6 +1759,13 @@ bool c3dPresentHalf(Renderer* r, int vy, int vh, Surface& screen) {
 
 bool c3dPresentHalfDirect(Renderer* r, int vy, int vh, std::uint16_t* dst) {
     return r && dst && static_cast<C3dRenderer*>(r)->presentHalf(vy, vh, nullptr, dst);
+}
+
+bool c3dOverlayReady(Renderer* r) { return r && static_cast<C3dRenderer*>(r)->overlayReady(); }
+
+bool c3dPresentOverlay(Renderer* r, const Surface& fb, const std::uint8_t* mask, const std::uint8_t* maskRows,
+                       const float fade[4], int vy, int vh, std::uint16_t* dst) {
+    return r && dst && static_cast<C3dRenderer*>(r)->presentOverlay(fb, mask, maskRows, fade, vy, vh, dst);
 }
 
 }  // namespace omk

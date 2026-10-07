@@ -781,6 +781,7 @@ one card session can lay each beside the build without it:
 | 6.4 | the present in ONE pass: the dither written straight into the top screen's framebuffer (the GPU-side zero-copy - the world drawn rotated, the dither before a truncating transfer - stays proposed: its dither could not be shown bit for bit the reference's) | `Flip` | **DONE 2026-10-07** (the CPU pass), Azahar-exact; console owed (`c3d-surface` is the switch) |
 | 6.5 | the panel's redraw (13.5 ms twice a second) only where its text changes | - | **DONE 2026-10-07**, self-checked in Azahar; console owed |
 | 6.6 | the second core (`OMK_THREADS`) | - | the reader's decision on threads first |
+| 6.7 | the interface over the world on the GPU (conversations, fades, HUDs, open screens) | the card blended the interface (`I2D` quads) | **DONE 2026-10-07**, Azahar within 2 steps of the readback path; console owed (`c3d-nooverlay` is the switch) |
 
 **6.1 - INDEXED DRAWS (2026-10-07).** The scene geometry from 4096 corners
 and every body's rest (the posed program) keep their corners as the shared
@@ -914,6 +915,42 @@ the check sees a fault - the scroll skipped, 29 of 38 redraws flagged. The
 redraw 7-8.5 ms -> 3.7-4.1 (Azahar's clock, against the build before it,
 back to back). The console owes its figure; the tiled copy should gain more
 there, where the untiled one met the cache.
+
+**6.7 - THE INTERFACE OVER THE WORLD ON THE GPU (2026-10-07).** A frame
+with anything drawn over the world - a conversation, a fade, the fight's or
+the shoot's HUD, an open screen over a live world - left the straight path:
+a SYNCHRONOUS readback (the GPU waited for, the one-frame-behind overlap
+lost), the whole 800x448 picture dithered on the CPU, the interface
+composited over it, the frontend's 2:1 copy. Now it is the GLES window's
+overlay (`ui/overlay.h`) done in fixed function as GL1 does it: the frame is
+composed over the KEY, the glue resolves it into C and M, and the backend
+sends the world rows into a 1024x512 RGBA8 texture (C in rgb, M in alpha;
+tiled as `tile` stores a material) - ONLY the rows that changed, found by
+comparing with a kept copy (`memcmp`; GL1's hash a pixel cost ~30 ms a frame
+in Azahar with nothing to send), the mask compared only on rows a plane
+touched - and blends it over the world IN ITS OWN GPU FRAME through the
+scene program with an identity matrix: `C + world * M` (`ONE, SRC_ALPHA`),
+the colour fade a second quad (`SRC_ALPHA, ONE_MINUS_SRC_ALPHA`) - the
+shared code leaves the fade out of the picture on an overlay frame. The
+frame then leaves as a straight one: the transfer's 2x2 average, the
+one-pass dither (6.4), one frame behind. The rows outside the world (the
+letterbox bands, no world in them) are written on the CPU from the frame -
+the fade's CPU law, then the frontend's `box4` - and DELAYED with the
+picture they belong to. A frame the GPU path refuses is resolved on the CPU
+from a readback, so the key never reaches the screen; `OMK_NO_OVERLAY=1` or
+`c3d-nooverlay` keep the readback path, to compare.
+
+*Proved in Azahar* on the supermarket fight (`--fight-supermarket`, the
+opening fade at present 450 and steady fighting at 650), both paths
+SYNCHRONOUS (`c3d-sync`, so a present shows its own frame - one behind, the
+camera's motion alone moved 22144 pixels): **0 pixels more than 2 steps
+apart** (of 31), 68109 and 62986 differing by the dither's place (the
+readback path dithers at 800x448 and averages; this averages and dithers);
+the comparison sees the blend (its factor inverted: 83541 pixels off). The
+cost, steady fighting (Azahar): the overlay's CPU **7.75 ms** a frame, the
+frame **~46 ms against ~76** on the readback path (whose readback alone was
+41). `--sneak` is no test of it: the screen covers the world and the world
+is not drawn at all. The console owes its figures.
 
 **`args.txt` sets the environment** (2026-10-07): a word `NAME=value` whose
 first letter is upper-case is `setenv`'d instead of passed on, so every
