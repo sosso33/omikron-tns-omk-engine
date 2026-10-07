@@ -114,6 +114,8 @@ struct PlayState {
     int & sceneChunk = opt.sceneChunk;
     std::vector<int> & zoneEnable = opt.zoneEnable;
     std::vector<int> & zoneDisable = opt.zoneDisable;
+    std::vector<int> & characterShow = opt.characterShow;
+    std::vector<std::pair<int, int>> & characterProg = opt.characterProg;
     std::vector<std::pair<int, int>> & sceneLoads = opt.sceneLoads;
     bool & noCrowd = opt.noCrowd;
     bool & noScriptSprites = opt.noScriptSprites;

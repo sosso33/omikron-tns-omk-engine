@@ -41588,6 +41588,14 @@ def c_engine_become_place():
     (33244, -4439, facing 180), not where Fodo's clip left him. The
     run also needs `--stand` to apply to the FIRST controller only - it was
     re-applied at every rebuild and undid the transfer.
+    **And the ridden Sham is POSED** (2026-10-07): `Anim_BindNodeTrack`
+    binds a track to the mesh whose INDEX is the track's key, the dword
+    before its name (`AnimTrack::key`); the player bound by exact name, and
+    Sham.CTL's `Ka*`/`Sm*` tracks name none of SHU_FN's `Fi*`/`Shm*` meshes -
+    0 of 484, the Sham sliding unanimated under a T-posed rider (the
+    reader's play). Asserted: 484 of 484. SHOWN TO FAIL: binding by name
+    again reads 0.
+
     SHOWN TO FAIL: removing the viewer's `setPlayerPosition` puts the Sham at
     Fodo's 33245 -4410 - `Session::becomePlayer`'s own move to the record
     does not survive to the rebuild in the viewer, which is why the viewer
@@ -41611,19 +41619,20 @@ def c_engine_become_place():
     became = _re.findall(r"player\.become - the player is actor (\d+) now, was (\d+)", out)
     named = _re.findall(r"player\.become - the new body's own place, (\S+) \S+ (\S+) "
                         r"facing (\S+) \(([a-z ]+)", out)
-    stands = _re.findall(r"ADVENTURE MODE - the player is (\S+) .*?standing at "
-                         r"(\S+) \S+ (\S+) facing (\S+)", out)
+    stands = _re.findall(r"ADVENTURE MODE - the player is (\S+) .*?(\d+)/(\d+) tracks resolve.*?"
+                         r"standing at (\S+) \S+ (\S+) facing (\S+)", out)
     if len(stands) < 2:
         return (became, len(stands)), ([("434", "49")], 2), \
                "the run must reach the mount: two ADVENTURE MODE lines, Fodo's and the Sham's"
     sham = stands[1]
     got = (became, [(n[0], n[1], n[2], n[3]) for n in named],
-           (sham[0], sham[1], sham[2], sham[3]))
+           (sham[0], sham[3], sham[4], sham[5]), (sham[1], sham[2]))
     return got, \
            ([("434", "49")], [("33244", "-4439", "180", "its placement record")],
-            ("SHU_FN", "33244", "-4439", "180")), \
+            ("SHU_FN", "33244", "-4439", "180"), ("484", "484")), \
            "the transfer (new actor, old), the place it names for the new body " \
-           "(x, z, facing, source), and where the new controller then stands"
+           "(x, z, facing, source), where the new controller then stands, and how " \
+           "many of Sham.CTL's tracks bind to SHU_FN by key"
 
 
 def c_engine_gandhar():

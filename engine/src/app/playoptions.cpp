@@ -196,6 +196,11 @@ int PlayOptions::parse(int argc, char** argv) {
 "                   game's path - walk in and the zone runs its own script.\n"
 "                   AREA 141's 2295 'Start Shoot' opens the catacombs' shoot\n"
 "                   phase, whose ten spectres PATROL (todo/shoot-patrol.md)\n"
+"  --character-show N  HARNESS: `character.show N, 1`, the opcode and nothing\n"
+"                   else, for a character the story would have shown - the\n"
+"                   Sham (AREA 137, 424) is shown only on the way out of\n"
+"                   Soyinka's house with variable 117 set. `N:h` also\n"
+"                   starts his program, `scx.play.actor N, obj h` (424:0x7d)\n"
 "  --zone-disable N HARNESS: `zone.disable N`, the mirror - for a start that\n"
 "                   skipped the script that would have disabled it. The\n"
 "                   supermarket harness needs 3949: AREA 231's record 1,\n"
@@ -437,6 +442,14 @@ int PlayOptions::parse(int argc, char** argv) {
         else if (a == "--newgame-world") newWorld = true;
         else if (a == "--scene-chunk" && i + 1 < argc) sceneChunk = std::atoi(argv[++i]);
         else if (a == "--zone-enable" && i + 1 < argc) zoneEnable.push_back(std::atoi(argv[++i]));
+        else if (a == "--character-show" && i + 1 < argc) {
+            const std::string v = argv[++i];
+            characterShow.push_back(std::atoi(v.c_str()));
+            const auto colon = v.find(':');
+            if (colon != std::string::npos)
+                characterProg.emplace_back(characterShow.back(),
+                                           static_cast<int>(std::strtol(v.c_str() + colon + 1, nullptr, 0)));
+        }
         else if (a == "--zone-disable" && i + 1 < argc) zoneDisable.push_back(std::atoi(argv[++i]));
         else if (a == "--scene-load" && i + 1 < argc) {
             int sa = -1, ss = -1;

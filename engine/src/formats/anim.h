@@ -41,6 +41,17 @@
 namespace omk {
 
 struct AnimTrack {
+    // THE KEY a node binds by. `Anim_RegisterClip` (0x0046E5F0) puts the
+    // track array at descriptor +8, 40 bytes a track, so a track's first
+    // dword is the int32 just BEFORE the name this reader starts at (the
+    // descriptor's +8 for track 0, the previous record's last dword for the
+    // rest); `Anim_BindNodeTrack` (0x00470FE0) gives a node the track whose
+    // key equals its own index (`desc+12`) less `dword_6A50A4` (0, or a LOD
+    // level's offset for the crowd). It is the mesh's position in the model
+    // file - `Mesh::index` - and the NAME is never read: Sham.CTL's `KaBass`
+    // drives SHU_FN's `FiBass` (both 2), its `SmNatte112` the `ShmNate112`
+    // (32). -1 binds nothing (H1Avnt's `col*` tracks).
+    std::int32_t key = -1;
     std::string  name;
     std::int32_t posKeys = 0;
     std::size_t  posOffset = 0;   // already absolute

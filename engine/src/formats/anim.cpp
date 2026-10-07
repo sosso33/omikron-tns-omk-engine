@@ -84,6 +84,7 @@ std::optional<AnimDescriptor> animDescriptor(std::span<const std::byte> d,
         const auto o = off + 12u + 40u * static_cast<std::size_t>(i);
         if (o + 40 > d.size()) return std::nullopt;
         AnimTrack t;
+        t.key = i32(d, o - 4);                 // `Anim_RegisterClip`'s track +0
         t.name = cstr(d, o, 20);
         t.posKeys = i32(d, o + 20);
         const auto po = i32(d, o + 24);

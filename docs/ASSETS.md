@@ -2740,6 +2740,23 @@ character by name suffix: `ChBassin` in `policier.ani` drives `TeBassin` in
 `TEL_FNM.3DO`. That resolves 19 of a character's 20 meshes — the face is the
 one left out, and body animations do not drive it.
 
+**But the engine does not bind by name at all** (read 2026-10-07). A track
+record is 40 bytes from descriptor `+8` (`Anim_RegisterClip`, 0x0046E5F0,
+relocates its `+28`/`+36`), so it OPENS with an int32 KEY before the 20-byte
+name - this repo's readers start the record at the name and see the key as
+the previous track's last dword (track 0's as descriptor `+8`).
+`Anim_BindNodeTrack` (0x00470FE0) gives each node the track whose key equals
+the node's INDEX in the model file (`desc+12`) less `dword_6A50A4` (0, or the
+crowd's LOD offset, STREET_LIFE). The name suffix only coincides with it:
+over H1Avnt/HO1_FN, F1Avnt/FE1_FN, H1Cmbt/HO1_FN, Meca/MCG_FN and
+Sham/SHU_FN the two never disagree where both resolve, and the key binds
+more - 1539 of F1Avnt's 1575 tracks to 855 by exact name, and ALL 484 of
+Sham.CTL's to 0 (`Ka*`/`Sm*` tracks against `Fi*`/`Shm*` meshes, and
+`SmNatte112` against `ShmNate112`). The player controller binds by key since
+then (`engine/src/actor/player.cpp`, `verify.py: engine: become place`); the
+NPC idle, a bank's tracks in `playstate.cpp` and the sneak's character view
+still bind by name and suffix.
+
 The bone list also **independently confirms the hierarchy order** that the
 `.3DM` tracks use:
 

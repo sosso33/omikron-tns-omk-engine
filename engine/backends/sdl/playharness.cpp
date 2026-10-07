@@ -164,6 +164,15 @@ void PlayState::harnessScriptForcing() {
         std::printf("--zone-disable: ZONE %d disabled (the `zone.disable` opcode, nothing "
                     "else)\n", z);
     }
+    // `--character-show N`: opcode 78 with its second field set, so the
+    // record's placement applies - a character the story would have shown.
+    // AREA 137's Sham (424) is shown by zone 2232's enter script, on the way
+    // out of Soyinka's house with variable 117 '3-M Soyinka' at 1.
+    for (const int a : characterShow) {
+        session.characterShow(a, 1);
+        std::printf("--character-show: CHARACTER %d shown (the `character.show` opcode, "
+                    "nothing else)\n", a);
+    }
     for (const int z : zoneEnable) {
         session.enableZoneById(z);
         std::printf("--zone-enable: ZONE %d enabled (the `zone.enable` opcode, nothing "
@@ -463,6 +472,21 @@ void PlayState::harnessScxPlay() {
             const int idx = session.sceneMutable().handle({c});
             std::printf("--scx-play: frame %ld  object handle %d -> program %d (a harness start)\n",
                         frames, h, idx);
+        }
+    }
+    // `--character-show N:h`: the program the showing script starts with it,
+    // `scx.play.actor N, obj h` (op 59) - for the Sham, AREA 137 record 34's
+    // `scx.play.actor 424, obj 0x007d, 0`.
+    static bool characterProgPlayed = false;
+    if (!characterProgPlayed && !characterProg.empty() && adventure && session.scene().loaded()) {
+        characterProgPlayed = true;
+        for (const auto& [a, h] : characterProg) {
+            omk::Call c;
+            c.op = 59;
+            c.fields = {static_cast<std::int16_t>(a), static_cast<std::int16_t>(h), 0};
+            const int idx = session.sceneMutable().handle({c});
+            std::printf("--character-show: frame %ld  scx.play.actor %d, obj 0x%x -> program %d "
+                        "(a harness start)\n", static_cast<long>(frames), a, h, idx);
         }
     }
 }

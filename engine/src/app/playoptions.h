@@ -204,6 +204,8 @@ struct PlayOptions {
     int sceneChunk = -1;
     std::vector<int> zoneEnable;   // `--zone-enable`, the harness below
     std::vector<int> zoneDisable;  // `--zone-disable`, its mirror
+    std::vector<int> characterShow;   // `--character-show`, opcode 78 by hand
+    std::vector<std::pair<int, int>> characterProg;   // ...`N:h`, then opcode 59
     std::vector<std::pair<int, int>> sceneLoads;   // `--scene-load A,S`, the opcode
     bool noCrowd = false;
     bool noScriptSprites = false;   // DEBUG: leave the scripted sprites undrawn, for a before/after

@@ -24,10 +24,17 @@ float f32at(std::span<const std::byte> d, std::size_t o) {
     float f; std::memcpy(&f, &b, 4); return f;
 }
 
-std::string lower(std::string s) {
-    for (auto& c : s) if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
-    while (!s.empty() && (s.back() == ' ' || s.back() == '\0')) s.pop_back();
-    return s;
+// `Anim_BindNodeTrack` (0x00470FE0): the mesh a track drives is the one whose
+// INDEX is the track's key (`AnimTrack::key`), never a name match. Binding by
+// name agreed with it everywhere both resolve (0 disagreements over H1Avnt,
+// F1Avnt, H1Cmbt, Meca and Sham against their models) and bound 0 of
+// Sham.CTL's 484 tracks to SHU_FN, whose meshes are `Fi*`/`Shm*` where the
+// tracks are `Ka*`/`Sm*` - the ridden Sham stood in its rest pose, the rider
+// in a T-pose (AREA 137, `todo/scene-gameplay-audit.md` 4).
+int meshOfTrack(const AnimTrack& t, const std::vector<Mesh>& meshes) {
+    if (t.key < 0) return -1;
+    for (const auto& m : meshes) if (m.index == t.key) return m.index;
+    return -1;
 }
 
 const std::string kEmpty;
@@ -581,9 +588,7 @@ void PlayerController::setBank(const CtlFile& ctl, std::span<const std::byte> da
             if (!d) continue;
             for (const auto& t : d->tracks) {
                 ++total_;
-                const std::string want = lower(t.name);
-                for (const auto& m : *meshes_)
-                    if (lower(m.name) == want) { ++matched_; break; }
+                if (meshOfTrack(t, *meshes_) >= 0) ++matched_;
             }
         }
     }
@@ -617,16 +622,14 @@ PlayerController::PlayerController(const Setup& s)
     stateBefore_ = rt_.channel().state();
 
     // The track table, counted once: every track of every clip the bank
-    // names must resolve to a mesh of the model by name.
+    // names must resolve to a mesh of the model by its key.
     if (meshes_) {
         for (std::size_t c = 0; c < ctl_->clips.size(); ++c) {
             const auto d = animDescriptor(data_, ctl_->clips[c].offset);
             if (!d) continue;
             for (const auto& t : d->tracks) {
                 ++total_;
-                const std::string want = lower(t.name);
-                for (const auto& m : *meshes_)
-                    if (lower(m.name) == want) { ++matched_; break; }
+                if (meshOfTrack(t, *meshes_) >= 0) ++matched_;
             }
         }
     }
@@ -1320,13 +1323,7 @@ const NodeTracks* PlayerController::clipTracks(int c) {
         t.count = static_cast<int>(d->tracks.size());
         t.frames = d->frames;
         t.rootTrack = -1;
-        for (const auto& tr : d->tracks) {
-            int mi = -1;
-            const std::string want = lower(tr.name);
-            for (const auto& m : *meshes_)
-                if (lower(m.name) == want) { mi = m.index; break; }
-            t.ids.push_back(mi);
-        }
+        for (const auto& tr : d->tracks) t.ids.push_back(meshOfTrack(tr, *meshes_));
         t.quats.assign(static_cast<std::size_t>(d->frames), {});
         // THE ROOT MOTION, which this used to assign all zeroes.
         //
