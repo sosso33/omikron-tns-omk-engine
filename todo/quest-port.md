@@ -480,6 +480,48 @@ on the authored camera alone.
   controller points at a gunman in `--area 230 --scene-chunk 56`, and the
   bolt hits him.
 
+**Step 3 DONE 2026-10-07** (`d4a8bb4`). What was read first, and it decided
+the design: the engine aims the player's shot along his FACING and the look
+PITCH (`rs.yawDeg = player->facing()`, `rs.pitchDeg = shootPitch` where
+`Actor_TickProjectiles` fires, `playframe_control_adventure.cpp`), and the
+arm slews toward the same two (`shootAimSlew(shootAim, 0, shootPitch)` - yaw
+0 because the BODY turns with the look). So the controller does exactly
+what the mouse did, and nothing downstream changes:
+
+* the right controller's ray, taken into the world through the frame's
+  origin, gives a point 10000 inches along it, and `shootGunmanAim` (the
+  solver `--aim-at` uses) turns that into his facing and the look pitch,
+  written before the tick (`vrShootAim`, called from the input hook). The
+  shot, the arm's raise and his body follow as they always do. The pitch is
+  held to the mouse's own +-45, the range the arm's keys are authored over;
+* the Tirer group's `Tourner a gauche/droite` and `Regarder En-Haut/En-Bas`
+  (0x1, 0x2, 0x200, 0x1000) are taken out of the word: the controller owns
+  both. The mouse moves the FAKE controller on the Mac and is zeroed before
+  `adventureAim` can turn him with it too;
+* shoot mode takes first person's ORIGIN (his head, the heading turned only
+  by the snap turn): riding his facing, the view would turn twice. A
+  script's camera in shoot mode (`shootCameraLive` false) stays authored.
+* `vr::HeadPose` gains the two controllers' poses (`hand[2]`, `handValid`);
+  the fake right one sits below and right of the head's start, NOT turned
+  with the head (`--vr-aim=Y,P`); `--vr-head-after=F:Y,P,R` turns the fake
+  head after a recentre, since one turned from the start is zeroed.
+
+**Measured** in the supermarket (`--area 230 --scene-chunk 56`, shoot mode
+from frame 394): the controller 30 degrees right and 10 up gives facing
+-30, pitch 10, and shots at yaw -30 pitch 10 whose direction's y is -0.174 -
+up, Y pointing down; with the controller straight, the head turned 40 away
+and numpad 6 (the group's turn key) held, the view turns and the facing
+stays 0. **Check**: `engine: vr aim`, SHOWN TO FAIL - aiming from the head
+(facing 0, pitch 0), the turn bits left in (facing 68), and alone the
+controller's pitch sign flipped (pitch -10, shots downward).
+
+**For the play pass**: shoot mode's MOVEMENT is relative to his facing, so
+now to the gun, not the head (`actor/shootmove.h`); whether it should follow
+the look as adventure's does is a question for a hand on a stick. The body
+turns with the controller at once, as it did with the mouse. The shoot HUD
+is still composed flat over the frame's left part (step 6). Only the right
+controller aims; a left-handed choice is a flag later.
+
 ### Step 4 - an Android build that boots on the Quest (device; ~1 day)
 
 * **What the reader does once**: developer mode on the Quest, the USB cable,
