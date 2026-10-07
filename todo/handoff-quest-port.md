@@ -193,6 +193,49 @@ the credentials file, as on every push from this machine.
    run there), fights, slider rides, conversations through their cameras;
    write what it decides back into §5.
 
+**The reader's play report of 2026-10-07 evening** (the M1's first build,
+`a03c4bd`, the restaurant save; recorded as said, before any reading):
+
+1. **Shoot and fight modes are very laggy**, where the SAME environment is
+   smooth in adventure mode.
+2. **Shoot mode: the stick should also STRAFE** (lateral steps), not only go
+   forward.
+3. **Leaving some interiors**: every npc in the street is T-POSED and the
+   effects carry RANDOM TEXTURES; at some point there seem to be MORE npcs
+   than normal (the reader suspects the preload, or scripts run twice).
+4. **Main menu: the sticks are too sensitive** - a held stick keeps changing
+   the selection for as long as it is held, not once per push.
+5. **No virtual keyboard** when starting a new game (6c, not built yet).
+
+**Report 1, the lag - FIXED, installed 2026-10-07 20:24, NOT yet played.**
+The run's own lines: `present, swap` 45-60 ms a frame in the shoot (frames
+18402-21610) and the fight (25452-26921) against ~1.5 in adventure, and
+inside it the `gles` line's `texture upload` 40-60 ms against 0.5. The HUD
+over the world (shoot screen 34, the fight's bars) is the OVERLAY frame, and
+its two planes changed ~700 rows a frame (`overlay: ~42000 plane rows
+re-sent in 60 frames`), each sent as its own `glTexSubImage2D` into a
+texture the eyes' draws still read - the Adreno shape the buffer re-floor
+had (§6). The desktop GLES build on the shoot route shows the same ~350
+rows a plane, so the HUD really changes them; the cost was the call count.
+Now `presentOverlay`'s `sync` sends contiguous rows as one call, and on
+Android the span first..last changed row as ONE call a plane.
+`engine: gles overlay` green (0 of 307200), red with the run's source
+pointer broken (57701). To confirm on the headset: `texture upload` and
+`present, swap` in a shoot back near adventure's. The menus' and
+conversations' ~10 ms upload is `presentSurface`'s, already one call.
+
+**And the Vita build was broken by 6b** (found on the way): `glBlendColor`
+(the eye shade) is not in vitaGL - now outside `__vita__` - and the Vita's
+CMake lists its sources by hand without `playvr_off.cpp`, so `PlayState::vr*`
+did not link. `engine: vita build` green.
+
+**The order for the rest** (one at a time, each played before the next):
+2. the menu stick - act once per push, not every frame it is held;
+3. the street after an interior (T-poses, effect textures, extra npcs) -
+   first whether the flat game does it too;
+4. the shoot strafe - first what the original's shoot scheme binds;
+5. the keyboard (6c).
+
 **Open since steps 2-3** (recorded in the step blocks): shoot-mode movement
 follows the gun, not the head; the body turns instantly with the controller;
 only the right hand aims; the calm fight camera's catch-up; the original's

@@ -3104,11 +3104,13 @@ void GlesRenderer::drawPresent(GLuint tex, int picW, int picH, int texW, int tex
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, tex);
     glUniform1i(pPic_, 0);
+#if !defined(__vita__)   // vitaGL has no glBlendColor; only a headset shades an eye
     if (shade_ < 1.0f) {
         glEnable(GL_BLEND);
         glBlendColor(shade_, shade_, shade_, 1.0f);
         glBlendFunc(GL_CONSTANT_COLOR, GL_ZERO);
     }
+#endif
     glBindBuffer(GL_ARRAY_BUFFER, quad_);
     for (GLuint a = 1; a <= kAttrPhase; ++a) glDisableVertexAttribArray(a);
     glEnableVertexAttribArray(0);
@@ -3396,19 +3398,50 @@ gpuTexture("interface", tex, static_cast<long long>(bpp) * s.w * s.h);
             unsigned char* texData = static_cast<unsigned char*>(vglGetTexDataPointer(GL_TEXTURE_2D));
             const std::size_t stride = static_cast<std::size_t>((s.w + 7) & ~7) * bpp;
 #endif
+            // THE CHANGED ROWS GO UP IN RUNS, NOT ONE CALL A ROW. A shoot or
+            // fight HUD changes ~350 rows of each plane every frame, and on
+            // the Quest 2 (Adreno 650) the ~700 `glTexSubImage2D`s into
+            // textures the eyes' draws still read cost 40-60 ms a frame
+            // (2026-10-07, the reader's "shoot and fight are very laggy" -
+            // `texture upload` 42 ms against 0.5 in adventure). Contiguous
+            // rows are one call everywhere; on Android the whole span from
+            // the first changed row to the last is ONE call, since the
+            // driver's cost there is per call into a busy texture, not per
+            // byte (the same shape as the buffer re-floor in the handoff's
+            // traps). `OMK_PRESENT_ROWS` keeps the console's row-by-row.
+#if !defined(__vita__)
+            static const bool rowsOnly = std::getenv("OMK_PRESENT_ROWS") != nullptr;
+#endif
+            int runFrom = -1, runTo = -1;   // the run (or span) not yet sent
+            const auto flush = [&] {
+                if (runFrom < 0) return;
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, runFrom, s.w, runTo - runFrom + 1, fmt, type,
+                                cur + static_cast<std::size_t>(runFrom) * rowBytes);
+                runFrom = runTo = -1;
+            };
             for (int y = 0; y < s.h; ++y) {
                 if (rows && !rows[y] && !wasFlagged[y]) continue;
                 wasFlagged[y] = rows ? rows[y] : 1;
                 const std::uint32_t hsh = rowHash(cur + y * rowBytes, rowBytes);
                 if (hsh == last[y]) continue;
                 last[y] = hsh;
-#if defined(__vita__)
-                if (texData) std::memcpy(texData + y * stride, cur + y * rowBytes, rowBytes);
-                else
-#endif
-                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, y, s.w, 1, fmt, type, cur + y * rowBytes);
                 ++overlayRows_;
+#if defined(__vita__)
+                if (texData) { std::memcpy(texData + y * stride, cur + y * rowBytes, rowBytes); continue; }
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, y, s.w, 1, fmt, type, cur + y * rowBytes);
+#else
+                if (rowsOnly) {
+                    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, y, s.w, 1, fmt, type, cur + y * rowBytes);
+                    continue;
+                }
+#if !defined(__ANDROID__)
+                if (runFrom >= 0 && y != runTo + 1) flush();
+#endif
+                if (runFrom < 0) runFrom = y;
+                runTo = y;
+#endif
             }
+            flush();
         }
         glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
     };

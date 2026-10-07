@@ -187,6 +187,7 @@ if(OMK_VITA_GAME)
     ${ENGINE}/backends/sdl/playstate.cpp
     ${ENGINE}/backends/sdl/playgpu_gles.cpp
     ${OMK_HARNESS_SRC}
+    ${ENGINE}/backends/sdl/playvr_off.cpp   # the VR seam's empty stubs (no OMK_VR here)
     ${ENGINE}/backends/sdl/playsetup_options.cpp
     ${ENGINE}/backends/sdl/playsetup_boot.cpp
     ${ENGINE}/backends/sdl/playsetup_session.cpp
