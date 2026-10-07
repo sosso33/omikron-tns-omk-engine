@@ -118,7 +118,7 @@ python3 tools/verify.py --only "engine: vr" "licence headers"
 `vr camera rule` (the probe), `vr frame` (flat == mono identity, the halves
 drawn and different), `vr modes` (first-person walk, still vs moving,
 Impasse cuts, the calm fight), `vr aim` (the controller's facing and pitch,
-the shots, the head not aiming). `licence headers` counts **590** authored
+the shots, the head not aiming). `licence headers` counts **592** authored
 files - a new VR file moves it.
 
 ## 4. Waiting on the reader - the headset

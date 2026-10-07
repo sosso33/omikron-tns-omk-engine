@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-<!-- THE ANDROID / META QUEST MANIFEST - `todo/quest-port.md` §5 step 4.
-     Step 4 is FLAT: an ordinary launcher activity, which the Quest shows as a
-     2D panel (Library > Unknown sources). Step 5's OpenXR session adds the
-     immersive intent category and the headtracking feature. -->
+<!-- THE ANDROID / META QUEST MANIFEST - `todo/quest-port.md` §5 steps 4-5.
+     Step 4 was FLAT, an ordinary launcher activity in a 2D panel. Step 5 makes
+     it an IMMERSIVE OpenXR app: the VR intent categories, head tracking, and
+     the Khronos loader's own permissions and broker queries (copied from its
+     AAR's manifest, since no Gradle merges it). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="org.omk.play"
     android:versionCode="1"
@@ -15,6 +16,14 @@
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.hardware.gamepad" android:required="false" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-feature android:name="android.hardware.vr.headtracking" android:required="true" android:version="1" />
+    <uses-permission android:name="org.khronos.openxr.permission.OPENXR" />
+    <uses-permission android:name="org.khronos.openxr.permission.OPENXR_SYSTEM" />
+    <queries>
+        <provider android:authorities="org.khronos.openxr.runtime_broker;org.khronos.openxr.system_runtime_broker" />
+        <intent><action android:name="org.khronos.openxr.OpenXRRuntimeService" /></intent>
+        <intent><action android:name="org.khronos.openxr.OpenXRApiLayerService" /></intent>
+    </queries>
 
     <application
         android:label="OMK"
@@ -33,6 +42,8 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="com.oculus.intent.category.VR" />
+                <category android:name="org.khronos.openxr.intent.category.IMMERSIVE_HMD" />
             </intent-filter>
         </activity>
     </application>

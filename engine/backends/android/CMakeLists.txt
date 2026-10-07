@@ -63,8 +63,19 @@ else()
 endif()
 file(GLOB OMK_VR_SRC ${ENGINE}/backends/vr/*.cpp)
 
+# ---- OpenXR (step 5): the Khronos loader, from its Android AAR
+# (`android-build.sh` fetches and unpacks it into OMK_OPENXR_DIR)
+if(NOT DEFINED OMK_OPENXR_DIR OR NOT EXISTS ${OMK_OPENXR_DIR}/prefab/modules/headers/include/openxr/openxr.h)
+  message(FATAL_ERROR "OMK_OPENXR_DIR must name the unpacked openxr_loader_for_android AAR")
+endif()
+add_library(openxr_loader SHARED IMPORTED)
+set_target_properties(openxr_loader PROPERTIES
+  IMPORTED_LOCATION ${OMK_OPENXR_DIR}/prefab/modules/openxr_loader/libs/android.arm64-v8a/libopenxr_loader.so
+  INTERFACE_INCLUDE_DIRECTORIES ${OMK_OPENXR_DIR}/prefab/modules/headers/include)
+
 add_library(main SHARED
   ${CMAKE_CURRENT_SOURCE_DIR}/android_main.cpp
+  ${ENGINE}/backends/openxr/xrhost.cpp
   ${OMK_PLAY_SRC}
   ${ENGINE}/backends/sdl/playgpu_gles.cpp
   ${OMK_VR_SRC}
@@ -75,6 +86,6 @@ add_library(main SHARED
 # SDL_main by name, the symbol SDLActivity looks up.
 set_source_files_properties(${ENGINE}/backends/sdl/play.cpp
   PROPERTIES COMPILE_DEFINITIONS "main=omk_play_main")
-target_compile_definitions(main PRIVATE OMK_GLES=1 SDL_MAIN_HANDLED)
+target_compile_definitions(main PRIVATE OMK_GLES=1 OMK_OPENXR=1 SDL_MAIN_HANDLED)
 target_include_directories(main PRIVATE ${OMK_SDL2_SRC}/include ${ENGINE}/backends/sdl)
-target_link_libraries(main omk_engine SDL2 GLESv2 EGL log android)
+target_link_libraries(main omk_engine SDL2 openxr_loader GLESv3 EGL log android)

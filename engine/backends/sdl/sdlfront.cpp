@@ -2,6 +2,9 @@
 // THE SDL FRONTEND's bodies - `sdlfront.h` has the class. Moved out of
 // `play.cpp` by `todo/play-split.md` S1c (2026-10-02) without a change.
 #include "sdlfront.h"
+#if OMK_OPENXR
+#include "../openxr/xrhost.h"
+#endif
 
 #include "input/pad.h"
 #include "ui/surface.h"
@@ -349,6 +352,9 @@ bool SdlFrontend::pump(omk::HostInput& out) {
     out.mouseDY = static_cast<float>(my);
 #endif
     readPad(out);
+#if OMK_OPENXR
+    omk::xr::readControllers(out);   // the Touch controllers (step 5)
+#endif
     // the green button and the Window menu change the window behind F11's
     // back - take the state from the window, so the next F11 undoes it
     if (SDL_Window* wnd = active()) {

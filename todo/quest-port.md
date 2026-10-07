@@ -615,6 +615,32 @@ by the controllers at all - they arrive only through OpenXR (step 5).
 * The sound listener follows the head - first find where the listener is
   fed from the camera today (the mixer's `Sound_SetListener` port).
 
+**STEP 5a RUN ON THE QUEST 2 (2026-10-07): immersive, the frame on a screen.**
+`backends/openxr/xrhost.*` (the Android build's alone, `OMK_OPENXR`): the
+Khronos loader 1.1.63 (fetched from Maven Central by `android-build.sh`, its
+`.so` packaged), `xrInitializeLoaderKHR`, an instance with
+`XR_KHR_android_create_instance` + `XR_KHR_opengl_es_enable`, the session on
+SDL's OWN EGL context (display, context and config queried from it), the LOCAL
+space, and ONE quad layer: the composed frame - films, menus, the world - on a
+2.4 m screen 2 m ahead. The GLES glue draws each present pass into the quad's
+swapchain image (`glesSetWindowTarget`, which existed for the probe) and
+SUBMITS where the window swapped (`presentTarget` / `swapOrSubmit` in
+`playgpu_gles.cpp`); `xrWaitFrame` paces. Measured on the device: runtime
+Oculus 201.124.0; it wants GLES 3.0-3.2, so the Android context is now ES 3
+(the backend's `#version 100` shaders run unchanged on 3.2); the swapchain is
+sRGB8_ALPHA8 with `GL_EXT_sRGB_write_control` - the game's colours are already
+gamma-encoded and go in unconverted; 30 of 72 fps through a film, 58-73 at the
+menu. The manifest carries the VR and IMMERSIVE_HMD categories and the
+loader's permissions and broker queries (no Gradle merges its AAR).
+The reader: "it is working but as a VR app, but on a 2D plane" - 5a as
+designed; 5b is the eyes.
+
+**OPEN - which path the input took.** The reader walked the start menu and
+loaded `games-resto.bin`'s slot 2 (area 217), yet the log has the session at
+VISIBLE (5), never FOCUSED (6), so `xr::readControllers` read nothing; SDL's
+pad and keyboard handed over nothing (`[in] sdl state` never printed) and the
+raw event log has no key. To settle before 5b relies on the controllers.
+
 ### Step 6 - the interface, the films and the keyboard (device; ~0.5-1 day)
 
 * The composed 640x480 interface (menus, the sneak, subtitles, reply choices)

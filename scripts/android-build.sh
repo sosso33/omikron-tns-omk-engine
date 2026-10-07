@@ -86,16 +86,26 @@ if [[ ! -f $SDL/CMakeLists.txt ]]; then
     tar xzf "$OUT/SDL2-$SDL_VER.tar.gz" -C "$OUT"
 fi
 
+# ---- the OpenXR loader (step 5): Khronos's AAR from Maven Central, unpacked
+XR_VER=1.1.63
+XR=$OUT/openxr-$XR_VER
+if [[ ! -f $XR/prefab/modules/headers/include/openxr/openxr.h ]]; then
+    curl -fsSL -o "$OUT/openxr_loader-$XR_VER.aar" \
+        "https://repo1.maven.org/maven2/org/khronos/openxr/openxr_loader_for_android/$XR_VER/openxr_loader_for_android-$XR_VER.aar"
+    mkdir -p "$XR" && (cd "$XR" && unzip -qo "../openxr_loader-$XR_VER.aar")
+fi
+
 # ---- the native libraries
 "$CMAKE" -S "$ENGINE/backends/android" -B "$OUT/cmake" "${GEN[@]}" \
     -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-29 -DANDROID_STL=c++_static \
-    -DCMAKE_BUILD_TYPE=Release -DOMK_SDL2_SRC="$SDL" >/dev/null
+    -DCMAKE_BUILD_TYPE=Release -DOMK_SDL2_SRC="$SDL" -DOMK_OPENXR_DIR="$XR" >/dev/null
 "$CMAKE" --build "$OUT/cmake" -j "$(sysctl -n hw.ncpu 2>/dev/null || nproc)"
 
 STAGE=$OUT/apk
 rm -rf "$STAGE"; mkdir -p "$STAGE/lib/arm64-v8a" "$STAGE/classes" "$STAGE/dex"
-cp "$OUT/cmake/libmain.so" "$OUT/cmake/sdl2/libSDL2.so" "$STAGE/lib/arm64-v8a/"
+cp "$OUT/cmake/libmain.so" "$OUT/cmake/sdl2/libSDL2.so" \
+   "$XR/prefab/modules/openxr_loader/libs/android.arm64-v8a/libopenxr_loader.so" "$STAGE/lib/arm64-v8a/"
 # THE C++ RUNTIME IS STATIC, and must stay so: the profiler replaces the global
 # `operator new`/`delete` (`platform/profile.cpp`, a header on every block). A
 # `libc++_shared.so` loaded before `libmain.so` keeps the system allocator for
@@ -105,7 +115,7 @@ cp "$OUT/cmake/libmain.so" "$OUT/cmake/sdl2/libSDL2.so" "$STAGE/lib/arm64-v8a/"
 # stripped in the package; engine/build/android/cmake/libmain.so keeps the
 # symbols, for `ndk-stack -sym engine/build/android/cmake` over a logcat crash
 STRIP=("$NDK"/toolchains/llvm/prebuilt/*/bin/llvm-strip)
-"${STRIP[0]}" --strip-unneeded "$STAGE"/lib/arm64-v8a/*.so
+"${STRIP[0]}" --strip-unneeded "$STAGE"/lib/arm64-v8a/lib{main,SDL2}.so
 
 # ---- the Java: SDL's glue and OMKActivity
 "$JAVA_BIN/javac" --release 11 -nowarn -encoding UTF-8 -classpath "$JAR" -d "$STAGE/classes" \

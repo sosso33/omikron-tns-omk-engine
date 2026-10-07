@@ -5,10 +5,45 @@
 #include "playframe.h"
 #include "playgpu_gles.h"
 #include "sdlfront.h"
+#if OMK_OPENXR
+#include "../openxr/xrhost.h"
+#endif
 
 // The GLES window - this glue's, not the game's (the gateway: game code holds
 // no host handle). One viewer a process, so one window.
 static SDL_Window* glWin = nullptr;
+
+namespace omk { void glesSetWindowTarget(Renderer*, unsigned fbo); }
+
+// THE HEADSET'S FRAME (`backends/openxr`, `todo/quest-port.md` §5 step 5):
+// with an OpenXR session running, a present pass draws into the headset's
+// swapchain image at its size, and the frame is SUBMITTED where the window
+// would swap. Without one (every other build, or no runtime) both are the
+// window's, as before.
+static void presentTarget(omk::Renderer* r, int& ww, int& wh) {
+#if OMK_OPENXR
+    unsigned fbo = 0;
+    int w = 0, h = 0;
+    if (omk::xr::frameTarget(fbo, w, h)) {
+        omk::glesSetWindowTarget(r, fbo);
+        ww = w;
+        wh = h;
+    }
+#else
+    (void)r; (void)ww; (void)wh;
+#endif
+}
+static void swapOrSubmit(omk::Renderer* r) {
+#if OMK_OPENXR
+    if (omk::xr::running()) {
+        omk::xr::submit();
+        omk::glesSetWindowTarget(r, 0);
+        return;
+    }
+#endif
+    (void)r;
+    SDL_GL_SwapWindow(glWin);
+}
 
 bool PlayState::gpuWindowBuild() const { return true; }
 
@@ -30,7 +65,14 @@ void PlayState::gpuOpenWindow() {
             // GLES 2 where the platform has it (the Vita's vitaGL, Linux,
             // WebGL); macOS's legacy GL 2.1 profile takes no attributes
             SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+            // ...3 on Android: an OpenXR runtime takes no GLES 2 context
+            // (Meta's asks 3.0 and up), and the backend's `#version 100`
+            // shaders run unchanged on a 3.x one
+#if defined(__ANDROID__)
+            SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+#else
             SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+#endif
             SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
 #endif
             SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);
@@ -69,6 +111,10 @@ void PlayState::gpuOpenWindow() {
                 glRen = gr;
                 omk::sdlFrontend(front).attachWindow(glWin);   // F11 and row 2 act on it
                 std::printf("renderer: GLES2 - %s\n", gr->name());
+#if OMK_OPENXR
+                // the headset's session on this context (step 5); false keeps the game flat
+                omk::xr::start(dispW, dispH);
+#endif
                 // G4 (todo/vita-port.md): the tie is ~1 ms of CPU on an M1 and
                 // ~50 in a console's city; whether the Vita's 16-bit depth
                 // shows the coincident faces without it is to be LOOKED at
@@ -98,9 +144,10 @@ bool PlayState::gpuPresentSurface(const omk::Surface& pic) {
 #else
         SDL_GL_GetDrawableSize(glWin, &ww, &wh);
 #endif
+        presentTarget(glRen, ww, wh);
         omk::glesPresentSurface(glRen, pic, ww, wh);
         const auto sw0 = SDL_GetPerformanceCounter();
-        SDL_GL_SwapWindow(glWin);
+        swapOrSubmit(glRen);
         glSwapMs += static_cast<double>(SDL_GetPerformanceCounter() - sw0) * 1000.0 /
                     static_cast<double>(SDL_GetPerformanceFrequency());
         return true;
@@ -120,6 +167,7 @@ void PlayState::gpuPresentVerify(bool& presentedWorld) {
 #else
         SDL_GL_GetDrawableSize(glWin, &ww, &wh);
 #endif
+        presentTarget(glRen, ww, wh);
         if (ww == fb.w && wh == fb.h &&
             omk::glesPresentWorld(glRen, gpuVy, gpuVh, fb.w, fb.h, ww, wh)) {
             static std::vector<unsigned char> winPic;
@@ -140,7 +188,7 @@ void PlayState::gpuPresentVerify(bool& presentedWorld) {
             if (diff || compared % 30 == 0)
                 std::printf("gles present verify: frame %ld, %ld pixels differ; %ld of %ld frames differed\n",
                             n, diff, differing, compared);
-            SDL_GL_SwapWindow(glWin);
+            swapOrSubmit(glRen);
             presentedWorld = true;
         }
     }
@@ -178,6 +226,7 @@ void PlayState::gpuPresentOverlay(bool& presentedWorld) {
 #else
         SDL_GL_GetDrawableSize(glWin, &ww, &wh);
 #endif
+        presentTarget(glRen, ww, wh);
         presentedWorld = omk::glesPresentOverlay(glRen, fb, ovMask.data(), ovMaskRow.data(), ovFade, gpuVy, gpuVh, ww, wh);
         if (presentedWorld) {
             static const char* winDump = std::getenv("OMK_GLES_WINDUMP");
@@ -189,7 +238,7 @@ void PlayState::gpuPresentOverlay(bool& presentedWorld) {
                     o.write(reinterpret_cast<const char*>(pic.data()), static_cast<std::streamsize>(pic.size()));
                 }
             }
-            SDL_GL_SwapWindow(glWin);
+            swapOrSubmit(glRen);
         }
     }
 }
@@ -202,10 +251,11 @@ void PlayState::gpuPresentWorld(bool& presentedWorld) {
 #else
         SDL_GL_GetDrawableSize(glWin, &ww, &wh);
 #endif
+        presentTarget(glRen, ww, wh);
         presentedWorld = omk::glesPresentWorld(glRen, gpuVy, gpuVh, fb.w, fb.h, ww, wh);
         if (presentedWorld) {
             const auto sw0 = SDL_GetPerformanceCounter();
-            SDL_GL_SwapWindow(glWin);
+            swapOrSubmit(glRen);
             glSwapMs += static_cast<double>(SDL_GetPerformanceCounter() - sw0) * 1000.0 /
                         static_cast<double>(SDL_GetPerformanceFrequency());
         }
