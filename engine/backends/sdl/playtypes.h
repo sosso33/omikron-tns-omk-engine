@@ -402,9 +402,9 @@ struct Staged {
 // walker of `session.sliders()`, its model shared through
 // `charModels`, posed from the crowd library's clip at the walker's own
 // clock, stood with its feet on the walker's body point and turned to its
-// heading. The engine draws a pedestrian through four LOD objects out to
-// `kLodDistances[3]` (40 m) and nothing beyond; this draws the full model
-// inside that distance and nothing beyond, so a street at density 3 in
+// heading. The engine draws a pedestrian through four LOD objects, the last
+// holding past `kLodDistances[3]` (40 m) out to the clip distance
+// (`sub_48D7F0`'s reach test); so does this, and a street at density 3 in
 // Anekbah is 200 walkers of which a camera sees a few dozen.
 // ONE WALKER'S SHARE OF THE BODY PASS (todo/vita-port.md P4). The serial
 // half resolves the caches and fills these; the body pass reads them and

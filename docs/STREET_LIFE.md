@@ -358,8 +358,9 @@ recipe until step 4 watches it.
 `omk-play` stages every walker of the pool beside the extras: the model
 shared by name, the pose from `PASSANTH`'s clip at the walker's own clock,
 the feet on the walker's body point, the body turned to its heading, and
-nothing beyond the engine's last LOD distance (40 m) — so Anekbah's 200
-walkers are a few dozen on screen. A **street start** stands in a city
+nothing beyond the CLIP DISTANCE (options row 3), as the engine draws every
+instance (below; until 2026-10-07 nothing beyond the last LOD distance, 40 m)
+— so Anekbah's 200 walkers are a few dozen on screen. A **street start** stands in a city
 without the intro: `--save traces/save-appart.bin --area 0` (the DB player
 record comes from the save, since Kay'l's actor record is in no city chunk),
 `--address A` or `--stand x,y,z,yaw`, `--density 0..4`, `--no-crowd`; it
@@ -388,10 +389,18 @@ by its own index LESS that offset), so the four skeletons share one 19-track
 clip and must sit in consecutive blocks of mesh indices, largest first - which
 the shipped models do (PSH_FN: `Ph`, `Pi`, `Pm`, `Pw` roots at 2, 21, 40, 59).
 The viewer does the same (`lodChainOf`), refuses a model the index rule does
-not hold for, and composes only the drawn skeleton's 19 meshes. **Still
-open**: the engine's walk keeps the last level out to the clip distance, and
-the viewer draws no walker past 40 m; whether `Sliders_Tick` hides a far
-walker on its own is not read.
+not hold for, and composes only the drawn skeleton's 19 meshes. **Closed
+2026-10-07** (a reader: the crowd and the traffic ended "on the first
+clipping level while most static 3D elements can be seen from far"): the
+walk's only distance test is the reach - `(dword_6A2B9C + root +88)^2 <=
+d^2` rejects - so the last level holds out to the clip distance, and
+`Sliders_Tick` hides nothing by distance (its only show/hide calls are the
+shadow node's, on `g_OptDisplayShadows`). The viewer drew no walker past 40 m
+and no vehicle past 50 m; both now reach the clip distance, the set's own
+radius. At Anekbah's lane with the 200 m clip, 21 walkers and 5 vehicles are
+drawn past those old reaches (`verify.py: engine: crowd reach`). The cost
+is real on the handhelds - the original paid it too, and the option is what
+bounds it.
 
 **What the frames settled**: the walkers are posed mid-stride in the city's
 own models, turned along their lanes, feet on the street, two of them a
@@ -634,9 +643,12 @@ far simpler body: no clip and no skeleton, so the chosen sub-object is
 composed once at rest, re-centred on its own root (the four sit ~200 units
 apart in model space) and only turned and translated per frame — to
 `(x, y - 30.75, z)`, `sub_437F80`'s own placement, and to the heading
-`sub_453330` built from the direction to its mover. The vehicle LOD reach is
-`dword_4C8860[3]` = 1968.5, so a slider is still drawn well past the last
-walker.
+`sub_453330` built from the direction to its mover. A vehicle is drawn out to
+the clip distance, like a walker (`sub_48D7F0`; until 2026-10-07 the port
+stopped at `dword_4C8860[3]` = 1968.5, which only ends the LOD chain). **Not
+ported: the vehicle's LOD by distance** - the viewer draws the sub-object the
+spawn names (`lodBase`) at every distance, where the engine's walk steps
+down `dword_4C8860`'s chain (sliders from sub-object 1) as for a walker.
 
 **Watched 2026-09-04**, which is the point of drawing it:
 `omk-play --save traces/save-appart.bin --area 0 --stand 5620,0,-2400,270`

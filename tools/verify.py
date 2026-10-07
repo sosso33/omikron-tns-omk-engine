@@ -7312,6 +7312,55 @@ def c_engine_street_frame():
 
 
 
+def c_engine_crowd_reach():
+    r"""The walkers and the traffic are drawn out to the CLIP DISTANCE, like the
+    rest of the street (docs/STREET_LIFE.md, "How the engine picks a walker's
+    LOD"; a reader, 2026-10-07: *"like they are on the first clipping level
+    while most static 3D elements can be seen from far"*).
+
+    `sub_48D7F0`, the instance walk every walker and vehicle goes through,
+    rejects an instance only at or past `dword_6A2B9C` (options row 3, the
+    same radius the set's visible walk uses) plus its model root's `+88`
+    radius, or outside the four side planes; the LOD chain's LAST level holds
+    past its distance, and nothing in `Sliders_Tick` hides a far body. The
+    port drew no walker past `dword_4C8870[3]` (40 m) and no vehicle past
+    `dword_4C8860[3]` (50 m).
+
+    Two runs at Anekbah's lane (`--stand 5620,0,-2400,270`, density 3), the
+    save's 200 m clip and `--clip 25`: at 200 m walkers AND vehicles are drawn
+    past their last LOD distance; at 25 m none are, and the reach printed is
+    the clip's own (984 in).
+    SHOWN TO FAIL: the old reaches (`kLodDistances[3]`, `kVehLodDistances[3]`)
+    - 0 past at 200 m.
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    got = []
+    for extra in ([], ["--clip", "25"]):
+        out = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                              "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+                              "--area", "0", "--stand", "5620,0,-2400,270", "--density", "3",
+                              "--frames", "301", "--nofmv", "--nodelay"] + extra,
+                             capture_output=True, text=True, errors="replace", env=env).stdout
+        pm = re.search(r"^frame 300: pedestrians - \d+ live, (\d+) drawn within (\d+) of the eye "
+                       r"\(\d+ outside the view, (\d+) past the last LOD distance\)", out, re.M)
+        vm = re.search(r"^frame 300: traffic - \d+ live, (\d+) drawn within (\d+) of the eye "
+                       r"\((\d+) past the last LOD distance\)", out, re.M)
+        if not pm or not vm:
+            return (bool(pm), bool(vm)), (True, True), "the run must print its crowd and traffic lines"
+        got.append((int(pm.group(2)), int(pm.group(3)), int(vm.group(2)), int(vm.group(3))))
+    far, near = got
+    return (far[0], far[1] > 0, far[3] > 0, near[0], near[1], near[2], near[3]), \
+           (7874, True, True, 984, 0, 984, 0), \
+           ("at the 200 m clip %d walkers and %d vehicles drawn past their last LOD distance; " \
+            "at 25 m none" % (far[1], far[3]))
+
 def c_engine_traffic_frame():
     r"""`omk-play` DRAWS the road traffic (docs/STREET_LIFE.md 2b, step 3).
 
@@ -45060,6 +45109,7 @@ CHECKS = [
     ("engine: slider refused", c_engine_slider_refused, "todo/slider-drift-audit B5"),
     ("engine: slider runover", c_engine_slider_runover, "todo/slider-drift-audit A8"),
     ("engine: run over contact", c_engine_run_over_contact, "todo/falls.md 4"),
+    ("engine: crowd reach", c_engine_crowd_reach, "docs/STREET_LIFE.md"),
     ("engine: slider manual", c_engine_slider_manual, "todo/slider-drift-audit M2"),
     ("engine: slider recall", c_engine_slider_recall, "todo/slider-drift-audit B1"),
     ("engine: slider placement", c_engine_slider_placement, "todo/slider-drift-audit B2"),

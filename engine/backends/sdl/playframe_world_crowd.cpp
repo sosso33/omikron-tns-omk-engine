@@ -36,7 +36,16 @@ void PlayState::worldCrowd() {
             pedLodTracks.clear();
             ++pedCacheGen;
         }
-        const float reach = omk::kLodDistances[3];
+        // THE REACH is the CLIP DISTANCE, as for every other instance:
+        // `sub_48D7F0` rejects one only when it lies at or past
+        // `dword_6A2B9C` plus its model root's `+88` radius, or outside
+        // the four side planes, and the LOD chain's LAST level holds past
+        // its distance (40 m) - nothing in `Sliders_Tick` hides a far
+        // walker (read 2026-10-07). Until then this drew no walker past
+        // `kLodDistances[3]`, and a reader saw the crowd end at 40 m while
+        // the street went on behind it.
+        const float reach = static_cast<float>(clipInches);
+        int pedPastLod = 0;
         // the view axis, for the LOD's depth (`sub_48D7F0`'s is the
         // camera matrix's third row: the depth along it)
         float viewFwd[3] = {view.cam.at[0] - view.cam.eye[0], view.cam.at[1] - view.cam.eye[1],
@@ -66,9 +75,15 @@ void PlayState::worldCrowd() {
             if (w.flags & 0x100u) ++pedIdle;
             const float dx = w.body[0] - view.cam.eye[0], dy = w.body[1] - view.cam.eye[1],
                         dz = w.body[2] - view.cam.eye[2];
-            if (dx * dx + dy * dy + dz * dz > reach * reach) continue;
+            const float d2 = dx * dx + dy * dy + dz * dz;
+            if (d2 > reach * reach * 4.0f) continue;   // far past any root radius: skip the model
             if (!p.mo) p.mo = charModelFor(w.model);
             if (!p.mo || !p.mo->ready) continue;
+            {
+                const float r = p.mo->root >= 0 && static_cast<std::size_t>(p.mo->root) < p.mo->meshes.size()
+                                    ? p.mo->meshes[static_cast<std::size_t>(p.mo->root)].radius : 0.0f;
+                if ((r + reach) * (r + reach) <= d2) continue;   // `sub_48D7F0`'s reach test
+            }
             // outside the view: `sub_48D7F0` skips the instance whole
             // on its model root's radius at its position
             if (p.mo->root >= 0 && static_cast<std::size_t>(p.mo->root) < p.mo->meshes.size() &&
@@ -366,6 +381,11 @@ void PlayState::worldCrowd() {
             p.posed.revision = ++worldGeoRev;
             p.drawn = true;
             ++pedDrawn;
+            {
+                const float* b = ws[j.i].body;
+                const float ex = b[0] - view.cam.eye[0], ey = b[1] - view.cam.eye[1], ez = b[2] - view.cam.eye[2];
+                if (ex * ex + ey * ey + ez * ez > omk::kLodDistances[3] * omk::kLodDistances[3]) ++pedPastLod;
+            }
             pedLit += j.lit;
             if (j.footOff > pedFootOffMax) pedFootOffMax = j.footOff;
             phSpan["ped compose"] += j.tCompose;
@@ -384,9 +404,10 @@ void PlayState::worldCrowd() {
             int pedGpu = 0;
             for (const auto& up : pedStaged) pedGpu += up->drawn && up->gpu;
             std::printf("frame %ld: pedestrians - %d live, %d drawn within %.0f of the eye "
-                        "(%d outside the view), %d at an action point, %d idling, %d light "
-                        "hits, %d posed by the renderer\n",
-                        n, pedLive, pedDrawn, reach, pedOffView, pedInAction, pedIdle, pedLit, pedGpu);
+                        "(%d outside the view, %d past the last LOD distance), %d at an action "
+                        "point, %d idling, %d light hits, %d posed by the renderer\n",
+                        n, pedLive, pedDrawn, reach, pedOffView, pedPastLod, pedInAction, pedIdle,
+                        pedLit, pedGpu);
         }
         // ...and the ROAD TRAFFIC on the same circuit's vehicle lanes.
         const auto& vs = pd.vehicles();
@@ -397,7 +418,11 @@ void PlayState::worldCrowd() {
         // `dword_4C8860`, the VEHICLE LOD distances - 20/30/40/50 m
         // where the crowd's are 10/20/30/40, so a slider is still
         // drawn a good way past the last walker.
-        const float vreach = omk::kVehLodDistances[3];
+        // ...and the vehicles' reach is the CLIP DISTANCE too, by the same
+        // walk (`sub_48D7F0`); `dword_4C8860[3]`, 50 m, only ends their
+        // LOD chain. Until 2026-10-07 this drew no vehicle past it.
+        const float vreach = static_cast<float>(clipInches);
+        int vehPastLod = 0;
         const double veh0 = phaseNow();
         for (std::size_t i = 0; i < vs.size(); ++i) {
             const auto& v = vs[i];
@@ -421,7 +446,8 @@ void PlayState::worldCrowd() {
             if (m.flags & 0x100u) ++vehStopped;
             const float vx = m.body[0] - view.cam.eye[0], vy = m.body[1] - view.cam.eye[1],
                         vz = m.body[2] - view.cam.eye[2];
-            if (vx * vx + vy * vy + vz * vz > vreach * vreach) { skipMine(2, "beyond the vehicle LOD reach"); continue; }
+            const float vd2 = vx * vx + vy * vy + vz * vz;
+            if (vd2 > vreach * vreach * 4.0f) { skipMine(2, "beyond the clip distance"); continue; }
             // A SLOT IS REUSED, and with another model: a call spawns into
             // the first dead slot, in a full
             // pool takes an ambient vehicle and rebinds its model to the
@@ -479,6 +505,12 @@ void PlayState::worldCrowd() {
                     sv.radius = std::max(sv.radius, std::sqrt(dx * dx + dy * dy + dz * dz));
                 }
                 sv.built = true;
+            }
+            // PAST THE CLIP DISTANCE: `sub_48D7F0`'s reach test, the
+            // distance against `dword_6A2B9C` plus the radius
+            if ((sv.radius + vreach) * (sv.radius + vreach) <= vd2) {
+                skipMine(2, "beyond the clip distance");
+                continue;
             }
             // OUTSIDE THE VIEW: `sub_48D7F0` rejects the instance whole
             // before any matrix or vertex; the radius here is the
@@ -581,6 +613,7 @@ void PlayState::worldCrowd() {
                     std::memcpy(&sv.affine[12 * k], a, sizeof a);
                 sv.drawn = true;
                 ++vehDrawn;
+                if (vd2 > omk::kVehLodDistances[3] * omk::kVehLodDistances[3]) ++vehPastLod;
                 continue;
             }
             if (!doorPosed) { OMK_MEM_TAG("crowd: vehicle slots"); sv.posed = *sv.atRest; }
@@ -616,6 +649,7 @@ void PlayState::worldCrowd() {
             sv.posed.revision = ++worldGeoRev;
             sv.drawn = true;
             ++vehDrawn;
+            if (vd2 > omk::kVehLodDistances[3] * omk::kVehLodDistances[3]) ++vehPastLod;
         }
         phSpan["vehicles"] += phaseNow() - veh0;
         releaseIdleCrowd();
@@ -631,10 +665,11 @@ void PlayState::worldCrowd() {
                 const float dx = mm.body[0] - ppos[0], dz = mm.body[2] - ppos[2];
                 closest = std::min(closest, std::sqrt(dx * dx + dz * dz));
             }
-            std::printf("frame %ld: traffic - %d live, %d drawn within %.0f of the eye, "
+            std::printf("frame %ld: traffic - %d live, %d drawn within %.0f of the eye "
+                        "(%d past the last LOD distance), "
                         "%d stopped; braked for the player %d frames, touched him %d frames, "
                         "ran him over %d times, nearest now %.0f\n", n, vehLive, vehDrawn, vreach,
-                        vehStopped, brakes, touches, bumps, double(closest));
+                        vehPastLod, vehStopped, brakes, touches, bumps, double(closest));
         }
     }
     player0 = phaseNow();
