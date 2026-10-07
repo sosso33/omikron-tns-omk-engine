@@ -417,6 +417,14 @@ public:
     // +1298 = -1; }` - a hidden actor's body leaves the index. No-op for an
     // actor that has none.
     void dropActorBody(int actor);
+    // A HARNESS: zone `id`'s ENTER script run as the zone's own ARM runs it -
+    // `Script_NewContext(slot, s[0], s[1], s[2])` with the zone id in +42,
+    // then `Script_QueueAction(ctx, 1)` - without the player walking in. For
+    // an enter script on a path the port cannot walk (AREA 137's 2232, the
+    // way out of Soyinka's house, whose record 34 shows the Sham). The
+    // record is found as `Zone_FindScriptsById` finds it, disabled or not.
+    // -> the context, -1 when the zone does not resolve or has no enter.
+    int runZoneEnter(int zoneId);
     // `character.look_at_player` (138) / `character.look_away` (139): the
     // actor's look-at slot (+400, slot 100) set to the player / cleared.
     // `Actors_TickAll` aims his head at it every frame (`aimHead`, pose.h);

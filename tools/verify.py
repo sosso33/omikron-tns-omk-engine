@@ -41681,6 +41681,41 @@ def c_engine_actor_body():
            "(x under 33240; through it he reaches 33326)"
 
 
+def c_engine_zone_run():
+    r"""A ZONE'S ENTER SCRIPT BY HAND (`--zone-run`, `todo/scene-gameplay-audit.md` 20).
+
+    AREA 137's Sham is shown on the way out of Soyinka's house: zone 2232's
+    ENTER script (record 34, under variable 117 '3-M Soyinka' = 1) shows
+    421, 30, 293 (old Fodo), 155 and 424 (the two Sham) and starts each one's
+    scene program, and enables the Mixture and Sham-voice zones. The port
+    cannot walk that way (the walkway at address 373 drops the player into
+    the water), so `Session::runZoneEnter` runs the record as the zone's own
+    arm runs it - a context with the zone id, then action 1.
+
+    Asserted: the five characters are staged, each posed by a scene
+    program's clip. SHOWN TO FAIL: without `queueAction(idx, 1)` none of the
+    five appears.
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    o = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"), "--save",
+         os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "137",
+         "--var", "117=1", "--zone-run", "2232", "--stand", "33183,1044,-4412,90",
+         "--frames", "10"],
+        capture_output=True, encoding="latin-1",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+    want = {"421", "30", "293", "155", "424"}
+    progs = set(_re.findall(r"actor (\d+) \S+ - pose source: a scene program's clip", o.stdout))
+    return sorted(want & progs), sorted(want), \
+           "record 34's cast, each posed by its own scene program"
+
+
 def c_engine_gandhar():
     r"""GANDHAR'S BRAIN (`todo/gandhar.md` step 1, `engine/src/actor/gandhar.h`).
 
@@ -45436,6 +45471,7 @@ SLOW = [
     (".ani quaternions",   c_ani_quaternions,   "ASSETS"),
     ("engine: become place", c_engine_become_place, "todo/scene-gameplay-audit.md 3; script/area.cpp"),
     ("engine: actor body", c_engine_actor_body, "todo/scene-gameplay-audit.md 19; script/area.h"),
+    ("engine: zone run", c_engine_zone_run, "todo/scene-gameplay-audit.md 20; script/area.h"),
 ]
 
 

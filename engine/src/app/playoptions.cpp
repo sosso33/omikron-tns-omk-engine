@@ -196,6 +196,10 @@ int PlayOptions::parse(int argc, char** argv) {
 "                   game's path - walk in and the zone runs its own script.\n"
 "                   AREA 141's 2295 'Start Shoot' opens the catacombs' shoot\n"
 "                   phase, whose ten spectres PATROL (todo/shoot-patrol.md)\n"
+"  --zone-run N     HARNESS: zone N's own ENTER script, run as its arm runs it\n"
+"                   (a context, action 1) without walking in - for a path the\n"
+"                   port cannot walk. AREA 137's 2232 with --var 117=1 shows\n"
+"                   the Sham, Fodo and the rest, as leaving Soyinka's does\n"
 "  --character-show N  HARNESS: `character.show N, 1`, the opcode and nothing\n"
 "                   else, for a character the story would have shown - the\n"
 "                   Sham (AREA 137, 424) is shown only on the way out of\n"
@@ -442,6 +446,7 @@ int PlayOptions::parse(int argc, char** argv) {
         else if (a == "--newgame-world") newWorld = true;
         else if (a == "--scene-chunk" && i + 1 < argc) sceneChunk = std::atoi(argv[++i]);
         else if (a == "--zone-enable" && i + 1 < argc) zoneEnable.push_back(std::atoi(argv[++i]));
+        else if (a == "--zone-run" && i + 1 < argc) zoneRun.push_back(std::atoi(argv[++i]));
         else if (a == "--character-show" && i + 1 < argc) {
             const std::string v = argv[++i];
             characterShow.push_back(std::atoi(v.c_str()));

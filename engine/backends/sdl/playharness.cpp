@@ -173,6 +173,13 @@ void PlayState::harnessScriptForcing() {
         std::printf("--character-show: CHARACTER %d shown (the `character.show` opcode, "
                     "nothing else)\n", a);
     }
+    // `--zone-run N`: the zone's own enter script, as its arm would run it.
+    for (const int z : zoneRun) {
+        const int ctx = session.runZoneEnter(z);
+        std::printf("--zone-run: ZONE %d's enter script %s\n", z,
+                    ctx >= 0 ? "queued (Script_NewContext + action 1)"
+                             : "NOT run - the zone does not resolve or has no enter script");
+    }
     for (const int z : zoneEnable) {
         session.enableZoneById(z);
         std::printf("--zone-enable: ZONE %d enabled (the `zone.enable` opcode, nothing "

@@ -4374,6 +4374,15 @@ int Session::actorBody(int actor, const std::string& model, const float origin[3
     return it->second;
 }
 
+int Session::runZoneEnter(int zoneId) {
+    const LiveZone* z = zones_.resolve(static_cast<std::int16_t>(zoneId));
+    if (!z || !z->zone.scripts[0]) return -1;
+    const int idx = newContext(z->slot, z->code, z->zone.scripts, z->zone.id,
+                               slots_[static_cast<std::size_t>(z->slot & 1)].area);
+    if (idx >= 0) queueAction(idx, 1);
+    return idx;
+}
+
 void Session::dropActorBody(int actor) {
     const auto it = actorBodySlots_.find(actor);
     if (it == actorBodySlots_.end()) return;
