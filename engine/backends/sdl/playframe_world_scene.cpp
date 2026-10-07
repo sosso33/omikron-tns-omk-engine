@@ -329,38 +329,17 @@ void PlayState::worldCamera() {
         // frame between: a reader's "the camera stutters sometimes when
         // following the slider".
         const auto lagged = [&](const float eyeOff[3], const float atOff[3], int f42, int f44, int f46) {
-            const float fx = -rz2[0], fz = -rz2[2];
-            const float yawNow = static_cast<float>(std::atan2(fx, fz) * 57.29577951308232);
-            const float dtl = static_cast<float>(frameSec * 30.0);
-            const auto wrap = [](float d) { while (d > 180.0f) d -= 360.0f; while (d < -180.0f) d += 360.0f; return d; };
-            const int k46 = f46 == 1 ? 2 : f46, k44 = f44 == 1 ? 2 : f44, k42 = f42 == 1 ? 2 : f42;
-            if (sliderCamFresh || !k46) sliderCamLagYaw = yawNow;
-            else {
-                const float d = wrap(yawNow - sliderCamLagYaw);
-                if (std::fabs(d) <= 0.1f) sliderCamLagYaw = yawNow;
-                else sliderCamLagYaw += d * std::min(1.0f, dtl / static_cast<float>(k46));
-            }
-            const float t = sliderCamLagYaw * 0.0174532925199433f;
-            const float gx = std::sin(t), gz = std::cos(t);
-            const float r0[3] = {-gz, 0.0f, gx}, r2[3] = {-gx, 0.0f, -gz};
-            float e[3], a[3];
-            for (int k = 0; k < 3; ++k) {
-                e[k] = at[k] - eyeOff[0] * r0[k] - eyeOff[2] * r2[k];
-                a[k] = at[k] - atOff[0] * r0[k] - atOff[2] * r2[k];
-            }
-            e[1] -= eyeOff[1]; a[1] -= atOff[1];
-            for (int k = 0; k < 3; ++k) {
-                if (sliderCamFresh || !k44) sliderCamLagEye[k] = e[k];
-                else sliderCamLagEye[k] += (e[k] - sliderCamLagEye[k]) * std::min(1.0f, dtl / static_cast<float>(k44));
-                if (sliderCamFresh || !k42) sliderCamLagAt[k] = a[k];
-                else sliderCamLagAt[k] += (a[k] - sliderCamLagAt[k]) * std::min(1.0f, dtl / static_cast<float>(k42));
-                tEye[k] = sliderCamLagEye[k];
-                tAt[k] = sliderCamLagAt[k];
-            }
-            sliderCamFresh = false;
+            sliderCamLag(at, -rz2[0], -rz2[2], eyeOff, atOff, f42, f44, f46, tEye, tAt);
         };
         if (sliderCamMode == 8 && frame) {
+            const bool fresh = sliderCamFresh;
             lagged(kComeEye, kComeAt, 0, 8, 8);
+            // ...and mode 8's WALL PASS (`sub_4141F0` arms `sub_417070`; drift
+            // audit B12): the second ray is the camera with no lag
+            float sEye[3], sAt[3];
+            place(kComeEye, sEye);
+            place(kComeAt, sAt);
+            sliderCamObstruct(tEye, tAt, sEye, sAt, at[1], fresh);
         } else if (sliderCamMode == 9 && frame) {
             place(kBoardEye, tEye);
             place(kNoOff, tAt);
@@ -481,8 +460,16 @@ void PlayState::worldCamera() {
         };
         static constexpr float kRideEye[3] = {0.0f, 118.1102f, -275.5905f};
         static constexpr float kRideAt[3]  = {0.0f, 78.7402f, 0.0f};
-        place(kRideEye, view.cam.eye);
-        place(kRideAt,  view.cam.at);
+        // NOT RIGID (drift audit B12): `Slider_TickRide` requests mode 8, the
+        // coming camera's own preset and so its own dynamics - the eye and
+        // the yaw chased at dt/8 (`sub_415E60`) and `sub_4141F0`'s wall pass
+        // (`sub_417070`) - with the slider as both subjects
+        float sEye[3], sAt[3];
+        place(kRideEye, sEye);
+        place(kRideAt,  sAt);
+        const bool fresh = sliderCamFresh;
+        sliderCamLag(sub, fx, fz, kRideEye, kRideAt, 0, 8, 8, view.cam.eye, view.cam.at);
+        sliderCamObstruct(view.cam.eye, view.cam.at, sEye, sAt, sub[1], fresh);
         view.cam.hfovDeg = 75.0f;      // the preset's own fov
         view.cam.rollDeg = 0.0f;
         view.cam.w = dispW; view.cam.h = dispH;

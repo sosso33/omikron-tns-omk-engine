@@ -82,6 +82,74 @@ void PlayState::takeCamRequest(int phase) {
 // source FROZEN, which is `dword_930820 = 1`'s blend: the slider's requests
 // mostly leave it 0, where the old camera keeps ticking through the blend
 // (a LABELLED simplification; `sub_418410` is not transcribed).
+void PlayState::sliderCamLag(const float at[3], float fx, float fz, const float eyeOff[3],
+                             const float atOff[3], int f42, int f44, int f46,
+                             float eye[3], float tat[3]) {
+    const float yawNow = static_cast<float>(std::atan2(fx, fz) * 57.29577951308232);
+    const float dtl = static_cast<float>(frameSec * 30.0);
+    const auto wrap = [](float d) { while (d > 180.0f) d -= 360.0f; while (d < -180.0f) d += 360.0f; return d; };
+    const int k46 = f46 == 1 ? 2 : f46, k44 = f44 == 1 ? 2 : f44, k42 = f42 == 1 ? 2 : f42;
+    if (sliderCamFresh || !k46) sliderCamLagYaw = yawNow;
+    else {
+        const float d = wrap(yawNow - sliderCamLagYaw);
+        if (std::fabs(d) <= 0.1f) sliderCamLagYaw = yawNow;
+        else sliderCamLagYaw += d * std::min(1.0f, dtl / static_cast<float>(k46));
+    }
+    const float t = sliderCamLagYaw * 0.0174532925199433f;
+    const float gx = std::sin(t), gz = std::cos(t);
+    const float r0[3] = {-gz, 0.0f, gx}, r2[3] = {-gx, 0.0f, -gz};
+    float e[3], a[3];
+    for (int k = 0; k < 3; ++k) {
+        e[k] = at[k] - eyeOff[0] * r0[k] - eyeOff[2] * r2[k];
+        a[k] = at[k] - atOff[0] * r0[k] - atOff[2] * r2[k];
+    }
+    e[1] -= eyeOff[1]; a[1] -= atOff[1];
+    for (int k = 0; k < 3; ++k) {
+        if (sliderCamFresh || !k44) sliderCamLagEye[k] = e[k];
+        else sliderCamLagEye[k] += (e[k] - sliderCamLagEye[k]) * std::min(1.0f, dtl / static_cast<float>(k44));
+        if (sliderCamFresh || !k42) sliderCamLagAt[k] = a[k];
+        else sliderCamLagAt[k] += (a[k] - sliderCamLagAt[k]) * std::min(1.0f, dtl / static_cast<float>(k42));
+        eye[k] = sliderCamLagEye[k];
+        tat[k] = sliderCamLagAt[k];
+    }
+    sliderCamFresh = false;
+}
+
+void PlayState::sliderCamObstruct(float eye[3], float tat[3], const float steadyEye[3],
+                                  const float steadyAt[3], float subjY, bool fresh) {
+    // the follow camera's own solids and grids (`setCameraSolids` /
+    // `setCameraGrids`): the steep complement and the walkable faces
+    const auto cast = [&](const double from[3], const double ray[3]) {
+        double best = 2.0;
+        const omk::TriangleSoup* const solids[2] = {&playerSteep, &playerSoup};
+        const omk::SplitSoupGrid* const grids[2] = {&playerSteepGrid, &playerGrid};
+        for (int k = 0; k < 2; ++k) {
+            if (solids[k]->empty()) continue;
+            if (const auto h = omk::sweepThrough(*solids[k], grids[k], from, ray, 0.0))
+                if (h->t < best) best = h->t;
+        }
+        return best;
+    };
+    const auto unlagged = [&](float e[3], float a[3]) {
+        for (int k = 0; k < 3; ++k) { e[k] = steadyEye[k]; a[k] = steadyAt[k]; }
+        return true;
+    };
+    // +344 = +340; +340 = +156, immediately before the pass
+    sliderCamObs.prevSubjY = sliderCamObs.prevValid ? sliderCamObs.subjY : subjY;
+    sliderCamObs.subjY = subjY;
+    const int was = sliderCamObs.block;
+    // `sub_4141F0`: +312 = -78.74 (2 m), +316 = -39.37 (1 m); +300 1.2, +320 8, +324 4
+    omk::obstructCamera(sliderCamObs, eye, tat, -78.74015808105469, -39.370079040527344,
+                        static_cast<float>(frameSec * 30.0), fresh, cast, unlagged);
+    // ...and `sub_4133B0`/`sub_4133E0` write the final y back for the next ease
+    sliderCamObs.prevEyeY = eye[1];
+    sliderCamObs.prevAtY = tat[1];
+    sliderCamObs.prevValid = true;
+    if (sliderCamObs.block != was && sliderCamObs.block == 1)
+        std::printf("frame %ld: slider camera 8 BLOCKED (sub_417070) - pulled in to %.0f\n",
+                    n, double(sliderCamObs.dist));
+}
+
 void PlayState::sliderCamRequest(int mode, float frames) {
     std::printf("frame %ld: slider camera %d requested over %.0f frames (from %d)\n",
                 n, mode, double(frames), sliderCamMode);
@@ -95,6 +163,7 @@ void PlayState::sliderCamRequest(int mode, float frames) {
     takeCam = false;
     takeCamPhase = 0;
     sliderCamFresh = true;          // `Camera_LoadParams`' flag 1: the first frame snaps
+    sliderCamObs = omk::CamObstruct{};   // `memset(cam + 208, 0, 0x94)`
     sliderCamMode = mode;
     sliderCamClock = 0.0f;
     sliderCamDur = frames;

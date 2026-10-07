@@ -8705,9 +8705,14 @@ def c_engine_slider_ride():
         return ("no player line",), ("a player line",), o[-200:]
     x, y, z = float(m.group(1)), float(m.group(2)), float(m.group(3))
     facing, walked, ticks = float(m.group(4)), float(m.group(5)), int(m.group(6))
+    # B12 (2026-10-07): the ride's camera is mode 8 with `sub_4141F0`'s wall
+    # pass (`sub_417070`) - mounted against the apartment building, its eye
+    # 7 m behind is inside it and is pulled in at once
+    mb = _re.search(r"frame (\d+): slider camera 8 BLOCKED \(sub_417070\) - pulled in to (\d+)", o)
     return ("ride: mounted at 4839 -103 -677" in o,
-            round(z), round(facing), walked, ticks), \
-           (True, -673, 47, 0.0, 0), \
+            round(z), round(facing), walked, ticks,
+            bool(mb) and int(mb.group(2)) < 276), \
+           (True, -673, 47, 0.0, 0, True), \
         "mounted where the address put him and flown 120 frames of UP then " \
         "20 of RIGHT: he is HELD at z -673 (re-pinned 2026-10-06, drift audit M3: " \
         "-3238 with no collisions at all, -1795 with the road edges, -673 with " \
@@ -41557,6 +41562,61 @@ def c_engine_address_camera():
            "over the two travels into them - their own step, no jump at the hand-over"
 
 
+def c_engine_become_place():
+    r"""A SOUL TRANSFER LANDS IN THE NEW BODY'S PLACE (`todo/scene-gameplay-audit.md` 3).
+
+    `player.become` (op 56, 0x402F60) reads the NEW body's node with
+    `Actor_GetPosAndFacing(new)` - actor +244..+252 and the facing at +420 -
+    and `Actor_SetPlacement`s it there before `sub_40D590` makes it the
+    player: the soul moves, the bodies stay. The port rebuilt the controller
+    at the OLD body's spot, so every reincarnation started where the previous
+    body stood. The Sham ride is the scene that shows it: in AREA 137 Fodo
+    presses action in 'Sham Monter Gauche' (zone 2239), the script shows the
+    Sham (434, SHU_FN on `Sham.CTL`, `character.show 434, 1`) and does
+    `player.become 434`, and the Sham's placement record is 61 units across
+    and a quarter turn round from where Fodo stood.
+
+    Asserted: the new controller stands at the place the transfer names (x,
+    z and facing, rounded), and that place is the Sham's record
+    (33244, -4439, facing 180), not Fodo's (33183, -4412, facing 90). The
+    run also needs `--stand` to apply to the FIRST controller only - it was
+    re-applied at every rebuild and undid the transfer.
+    SHOWN TO FAIL: removing the viewer's `setPlayerPosition` puts the Sham at
+    Fodo's 33183 -4412 facing 90.
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    o = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"), "--save",
+         os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "137",
+         "--stand", "33183,1044,-4412,90", "--zone-enable", "2239",
+         "--keys", "28,28", "--keydelay", "120", "--frames", "260"],
+        capture_output=True, encoding="latin-1",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+    out = o.stdout
+    became = _re.findall(r"player\.become - the player is actor (\d+) now, was (\d+)", out)
+    named = _re.findall(r"player\.become - the new body's own place, (\S+) \S+ (\S+) "
+                        r"facing (\S+) \(([a-z ]+)", out)
+    stands = _re.findall(r"ADVENTURE MODE - the player is (\S+) .*?standing at "
+                         r"(\S+) \S+ (\S+) facing (\S+)", out)
+    if len(stands) < 2:
+        return (became, len(stands)), ([("434", "49")], 2), \
+               "the run must reach the mount: two ADVENTURE MODE lines, Fodo's and the Sham's"
+    sham = stands[1]
+    got = (became, [(n[0], n[1], n[2], n[3]) for n in named],
+           (sham[0], sham[1], sham[2], sham[3]))
+    return got, \
+           ([("434", "49")], [("33244", "-4439", "180", "its placement record")],
+            ("SHU_FN", "33244", "-4439", "180")), \
+           "the transfer (new actor, old), the place it names for the new body " \
+           "(x, z, facing, source), and where the new controller then stands"
+
+
 def c_engine_gandhar():
     r"""GANDHAR'S BRAIN (`todo/gandhar.md` step 1, `engine/src/actor/gandhar.h`).
 
@@ -42825,9 +42885,11 @@ def c_licence_headers():
                                   errors="replace").read(600)]
     # the census is 574 since 2026-10-06: + `engine/src/o3de/daynight.h` / `.cpp`;
     # 575 the same day: + `engine/src/o3de/greybank.h` (ops 150/151); 577: +
-    # `engine/src/script/linesync.h` and `engine/tools/linesync_probe.cpp` (T2)
+    # `engine/src/script/linesync.h` and `engine/tools/linesync_probe.cpp` (T2);
+    # 579 on 2026-10-07: + `engine/src/o3de/camobstruct.h` / `.cpp` (the
+    # camera obstruction pass shared by modes 0 and 8, drift audit B12)
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (577, [], 1, []), \
+           (579, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -45308,6 +45370,7 @@ SLOW = [
     ("textures",           c_textures,          "ASSETS"),
     (".3DM files",         c_morphs,            "FILE_FORMATS 5"),
     (".ani quaternions",   c_ani_quaternions,   "ASSETS"),
+    ("engine: become place", c_engine_become_place, "todo/scene-gameplay-audit.md 3; script/area.cpp"),
 ]
 
 

@@ -642,6 +642,20 @@ struct PlayState {
     // on the request's first frame
     bool  sliderCamFresh{true};
     float sliderCamLagYaw{}, sliderCamLagEye[3]{}, sliderCamLagAt[3]{};
+    // MODE 8's obstruction pass (`sub_4141F0` arms `sub_417070`; drift
+    // audit B12) - its state, reset by every request as `Camera_Request`'s
+    // memset of +208.. does
+    omk::CamObstruct sliderCamObs{};
+    // `sub_415D10`/`sub_415E60`'s chase for a slider camera: the subject at
+    // `at` heading (fx, fz), the preset's two offsets, the lag f42/f44/f46
+    void sliderCamLag(const float at[3], float fx, float fz, const float eyeOff[3],
+                      const float atOff[3], int f42, int f44, int f46,
+                      float eye[3], float tat[3]);
+    // ...and mode 8's wall pass over it: `fresh` is flag 1, `steadyEye` /
+    // `steadyAt` the camera with no lag (the second ray), `subjY` the
+    // slider's y (+156)
+    void sliderCamObstruct(float eye[3], float tat[3], const float steadyEye[3],
+                           const float steadyAt[3], float subjY, bool fresh);
     int   sliderPrevState{0};      // the called slider's mode last frame
     long  boardAt{-1};             // `--board-after`: the frame to board on
     float boardAtSlider[3]{}, boardAtDoor[3]{};

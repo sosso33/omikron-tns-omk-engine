@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "actor/player.h"
+#include "o3de/camobstruct.h"
 
 #include <cmath>
 #include <cstdlib>
@@ -1256,124 +1257,37 @@ void PlayerController::tick(float dt, std::uint32_t word) {
 // the flag rule.
 void PlayerController::cameraCollide(float dt) {
     if (!camSolidA_ && !camSolidB_) return;
-    const double eye[3] = {cam_.eye[0], cam_.eye[1], cam_.eye[2]};
-    const double at[3]  = {cam_.at[0],  cam_.at[1],  cam_.at[2]};
-    double D[3] = {eye[0] - at[0], eye[1] - at[1], eye[2] - at[2]};
-    const double d = std::sqrt(D[0]*D[0] + D[1]*D[1] + D[2]*D[2]);
-    if (d < 1e-3) return;
-    constexpr double kOver = 1.2;      // +300
-    constexpr double kOut  = 8.0;      // +320
-    constexpr double kLift = 4.0;      // +324
-    // the over-reach ray, target -> 1.2x the eye distance
-    double ray[3] = {D[0] * kOver, D[1] * kOver, D[2] * kOver};
-    double best = 2.0;
+    // `sub_417070`, now `obstructCamera` (o3de/camobstruct.h), with
+    // `sub_413C00`'s pushes: +312 = +316 = -0.7 x his pelvis height
+    CamObstruct st;
+    st.dist = camDist_; st.block = camBlock_;
+    st.prevEyeY = camPrevEyeY_; st.prevAtY = camPrevAtY_; st.prevValid = camPrevValid_;
+    st.subjY = camSubjY_; st.prevSubjY = camPrevSubjY_;
     const TriangleSoup* const solids[2] = {camSolidA_, camSolidB_};
     const SplitSoupGrid* const grids[2] = {camGridA_, camGridB_};
-    for (int k = 0; k < 2; ++k) {
-        const TriangleSoup* s = solids[k];
-        if (!s || s->empty()) continue;
-        if (const auto h = sweepThrough(*s, grids[k], at, ray, 0.0))
-            if (h->t < best) best = h->t;
-    }
-    double r = d;
-    if (best <= 1.0) {
-        if (!camBlock_) camDist_ = static_cast<float>(d);
-        camBlock_ = 1;
-        // |hit - target| is `best` of the 1.2x ray, and the engine divides
-        // that by +300 to undo the over-reach - so the free distance is
-        // simply `best * d`.
-        r = best * d;
-        if (r > camDist_ && !camJustChanged_) r = (r - camDist_) * dt / kOut + camDist_;
-        camDist_ = static_cast<float>(r);
-    } else if (camBlock_ == 1) {
-        // THE SECOND RAY. The engine does not go straight to recovery: with
-        // no hit on the over-reach ray and `+208 == 1` it rebuilds both ends
-        // from the SUBJECT's own euler and offsets - `+100..+120` and
-        // `+152..+172`, which `sub_414F30` fills with the actor's position
-        // and Euler triple, i.e. the camera with no lag in it - and casts
-        // again. Only if THAT misses does it go to state 2. So a camera whose
-        // lagged ray has swung clear of the wall its unlagged one is still
-        // behind does not start recovering yet.
-        FollowCamera st;
-        // `B` is `sub_415E60`'s eye, which resolves against the LAGGED Euler
-        // triple `+76..+84` and not the actor's own - `resolveSteady` already
-        // splits the two, using its argument for the eye and `euler_` for the
-        // target, which is exactly `+76..+84` against `+112..+120`.
-        resolveSteady(st, camEuler_);
-        const double at2[3] = {st.at[0], st.at[1], st.at[2]};
-        double D2[3] = {st.eye[0] - st.at[0], st.eye[1] - st.at[1], st.eye[2] - st.at[2]};
-        const double d2 = std::sqrt(D2[0]*D2[0] + D2[1]*D2[1] + D2[2]*D2[2]);
-        double best2 = 2.0;
-        if (d2 > 1e-3) {
-            const double ray2[3] = {D2[0] * kOver, D2[1] * kOver, D2[2] * kOver};
-            for (int k = 0; k < 2; ++k) {
-                const TriangleSoup* sp = solids[k];
-                if (!sp || sp->empty()) continue;
-                if (const auto h = sweepThrough(*sp, grids[k], at2, ray2, 0.0))
-                    if (h->t < best2) best2 = h->t;
-            }
+    const auto cast = [&](const double from[3], const double ray[3]) {
+        double best = 2.0;
+        for (int k = 0; k < 2; ++k) {
+            const TriangleSoup* s = solids[k];
+            if (!s || s->empty()) continue;
+            if (const auto h = sweepThrough(*s, grids[k], from, ray, 0.0))
+                if (h->t < best) best = h->t;
         }
-        if (best2 <= 1.0) {
-            // STILL BLOCKED, and this arm is a RETURN in the engine - it does
-            // not reach the height push at all. The eye goes back to `+328`
-            // along the current direction, and BOTH heights are frozen at
-            // last frame's answer shifted by the subject's own rise this
-            // frame (`+24 + (+340 - +344)`, `+36 + (+340 - +344)`). `+208`
-            // stays 1, so the next frame's first ray decides again.
-            const double kept = camDist_;
-            const double dy   = camPrevValid_
-                                ? static_cast<double>(camSubjY_ - camPrevSubjY_) : 0.0;
-            cam_.eye[0] = static_cast<float>(at[0] + D[0] * kept / d);
-            cam_.eye[2] = static_cast<float>(at[2] + D[2] * kept / d);
-            if (camPrevValid_) {
-                cam_.eye[1] = static_cast<float>(camPrevEyeY_ + dy);
-                cam_.at[1]  = static_cast<float>(camPrevAtY_  + dy);
-            } else {
-                cam_.eye[1] = static_cast<float>(at[1] + D[1] * kept / d);
-            }
-            return;
-        } else {
-            camBlock_ = 2;
-            if (d <= camDist_) { camBlock_ = 0; return; }
-            camDist_ = static_cast<float>((d - camDist_) * dt / kOut + camDist_);
-            r = camDist_;
-        }
-    } else if (camBlock_ == 2) {
-        if (d <= camDist_) { camBlock_ = 0; return; }
-        camDist_ = static_cast<float>((d - camDist_) * dt / kOut + camDist_);
-        r = camDist_;
-    } else {
-        return;                                   // clear and was clear
-    }
-    const double k = r / d;
-    float e[3];
-    for (int i = 0; i < 3; ++i) e[i] = static_cast<float>(at[i] + D[i] * k);
-    // THE LIFT, blended in as the camera closes past half its free distance.
-    // `+156` is the eye's SUBJECT position - the actor's own origin, which is
-    // his pelvis, `pos_[1] - camLift_` (the walker keeps `pos_` on the floor
-    // and Y grows downward). `+312`/`+316` are -0.7x the pelvis height, so a
-    // pinched camera rises ABOVE him rather than dropping through the floor.
-    const double half = d * 0.5;
-    const double t = r <= half ? 0.0 : (r - half) / (d - half);
-    const double subjY = static_cast<double>(camSubjY_);   // +156, latched by the tick
-    const double lift  = -0.7 * camLift_ + subjY;          // +312 + +156, and +316 + +156
-    // THE FAR END OF THE BLEND IS THE UNPULLED Y. The engine holds the pulled
-    // eye in a scratch vector and only stores it at the very end, so `+56`
-    // and `+68` here are still what the resolvers left - `cam_.eye[1]` and
-    // `cam_.at[1]`, not `e[1]`.
-    double ey = lift * (1.0 - t) + static_cast<double>(cam_.eye[1]) * t;
-    double ty = lift * (1.0 - t) + static_cast<double>(cam_.at[1])  * t;
-    // ...each then eased toward `+24` / `+36` - LAST FRAME'S FINAL eye and
-    // target Y, which is what makes this a filter that converges on the push
-    // instead of a fixed `dt/+324` fraction of it. Flag 1 (the camera changed
-    // this frame) skips the ease and snaps.
-    if (!camJustChanged_ && camPrevValid_) {
-        ey = (ey - camPrevEyeY_) * dt / kLift + camPrevEyeY_;
-        ty = (ty - camPrevAtY_)  * dt / kLift + camPrevAtY_;
-    }
-    cam_.at[1] = static_cast<float>(ty);
-    e[1]       = static_cast<float>(ey);
-    for (int i = 0; i < 3; ++i) cam_.eye[i] = e[i];
+        return best;
+    };
+    // the second ray: `B` is `sub_415E60`'s eye, which resolves against the
+    // LAGGED Euler triple `+76..+84` and not the actor's own -
+    // `resolveSteady` splits the two, its argument for the eye and `euler_`
+    // for the target, which is exactly `+76..+84` against `+112..+120`
+    const auto unlagged = [&](float e[3], float a[3]) {
+        FollowCamera fc;
+        resolveSteady(fc, camEuler_);
+        for (int k = 0; k < 3; ++k) { e[k] = fc.eye[k]; a[k] = fc.at[k]; }
+        return true;
+    };
+    const double lift = -0.7 * static_cast<double>(camLift_);
+    obstructCamera(st, cam_.eye, cam_.at, lift, lift, dt, camJustChanged_, cast, unlagged);
+    camDist_ = st.dist; camBlock_ = st.block;
 }
 
 // ------------------------------------------------------------- posing

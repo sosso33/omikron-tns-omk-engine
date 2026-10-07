@@ -180,9 +180,10 @@ authored to meet, H_TAK031's +19.58 into H_PUT032's key 1 of +19.58).
   with nothing in the way relinks an ambient vehicle, where the engine uses
   its reserved slot-0 mover. NOT PLAYED: a call now stops 30 units short of
   where it did (1274 -6644 against 1304 -6651 on the checks' route).
-- **B12 rest**: the wall pass (`sub_417070`) for the slider modes; the
-  Manuelle ride camera is still rigid (its heading changes smoothly, so less
-  visible).
+- ~~**B12 rest**~~ DONE 2026-10-07, NOT PLAYED: mode 8 (the coming slider
+  and Manuelle) runs `sub_417070` with `sub_4141F0`'s pushes, and Manuelle's
+  camera chases as the coming camera does. Modes 9 and 10 have no wall pass
+  in the original (`sub_4141F0` clears flag 4 for 10, skips 9).
 - ~~**M5**~~ DONE 2026-10-07, NOT PLAYED: while Manuelle flies, the actors'
   shadows are not cast and their head look-ats hold - the parts of
   `Actors_TickAll` the port has; the scene extras keep moving, as in the
