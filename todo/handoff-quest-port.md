@@ -15,15 +15,18 @@ wait for "Go".
 
 ## 1. Where it stands
 
-**Steps 1-3 done (on the Mac alone, through a fake headset); step 4 BUILT
-(2026-10-07, the APK) but not yet run on a headset; steps 5-7 not started.**
+**Steps 1-4 done; steps 5-7 not started.** Step 4 RAN on the reader's Quest 2
+on 2026-10-07: flat, in a 2D panel, to the start menu with the films' sound.
+**The controllers cannot drive it** - measured: in a 2D panel only the laser
+trigger arrives (as a touch and a left click), every button and stick is kept
+by the shell. The reader chose to go to step 5 rather than map touch.
 
 | step | state | commits |
 |---|---|---|
 | 1 the stereo seam, the fake headset | done | up to `2b22f9e` |
 | 2 the cameras, mode by mode | done | `94c1987`, `54178a4` |
 | 3 shoot mode aims with the controller | done | `d4a8bb4`, `93a7c66` |
-| 4 an Android build booting FLAT on the Quest | APK built on the M3; NOT run - waits on the headset | |
+| 4 an Android build booting FLAT on the Quest | done - runs on a Quest 2 to the start menu; no controller input in a 2D panel | `3d63f43`, `b679f0e` |
 | 5 the OpenXR frontend | not started | |
 | 6 the interface on a quad, the films, the keyboard | not started; the screen analysis is written (§5 step 6) | |
 | 7 the first play pass | not started | |
@@ -142,11 +145,9 @@ adb logcat -s OMK                           # the game's stdout/stderr
 
 ## 5. What to do next, in order
 
-1. **Step 4, the device half** - install, push the data, launch from Library >
-   Unknown sources. Milestone: FLAT in the Quest's 2D panel to the start menu
-   with sound, the log over `adb logcat -s OMK`. What is untested until then:
-   the GLES context on the Quest (GLES2 asked for), the 8 MiB game thread
-   attaching to the JVM through SDL, the audio, `--res 1280x720` in the panel.
+1. **Step 4 is done.** To run it again: `scripts/android-build.sh install`,
+   launch OMK from Library > Unknown sources, `adb logcat -s OMK`. `[in]`
+   lines are the raw input log (`android_main.cpp`, the first 600 events).
 2. **Step 5** - `backends/openxr/` (a frontend like `sdlfront.*`):
    `XR_KHR_android_create_instance`, `XR_KHR_opengl_es_enable`, the LOCAL
    space, a GLES swapchain per eye, the frontend PACING (skip the 30/60
@@ -171,6 +172,14 @@ it IS available on GLES, the reader corrected a "Vulkan only"), standing
 play (the `Space` seam is there), menu pointing.
 
 ## 6. Traps that cost time
+
+* **The C++ runtime must stay STATIC on Android** (`c++_static`): the
+  profiler replaces `operator new`, and a shared libc++ loaded first keeps the
+  system allocator for its own code - the first device run died in `free()`.
+* **A 2D panel gets no controller input** but the laser trigger (a touch).
+  Do not debug the pad path in the flat build; it receives nothing.
+* **`adb` differs per machine**: `/opt/local/bin/adb` on the M3. The NDK is
+  found per machine by `android-build.sh` (a Unity install's on the M3).
 
 * **The recentre zeroes a fixed head.** The first kind change recentres, so
   `--vr-head` from frame 0 is undone and a "turned" run equals the flat one.
