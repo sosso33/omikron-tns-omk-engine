@@ -742,6 +742,44 @@ is still in play, what is left over 64 MB is a list of cuts,
 **the budget is a goal for the code, never raised to the measurement** (the
 classic Mac's rule).
 
+**MEASURED 2026-10-07 in Azahar** (New 3DS mode; a memory line every 60
+frames now - `frame N memory:` - the heap's high-water mark from
+`mallinfo().arena`, which newlib never gives back, so it is the footprint a
+run needed; the profiler's counted peak; linear and VRAM free now and at the
+lowest seen). Memory is exact in the emulator where its speed is not:
+
+| start | heap high water | counted peak | linear used (of 32 MB) | VRAM free (lowest) |
+|---|---|---|---|---|
+| Anekbah's street (crowd 4) | 40.5 MB | 38.4 | 11.9 | 0.14 MB |
+| Jaunpur's street (`--area 1 --address 4`) | **41.9** | 40.3 | 6.5 | 3.27 |
+| the supermarket fight (area 245, 700 frames, the overlay texture in) | 26.8 | 22.2 | 9.5 | 1.75 |
+| the restaurant (area 217) | 16.6 | 13.4 | 7.6 | 0.77 |
+
+So the port needs **~42 MB of heap and ~12 MB of linear memory** at its
+largest measured (+2 MB of linear for the overlay texture of 6.7, in the
+fight row), ~54 MB in all; VRAM is full in Anekbah BY DESIGN (6.3 fills it
+with textures, the rest go linear). The New 3DS's 124 MB (88.7 MB heap +
+32 MB linear on the console) holds it twice over.
+
+**The Old 3DS - by arithmetic, not by run.** Azahar does NOT model an Old
+3DS's memory for a `.3dsx`: switched to Old 3DS (`is_new_3ds=false`, the
+config restored after) it ran the CPU at 268 MHz and still gave 98304 KB.
+The Old 3DS's default application region is 64 MB, ~62 left at start-up,
+and libctru's default split (`allocateHeaps.c`: halves, the heap capped at
+24 MB, then the linear heap capped at 32 MB and the heap given the rest)
+leaves the heap **~30 MB - under the 42 MB a city street needs**: the first
+street would end in a refused allocation. A split made at start-up for a
+small region (a `__system_allocateHeaps` of our own, or
+`__ctru_linear_heap_size` - weak symbols both) at ~18 MB linear and ~44 MB
+heap holds the measured need with ~2-6 MB to spare - too little to call a
+fit without the cuts `ram-vs-original.md` lists, the indexed geometry's -3
+MB on the heap side already taken here (6.1, in linear memory). Not built:
+nothing here can run it. Step 7 decides it on a console.
+
+The `.cia` (its exheader's memory mode) waits on `makerom`, which the
+toolchain script does not build yet (devkitPro's hosts refuse this machine;
+Project_CTR from its upstream is the way, as the script does for the rest).
+
 ### Step 5 - controls, saves and the films
 
 * the four control schemes' joystick column on the buttons and circle pad,

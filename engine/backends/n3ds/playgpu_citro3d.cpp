@@ -12,6 +12,11 @@
 #include "playframe.h"
 #include "c3drender.h"
 #include "n3dsfront.h"
+#include "n3dshost.h"
+#include "platform/profile.h"
+
+#include <3ds.h>
+#include <malloc.h>
 
 // THE STRAIGHT PRESENT (3c): the build decides, frame by frame, whether
 // anything is drawn over the world - the GLES window's "present pass", every
@@ -142,7 +147,25 @@ void PlayState::gpuOverlayDecision(const char*& keep) {
 void PlayState::gpuResize(int, int, bool&) {}
 bool PlayState::gpuDriverRow(std::vector<std::string>&) { return false; }
 // every 60 frames, beside the phases line: the backend's own counts
-void PlayState::gpuReportTimings() { if (worldVk) omk::c3dReport(worldVk, n); }
+// every 60 frames, beside the phases line: the backend's own counts, and
+// THE MEMORY (`todo/3ds-port.md` step 4) - the heap's high-water mark
+// (`mallinfo().arena`: newlib's heap grows and never gives back, so it is the
+// footprint the run needed) and what is in use, the profiler's counted peak,
+// linear memory and VRAM free now and at the lowest seen
+void PlayState::gpuReportTimings() {
+    if (worldVk) omk::c3dReport(worldVk, n);
+    const struct mallinfo mi = mallinfo();
+    static u32 linMin = ~0u, vramMin = ~0u;
+    const u32 lin = linearSpaceFree(), vram = vramSpaceFree();
+    linMin = std::min(linMin, lin);
+    vramMin = std::min(vramMin, vram);
+    const omk::prof::MemTotals mt = omk::prof::memTotals();
+    std::printf("frame %ld memory: heap %.1f MB in use, %.1f MB high water, of %.1f; counted peak %.1f MB; "
+                "linear %.1f MB free (lowest %.1f); VRAM %.2f MB free (lowest %.2f)\n", n,
+                mi.uordblks / 1048576.0, mi.arena / 1048576.0, omk::n3ds::heapBytes() / 1048576.0,
+                mt.peak / 1048576.0, lin / 1048576.0, linMin / 1048576.0, vram / 1048576.0,
+                vramMin / 1048576.0);
+}
 void PlayState::gpuSlowFrameReport() {}
 void PlayState::gpuFinishReport() {}
 void PlayState::gpuVerifyWorldPicture() {}
