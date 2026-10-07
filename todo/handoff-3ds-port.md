@@ -186,6 +186,12 @@ log; the `.elf` of that build names its line (section 5).
 
 ## 4. What to do next, in order
 
+**ALSO 2026-10-07, after it**: 6.7 the interface over the world on the
+GPU, step 4's memory measured (~42 MB heap + ~12 MB linear at the largest
+street; an Old 3DS needs its own heap split - recorded, not built), and
+step 8's stereoscopic 3D (OFF unless `stereo3d` is on the card) - all
+Azahar-proved, none on the console. `3ds-port.md` has each.
+
 **THE OPTIMISATION PASS of 2026-10-07** (`3ds-port.md` Step 6, its table):
 6.1 indexed draws (DONE; on the console no measurable GPU gain - the vertex
 program is not the lever), 6.2 the GPU attribution instruments, 6.3 the
@@ -194,21 +200,26 @@ drawing only what changed - 6.2-6.5 Azahar-exact and NOT yet on the
 console. The fog's colour and the blue clear (16-bit) were fixed the same
 day.
 
-1. **ONE CARD SESSION, five runs** on `engine/build/n3ds-card/4023594/`
-   (its `runs/A..E` hold each run's `sdmc:/omk/` files; the fixed street
-   start; the same walk into the dense part; a minute each; delete each
-   run's extra file before the next, and check `args.txt` carries no
-   leftover `OMK_*` word):
+1. **ONE CARD SESSION, eight runs** on `engine/build/n3ds-card/4dec582/`
+   (its `runs/A..H` hold each run's `sdmc:/omk/` files; A-E and H the fixed
+   street start, F-G the supermarket fight; the same walk each time; a
+   minute each; delete each run's extra file before the next, and check
+   `args.txt` carries no leftover `OMK_*` word):
 
    | run | extra file | answers |
    |---|---|---|
-   | A | - | the new baseline (VRAM textures, the one-pass present, the panel) |
+   | A | - | the new baseline (VRAM textures, the one-pass present, the panel, the indexed draws) |
    | B | `c3d-texlinear` | A against B: what VRAM textures buy |
    | C | `c3d-scissor` | citro3d's drawing with the fill gone - the geometry's share |
    | D | `c3d-notex` | the texturing's share |
-   | E | `c3d-surface` | the two-pass present: what 6.4 buys (the `c3d CPU` line's dither loop and the frontend's copy) |
+   | E | `c3d-surface` | the two-pass present: what 6.4 buys |
+   | F | `c3d-nooverlay` | the fight's frames read back: against G, what 6.7 buys |
+   | G | - | the fight through the GPU overlay (6.7) |
+   | H | `stereo3d` (empty: the slider decides) | STEREOSCOPIC 3D (step 8): how it looks at a few slider positions, and its cost against A |
 
-   Compare by draws a pass (the routes differ), as the eighth run did.
+   Compare by draws a pass (the routes differ), as the eighth run did. The
+   `frame N memory:` line (step 4) rides along in every run.
+
 2. **The reader's two decisions** from the eighth run: the 16-bit default
    (565: 4 ms faster, posterised; RGBA8 + CPU dither: the original's look),
    and the target size (fill is about half the GPU's 52 ms dense; 400x224
