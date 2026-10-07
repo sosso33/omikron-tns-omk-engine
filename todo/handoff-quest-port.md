@@ -15,15 +15,15 @@ wait for "Go".
 
 ## 1. Where it stands
 
-**Steps 1-3 done (on the Mac alone, through a fake headset); steps 4-7 not
-started - each needs the headset.**
+**Steps 1-3 done (on the Mac alone, through a fake headset); step 4 BUILT
+(2026-10-07, the APK) but not yet run on a headset; steps 5-7 not started.**
 
 | step | state | commits |
 |---|---|---|
 | 1 the stereo seam, the fake headset | done | up to `2b22f9e` |
 | 2 the cameras, mode by mode | done | `94c1987`, `54178a4` |
 | 3 shoot mode aims with the controller | done | `d4a8bb4`, `93a7c66` |
-| 4 an Android build booting FLAT on the Quest | not started - waits on the reader | |
+| 4 an Android build booting FLAT on the Quest | APK built on the M3; NOT run - waits on the headset | |
 | 5 the OpenXR frontend | not started | |
 | 6 the interface on a quad, the films, the keyboard | not started; the screen analysis is written (§5 step 6) | |
 | 7 the first play pass | not started | |
@@ -115,28 +115,38 @@ python3 tools/verify.py --only "engine: vr" "licence headers"
 `vr camera rule` (the probe), `vr frame` (flat == mono identity, the halves
 drawn and different), `vr modes` (first-person walk, still vs moving,
 Impasse cuts, the calm fight), `vr aim` (the controller's facing and pitch,
-the shots, the head not aiming). `licence headers` counts **588** authored
+the shots, the head not aiming). `licence headers` counts **590** authored
 files - a new VR file moves it.
 
-## 4. Waiting on the reader - step 4 cannot start without it
+## 4. Waiting on the reader - the headset
+
+**The build no longer waits** - `scripts/android-build.sh` finds the toolchain
+(it differs PER MACHINE: the M1 had no NDK; the M3's Unity installs each
+bundle NDK r27c, the SDK platforms, build-tools and a JDK) and builds the APK.
+On a machine with none of those: install the command-line tools and
+`sdkmanager 'ndk;27.2.12479018'` (~3 GB), or set `ANDROID_NDK_HOME`.
 
 1. **Developer mode on the Quest 2**, the USB cable, `adb devices` listing it
-   (`adb` is `/opt/homebrew/bin/adb`).
-2. **Disk**: 13 GB free on the M1 on 2026-10-07; the NDK is ~3 GB installed.
-3. **The NDK**: `~/Library/Android/sdk` has no `ndk/` and no `cmdline-tools/`
-   (so no `sdkmanager`) - install the command-line tools first, or the NDK
-   zip directly. No Unity install with a bundled NDK on the machine.
-4. **The data**, 1.7 GB, pushed with `adb push` to
-   `/sdcard/Android/data/<package>/files/` (`gamedata`, `tables`) once the
-   headset is visible - sideloaded, never in the APK.
+   (`adb` is `/opt/local/bin/adb` on the M3, `/opt/homebrew/bin/adb` on the M1).
+2. **The data**, 1.7 GB, sideloaded, never in the APK:
+
+```bash
+scripts/android-build.sh install            # build + adb install -r
+adb push gamedata /sdcard/Android/data/org.omk.play/files/gamedata
+adb push tables   /sdcard/Android/data/org.omk.play/files/tables
+adb logcat -s OMK                           # the game's stdout/stderr
+```
+
+   (`gamedata` is wherever `python3 tools/omkpaths.py` says it resolved.)
+   Extra flags go in `.../files/args.txt`, one a line.
 
 ## 5. What to do next, in order
 
-1. **Step 4** - CMake modelled on `backends/vita/CMakeLists.txt` (`omk_engine`
-   + the viewer + the GLES backend + SDL's Android glue), `-DOMK_VR=1`, an APK
-   with the Quest manifest entries, `omk.conf`'s resolver pointed at the app
-   folder. Milestone: FLAT in the Quest's 2D panel to the start menu with
-   sound, the log over `adb logcat`.
+1. **Step 4, the device half** - install, push the data, launch from Library >
+   Unknown sources. Milestone: FLAT in the Quest's 2D panel to the start menu
+   with sound, the log over `adb logcat -s OMK`. What is untested until then:
+   the GLES context on the Quest (GLES2 asked for), the 8 MiB game thread
+   attaching to the JVM through SDL, the audio, `--res 1280x720` in the panel.
 2. **Step 5** - `backends/openxr/` (a frontend like `sdlfront.*`):
    `XR_KHR_android_create_instance`, `XR_KHR_opengl_es_enable`, the LOCAL
    space, a GLES swapchain per eye, the frontend PACING (skip the 30/60

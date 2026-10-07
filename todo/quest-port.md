@@ -540,6 +540,38 @@ controller aims; a left-handed choice is a flag later.
   start menu with sound, its log over `adb logcat`. It proves the build, the
   data and GLES on the device before OpenXR is added.
 
+**BUILT 2026-10-07 on the M3 - NOT YET RUN on a headset** (no Quest was
+attached). `scripts/android-build.sh` -> `engine/build/android/omk.apk`
+(3.0 MB; arm64-v8a, minSdk 29, target 32, package `org.omk.play`):
+
+* **The toolchain differs per machine and the script FINDS it**: the M1 had no
+  NDK; the M3 has two Unity installs (6000.0.76f1, 6000.5.2f1) each bundling
+  NDK r27c (27.2.12479018), SDK platforms 33-36, build-tools 36 and an
+  OpenJDK, beside `~/Library/Android/sdk` (platforms 34/35, build-tools 34).
+  Order: `$ANDROID_NDK_HOME`, the SDK's `ndk/`, a Unity editor's `NDK`. No
+  Gradle: CMake + the NDK's toolchain file, javac + d8, aapt2, zipalign,
+  apksigner with a local debug key (`engine/build/android/debug.keystore`).
+* **SDL2 2.32.10 from source** (the Mac's version), fetched once into
+  `engine/build/android/`, built as `libSDL2.so`; SDL's own Java glue and a
+  one-method `OMKActivity` (`backends/android/java/`).
+* `backends/android/CMakeLists.txt` takes the viewer's sources by the
+  Makefile's rule (every `backends/sdl/*.cpp` but the other GPU windows and the
+  unused instruments half, plus `backends/vr/*.cpp`), `OMK_VR=1`, `OMK_GLES=1`.
+  `play.cpp` compiles as `omk_play_main` (the Vita's arrangement) and
+  `android_main.cpp` is `SDL_main`. **No `#if` was needed in the engine**: the
+  GLES backend's `GLES2/gl2.h` and `threads.cpp`'s `std::thread` paths are the
+  non-Apple, non-Vita defaults.
+* **Not `omk.conf`**: the C++ viewer takes its roots as arguments, so
+  `android_main.cpp` passes `<files>/gamedata <files>/tables --saves
+  <files>/saves/GAMES --res 1280x720`, then `omk.ini` (`--config`) and
+  `args.txt` (extra flags, one a line; the last `--res` wins) when present.
+  `<files>` is `SDL_AndroidGetExternalStoragePath()` =
+  `/sdcard/Android/data/org.omk.play/files`.
+* stdout/stderr are piped to a dated `omk-play-*.log` / `.err` in `<files>`
+  AND to `adb logcat -s OMK`. The game runs on its own thread with an 8 MiB
+  stack (SDL's thread has Java's ~1 MiB). The packaged `.so` are stripped;
+  `engine/build/android/cmake/libmain.so` keeps the symbols for `ndk-stack`.
+
 ### Step 5 - the OpenXR frontend (device; ~1.5-2 days)
 
 * `backends/openxr/`: an instance with `XR_KHR_android_create_instance` and

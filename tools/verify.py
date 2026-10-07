@@ -43128,9 +43128,10 @@ def c_licence_headers():
     # 588 the same day: + the Quest's step 1 (todo/quest-port.md) -
     # `engine/src/vr/xrspace.h` / `.cpp`, `engine/backends/vr/playvr.h` and its
     # `_setup` / `_camera` / `_draw.cpp`, `engine/backends/sdl/playvr_off.cpp`,
-    # `engine/tools/vr_probe.cpp`
+    # `engine/tools/vr_probe.cpp`; 590 on 2026-10-07: + the Quest's step 4,
+    # `engine/backends/android/android_main.cpp`, `scripts/android-build.sh`
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (588, [], 1, []), \
+           (590, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
