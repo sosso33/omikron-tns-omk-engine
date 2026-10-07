@@ -405,6 +405,47 @@ aim, look-relative movement, the fight camera and the keyboard.
   into its own texture, shown as an `XrCompositionLayerQuad` - the
   compositor draws it sharp, at about 1.5 m. The FLIS films on the same quad.
   On the Mac, `--vr-sim` keeps compositing it into each eye flat.
+* **What the world does behind a screen - already read and already ported**
+  (`docs/UI.md` "Which screens stop the world", 2026-09-07; `verify.py:
+  engine: screen world`, `engine: sneak`). Asked 2026-10-07 whether the port
+  letting the world run is right: it is.
+  * The world TICKS behind every screen: `Game_Tick` (0x004200F0) runs the
+    scripts, the projectiles, the traffic and the ride with no test for an
+    open screen. Only the script that called `ui.open` waits.
+  * The one exception is PAUSE GAME (31): its open callback sets the pause
+    flag `dword_4E9728` (two writes in the image), which forces the frame
+    delta to 0.
+  * What a screen stops is the world's DRAWING, its SOUND and Kay'l:
+    without bit `0x40000` in its record's `+112`, `UI_LoadScreen` calls
+    `sub_466B30` - the full-screen 3D view off, every sound buffer suspended,
+    the player in ACTOR_STATE 9 - and the close undoes all three. Three of
+    37 screens carry the bit: PAUSE GAME, SHOOT MECA, SHOOT HUMAN.
+  * A panel with bank B `0x800` turns the world back on, DIMMED: the ten
+    shops, SAVE GAME, PAUSE GAME, SHOOT HUMAN, HIGH-SCORE. And a 3D viewport
+    item (the videophone's caller) draws the world into a rectangle through
+    the game's live camera.
+* **So four kinds of screen, and a VR form for each:**
+
+  | kind | screens | world | VR form |
+  |---|---|---|---|
+  | world hidden | the sneak, MULTIPLAN, the terminals, most | ticking, not drawn, silent | the window in a DARK space - the original's black, comfortable while the window is fixed in the world |
+  | world dimmed | shops, SAVE GAME, high scores | ticking, drawn dimmed | the window before the live, dimmed world |
+  | world frozen | PAUSE GAME | delta 0, drawn | the window before the frozen world, still looked around in |
+  | heads-up | SHOOT MECA / HUMAN | live | not a window: an overlay on the view or the gun, later |
+
+  A 3D viewport item becomes a flat MONITOR texture on its window, rendered
+  once and not per eye, through the game's camera and not the head's.
+* **Placement**: a window is FIXED IN THE WORLD where the head looked when the
+  screen opened, level, at about 1.5 m - never following the head. The
+  sneak's own forms come later.
+* **A VR-only option, beside the faithful path** (§5's rules): the world
+  drawn dimmed behind a world-hidden screen. Less disorienting, but it shows
+  what the original hid - the traffic moving while Kay'l stands held in
+  state 9. The faithful dark space is the default; a faint floor or horizon
+  line in it is the smallest departure, and the play pass decides whether
+  it is needed.
+* Conversations are not screens: the subtitles and reply choices are a
+  small panel while the world is drawn through the conversation's camera.
 * **The keyboard, tried first**: `startTextInput()` showing the system
   keyboard through the `oculus.software.overlay_keyboard` manifest feature;
   if a native app does not get it, `XR_META_virtual_keyboard`, which costs
