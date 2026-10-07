@@ -295,7 +295,11 @@ public:
         grave_.clear();
         for (GpuPoseVert* b : poseGrave_) linearFree(b);
         poseGrave_.clear();
-        C3D_RenderTargetClear(target_, C3D_CLEAR_ALL, 0x000000FF, 0x00FFFFFF);
+        // the clear value is the TARGET's format: citro3d hands it to
+        // GX_MemoryFill unconverted, and a 16-bit fill keeps the low half -
+        // 0x000000FF on the RGB565 target was 0x00FF, a saturated blue in
+        // every pixel nothing draws (the reader's run E, 2026-10-07)
+        C3D_RenderTargetClear(target_, C3D_CLEAR_ALL, rgb565_ ? 0x0000u : 0x000000FFu, 0x00FFFFFF);
         C3D_FrameDrawOn(target_);
         // the picture in the TOP-LEFT cam.w x cam.h, as the reference draws
         // it; the PICA's viewport origin is the bottom-left, as GL's

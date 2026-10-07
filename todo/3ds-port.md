@@ -649,6 +649,15 @@ the present (ms, mean of the bin):
   `--res 400x224` (1:1, nothing averaged) is the clean test if it matters.
   The default is the reader's choice (16-bit: 4 ms faster, posterised;
   RGBA8 + CPU dither: the original's DITHERENABLE look).
+* **E showed distant parts as PLAIN BLUE, sometimes** (the reader). Every
+  pixel nothing draws - past the clip distance, gaps in the set - shows the
+  cleared target, and the clear was `0x000000FF`, black only in RGBA8:
+  citro3d hands it to `GX_MemoryFill` unconverted and a 16-bit fill keeps
+  the low half, `0x00FF` = red 0, green 7, blue 31. Fixed (the clear value
+  by the target's format); in Azahar, the street start with `--clip 10`,
+  `c3d-rgb565` and a capture at present 60: **5187 pixels of `0x00FF`
+  before, 0 after**, black up by about as many. The default RGBA8 target
+  never had it. Not run on the console yet.
 * The rest: the frontend's copy 2.7 ms median (1.4 in B), the panel's redraw
   ~13.5 ms median twice a second (8 in B) - larger than the seventh run's
   6-15 and still a CPU cost worth cutting (section 4 of the handoff, item 4).
