@@ -19,11 +19,22 @@ From there it runs the **sneak** — Kay'l's device, with its inventory and
 verbs, the memo journal, the identity page and the city map — the **slider**
 you call, board and fly, the **shops**, the **MULTIPLAN** storage kiosk, the
 security centre's **lift** and **terminals**, **saving and loading** through
-the game's own panels, the **pause** screen, and both combat modes:
-**melee**, with the game's own adaptive fight AI, and first-person **shoot
-mode**, whose gunmen patrol and fight over the level's navigation grid. The
-city's crowd and its traffic walk their circuit around you, lit by the set's
-own lights and casting the engine's blob shadows.
+the game's own panels, the **pause** screen and the **options menu** (live,
+with fullscreen), and both combat modes: **melee**, with the game's own
+adaptive fight AI, and first-person **shoot mode**, whose gunmen patrol and
+fight over the level's navigation grid — including the two **boss fights**,
+Astaroth and Gandhar, each with its own compiled brain. The game **clock
+runs**: the fog colour and, in
+nineteen areas, the ambient light follow the time of day as the area's own
+colours say. The city's crowd and its traffic walk their circuit
+around you out to the clip distance, a slider brakes when it sees you in the
+road and runs you over when it does not, and every character is lit by the
+set's own lights and casts the engine's blob shadows.
+
+What the original never did is there too, and **off unless asked for**:
+anti-aliasing, trilinear filtering, fitted and mapped shadows, per-pixel
+lighting, supersampling, enlarged text and 60 fps with the bodies smoothed
+between keys (`todo/enhancements.md`; `--enhance-all` turns them on).
 
 It is not a finished game, and no claim is made about anything a reader has
 not confirmed in play: [`todo/play-test.md`](todo/play-test.md) lists what is
@@ -32,11 +43,19 @@ of each are filed in [`todo/omk-play.md`](todo/omk-play.md).
 [`engine/README.md`](engine/README.md) audits what is ported row by row, and
 it has been wrong twice, so trust it over this paragraph.
 
-A **PS Vita** port is under way as a separate backend (GLES2, the pad as the
-engine's joystick, a VitaSDK build). It runs on a real console, through the
-intro films and the menu into the city, where it is still slow; its state, and
-what the next console log is to answer, are in
-[`todo/handoff-vita-port.md`](todo/handoff-vita-port.md).
+### Other machines
+
+The same engine runs on four other machines, each through its own backend and
+none of it in the game code (`docs/PORTING.md` A2; the viewer reaches its host
+only through `omk::Frontend`). Each has a handoff file with its state, its
+build recipe and its traps:
+
+| machine | where it stands | read |
+|---|---|---|
+| **PS Vita** (VitaSDK, GLES2 through vitaGL) | runs on a real console from the films to the city; Anekbah's street measured at ~27-31 ms a frame, inside 30 fps | [`todo/handoff-vita-port.md`](todo/handoff-vita-port.md) |
+| **Nintendo 3DS** (devkitARM, citro3d) | runs on a New 3DS into the city with its crowd, sound and touch; ~30-48 ms a frame of game, the dense street GPU-bound; optional stereoscopic 3D. In Azahar the boot reproduces the original's trace 42 of 42 and the menu is byte-identical | [`todo/handoff-3ds-port.md`](todo/handoff-3ds-port.md) |
+| **Classic Mac** — Mac OS 9 and Mac OS X Tiger on PowerPC (Retro68 / Carbon, a fixed-function OpenGL 1.x backend) | the engine boots byte-identical to the Mac on both; the viewer plays the street on Tiger at 6-10 fps; big-endian done. Run in emulators so far, not yet on real hardware | [`todo/handoff-classic-mac.md`](todo/handoff-classic-mac.md) |
+| **Meta Quest 2** (Android NDK, OpenXR) | runs immersive on a Quest 2 at 72 fps: each eye drawn at the runtime's resolution, first person on the Touch controllers, the interface as a transparent layer, screens as windows fixed in the world. A prototype; the keyboard and a first play pass are next | [`todo/handoff-quest-port.md`](todo/handoff-quest-port.md) |
 
 The name is not new — it is what the code has always called itself. The C++
 lives in `namespace omk`, the replica builds as `build/omk` and its viewer
@@ -111,8 +130,8 @@ distribute one.** Producing your own is up to you; point at it the same way:
 OMK_ASM=~/ida/Runtime.exe.asm OMK_CLEAN=~/ida/clean python3 tools/verify.py
 ```
 
-Without it, **the 17 checks that read it report `skipped`** — naming the
-variable to set — and the rest of the suite's 479 run normally. `tools/dialog_disasm.py`
+Without it, **the 18 checks that read it report `skipped`** — naming the
+variable to set — and the rest of the suite's 577 run normally. `tools/dialog_disasm.py`
 falls back to the committed `tables/vm_opcodes.json`, which carries the same
 VM table; `verify.py: vm table sources` asserts the two agree, 153/153 operand
 counts and 49/49 `.TAG` domains, so the fallback cannot drift unnoticed.
@@ -132,11 +151,15 @@ cd engine && make && cd ..
 engine/build/omk gamedata --tables tables
 
 # 5. check that everything the docs claim is still true
-python3 tools/verify.py --list                 # all 479, and which doc quotes each
+python3 tools/verify.py --list                 # all 577, and which doc quotes each
 python3 tools/verify.py --only "engine: cull"  # one check, seconds
-python3 tools/verify.py                        # all the fast ones
-python3 tools/verify.py --slow                 # plus the asset sweeps and engine runs — over an hour
+python3 tools/verify.py                        # the fast list, 244 of them
+python3 tools/verify.py --slow --jobs 6        # all of it, six at a time — about half an hour
 ```
+
+`--only` is the everyday form; the whole `--slow` sweep runs serially in
+well over an hour, and `--jobs N` runs each check as its own process with
+the builds kept serial behind one lock.
 
 `verify.py` exits with the number of failures, so it drops into a hook or a
 `&&` chain. Checks whose inputs you have not supplied report `skipped` rather
@@ -155,19 +178,21 @@ and `docs/PORTING.md` A1 requires that they keep working without either.
 `scripts/install-deps.sh` reports what is present, `--install` adds the
 optional pieces via Homebrew, apt, dnf or pacman.
 
-### Platforms — portable by construction, tested only on macOS
+### Platforms — portable by construction, developed on macOS
 
 OMK is written to be platform-independent: C++20 with no dependencies, a plain
 Makefile driven by `pkg-config`, Python that is standard library only, and an
-install script with Homebrew, apt, dnf and pacman branches. `engine/src`
-contains **no operating-system `#ifdef` at all** — not one `_WIN32`,
-`__APPLE__` or `__linux__` in the whole core. The only conditionals in the
-tree are in the SDL backend, and they choose between SDL2 and SDL3 or gate
-the optional Vulkan path; none of them asks which OS it is on.
+install script with Homebrew, apt, dnf and pacman branches. **The game code
+asks which machine it is on in one place only**: `engine/src/platform/`, where
+`datafs`, `threads` and `profile` choose a file API, a thread API and a clock
+for the Vita, the 3DS and classic Mac OS. Nothing else under `engine/src` has
+an operating-system `#if`; the rest lives in the backends, and the viewer's
+game code reaches its host only through `omk::Frontend`.
 
-**But it has only ever been built and run on macOS on Apple Silicon.** Nothing
-else has been tried, so treat any other platform as unexplored rather than
-supported. Four things are known in advance to need attention:
+**Desktop development is on macOS on Apple Silicon**, and the four machines
+in the table above each have their own build. **Windows and Linux desktops
+have never been tried**, so treat them as unexplored rather than supported.
+Four things are known in advance to need attention there:
 
 * **Case-sensitive filesystems.** The game shipped with inconsistent casing
   because Win95 did not care, so the C++ `DataFs` resolves every lookup
@@ -219,6 +244,13 @@ set's own cameras, `L` cycles the baked vertex light, `V` swaps the software
 rasterizer for the Vulkan backend, `P` prints the current camera in a form you
 can paste into a check.
 
+`omk-play` draws in software by default, the reference every other renderer is
+checked against. `--vulkan` presents through Vulkan, and `make play-gles`
+builds `build/omk-play-gles`, the OpenGL ES path the Vita and the Quest use.
+`make release` builds without the instruments and the profiler; with them,
+`omk-play --profile run.prof` records a frame-by-frame profile and
+`tools/omkprof.py` reads it or serves it as a page (`todo/debug-tools.md`).
+
 And four web viewers that read the data directly rather than through the
 replica:
 
@@ -242,7 +274,12 @@ resolving), the scene scripts (220/220), morph animation and its ADPCM audio
 (777/777 sample-identical), the trigger zones (4558, 0 bad), the world scripts
 (5785/5785 slots decoding), the game state, the fonts and text layout, the 37
 interface screens and their widget tree, the effect sprites, the fight and
-shoot AI, and the cutscene camera editings (24112/24112 frames sampling).
+shoot AI (the two bosses' brains among them), the cutscene camera editings
+(24112/24112 frames sampling), the street's traffic circuit, the graphical
+options and what each one sizes, the blob shadows, the `.3DO` light table
+that lights every moving body, the clock's day and night, and the shipped
+render states — bilinear on a 3D card, a dither on both device arms, and a
+back-face cull done in software above a device set to cull nothing.
 
 `docs/RECONSTRUCTION.md` is the roadmap and the running log — what is left, in
 what order. `engine/README.md` audits the port row by row against that list,
@@ -251,12 +288,18 @@ and it has been wrong twice, so read it rather than any summary of it.
 Open questions are listed in `CLAUDE.md` §6 **with what has already been ruled
 out**, so nobody repeats a search.
 
-[`manual/`](manual/) is the illustrated walkthrough of all of it — how the
-original works and how OMK ports it, in two registers per chapter (a plain
-summary and the technical account). It is **derivative, and a snapshot**: it
-retells `docs/` rather than establishing anything, and by its own first rule it
-is regenerated **only when explicitly asked for**, never as a side effect of
-other work. If it and `docs/` disagree, `docs/` is right.
+Two retellings sit beside the docs, and both are **derivative**: neither
+establishes anything, and where either disagrees with `docs/`, `docs/` is
+right.
+
+* [`book/`](book/README.md) — *How Omikron Works*, the engine and the port
+  told in order for a developer new to both, with diagrams and Unity/OpenGL
+  analogies (`omk-book.pdf`). An edited draft, updated when a finding it
+  retells changes.
+* [`manual/`](manual/) — the illustrated walkthrough, in two registers per
+  chapter (a plain summary and the technical account). A **snapshot**: by its
+  own first rule it is regenerated **only when explicitly asked for**, never
+  as a side effect of other work.
 
 ## How this work is done
 
@@ -289,10 +332,12 @@ the prose and the code cannot drift apart.
 ## Built with AI, and why that shapes everything above
 
 OMK was written with heavy use of AI — Claude, via Claude Code. The
-sessions in [`transcript/`](transcript/README.md) are the archived record,
-kept deliberately: they contain the wrong turns as well as the findings, and
-several of the ground rules above are only convincing with the mistake that
-produced them still attached.
+sessions in [`transcript/`](transcript/README.md) are the archived record of
+its first fortnight (2026-08-26 to 2026-09-06), kept deliberately: they
+contain the wrong turns as well as the findings, and several of the ground
+rules above are only convincing with the mistake that produced them still
+attached. No later session is added; the docs and the commit log carry the
+work since.
 
 That is stated here rather than buried, because it changes what a reader
 should ask of the work.

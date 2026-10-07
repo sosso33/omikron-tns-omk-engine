@@ -3747,10 +3747,54 @@ security centre** - each with its record in `todo/` and its finding in `docs/`:
   dark arrival (the car mesh `CSPont04` around the lens) stays open.
   `engine: camera obstruction`.
 
-The PS Vita port that began on 2026-09-17 is a separate backend and is
-recorded in `todo/handoff-vita-port.md` (the state, the recipes and what next),
-`todo/vita-port.md` (the plan and the full record) and `todo/handoff-vita.md`
-(the pre-port decision); it is not part of this audit.
+**And 2026-10-01..07, the BOSSES, the CLOCK, the LIGHT on every body and
+the SLIDER audited** - each with its record in `todo/` and its finding in
+`docs/`:
+
+* ASTAROTH (shoot type 13, AREA 175; `todo/astaroth.md`, all five steps):
+  the souls, his back and death, his own tick with his two weapons, the
+  camera shake - `sub_47FF70` / `sub_4800C0` / `sub_47FCF0` / `sub_47FD90`
+  transcribed whole. `engine: astaroth souls`, `astaroth back`, `astaroth
+  tick`, `camera shake`;
+* GANDHAR (shoot type 10, AREA 2's lava cave; `todo/gandhar.md`, all five
+  steps): the brain `sub_47F6F0` over his twelve actions, his walk and fire,
+  the head-only baton gate, the strike and the grab (messages 5-8).
+  `engine: gandhar`, `gandhar head`, `gandhar grab`, `gandhar play`;
+* the DRIFT AUDIT's fixes (`todo/drift-audit.md`): the game clock TICKS
+  (S1), a reply's actions run with their hooks (S2), hide/show keeps a body's
+  pose (M1), and the fog colour - the AREA's four colours lerped by the clock,
+  the screen cleared to it - with the ambient floor in 19 areas
+  (`o3de/daynight.h`). `engine: day night`, `engine: actor lighting`;
+* the `.3DO` LIGHT TABLE lights every character and prop, not only the
+  crowd (`LightObject` in `Actor_LoadModel` / `Object_Load`; `docs/ASSETS.md`
+  4c);
+* the SLIDER drift audit (`todo/slider-drift-audit.md`, `todo/handoff-slider.md`):
+  the rider hidden while seated, the call, the wait, the journey, *Manuelle*
+  and the exit compared with the original and fixed in order - `engine:
+  slider recall`, `slider placement`, `slider forget`, `slider refused`,
+  `slider journey drive`, `slider manual`, `slider bank`, `vehicle sound`;
+* the RUN-OVER uses the spatial index's own touch flag (`sub_45DF30`, flag 2,
+  set only by the player's query), so a vehicle that braked in time stops
+  short of him and one that saw him late still knocks him down. `engine: run
+  over`, `engine: run over contact`; `todo/falls.md` 4;
+* the CROWD and the TRAFFIC are drawn out to the clip distance with the last
+  level of detail held, as `sub_48D7F0` draws every instance - the port had
+  stopped at the last LOD distance, 40 and 50 m. `engine: crowd reach`;
+  `docs/STREET_LIFE.md`. Not ported: the vehicles' own LOD by distance.
+
+**The ports to other machines are separate backends and not part of this
+audit**; each keeps its state, recipes and traps in a handoff file:
+
+* the PS VITA (begun 2026-09-17; GLES2 through vitaGL, the street inside
+  30 fps on a console): `todo/handoff-vita-port.md`, with `todo/vita-port.md`
+  the plan and the full record and `todo/handoff-vita.md` the pre-port
+  decision;
+* the NINTENDO 3DS (begun 2026-10-05; citro3d, runs on a New 3DS into the
+  city): `todo/handoff-3ds-port.md`, `todo/3ds-port.md`;
+* CLASSIC MAC OS and Tiger on PowerPC (Retro68 / Carbon, the GL 1.x
+  backend): `todo/handoff-classic-mac.md`, `todo/classic-mac-port-1999.md`;
+* the META QUEST (OpenXR on Android, all under `OMK_VR`; runs immersive on a
+  Quest 2): `todo/handoff-quest-port.md`, `todo/quest-port.md`.
 
 Re-audited row by row against `CLAUDE.md` §4 on 2026-08-31, **41 content
 rows**. This table has now been wrong twice — once with a count that had
@@ -3886,10 +3930,12 @@ branch, all three in I2D, behind two rasterizers that are both ported.
 | the PLAYER in adventure mode | **the chain, run from the keyboard**: `Input::frame`'s word (Aventure scheme, the world's repeat mask 0) -> `CefChannel` -> the clip's root delta (`Anim_RootDelta`, fractional ends, ROTATED by the facing matrix - node+156 = actor+288, which closes CLAUDE.md 6's "optional 3x3" for the actor path) -> `Walker` -> the floor; the window and whole-on-transition turn and root shift through `Cef_ApplyTurn`/`Cef_ApplyRootShift`; the idle word `sub_4A7A20` makes when nothing is held; the follow camera as `sub_415D10`/`sub_415E60` resolve and lag it (f42/f44/f46 = 3/8/8 for mode 0). Tier **5**: four replayable streams on `AIMPASSE`, `H_STAND -> H_SD-WK -> H_WALK -> H_WK-SD -> H_STAND`, 69.5 units in 60 frames along the facing, the eye 118.11 behind at fov 75, 1539/1595 tracks resolving | `Actor_Move`'s slide (a blocked step stops); the camera's flag 8 / 0x10 passes (`sub_417070`, `sub_416450`) and `sub_413C00`'s 0.7 x height rule, so the eye keeps the offset's own height and passes through walls; a blend is drawn as a cut; feet-or-pelvis for `+244..+252`; the world camera's own smoothing shorts (the preset's 3/8/8 stand in) |
 | input | 3 | the binding tables reproducing `tools/sim`'s decisions |
 | the Vulkan backend | none | explicitly unverifiable; correctness inherited from the software backend it mirrors. **It also carries the port's first ENHANCEMENT, off by default** (2026-09-08): `--aa N`, or `antialiasing = N` under the config's `[Enhancements]` section, is N-sample MSAA resolved into the same image the readback reads — an option the original explicitly turns OFF (ASSETS 4), so it has no tier by construction, and the software reference does not have it. `engine: anti-aliasing` pins that the default is off and that 4x moves only edge pixels (2.7% of the frame, 99.7% on an edge). **Bilinear texture filtering** (`--filter bilinear` / `texturefiltering = bilinear`) was the second, with the colour key carried in alpha so a keyed edge does not fringe; `engine: texture filter` pins the nearest path bit-identical and the filter's shape (55.6% of pixels moved by a mean of 4.6 levels). **Since 2026-10-03 it is not an enhancement but the DEFAULT** on every GPU backend (GLES and GL1 learned it too): the original's hardware device set MAG/MIN LINEAR (ASSETS 4). **Trilinear and anisotropic** (`--filter trilinear --anisotropy N`) generate the mip chain at upload, the key averaging correctly down it; `engine: mipmaps` pins the gradient order trilinear < anisotropic < bilinear. **Interface scaling** (`--ui-scaling linear`) filters the 640x480 layer's stretch and is the one enhancement BOTH backends draw, the interface being composed on the CPU; the colour key decides the silhouette and the blend the colour, so a keyed edge cannot fringe without an alpha to premultiply into (`engine: ui scaling`) |
-
 | the fixed-function OpenGL 1.x backend (`backends/gl1/`, 2026-10-02) | none | the same standing as Vulkan: what is asserted is agreement with the software reference, never with the original. `engine: gl1 backend` (macOS) - coverage 0.9932 and 153 pixels past 24 levels on Anekbah's street, and a bilinear frame. On Tiger's emulated Radeon 9700 it draws the street at 6-10 fps against ~1 in software; a wall grazed by the camera flashing flat for a frame there is open and suspected to be the emulator's (`todo/handoff-classic-mac.md` 5) |
 | classic Mac OS (`backends/classic/`, 2026-10-03) | none | the engine booted headless (`tools/omk.cpp`) as one Carbon binary: its boot dump BYTE-IDENTICAL to the Mac's on Mac OS 9.2 and on Tiger, run in the emulators (not repeatable in `verify.py`). `engine: classic build` keeps it building and free of C++ streams (PORTING A10). And the VIEWER through the Carbon frontend (`OMKPlay`): 30 frames of the street start byte-identical to the host on both, after three big-endian fixes in the viewer and the weak-object rule (PORTING A10). Sound Manager audio (`8b536ad`); not yet played by hand |
 | big-endian hosts (`formats/le.h`, `ppc-darwin.mk`) | none | PORTING A9: every raw read through `loadLE`; 1927 of the 1928 tool calls the checks make identical on PowerPC (the last, directory order). The replay runs in the emulator, not in `verify.py` |
+| the OpenGL ES backend (`backends/gles/`, the Vita's and the Quest's) | none | the same standing as Vulkan: agreement with the software reference, never with the original. `engine: gles backend`, `gles overlay`, `gles pose`, `gles state cache`; the console's own runs are in `todo/handoff-vita-port.md` |
+| the Nintendo 3DS (`backends/n3ds/`, citro3d) | none | in the Azahar emulator: the boot reproduces `traces/intro.log` 42 of 42, the menu frame is byte-identical to the desktop's, the street agrees with the software reference at 99.8-99.9% of pixels within 24 levels. `engine: 3ds build` keeps it building; the runs themselves are not in `verify.py` |
+| the Meta Quest (`backends/openxr/`, `backends/android/`, `src/vr/`) | none | the head is a RENDER transform composed on the authored camera, so game logic is unchanged; asserted on the desktop through `--vr-sim` (`engine: vr camera rule`, `vr frame`, `vr modes`, `vr aim`). The headset runs are not in `verify.py` |
 
 **Still deliberately excluded**: DirectX, win32 and the C runtime. Those are
 host APIs the backends replace rather than code to port.
