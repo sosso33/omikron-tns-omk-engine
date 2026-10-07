@@ -317,6 +317,64 @@ aim, look-relative movement, the fight camera and the keyboard.
   turns the picture right (the reflection's sign, mutated by flipping it); the
   two eyes 2.52 inches apart for 64 mm.
 
+**Step 1 DONE 2026-10-07** (`d5e25e9` and the commit after it). What was
+built, and where it departed from the plan above:
+
+* **`OMK_VR`, the reader's macro** ("not compiled on non-vr targets"): only
+  the main Makefile defines it (`VR ?= 1`); every VR line is under it. The
+  Vita, classic Mac, 3DS and PowerPC builds compile every `backends/sdl/*.cpp`
+  and `src/*/*.cpp`, so the viewer's VR half lives in **`engine/backends/vr/`**
+  (`playvr.h`, `playvr_setup.cpp`, `playvr_camera.cpp`, `playvr_draw.cpp`),
+  which they never see, and its stubs in `backends/sdl/playvr_off.cpp`, which
+  they pick up by their own globs; `src/vr/xrspace.*` compiles empty for them.
+  None of their build files changed. `make VR=0` builds the same way.
+* **The object tree records its VR value** (`build/obj/.vr`) and is emptied
+  when it changes: `OMK_VR` changes `RCamera`'s and `PlayState`'s layout, and
+  make does not track flags, so a mixed link would be memory corruption.
+* **The main code's share**: one call where `worldCamera()` ends
+  (`vrAfterWorldCamera`), one where `worldMirror()` draws (`vrWorldDraw`,
+  returning true when the eyes were drawn), one after the options
+  (`vrSetup`), the `VrState` member and three declarations in `playstate.h`,
+  `headPose()` on the Frontend, the off-axis fields on `RCamera` (with the
+  arithmetic in the software, GLES and Vulkan projections), and one usage
+  line naming `--vr-help`.
+* **The flags are read by the VR code**, one word each (`--vr-head=30,0,0`):
+  the main parser ignores what it does not know, but would take a separate
+  value word for a screen number. `--vr-sim` (side by side), `--vr-sim=mono`
+  (one eye over the frame - the identity check's form), `--vr-camera=level|
+  full`, `--vr-head=Y,P,R` (yaw right, pitch up, roll to the right shoulder;
+  the numpad turns it live, 5 recentres), `--vr-headpos`, `--vr-ipd`,
+  `--vr-fov=quest2` (a NOMINAL asymmetric eye, 52 degrees outer / 44 inner,
+  not measured from a headset).
+* **The composition is a proper rotation, so the reflection trap does not
+  arise**: the head is composed in the authored camera's own frame,
+  `(x, y, z) -> x s + y u - z f`, det +1 since `u = s x f`. The Y-down
+  reflection only bites a conversion through world axes, and none is made.
+* **Measured**: `vr_probe` - a 30-degree right turn looks along 0.5 of the
+  camera's right, 20 up along 0.342 of its up, a 15-degree roll to the right
+  shoulder gives roll +15; 64 mm is 2.5197 inches along the right; an
+  unturned head is the authored camera to the bit; each edge of the nominal
+  Quest eye lands on its picture's edge; the culling camera holds 144 of 144
+  eye-frustum corners. On Anekbah's street: the flat frame and the unturned
+  mono frame are byte-identical; the Quest-shaped eyes on GLES against the
+  software reference differ in 258 of 480000 pixels, on edges. Vulkan's
+  off-axis rows are built and NOT run.
+* **Checks** (`--slow`): `engine: vr camera rule`, `engine: vr frame`, each
+  SHOWN TO FAIL - the rotation's `- z f` made `+` gave `yaw30_ahead -0.8660`
+  and roll -15; both eyes drawn from eye 0, and the mono seam not applying the
+  head, turned "both halves different" and "turned != flat" False.
+  `licence headers` 580 -> 588 for the eight new files.
+* **Still open from step 1**: what besides the culling reads `view.cam` after
+  `worldCamera()` - side by side it is now the CULLING camera (the head's
+  orientation, a few centimetres behind the eyes), which the crowd's
+  distance tests, the sky and anything sound-side see. Not yet audited; the
+  authored camera is kept in `vr.authored` for whichever must have it. The
+  interface is composed flat over both halves (step 6 moves it to a quad).
+
+**To look at it**: `build/omk-play ../gamedata ../tables --save
+../traces/save-appart.bin --area 0 --stand 1804,0,-6890,336 --vr-sim`, the
+numpad for the head.
+
 ### Step 2 - the cameras, mode by mode (Mac; ~1-1.5 days)
 
 * **Authored cameras** (conversations, editings, world cameras, the slider

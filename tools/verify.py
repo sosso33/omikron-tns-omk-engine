@@ -43124,9 +43124,13 @@ def c_licence_headers():
     # `engine/src/script/linesync.h` and `engine/tools/linesync_probe.cpp` (T2);
     # 579 on 2026-10-07: + `engine/src/o3de/camobstruct.h` / `.cpp` (the
     # camera obstruction pass shared by modes 0 and 8, drift audit B12); 580
-    # the same day: + `engine/backends/n3ds/c3dstereo.h` (the 3DS's stereo 3D)
+    # the same day: + `engine/backends/n3ds/c3dstereo.h` (the 3DS's stereo 3D);
+    # 588 the same day: + the Quest's step 1 (todo/quest-port.md) -
+    # `engine/src/vr/xrspace.h` / `.cpp`, `engine/backends/vr/playvr.h` and its
+    # `_setup` / `_camera` / `_draw.cpp`, `engine/backends/sdl/playvr_off.cpp`,
+    # `engine/tools/vr_probe.cpp`
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (580, [], 1, []), \
+           (588, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \

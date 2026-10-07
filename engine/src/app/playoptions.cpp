@@ -305,6 +305,7 @@ int PlayOptions::parse(int argc, char** argv) {
 "  --nodelay        drop the 16 ms sleep. THE SET VIEWER ONLY - it does\n"
 "                   nothing to a game run; use --frames for that\n"
 "\n"
+"  --vr-help        the VR flags (--vr-sim...), read by backends/vr in a VR build\n"
 "  --help           this\n");
     };
     for (int i = 1; i < argc; ++i)
