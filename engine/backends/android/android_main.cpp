@@ -77,6 +77,62 @@ void redirect(int fd, std::FILE* stream, const std::string& path, int prio) {
     pthread_detach(t);
 }
 
+// THE RAW INPUT LOG (step 4's controller question, 2026-10-07): every input
+// event SDL delivers, one line each, before the game reads any of it - what a
+// Quest controller arrives as in a 2D panel is a measurement, not a guess.
+// The first 600 events of a run; `[in]` in the log.
+int logInput(void*, SDL_Event* e) {
+    static int left = 600;
+    if (left <= 0) return 1;
+    switch (e->type) {
+    case SDL_KEYDOWN: case SDL_KEYUP:
+        std::printf("[in] key %s scancode %d (%s) sym %d\n", e->type == SDL_KEYDOWN ? "down" : "up",
+                    e->key.keysym.scancode, SDL_GetScancodeName(e->key.keysym.scancode), e->key.keysym.sym);
+        break;
+    case SDL_CONTROLLERBUTTONDOWN: case SDL_CONTROLLERBUTTONUP:
+        std::printf("[in] pad %d button %d (%s) %s\n", e->cbutton.which, e->cbutton.button,
+                    SDL_GameControllerGetStringForButton(static_cast<SDL_GameControllerButton>(e->cbutton.button)),
+                    e->type == SDL_CONTROLLERBUTTONDOWN ? "down" : "up");
+        break;
+    case SDL_CONTROLLERAXISMOTION:
+        if (e->caxis.value > 8000 || e->caxis.value < -8000)
+            std::printf("[in] pad %d axis %d value %d\n", e->caxis.which, e->caxis.axis, e->caxis.value);
+        else return 1;
+        break;
+    case SDL_JOYBUTTONDOWN: case SDL_JOYBUTTONUP:
+        std::printf("[in] joy %d button %d %s\n", e->jbutton.which, e->jbutton.button,
+                    e->type == SDL_JOYBUTTONDOWN ? "down" : "up");
+        break;
+    case SDL_JOYAXISMOTION:
+        if (e->jaxis.value > 8000 || e->jaxis.value < -8000)
+            std::printf("[in] joy %d axis %d value %d\n", e->jaxis.which, e->jaxis.axis, e->jaxis.value);
+        else return 1;
+        break;
+    case SDL_JOYHATMOTION:
+        std::printf("[in] joy %d hat %d value %d\n", e->jhat.which, e->jhat.hat, e->jhat.value);
+        break;
+    case SDL_JOYDEVICEADDED: case SDL_CONTROLLERDEVICEADDED:
+        std::printf("[in] %s added %d (%s)\n", e->type == SDL_JOYDEVICEADDED ? "joystick" : "controller",
+                    e->jdevice.which, SDL_JoystickNameForIndex(e->jdevice.which));
+        break;
+    case SDL_MOUSEBUTTONDOWN: case SDL_MOUSEBUTTONUP:
+        std::printf("[in] mouse button %d %s at %d,%d (touch id %u)\n", e->button.button,
+                    e->type == SDL_MOUSEBUTTONDOWN ? "down" : "up", e->button.x, e->button.y, e->button.which);
+        break;
+    case SDL_MOUSEWHEEL:
+        std::printf("[in] wheel %d,%d\n", e->wheel.x, e->wheel.y);
+        break;
+    case SDL_FINGERDOWN: case SDL_FINGERUP:
+        std::printf("[in] finger %s at %.3f,%.3f\n", e->type == SDL_FINGERDOWN ? "down" : "up",
+                    e->tfinger.x, e->tfinger.y);
+        break;
+    default:
+        return 1;
+    }
+    --left;
+    return 1;
+}
+
 struct Run {
     std::vector<std::string> args;
     int rc = 1;
@@ -119,6 +175,8 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int, char**) {
     std::printf("run %s\n", stamp);
     for (const auto& a : run.args) std::printf("%s ", a.c_str());
     std::printf("\n");
+
+    SDL_AddEventWatch(logInput, nullptr);
 
     // The game on a thread with an 8 MiB stack, as the Vita gives it: the
     // SDLThread SDLActivity starts has Java's default, ~1 MiB, and the setup

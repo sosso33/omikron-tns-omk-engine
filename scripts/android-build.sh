@@ -89,15 +89,19 @@ fi
 # ---- the native libraries
 "$CMAKE" -S "$ENGINE/backends/android" -B "$OUT/cmake" "${GEN[@]}" \
     -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
-    -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-29 -DANDROID_STL=c++_shared \
+    -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-29 -DANDROID_STL=c++_static \
     -DCMAKE_BUILD_TYPE=Release -DOMK_SDL2_SRC="$SDL" >/dev/null
 "$CMAKE" --build "$OUT/cmake" -j "$(sysctl -n hw.ncpu 2>/dev/null || nproc)"
 
 STAGE=$OUT/apk
 rm -rf "$STAGE"; mkdir -p "$STAGE/lib/arm64-v8a" "$STAGE/classes" "$STAGE/dex"
 cp "$OUT/cmake/libmain.so" "$OUT/cmake/sdl2/libSDL2.so" "$STAGE/lib/arm64-v8a/"
-STL=$(find "$NDK/toolchains/llvm/prebuilt" -path '*aarch64-linux-android/libc++_shared.so' | head -1)
-cp "$STL" "$STAGE/lib/arm64-v8a/"
+# THE C++ RUNTIME IS STATIC, and must stay so: the profiler replaces the global
+# `operator new`/`delete` (`platform/profile.cpp`, a header on every block). A
+# `libc++_shared.so` loaded before `libmain.so` keeps the system allocator for
+# its own out-of-line code (std::string's, among others), so a block made on one
+# side was freed on the other - the first device run (2026-10-07) corrupted an
+# argument string and died in `free()` inside the first table load.
 # stripped in the package; engine/build/android/cmake/libmain.so keeps the
 # symbols, for `ndk-stack -sym engine/build/android/cmake` over a logcat crash
 STRIP=("$NDK"/toolchains/llvm/prebuilt/*/bin/llvm-strip)

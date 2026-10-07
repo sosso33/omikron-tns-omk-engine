@@ -572,6 +572,29 @@ attached). `scripts/android-build.sh` -> `engine/build/android/omk.apk`
   stack (SDL's thread has Java's ~1 MiB). The packaged `.so` are stripped;
   `engine/build/android/cmake/libmain.so` keeps the symbols for `ndk-stack`.
 
+**RUN ON THE READER'S QUEST 2 (2026-10-07, Horizon OS on Android 14):** the
+APK installs, the 1.7 GB push takes 38 s, and the game boots FLAT in a 2D
+panel - GLES2 at 1280x720, area 118, the three films with their sound (EIDOS
+dropped 13 of 386 frames to keep up with it), the start menu reached (the
+reader). Two faults, both fixed:
+
+* **The first launch died in `free()`** inside the first table load, with an
+  argument string already corrupted: the profiler's own `operator new`
+  (`platform/profile.cpp`) against a `libc++_shared.so` loaded before
+  `libmain.so`, which kept the system allocator for its own out-of-line code.
+  The runtime is now STATIC (`android-build.sh` says why).
+* **The system keyboard opened under the panel** at boot: `SDL_StartTextInput`
+  on Android, as on the Vita - `sdlfront.cpp` skips it there too.
+
+**THE CONTROLLERS DO NOT REACH A 2D PANEL** - measured, not assumed:
+`android_main.cpp` logs every raw SDL input event (`[in]`, the first 600 of
+a run), and with every button, grip, stick and stick click pressed the ONLY
+events were the laser's trigger, as a touch AND SDL's synthesised left mouse
+button at the panel point. SDL opens one controller as a pad and it sends
+nothing; the shell keeps A/B/X/Y, the grips and the sticks. The game's menus
+read the binding word and have no pointer, so the flat build cannot be driven
+by the controllers at all - they arrive only through OpenXR (step 5).
+
 ### Step 5 - the OpenXR frontend (device; ~1.5-2 days)
 
 * `backends/openxr/`: an instance with `XR_KHR_android_create_instance` and

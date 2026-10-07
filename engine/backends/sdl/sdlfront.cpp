@@ -180,9 +180,11 @@ void SdlFrontend::setWindowTitle(const std::string& t) {
 }
 // The name field is real typing, so ask the host for characters. Not on
 // the Vita: there SDL answers with the system's on-screen keyboard, which
-// would cover the game from the first frame (`todo/vita-port.md` F4).
+// would cover the game from the first frame (`todo/vita-port.md` F4). Nor
+// on Android - the Quest opened its keyboard under the panel at boot
+// (2026-10-07); the name field's keyboard is `todo/quest-port.md` step 6.
 void SdlFrontend::startTextInput() {
-#if !defined(__vita__)
+#if !defined(__vita__) && !defined(__ANDROID__)
     SDL_StartTextInput();
 #endif
 }
