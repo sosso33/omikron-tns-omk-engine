@@ -9897,10 +9897,17 @@ def c_engine_slider_bank():
         r"Manuelle drawn BANKED - its \+X side (-?[\d.]+) degrees up, the ride's roll (-?[\d.]+)",
         r.stdout)]
     top = max((t for t, _ in rows), default=0.0)
-    return (len(rows) >= 3, top >= 10.0, all(abs(t - rl) < 0.3 for t, rl in rows)), \
-           (True, True, True), \
+    # M5 on the same drive: `Game_Tick` runs `Slider_TickRide` INSTEAD of
+    # `Actors_TickAll` (05_sys.c:2170), and the actors' shadows are cast from
+    # inside the latter - so while Manuelle flies none is (the street's
+    # extras keep moving: their programs are `Script_PlayAllScripts`', :2134)
+    m5 = _re.search(r"Manuelle drives - Actors_TickAll does not run, (\d+) actor shadow", r.stdout)
+    left = int(m5.group(1)) if m5 else 0
+    return (len(rows) >= 3, top >= 10.0, all(abs(t - rl) < 0.3 for t, rl in rows), left > 0), \
+           (True, True, True, True), \
         "steering RIGHT on Manuelle, the drawn hull's +X (the rider's left) side rises " \
-        "with the roll to %.1f degrees over %d steps, drawn tilt = roll throughout" % (top, len(rows))
+        "with the roll to %.1f degrees over %d steps, drawn tilt = roll throughout; and " \
+        "%d actor shadows left out while he drives (M5)" % (top, len(rows), left)
 
 
 def c_engine_slider_collider():

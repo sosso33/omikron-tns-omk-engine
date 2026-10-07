@@ -824,10 +824,27 @@ void PlayState::worldDrawLists() {
             castBones(playerMeshes, playerMeshAt, detail, -1, nullptr, &playerBoneIdx);
         nPlayer = blobs;
         shadowSpreadPlayer = shadowSpreadMax;   // his alone, before the rest
-        for (const auto& up : staged)
-            if (up->drawn && up->mo)
-                castBones(up->mo->meshes, up->meshAt, detail - 1, up->shadowRoot,
-                          up->gpu ? nullptr : &up->posed, &up->mo->boneIdx);
+        // ...but NOT while he flies Manuelle: `Game_Tick` runs
+        // `Slider_TickRide` INSTEAD of `Actors_TickAll` then (05_sys.c:2170,
+        // drift audit M5), and `Actor_DrawShadow` is called from inside the
+        // latter - so no actor casts one. The crowd's below are
+        // `Sliders_Tick`'s, which runs either way.
+        int frozenLeftOut = 0;
+        for (const auto& up : staged) {
+            if (!(up->drawn && up->mo)) continue;
+            if (ride) { ++frozenLeftOut; continue; }
+            castBones(up->mo->meshes, up->meshAt, detail - 1, up->shadowRoot,
+                      up->gpu ? nullptr : &up->posed, &up->mo->boneIdx);
+        }
+        {
+            static bool frozenTold = false;
+            if (ride && !frozenTold && frozenLeftOut > 0) {
+                frozenTold = true;
+                std::printf("frame %ld: slider: Manuelle drives - Actors_TickAll does not run, "
+                            "%d actor shadow(s) left out\n", n, frozenLeftOut);
+            }
+            if (!ride) frozenTold = false;
+        }
         nActor = blobs - nPlayer;
         // The crowd's, which is the other mechanism entirely.
         for (const auto& up : pedStaged) {

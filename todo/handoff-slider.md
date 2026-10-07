@@ -183,8 +183,10 @@ authored to meet, H_TAK031's +19.58 into H_PUT032's key 1 of +19.58).
 - **B12 rest**: the wall pass (`sub_417070`) for the slider modes; the
   Manuelle ride camera is still rigid (its heading changes smoothly, so less
   visible).
-- **M5** NPCs frozen while Manuelle drives — read, not ported (no single
-  `Actors_TickAll` in the port).
+- ~~**M5**~~ DONE 2026-10-07, NOT PLAYED: while Manuelle flies, the actors'
+  shadows are not cast and their head look-ats hold - the parts of
+  `Actors_TickAll` the port has; the scene extras keep moving, as in the
+  original (their programs run before the branch).
 - ~~the 11-degree bank~~ DONE 2026-10-07 (`engine: slider bank`), NOT PLAYED: the hull leans INTO the turn (+X, the rider's left, rises steering right; laid beside an unbanked frame).
 
 ## Instruments added on the way

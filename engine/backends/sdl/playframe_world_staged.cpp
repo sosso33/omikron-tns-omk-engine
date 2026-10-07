@@ -2766,10 +2766,13 @@ void PlayState::worldStaged() {
                 // and ease from wherever they are; with no target they
                 // ease back to 0 (`Actor_SetHeadLook(a, 0, 0)`), which the
                 // zeroing below stands in for.
+                // ...HELD while he flies Manuelle: the look is `Actors_
+                // TickAll`'s, which `Slider_TickRide` replaces (05_sys.c:2170,
+                // drift audit M5), so the angles at +432/+436 do not move
                 omk::aimHead(pose, s.mo->meshes, head, target, s.look,
-                             static_cast<float>(frameSec * 30.0), false);
+                             ride ? 0.0f : static_cast<float>(frameSec * 30.0), false);
             }
-        } else {
+        } else if (!ride) {
             s.look = omk::HeadLook{};
         }
         if (!s.placed) {
