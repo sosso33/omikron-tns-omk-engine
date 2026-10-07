@@ -597,6 +597,63 @@ at `102b751` (the M3's first 3DS build).
   HOME button on the way out - unconfirmed). GAME.MPG still "not
   decodable".
 
+### THE EIGHTH CONSOLE RUN - the five-run card session (the reader, 2026-10-07)
+
+`omk_play.3dsx` built from `842bd42` (in a clean worktree, so other
+sessions' uncommitted edits stayed off the card; smoke-run in Azahar first).
+Five runs on the street start (`--nofmv --save ... --area 0 --stand
+1804,0,-6890,336`), the reader walking into the dense part, 900-1740 frames
+each; the logs and both captures are outside the repo (the reader's
+`3DSruns/`). **No FATAL, no refused allocation, in any of the five**; the
+only ~1 s frames are the street's load (frame 2). The routes differ, so the
+runs are compared by DRAWS a pass (the `c3d` line's 60-pass windows from
+frame 119, binned), never window for window. "Frame" below is sim+draw plus
+the present (ms, mean of the bin):
+
+| run | 0-90 draws | 90-140 | 140+ | wait at `begin` (90-140 / 140+) | citro3d drawing (90-140 / 140+) | present |
+|---|---|---|---|---|---|---|
+| A one frame behind (the default) | 33.9 | 47.4 | 58.7 | 9.1 / 14.5 | 39.4 / 52.2 | 10.7-11.7 |
+| B `c3d-sync` | 52.8 | 62.9 | 78.9 | (its wait is at the transfer: 31 / 42) | 32.4 / 41.3 | 30-50 |
+| C `--res 400x224` (1:1) | 29.8 | 34.1 | 40.1 | 0.2 / 2.1 | 22.8 / 31.1 | 10.7-10.9 |
+| D = A + `capture-at` | 42.1 | 48.1 | 61.5 | 10.8 / 13.9 | 41.1 / 51.4 | 11-15 |
+| E `c3d-rgb565` | 33.6 | 46.9 | 53.8 | 12.6 / 15.5 | 40.9 / 48.4 | 6.9-8.3 |
+
+* **A against B - what the one-frame-behind present buys: ~25% of the
+  frame** (47 against 63 ms in the street, 59 against 79 dense; ~21 against
+  ~16 fps). Confirmed on the console; whether anything tears or lags to
+  the eye is the reader's to say.
+* **C - the GPU's side is largely FILL.** A quarter of the pixels cuts
+  citro3d's drawing by ~40% (39 -> 23, 52 -> 31) and the wait at `begin`
+  all but vanishes: the GPU keeps up at 400x224 and the frame is the CPU's
+  (~34 ms in the street, ~40 dense: ~29 and ~25 fps). Fitted as `a + b x
+  pixels` over the two sizes, the 800x448 dense frame is ~28 ms of fill and
+  ~24 of the rest (vertices, commands - growing with the draws), so fill is
+  about half: the target size is the larger lever and the draw count the
+  other. 400x224 has no 2x2 average (no anti-aliasing) and is still the
+  READER'S decision; `GX_TRANSFER_SCALE_X` alone (800x224 halved
+  horizontally) would be a middle point, half the pixels, not measured.
+* **E - the 16-bit present costs 4 ms less** (the dither loop 6.0 -> 1.8 ms,
+  the present 11 -> 7) and the GPU draws no faster in 565 (41/48 against
+  D's 41/51).
+* **D and E - the 16-bit QUESTION, by eye and by count** (`screen-301.bin`
+  of each, decoded 240-a-column, the content rows only, dark = green level
+  under 10 of 63; the ground enlarged 6x with the contrast raised). D, the
+  RGBA8 target with the CPU's 4x4 ordered dither, shows the fine regular
+  pattern: 36% of neighbouring dark pixels one level apart, identical runs
+  1.34 long. E, the RGB565 target, shows NO regular pattern - flat blotches
+  of one level, identical runs 2.32 long, 25% one level apart: the
+  posterised look of a 565 picture without a dither. So by the plan's rule
+  (a fine pattern = the PICA dithers) **it does not, as seen**. One caveat
+  this capture cannot close: E's 800x448 picture reaches the screen through
+  the transfer's 2x2 average, which would smear a GPU dither; E at
+  `--res 400x224` (1:1, nothing averaged) is the clean test if it matters.
+  The default is the reader's choice (16-bit: 4 ms faster, posterised;
+  RGBA8 + CPU dither: the original's DITHERENABLE look).
+* The rest: the frontend's copy 2.7 ms median (1.4 in B), the panel's redraw
+  ~13.5 ms median twice a second (8 in B) - larger than the seventh run's
+  6-15 and still a CPU cost worth cutting (section 4 of the handoff, item 4).
+  The film copy was not measured (every run `--nofmv`).
+
 ### Step 4 - the memory fit
 
 The `.cia`'s memory mode in the exheader; textures in the linear heap at 2

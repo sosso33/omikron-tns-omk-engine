@@ -1,4 +1,4 @@
-# Handoff — the NINTENDO 3DS PORT (begun 2026-10-05, updated 2026-10-06 evening)
+# Handoff — the NINTENDO 3DS PORT (begun 2026-10-05, updated 2026-10-07)
 
 **Read this first to pick up the 3DS.** [`3ds-port.md`](3ds-port.md) is the
 plan (its steps 0-10) and the running record - every console run, every
@@ -36,6 +36,14 @@ specific code".
   22-36 -> ~10 ms: the dither loop 5-6 ms, the frontend's copy 1.5-2.9 ms
   (tiled), the films' and menus' 2:1 copy 7.7 ms (tiled since, not yet on
   the console).
+* **The eighth run (2026-10-07, the five-run card session, `3ds-port.md`)**:
+  the one-frame-behind present CONFIRMED on the console (~25% of the frame:
+  47 against 63 ms in the street); the GPU's side is about HALF FILL
+  (`--res 400x224` cuts citro3d's drawing ~40% and the frame to ~34 ms);
+  the RGB565 target saves 4 ms of present and shows NO dither pattern
+  (posterised blotches) where the RGBA8 + CPU dither shows its fine one.
+  Both decisions - the 16-bit default and the target size - are the
+  reader's, and wait on them.
 * **The straight present runs ONE FRAME BEHIND** (the reader's decision,
   2026-10-06: "a 1 frame delay is acceptable for this kind of game"): the
   GPU draws frame N while the CPU shows N-1. Before, it read its buffer
@@ -152,7 +160,12 @@ told apart from `c3d-sync`.
 
 Decode a capture: raw little-endian RGB565, the size in the log line.
 
-## 3. Waiting on the reader - ONE card session
+## 3. Waiting on the reader - ONE card session (DONE 2026-10-07)
+
+Run on `842bd42`; the results are `3ds-port.md`'s EIGHTH run. Still owed
+from it: one run WITH the films (the 2:1 copy), and - only if the 16-bit
+question needs it - E at `--res 400x224` (1:1, so the transfer's 2x2
+average cannot hide a GPU dither). The checklist as it was run:
 
 Copy the current `omk_play.3dsx` (and keep its `.elf`), then run the street
 start (`args.txt` above, with `--nofmv`), walking into the dense part, once
@@ -173,12 +186,13 @@ log; the `.elf` of that build names its line (section 5).
 
 ## 4. What to do next, in order
 
-1. **Read the card session's logs** (section 3) and decide the 16-bit default
-   with the reader.
-2. **The GPU's side** in the dense street (52 ms drawing at ~220 draws): run
-   C says whether it is fill. If it is, the target size is the lever (and a
-   reader's decision, since 800x448 is their default); if not, the vertices
-   and the draw count.
+1. **The reader's two decisions** from the eighth run: the 16-bit default
+   (565: 4 ms faster, posterised; RGBA8 + CPU dither: the original's look),
+   and the target size (fill is about half the GPU's 52 ms dense; 400x224
+   gets ~34 ms frames without anti-aliasing; `GX_TRANSFER_SCALE_X` from
+   800x224 is an unmeasured middle point).
+2. **The GPU's other half** (~24 ms dense at 800x448, growing with the
+   draws): the vertices and the draw count.
 3. **Zero-copy present**: render the world ROTATED (the screens' own
    orientation) so the display transfer writes straight into the top
    framebuffer - no dither loop, no frontend copy, and it keeps the
