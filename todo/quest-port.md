@@ -711,6 +711,9 @@ so). The reader asked for the useful ones only. Now:
 * 1.3x with 4x MSAA: 60-65 fps, the GPU at 11-12 ms - more than a Quest 2
   draws at 72 Hz. **1.1x (1584x1742) with 4x MSAA: 72 fps in 11 of 12
   seconds** (the twelfth a slow frame), the GPU 7.3-9.7 ms.
+* **THE DEFAULT STAYS 1.0x** (1440x1584, the runtime's own): the reader's
+  decision the same day, with 1.1x measured at 72. Higher is the resolution
+  row's, per session.
 
 **THE SLOW FRAMES are now the most visible fault**: 74-278 ms, a few a minute
 in Anekbah's street, at varying places, some repeating at one spot while
