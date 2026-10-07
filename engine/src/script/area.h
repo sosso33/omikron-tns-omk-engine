@@ -413,6 +413,10 @@ public:
                   const float base[3], float reach);
     // the actor a slot was registered for by `actorBody`, or -1
     int actorOfBodySlot(int slot) const;
+    // `Actor_Detach` (0x0041CDD0): `if (+1298 != -1) { sub_45E090(node);
+    // +1298 = -1; }` - a hidden actor's body leaves the index. No-op for an
+    // actor that has none.
+    void dropActorBody(int actor);
     // `character.look_at_player` (138) / `character.look_away` (139): the
     // actor's look-at slot (+400, slot 100) set to the player / cleared.
     // `Actors_TickAll` aims his head at it every frame (`aimHead`, pose.h);

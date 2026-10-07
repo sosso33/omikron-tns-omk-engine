@@ -41635,6 +41635,52 @@ def c_engine_become_place():
            "many of Sham.CTL's tracks bind to SHU_FN by key"
 
 
+def c_engine_actor_body():
+    r"""EVERY SHOWN CHARACTER IS SOLID (`todo/scene-gameplay-audit.md` 19).
+
+    `Actor_Attach` (0x0041CCA0) registers every attached actor in the spatial
+    index (`sub_45DFF0(node, x, y, z)`) and `Actor_Detach` (0x0041CDD0) takes
+    it out (`sub_45E090`); the player's `SpatialIndex_Query` pushes him off
+    each one by its sphere list (`sub_45E390`). The port registered only the
+    shoot gunmen, so the player walked through every other character - the
+    reader, 2026-10-07: "the Mecaguards and the Sham have no collider". Now
+    every staged body but the player's own; a scene actor's spheres hung from
+    its PELVIS and turned by the yaw it is drawn with, since that is where its
+    vertices go (the Sham's pelvis is 25 units off its model origin - hung
+    from the node, the spheres sat behind the drawn body).
+
+    Kay'l walks east into the Sham's flank in AREA 137 (`--character-show
+    424:0x7d`, its own standing program): he must be pushed by actor 424 and
+    stop at the flank. SHOWN TO FAIL: the old gate (gunmen only) lets him
+    through to x 33326 with no push at all; registered but hung from the node
+    (base 0, `facing`), he grazed the Sham's rear sphere (0.06) and still
+    reached 33326 - measured 2026-10-07, before the pelvis hang.
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    o = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"), "--save",
+         os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "137",
+         "--stand", "33183,1044,-4412,90", "--character-show", "424:0x7d",
+         "--hold", "0*20,k200*120", "--frames", "160"],
+        capture_output=True, encoding="latin-1",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+    out = o.stdout
+    pushed = sorted(set(_re.findall(r"pushed out of actor (\d+)'s body", out)))
+    end = _re.findall(r"^player: ends at (\S+) \S+ (\S+)", out, _re.M)
+    if not end:
+        return (pushed, None), (["424"], "stopped"), "the run must end with the player's line"
+    x = float(end[-1][0])
+    return (pushed, x < 33240.0), (["424"], True), \
+           "the bodies that pushed the player, and whether he stopped at the Sham's flank " \
+           "(x under 33240; through it he reaches 33326)"
+
+
 def c_engine_gandhar():
     r"""GANDHAR'S BRAIN (`todo/gandhar.md` step 1, `engine/src/actor/gandhar.h`).
 
@@ -45389,6 +45435,7 @@ SLOW = [
     (".3DM files",         c_morphs,            "FILE_FORMATS 5"),
     (".ani quaternions",   c_ani_quaternions,   "ASSETS"),
     ("engine: become place", c_engine_become_place, "todo/scene-gameplay-audit.md 3; script/area.cpp"),
+    ("engine: actor body", c_engine_actor_body, "todo/scene-gameplay-audit.md 19; script/area.h"),
 ]
 
 

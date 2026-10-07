@@ -3414,9 +3414,16 @@ void PlayState::worldStaged() {
         // alike. At the model's origin (`off`) the entry sat ~40 above
         // the floor and the reach box, `max(|dx|,|dy|,|dz|) <= the two
         // root radii` (~28), refused every gunman on the height alone.
-        // NOT PORTED, labelled: every other actor, which `Actor_Attach`
-        // registers too; the dead stay registered, as nothing read
-        // removes them.
+        // And EVERY OTHER ACTOR (2026-10-07, a reader: "the Mecaguards
+        // and the Sham have no collider"): `Actor_Attach` (0x0041CCA0)
+        // registers every attached actor, `sub_45DFF0(node, x, y, z)`,
+        // and `Actor_Detach` removes it (`dropActorBody`, where the
+        // viewer parks or drops a body). Not the player's own body - a
+        // program-driven player is staged here and his query would
+        // shove him out of himself. The dead stay registered, as
+        // nothing read removes them. LABELLED: a body is registered the
+        // first frame it is posed, where the engine registers it at the
+        // attach - a body never yet in view has no entry.
         // His spheres are the model's meshes', which a scene actor's
         // file authors far off its origin (VIR_FN's first at x 564.7),
         // so they are RE-HUNG from the model-space point that stands
@@ -3426,17 +3433,26 @@ void PlayState::worldStaged() {
         // his ROOT mesh's radius, the sweep's and the model's `+88`
         // (docs/STREET_LIFE.md 3) - not `meshes.front()`, which for
         // VIR_FN is a 7-unit mesh and shut the box at 14 units.
-        if (shootMode && shootBrains.count(s.actor)) {
+        if (s.actor != session.playerActor()) {
             const float bodyAt[3] = {s.drawAt[0], off[1] + feet, s.drawAt[2]};
             // (since B5 his list is the model's own, already hung from
             // the feet by `Session::modelSpheres` - node-relative in x/z,
             // so nothing to re-hang: the base is the origin)
-            const float bodyBase[3] = {0.0f, 0.0f, 0.0f};
-            (void)pelvis;
+            // Every OTHER body is drawn turned about its PELVIS
+            // (`drawAt + R(p - pelvis)`, above), and a scene actor's
+            // pelvis is not at its model origin - the Sham's is 25 units
+            // off - so its spheres are hung from the pelvis and turned
+            // by the yaw it is DRAWN with. At the node with `facing`
+            // they sat behind the drawn Sham and the player walked
+            // through its flank.
+            const bool gunman = shootMode && shootBrains.count(s.actor);
+            const float bodyBase[3] = {gunman ? 0.0f : pelvis[0], 0.0f,
+                                       gunman ? 0.0f : pelvis[2]};
+            const float bodyYawNow = gunman ? s.facing : s.drawnYaw;
             const float bodyReach =
                 (s.mo->root >= 0 && static_cast<std::size_t>(s.mo->root) < s.mo->meshes.size())
                     ? s.mo->meshes[static_cast<std::size_t>(s.mo->root)].radius : 0.0f;
-            session.actorBody(s.actor, s.model, bodyAt, s.facing, bodyBase, bodyReach);
+            session.actorBody(s.actor, s.model, bodyAt, bodyYawNow, bodyBase, bodyReach);
         }
         s.posed.revision = ++worldGeoRev;
         s.drawn = true;

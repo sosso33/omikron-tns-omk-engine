@@ -4374,6 +4374,14 @@ int Session::actorBody(int actor, const std::string& model, const float origin[3
     return it->second;
 }
 
+void Session::dropActorBody(int actor) {
+    const auto it = actorBodySlots_.find(actor);
+    if (it == actorBodySlots_.end()) return;
+    spatial_.remove(it->second);
+    actorBodySlots_.erase(it);
+    actorBodySpheres_.erase(actor);
+}
+
 int Session::actorOfBodySlot(int slot) const {
     for (const auto& [actor, s] : actorBodySlots_)
         if (s == slot) return actor;

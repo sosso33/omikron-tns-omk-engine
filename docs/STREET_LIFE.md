@@ -740,7 +740,7 @@ the reservation groups the vehicles now share with it.)
 | zone lines to passers-by | zones + `voiceover` | done, never watched on a street |
 | `character.look_at_player` head aim | `Session::looksAtPlayer`, `aimHead` (pose.h), the viewer | ported (`engine: head look`); to be watched |
 | the `.OPT` pedestrians and the density option | `formats/opt.*`, `actor/pedestrians.*`, `Session::loadTraffic` | ported and run headless; drawing is step 4 |
-| the crowd push | `actor/spatial.*`, `Session::crowdPush` | ported; the bump and talk messages post |
+| the crowd push | `actor/spatial.*`, `Session::crowdPush` | ported; the bump and talk messages post; since 2026-10-07 every shown CHARACTER is a body in the index too (`Actor_Attach` registers every attached actor) - they had been the shoot gunmen alone, and the player walked through the rest (`engine: actor body`) |
 | the road traffic (§2b) | `actor/vehicles.cpp`, the vehicle masks in `Session::loadTrafficFor`, staged by `omk-play` | ported, drawn and seen (`engine: road traffic`, `engine: traffic frame`); the pace and the corners still unwatched |
 | the player riding a slider | - | not ported: `Slider_TickRide`, `ACTOR_STATE` 7/8, `sub_456530` states 1..7 |
 | a way to stand in a street without replaying the intro | `omk-play` | nothing |

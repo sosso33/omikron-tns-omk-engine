@@ -353,6 +353,7 @@ int PlayState::phaseWorld() {
                     std::printf("frame %ld: hid actor %d %s - kept where it stands "
                                 "(Actor_Detach)\n", n,
                                 staged[k]->actor, staged[k]->model.c_str());
+                    session.dropActorBody(staged[k]->actor);    // `Actor_Detach`'s `sub_45E090`
                     parked.push_back(std::move(staged[k]));
                     staged.erase(staged.begin() + static_cast<long>(k));
                     ++poolComposition;
@@ -360,6 +361,7 @@ int PlayState::phaseWorld() {
                 }
                 std::printf("frame %ld: dropped actor %d %s\n", n,
                             staged[k]->actor, staged[k]->model.c_str());
+                session.dropActorBody(staged[k]->actor);
                 staged.erase(staged.begin() + static_cast<long>(k));
                 ++poolComposition;
             }
