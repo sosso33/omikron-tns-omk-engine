@@ -41716,6 +41716,51 @@ def c_engine_zone_run():
            "record 34's cast, each posed by its own scene program"
 
 
+def c_engine_meca_react():
+    r"""A MECAGUARD RAISES HIS WEAPON AS YOU WALK UP (`todo/scene-gameplay-audit.md`).
+
+    The reader, 2026-10-07: in adventure mode a Mecaguard raises its weapon
+    with a small sound when the player approaches, no key pressed. It is
+    DATA, read 2026-10-07: Jaunpur (AREA 1) has a zone in front of each of
+    its four guards (269-272, records 125-128) whose ENTER script runs
+    `scx.play.actor <guard>, MecagardNN_Up` and whose LEAVE runs `..._Dwn`.
+    In `Jaunpur.SCX` Up is one `Script_SelectRelativeBodyAnimation` of clip
+    27 `10MEHA1.3DA` synced to `Script_PlaySound` 44 `SCCS-3M1.WAV`, Dwn clip
+    26 `10MEHA5.3DA` with sound 45 - loop 1, so he holds the raised pose
+    while the player stays. The zone arms only when the player FACES into its
+    arc (`Actor_ScanZones`). Anekbah's five guards have no such zone and no
+    such object, so they do not react in the original either.
+
+    Kay'l walks north into zone 269 in front of guard 163, waits, and backs
+    out: Up's sound and clip, then Dwn's. SHOWN TO FAIL: started facing away
+    (`OMK_CHECK_MECA_FACING=0`) he walks off the other way, the zone never
+    arms and nothing plays.
+    """
+    import subprocess, re as _re
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    facing = os.environ.get("OMK_CHECK_MECA_FACING", "176")
+    o = subprocess.run(
+        [play, fr, os.path.join(ROOT, "tables"), "--save",
+         os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "1",
+         "--stand", "9420,-130,13980," + facing, "--no-crowd",
+         "--hold", "0*30,k200*100,0*120,k208*160,0*60", "--frames", "420"],
+        capture_output=True, encoding="latin-1",
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+    seq = []
+    for m in _re.finditer(r"scene-sound\s+\S+ s\s+\((\d+), (\d+)\)|"
+                          r"pose: actor 163 MCG_FN - clip (\d+) '([^']+)'", o.stdout):
+        item = ("sound", m.group(1)) if m.group(1) else ("clip", m.group(4))
+        if item[0] == "sound" or item[1] != "2-05MECA.3DA":
+            seq.append(item)
+    return seq, [("sound", "44"), ("clip", "10MEHA1.3DA"), ("sound", "45"), ("clip", "10MEHA5.3DA")], \
+           "walking into zone 269 and back out: what guard 163's zone plays, in order"
+
+
 def c_engine_gandhar():
     r"""GANDHAR'S BRAIN (`todo/gandhar.md` step 1, `engine/src/actor/gandhar.h`).
 
@@ -45472,6 +45517,7 @@ SLOW = [
     ("engine: become place", c_engine_become_place, "todo/scene-gameplay-audit.md 3; script/area.cpp"),
     ("engine: actor body", c_engine_actor_body, "todo/scene-gameplay-audit.md 19; script/area.h"),
     ("engine: zone run", c_engine_zone_run, "todo/scene-gameplay-audit.md 20; script/area.h"),
+    ("engine: meca react", c_engine_meca_react, "todo/scene-gameplay-audit.md; docs/SCRIPT_VM.md"),
 ]
 
 

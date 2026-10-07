@@ -744,3 +744,29 @@ the reservation groups the vehicles now share with it.)
 | the road traffic (§2b) | `actor/vehicles.cpp`, the vehicle masks in `Session::loadTrafficFor`, staged by `omk-play` | ported, drawn and seen (`engine: road traffic`, `engine: traffic frame`); the pace and the corners still unwatched |
 | the player riding a slider | - | not ported: `Slider_TickRide`, `ACTOR_STATE` 7/8, `sub_456530` states 1..7 |
 | a way to stand in a street without replaying the intro | `omk-play` | nothing |
+
+## The Mecaguards' raised weapon - zones, not code (read 2026-10-07)
+
+A reader: in adventure mode a Mecaguard raises its weapon with a small sound
+as the player walks up, no key pressed. No engine code does this (searched:
+`Actors_TickAll` has no NPC proximity test, an NPC in ACTOR_STATE 4 only polls
+`ScriptObject_IsBusy`, `SpatialIndex_Query` posts nothing, the `.CTL` effect
+sounds run for the player and the fight opponent only, and none of the 17
+scene functions tests a distance). It is DATA. Jaunpur (AREA 1) has a zone in
+front of each of its four guards - 269..272, records 125..128, about 4 x 5 m,
+armed only when the player FACES into its ~150-degree arc (`Actor_ScanZones`)
+- whose ENTER script runs `scx.play.actor <guard>, MecagardNN_Up` and whose
+LEAVE runs `..._Dwn`; ACTIVATE is the "No Comment" / "CS Lev0" voice line. In
+`Jaunpur.SCX` (objects 143..150, loop 1) Up is a
+`Script_SelectRelativeBodyAnimation` of clip 27 `10MEHA1.3DA` (35 frames)
+synced to `Script_PlaySound` 44 `SCCS-3M1.WAV`, Dwn clip 26 `10MEHA5.3DA` with
+sound 45 `SCCS-3M2.WAV`. `ScriptObject_StartOnActor` stops the looping
+`MecaNN_Std` idle and the loop-1 program leaves him in its last frame, so he
+HOLDS the weapon up while the player stays and holds it down after - the idle
+is never restarted, and the reaction re-arms on every entry. Anekbah's five
+guards have none of it (`anekbah.SCX` carries only their idles), so they do
+not react in the original either. AREA 157 (the well) does the same as
+cutscenes (`1_/2_Meca_Nv0`, with a camera); `qchaud.SCX` (Qalisar) carries ten
+`1MecaNa/b_*` objects that nothing starts - cut. The port runs all of it:
+`verify.py: engine: meca react` walks into zone 269 and back out.
+
