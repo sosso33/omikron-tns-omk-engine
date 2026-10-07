@@ -246,10 +246,43 @@ and filtered, shown to fail by both rules removed. NOT covered: the
 conversation's reply list, which is not a `walk` screen - if a held stick
 runs down the replies too, that is where.
 
+**Report 3, the street after an interior - two causes found and fixed,
+installed 2026-10-07 21:06, NOT yet played.** Neither is the headset's: the
+flat game has both.
+
+* **The effects' random textures = the texture pool past 64** (`f4c6cf9`).
+  The run's own `WARNING: texture pool is 72` (26 set + 43 character + 3
+  sprite at the screenshots): the sprites at 69..71 bound slots 5..7, set
+  textures - the street lights' glow in stone. The engine's six-bit slot
+  never wraps (58 slots); this port's pool does, so the full index now rides
+  above the 14-bit key (`omk::drawTextureSlot`, all five renderers).
+  `engine: pool past 64` (`OMK_POOL_PAD=64`, software and GLES). Why the
+  headset's pool grew so large is NOT settled: 43 character textures for 10
+  models where a fresh street has 14 for 7 - the kept player model (hidden
+  in first person) and the last speaker's are the likely two; harmless now.
+* **The T-poses = walkers drawn from FREED tracks** (this commit). A
+  walker's `p.tracks` points into `pedTracks`, which a new animation library
+  clears; it was rebound only when its CLIP POINTER changed, and the circuit's
+  clips are copy-assigned into the same vectors on a reload, so the same
+  index keeps the same address. The run's route was Anekbah -> the sewer
+  (area 157, its own 8 walkers and library) -> 218 -> Anekbah. Now a
+  library change rebinds every walker (`pedCacheGen`), and `shootClips` - the
+  gunmen's descriptors into the old library - is cleared with the rest. NOT
+  reproduced on the desktop (the route is long); the evidence is the code
+  and the route. **Two new log lines confirm it on the next play**:
+  `crowd library - ANIMS/X.ANI ... generation G` at each change and
+  `crowd library - N walker(s) rebound ... though their clip pointer was
+  unchanged` - N above 0 is the fault caught. A first desktop look at the
+  staged extras in `--vr-sim` read a GESTURE as a T-pose; it was not.
+* **"More npcs than normal"** - not changed. Two things add bodies in this
+  run: five more scripted extras (59, 62, 63, 69, 70) are staged in Anekbah
+  from the shoot's story state on, and since today's `engine: crowd reach`
+  the walkers are drawn to the clip distance, not cut at 40 m. If it is
+  something else, say where.
+
 **The order for the rest** (one at a time, each played before the next):
 2. ~~the menu stick~~ - done above;
-3. the street after an interior (T-poses, effect textures, extra npcs) -
-   first whether the flat game does it too;
+3. ~~the street after an interior~~ - above;
 4. the shoot strafe - first what the original's shoot scheme binds;
 5. the keyboard (6c).
 

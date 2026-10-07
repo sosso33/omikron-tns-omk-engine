@@ -26,7 +26,13 @@ void PlayState::worldCrowd() {
             pedAni = fs.read("ANIMS/" + rs.ani + ".ANI");
             pedTracks.clear();
             pedLodTracks.clear();
+            // ...and the shoot groups' clip lists, which are DESCRIPTORS into
+            // the library just replaced (`shootClipBySlot`)
+            shootClips.clear();
             ++pedCacheGen;
+            std::printf("frame %ld: crowd library - ANIMS/%s.ANI (%zu bytes), "
+                        "the track caches cleared (generation %ld)\n", n, rs.ani.c_str(),
+                        pedAni.size(), pedCacheGen);
         }
         const auto& ws = pd.movers();
         if (pedStaged.size() != ws.size()) {
@@ -65,6 +71,7 @@ void PlayState::worldCrowd() {
         pedFootOffMax = 0.0f;
         pedJobs.clear();
         const double pedSerial0 = phaseNow();
+        int pedRebound = 0;   // walkers whose clip pointer survived a library change
         for (std::size_t i = 0; i < ws.size(); ++i) {
             const auto& w = ws[i];
             PedStaged& p = *pedStaged[i];
@@ -91,7 +98,15 @@ void PlayState::worldCrowd() {
                 ++pedOffView;
                 continue;
             }
-            if (w.clip != p.clipWas) {
+            // REBOUND WHEN THE LIBRARY CHANGES, not only when the clip
+            // pointer does. `p.tracks` points INTO `pedTracks`, which a new
+            // library clears; the walkers' clips are rebuilt at the same
+            // time, and a new clip at the freed one's address left the
+            // pointer test equal - the walker drawn from freed tracks. The
+            // Quest, 2026-10-07: back in Anekbah from an interior, "all npc
+            // in the streets are T-posed".
+            if (w.clip != p.clipWas || p.cacheGen != pedCacheGen) {
+                if (w.clip == p.clipWas && p.cacheGen != pedCacheGen) ++pedRebound;
                 p.clipWas = w.clip;
                 p.tracks = pedTracksFor(w.sex, *w.clip, p.mo->meshes);
             }
@@ -160,6 +175,10 @@ void PlayState::worldCrowd() {
             pedJobs.push_back(job);
         }
         phSpan["ped serial"] += phaseNow() - pedSerial0;
+        if (pedRebound)
+            std::printf("frame %ld: crowd library - %d walker(s) rebound after the library change "
+                        "though their clip pointer was unchanged (their tracks were the cleared "
+                        "cache's)\n", n, pedRebound);
         // ---- THE BODIES, which may run on several cores -----------
         //
         // The pass above is the SERIAL half and it is serial for a
