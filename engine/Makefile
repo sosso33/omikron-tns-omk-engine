@@ -37,6 +37,16 @@ CXX      ?= c++
 # not a disabled frontend.
 CXXFLAGS ?= -std=c++20 -O2 -Wall -Wextra -Wpedantic -Isrc -Ithird_party
 DEPFLAGS := -MMD -MP
+# VR (`todo/quest-port.md` §5): `VR=1` (the default here) defines OMK_VR for
+# every object of this Makefile - `src/vr/`, `backends/vr/`, and the few
+# `#if OMK_VR` lines at the renderer and the frontend. The Vita, the classic
+# Mac, the 3DS and the PowerPC builds have their own build files, never define
+# it, and compile `src/vr/` empty and `backends/sdl/playvr_off.cpp`'s stubs.
+# `override`, so `make release`'s CXXFLAGS on the command line keep it.
+VR ?= 1
+ifeq ($(VR),1)
+override CXXFLAGS += -DOMK_VR=1
+endif
 
 SRC   := $(wildcard src/*/*.cpp)
 # `run_vulkan.cpp` is EXCLUDED from the default set on purpose: it links the
@@ -48,6 +58,13 @@ TOOLS := $(filter-out tools/run_vulkan.cpp tools/shadow_probe.cpp tools/perpixel
 BINS  := $(patsubst tools/%.cpp,build/%,$(TOOLS))
 
 OBJDIR   ?= build/obj
+# OMK_VR CHANGES STRUCT LAYOUTS (`RCamera`, `PlayState`), and make does not
+# track flags: an object built with one value linked beside one built with the
+# other is memory corruption, not a stale feature. So the object tree records
+# the VR value it was built with, and a different one empties it first.
+ifneq ($(shell cat $(OBJDIR)/.vr 2>/dev/null),$(VR))
+$(shell rm -rf $(OBJDIR) && mkdir -p $(OBJDIR) && echo $(VR) > $(OBJDIR)/.vr)
+endif
 # the viewer's binary - `make release` puts its own elsewhere
 PLAY_BIN ?= build/omk-play
 SRCOBJS  := $(patsubst %.cpp,$(OBJDIR)/%.o,$(SRC))
@@ -173,9 +190,23 @@ $(INSTR_STAMP):
 	@touch $@
 # ...and THE GPU WINDOW, one file per variant (todo/play-split.md S5): the
 # code that talks to a backend lives there, so the rest carries no #if for it
-PLAY_SW_OBJS := $(PLAY_SDL_SRCS:backends/sdl/%.cpp=$(PLAY_SW_DIR)/%.o) $(PLAY_SW_DIR)/playgpu_none.o
-PLAY_VK_OBJS := $(PLAY_SDL_SRCS:backends/sdl/%.cpp=$(PLAY_VK_DIR)/%.o) $(PLAY_VK_DIR)/playgpu_vulkan.o
-PLAY_GL_OBJS := $(PLAY_SDL_SRCS:backends/sdl/%.cpp=$(PLAY_GL_DIR)/%.o) $(PLAY_GL_DIR)/playgpu_gles.o
+# ...and the VR half (`backends/vr/`), whose files compile empty without OMK_VR
+PLAY_VR_SRCS := $(wildcard backends/vr/*.cpp)
+PLAY_SW_OBJS := $(PLAY_SDL_SRCS:backends/sdl/%.cpp=$(PLAY_SW_DIR)/%.o) $(PLAY_SW_DIR)/playgpu_none.o \
+                $(PLAY_VR_SRCS:backends/vr/%.cpp=$(PLAY_SW_DIR)/%.o)
+PLAY_VK_OBJS := $(PLAY_SDL_SRCS:backends/sdl/%.cpp=$(PLAY_VK_DIR)/%.o) $(PLAY_VK_DIR)/playgpu_vulkan.o \
+                $(PLAY_VR_SRCS:backends/vr/%.cpp=$(PLAY_VK_DIR)/%.o)
+PLAY_GL_OBJS := $(PLAY_SDL_SRCS:backends/sdl/%.cpp=$(PLAY_GL_DIR)/%.o) $(PLAY_GL_DIR)/playgpu_gles.o \
+                $(PLAY_VR_SRCS:backends/vr/%.cpp=$(PLAY_GL_DIR)/%.o)
+$(PLAY_SW_DIR)/%.o: backends/vr/%.cpp
+	@mkdir -p $(@D)
+	$(CXX) $(CXXFLAGS) $(DEPFLAGS) $(PLAY_SW_FLAGS) -c -o $@ $<
+$(PLAY_VK_DIR)/%.o: backends/vr/%.cpp | $(VK_SHADERS)
+	@mkdir -p $(@D)
+	$(CXX) $(CXXFLAGS) $(DEPFLAGS) $(PLAY_VK_FLAGS) -c -o $@ $<
+$(PLAY_GL_DIR)/%.o: backends/vr/%.cpp
+	@mkdir -p $(@D)
+	$(CXX) $(CXXFLAGS) $(DEPFLAGS) $(PLAY_GL_FLAGS) -c -o $@ $<
 
 $(PLAY_SW_DIR)/%.o: backends/sdl/%.cpp
 	@mkdir -p $(@D)

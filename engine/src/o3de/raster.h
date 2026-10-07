@@ -104,6 +104,20 @@ struct RCamera {
     // flag is set and leaves y alone, so the mirror pass wants this one: negate
     // the right vector AFTER `u` has been taken from the unflipped basis.
     bool  flipX = false;
+#if OMK_VR
+    // AN OFF-AXIS FRUSTUM, for a headset's eye (`todo/quest-port.md` §5 step
+    // 1) - nothing the engine does, and compiled only into a VR build. An
+    // OpenXR eye's field of view is four angles, not one: the frustum is
+    // asymmetric (wider on the outer side) and its height is not the width
+    // over the aspect. So: `tanHalfV` replaces the derived vertical half-tangent
+    // when it is above 0, and `lensX`/`lensY` move the frustum's centre, in
+    // tangent units - screen x = w/2 * (1 + (vx/vz - lensX) / tanHalfH), y the
+    // same with `lensY` and `tanHalfV`, +y up. All zero is today's camera to
+    // the bit. Honoured by the software reference, GLES and Vulkan; the GL 1.x
+    // and 3DS backends never get a VR camera.
+    float lensX = 0.0f, lensY = 0.0f;
+    float tanHalfV = 0.0f;
+#endif
 };
 
 struct Projected {

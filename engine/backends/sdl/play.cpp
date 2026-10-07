@@ -45,6 +45,7 @@ int PlayState::run(int argc, char** argv) {
     // THE SETUP, in order (`playsetup_<section>.cpp`, todo/play-split.md)
     int r = -1;
     if ((r = setupOptions(argc, argv)) != -1) return r;
+    vrSetup(argc, argv);   // the --vr-* flags (backends/vr; empty without OMK_VR)
     // the profiler (`--profile`, todo/debug-tools.md): the setup is FRAME -1,
     // each section a zone; then one capture frame per `step`
     omk::prof::beginFrame(-1);

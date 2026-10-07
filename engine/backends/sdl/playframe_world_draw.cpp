@@ -1146,6 +1146,8 @@ void PlayState::worldMirror() {
         for (int k = 0; k < 3; ++k) drawn.fogColour[k] = static_cast<std::uint8_t>(y);
         omk::greyClear565(view.clearColour, drawn.clearColour);
     }
+    // a headset's two eyes, drawn there instead (backends/vr; empty without OMK_VR)
+    if (vrWorldDraw(drawn, noMirror ? omk::MirrorPlane{} : wmp)) return;
     const auto mst = omk::drawWithMirror(world, draws, drawn,
                                          noMirror ? omk::MirrorPlane{} : wmp);
     mark("world begin..end (submit, GL)");

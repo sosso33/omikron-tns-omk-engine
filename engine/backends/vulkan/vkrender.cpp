@@ -2149,10 +2149,23 @@ void VulkanRenderer::pushView(const omk::View& view) {
     // view = R * (world - eye), R's rows are s, u, f. Folded into one matrix,
     // COLUMN-major as GLSL wants it.
     const float e[3] = {cam.eye[0], cam.eye[1], cam.eye[2]};
+#if OMK_VR
+    // A VR eye's off-axis frustum (`RCamera::lensX`/`lensY`), as GLES's: the
+    // rows take `- lens * f`, and 0 leaves them bit-identical.
+    const float lx = cam.lensX, ly = cam.lensY;
+    const float fe0 = f[0] * e[0] + f[1] * e[1] + f[2] * e[2];
+    const float r0[4] = {(s[0] - lx * f[0]) / tanH, (s[1] - lx * f[1]) / tanH,
+                         (s[2] - lx * f[2]) / tanH,
+                         (-(s[0] * e[0] + s[1] * e[1] + s[2] * e[2]) + lx * fe0) / tanH};
+    const float r1[4] = {-(u[0] - ly * f[0]) / tanV, -(u[1] - ly * f[1]) / tanV,
+                         -(u[2] - ly * f[2]) / tanV,
+                         ((u[0] * e[0] + u[1] * e[1] + u[2] * e[2]) - ly * fe0) / tanV};
+#else
     const float r0[4] = {s[0] / tanH, s[1] / tanH, s[2] / tanH,
                          -(s[0] * e[0] + s[1] * e[1] + s[2] * e[2]) / tanH};
     const float r1[4] = {-u[0] / tanV, -u[1] / tanV, -u[2] / tanV,
                          (u[0] * e[0] + u[1] * e[1] + u[2] * e[2]) / tanV};
+#endif
     const float r2[4] = {A * f[0], A * f[1], A * f[2],
                          -A * (f[0] * e[0] + f[1] * e[1] + f[2] * e[2]) + B};
     const float r3[4] = {f[0], f[1], f[2],

@@ -838,6 +838,7 @@ void PlayState::worldCamera() {
     lastFov = view.cam.hfovDeg;
     lastRoll = view.cam.rollDeg;
     haveLastDrawn = true;
+    vrAfterWorldCamera();   // a headset's eyes on this camera (backends/vr; empty without OMK_VR)
 }
 
 // The texture pool

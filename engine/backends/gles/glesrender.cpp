@@ -2301,8 +2301,19 @@ void GlesRenderer::setView(const View& view) {
     const float se = s[0] * e[0] + s[1] * e[1] + s[2] * e[2];
     const float ue = u[0] * e[0] + u[1] * e[1] + u[2] * e[2];
     const float fe = f[0] * e[0] + f[1] * e[1] + f[2] * e[2];
+#if OMK_VR
+    // A VR eye's off-axis frustum (`RCamera::lensX`/`lensY`): x_ndc =
+    // (vx/vz - lensX)/tanH, so the row is (s - lensX f)/tanH - and 0 leaves
+    // the row bit-identical.
+    const float lx = cam.lensX, ly = cam.lensY;
+    const float r0[4] = {(s[0] - lx * f[0]) / tanH, (s[1] - lx * f[1]) / tanH,
+                         (s[2] - lx * f[2]) / tanH, (-se + lx * fe) / tanH};
+    const float r1[4] = {(u[0] - ly * f[0]) / tanV, (u[1] - ly * f[1]) / tanV,
+                         (u[2] - ly * f[2]) / tanV, (-ue + ly * fe) / tanV};
+#else
     const float r0[4] = {s[0] / tanH, s[1] / tanH, s[2] / tanH, -se / tanH};
     const float r1[4] = {u[0] / tanV, u[1] / tanV, u[2] / tanV, -ue / tanV};
+#endif
     const float r2[4] = {A * f[0], A * f[1], A * f[2], -A * fe + B};
     const float r3[4] = {f[0], f[1], f[2], -fe};
     const float* rows[4] = {r0, r1, r2, r3};

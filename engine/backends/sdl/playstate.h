@@ -17,6 +17,9 @@
 #pragma once
 
 #include "playshared.h"
+#if OMK_VR
+#include "../vr/playvr.h"   // VrState: the VR build's only state (todo/quest-port.md)
+#endif
 
 #include <optional>
 
@@ -980,6 +983,15 @@ struct PlayState {
     void harnessGameRestart();   // --game-restart: op 152's write at a frame
     void harnessFlickerNote(std::size_t& runsDrawn, std::size_t& runsCulled, std::size_t& litBodies);   // the frame's facts for the flicker catcher
     void harnessSnaps();   // --snaps: the framebuffer every N frames from the hand-over
+
+    // ---- VR (`todo/quest-port.md` §5): `backends/vr/playvr_<part>.cpp` in a
+    // build with OMK_VR, empty stubs in `playvr_off.cpp` everywhere else
+#if OMK_VR
+    VrState vr{};
+#endif
+    void vrSetup(int argc, char** argv);   // the --vr-* flags
+    void vrAfterWorldCamera();             // the head on the authored camera
+    bool vrWorldDraw(const omk::View& drawn, const omk::MirrorPlane& plane);   // the eyes; true = drawn
 
     // ---- THE GPU WINDOW, per backend (`playgpu_vulkan.cpp`, `playgpu_gles.cpp`
     // or `playgpu_none.cpp` - each build links exactly one; todo/play-split.md S5)

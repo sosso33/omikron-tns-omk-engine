@@ -45030,6 +45030,117 @@ def c_engine_player_landing():
 
 
 
+def c_engine_vr_camera_rule():
+    r"""THE HEAD ON THE AUTHORED CAMERA - `engine/src/vr/xrspace.*`, `todo/quest-port.md` §5 step 1.
+
+    This project's own work, not the original's: there is no capture to be
+    faithful to, so what is asserted is the arithmetic a headset must get
+    right and a still frame cannot show. `tools/vr_probe.cpp` composes heads
+    on a level authored camera and prints, against that camera's own axes:
+
+    * the SENSE of each turn - a head turned 30 degrees right looks along
+      sin 30 = 0.5 of the camera's RIGHT, one pitched 20 up along sin 20 of
+      its UP, one rolled 15 toward the right shoulder tilts its up 15 toward
+      the right. A mirrored sense draws a plausible picture, which is why it
+      is asserted as a number;
+    * the UNITS: 64 mm between the eyes is 2.5197 inches, along the right;
+    * an unturned head IS the authored camera, to the bit;
+    * LEVEL drops the authored pitch and roll, FULL keeps them;
+    * the OFF-AXIS eye (a nominal Quest-shaped field of view, 52 degrees
+      outer, 44 inner): a point on each edge of the field lands on that edge
+      of the picture;
+    * the CULLING camera holds both eyes: every frustum corner of both eyes,
+      at three depths, three yaws and two rolls, projects inside it.
+
+    A build without OMK_VR (`make VR=0`) builds the probe empty and the check
+    says so rather than failing.
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s", "build/vr_probe"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "vr_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    out = subprocess.run([binp], capture_output=True, text=True).stdout
+    if "not built with OMK_VR" in out:
+        return ("skipped",), ("skipped",), "a build without OMK_VR"
+    v = dict((m.group(1), m.group(2)) for m in re.finditer(r"^(\w+) (.+)$", out, re.M))
+    got = (v.get("yaw30_right"), v.get("yaw30_ahead"), v.get("pitch20_up"),
+           v.get("roll15_up_toward_right"), v.get("roll15_deg"),
+           v.get("ipd64_inches"), v.get("ipd64_along_right"), v.get("identity_exact"),
+           v.get("level_gaze_dy"), v.get("level_roll"), v.get("full_roll"),
+           v.get("lens_right_edge_x"), v.get("lens_left_edge_x"),
+           v.get("lens_top_edge_y"), v.get("lens_bottom_edge_y"), v.get("cull_holds_eyes"))
+    want = ("0.5000", "0.8660", "0.3420", "0.2588", "15.000", "2.5197", "2.5197", "1",
+            "0.0000", "0.000", "10.000", "400.00", "0.00", "0.00", "600.00", "144 144")
+    return got, want, "turn senses, units, identity, level/full, off-axis edges, cull holding both eyes"
+
+
+def c_engine_vr_frame():
+    r"""THE FAKE HEADSET'S FRAME - `omk-play --vr-sim`, `todo/quest-port.md` §5 step 1.
+
+    The seams in the main code are one call each - where `worldCamera()`
+    ends and where `worldMirror()` draws - and the VR code is
+    `engine/backends/vr/`. On Anekbah's street start (the software
+    reference, headless, no dither), four 40-frame runs:
+
+    * FLAT and `--vr-sim=mono --vr-camera=full` with an unturned head must
+      be BYTE-IDENTICAL: the head path, composed and drawn, changes nothing
+      when the head has not moved - so the flat game is untouched by it;
+    * a head turned 30 degrees (`--vr-head=30,0,0`) must CHANGE the frame,
+      so the identity above is not the head being ignored;
+    * `--vr-sim`, both eyes side by side: each half mostly drawn (no empty
+      eye) and the two halves DIFFERENT (two eyes, not one copied).
+
+    And the log must say the head was composed (`frame 0: vr - the head on
+    the authored camera`), from the value the composition produced.
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    if not os.path.exists(omkpaths.data("MESHES/DECORS/ANEKBAH.3DO")):
+        return ("skipped",), ("skipped",), "ANEKBAH.3DO absent"
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("skipped",), ("skipped",), "omk-play did not build (needs SDL)"
+    import tempfile, shutil, struct as _st
+    tmp = tempfile.mkdtemp()
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
+    base = [binp, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+            "--save", os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "0",
+            "--stand", "1804,0,-6890,336", "--no-dither", "--frames", "40"]
+    runs = {"flat": [], "mono": ["--vr-sim=mono", "--vr-camera=full"],
+            "yaw": ["--vr-sim=mono", "--vr-camera=full", "--vr-head=30,0,0"],
+            "sbs": ["--vr-sim"]}
+    px, logs = {}, {}
+    try:
+        for name, extra in runs.items():
+            out = os.path.join(tmp, name + ".bin")
+            r = subprocess.run(base + extra + ["--dump", out], cwd=eng, env=env,
+                               capture_output=True, text=True, errors="replace", timeout=600)
+            logs[name] = r.stdout
+            if "vr: not built" in r.stdout:
+                return ("skipped",), ("skipped",), "a build without OMK_VR"
+            if not os.path.exists(out):
+                return ("no dump: " + name,), ("dumps",), "the viewer wrote no frame"
+            px[name] = open(out, "rb").read()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    w, h = 800, 600
+    sbs = _st.unpack("<%dH" % (w * h), px["sbs"][:w * h * 2])
+    left = [sbs[y * w + x] for y in range(h) for x in range(w // 2)]
+    right = [sbs[y * w + x] for y in range(h) for x in range(w // 2, w)]
+    drawn = lambda half: round(sum(1 for p in half if p) / len(half), 2)
+    got = (px["flat"] == px["mono"], px["flat"] != px["yaw"],
+           drawn(left) > 0.9, drawn(right) > 0.9, left != right,
+           "frame 0: vr - the head on the authored camera" in logs["mono"],
+           "frame 0: vr - the head on the authored camera" in logs["sbs"])
+    want = (True, True, True, True, True, True, True)
+    return got, want, "flat == unturned mono; turned != flat; both eyes drawn and different; composed"
+
+
 CHECKS = [
     ("conversations",      c_conversations,     "FILE_FORMATS 2"),
     ("DIALOGS.TAG",        c_dialog_tag,        "FILE_FORMATS 4"),
@@ -45613,6 +45724,8 @@ SLOW = [
     ("engine: actor body", c_engine_actor_body, "todo/scene-gameplay-audit.md 19; script/area.h"),
     ("engine: zone run", c_engine_zone_run, "todo/scene-gameplay-audit.md 20; script/area.h"),
     ("engine: meca react", c_engine_meca_react, "todo/scene-gameplay-audit.md; docs/SCRIPT_VM.md"),
+    ("engine: vr camera rule", c_engine_vr_camera_rule, "todo/quest-port.md 5"),
+    ("engine: vr frame", c_engine_vr_frame, "todo/quest-port.md 5"),
 ]
 
 

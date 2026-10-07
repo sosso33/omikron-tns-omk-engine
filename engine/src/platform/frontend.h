@@ -84,9 +84,20 @@ struct HostInput {
     float mouseDX = 0.0f, mouseDY = 0.0f;
 };
 
+#if OMK_VR
+namespace vr { struct HeadPose; }   // `vr/xrspace.h`, a VR build's only
+#endif
+
 class Frontend {
 public:
     virtual ~Frontend() = default;
+
+#if OMK_VR
+    // THE HEADSET, for a frontend that has one (`todo/quest-port.md` §5): the
+    // head and each eye's pose and field of view this frame. false = none, and
+    // the frame draws the authored camera as the flat game does.
+    virtual bool headPose(vr::HeadPose& /*out*/) { return false; }
+#endif
 
     virtual bool open(int w, int h, const std::string& title) = 0;
     // -> false once the host wants to stop.

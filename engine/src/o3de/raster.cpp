@@ -65,6 +65,9 @@ Basis basisOf(const RCamera& c) {
     // the vertical follows from the frame's shape - reading angle[1] as
     // vertical is one of the two errors laying this over a screenshot found.
     b.tanv_ = b.tanh_ / (static_cast<float>(c.w) / static_cast<float>(c.h));
+#if OMK_VR
+    if (c.tanHalfV > 0.0f) b.tanv_ = c.tanHalfV;   // an eye's own (RCamera::tanHalfV)
+#endif
     return b;
 }
 
@@ -95,8 +98,13 @@ Projected toScreen(const Basis& b, const RCamera& c, const float v[3]) {
     Projected out;
     out.z = v[2];
     if (out.z <= kNear) return out;
+#if OMK_VR
+    out.x = c.w * 0.5f * (1.0f + (v[0] / out.z - c.lensX) / b.tanh_);   // RCamera::lensX
+    out.y = c.h * 0.5f * (1.0f - (v[1] / out.z - c.lensY) / b.tanv_);
+#else
     out.x = c.w * 0.5f * (1.0f + (v[0] / out.z) / b.tanh_);
     out.y = c.h * 0.5f * (1.0f - (v[1] / out.z) / b.tanv_);
+#endif
     out.ahead = true;
     return out;
 }
@@ -114,8 +122,13 @@ Projected toScreen(const Basis& b, const RCamera& c, const float v[3]) {
 Projected toScreenClipped(const Basis& b, const RCamera& c, const float v[3]) {
     Projected out;
     out.z = std::max(v[2], kNear);
+#if OMK_VR
+    out.x = c.w * 0.5f * (1.0f + (v[0] / out.z - c.lensX) / b.tanh_);   // RCamera::lensX
+    out.y = c.h * 0.5f * (1.0f - (v[1] / out.z - c.lensY) / b.tanv_);
+#else
     out.x = c.w * 0.5f * (1.0f + (v[0] / out.z) / b.tanh_);
     out.y = c.h * 0.5f * (1.0f - (v[1] / out.z) / b.tanv_);
+#endif
     out.ahead = true;
     return out;
 }
