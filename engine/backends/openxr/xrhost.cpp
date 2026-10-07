@@ -33,9 +33,13 @@ namespace {
 constexpr GLenum kFramebufferSrgb = 0x8DB9;
 constexpr std::int64_t kSrgb8Alpha8 = 0x8C43, kRgba8 = 0x8058;
 
-// The screen: 2 m ahead, its centre at the head's height when the session
-// began (LOCAL space), 2.4 m wide at the frame's own aspect.
-constexpr float kScreenDistance = 2.0f, kScreenWidth = 2.4f;
+// The screen: 1.2 m ahead, its centre at the head's height when the session
+// began (LOCAL space), 1.2 m wide (~53 degrees) at the frame's own aspect.
+// It was 2 m and 2.4 m (5a); over the eyes (6a) the scene is often NEARER
+// than 2 m - a speaker at a table - and text read at 2 m over a face at 1 m
+// "hurts to read (stereoscopic issue)" (the reader, 2026-10-07): the panel
+// comes in front of most of what is around.
+constexpr float kScreenDistance = 1.2f, kScreenWidth = 1.2f;
 
 // One swapchain and an FBO per image: the quad's, or an eye's.
 struct Chain {
@@ -564,6 +568,7 @@ bool headPose(vr::HeadPose& out) {
 }
 
 void setQuadOverEyes(bool on) { g.quadOverEyes = on; }
+bool eyesDrawn() { return g.eye[0].drawn && g.eye[1].drawn; }
 
 bool eyeTarget(int e, unsigned& fbo, int& w, int& h) {
     if (e < 0 || e > 1 || !g.begun || !g.viewsValid || !g.frame.shouldRender) return false;
@@ -582,7 +587,6 @@ void eyeDone(int e) {
 bool frameTarget(unsigned& fbo, int& w, int& h) {
     if (!ensureFrame()) return false;
     if (!g.frame.shouldRender) return false;
-    if ((g.eye[0].drawn || g.eye[1].drawn) && !g.quadOverEyes) return false;
     if (!acquire(g.quad)) return false;
     fbo = g.quad.fbo;
     w = g.quad.w;
@@ -615,6 +619,9 @@ void submit() {
     }
     XrCompositionLayerQuad quad{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if (g.quad.drawn) {
+        // over the eyes the quad is the interface with the world showing
+        // through it (step 6a): its alpha, premultiplied
+        if (nLayers) quad.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
         quad.space = g.local;
         quad.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
         quad.subImage.swapchain = g.quad.sc;

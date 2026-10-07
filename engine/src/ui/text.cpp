@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "ui/text.h"
+#include "ui/overlay.h"
 
 #include "platform/datafs.h"
 #include "platform/json.h"
@@ -343,7 +344,26 @@ void TextLayout::drawGlyphScaled(Surface& dst, int pen, int top, const Glyph& gl
             }
             if (!c) continue;
             c &= 31;
-            const std::uint16_t b = dst.px[static_cast<std::size_t>(py) * dst.w + px];
+            const std::size_t at565 = static_cast<std::size_t>(py) * dst.w + px;
+            const std::uint16_t b = dst.px[at565];
+            // ON AN OVERLAY FRAME'S KEY the pixel beneath is "the world", not
+            // a colour (`ui/overlay.h`): the blend is affine in it, so it runs
+            // on the planes - C = (colour * c + C * (31 - c)) / 31, M scaled
+            // by (31 - c) / 31 - and the key stays. Blended with the key's
+            // magenta itself it gave every glyph a pink rim over the world
+            // (the Quest's interface layer, the reader, 2026-10-07: "texts
+            // have pink border"; the flat GLES overlay had it too, unseen).
+            OverlayPlanes& ov = overlayPlanes();
+            if (ov.on && b == kOverlayKey && ov.w == dst.w && at565 < ov.m.size()) {
+                ov.row(at565);
+                std::uint16_t& cp = ov.c[at565];
+                const int cr = ((cp >> 11) << 3) | (cp >> 13), cg = (((cp >> 5) & 63) << 2) | ((cp >> 9) & 3),
+                          cb = ((cp & 31) << 3) | ((cp & 31) >> 2);
+                cp = rgb565((rgb[0] * c + cr * (31 - c)) / 31, (rgb[1] * c + cg * (31 - c)) / 31,
+                            (rgb[2] * c + cb * (31 - c)) / 31);
+                ov.m[at565] = static_cast<std::uint8_t>(ov.m[at565] * (31 - c) / 31);
+                continue;
+            }
             const int br = ((b >> 11) << 3) | (b >> 13), bg = (((b >> 5) & 63) << 2) | ((b >> 9) & 3),
                       bb = ((b & 31) << 3) | ((b & 31) >> 2);
             dst.set(px, py, rgb565((rgb[0] * c + br * (31 - c)) / 31,

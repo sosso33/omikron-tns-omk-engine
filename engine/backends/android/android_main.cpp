@@ -171,8 +171,12 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int, char**) {
                 // Not the costly ones: per-pixel light, mapped shadows and the
                 // unlimited draw distance took the game thread from ~6 to
                 // ~13.6 ms of a 13.9 ms frame on a Quest 2. args.txt still wins.
+                // NOT `--ui-scaling linear`: over the eyes the interface is
+                // drawn over the KEY (step 6a), and a filtered edge mixed the
+                // text with it - "texts have pink border" (the reader,
+                // 2026-10-07). Unfiltered, an edge pixel is the text or the key.
                 "--aa", "4", "--filter", "trilinear", "--anisotropy", "16",
-                "--ui-scaling", "linear", "--text-scaling", "fit"};
+                "--text-scaling", "fit"};
     const std::string ini = home + "/omk.ini";
     if (std::ifstream(ini)) { run.args.push_back("--config"); run.args.push_back(ini); }
     if (std::ifstream extra{home + "/args.txt"}) {

@@ -60,6 +60,17 @@ bool PlayState::vrWorldDraw(const omk::View& drawn, const omk::MirrorPlane& plan
                       pic.px.begin() + static_cast<long>(y) * pic.w + std::min(w, fb.w - x0),
                       fb.px.begin() + static_cast<long>(y) * fb.w + x0);
     }
+#if OMK_OPENXR
+    // THE INTERFACE OVER THE EYES (step 6a): the frame is the flat GPU path's
+    // OVERLAY frame - every pixel the KEY, "the world shows here", the alpha
+    // passes recorded in the planes - and the present lays it over the eyes
+    // as a transparent layer (`glesSetOverlayAsLayer`)
+    if (omk::xr::eyesDrawn()) {
+        overlayFrame = true;
+        g_ov.begin(fb.w, fb.h);
+        std::fill(fb.px.begin(), fb.px.end(), kOverlayKey);
+    }
+#endif
     phRb1 = phaseNow();
     mark("vr: both eyes");
     ++worldFrames;

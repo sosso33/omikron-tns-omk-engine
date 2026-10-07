@@ -68,6 +68,9 @@ void eyeDone(int e);
 // OVER the eyes this frame, opaque - until step 6 puts the interface there
 // with the world showing through. Set by `playvr_draw.cpp` each world frame.
 void setQuadOverEyes(bool on);
+// Both eyes went to the headset this frame: a flat present is then the
+// INTERFACE as a transparent layer over them (step 6a).
+bool eyesDrawn();
 
 // The headset's frame for a FLAT present: begins it if `headPose` did not,
 // acquires the quad's image. Idempotent until `submit`. False when no frame is

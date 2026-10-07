@@ -783,6 +783,30 @@ after any and no heavy-upload line. Desktop and Vita unchanged (the
   drawing its model. The Vita's `backends/vita/ime.cpp` is the shape of the
   frontend's half either way.
 
+**STEP 6a RUN ON THE QUEST 2 (2026-10-07): the interface over the eyes.** A
+headset frame whose eyes were drawn is the flat GPU path's OVERLAY frame
+(`playvr_draw.cpp`): every pixel the KEY, the alpha passes on the planes
+(`ui/overlay.h`), and the present draws `presentOverlay` AS A LAYER
+(`glesSetOverlayAsLayer`) - cleared to (0,0,0,1), blended (ONE, ZERO /
+ZERO, ONE_MINUS_SRC_ALPHA), so the colour is the interface's and the alpha
+1 - the world's weight: the premultiplied picture the quad layer lays over
+the projection (`XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT`).
+The reader's play:
+
+* "texts have pink border": the FITTED glyph's edge (`drawGlyphScaled`)
+  blended with the pixel beneath - the key's magenta. Dropping
+  `--ui-scaling linear` from the Quest's defaults did not cure it (that was
+  a second blend, removed anyway); the glyph blend now runs on the planes on
+  a key pixel, the planes' own rule. The flat GLES overlay had the same rim,
+  unseen. "It is fixed". `engine: gles overlay`, `text scaling`,
+  `subtitle box` green.
+* "it hurts to read them (stereoscopic issue)": the panel was 2 m away,
+  2.4 m wide, while a speaker at a table is nearer - text read at 2 m over a
+  face at 1 m. Now 1.2 m and 1.2 m wide (~53 degrees): "a bit better".
+  OPEN - what fully cures it is 6b's question (a window fixed where the head
+  looked, or a depth that follows the scene).
+
+
 ### Step 7 - the first play pass (device; ~0.5-1 day)
 
 One route, at 72 Hz on a Quest 2, the frame log over `logcat`: boot, the

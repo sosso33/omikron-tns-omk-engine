@@ -13,7 +13,8 @@
 // no host handle). One viewer a process, so one window.
 static SDL_Window* glWin = nullptr;
 
-namespace omk { void glesSetWindowTarget(Renderer*, unsigned fbo); }
+namespace omk { void glesSetWindowTarget(Renderer*, unsigned fbo);
+                void glesSetOverlayAsLayer(Renderer*, bool on); }
 
 // THE HEADSET'S FRAME (`backends/openxr`, `todo/quest-port.md` §5 step 5):
 // with an OpenXR session running, a present pass draws into the headset's
@@ -236,7 +237,16 @@ void PlayState::gpuPresentOverlay(bool& presentedWorld) {
         SDL_GL_GetDrawableSize(glWin, &ww, &wh);
 #endif
         presentTarget(glRen, ww, wh);
+#if OMK_OPENXR
+        // a headset frame whose eyes were drawn: the interface is a LAYER
+        // over them (step 6a), not a picture over the world
+        const bool asLayer = omk::xr::eyesDrawn();
+        omk::glesSetOverlayAsLayer(glRen, asLayer);
+#endif
         presentedWorld = omk::glesPresentOverlay(glRen, fb, ovMask.data(), ovMaskRow.data(), ovFade, gpuVy, gpuVh, ww, wh);
+#if OMK_OPENXR
+        omk::glesSetOverlayAsLayer(glRen, false);
+#endif
         if (presentedWorld) {
             static const char* winDump = std::getenv("OMK_GLES_WINDUMP");
             if (winDump && frames && n + 1 >= frames) {

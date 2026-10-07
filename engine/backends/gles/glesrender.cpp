@@ -1020,6 +1020,10 @@ public:
     bool presentOverlay(const Surface& s, const unsigned char* mask, const unsigned char* maskRows,
                         const float fade[4], int vy, int vh, int winW, int winH);
     void setStretch(bool on) { stretch_ = on; }
+    // THE OVERLAY AS A LAYER (`todo/quest-port.md` §5 step 6a): `presentOverlay`
+    // draws the interface over NO world, into a target a compositor lays
+    // over the eyes - premultiplied colour, alpha = 1 - the world's weight
+    void setOverlayAsLayer(bool on) { overlayLayer_ = on; }
     void setDepthTie(bool on) { tieOn_ = on; }
     // Where "the window" is: 0, the default framebuffer, everywhere but the
     // probe, which has no window and points the present pass at an FBO of its
@@ -1327,6 +1331,7 @@ private:
     int  aniso_ = 1;         // asked; 1 is off
     int  anisoOn_ = 1;       // what `init` found the context grants (1: none)
     GLuint windowFbo_ = 0;
+    bool overlayLayer_ = false;
 
     View view_;
     bool flipX_ = false;   // the CURRENT view's screen-X flip - the mirror pass sets it
@@ -3310,7 +3315,14 @@ bool GlesRenderer::presentOverlay(const Surface& s, const unsigned char* mask, c
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     }
-    if (!presentWorld(vy, vh, s.w, s.h, winW, winH)) return false;
+    if (overlayLayer_) {
+        // no world under it: cleared to (0, 0, 0, 1) - "nothing drawn over the
+        // world" - which the layer blend below turns into alpha 0
+        glBindFramebuffer(GL_FRAMEBUFFER, windowFbo_);
+        glViewport(0, 0, winW, winH);
+        glClearColor(0, 0, 0, 1);
+        glClear(GL_COLOR_BUFFER_BIT);
+    } else if (!presentWorld(vy, vh, s.w, s.h, winW, winH)) return false;
     const double t0 = glesClockMs();
     if (!surfTex_) {
         glGenTextures(1, &surfTex_);
@@ -3401,7 +3413,11 @@ gpuTexture("interface", tex, static_cast<long long>(bpp) * s.w * s.h);
     glViewport(0, 0, winW, winH);
     glDisable(GL_DEPTH_TEST);
     glEnable(GL_BLEND);
-    glBlendFunc(GL_ONE, GL_SRC_ALPHA);
+    // over the world: new = overlay + world x weight. As a LAYER the colour is
+    // the overlay's alone and the alpha the cleared 1 x (1 - weight) - the
+    // premultiplied picture a compositor lays over the eyes
+    if (overlayLayer_) glBlendFuncSeparate(GL_ONE, GL_ZERO, GL_ZERO, GL_ONE_MINUS_SRC_ALPHA);
+    else glBlendFunc(GL_ONE, GL_SRC_ALPHA);
     glUseProgram(overlay_);
     curProg_ = overlay_;
     glUniform4fv(oDst_, 1, dst);
@@ -3483,6 +3499,9 @@ void glesSetStretch(Renderer* r, bool on) { static_cast<GlesRenderer*>(r)->setSt
 void glesSetDepthTie(Renderer* r, bool on) { static_cast<GlesRenderer*>(r)->setDepthTie(on); }
 bool glesPresentEye(Renderer* r, int ew, int eh, int winW, int winH) {
     return static_cast<GlesRenderer*>(r)->presentEye(ew, eh, winW, winH);
+}
+void glesSetOverlayAsLayer(Renderer* r, bool on) {
+    static_cast<GlesRenderer*>(r)->setOverlayAsLayer(on);
 }
 void glesSetWindowTarget(Renderer* r, unsigned fbo) {
     static_cast<GlesRenderer*>(r)->setWindowTarget(static_cast<GLuint>(fbo));
