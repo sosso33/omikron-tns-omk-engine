@@ -331,18 +331,28 @@ Read against the run's log:
   STREET"). And `Sliders_Tick` has no such gate: the crowd keeps WALKING
   unseen. FIXED the same day, like the original: drawn only while the
   circuit's slot is shown, the ridden slider excepted (`engine: crowd
-  indoors`, red with the gate removed: 32 drawn); BUILT, NOT installed (the
-  headset had dropped off USB) - `scripts/android-build.sh install`. The log says `crowd library - the circuit's slot N is HIDDEN` /
+  indoors`, red with the gate removed: 32 drawn); installed 2026-10-07
+  22:40 with the strafe below, NOT yet played. The log says `crowd library - the circuit's slot N is HIDDEN` /
   `SHOWN` at each change.
 * **two programs drive one actor** at frame 98359: actors 147 CMH_FN and 458
   CWH_FN each have a pose on a sewer path AND on an Anekbah path 20 m apart
   in the same frame - two resident scenes naming the same actors. One body,
   so not a duplicate, but a body that jumps. Recorded, not investigated.
 
+**Report 2, the shoot strafe - DONE, installed 2026-10-07 22:40, NOT yet
+played.** The original's *Tirer* group HAS the strafe: slots 10/11
+`Glisser a gauche / droite`, bits 0x400 / 0x800, the arrows on a keyboard,
+queued by the `.CTL` channel as MDDG / MDDD (already ported,
+`actor/shootmove.h`). `Input_Poll` hardwires a stick's x to the TURN bits 1/2,
+which `vrShootAim` dropped because the controller aims; it now turns them
+into the strafe bits. Flat play unchanged. `engine: vr strafe` (flat 30 MDRG
++ 30 MDRD; `--vr-sim` 30 MDDG + 30 MDDD and two sideways moves; red with the
+two lines removed: no move at all).
+
 **The order for the rest** (one at a time, each played before the next):
 2. ~~the menu stick~~ - done above;
 3. ~~the street after an interior~~ - above;
-4. the shoot strafe - first what the original's shoot scheme binds;
+4. ~~the shoot strafe~~ - above;
 5. the keyboard (6c).
 
 **Open since steps 2-3** (recorded in the step blocks): shoot-mode movement

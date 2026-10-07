@@ -28879,6 +28879,47 @@ def c_engine_lazy_collision():
         "log are those of the eager placement"
 
 
+def c_engine_vr_strafe():
+    r"""IN A HEADSET'S SHOOT MODE THE STICK'S SIDEWAYS PUSH STRAFES
+    (`vrShootAim`, backends/vr; the reader, 2026-10-07: "the stick should also
+    make lateral steps and not just going forward"). `Input_Poll` hardwires the
+    stick's x to *Tirer*'s `Tourner` bits 1 / 2; with the controller aiming they
+    were dropped, and they now become the group's own `Glisser` bits 0x400 /
+    0x800 - MDDG / MDDD through the `.CTL` channel. The flat game is unchanged.
+
+    `engine: shoot move`'s harness (AREA 59, `--shoot`), numpad 4 then 6 held
+    30 frames each - the turn bits a stick's x gives: flat, 30 MDRG and 30
+    MDRD; with `--vr-sim`, 30 MDDG and 30 MDDD, and the two moves carry him
+    sideways (along X, facing 180).
+
+    SHOWN TO FAIL, 2026-10-07: the two conversion lines removed leave the
+    `--vr-sim` run with no special move at all.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build omk-play"
+    got = []
+    for extra in ([], ["--vr-sim"]):
+        r = subprocess.run([binp, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                            "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+                            "--area", "59", "--stand", "5000,0,-2900,180", "--shoot",
+                            "--shoot-health", "1000", "--frames", "200", "--nodelay",
+                            "--hold", "k75*30,0*20,k77*30,0*20", "--res", "640x480"] + extra,
+                           capture_output=True, text=True, errors="replace",
+                           env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+        moves = re.findall(r"^special move: (MD(?:DG|DD|RG|RD)) ", r.stdout, re.M)
+        counts = tuple(moves.count(m) for m in ("MDRG", "MDRD", "MDDG", "MDDD"))
+        went = [float(x) for x in re.findall(r"SHOOT MOVE stops after \d+ frames - asked [\d.]+, "
+                                             r"went (-?[\d.]+) ", r.stdout)]
+        sideways = sum(1 for x in went if abs(x) > 50.0)
+        got.append(("vr" if extra else "flat", counts, sideways))
+    return tuple(got), (("flat", (30, 30, 0, 0), 0), ("vr", (0, 0, 30, 30), 2)), \
+        "per run: MDRG, MDRD, MDDG, MDDD queued, and the moves that went over 50 along X"
+
+
 def c_engine_crowd_indoors():
     r"""THE STREET'S CROWD IS NOT DRAWN WHILE ITS STREET IS HIDDEN, and goes on
     walking (docs/STREET_LIFE.md, "The crowd is drawn WITH ITS STREET", read
@@ -46043,6 +46084,7 @@ SLOW = [
     ("engine: gles overlay", c_engine_gles_overlay, "todo/vita-port.md G6; backends/gles/glesrender.cpp"),
     ("engine: pool past 64", c_engine_pool_past_64, "todo/handoff-quest-port.md; o3de/renderer.h"),
     ("engine: crowd indoors", c_engine_crowd_indoors, "docs/STREET_LIFE.md; todo/handoff-quest-port.md"),
+    ("engine: vr strafe", c_engine_vr_strafe, "todo/handoff-quest-port.md; backends/vr/playvr_camera.cpp"),
     ("engine: profiler control", c_engine_profiler_control, "todo/debug-tools.md step 3"),
     ("engine: profiler gpu", c_engine_profiler_gpu, "todo/debug-tools.md step 5"),
     ("engine: release build", c_engine_release_build, "todo/debug-tools.md"),

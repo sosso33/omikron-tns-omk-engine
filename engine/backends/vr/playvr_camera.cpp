@@ -471,6 +471,15 @@ void PlayState::vrAdventureInput(std::uint32_t& word) {
 // (the snap turn) and the head looks freely. Pitch is held to the mouse's own
 // +-45 (`actor/shootmove.h`), the range the arm's keys are authored over.
 void PlayState::vrShootAim(std::uint32_t& word) {
+    // THE STICK'S SIDEWAYS PUSH STRAFES (the reader, 2026-10-07: "the stick
+    // should also make lateral steps, not just going forward"). `Input_Poll`
+    // hardwires the stick's x to *Tirer*'s `Tourner` bits 1 / 2, and the
+    // controller already aims, so they were simply dropped; they become the
+    // group's own `Glisser a gauche / droite`, bits 0x400 / 0x800, which the
+    // `.CTL` channel queues as MDDG / MDDD - the side steps the arrows give a
+    // keyboard player (actor/shootmove.h)
+    if (word & 0x1u) word |= 0x400u;
+    if (word & 0x2u) word |= 0x800u;
     word &= ~(0x1u | 0x2u | 0x200u | 0x1000u);
     if (!(word & 0x3FFFu)) word = 0x40000000u;
     if (vr.sim) {
