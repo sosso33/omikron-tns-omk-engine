@@ -406,6 +406,64 @@ numpad for the head.
   headless run through dialogue 402 asserting the authored trajectory is
   unchanged by a moving head while the drawn eye follows it.
 
+**Step 2 DONE 2026-10-07** (`94c1987`). `backends/vr/playvr_camera.cpp`
+names the frame's camera KIND - world, first-person, dialogue, editing,
+fight, ride, shoot, from the flags `worldCamera()` already set - and picks
+the headset's origin for it. Every choice is a flag beside the authored path
+(`--vr-help`); `--vr-adventure=authored --vr-fight=authored` leaves the head
+on the authored camera alone.
+
+* **First person** (`--vr-adventure=first`, the default): when the player is
+  at the keys in adventure. The eye is where shoot mode's is - the pelvis
+  lifted by `headLift`, the engine's own first-person height (0.7 of the
+  model's extent, `sub_414520` case 4), which puts it 71 inches (1.81 m)
+  over his feet: a little above a real eye line, and left as the engine's.
+  His body is hidden (one line where `drawPlayer` is decided). The view's
+  heading starts along his body and turns only by the SNAP TURN (30 degrees,
+  numpad 1/3 on the Mac).
+* **The look-relative walk** is a TRANSLATION of the input word, one line
+  after `bits = in.frame(st)`: the four direction bits of the Aventure group
+  (1 turn left, 2 turn right, 4 `Avancer`, 8 `Reculer`) are read as a
+  direction relative to the head, and turned back into the same bits for
+  the body - turn toward it beyond 12 degrees, walk while it is within 70.
+  The `.CTL` channel and the walker take their usual word. Measured: the head
+  turned 90 degrees right, `Avancer` held, he walks ~76 degrees right of his
+  first heading (he turns while he walks).
+* **The recentre**: the raw head's yaw and position become zero at a change of
+  kind and, with `--vr-recentre=cut` (the default), at a CUT - read off the
+  authored camera alone, a jump of over 1 m or a turn of over 20 degrees in
+  one frame, never in first person or a fight. In the Impasse's 1200 frames
+  every cut jumped 41-505 inches against under 8 a frame for a travel; it
+  recentres at every editing that starts away from the last camera (331,
+  556, 629, 980, 1164) and NOT at 464, where 'demsuite' takes over exactly
+  where 'sautdemon' held. A conversation's cameras TRAVEL between their
+  pairs (387: 4166 -> 4167), which is not a cut and does not recentre.
+* **The calm fight camera** (`--vr-fight=calm`): over `Fight_TickCamera`'s
+  own output, untouched - its target as chosen, the distance FROZEN at the
+  fight's first frame, the direction turned toward the authored one by at
+  most `--vr-fight-turn` (1 degree) a frame. The supermarket fight: 131
+  inches held where the authored camera moves between 110 and 170, at most
+  1.01 degrees a frame where the authored one jumps by up to 120 (its
+  re-placements). **For the play pass**: such a jump now takes ~4 s to catch
+  up; a fade-cut past some angle may be better than a sweep.
+* **Seated**, behind `VrState::Space` - the one place a standing mode changes.
+* **The authored camera is never touched**: conversation 386's authored eyes
+  are identical with the head still and turning 1.5 degrees a frame.
+* **Step 1's open item, closed**: what reads `view.cam` after `worldCamera()`
+  is all on the DRAWING side - the culling, the crowd's level of detail and
+  posing reach, the particles' facing, the sky, the lights - plus ONE sound:
+  the street traffic's listener (`session.sliders().setListener(view.cam.eye)`,
+  `playframe_input_parts.cpp`), where following the head is what a headset
+  wants. No game logic reads it.
+* **Not read, worth knowing**: the original has its OWN first-person view in
+  adventure - Aventure bit `0x80`, `Vue première personne`, key L. What it
+  does in the engine is not read; it may matter for how first person feels.
+* **Check** (`--slow`): `engine: vr modes`, SHOWN TO FAIL with four
+  mutations at once, each turning its own assertion red - the turn bits
+  swapped (walks left), the fight distance not frozen (spread 60.3), the cut
+  test disabled, the logged authored eye taken after the head.
+  `engine: vr frame` now turns its head AFTER the first frame's recentre.
+
 ### Step 3 - shoot mode aims with the controller (Mac; ~1 day)
 
 * `HostInput` gains the controllers' poses (an aim ray each, in head space);
