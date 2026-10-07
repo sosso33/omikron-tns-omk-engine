@@ -146,7 +146,7 @@ authored to meet, H_TAK031's +19.58 into H_PUT032's key 1 of +19.58).
 
 ## What is left (the audit's order)
 
-- **M3** Manuelle's collisions - DONE 2026-10-06 in three steps, NONE PLAYED (try: drive Manuelle into a parked slider, off the road's edge, into a building; the viewer logs `Manuelle HIT a vehicle`, `SLIDES along a wall` and a `slider ride at` line every 30 frames naming the surface):
+- **M3** Manuelle's collisions - DONE 2026-10-06 in three steps, PLAYED AND CONFIRMED by the reader 2026-10-07 ("Tested, good"; the instruments, should it need re-checking: drive Manuelle into a parked slider, off the road's edge, into a building; the viewer logs `Manuelle HIT a vehicle`, `SLIDES along a wall` and a `slider ride at` line every 30 frames naming the surface):
   1. DONE: `sub_458880` the vehicle push and `sub_458490`/`sub_459970` the
      walker on a crossing (`SliderRide::hover(dt, RideWorld)`; the viewer
      fills the world with the named-surface probe, the vehicles, the walkers;
