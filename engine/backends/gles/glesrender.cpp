@@ -2033,8 +2033,25 @@ bool GlesRenderer::uploadGeometry(const Geometry* g, bool allowStream) {
     if (it != vbo_.end() && it->second.n == g->corners.size()) {
         Vbo& vb = it->second;
         static const bool noDirty = std::getenv("OMK_NO_DIRTY") != nullptr;
-        const bool partial = !noDirty && g->dirtyTo != 0 && g->dirtyTo == g->revision &&
+        bool partial = !noDirty && g->dirtyTo != 0 && g->dirtyTo == g->revision &&
                              vb.rev == g->dirtyFrom;
+#if defined(__ANDROID__)
+        // TOO MANY RUNS GO WHOLE, AND ORPHANED (the Quest, 2026-10-07): the
+        // day/night re-floor rewrites ~55000 scattered corners of the set
+        // (`reclampToAmbient`), thousands of runs, and each `glBufferSubData`
+        // into a buffer the GPU is still reading cost the eyes 135-180 ms on
+        // a Quest 2, every grey step. Past `kMaxRuns` the buffer is sent
+        // whole through `glBufferData` - fresh storage, which the driver
+        // hands over without waiting on the frames in flight.
+        bool orphan = false;
+        if (partial) {
+            constexpr std::size_t kMaxRuns = 64;
+            const auto& dc = g->dirtyCorners;
+            std::size_t runs = dc.empty() ? 0 : 1;
+            for (std::size_t k = 1; k < dc.size() && runs <= kMaxRuns; ++k) runs += dc[k] != dc[k - 1] + 1;
+            if (runs > kMaxRuns) { partial = false; orphan = true; }
+        }
+#endif
         glBindBuffer(GL_ARRAY_BUFFER, vb.id);
         // `OMK_DIRTY_AUDIT` (todo/optimization.md step 25): is the dirty list
         // COMPLETE? A copy of the corners last uploaded, per buffer, and on a
@@ -2119,6 +2136,12 @@ bool GlesRenderer::uploadGeometry(const Geometry* g, bool allowStream) {
             for (std::size_t k = 0; k < v.size(); ++k) v[k] = gpuVert(g->corners[k]);
             foldTies(*g, v, 0, static_cast<std::uint32_t>(v.size() - 1));
             foldBias(*g, v.data(), 0, static_cast<std::uint32_t>(v.size() - 1));
+#if defined(__ANDROID__)
+            if (orphan)
+                glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(v.size() * sizeof(GpuVert)),
+                             v.data(), GL_DYNAMIC_DRAW);
+            else
+#endif
             glBufferSubData(GL_ARRAY_BUFFER, 0,
                             static_cast<GLsizeiptr>(v.size() * sizeof(GpuVert)), v.data());
             g_glesFrame.uploadBytes += static_cast<long>(v.size() * sizeof(GpuVert));
@@ -2375,6 +2398,13 @@ bool GlesRenderer::drawMirrorScene(const View& v, const View& refl, std::span<co
 }
 
 void GlesRenderer::begin(const View& view) {
+    // A PASS THAT SPENT OVER 20 ms UPLOADING says so (the Quest's slow frames,
+    // 2026-10-07): the CPU time around the uploads, which is where a driver
+    // stall inside `glBufferSubData` lands
+    if (g_glesFrame.uploadMs > 20.0)
+        std::printf("gles: heavy upload - %ld uploads (%ld whole), %ld patches, %ld KB, %.0f ms\n",
+                    g_glesFrame.uploads, g_glesFrame.wholeUploads, g_glesFrame.patches,
+                    g_glesFrame.uploadBytes / 1024, g_glesFrame.uploadMs);
     g_glesWindow.uploads += g_glesFrame.uploads;
     g_glesWindow.uploadBytes += g_glesFrame.uploadBytes;
     g_glesWindow.uploadMs += g_glesFrame.uploadMs;

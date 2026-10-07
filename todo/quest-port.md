@@ -715,10 +715,20 @@ so). The reader asked for the useful ones only. Now:
   decision the same day, with 1.1x measured at 72. Higher is the resolution
   row's, per session.
 
-**THE SLOW FRAMES are now the most visible fault**: 74-278 ms, a few a minute
-in Anekbah's street, at varying places, some repeating at one spot while
-standing. Not set loads (those are prepared on their own thread, "the frame
-waited 0.0 ms"). Open.
+**THE SLOW FRAMES - FOUND AND FIXED (2026-10-07).** 74-278 ms a few a minute
+in Anekbah's street, every ~1000 frames while standing. The slow-frame lines'
+own breakdown put them all inside `vr: both eyes` (145-265 ms), and each
+came the frame after `set ANEKBAH re-floored at grey N by the clock
+(sub_41E7A0): ~55000 corners ... changed` - the day/night AMBIENT FLOOR,
+which re-bakes the set's colours each grey step. The GLES backend sent those
+~55000 SCATTERED corners as runs of `glBufferSubData` into the set's buffer
+while the GPU was still reading it; Adreno stalled on them. On Android a
+dirty list of more than 64 runs now goes WHOLE through `glBufferData`
+(fresh storage, no wait), and a pass that spends over 20 ms uploading logs a
+`gles: heavy upload` line. Played: ten re-floors (grey 29..38), no slow frame
+after any and no heavy-upload line. Desktop and Vita unchanged (the
+`#if defined(__ANDROID__)`). Left: one 96 ms frame entering the street and one
+67 ms elsewhere - other causes, not chased yet.
 
 ### Step 6 - the interface, the films and the keyboard (device; ~0.5-1 day)
 
