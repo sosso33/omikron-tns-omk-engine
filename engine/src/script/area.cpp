@@ -1948,10 +1948,17 @@ bool Session::postMessage(int message, int sender) {
 // `dword_69BC6C` is the DB's player record (+60), whose +0/+4 `State_Apply`
 // points at the two 256-byte bio slots. So the player's identity IS the DB
 // record after this - which is what `playerActor()` reads - and the bio
-// travels in the save. The live-actor half (the record swap, `Player_
-// SetActor`, the placement) has no actor table to land in here: the position
-// and facing the Session tracks stay where they are, which is the transfer's
-// own rule, and the new body joins `shown_`.
+// travels in the save. The live-actor half: `Actor_GetPosAndFacing(esi)`
+// reads the NEW body's node (+244..+252, facing +420) and `Actor_SetPlacement`
+// puts it back there - so the player is now wherever that body stands, and
+// the soul moves while the bodies stay. (This said "the position the Session
+// tracks stays where it is, which is the transfer's own rule" until
+// 2026-10-07; the two reads of the new slot say the opposite, and every
+// reincarnation began at the old body's spot - the Sham mounted from Fodo's
+// place, AREA 137.) The Session knows a body's node only as its `Shown`
+// placement, so that is what it moves the player to; a frontend that draws
+// the body has its live node and puts the player there instead
+// (`playframe_world.cpp`). The new body joins `shown_`.
 void Session::becomePlayer(int actor) {
     if (actor == playerActor()) return;
     std::vector<std::byte> chunk;
@@ -1964,6 +1971,16 @@ void Session::becomePlayer(int actor) {
     // joins the script-shown list, which is what this did for everyone
     // before the spawn landed.
     showCharacter(actor);
+    // `sub_41C270(esi, &pos)` / `sub_41BDF0(esi, &pos)`: the new body's own
+    // place. Only a body a placement record put here has one the Session
+    // knows, and only a player already placed has a position to move.
+    if (playerPlaced_)
+        for (const auto& sh : shown_)
+            if (sh.actor == actor && sh.fromTable) {
+                for (int k = 0; k < 3; ++k) playerPos_[k] = sh.pos[k];
+                playerYaw_ = sh.facing;
+                break;
+            }
 
     // the two bios: strcpy, so the NUL is copied and the slot's tail is left
     for (int k = 0; k < 2; ++k) {

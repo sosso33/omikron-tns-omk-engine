@@ -41573,16 +41573,19 @@ def c_engine_become_place():
     body stood. The Sham ride is the scene that shows it: in AREA 137 Fodo
     presses action in 'Sham Monter Gauche' (zone 2239), the script shows the
     Sham (434, SHU_FN on `Sham.CTL`, `character.show 434, 1`) and does
-    `player.become 434`, and the Sham's placement record is 61 units across
-    and a quarter turn round from where Fodo stood.
+    `player.become 434`. Fodo's mount clip (`scx.play.player.wait obj
+    0x72`) has carried him to 33245 -4410 by then, and the Sham's placement
+    record is 29 units from there.
 
     Asserted: the new controller stands at the place the transfer names (x,
     z and facing, rounded), and that place is the Sham's record
-    (33244, -4439, facing 180), not Fodo's (33183, -4412, facing 90). The
+    (33244, -4439, facing 180), not where Fodo's clip left him. The
     run also needs `--stand` to apply to the FIRST controller only - it was
     re-applied at every rebuild and undid the transfer.
     SHOWN TO FAIL: removing the viewer's `setPlayerPosition` puts the Sham at
-    Fodo's 33183 -4412 facing 90.
+    Fodo's 33245 -4410 - `Session::becomePlayer`'s own move to the record
+    does not survive to the rebuild in the viewer, which is why the viewer
+    places the player itself.
     """
     import subprocess, re as _re
     eng = os.path.join(ROOT, "engine")

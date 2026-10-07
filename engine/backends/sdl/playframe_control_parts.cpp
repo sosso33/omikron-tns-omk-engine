@@ -286,7 +286,12 @@ void PlayState::controlBinding() {
                     }
                     if (under >= 0) session.playerOnArea(under);
                 }
-                if (haveStand) {
+                // The START only: a controller rebuilt later (`player.become`)
+                // stands where the game put the new body, and re-applying the
+                // harness's spot there undid the transfer.
+                static bool standApplied = false;
+                if (haveStand && !standApplied) {
+                    standApplied = true;
                     player->placeAt(standAt, standAt[3]);
                     std::printf("street start: --stand puts the player at %.0f %.0f %.0f facing %.0f\n",
                                 standAt[0], standAt[1], standAt[2], standAt[3]);

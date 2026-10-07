@@ -1453,6 +1453,17 @@ strings into the buffers its header points at. That copy is why the stats of
 whoever you currently are persist in the save. All **43** operands name a
 character record, and `var.set.player_id` is its read-back.
 
+**Where the player stands afterwards is where the NEW body stands** (read
+2026-10-07). `Actor_GetPosAndFacing(new)` (0x0041C270) reads the new body's
+node - actor `+244..+252` and the facing at `+420` - and
+`Actor_SetPlacement(new, that)` (0x0041BDF0) writes it straight back; then
+`sub_40D590(new, 0)` loads the new body's `.CTL` and `Player_SetActor`s it,
+and `sub_41DDB0(new)` points both camera actors at it and requests the
+follow camera (`Camera_Request(0)`). The soul moves and both bodies stay
+where they were. The port rebuilt its controller at the OLD body's spot
+until then; in the Sham ride (AREA 137, `player.become 434`) that was 29
+units off the Sham. `verify.py: engine: become place`.
+
 And the listing states it outright — from `AREA 22`:
 
 ```

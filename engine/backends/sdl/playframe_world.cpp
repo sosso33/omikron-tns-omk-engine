@@ -79,6 +79,43 @@ int PlayState::phaseWorld() {
                 if (player) {
                     std::printf("frame %ld: player.become - the player is actor %d now, was %d; "
                                 "the controller is rebuilt for the new body\n", n, playerId, lastPlayerActor);
+                    // ...WHERE THE NEW BODY STANDS. Op 56 (0x402F60) reads
+                    // the NEW body's own node - `Actor_GetPosAndFacing(new)`,
+                    // actor +244..+252 and +420 - and `Actor_SetPlacement`s
+                    // it there before `sub_40D590` makes it the player: the
+                    // soul moves, the body does not. The controller was
+                    // rebuilt at the OLD body's spot (the Sham's rider
+                    // mounted from Fodo's place, every reincarnation where
+                    // the dead body lay). The live node is the staged body's
+                    // `drawAt`, as the program hand-back below takes it; a
+                    // re-placement `character.show` has queued and not yet
+                    // applied, or a body never drawn, stands at the Session's
+                    // `Shown` placement.
+                    const Staged* nb = nullptr;
+                    for (const auto& up : staged) if (up->actor == playerId) { nb = up.get(); break; }
+                    if (!nb)
+                        for (const auto& up : parked) if (up->actor == playerId) { nb = up.get(); break; }
+                    const omk::Session::Shown* nsh = nullptr;
+                    for (const auto& sh : session.shown()) if (sh.actor == playerId) { nsh = &sh; break; }
+                    const bool pendingPlace = nsh && nsh->fromTable && nb &&
+                                              nsh->placeSeq != nb->placeSeqSeen;
+                    if (nb && nb->drawAtKnown && !pendingPlace) {
+                        const float yaw = nb->progYawKnown ? nb->progYaw : nb->facing;
+                        session.setPlayerPosition(nb->drawAt, yaw);
+                        std::printf("frame %ld: player.become - the new body's own place, "
+                                    "%.0f %.0f %.0f facing %.0f (its drawn node)\n", n,
+                                    nb->drawAt[0], nb->drawAt[1], nb->drawAt[2], yaw);
+                    } else if (nsh && nsh->fromTable) {
+                        session.setPlayerPosition(nsh->pos, nsh->facing);
+                        std::printf("frame %ld: player.become - the new body's own place, "
+                                    "%.0f %.0f %.0f facing %.0f (its placement record)\n", n,
+                                    nsh->pos[0], nsh->pos[1], nsh->pos[2], nsh->facing);
+                    } else {
+                        std::printf("frame %ld: player.become - no place known for the new "
+                                    "body: the old body's, LABELLED\n", n);
+                    }
+                    // the facing is the body's, not the last player clip's
+                    handoverFacingKnown = false;
                     player.reset();
                     playerReady = false; adventure = false;
                     forceAdventure = true;
