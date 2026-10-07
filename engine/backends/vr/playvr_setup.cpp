@@ -43,7 +43,11 @@ void vrUsage() {
         "  --vr-fight-turn=DEG  the calm fight camera's turn a frame at 30 fps (1)\n"
         "  --vr-recentre=cut|scene  the head re-zeroed at every cut (the default)\n"
         "                       or only when the camera's kind changes\n"
-        "  numpad 1/3           first person: a 30-degree snap turn\n"
+        "  numpad 1/3           first person and shoot mode: a 30-degree snap turn\n"
+        "  --vr-aim=Y,P         the fake right controller, degrees in the headset's\n"
+        "                       space (yaw right, pitch up); the mouse moves it in shoot\n"
+        "                       mode, where it AIMS - the body and the look pitch follow it\n"
+        "  --vr-head-after=F:Y,P,R  the fake head turned at frame F (after a recentre)\n"
         "  OMK_VRLOG=1          a line a frame: the kind, the authored and drawn eye, him\n");
 }
 
@@ -67,6 +71,18 @@ void PlayState::vrSetup(int argc, char** argv) {
         else if (a.compare(0, 16, "--vr-fight-turn=") == 0) vr.fightTurnDeg = static_cast<float>(std::atof(a.c_str() + 16));
         else if (a == "--vr-recentre=cut") vr.recentreEachCut = true;
         else if (a == "--vr-recentre=scene") vr.recentreEachCut = false;
+        else if (a.compare(0, 9, "--vr-aim=") == 0) {
+            float y = 0.0f, p = 0.0f;
+            if (std::sscanf(a.c_str() + 9, "%f,%f", &y, &p) >= 1) { vr.ctlYaw = y; vr.ctlPitch = p; }
+        }
+        else if (a.compare(0, 16, "--vr-head-after=") == 0) {
+            long f = -1;
+            float y = 0.0f, p = 0.0f, r = 0.0f;
+            if (std::sscanf(a.c_str() + 16, "%ld:%f,%f,%f", &f, &y, &p, &r) >= 2) {
+                vr.headAfterFrame = f;
+                vr.headAfter[0] = y; vr.headAfter[1] = p; vr.headAfter[2] = r;
+            }
+        }
         else if (a.compare(0, 9, "--vr-ipd=") == 0) vr.ipdMm = static_cast<float>(std::atof(a.c_str() + 9));
         else if (takeTriple(a, "--vr-headpos=", t)) for (int k = 0; k < 3; ++k) vr.headPos[k] = t[k];
         else if (takeTriple(a, "--vr-head=", t)) { vr.yaw = t[0]; vr.pitch = t[1]; vr.roll = t[2]; }

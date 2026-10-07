@@ -81,6 +81,12 @@ void simPose(const VrState& v, omk::vr::HeadPose& p) {
             p.fov[e].down = -52.0f * kDegToRad;
         }
     }
+    // the fake RIGHT CONTROLLER: held below and to the right of where the
+    // head started, aimed by its own yaw and pitch in the headset's space -
+    // NOT turned with the head, as a real controller is not
+    p.hand[1].pos[0] = 0.18f; p.hand[1].pos[1] = -0.30f; p.hand[1].pos[2] = -0.30f;
+    omk::vr::quatFromYawPitchRoll(-v.ctlYaw, v.ctlPitch, 0.0f, p.hand[1].quat);
+    p.handValid[1] = true;
 }
 
 // The head's YAW in OpenXR's sense (about +y, + turns left), from its forward.
@@ -154,6 +160,13 @@ void PlayState::vrAfterWorldCamera() {
         if (held(0x47)) vr.roll -= kStep;
         if (held(0x49)) vr.roll += kStep;
         if (held(0x4C)) { vr.yaw = vr.pitch = vr.roll = 0.0f; simRecentre = true; }
+        if (vr.headAfterFrame >= 0 && n >= vr.headAfterFrame) {
+            vr.headAfterFrame = -1;
+            vr.yaw = vr.headAfter[0]; vr.pitch = vr.headAfter[1]; vr.roll = vr.headAfter[2];
+            std::printf("frame %ld: vr - the fake head turned to yaw %.1f pitch %.1f roll %.1f "
+                        "(--vr-head-after)\n", n, static_cast<double>(vr.yaw),
+                        static_cast<double>(vr.pitch), static_cast<double>(vr.roll));
+        }
         simPose(vr, raw);
     }
     if (!raw.valid) return;
@@ -164,7 +177,10 @@ void PlayState::vrAfterWorldCamera() {
     else if (haveDlgCam) kind = VrKind::Dialogue;
     else if (haveEdit || holdEditCam) kind = VrKind::Editing;
     else if (ride.has_value()) kind = VrKind::Ride;
-    else if (shootMode) kind = VrKind::Shoot;
+    // shoot mode while ITS first-person camera holds; a script's camera
+    // taking the view in shoot mode (`shootCameraLive` false) is authored
+    else if (shootMode && shootCameraLive) kind = VrKind::Shoot;
+    else if (shootMode) kind = VrKind::World;
     else if (vr.adventureFirst && adventure && player && playerReady && !playerProgram &&
              !boarded && !leaving && !session_->dialogOpen())
         kind = VrKind::FirstPerson;
@@ -173,9 +189,11 @@ void PlayState::vrAfterWorldCamera() {
     // ---- THE ORIGIN for the kind
     const omk::RCamera authored = view.cam;
     omk::RCamera originSrc = authored;
-    if (kind == VrKind::FirstPerson) {
+    if (kind == VrKind::FirstPerson || kind == VrKind::Shoot) {
         // his head, as shoot mode's first-person eye is placed (`worldCamera`'s
-        // shoot branch): the pelvis lifted by `headLift`, yaw only
+        // shoot branch): the pelvis lifted by `headLift`, yaw only. In shoot
+        // mode too: there the CONTROLLER turns his body (`vrAdventureInput`),
+        // so the view cannot ride his facing, or it would turn twice
         const float lift = player->headLift();
         const float eyeOff[3] = {0.0f, lift, 0.0f}, atOff[3] = {0.0f, lift, 100.0f};
         const omk::FollowCamera fc = player->resolveOffsetsYaw(eyeOff, atOff, authored.hfovDeg);
@@ -205,7 +223,9 @@ void PlayState::vrAfterWorldCamera() {
             originSrc.at[k] = fc.eye[k] + vr.fpFwd[k] * 100.0f;
         }
         originSrc.rollDeg = 0.0f;
-        vr.hidePlayer = true;
+        // shoot mode hides him itself (`Shoot_Enter`'s `sub_436CE0`) and
+        // draws the arm; first person hides the whole body here
+        vr.hidePlayer = kind == VrKind::FirstPerson;
     } else {
         vr.fpInit = false;
     }
@@ -261,10 +281,14 @@ void PlayState::vrAfterWorldCamera() {
     vr.pose = raw;
     vr.pose.head = recentred(raw.head, vr.zeroYaw, vr.zeroPos);
     for (int e = 0; e < 2; ++e) vr.pose.eye[e] = recentred(raw.eye[e], vr.zeroYaw, vr.zeroPos);
+    for (int e = 0; e < 2; ++e)
+        if (raw.handValid[e]) vr.pose.hand[e] = recentred(raw.hand[e], vr.zeroYaw, vr.zeroPos);
 
     // ---- COMPOSED
     vr.authored = authored;
     const omk::RCamera origin = omk::vr::originCamera(originSrc, vr.orient);
+    vr.origin = origin;
+    vr.haveOrigin = true;
     if (vr.mono) {
         // ONE eye, the frame's own size and letterbox: everything flat but
         // the camera, so an unturned head on the authored camera draws the
@@ -301,7 +325,7 @@ void PlayState::vrAfterWorldCamera() {
     static const bool vrLog = std::getenv("OMK_VRLOG") && *std::getenv("OMK_VRLOG") == '1';
     if (vrLog)
         std::printf("[vr] frame %ld kind %s target %.2f %.2f %.2f authored %.2f %.2f %.2f drawn %.2f %.2f %.2f "
-                    "look %.3f %.3f %.3f origin %.2f %.2f %.2f him %.2f %.2f %.2f facing %.2f\n", n, vrKindName(kind),
+                    "look %.3f %.3f %.3f origin %.2f %.2f %.2f him %.2f %.2f %.2f facing %.2f pitch %.2f\n", n, vrKindName(kind),
                     static_cast<double>(authored.at[0]), static_cast<double>(authored.at[1]),
                     static_cast<double>(authored.at[2]),
                     static_cast<double>(authored.eye[0]), static_cast<double>(authored.eye[1]),
@@ -314,7 +338,8 @@ void PlayState::vrAfterWorldCamera() {
                     player ? static_cast<double>(player->pos()[0]) : 0.0,
                     player ? static_cast<double>(player->pos()[1]) : 0.0,
                     player ? static_cast<double>(player->pos()[2]) : 0.0,
-                    player ? static_cast<double>(player->facing()) : 0.0);
+                    player ? static_cast<double>(player->facing()) : 0.0,
+                    static_cast<double>(shootPitch));
 }
 
 bool PlayState::vrHidesPlayer() const { return vr.on && vr.hidePlayer; }
@@ -326,6 +351,7 @@ bool PlayState::vrHidesPlayer() const { return vr.on && vr.hidePlayer; }
 // turn toward that direction, walk while it is within 70 degrees. Nothing new
 // moves him - the `.CTL` channel and the walker take the word they always take.
 void PlayState::vrAdventureInput(std::uint32_t& word) {
+    if (vr.on && vr.kind == VrKind::Shoot && player) { vrShootAim(word); return; }
     if (!vr.on || vr.kind != VrKind::FirstPerson || !vr.haveHeadFwd || !player) return;
     if (word & 0x40000000u) return;   // the idle word: nothing held
     const std::uint32_t dirBits = word & 0xFu;
@@ -356,3 +382,52 @@ void PlayState::vrAdventureInput(std::uint32_t& word) {
 }
 
 #endif  // OMK_VR
+
+#if OMK_VR
+// SHOOT MODE AIMS WITH THE CONTROLLER (§3b 8, step 3). The engine aims the
+// player's shot along his FACING and the look PITCH (`rs.yawDeg = facing`,
+// `rs.pitchDeg = shootPitch` where `Actor_TickProjectiles` fires), and the arm
+// follows the same two (`shootAimSlew`: yaw toward 0 - the body turns with the
+// look - pitch toward the look's). So the controller does what the mouse did:
+// its ray, taken into the world through this frame's origin, sets his facing
+// and the look pitch through `shootGunmanAim` - the solver `--aim-at` uses -
+// toward a point far along the ray, and the shot, the arm and his body follow
+// as they always do. The keyboard's turn and look bits (`Tourner`, `Regarder
+// En-Haut/En-Bas`: 0x1, 0x2, 0x200, 0x1000 in the Tirer group) are taken out
+// of the word, since the controller owns both; the view keeps its own heading
+// (the snap turn) and the head looks freely. Pitch is held to the mouse's own
+// +-45 (`actor/shootmove.h`), the range the arm's keys are authored over.
+void PlayState::vrShootAim(std::uint32_t& word) {
+    word &= ~(0x1u | 0x2u | 0x200u | 0x1000u);
+    if (!(word & 0x3FFFu)) word = 0x40000000u;
+    if (vr.sim) {
+        // the mouse moves the fake controller, and nothing else: zeroed here,
+        // so `adventureAim` does not turn his body with it as well
+        vr.ctlYaw += host.mouseDX * 0.15f;
+        vr.ctlPitch = std::max(-70.0f, std::min(70.0f, vr.ctlPitch - host.mouseDY * 0.15f));
+        host.mouseDX = host.mouseDY = 0.0f;
+    }
+    if (!vr.haveOrigin || !vr.pose.handValid[1]) return;
+    const omk::vr::Pose& h = vr.pose.hand[1];
+    float off[3], dirH[3], dir[3];
+    omk::vr::headToWorld(vr.origin, h.pos, off);
+    const float fwd[3] = {0.0f, 0.0f, -1.0f};
+    omk::vr::rotate(h.quat, fwd, dirH);
+    omk::vr::headToWorld(vr.origin, dirH, dir);
+    float from[3], far[3];
+    for (int k = 0; k < 3; ++k) {
+        from[k] = vr.origin.eye[k] + off[k] * omk::vr::kInchesPerMetre;
+        far[k] = from[k] + dir[k] * 10000.0f;
+    }
+    const int k0[3] = {0, 0, 0};
+    const omk::GunmanAim a = omk::shootGunmanAim(far, from, 0.0f, k0);
+    player->setFacing(a.yawDeg);
+    shootPitch = std::max(-45.0f, std::min(45.0f, a.pitchDeg));
+    if (!vr.aimed || std::fabs(a.yawDeg - vr.aimYaw) > 5.0f || std::fabs(shootPitch - vr.aimPitch) > 5.0f)
+        std::printf("frame %ld: vr - the controller aims: facing %.1f, look pitch %.1f\n", n,
+                    static_cast<double>(a.yawDeg), static_cast<double>(shootPitch));
+    vr.aimed = true;
+    vr.aimYaw = a.yawDeg;
+    vr.aimPitch = shootPitch;
+}
+#endif

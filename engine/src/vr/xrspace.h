@@ -48,6 +48,10 @@ struct HeadPose {
     Pose   head;
     Pose   eye[2];
     EyeFov fov[2];
+    // the CONTROLLERS (step 3): their aim poses in the same local space as
+    // the head - 0 left, 1 right - each with its own validity
+    Pose   hand[2];
+    bool   handValid[2]{false, false};
 };
 
 // How the authored camera's orientation is taken (§3: a flag).

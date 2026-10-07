@@ -45264,6 +45264,74 @@ def c_engine_vr_modes():
                       "Impasse's cuts and not at its seamless hand-over; the fight at one distance, 1 deg a frame"
 
 
+
+def c_engine_vr_aim():
+    r"""SHOOT MODE AIMS WITH THE CONTROLLER - `todo/quest-port.md` §5 step 3.
+
+    The engine aims the player's shot along his FACING and the look PITCH
+    (`rs.yawDeg`/`rs.pitchDeg` where `Actor_TickProjectiles` fires) and the
+    arm follows the same two (`shootAimSlew`). In VR the controller's ray
+    sets both, through `shootGunmanAim` toward a point far along it - the
+    solver `--aim-at` uses - and the keyboard's turn and look bits are taken
+    out of the Tirer word; the view keeps its own heading and the head looks
+    freely. Two runs of the supermarket's shoot phase (`--area 230
+    --scene-chunk 56`, the mode from frame 394), `--vr-sim`, firing with
+    `Tir` (right shift):
+
+    * the fake controller 30 degrees right and 10 up (`--vr-aim=30,10`): his
+      facing is -30 and the pitch 10, and the SHOTS leave at yaw -30, pitch
+      10, their direction's y NEGATIVE - up, in a world whose Y points down;
+    * the controller straight, the head turned 40 degrees away at frame 500
+      (`--vr-head-after`) and `Tourner a droite` (numpad 6, the Tirer
+      group's key) held to the end of the run: the view turns, his facing stays 0 - the
+      aim is the controller's and nothing else's.
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    if not os.path.exists(omkpaths.data("IAM/AREA")):
+        return ("skipped",), ("skipped",), "the game data is absent"
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("skipped",), ("skipped",), "omk-play did not build (needs SDL)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy", OMK_VRLOG="1")
+    base = [binp, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+            "--save", os.path.join(ROOT, "traces", "save-appart.bin"), "--nofmv",
+            "--area", "230", "--scene-chunk", "56", "--shoot-health", "1000",
+            "--frames", "700", "--vr-sim"]
+
+    def run(extra):
+        r = subprocess.run(base + extra, cwd=eng, env=env, capture_output=True,
+                           text=True, errors="replace", timeout=900)
+        return r.stdout
+    o1 = run(["--vr-aim=30,10", "--hold", "0*30,k54*4,0*60,k54*4"])
+    if "vr: not built" in o1:
+        return ("skipped",), ("skipped",), "a build without OMK_VR"
+    o2 = run(["--vr-aim=0,0", "--vr-head-after=500:40,0,0",
+              # numpad 6 held to the END: the row read is inside the hold
+              "--hold", "0*30,k54*4,0*60,k54*4,0*20,k77*300"])
+    shots = lambda o: re.findall(r"SHOT \d+ - Actor_TickProjectiles\(player\): .*?dir (\S+) (\S+) (\S+) "
+                                 r"\(yaw (\S+) pitch (\S+)\)", o)
+    def last(o, after):
+        rows = [m for m in re.finditer(r"^\[vr\] frame (\d+) kind shoot .*? look (\S+) (\S+) (\S+) .*"
+                                       r"facing (\S+) pitch (\S+)$", o, re.M) if int(m.group(1)) >= after]
+        return rows[-1] if rows else None
+    s1 = shots(o1)
+    r1 = last(o1, 600)
+    up = bool(s1) and all(float(x[1]) < 0 for x in s1)
+    aimed = sorted(set((x[3], x[4]) for x in s1))
+    before = last(o2, 0) and [m for m in re.finditer(r"^\[vr\] frame (\d+) kind shoot .*? look (\S+) (\S+) (\S+) .*"
+                                                    r"facing (\S+) pitch (\S+)$", o2, re.M) if int(m.group(1)) < 500]
+    r2 = last(o2, 600)
+    lookMoved = bool(before and r2) and abs(float(before[-1].group(2)) - float(r2.group(2))) > 0.5
+    got = (r1.group(5) if r1 else None, r1.group(6) if r1 else None, aimed, up,
+           r2.group(5) if r2 else None, lookMoved)
+    want = ("-30.00", "10.00", [("-30.0", "10.0")], True, "0.00", True)
+    return got, want, "facing and pitch from the controller; the shots along it, upward; " \
+                      "the head and the keyboard's turn key do not move the aim"
+
+
 CHECKS = [
     ("conversations",      c_conversations,     "FILE_FORMATS 2"),
     ("DIALOGS.TAG",        c_dialog_tag,        "FILE_FORMATS 4"),
@@ -45850,6 +45918,7 @@ SLOW = [
     ("engine: vr camera rule", c_engine_vr_camera_rule, "todo/quest-port.md 5"),
     ("engine: vr frame", c_engine_vr_frame, "todo/quest-port.md 5"),
     ("engine: vr modes", c_engine_vr_modes, "todo/quest-port.md 5"),
+    ("engine: vr aim", c_engine_vr_aim, "todo/quest-port.md 5"),
 ]
 
 

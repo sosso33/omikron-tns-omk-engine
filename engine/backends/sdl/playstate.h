@@ -988,6 +988,7 @@ struct PlayState {
     // build with OMK_VR, empty stubs in `playvr_off.cpp` everywhere else
 #if OMK_VR
     VrState vr{};
+    void vrShootAim(std::uint32_t& word);   // shoot mode: the controller aims (backends/vr only)
 #endif
     void vrSetup(int argc, char** argv);   // the --vr-* flags
     void vrAfterWorldCamera();             // the head on the authored camera

@@ -35,6 +35,14 @@ struct VrState {
     // shoulder (--vr-head=Y,P,R; the numpad moves it), and metres (--vr-headpos)
     float yaw = 0.0f, pitch = 0.0f, roll = 0.0f;
     float headPos[3]{0.0f, 0.0f, 0.0f};
+    // the fake CONTROLLER (right hand): degrees in the headset's local space,
+    // yaw right and pitch up - independent of the head, as a held controller
+    // is (--vr-aim=Y,P; the mouse moves it in shoot mode)
+    float ctlYaw = 0.0f, ctlPitch = 0.0f;
+    // --vr-head-after=FRAME:Y,P,R: the fake head turned at a frame, AFTER the
+    // recentre a new camera kind makes (which zeroes a head turned from the start)
+    long headAfterFrame = -1;
+    float headAfter[3]{0.0f, 0.0f, 0.0f};
     // ---- step 2's choices, each a second path beside the authored one
     bool adventureFirst = true;   // --vr-adventure=first|authored
     bool fightCalm = true;        // --vr-fight=calm|authored
@@ -75,6 +83,10 @@ struct VrState {
     float fightDir[3]{0.0f, 0.0f, 0.0f};
     bool fightInit = false;
     bool snapHeld = false;      // the snap turn's key, for its edge
+    omk::RCamera origin;        // this frame's origin, for the controller's ray
+    bool haveOrigin = false;
+    float aimYaw = 0.0f, aimPitch = 0.0f;   // shoot mode: what the controller last aimed
+    bool aimed = false;
 };
 
 #endif  // OMK_VR
