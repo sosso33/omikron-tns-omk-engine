@@ -10,6 +10,19 @@
 #include "o3de/raster.h"
 #include "vr/xrspace.h"
 
+// WHICH CAMERA THE FRAME HAS, as the headset sees it (step 2): what the
+// headset's origin is, and when it recentres.
+enum class VrKind {
+    World,         // an authored camera: a script's world camera, the follow camera
+    FirstPerson,   // adventure with the player at the keys: the origin is his head
+    Dialogue,      // a conversation's camera
+    Editing,       // a cutscene's camera editing (mode 13)
+    Fight,         // melee's camera (mode 14), calmed
+    Ride,          // a slider ride's camera (mode 8)
+    Shoot,         // shoot mode's first-person camera (step 3 aims it)
+};
+const char* vrKindName(VrKind k);
+
 struct VrState {
     // ---- the command line (`--vr-help`)
     bool on = false;            // a headset this run: the fake one, or a frontend's
@@ -22,6 +35,16 @@ struct VrState {
     // shoulder (--vr-head=Y,P,R; the numpad moves it), and metres (--vr-headpos)
     float yaw = 0.0f, pitch = 0.0f, roll = 0.0f;
     float headPos[3]{0.0f, 0.0f, 0.0f};
+    // ---- step 2's choices, each a second path beside the authored one
+    bool adventureFirst = true;   // --vr-adventure=first|authored
+    bool fightCalm = true;        // --vr-fight=calm|authored
+    float fightTurnDeg = 1.0f;    // --vr-fight-turn=DEG: the calm camera's turn a frame, at 30 fps
+    bool recentreEachCut = true;  // --vr-recentre=cut|scene
+    // THE REFERENCE SPACE - the one seam a standing mode will change: where
+    // the head's local offsets are measured from. Seated: around the origin
+    // as they come, the origin being the authored eye (or his head in first
+    // person). Standing would subtract a floor height here instead.
+    enum class Space { Seated } space = Space::Seated;
 
     // ---- this frame
     omk::vr::HeadPose pose;
@@ -30,6 +53,28 @@ struct VrState {
     omk::RCamera eye[2];        // the cameras the eyes draw with
     int eyeW = 0, eyeH = 0;     // each eye's picture
     long told = -1;             // the frame the setup line was printed on
+    VrKind kind = VrKind::World;
+    bool haveKind = false;
+    // THE RECENTRE: the raw head's yaw and position taken as zero, at a change
+    // of camera kind and (--vr-recentre=cut) at each cut of an authored camera
+    float zeroYaw = 0.0f;       // radians, OpenXR's sense (+ turns left)
+    float zeroPos[3]{0.0f, 0.0f, 0.0f};
+    long recentres = 0;
+    omk::RCamera prevAuthored;
+    bool havePrev = false;
+    // first person: the view's heading in the world (horizontal, unit), set
+    // from his body when the mode begins and turned by the snap turn only
+    float fpFwd[3]{0.0f, 0.0f, 1.0f};
+    bool fpInit = false;
+    float headFwd[3]{0.0f, 0.0f, 1.0f};   // where the head looked last frame (world, horizontal)
+    bool haveHeadFwd = false;
+    bool hidePlayer = false;    // first person: his body is not drawn
+    // the calm fight camera: the distance frozen at the fight's start, and
+    // the direction from the target turned at most fightTurnDeg a frame
+    float fightDist = 0.0f;
+    float fightDir[3]{0.0f, 0.0f, 0.0f};
+    bool fightInit = false;
+    bool snapHeld = false;      // the snap turn's key, for its edge
 };
 
 #endif  // OMK_VR

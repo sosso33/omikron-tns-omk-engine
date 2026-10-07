@@ -901,6 +901,7 @@ void PlayState::worldTexturePool() {
                             !(session.shootMode().active() && shootCameraLive) &&
                             (adventure || uiPause ||
                              (session.dialogOpen() && !playerProgram));
+    if (vrHidesPlayer()) drawPlayer = false;   // a headset's first person (backends/vr)
     {
         static bool wasSeatedHidden = false;
         if (seatedHidden != wasSeatedHidden && player) {

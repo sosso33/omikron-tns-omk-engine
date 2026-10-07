@@ -20,5 +20,7 @@ void PlayState::vrSetup(int argc, char** argv) {
 }
 void PlayState::vrAfterWorldCamera() {}
 bool PlayState::vrWorldDraw(const omk::View&, const omk::MirrorPlane&) { return false; }
+bool PlayState::vrHidesPlayer() const { return false; }
+void PlayState::vrAdventureInput(std::uint32_t&) {}
 
 #endif  // !OMK_VR

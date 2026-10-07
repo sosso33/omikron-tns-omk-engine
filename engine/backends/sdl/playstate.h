@@ -992,6 +992,8 @@ struct PlayState {
     void vrSetup(int argc, char** argv);   // the --vr-* flags
     void vrAfterWorldCamera();             // the head on the authored camera
     bool vrWorldDraw(const omk::View& drawn, const omk::MirrorPlane& plane);   // the eyes; true = drawn
+    bool vrHidesPlayer() const;            // first person: his body not drawn
+    void vrAdventureInput(std::uint32_t& word);   // first person: the walk turned to the look
 
     // ---- THE GPU WINDOW, per backend (`playgpu_vulkan.cpp`, `playgpu_gles.cpp`
     // or `playgpu_none.cpp` - each build links exactly one; todo/play-split.md S5)

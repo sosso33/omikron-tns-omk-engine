@@ -45092,7 +45092,7 @@ def c_engine_vr_frame():
     * FLAT and `--vr-sim=mono --vr-camera=full` with an unturned head must
       be BYTE-IDENTICAL: the head path, composed and drawn, changes nothing
       when the head has not moved - so the flat game is untouched by it;
-    * a head turned 30 degrees (`--vr-head=30,0,0`) must CHANGE the frame,
+    * a head turned 30 degrees (numpad 6 held) must CHANGE the frame,
       so the identity above is not the head being ignored;
     * `--vr-sim`, both eyes side by side: each half mostly drawn (no empty
       eye) and the two halves DIFFERENT (two eyes, not one copied).
@@ -45115,8 +45115,15 @@ def c_engine_vr_frame():
     base = [binp, omkpaths.data_root(), os.path.join(ROOT, "tables"),
             "--save", os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "0",
             "--stand", "1804,0,-6890,336", "--no-dither", "--frames", "40"]
-    runs = {"flat": [], "mono": ["--vr-sim=mono", "--vr-camera=full"],
-            "yaw": ["--vr-sim=mono", "--vr-camera=full", "--vr-head=30,0,0"],
+    # `--vr-adventure=authored`: since step 2 an adventure frame is FIRST
+    # PERSON by default, and the identity is about the authored camera
+    runs = {"flat": [], "mono": ["--vr-sim=mono", "--vr-camera=full", "--vr-adventure=authored"],
+            # ...and the head turned AFTER the first frame: since step 2 the
+            # head is recentred when the camera's kind is first named, so a
+            # head turned from the start (`--vr-head`) is zeroed there. Numpad
+            # 6 held 20 frames is 30 degrees.
+            "yaw": ["--vr-sim=mono", "--vr-camera=full", "--vr-adventure=authored",
+                    "--hold", "k77*20"],
             "sbs": ["--vr-sim"]}
     px, logs = {}, {}
     try:
@@ -45143,6 +45150,118 @@ def c_engine_vr_frame():
            "frame 0: vr - the head on the authored camera" in logs["sbs"])
     want = (True, True, True, True, True, True, True)
     return got, want, "flat == unturned mono; turned != flat; both eyes drawn and different; composed"
+
+
+
+def c_engine_vr_modes():
+    r"""THE HEADSET'S CAMERA, MODE BY MODE - `todo/quest-port.md` §5 step 2.
+
+    `backends/vr/playvr_camera.cpp` names the frame's camera kind and picks
+    the headset's origin for it; every choice is a second path beside the
+    authored camera, by its flag (`--vr-help`). Six headless runs of
+    `--vr-sim` with `OMK_VRLOG=1`, whose `[vr]` line a frame carries the
+    kind, the AUTHORED camera's target and eye, the origin, the drawn eye,
+    where the head looks, and the player:
+
+    * FIRST PERSON (Anekbah's street; `--hold` presses `Avancer` for 120
+      frames): his body hidden is the picture's business, the line's is that
+      the drawn eye stands over him (horizontally within half the inter-eye
+      distance) and that he WALKS WHERE THE HEAD LOOKS - with the head left
+      alone he walks along his first heading (cosine > 0.9), with numpad 6
+      held 60 frames first (90 degrees right) he walks to the RIGHT of it
+      (the displacement's cosine with the first heading's right > 0.7; he
+      turns while he walks, so it is about 76 degrees, not 90);
+    * A CONVERSATION (386, `--call`): with the head turning 1.5 degrees a
+      frame the AUTHORED eyes are the very same as with it still - the head
+      never reaches the game - while the drawn gaze moves;
+    * THE IMPASSE (SCENE 55's editings): the head is recentred at a CUT,
+      among them every editing that starts away from the last camera (331,
+      556, 629, 980, 1164), and NOT at 464, where 'demsuite' takes over
+      from where 'sautdemon' held;
+    * THE FIGHT (`--fight-supermarket`, `--vr-fight=calm`): the drawn eye
+      keeps ONE distance from the fight's target while the authored one moves
+      between 110 and 170, and turns at most `--vr-fight-turn` (1 degree) a
+      frame where the authored camera jumps by up to 120.
+    """
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    if not os.path.exists(omkpaths.data("MESHES/DECORS/ANEKBAH.3DO")):
+        return ("skipped",), ("skipped",), "the game data is absent"
+    b = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("skipped",), ("skipped",), "omk-play did not build (needs SDL)"
+    import math
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy", OMK_VRLOG="1")
+    data, tables = omkpaths.data_root(), os.path.join(ROOT, "tables")
+    appart = os.path.join(ROOT, "traces", "save-appart.bin")
+    resto = os.path.join(ROOT, "traces", "games-resto.bin")
+    rx = re.compile(r"\[vr\] frame (\d+) kind (\S+) target (\S+) (\S+) (\S+) authored (\S+) (\S+) (\S+) "
+                    r"drawn (\S+) (\S+) (\S+) look (\S+) (\S+) (\S+) origin (\S+) (\S+) (\S+) "
+                    r"him (\S+) (\S+) (\S+)")
+
+    def run(args):
+        r = subprocess.run([binp, data, tables, "--vr-sim"] + args, cwd=eng, env=env,
+                           capture_output=True, text=True, errors="replace", timeout=900)
+        if "vr: not built" in r.stdout:
+            return None, r.stdout
+        rows = []
+        for m in rx.finditer(r.stdout):
+            g = m.groups()
+            v = [float(x) for x in g[2:]]
+            rows.append({"f": int(g[0]), "kind": g[1], "target": v[0:3], "authored": v[3:6],
+                         "drawn": v[6:9], "look": v[9:12], "origin": v[12:15], "him": v[15:18]})
+        return rows, r.stdout
+
+    street = ["--save", appart, "--area", "0", "--stand", "1804,0,-6890,336", "--frames", "200"]
+    walk, log = run(street + ["--hold", "0*20,k200*120"])
+    if walk is None:
+        return ("skipped",), ("skipped",), "a build without OMK_VR"
+    turned, _ = run(street + ["--hold", "0*20,k77*60,k200*120"])
+    fp = [r for r in walk if r["kind"] == "first-person"]
+    over = bool(fp) and max(math.hypot(r["drawn"][0] - r["him"][0], r["drawn"][2] - r["him"][2])
+                            for r in fp) < 1.5
+    def unit(a, b):
+        d = [b[0] - a[0], b[2] - a[2]]
+        l = math.hypot(*d)
+        return [d[0] / l, d[1] / l] if l > 1e-6 else [0.0, 0.0]
+    f0 = unit(walk[21]["him"], walk[-1]["him"])           # his first heading, walked
+    right0 = [f0[1], -f0[0]]                                # RCamera's right of it: (f.z, -f.x)
+    dt = unit(turned[81]["him"], turned[-1]["him"])
+    straight = round(f0[0] * f0[0] + f0[1] * f0[1], 2)
+    toRight = round(dt[0] * right0[0] + dt[1] * right0[1], 2)
+
+    call = ["--save", resto, "--slot", "2", "--nofmv", "--no-crowd", "--call", "386", "--frames", "300"]
+    still, _ = run(call)
+    turning, _ = run(call + ["--hold", "k77*300"])
+    sameAuthored = [r["authored"] for r in still] == [r["authored"] for r in turning] and len(still) > 200
+    gazeMoved = any(abs(a["look"][0] - b["look"][0]) > 0.1 for a, b in zip(still, turning))
+
+    imp, implog = run(["--save", appart, "--nofmv", "--no-crowd", "--area", "222", "--scene-chunk", "55",
+                       "--frames", "1200"])
+    cuts = set(int(m.group(1)) for m in re.finditer(r"frame (\d+): vr - camera editing - a CUT", implog))
+    starts = all(f in cuts for f in (331, 556, 629, 980, 1164)) and 464 not in cuts
+
+    fight, _ = run(["--save", appart, "--nofmv", "--fight-supermarket", "--frames", "800"])
+    fr = [r for r in fight if r["kind"] == "fight"]
+    dists = [math.dist(r["target"], r["origin"]) for r in fr]
+    auth = [math.dist(r["target"], r["authored"]) for r in fr]
+    turns = []
+    for a, b2 in zip(fr, fr[1:]):
+        da = [a["origin"][k] - a["target"][k] for k in range(3)]
+        db = [b2["origin"][k] - b2["target"][k] for k in range(3)]
+        la, lb = math.sqrt(sum(x * x for x in da)), math.sqrt(sum(x * x for x in db))
+        c = max(-1.0, min(1.0, sum(p * q for p, q in zip(da, db)) / (la * lb)))
+        turns.append(math.degrees(math.acos(c)))
+    calm = (len(fr) > 60, round(max(dists) - min(dists), 1) if dists else None,
+            max(turns) <= 1.05 if turns else None, (max(auth) - min(auth)) > 20 if auth else None)
+
+    got = (len(fp) > 100, over, straight > 0.9, toRight > 0.7, sameAuthored, gazeMoved, starts, calm)
+    want = (True, True, True, True, True, True, True, (True, 0.0, True, True))
+    return got, want, "first person over him and walking where the head looks; " \
+                      "the authored dialogue camera untouched by the head; recentred at the " \
+                      "Impasse's cuts and not at its seamless hand-over; the fight at one distance, 1 deg a frame"
 
 
 CHECKS = [
@@ -45730,6 +45849,7 @@ SLOW = [
     ("engine: meca react", c_engine_meca_react, "todo/scene-gameplay-audit.md; docs/SCRIPT_VM.md"),
     ("engine: vr camera rule", c_engine_vr_camera_rule, "todo/quest-port.md 5"),
     ("engine: vr frame", c_engine_vr_frame, "todo/quest-port.md 5"),
+    ("engine: vr modes", c_engine_vr_modes, "todo/quest-port.md 5"),
 ]
 
 

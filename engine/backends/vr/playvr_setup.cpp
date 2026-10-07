@@ -35,7 +35,16 @@ void vrUsage() {
         "                       (4/6 yaw, 8/2 pitch, 7/9 roll, 5 recentres)\n"
         "  --vr-headpos=X,Y,Z   the fake head's offset in metres (x right, y up, z back)\n"
         "  --vr-ipd=MM          the distance between the eyes (64)\n"
-        "  --vr-fov=quest2      a nominal asymmetric eye instead of the authored fov\n");
+        "  --vr-fov=quest2      a nominal asymmetric eye instead of the authored fov\n"
+        "  --vr-adventure=first|authored  adventure in first person, moving where\n"
+        "                       the head looks (first, the default) or the game's camera\n"
+        "  --vr-fight=calm|authored  the fight camera at a frozen distance, turning\n"
+        "                       slowly (calm, the default) or as the game moves it\n"
+        "  --vr-fight-turn=DEG  the calm fight camera's turn a frame at 30 fps (1)\n"
+        "  --vr-recentre=cut|scene  the head re-zeroed at every cut (the default)\n"
+        "                       or only when the camera's kind changes\n"
+        "  numpad 1/3           first person: a 30-degree snap turn\n"
+        "  OMK_VRLOG=1          a line a frame: the kind, the authored and drawn eye, him\n");
 }
 
 }  // namespace
@@ -51,6 +60,13 @@ void PlayState::vrSetup(int argc, char** argv) {
         else if (a == "--vr-camera=level") vr.orient = omk::vr::CameraOrientation::Level;
         else if (a == "--vr-camera=full") vr.orient = omk::vr::CameraOrientation::Full;
         else if (a == "--vr-fov=quest2") vr.questFov = true;
+        else if (a == "--vr-adventure=first") vr.adventureFirst = true;
+        else if (a == "--vr-adventure=authored") vr.adventureFirst = false;
+        else if (a == "--vr-fight=calm") vr.fightCalm = true;
+        else if (a == "--vr-fight=authored") vr.fightCalm = false;
+        else if (a.compare(0, 16, "--vr-fight-turn=") == 0) vr.fightTurnDeg = static_cast<float>(std::atof(a.c_str() + 16));
+        else if (a == "--vr-recentre=cut") vr.recentreEachCut = true;
+        else if (a == "--vr-recentre=scene") vr.recentreEachCut = false;
         else if (a.compare(0, 9, "--vr-ipd=") == 0) vr.ipdMm = static_cast<float>(std::atof(a.c_str() + 9));
         else if (takeTriple(a, "--vr-headpos=", t)) for (int k = 0; k < 3; ++k) vr.headPos[k] = t[k];
         else if (takeTriple(a, "--vr-head=", t)) { vr.yaw = t[0]; vr.pitch = t[1]; vr.roll = t[2]; }
@@ -66,6 +82,12 @@ void PlayState::vrSetup(int argc, char** argv) {
                     static_cast<double>(vr.headPos[0]), static_cast<double>(vr.headPos[1]),
                     static_cast<double>(vr.headPos[2]),
                     vr.questFov ? ", a nominal Quest eye" : "");
+    if (vr.on)
+        std::printf("vr: adventure %s, fight %s (%.1f deg a frame), recentre at %s, seated\n",
+                    vr.adventureFirst ? "FIRST PERSON, moving where the head looks" : "on the game's camera",
+                    vr.fightCalm ? "CALM - frozen distance" : "on the game's camera",
+                    static_cast<double>(vr.fightTurnDeg),
+                    vr.recentreEachCut ? "every cut" : "a change of camera kind");
 }
 
 #endif  // OMK_VR

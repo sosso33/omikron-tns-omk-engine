@@ -260,6 +260,7 @@ void PlayState::inputPause() {
     if (walk) in.setRepeatMask(omk::kUiRepeatMask | (shootMode ? 0x100u : 0u));
     else if (adventure) in.setRepeatMask(0);
     bits = in.frame(st);
+    vrAdventureInput(bits);   // a headset's first person: the walk turned to the look (backends/vr)
     // ...and the word HELD this frame, before any edge filter - what a
     // "while held" rule reads (the dialogue line's scroll, below).
     heldBits = in.poll(st);
