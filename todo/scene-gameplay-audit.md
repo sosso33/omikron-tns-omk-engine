@@ -1,6 +1,6 @@
 # Scene-specific gameplay - what the port does not run (audit, 2026-10-05)
 
-**Updated 2026-10-07** at `82a8d54`: rows 1, 2 and 7 are DONE, and row 3 later the same day (struck below,
+**Re-checked 2026-10-07** at `842bd42` (nothing moved since: no commit after it, and the uncommitted work in the tree is the slider's). **Updated 2026-10-07** at `82a8d54`: rows 1, 2 and 7 are DONE, and row 3 later the same day (`842bd42`; struck below,
 with their commits); every other row re-checked against the tree and still
 open - no `onCall` arm for ops 54, 127, 134, 135, 137, 142 (94 and 122 are only
 classified by `visibleOp`, `area.cpp:3477`), nothing posts messages 23/24,
@@ -38,7 +38,7 @@ software-mode glow meshes - not needed, the port is the HAL device).
 | 9 | **Shoot mode: weapon change** `MDGUN` | every shoot phase | event 48, `Shoot_InitWeapon`, HUD refresh | not modelled (`projectile.h:167`) |
 | 10 | **Shoot mode: jump** `MDJP` | every shoot phase | clears `dword_6A52CC`, `sub_47D2E0` | not modelled (`shootmove.h:82`) |
 | 11 | **Adventure first-person look** `MDHEAD00/01` (key L) | everywhere; H1/F1 g0/g27/g28, Sham | actor +1305: head pitch ±40 / yaw ±70, `Camera_Request(3)` | missing - the key only plays the stand loop. Not checked in play |
-| 12 | **VIDEOPHONE** callback (screen 0) | `ui.open 0` x10: AREA 41, SCENE 39, 45, 46, 47, 53, 62 | item callback 0x0049DBF0 | partial; last screen in `todo/missing-ui.md:209` |
+| 12 | **VIDEOPHONE** callback (screen 0) | `ui.open 0` x10: AREA 41, SCENE 39, 45, 46, 47, 53, 62 | item callback 0x0049DBF0 | partial; last screen in `todo/missing-ui.md:209`. NOTE: 0x0049DBF0 is the SNEAK QUIT tab's "show Oui/Non" (`sub_428FF0(0x004DEBA0, 0x40000001, 0)`), already ported as `kCbSneakQuitShow` (`widgets.cpp:2128`, `:2174`) - so the screen's gap is not that function; re-read what screen 0 lacks before sizing it |
 | 13 | **`image.show`** (op 94) | AREA 56 Jaunpur BE Entrée, 76 Jangir (2), 98 Lahoreh Yrmali Place | full-screen `IMAGES\%06lx.BMP` (all ship) | no consumer |
 | 14 | **op 122 = SHOW a set piece** (newly read; inverse of 123) | AREA 2 startup (ids 0, 0, 1) | `sub_41BD40(id,1)` -> `SetPiece_Show` (`04_sys.c:6253`) | no case; set pieces default hidden (`setpiece.h:121`), so two effects in Gandhar's cave likely never show |
 | 15 | `camera.follow_player` (54) | AREA 24 Anekbah Hall 42 | camera back to follow | no consumer |
