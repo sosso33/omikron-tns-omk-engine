@@ -96,6 +96,7 @@
 #include <fstream>
 #include <vector>
 #include <map>
+#include <tuple>
 #include <memory>
 #include <thread>
 #include <mutex>

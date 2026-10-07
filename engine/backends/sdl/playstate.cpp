@@ -551,11 +551,30 @@ const omk::PedClip * PlayState::shootClipBySlot(int group, int slot) {
     return nullptr;
 }
 
-const omk::NodeTracks * PlayState::pedTracksFor(int sex, const omk::PedClip& c, const std::vector<omk::Mesh>& meshes) {
+const omk::NodeTracks * PlayState::pedTracksFor(int sex, const omk::PedClip& c, const std::vector<omk::Mesh>& meshes,
+                                                const std::string& model) {
     // `PlayerController::poseTracks`'s recipe over the crowd library: the
     // descriptor's tracks resolve to meshes by name, key 0 is the rest
     // sentinel so frame f reads key f + 1
-    const auto key = std::make_pair(sex, c.slot);
+    //
+    // KEYED BY THE SKELETON TOO. A track's `ids` are mesh INDICES of the
+    // model it was resolved against, and this cache was keyed by (sex, clip)
+    // alone - so whichever model asked first decided the indices for every
+    // walker of that sex playing that clip. A model laid out otherwise (a
+    // city's extras wear 76-mesh LOD chains, others 19 meshes) had its
+    // channels on the wrong meshes or on none, and a part no channel reaches
+    // stays at rest: arms out, a T-pose. And WHICH model asked first follows
+    // the order walkers came into view after the last clear - the Quest's
+    // street, 2026-10-07: T-posed npcs after an interior, "sometimes going in
+    // another indoors fixed it, sometimes not". The layout is the meshes'
+    // names and parents, so a model's texture variants (PSH_FN / PSH1_FN)
+    // still share one entry.
+    std::uint64_t layout = 1469598103934665603ull;
+    for (const auto& m : meshes) {
+        for (char ch : m.name) layout = (layout ^ static_cast<unsigned char>(ch | 0x20)) * 1099511628211ull;
+        layout = (layout ^ static_cast<std::uint64_t>(static_cast<std::uint32_t>(m.parent))) * 1099511628211ull;
+    }
+    const auto key = std::make_tuple(sex, c.slot, layout);
     auto it = pedTracks.find(key);
     if (it != pedTracks.end()) return it->second.valid() ? &it->second : nullptr;
     omk::NodeTracks t;
@@ -655,6 +674,29 @@ const omk::NodeTracks * PlayState::pedTracksFor(int sex, const omk::PedClip& c, 
             }
         }
     }
+    // ...and what the shared key used to hand this model instead: another
+    // layout's entry for the same clip, compared track by track (a THING
+    // MEASURED - the old rule's error, logged the first times it is seen)
+    static int mismatchTold = 0;
+    if (mismatchTold < 12)
+        for (const auto& [k, other] : pedTracks) {
+            if (std::get<0>(k) != sex || std::get<1>(k) != c.slot || std::get<2>(k) == layout) continue;
+            if (other.ids.size() != t.ids.size()) continue;
+            int differ = 0, unbound = 0;
+            for (std::size_t i = 0; i < t.ids.size(); ++i) {
+                if (other.ids[i] != t.ids[i]) ++differ;
+                if (t.ids[i] >= 0 && (other.ids[i] < 0 ||
+                                      static_cast<std::size_t>(other.ids[i]) >= meshes.size())) ++unbound;
+            }
+            if (differ) {
+                ++mismatchTold;
+                std::printf("crowd tracks: clip slot %d (group %d) for %s (%zu meshes) - the shared "
+                            "binding of another skeleton had %d of %zu tracks on other meshes, %d on "
+                            "none of this one's\n", c.slot, sex, model.empty() ? "?" : model.c_str(),
+                            meshes.size(), differ, t.ids.size(), unbound);
+            }
+            break;
+        }
     it = pedTracks.emplace(key, std::move(t)).first;
     return it->second.valid() ? &it->second : nullptr;
 }

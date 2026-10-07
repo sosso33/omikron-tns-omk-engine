@@ -72,6 +72,7 @@ void PlayState::worldCrowd() {
         pedJobs.clear();
         const double pedSerial0 = phaseNow();
         int pedRebound = 0;   // walkers whose clip pointer survived a library change
+        int pedModelSwapped = 0;   // walkers whose slot was drawn last as ANOTHER model
         for (std::size_t i = 0; i < ws.size(); ++i) {
             const auto& w = ws[i];
             PedStaged& p = *pedStaged[i];
@@ -84,7 +85,21 @@ void PlayState::worldCrowd() {
                         dz = w.body[2] - view.cam.eye[2];
             const float d2 = dx * dx + dy * dy + dz * dz;
             if (d2 > reach * reach * 4.0f) continue;   // far past any root radius: skip the model
-            if (!p.mo) p.mo = charModelFor(w.model);
+            // THE WALKER'S OWN MODEL, looked up every frame - a map lookup when
+            // it is resident. It was taken ONCE (`if (!p.mo)`), and this list
+            // is rebuilt only when the number of movers changes: a city
+            // reloads its circuit on every entry and refills to the same cap
+            // (Anekbah's 200), so after any interior each slot kept its LAST
+            // occupant's model - the wrong body on a new walker - and, once
+            // the per-frame eviction let that model go because no live
+            // walker wore it any more, a pointer to a freed one (the Quest,
+            // 2026-10-07: T-posed npcs beside animated ones after an
+            // interior). The caches below follow `p.mo` (`cacheMo`).
+            {
+                CharModel* const was = p.mo;
+                p.mo = charModelFor(w.model);
+                if (was && p.mo && was != p.mo && p.cacheMo == was) ++pedModelSwapped;
+            }
             if (!p.mo || !p.mo->ready) continue;
             {
                 const float r = p.mo->root >= 0 && static_cast<std::size_t>(p.mo->root) < p.mo->meshes.size()
@@ -105,10 +120,10 @@ void PlayState::worldCrowd() {
             // pointer test equal - the walker drawn from freed tracks. The
             // Quest, 2026-10-07: back in Anekbah from an interior, "all npc
             // in the streets are T-posed".
-            if (w.clip != p.clipWas || p.cacheGen != pedCacheGen) {
+            if (w.clip != p.clipWas || p.cacheGen != pedCacheGen || p.cacheMo != p.mo) {
                 if (w.clip == p.clipWas && p.cacheGen != pedCacheGen) ++pedRebound;
                 p.clipWas = w.clip;
-                p.tracks = pedTracksFor(w.sex, *w.clip, p.mo->meshes);
+                p.tracks = pedTracksFor(w.sex, *w.clip, p.mo->meshes, w.model);
             }
             if (p.cacheGen != pedCacheGen || p.cacheMo != p.mo || p.cacheTracks != p.tracks ||
                 p.cacheModel != w.model) {
@@ -175,6 +190,9 @@ void PlayState::worldCrowd() {
             pedJobs.push_back(job);
         }
         phSpan["ped serial"] += phaseNow() - pedSerial0;
+        if (pedModelSwapped)
+            std::printf("frame %ld: crowd library - %d walker(s) whose slot was last drawn as another "
+                        "model, re-resolved to their own\n", n, pedModelSwapped);
         if (pedRebound)
             std::printf("frame %ld: crowd library - %d walker(s) rebound after the library change "
                         "though their clip pointer was unchanged (their tracks were the cleared "

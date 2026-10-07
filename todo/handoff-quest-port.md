@@ -280,6 +280,56 @@ flat game has both.
   the walkers are drawn to the clip distance, not cut at 40 m. If it is
   something else, say where.
 
+**The reader's account of report 3, 2026-10-07 21:10** (recorded as said,
+after the fixes above were installed and before they were played):
+* the T-posed npcs happened SEVERAL times, not once; going into another
+  interior and out again sometimes fixed it, sometimes not;
+* after a while there were normally animated npcs IN ADDITION to the
+  T-posed ones - "which made me wonder if the T-pose npcs were not npcs that
+  were supposed to be destroyed";
+* "more npcs than normal" means: several times the crowd DENSITY seemed
+  bigger on going outside after entering a building - first noticed on
+  leaving the TEMPLE in Qalisar;
+* in VR, through the small gap between doors, the street's npcs are still
+  there and moving while he is indoors;
+* the reader suspects the preload radius, the Quest build's main new thing,
+  in how scripts are loaded.
+
+**What the account changed, 2026-10-07 21:30 - installed, NOT yet played.**
+Read against the run's log:
+* the street crowd is NOT duplicated in the simulation: Qalisar holds 167
+  live walkers before, inside and after the temple, and staging is one body
+  per actor. So extra bodies are DRAWING faults, and two were found in the
+  walkers' drawing, both latent in the flat game:
+  - **a walker's model was taken ONCE** (`if (!p.mo)`), and the per-walker
+    list is rebuilt only when the number of movers changes - which a city
+    reloading its circuit to the same cap (Anekbah's 200) does not. After any
+    interior each slot kept its previous occupant's model, and once the
+    eviction let that model go, a pointer to a freed one. Now resolved from
+    the walker's own model every frame, the tracks rebound with it;
+  - **the crowd's track cache was keyed (sex, clip) only**, its mesh indices
+    the first asking model's - now keyed by the skeleton layout as well. On
+    three fresh streets no clip was bound differently, so this one is a
+    latent fault, NOT shown to be the reader's.
+  Neither is reproduced on the desktop: the airlock and the temple cannot be
+  walked out of and back into with `--hold` (backwards does not reach the
+  trigger, turning does not find the door). **The next play's log decides**:
+  `crowd library - N walker(s) whose slot was last drawn as another model`,
+  `... rebound after the library change`, and `crowd tracks: ... the shared
+  binding of another skeleton` - each N above 0 is a fault caught.
+* **there is no Quest-only preload**: `quest-port.md` §4's mode was never
+  built. What preloads is the engine's own `area.preload` (a door zone loads
+  the next area into the second resident slot) and the threaded set read -
+  the same on every build.
+* **the street's walkers keep walking and are DRAWN while he is indoors**
+  (the temple: 44 drawn with Qalisar's slot hidden). Whether the original
+  draws a hidden slot's crowd is not read - `sub_48D7F0`'s caller is the
+  place to look; recorded, not changed.
+* **two programs drive one actor** at frame 98359: actors 147 CMH_FN and 458
+  CWH_FN each have a pose on a sewer path AND on an Anekbah path 20 m apart
+  in the same frame - two resident scenes naming the same actors. One body,
+  so not a duplicate, but a body that jumps. Recorded, not investigated.
+
 **The order for the rest** (one at a time, each played before the next):
 2. ~~the menu stick~~ - done above;
 3. ~~the street after an interior~~ - above;

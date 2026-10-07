@@ -2383,7 +2383,7 @@ void PlayState::worldStaged() {
                                    gdIt->second.clip >= 0 && !onTurn && s.deathType < 0;
                 if (gaOwn)
                     if (const omk::PedClip* gcl = shootClipBySlot(grp, gdIt->second.clip)) c = gcl;
-                if (c) shootTracks = pedTracksFor(grp, *c, s.mo->meshes);
+                if (c) shootTracks = pedTracksFor(grp, *c, s.mo->meshes, s.model);
                 if (gaOwn && shootTracks && shootTracks->frames > 0)
                     shootFrame = std::clamp(static_cast<int>(gdIt->second.frame) - 1, 0,
                                             shootTracks->frames - 1);

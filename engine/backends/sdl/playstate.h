@@ -480,7 +480,9 @@ struct PlayState {
     int vehLive{};
     int vehStopped{};
     long vehTold{};
-    std::map<std::pair<int, int>, omk::NodeTracks> pedTracks{};   // (sex, clip slot) -> its tracks
+    // (sex or shoot group, clip slot, the model's SKELETON LAYOUT) -> its tracks:
+    // a track's mesh index is the model's own, so two layouts cannot share one
+    std::map<std::tuple<int, int, std::uint64_t>, omk::NodeTracks> pedTracks{};
     long pedCacheGen{};
     std::vector<std::byte> pedAni{};
     std::string pedAniName{};
@@ -860,7 +862,8 @@ struct PlayState {
     const omk::PedClip * shootClipOfType(int group, int type);
     const omk::PedClip * shootClipExact(int group, int type);
     const omk::PedClip * shootClipBySlot(int group, int slot);
-    const omk::NodeTracks * pedTracksFor(int sex, const omk::PedClip& c, const std::vector<omk::Mesh>& meshes);
+    const omk::NodeTracks * pedTracksFor(int sex, const omk::PedClip& c, const std::vector<omk::Mesh>& meshes,
+                                         const std::string& model = {});
     void shootNoise(long frame, int from, const float at[3], const char* what);
     // the freeze (`dword_4E9760`): its bit on every record made equal to the
     // Session's flag, and the WAKE the noise, a hit and a strike begin with
