@@ -1,204 +1,234 @@
-# Handoff — the META QUEST VR PROTOTYPE (begun 2026-10-06, updated 2026-10-07)
+# Handoff — the META QUEST VR PROTOTYPE (begun 2026-10-06, updated 2026-10-07 evening)
 
 **Read this first to pick up the Quest.** [`quest-port.md`](quest-port.md) is
 the plan and the record: §1-4 why this code and not Unity, the performance
 proxy, the camera rule, the preload mode; **§5 the seven-step implementation
-plan**, each finished step followed by its "DONE" block with what was read,
-measured and checked. This file is the state, the recipes and what to do
-next.
+plan**, each finished step followed by its block with what was read,
+measured, played and checked. This file is the state, the recipes and what
+to do next.
 
 The reader's way of working on this task: **one step at a time** - finish
-it, commit it, report it in a message that stands on its own, then STOP and
-wait for "Go".
+it, commit it, report it in a message that stands on its own, then wait.
+The reader PLAYS each build on the headset and reports; a fix is not done
+until it has been played.
 
 ---
 
 ## 1. Where it stands
 
-**Steps 1-4 done; steps 5-7 not started.** Step 4 RAN on the reader's Quest 2
-on 2026-10-07: flat, in a 2D panel, to the start menu with the films' sound.
-**The controllers cannot drive it** - measured: in a 2D panel only the laser
-trigger arrives (as a touch and a left click), every button and stick is kept
-by the shell. The reader chose to go to step 5 rather than map touch.
+**OMK runs IMMERSIVE on the reader's Quest 2**: the game drawn per eye at the
+runtime's resolution, 72 fps, first person with the Touch controllers, the
+interface as a transparent layer, the screens as windows fixed in the world
+over a shaded world. Steps 1-5 done, step 6 mostly done (6a, 6b; 6c the
+keyboard not started), step 7 not started.
 
 | step | state | commits |
 |---|---|---|
 | 1 the stereo seam, the fake headset | done | up to `2b22f9e` |
 | 2 the cameras, mode by mode | done | `94c1987`, `54178a4` |
-| 3 shoot mode aims with the controller | done | `d4a8bb4`, `93a7c66` |
-| 4 an Android build booting FLAT on the Quest | done - runs on a Quest 2 to the start menu; no controller input in a 2D panel | `3d63f43`, `b679f0e` |
-| 5 the OpenXR frontend | 5a (the screen) and 5b (the eyes, the walk, the scale row) run on a Quest 2 | `4a25630` and the next |
-| 6 the interface on a quad, the films, the keyboard | not started; the screen analysis is written (§5 step 6) | |
+| 3 shoot mode aims with the controller | done on the desktop; NOT yet played on the headset | `d4a8bb4`, `93a7c66` |
+| 4 an Android build | done - played flat in a 2D panel, then superseded by 5 | `3d63f43`, `b679f0e` |
+| 5a OpenXR, the frame on a quad | done, played | `4a25630` |
+| 5b the eyes, the walk, the scale row, the pacing | done, played | `c3f5718` |
+| - the headset's enhancements and clocks | done, played | `7797ac3`, `934d17b` |
+| - the street's slow frames (the re-floor upload) | done, played | `e3c6ac0` |
+| 6a the interface as a transparent layer | done, played | `f1d1d28` |
+| 6b the screens: world-fixed window, shaded world | done, played | `16dca15` |
+| 6b the videophone's MONITOR (the caller's picture) | **built, installed, NOT yet played** | `7382903` |
+| 6c the system keyboard (the name field) | not started | |
 | 7 the first play pass | not started | |
 
-What works under `--vr-sim` (desktop, software / GLES / Vulkan builds):
+**On the headset (Quest 2, Horizon OS / Android 14, runtime Oculus 201.124.0):**
 
-* **Stereo**: side by side, one eye per half, each through an OFF-AXIS
-  frustum (`RCamera::lensX/lensY/tanHalfV`, honoured by the software
-  raster, GLES and Vulkan - **Vulkan built, never run**); one cull pass for
-  both eyes; `--vr-sim=mono` draws one eye full frame.
-* **The camera rule**: the authored camera is the headset's ORIGIN, the head
-  composed in its own frame (`src/vr/xrspace.cpp`); `--vr-camera=level`
-  (default) drops its pitch and roll. The head RECENTRES at a camera-kind
-  change and at a cut (eye jump > 1 m or gaze > 20° in a frame), never in
-  first person or a fight.
-* **Adventure is first person** (`--vr-adventure=first`, default; `authored`
-  keeps the game's camera): eye at the pelvis + the engine's own first-person
-  height (~1.81 m), body hidden, snap turn 30° (numpad 1/3), movement
-  relative to the LOOK (the head's yaw translated into the Aventure input
-  bits: turn beyond 12°, walk within 70°).
-* **The fight camera, calmed** (`--vr-fight=calm`, default): the game's own
-  `Fight_TickCamera` output with its distance frozen and its turn limited to
-  `--vr-fight-turn` (1°/frame).
-* **Shoot mode aims with the right controller**: its ray goes through
-  `shootGunmanAim` and sets the player's facing and `shootPitch` (±45), as
-  the mouse did; the shot and the arm follow. Shoot mode's keyboard
-  turn/look bits are stripped in VR.
-* **The flat game is unchanged**: with no head pose every frame is
-  byte-identical to before; every option is a path BESIDE the original, which
-  stays the default and stays selectable.
+* **The eyes** at the runtime's recommended size (1440x1584 on a Quest 2),
+  `--vr-scale=S` or OPTIONS ROW 2 (the resolution line, live: the recommended
+  x 0.8 .. 1.5, labelled `W x H (S x)`). **Default 1.0x - the reader's
+  decision**; 1.1x also holds 72 with MSAA, 1.3x does not (60-65).
+* **72/72 fps**, the headset pacing (`Frontend::paces()` skips the game's
+  30/60 pacer; the simulation steps on the measured delta).
+* **Enhancements, the Quest's defaults** (`android_main.cpp`): 4x MSAA
+  (GLES 3 on Android), trilinear with 16x anisotropy, fitted text. Per-pixel
+  light, mapped shadows, unlimited distance OFF (they took the game thread
+  from ~6 to ~13.6 of 13.9 ms). `XR_EXT_performance_settings`: CPU
+  SUSTAINED_HIGH, GPU SUSTAINED_HIGH above 1.0x (the GPU was already at its
+  top level; the CPU went from 2-3 to 5).
+* **First person**: the left stick's analog direction, relative to the head,
+  SETS his facing and he walks; the right stick snap-turns 30 degrees; under
+  a screen the stick is the menu's (the kind held, no rewrite).
+* **The Touch controllers as the pad** (`xr::readControllers`): A confirm /
+  action, B back / jump, X, Y, grips the shoulders, right trigger the shoot
+  group's action, left trigger or a stick click the sneak, left menu START.
+* **The interface over the eyes** (6a): the flat GPU path's overlay frame
+  presented as a premultiplied quad layer; fitted glyph edges blended on the
+  overlay planes (they were pink). The panel 1.2 m away, 1.2 m wide.
+* **The screens** (6b): the panel PLACED where the head looks (level, 1.2 m)
+  when a screen opens or a conversation starts, fixed in the world. Behind a
+  screen the original hides the world behind (the sneak, terminals...), a
+  headset draws it on, SHADED (`--vr-shade=0.45`), the panel opaque; a panel
+  that dims the world itself (shops, SAVE GAME, PAUSE GAME) keeps its own dim
+  and no extra shade. Only the drawing: Kay'l held, the sound suspended.
+* **The videophone's caller** (NOT yet played): on a frame whose panel holds
+  a 3D viewport item the eyes are drawn AND the world once more through the
+  game's view kept before the eyes rewrite it (`vr.monitorView`), read back
+  into the panel - a flat monitor - with the side-plane cull off for that
+  frame so one draw list holds both cameras' sight. Before it, the video
+  rectangle stayed black (Telis's call, the restaurant).
+
+**The flat game is unchanged**: with no head pose every frame is
+byte-identical; every VR option is a path BESIDE the original.
 
 ## 2. Where the code is - and the two rules for it
 
-* `engine/src/vr/xrspace.*` - the platform-free arithmetic (poses, the
-  composition, the cull camera, quaternions). Tested by
-  `engine/tools/vr_probe.cpp`.
-* `engine/backends/vr/playvr.h` - `VrKind`, `VrState` (ALL the VR state, one
-  `PlayState` member); `playvr_setup.cpp` the `--vr-*` flags,
-  `playvr_camera.cpp` the fake headset / the modes / the recentre / the input
-  translation / the aim, `playvr_draw.cpp` the two-eye draw.
-* `engine/backends/sdl/playvr_off.cpp` - the stubs a non-VR build links.
-* **The main code holds one-line calls only**: `play.cpp` (`vrSetup`),
-  `playframe_world_scene.cpp` (`vrAfterWorldCamera`, `vrHidesPlayer`),
-  `playframe_world_draw.cpp` (`vrWorldDraw`), `playframe_input_parts.cpp`
-  (`vrAdventureInput`); `frontend.h` a `headPose()` virtual; `raster.h` three
-  fields; the off-axis rows in `raster.cpp`, `glesrender.cpp`, `vkrender.cpp`.
+* `engine/src/vr/xrspace.*` - the platform-free arithmetic. `HeadPose` also
+  carries the frontend's eye size. Tested by `engine/tools/vr_probe.cpp`.
+* `engine/backends/vr/` - `playvr.h` (`VrState`: ALL the VR state),
+  `playvr_setup.cpp` (the `--vr-*` flags: `--vr-flat`, `--vr-scale`,
+  `--vr-shade` among them), `playvr_camera.cpp` (the modes, the recentre, the
+  first-person walk, the aim, `vrDrawsBehindScreen`, `vrNoSideCull`, the
+  panel anchoring), `playvr_draw.cpp` (the eyes - into the headset's
+  swapchains under `OMK_OPENXR` - the monitor, the overlay frame).
+* `engine/backends/openxr/xrhost.*` - THE HEADSET (Android only,
+  `OMK_OPENXR`): the loader, instance, session on SDL's EGL context, LOCAL
+  and VIEW spaces, the quad and the two eye swapchains (`Chain`), the frame
+  lifecycle (`headPose` BEGINS the frame - `xrWaitFrame` paces - `eyeTarget`
+  / `eyeDone`, `frameTarget` for a flat present, `submit` with the
+  projection and/or the quad), the actions, the performance levels,
+  `anchorQuad`, `eyeModes` / `setEyeSize`.
+* `engine/backends/android/` - `CMakeLists.txt` (SDL2 from source, the
+  OpenXR loader imported, `OMK_VR=1 OMK_GLES=1 OMK_OPENXR=1`),
+  `android_main.cpp` (`SDL_main`: the arguments, the Quest's enhancement
+  defaults, the log pipe to the dated file and logcat, the `[in]` raw input
+  log, an 8 MiB game thread), `AndroidManifest.xml` (immersive, the loader's
+  permissions and queries), `java/` (`OMKActivity`).
+* `scripts/android-build.sh` - no Gradle: finds the NDK / SDK / JDK per
+  machine, fetches SDL2 2.32.10 and the OpenXR loader 1.1.63 into
+  `engine/build/android/`, builds, packages, signs.
+* **Seams in shared files** (one-line calls, `#if OMK_OPENXR` / `OMK_VR`):
+  `playgpu_gles.cpp` (`presentTarget` / `swapOrSubmit`, the overlay as a
+  layer, `xr::start` BEFORE the renderer's `init`, the GLES 3 context on
+  Android), `sdlfront.*` (`headPose`, `paces`, `displayModes`, the pad, no
+  text input on Android), `playframe_present.cpp` (the pacer skipped when
+  the host paces), `playframe_input_parts.cpp` (row 2 = the eye size),
+  `playframe_world.cpp` (`vrDrawsBehindScreen`), `playframe_world_draw.cpp`
+  (`vrNoSideCull` in `outsideView`), `frontend.h` (`paces()`),
+  `glesrender.cpp` (`presentEye` with a shade, `setOverlayAsLayer`, MSAA on
+  Android, the orphaned whole upload past 64 dirty runs on Android, the
+  `heavy upload` log), `text.cpp` (the fitted glyph on the overlay planes -
+  every build).
 
 **Rule 1 (the reader's): VR code in its own files**; an existing file gains
 only a call at its seam. **Rule 2: everything VR is under `#if OMK_VR`**,
-defined only by the main `engine/Makefile` (`VR ?= 1`). The Vita, classic
-Mac, 3DS and PowerPC builds compile `src/vr/` empty and link the `_off`
-stubs, with their build files untouched - a step-4 Android build must
-define `OMK_VR=1` itself.
-
-§5's file list in `quest-port.md` was written before the code and names
-`backends/sdl/playvr_*` and `vrcamera/vrfight/vrmove/vraim`; what exists is
-the layout above (the fight, move and aim halves live in
-`playvr_camera.cpp`, small enough not to split yet).
+defined by the main `engine/Makefile` (`VR ?= 1`) and the Android CMake; the
+headset half under `OMK_OPENXR`, the Android CMake's alone. The Vita, classic
+Mac, 3DS and PowerPC builds compile none of it.
 
 ## 3. Recipes
 
-**Look at it** (numpad 4/6 yaw, 8/2 pitch, 7/9 roll, 5 recentre, 1/3 snap
-turn; the mouse moves the fake controller in shoot mode):
+**On the headset** (Quest 2 in developer mode, USB, `adb devices` lists it):
+
+```bash
+scripts/android-build.sh install            # build + adb install -r
+# once: the data, 1.7 GB, sideloaded (<gamedata> = what tools/omkpaths.py resolves)
+adb push <gamedata> /sdcard/Android/data/org.omk.play/files/gamedata
+adb push tables     /sdcard/Android/data/org.omk.play/files/tables
+adb logcat -s OMK                           # the game's stdout/stderr
+```
+
+Launch from Library > Unknown sources WITH THE CONTROLLERS AWAKE - an
+`am start` while they sleep is refused by the shell's "controller required"
+dialog and the game never starts (`adb logcat | grep LaunchCheck`).
+`.../files/args.txt` holds extra flags, one a line, AFTER the defaults (the
+last of a flag wins); the reader's test file is `--slot` / `2` / `--nofmv`
+(the restaurant slot of `traces/games-resto.bin`, pushed as
+`.../files/saves/GAMES`). Each run's log: `.../files/omk-play-<date>.log`.
+
+**Reading a run**: the headset's own line,
+`adb logcat -d | grep "VrApi.*FPS" | grep " <pid> "` - `FPS=a/72`,
+`CPU4/GPU=c/g` (**c the CPU level, g the GPU's** - read the other way round
+once, and a wrong conclusion followed), `App=` the GPU ms. The game's own:
+`SLOW FRAME`, `: sections -`, `gles: heavy upload`, `openxr:` lines.
+
+**On the desktop** (the fake headset, numpad head; see `--vr-help`):
 
 ```bash
 cd engine && make play
 build/omk-play ../gamedata ../tables --save ../traces/save-appart.bin \
-    --area 0 --stand 1804,0,-6890,336 --vr-sim          # the street, first person
-build/omk-play ../gamedata ../tables --area 230 --scene-chunk 56 \
-    --shoot-health 1000 --vr-sim                        # shoot phase from frame ~394
-build/omk-play ../gamedata ../tables --fight-supermarket --vr-sim   # a fight
-build/omk-play ../gamedata ../tables --area 222 --scene-chunk 55 --vr-sim  # Impasse cuts
-build/omk-play --vr-help                                # every --vr-* flag
+    --area 0 --stand 1804,0,-6890,336 --vr-sim
 ```
 
-**Test instruments**: `--vr-head=Y,P,R` (a fixed head - zeroed by the first
-recentre, see traps), `--vr-head-after=F:Y,P,R` (turn it from frame F),
-`--vr-aim=Y,P` (the fake controller), `--vr-headpos=X,Y,Z`, `--vr-ipd=MM`,
-`--vr-fov=quest2`. `OMK_VRLOG=1` prints one `[vr] frame N kind K target ...
-authored ... drawn ... look ... origin ... him ... facing F pitch P` line a
-frame; the recentres and the aim log without it.
+**Checks**: `python3 tools/verify.py --only "engine: vr" "licence headers"
+"play usage"`; after a GLES or text change also `"engine: gles overlay"
+"engine: text scaling" "subtitle box" "engine: texture filter"
+"engine: mipmaps"`. `licence headers` counts **592**. No check runs the
+headset; the reader's play is its evidence.
 
-**Checks** (all `--slow`, so through `--only`; all shown to fail):
+## 4. The machines
 
-```bash
-python3 tools/verify.py --only "engine: vr" "licence headers"
-```
-
-`vr camera rule` (the probe), `vr frame` (flat == mono identity, the halves
-drawn and different), `vr modes` (first-person walk, still vs moving,
-Impasse cuts, the calm fight), `vr aim` (the controller's facing and pitch,
-the shots, the head not aiming). `licence headers` counts **592** authored
-files - a new VR file moves it.
-
-## 4. Waiting on the reader - the headset
-
-**The build no longer waits** - `scripts/android-build.sh` finds the toolchain
-(it differs PER MACHINE: the M1 had no NDK; the M3's Unity installs each
-bundle NDK r27c, the SDK platforms, build-tools and a JDK) and builds the APK.
-On a machine with none of those: install the command-line tools and
-`sdkmanager 'ndk;27.2.12479018'` (~3 GB), or set `ANDROID_NDK_HOME`.
-
-1. **Developer mode on the Quest 2**, the USB cable, `adb devices` listing it
-   (`adb` is `/opt/local/bin/adb` on the M3, `/opt/homebrew/bin/adb` on the M1).
-2. **The data**, 1.7 GB, sideloaded, never in the APK:
-
-```bash
-scripts/android-build.sh install            # build + adb install -r
-adb push gamedata /sdcard/Android/data/org.omk.play/files/gamedata
-adb push tables   /sdcard/Android/data/org.omk.play/files/tables
-adb logcat -s OMK                           # the game's stdout/stderr
-```
-
-   (`gamedata` is wherever `python3 tools/omkpaths.py` says it resolved.)
-   Extra flags go in `.../files/args.txt`, one a line.
+The toolchain differs PER MACHINE and `android-build.sh` finds it: the M3's
+Unity installs each bundle NDK r27c, the SDK platforms, build-tools and a
+JDK; the M1 had no NDK (install the command-line tools and
+`sdkmanager 'ndk;27.2.12479018'`, ~3 GB, or set `ANDROID_NDK_HOME`). `adb` is
+`/opt/local/bin/adb` on the M3, `/opt/homebrew/bin/adb` on the M1. Push with
+the credentials file, as on every push from this machine.
 
 ## 5. What to do next, in order
 
-1. **Step 4 is done.** To run it again: `scripts/android-build.sh install`,
-   launch OMK from Library > Unknown sources, `adb logcat -s OMK`. `[in]`
-   lines are the raw input log (`android_main.cpp`, the first 600 events).
-2. **Step 5** - `backends/openxr/` (a frontend like `sdlfront.*`):
-   `XR_KHR_android_create_instance`, `XR_KHR_opengl_es_enable`, the LOCAL
-   space, a GLES swapchain per eye, the frontend PACING (skip the 30/60
-   pacer, `playframe_present.cpp`), controllers into `pad::Pad`, hands and
-   eyes into `vr::HeadPose`, pause when not FOCUSED, the traffic listener
-   (`session.sliders().setListener(view.cam.eye)`) following the head.
-   `headPose()` returning true is all the camera code needs - it already
-   runs on whatever `HeadPose` arrives.
-3. **Step 6** - the interface on an `XrCompositionLayerQuad`, the four
-   screen kinds' VR forms (the table in §5 step 6), the system keyboard.
-4. **Step 7** - the play pass; write what it decides back into §5.
+1. **Play the videophone monitor** (Telis's call in the restaurant): the
+   caller in the video rectangle, the shaded world around, the frame rate
+   (that frame draws the world three times and reads one picture back).
+2. **6c, the keyboard**: the name field. `startTextInput()` is OFF on Android
+   (it opened the keyboard under the panel at boot); try the system keyboard
+   through `oculus.software.overlay_keyboard`, else `XR_META_virtual_keyboard`;
+   `backends/vita/ime.cpp` is the frontend's shape.
+3. **Open from the play so far**: the reading strain of the panel ("a bit
+   better" at 1.2 m - a depth that follows the scene, or a smaller panel,
+   are the candidates); the few slow frames left (96 ms entering the street,
+   a 67, one 224 ms in `world begin, set`); the HUD is still on the panel
+   where the last anchor put it.
+4. **Step 7, the play pass**: shoot mode on the headset (step 3 has never
+   run there), fights, slider rides, conversations through their cameras;
+   write what it decides back into §5.
 
-**Open for the play pass** (recorded in the step blocks): shoot-mode movement
+**Open since steps 2-3** (recorded in the step blocks): shoot-mode movement
 follows the gun, not the head; the body turns instantly with the controller;
-only the right hand aims; the calm fight camera takes ~4 s to catch up after
-the game's 120° re-placements (a fade-cut may be better); the original's
-own first-person key (Aventure bit `0x80`, key L) is not read.
+only the right hand aims; the calm fight camera's catch-up; the original's
+own first-person key (Aventure `0x80`, L) is not read.
 
-**Not in this prototype**: §4's preload, multiview (the GLES backend is GLES2
-/ `#version 100`; `GL_OVR_multiview2` needs GLES 3 and `#version 300 es` -
-it IS available on GLES, the reader corrected a "Vulkan only"), standing
-play (the `Space` seam is there), menu pointing.
+**Not in this prototype**: §4's preload, multiview (`GL_OVR_multiview2`,
+available on GLES 3 - the backend's shaders are `#version 100`), standing
+play, menu pointing with the controller ray, 90 Hz (plausible at 1.0x; the
+CPU's real cost must first be measured apart from the `xrWaitFrame` wait,
+which sits inside `world begin, set`).
 
 ## 6. Traps that cost time
 
 * **The C++ runtime must stay STATIC on Android** (`c++_static`): the
-  profiler replaces `operator new`, and a shared libc++ loaded first keeps the
-  system allocator for its own code - the first device run died in `free()`.
-* **A 2D panel gets no controller input** but the laser trigger (a touch).
-  Do not debug the pad path in the flat build; it receives nothing.
-* **`adb` differs per machine**: `/opt/local/bin/adb` on the M3. The NDK is
-  found per machine by `android-build.sh` (a Unity install's on the M3).
-
-* **The recentre zeroes a fixed head.** The first kind change recentres, so
-  `--vr-head` from frame 0 is undone and a "turned" run equals the flat one.
-  Turn after it: `--hold k77*N` (numpad 6; the sim reads `st.keyboard` as
-  well as the held keys) or `--vr-head-after=F:...`.
-* **First person is the default**, so an identity comparison against the
-  flat game needs `--vr-adventure=authored`.
-* **The shoot phase starts at frame 394** in the supermarket chunk; a
-  300-frame run never reaches it. Use 700, and make a `--hold` cover the row
-  the check reads.
-* **Shoot mode binds numpad 4/6/8/2** - the same keys as the fake head. The
-  VR shoot input strips them from the game's word; a desktop run without
-  `--vr-sim` still uses them.
-* **Changing `VR=` wipes `build/obj`** (the `.vr` marker): `OMK_VR` changes
-  `RCamera`'s and `PlayState`'s layout, so mixed objects would be silent
-  corruption. Expect a clean build each way.
-* **Mutations can mask each other** (the aim-from-head mutation hid the pitch
-  flip); run the ones that touch the same value alone. After restoring one,
-  `touch` the file (make 3.81's one-second clock, CLAUDE.md §1).
-* **Other sessions commit to this tree at the same time** (the 3DS port
-  among them): commit only the VR lines, check `git diff --cached` first.
-* **zsh**: flags in a variable need `${=var}`.
+  profiler replaces `operator new`, and a shared libc++ loaded first keeps
+  the system allocator for its own code - the first device run died in
+  `free()`.
+* **A 2D panel gets no controller input** but the laser trigger (a touch);
+  an immersive app gets them only through OpenXR actions.
+* **The session can stay VISIBLE (5) without FOCUSED (6)** and still get
+  input: `readControllers` reads in both.
+* **`am start` is refused while the controllers sleep** ("controller
+  required") - the old process is force-stopped and NOTHING starts; a log
+  that looks fresh may be the previous run. Check the log's timestamp.
+* **The USB link drops when the headset sleeps**:
+  `adb shell am broadcast -a com.oculus.vrpowermanager.prox_close` keeps it
+  awake; wait for `adb get-state` before each install.
+* **An `||` hides a call with a side effect**: `vrDrawsBehindScreen` behind
+  `screenKeepsWorld ||` never cleared its shade.
+* **The key colour (0xF81F) leaks through anything that BLENDS with the pixel
+  beneath** on an overlay frame - any such pass must run on the planes
+  (`ui/overlay.h`), as the fitted glyph now does.
+* **Adreno stalls on many `glBufferSubData` into a buffer in flight**: the
+  day/night re-floor (~55000 scattered corners) cost 135-180 ms a step until
+  the whole buffer went through `glBufferData` (Android only).
+* **The shell's working directory drifts** between commands in a session
+  (`cd engine` persists): a relative `adb install engine/...` then installs
+  NOTHING and a stale APK stays on the headset. Use absolute paths.
+* **The recentre zeroes a fixed head** on the desktop: turn after it
+  (`--vr-head-after=F:...`). **First person is the default**: an identity
+  check against the flat game needs `--vr-adventure=authored`.
+* **Changing `VR=` wipes `build/obj`**; **other sessions commit to this tree**
+  (commit by path, `git diff --cached` first); **zsh** needs `${=var}`.
