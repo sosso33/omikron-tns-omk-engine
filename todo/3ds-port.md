@@ -778,7 +778,7 @@ one card session can lay each beside the build without it:
 | 6.1 | **indexed draws** - a vertex shaded once | faces index the file's vertices, `sub_4947F0` transforms each once | **DONE 2026-10-07**, Azahar-exact; on the console **no measurable GPU gain** (<= ~5%): the vertex program is not the lever |
 | 6.2 | the GPU's halves attributed: a scissored run (fill ~0) and an untextured one | - (instruments) | **BUILT 2026-10-07** (`c3d-scissor`, `c3d-notex`); console owed |
 | 6.3 | textures in VRAM where they fit | the card's own memory (`SetMaterialsMemory`'s pages uploaded to it) | **DONE 2026-10-07**, Azahar-exact; console owed (`c3d-texlinear` is the switch) |
-| 6.4 | the zero-copy present: the world drawn rotated, the transfer into the framebuffer, the dither on the GPU (an additive 4x4 pass before the truncating transfer) | `Flip` | proposed |
+| 6.4 | the present in ONE pass: the dither written straight into the top screen's framebuffer (the GPU-side zero-copy - the world drawn rotated, the dither before a truncating transfer - stays proposed: its dither could not be shown bit for bit the reference's) | `Flip` | **DONE 2026-10-07** (the CPU pass), Azahar-exact; console owed (`c3d-surface` is the switch) |
 | 6.5 | the panel's redraw (13.5 ms twice a second) only when its text changes | - | proposed |
 | 6.6 | the second core (`OMK_THREADS`) | - | the reader's decision on threads first |
 
@@ -872,6 +872,29 @@ attribute fetch or the texturing:
   targets take the rest). Azahar, back to back: VRAM against `c3d-texlinear`
   **byte-identical** at present 200. Whether the PICA samples VRAM faster is
   the console's to say.
+
+**6.4 - THE PRESENT IN ONE PASS (2026-10-07).** The straight present was
+two CPU passes the original never had (it flipped): the dither loop - a
+byte-swapped copy of each row, then three lookups into the shared 24 KB of
+16-bit tables, more than the ARM11's data cache - into a 400x240 surface
+(~6 ms a frame on the console), then the frontend turning that surface into
+the framebuffer's columns (~2.7 ms). Now `c3dPresentHalfDirect` writes the
+dithered 565 word straight into the top screen's framebuffer, in 8x8 tiles,
+through two BYTE tables (8.5 KB: red and blue share `quantise888`'s 5-bit
+law, green has its 6-bit one; cell 16 the undithered law) made from
+`quantise888Dither` / `quantise888` themselves and checked against them
+channel by channel at start-up - a mismatch leaves the two passes on. The
+frontend's `present` is split: `topFramebuffer()` hands the frame's buffer
+out, `presentWritten()` runs the rest (the capture - the screen turned back
+into a frame -, the stats, the panel, the swap). `c3d-surface` keeps the two
+passes, to time and compare.
+
+*Proved in Azahar*, back to back, the top screen as written (`screen-*.bin`):
+direct against two-pass **byte-identical** dithered, undithered
+(`--no-dither`) and on the RGB565 target; the comparison sees the dither (a
+mutation moving its cell a column: 90843 bytes). Azahar's CPU (no cache
+model): 10.44 + 1.93 ms -> 8.53. The console owes its figure - the smaller
+tables are aimed at its cache, which Azahar does not model.
 
 **`args.txt` sets the environment** (2026-10-07): a word `NAME=value` whose
 first letter is upper-case is `setenv`'d instead of passed on, so every

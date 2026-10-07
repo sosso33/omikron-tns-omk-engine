@@ -253,6 +253,16 @@ public:
         if (std::FILE* f = std::fopen("sdmc:/omk/c3d-texlinear", "r")) { std::fclose(f); vramTex_ = false; }
         if (std::FILE* f = std::fopen("sdmc:/omk/c3d-scissor", "r")) { std::fclose(f); scissor_ = true; }
         if (std::FILE* f = std::fopen("sdmc:/omk/c3d-notex", "r")) { std::fclose(f); noTex_ = true; }
+        // THE DIRECT PRESENT (6.4) unless `sdmc:/omk/c3d-surface` asks for
+        // the two passes (an instrument, to time and compare them)
+        direct_ = makeDirectTables();
+        if (!direct_) std::printf("c3d: the direct present's tables disagree with quantise888Dither - "
+                                  "presented in two passes\n");
+        if (std::FILE* f = std::fopen("sdmc:/omk/c3d-surface", "r")) {
+            std::fclose(f);
+            direct_ = false;
+            std::printf("c3d: c3d-surface present - the straight present in two passes (an instrument)\n");
+        }
         // a texture in VRAM leaves first if the target is made again
         // (`init` runs once on the 3DS; this keeps a second one safe)
         evictVramTextures();
@@ -597,7 +607,8 @@ public:
     }
 
     // 3c: see `c3dPresentHalf` (c3drender.h).
-    bool presentHalf(int vy, int vh, Surface& screen) {
+    bool presentHalf(int vy, int vh, Surface* screen, std::uint16_t* dst) {
+        if (dst && !direct_) return false;             // before any work: the caller goes the other way
         // A FRAME THE SCREEN'S OWN SIZE (`--res 400x224` in args.txt, the
         // GPU-fill experiment of 2026-10-06: a quarter of the pixels to fill,
         // and no 2x2 average - so no anti-aliasing either) goes over 1:1;
@@ -651,16 +662,27 @@ public:
         halfCur_ = wr ^ 1;
         GSPGPU_InvalidateDataCache(const_cast<std::uint32_t*>(shown), static_cast<u32>(hw) * hh * (rgb565_ ? 2 : 4));
         const u64 p0 = svcGetSystemTick();
-        if (screen.w != 400 || screen.h != 240) screen = Surface(400, 240, 0);
-        std::fill(screen.px.begin(), screen.px.end(), std::uint16_t(0));
         // the frame halved and centred; the picture is its rows vy..vy+vh,
         // drawn in the target's top rows
         const int ox = (400 - w_ / k) / 2, oy = (240 - h_ / k) / 2;
         const int py0 = vy / k, ph = vh / k, pw = std::min(w_ / k, hw);
+        if (dst) {
+            presentDirect(shown, hw, hh, ox, oy + py0, pw, ph, dst);
+            rep_.halfLoopTicks += svcGetSystemTick() - p0;
+            ++straight_;
+            if (straight_ == 1)
+                std::printf("c3d: the first frame presented STRAIGHT and DIRECT - %s, %dx%d dithered into the "
+                            "top screen at %d,%d in one pass\n", one ? "the screen's own size, 1:1"
+                            : "the transfer's 2x2 average", pw, ph, ox, oy + py0);
+            return true;
+        }
+        Surface& sc = *screen;
+        if (sc.w != 400 || sc.h != 240) sc = Surface(400, 240, 0);
+        std::fill(sc.px.begin(), sc.px.end(), std::uint16_t(0));
         for (int r = 0; r < ph && r < hh; ++r) {
             const int y = oy + py0 + r;
             if (y < 0 || y >= 240) continue;
-            std::uint16_t* out = screen.px.data() + static_cast<std::size_t>(y) * 400 + ox;
+            std::uint16_t* out = sc.px.data() + static_cast<std::size_t>(y) * 400 + ox;
             if (rgb565_)
                 std::memcpy(out, reinterpret_cast<const std::uint16_t*>(shown) + static_cast<std::size_t>(r) * hw,
                             static_cast<std::size_t>(pw) * 2);
@@ -734,6 +756,76 @@ private:
     u32 transferFormats() const {
         return rgb565_ ? (GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGB565) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB565))
                        : (GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8));
+    }
+
+    // THE DIRECT PRESENT'S PASS (6.4). The two-pass present spent ~6 ms a
+    // frame in its dither loop and ~2.7 in the frontend's copy on the console
+    // (the eighth run): a byte-swapped copy of each row, three lookups into
+    // 24 KB of 16-bit tables - more than the ARM11's data cache - a 400x240
+    // surface, then that surface turned into the framebuffer's columns. Here
+    // ONE pass in 8x8 tiles (the frontend's reason: a column of the screen
+    // is one pixel of every source row) reads the transfer's word, looks its
+    // channels up in two BYTE tables (8.5 KB: red and blue share
+    // `quantise888`'s 5-bit law, green its 6-bit one) and writes the 565
+    // word where the screen holds it. The cell is the screen pixel's, as
+    // `toRgb565Row` makes it; cell 16 is the undithered `quantise888`.
+    // Picture rows start at screen row `y0`; everything else is black.
+    void presentDirect(const std::uint32_t* shown, int hw, int hh, int ox, int y0, int pw, int ph,
+                       std::uint16_t* dst) {
+        const int rows = std::min(ph, hh);
+        const int ya = std::max(y0, 0), yb = std::min(y0 + rows, 240);
+        for (int x = 0; x < 400; ++x) {
+            std::uint16_t* col = dst + x * 240;            // screen row y is word 239 - y
+            if (x < ox || x >= ox + pw || ya >= yb) {
+                std::memset(col, 0, 240 * sizeof(std::uint16_t));
+                continue;
+            }
+            if (ya > 0) std::memset(col + 240 - ya, 0, static_cast<std::size_t>(ya) * sizeof(std::uint16_t));
+            if (yb < 240) std::memset(col, 0, static_cast<std::size_t>(240 - yb) * sizeof(std::uint16_t));
+        }
+        const bool dith = view_.dither;
+        const int r0 = ya - y0, r1 = yb - y0;              // the source rows on screen
+        for (int tc = 0; tc < pw; tc += 8)
+            for (int tr = r0; tr < r1; tr += 8) {
+                const int nx = std::min(8, pw - tc), ny = std::min(8, r1 - tr);
+                for (int i = 0; i < nx; ++i) {
+                    const int x = ox + tc + i;
+                    std::uint16_t* o = dst + x * 240 + 239 - (y0 + tr);
+                    if (rgb565_) {
+                        const auto* s = reinterpret_cast<const std::uint16_t*>(shown) +
+                                        static_cast<std::size_t>(tr) * hw + tc + i;
+                        for (int j = 0; j < ny; ++j, s += hw) *o-- = *s;
+                        continue;
+                    }
+                    const std::uint32_t* s = shown + static_cast<std::size_t>(tr) * hw + tc + i;
+                    for (int j = 0; j < ny; ++j, s += hw) {
+                        const int y = y0 + tr + j;
+                        const int cell = dith ? ((y & 3) << 2 | (x & 3)) : 16;
+                        const std::uint32_t w = *s;                     // 0xRRGGBBAA
+                        *o-- = static_cast<std::uint16_t>(q5_[cell][w >> 24] << 11 |
+                                                          q6_[cell][(w >> 16) & 0xFF] << 5 |
+                                                          q5_[cell][(w >> 8) & 0xFF]);
+                    }
+                }
+            }
+    }
+
+    // The direct pass's tables, from `quantise888Dither` / `quantise888`
+    // themselves, and checked against them channel by channel (blue too,
+    // which shares red's table) - a mismatch leaves the direct present off.
+    bool makeDirectTables() {
+        for (int cell = 0; cell <= 16; ++cell) {
+            const int x = cell & 3, y = (cell >> 2) & 3;
+            for (int v = 0; v < 256; ++v) {
+                const std::uint16_t r = cell < 16 ? quantise888Dither(v, 0, 0, x, y) : quantise888(v, 0, 0);
+                const std::uint16_t g = cell < 16 ? quantise888Dither(0, v, 0, x, y) : quantise888(0, v, 0);
+                const std::uint16_t b = cell < 16 ? quantise888Dither(0, 0, v, x, y) : quantise888(0, 0, v);
+                q5_[cell][v] = static_cast<std::uint8_t>(r >> 11);
+                q6_[cell][v] = static_cast<std::uint8_t>((g >> 5) & 0x3F);
+                if ((r & 0x07FF) || (g & 0xF81F) || (b & 0xFFE0) || b != q5_[cell][v]) return false;
+            }
+        }
+        return true;
     }
 
     // A row of the transfer's words (0xRRGGBBAA) into 565, dithered as the
@@ -1364,6 +1456,8 @@ private:
     bool vramTex_ = true;               // textures in VRAM where they fit (6.3); `c3d-texlinear` off
     bool scissor_ = false;              // `c3d-scissor`: every pass into an 8x8 corner (6.2)
     bool noTex_ = false;                // `c3d-notex`: untextured (6.2)
+    bool direct_ = false;               // the direct present (6.4); `c3d-surface` off
+    std::uint8_t q5_[17][256] = {}, q6_[17][256] = {};   // its tables: cells 0..15, 16 undithered
     std::vector<std::uint16_t> tiled_;  // a texture's tiled texels, staged
     std::vector<std::uint8_t> markC_;   // a partial update's scratch: corners seen
     std::vector<std::uint16_t> seenV_;  // ...and the corners seen on a vertex
@@ -1402,7 +1496,11 @@ void c3dReport(Renderer* r, long frame) {
 }
 
 bool c3dPresentHalf(Renderer* r, int vy, int vh, Surface& screen) {
-    return r && static_cast<C3dRenderer*>(r)->presentHalf(vy, vh, screen);
+    return r && static_cast<C3dRenderer*>(r)->presentHalf(vy, vh, &screen, nullptr);
+}
+
+bool c3dPresentHalfDirect(Renderer* r, int vy, int vh, std::uint16_t* dst) {
+    return r && dst && static_cast<C3dRenderer*>(r)->presentHalf(vy, vh, nullptr, dst);
 }
 
 }  // namespace omk

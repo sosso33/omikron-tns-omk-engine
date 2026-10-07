@@ -11,6 +11,7 @@
 // `init()` says no.
 #include "playframe.h"
 #include "c3drender.h"
+#include "n3dsfront.h"
 
 // THE STRAIGHT PRESENT (3c): the build decides, frame by frame, whether
 // anything is drawn over the world - the GLES window's "present pass", every
@@ -40,6 +41,16 @@ void PlayState::gpuPresentVerify(bool&) {}
 void PlayState::gpuPresentOverlay(bool&) {}
 void PlayState::gpuPresentWorld(bool& presentedWorld) {
     if (presentedWorld || !worldVk) return;
+    // THE DIRECT PRESENT (6.4): dithered straight into the top screen's
+    // framebuffer in one pass; the two passes below when it cannot
+    if (omk::N3dsFrontend* f = omk::liveN3dsFrontend()) {
+        std::uint16_t* dst = f->topFramebuffer();
+        if (dst && omk::c3dPresentHalfDirect(worldVk, gpuVy, gpuVh, dst)) {
+            f->presentWritten();
+            presentedWorld = true;
+            return;
+        }
+    }
     static omk::Surface screen(400, 240, 0);
     if (!omk::c3dPresentHalf(worldVk, gpuVy, gpuVh, screen)) return;
     front.present(screen);          // 400x240: the frontend copies it 1:1, its stats and capture as ever

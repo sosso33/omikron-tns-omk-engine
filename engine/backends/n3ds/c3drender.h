@@ -46,6 +46,15 @@ Renderer* makeC3dRenderer();
 // (its halves not multiples of 8, or larger than the screen), and the caller
 // reads back and composites as before. `r` is `makeC3dRenderer`'s.
 bool c3dPresentHalf(Renderer* r, int vy, int vh, Surface& screen);
+// ...and the same picture DITHERED STRAIGHT INTO THE TOP SCREEN's framebuffer
+// `dst` (240 a column, 400 columns, RGB565) in one tiled pass - no 400x240
+// surface between, no second copy (`todo/3ds-port.md` 6.4). Bit for bit the
+// two-pass result: the same dither (`quantise888Dither`, through tables the
+// backend makes from it and checks at start-up), the same cell, the same
+// black bands. -> false, having done nothing, when it cannot go that way
+// (`sdmc:/omk/c3d-surface` asks for the two passes, or the tables failed
+// their check) - and then `c3dPresentHalf` as before.
+bool c3dPresentHalfDirect(Renderer* r, int vy, int vh, std::uint16_t* dst);
 
 // THE BACKEND'S OWN COUNTS over the frames since the last call - draws, posed
 // draws on the GPU and on the CPU, the CPU's posing time, the time waited on

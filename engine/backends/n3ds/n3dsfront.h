@@ -50,6 +50,13 @@ public:
     bool pump(HostInput& out) override;
     void present(const Surface& fb) override;
     void close() override;
+    // THE DIRECT PRESENT (`todo/3ds-port.md` 6.4): this frame's top-screen
+    // framebuffer (240 a column, 400 columns, RGB565) for a caller that
+    // writes it itself - the straight world, dithered into it in one pass -
+    // or null; and `presentWritten` once it has: `present` less its copy
+    // (the capture, the frame's stats, the panel, the swap).
+    std::uint16_t* topFramebuffer();
+    void presentWritten();
 
     std::uint32_t ticksMs() override;
     std::uint64_t perfCounter() override;
@@ -100,6 +107,7 @@ private:
     void act(n3ds::Panel::Action a);
     void writeControl(const char* cmd);   // `<capture>.ctl`, as omkprof.py --ctl writes it
     void writeCapture(const Surface& fb);
+    void finishPresent(const Surface* fb, std::uint16_t* dst);   // `fb` null: a direct present
     n3ds::Panel panel_;
     Surface panelSurf_{320, 240};
     n3ds::PanelStats stats_;
@@ -124,4 +132,6 @@ private:
     long pumps_ = 0;
 };
 
+// The open frontend, or null - for the 3DS glue's direct present.
+N3dsFrontend* liveN3dsFrontend();
 }  // namespace omk

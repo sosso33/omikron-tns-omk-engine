@@ -16,6 +16,8 @@
 
 namespace omk {
 
+namespace { N3dsFrontend* live_ = nullptr; }   // the open one (6.4)
+
 // ---- the sound --------------------------------------------------------------
 
 struct N3dsFrontend::Wave {
@@ -180,6 +182,7 @@ bool N3dsFrontend::open(int, int, const std::string&) {
     n3ds::Panel::toScreen(panelSurf_);
     winStart_ = lastPresent_ = svcGetSystemTick();
     opened_ = true;
+    live_ = this;
     return true;
 }
 
@@ -359,10 +362,24 @@ void N3dsFrontend::present(const Surface& fb) {
             }
     }
     copyTicks_ += svcGetSystemTick() - pr0;
+    finishPresent(&fb, dst);
+}
+
+// What follows the picture's arrival in `dst`, whoever wrote it.
+void N3dsFrontend::finishPresent(const Surface* fb, std::uint16_t* dst) {
     if (captureAt_ >= 0 && stats_.frames == captureAt_) captureOwed_ = true;
     if (captureOwed_) {
         captureOwed_ = false;
-        writeCapture(fb);
+        if (fb) {
+            writeCapture(*fb);
+        } else {
+            // a direct present handed no frame: the screen's own, turned back
+            Surface s(400, 240, 0);
+            for (int x = 0; x < 400; ++x)
+                for (int y = 0; y < 240; ++y)
+                    s.px[static_cast<std::size_t>(y) * 400 + x] = dst[x * 240 + 239 - y];
+            writeCapture(s);
+        }
         screenDumpOwed_ = true;
     }
     // THE FRAME, measured where it is presented: the interval since the last
@@ -490,6 +507,20 @@ void N3dsFrontend::close() {
     closeAudio();
     if (dsp_) { ndspExit(); dsp_ = false; }
     opened_ = false;
+    if (live_ == this) live_ = nullptr;
+}
+
+N3dsFrontend* liveN3dsFrontend() { return live_; }
+
+std::uint16_t* N3dsFrontend::topFramebuffer() {
+    if (!opened_) return nullptr;
+    u16 fw = 0, fh = 0;
+    auto* dst = reinterpret_cast<std::uint16_t*>(gfxGetFramebuffer(GFX_TOP, GFX_LEFT, &fw, &fh));
+    return dst && fw == 240 && fh == 400 ? dst : nullptr;
+}
+
+void N3dsFrontend::presentWritten() {
+    if (std::uint16_t* dst = topFramebuffer()) finishPresent(nullptr, dst);
 }
 
 N3dsFrontend::~N3dsFrontend() { close(); }
