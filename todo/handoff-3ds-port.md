@@ -1,4 +1,4 @@
-# Handoff — the NINTENDO 3DS PORT (begun 2026-10-05, updated 2026-10-07)
+# Handoff — the NINTENDO 3DS PORT (begun 2026-10-05, updated 2026-10-07, the optimisation pass)
 
 **Read this first to pick up the 3DS.** [`3ds-port.md`](3ds-port.md) is the
 plan (its steps 0-10) and the running record - every console run, every
@@ -186,23 +186,44 @@ log; the `.elf` of that build names its line (section 5).
 
 ## 4. What to do next, in order
 
-1. **The reader's two decisions** from the eighth run: the 16-bit default
+**THE OPTIMISATION PASS of 2026-10-07** (`3ds-port.md` Step 6, its table):
+6.1 indexed draws (DONE; on the console no measurable GPU gain - the vertex
+program is not the lever), 6.2 the GPU attribution instruments, 6.3 the
+textures in VRAM, 6.4 the straight present in one CPU pass, 6.5 the panel
+drawing only what changed - 6.2-6.5 Azahar-exact and NOT yet on the
+console. The fog's colour and the blue clear (16-bit) were fixed the same
+day.
+
+1. **ONE CARD SESSION, five runs** on `engine/build/n3ds-card/4023594/`
+   (its `runs/A..E` hold each run's `sdmc:/omk/` files; the fixed street
+   start; the same walk into the dense part; a minute each; delete each
+   run's extra file before the next, and check `args.txt` carries no
+   leftover `OMK_*` word):
+
+   | run | extra file | answers |
+   |---|---|---|
+   | A | - | the new baseline (VRAM textures, the one-pass present, the panel) |
+   | B | `c3d-texlinear` | A against B: what VRAM textures buy |
+   | C | `c3d-scissor` | citro3d's drawing with the fill gone - the geometry's share |
+   | D | `c3d-notex` | the texturing's share |
+   | E | `c3d-surface` | the two-pass present: what 6.4 buys (the `c3d CPU` line's dither loop and the frontend's copy) |
+
+   Compare by draws a pass (the routes differ), as the eighth run did.
+2. **The reader's two decisions** from the eighth run: the 16-bit default
    (565: 4 ms faster, posterised; RGBA8 + CPU dither: the original's look),
    and the target size (fill is about half the GPU's 52 ms dense; 400x224
    gets ~34 ms frames without anti-aliasing; `GX_TRANSFER_SCALE_X` from
-   800x224 is an unmeasured middle point).
-2. **The GPU's other half** (~24 ms dense at 800x448, growing with the
-   draws): the vertices and the draw count.
-3. **Zero-copy present**: render the world ROTATED (the screens' own
-   orientation) so the display transfer writes straight into the top
-   framebuffer - no dither loop, no frontend copy, and it keeps the
-   one-frame-behind shape. Needs the 16-bit decision (or an RGB8 top screen).
-4. **The rest of the CPU frame**: `splitList`'s per-corner mirror scan
-   (shared code - `src/o3de/renderer.cpp`), the panel's redraw (6-15 ms twice
-   a second: redraw less, or only what changed - doable without the
-   console), the interface frames' CPU path (the GLES overlay's GPU blend,
-   not ported).
-5. **Step 6, the second core** (`OMK_THREADS`, the New 3DS gives a whole
+   800x224 is an unmeasured middle point). Run C says how much of the rest
+   is fill.
+3. **Then the GPU lever the runs point at**: fill (the target size), the
+   texturing (D), or the geometry (C - setup, the attribute fetch, the
+   per-draw cost; NOT the vertex program, 6.1).
+4. **The rest of the CPU frame**: the interface frames' CPU path (a
+   synchronous readback and a CPU composite under every subtitle - the GLES
+   overlay's GPU blend, not ported); the shared code's spans (`session`,
+   `player`, `staged resolve` ~3 ms each, ~11 ms unattributed) - SHARED
+   code, for when the other sessions allow; `splitList`'s mirror scan.
+5. **Step 6.6, the second core** (`OMK_THREADS`, the New 3DS gives a whole
    core) - the reader's decision on threads first.
 6. **Step 4**: the `.cia` (makerom, its own memory mode), memory measured.
 7. Owed in SHARED code, for when the other sessions allow: the name-field
