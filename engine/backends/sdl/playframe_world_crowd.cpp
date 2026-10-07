@@ -547,17 +547,35 @@ void PlayState::worldCrowd() {
             // mover - which for a vehicle is where it is going.
             float vcs, vsn;
             omk::yawSinCos(m.facing, vcs, vsn);   // once a vehicle, not a corner
+            // THE BANK (drift audit M6): Manuelle's node matrix is
+            // `sub_442160(0, -yaw, -(360 - roll))` (`sub_457F50`), which is a
+            // turn about the model's own LONG axis (local Z) by the roll, then
+            // the yaw: rows (cos r, -sin r, 0), (sin r, cos r, 0), (0, 0, 1)
+            // at yaw 0, applied row-vector. Only the manual ride's tick writes
+            // it - a called or ambient vehicle is yaw alone - so the slider
+            // leans into a turn, up to `kBankLimit` (11), only while he flies it.
+            float bcr = 1.0f, bsr = 0.0f;
+            if (mine && ride && ride->roll != 0.0) {
+                const double rr = ride->roll * 0.017453292519943295;
+                bcr = static_cast<float>(std::cos(rr));
+                bsr = static_cast<float>(std::sin(rr));
+            }
             sv.gpu = !doorPosed && !cpuBodiesFlag && world.posesBodies() &&
                      sv.atRest->cornerMesh.size() == sv.atRest->corners.size();
             if (sv.gpu) {
                 // x' = R (x - origin) + body - lift, R the yaw as
                 // `rotateYawCS` applies it: x' = c x - s z, z' = s x + c z
-                const float tx = m.body[0] - (vcs * sv.origin[0] - vsn * sv.origin[2]);
-                const float ty = m.body[1] - omk::kVehNodeLift - sv.origin[1];
-                const float tz = m.body[2] - (vsn * sv.origin[0] + vcs * sv.origin[2]);
-                const float a[12] = {vcs, 0.0f, -vsn, tx,
-                                     0.0f, 1.0f, 0.0f, ty,
-                                     vsn, 0.0f, vcs, tz};
+                // M = Yaw * Roll(about local z), column form; t = body - lift - M origin
+                const float m00 = vcs * bcr, m01 = vcs * bsr, m02 = -vsn;
+                const float m10 = -bsr,      m11 = bcr,       m12 = 0.0f;
+                const float m20 = vsn * bcr, m21 = vsn * bsr, m22 = vcs;
+                const float* o = sv.origin;
+                const float tx = m.body[0] - (m00 * o[0] + m01 * o[1] + m02 * o[2]);
+                const float ty = m.body[1] - omk::kVehNodeLift - (m10 * o[0] + m11 * o[1] + m12 * o[2]);
+                const float tz = m.body[2] - (m20 * o[0] + m21 * o[1] + m22 * o[2]);
+                const float a[12] = {m00, m01, m02, tx,
+                                     m10, m11, m12, ty,
+                                     m20, m21, m22, tz};
                 sv.affine.resize(12 * sv.mo->meshes.size());
                 for (std::size_t k = 0; k < sv.mo->meshes.size(); ++k)
                     std::memcpy(&sv.affine[12 * k], a, sizeof a);
@@ -566,13 +584,34 @@ void PlayState::worldCrowd() {
                 continue;
             }
             if (!doorPosed) { OMK_MEM_TAG("crowd: vehicle slots"); sv.posed = *sv.atRest; }
+            // the DRAWN tilt, read back from the posed corners: the two lateral
+            // extremes (model x), their height difference over their spread
+            float latLo = 1e30f, latHi = -1e30f, loW[3] = {0, 0, 0}, hiW[3] = {0, 0, 0};
+            const bool measureBank = mine && ride;
             for (auto& c : sv.posed.corners) {
-                const float in[3] = {c.x - sv.origin[0], c.y - sv.origin[1], c.z - sv.origin[2]};
+                const float l[3] = {c.x - sv.origin[0], c.y - sv.origin[1], c.z - sv.origin[2]};
+                // the bank first, about the long axis (identity off a manual ride)
+                const float in[3] = {l[0] * bcr + l[1] * bsr, -l[0] * bsr + l[1] * bcr, l[2]};
                 float r[3];
                 omk::rotateYawCS(vcs, vsn, in, r);
                 c.x = r[0] + m.body[0];
                 c.y = r[1] + m.body[1] - omk::kVehNodeLift;
                 c.z = r[2] + m.body[2];
+                if (measureBank) {
+                    if (l[0] < latLo) { latLo = l[0]; loW[0] = c.x; loW[1] = c.y; loW[2] = c.z; }
+                    if (l[0] > latHi) { latHi = l[0]; hiW[0] = c.x; hiW[1] = c.y; hiW[2] = c.z; }
+                }
+            }
+            if (measureBank && latHi > latLo) {
+                const double dx = hiW[0] - loW[0], dz = hiW[2] - loW[2];
+                const double tilt = std::atan2(-(hiW[1] - loW[1]), std::sqrt(dx * dx + dz * dz)) * 57.29577951308232;
+                static double tiltMax = 0.0;
+                if (std::fabs(tilt) > tiltMax + 2.0) {
+                    tiltMax = std::fabs(tilt);
+                    std::printf("frame %ld: slider: Manuelle drawn BANKED - its +X side %.1f degrees "
+                                "up, the ride's roll %.1f (sub_457F50's node matrix)\n", n, tilt,
+                                ride->roll > 180.0 ? ride->roll - 360.0 : ride->roll);
+                }
             }
             sv.posed.revision = ++worldGeoRev;
             sv.drawn = true;

@@ -185,7 +185,7 @@ authored to meet, H_TAK031's +19.58 into H_PUT032's key 1 of +19.58).
   visible).
 - **M5** NPCs frozen while Manuelle drives — read, not ported (no single
   `Actors_TickAll` in the port).
-- the 11-degree bank into the node matrix (`placeCalled` draws yaw only).
+- ~~the 11-degree bank~~ DONE 2026-10-07 (`engine: slider bank`), NOT PLAYED: the hull leans INTO the turn (+X, the rider's left, rises steering right; laid beside an unbanked frame).
 
 ## Instruments added on the way
 

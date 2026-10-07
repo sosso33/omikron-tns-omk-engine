@@ -9861,6 +9861,48 @@ def c_engine_vehicle_sound():
             len(starts), ", ".join("slot %d %s at %.0f" % (s, m, d) for s, m, d, _ in starts[:3]), stops)
 
 
+def c_engine_slider_bank():
+    r"""MANUELLE LEANS INTO A TURN (drift audit M6, the bank). `sub_457F50`
+    builds the ridden slider's node matrix as `sub_442160(0, -yaw,
+    -(360 - roll))` - a turn about the model's own LONG axis (local Z) by the
+    roll, then the yaw - so the hull banks with the flight model's roll (up
+    to its 11 degrees) while he flies it, and only then. The port drew yaw
+    alone. The real path: the call, the boarding, screen 7's Manuelle, UP,
+    then RIGHT held - the drawn tilt is read back from the posed corners (the
+    hull's two lateral extremes), not from the roll it was given. +X is the
+    rider's LEFT (Y down, moving along -Z), so its side rising is the slider
+    banking INTO the right turn (laid beside an unbanked frame, 2026-10-07).
+    Shown to fail with the bank dropped: no line.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    fr, tb = omkpaths.data_root(), os.path.join(ROOT, "tables")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    if not os.path.isdir(eng) or not os.path.exists(save):
+        return ("skipped",), ("skipped",), "engine/ or the save absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return (True,) * 3, (True,) * 3, "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    r = subprocess.run([play, fr, tb, "--software", "--res", "640x480", "--nofmv",
+                        "--save", save, "--area", "0", "--stand", "1804,0,-6890,244",
+                        "--frames", "900", "--board",
+                        "--hold", "0*40,k15*3,0*30,k205*4,0*10,k200*4,0*10,k28*4,0*30,"
+                                  "k203*4,0*10,k28*4,0*560,k205*4,0*10,k28*4,0*20,k200*60,"
+                                  "k205*40,0*100"],
+                       capture_output=True, text=True, env=env, errors="replace")
+    import re as _re
+    rows = [(float(a), float(b)) for a, b in _re.findall(
+        r"Manuelle drawn BANKED - its \+X side (-?[\d.]+) degrees up, the ride's roll (-?[\d.]+)",
+        r.stdout)]
+    top = max((t for t, _ in rows), default=0.0)
+    return (len(rows) >= 3, top >= 10.0, all(abs(t - rl) < 0.3 for t, rl in rows)), \
+           (True, True, True), \
+        "steering RIGHT on Manuelle, the drawn hull's +X (the rider's left) side rises " \
+        "with the roll to %.1f degrees over %d steps, drawn tilt = roll throughout" % (top, len(rows))
+
+
 def c_engine_slider_collider():
     r"""THE CALLED SLIDER'S BODY in the spatial index - a reader, 2026-10-06:
     *"I called the slider and then I just walk through it, and if I go to the
@@ -44765,6 +44807,7 @@ CHECKS = [
     ("engine: slider recall", c_engine_slider_recall, "todo/slider-drift-audit B1"),
     ("engine: slider placement", c_engine_slider_placement, "todo/slider-drift-audit B2"),
     ("engine: slider collider", c_engine_slider_collider, "a reader, 2026-10-06"),
+    ("engine: slider bank", c_engine_slider_bank, "todo/slider-drift-audit M6"),
     ("engine: vehicle sound", c_engine_vehicle_sound, "todo/slider-drift-audit A9"),
     ("engine: slider journey", c_engine_slider_journey, "todo/slider"),
     ("ui open answer",     c_ui_open_answer,    "SCRIPT_VM 70"),
