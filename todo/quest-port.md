@@ -822,6 +822,18 @@ a conversation starts (`xr::anchorQuad`) and stays fixed in the world. The
 reader: "Better". Only the drawing - Kay'l held, the sound suspended, as the
 screen set them.
 
+**THE VIDEOPHONE'S MONITOR (2026-10-07) - BUILT, NOT YET PLAYED.** On
+Telis's call the sneak's video rectangle stayed black: the panel's 3D
+viewport item renders the world through the GAME's camera into it, and the
+eyes took the frame over. A first fix drew no eyes on such a frame (the
+caller right, the world dark around); the reader: "this is a visio so it is
+correct if the image is flat. But I'd rather keep the shaded world". So the
+game's view is kept before the eyes rewrite it (`vr.monitorView`), the eyes
+are drawn, then the world once more through that view into the target, read
+back into `view3dPic` and handed to the composer as the flat path does; the
+side-plane cull is off on that frame (`vrNoSideCull`) so one draw list holds
+both cameras' sight.
+
 ### Step 7 - the first play pass (device; ~0.5-1 day)
 
 One route, at 72 Hz on a Quest 2, the frame log over `logcat`: boot, the

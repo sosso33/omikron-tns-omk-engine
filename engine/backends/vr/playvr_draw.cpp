@@ -61,6 +61,25 @@ bool PlayState::vrWorldDraw(const omk::View& drawn, const omk::MirrorPlane& plan
                       fb.px.begin() + static_cast<long>(y) * fb.w + x0);
     }
 #if OMK_OPENXR
+    // THE MONITOR (step 6b): the panel's 3D viewport item through the GAME's
+    // view, once, read back and handed to the composer exactly as the flat
+    // path does (`playframe_world_draw.cpp`, `vpItem`)
+    if (vr.monitor && vpItem && omk::xr::eyesDrawn()) {
+        omk::View mv = drawn;
+        mv.cam = vr.monitorView.cam;
+        mv.vx = vr.monitorView.vx;
+        mv.vy = vr.monitorView.vy;
+        mv.vw = vr.monitorView.vw;
+        mv.vh = vr.monitorView.vh;
+        omk::drawWithMirror(world, draws, mv, omk::MirrorPlane{});
+        const omk::Surface& pic = world.readback();
+        view3dPic = omk::Surface(mv.vw, mv.vh, 0);
+        for (int y = 0; y < mv.vh && y < pic.h; ++y)
+            std::copy(pic.px.begin() + static_cast<long>(y) * pic.w,
+                      pic.px.begin() + static_cast<long>(y) * pic.w + std::min(mv.vw, pic.w),
+                      view3dPic.px.begin() + static_cast<long>(y) * mv.vw);
+        if (comp_) comp_->attachView3D(&view3dPic);
+    }
     // THE INTERFACE OVER THE EYES (step 6a): the frame is the flat GPU path's
     // OVERLAY frame - every pixel the KEY, "the world shows here", the alpha
     // passes recorded in the planes - and the present lays it over the eyes

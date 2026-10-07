@@ -8,6 +8,7 @@
 #if OMK_VR
 
 #include "o3de/raster.h"
+#include "o3de/renderer.h"
 #include "vr/xrspace.h"
 
 // WHICH CAMERA THE FRAME HAS, as the headset sees it (step 2): what the
@@ -95,6 +96,10 @@ struct VrState {
     // PAUSE GAME) keeps its own dim and gets none. And the edges that place
     // the panel where the head looks.
     bool shadeWorld = false;
+    // A MONITOR this frame: the panel's 3D viewport item (the videophone's
+    // caller), drawn once through the GAME's view kept here, after the eyes
+    bool monitor = false;
+    omk::View monitorView;
     int lastScreen = -1;
     bool lastDialog = false;
 };

@@ -7,6 +7,7 @@
 // -> true when the sphere is wholly outside one side plane
 bool PlayState::outsideView(const float c[3], float r, bool bodies) {
         if (!(bodies ? sideCullBodies : sideCullSet)) return false;
+        if (vrNoSideCull()) return false;   // a headset's eyes AND a monitor this frame (backends/vr)
         for (const auto& pl : sideFr.side)
             if (pl.n[0] * c[0] + pl.n[1] * c[1] + pl.n[2] * c[2] + pl.d > r) return true;
         return false;

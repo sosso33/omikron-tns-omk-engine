@@ -995,6 +995,7 @@ struct PlayState {
     bool vrWorldDraw(const omk::View& drawn, const omk::MirrorPlane& plane);   // the eyes; true = drawn
     bool vrHidesPlayer() const;            // first person: his body not drawn
     bool vrDrawsBehindScreen(bool screenKeepsWorld);   // a headset: the world behind a screen that hides it
+    bool vrNoSideCull() const;             // a headset frame with a monitor: no side-plane cull
     void vrAdventureInput(std::uint32_t& word);   // first person: the walk turned to the look
 
     // ---- THE GPU WINDOW, per backend (`playgpu_vulkan.cpp`, `playgpu_gles.cpp`

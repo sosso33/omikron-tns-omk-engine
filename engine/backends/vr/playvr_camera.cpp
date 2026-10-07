@@ -142,6 +142,16 @@ void PlayState::vrAfterWorldCamera() {
     vr.haveEyes = false;
     vr.hidePlayer = false;
     if (!vr.on) return;
+    // A PANEL WITH A 3D VIEWPORT ITEM - the videophone's caller - renders the
+    // world into its rectangle through the GAME's camera, read back and
+    // composed into the panel (`playframe_world_draw.cpp`). The eyes took that
+    // frame over and the rectangle stayed black (the Quest, Telis's call in
+    // the restaurant, 2026-10-07). So the game's view is KEPT here, before
+    // the eyes rewrite it, and `vrWorldDraw` draws it once more after them -
+    // a flat MONITOR, as a videophone is ("this is a visio so it is correct
+    // if the image is flat. But I'd rather keep the shaded world").
+    vr.monitor = vpItem != nullptr;
+    if (vr.monitor) vr.monitorView = view;
     omk::vr::HeadPose raw;
     bool simRecentre = false;
     if (!front.headPose(raw)) {
@@ -373,6 +383,11 @@ bool PlayState::vrHidesPlayer() const { return vr.on && vr.hidePlayer; }
 // the DRAWING: Kay'l stays held and the sound suspended as the screen set
 // them. A screen that keeps the world (or a panel that dims it itself)
 // changes nothing here and gets no extra shade.
+// ...and the one draw list must hold what BOTH cameras see: the side planes
+// are the eyes', so on a monitor frame nothing is side-culled (the distance
+// cull is from an eye a few metres from the game's, against 150-200 m)
+bool PlayState::vrNoSideCull() const { return vr.on && vr.monitor; }
+
 bool PlayState::vrDrawsBehindScreen(bool screenKeepsWorld) {
     vr.shadeWorld = false;
     if (!vr.on || vr.sim || !front.paces() || openScreen < 0 || screenKeepsWorld) return false;
