@@ -9672,8 +9672,14 @@ def c_engine_slider_journey_area():
             # a journey ends on camera 10, not 17 (drift audit A3)
             "slider: camera 10 - on the slider, looking at address" in o,
             "MDSLIDOU: out and standing" in o,
-            "slider: RELEASED - the journey is over and he is out" in o), \
-           (True,) * 7, \
+            "slider: RELEASED - the journey is over and he is out" in o,
+            # 2026-10-07: `sub_40E630` loads the area SYNCHRONOUSLY and the
+            # hook's `sub_452570` -> `sub_452CC0` then places the slider in
+            # the NEW pool as a same-area journey does - nothing is killed.
+            # The port parked it at the pickup point and killed what stood
+            # within 400 first: 39 live (red), now the whole 40
+            "with him aboard, state 6; 40 vehicles live in the new pool" in o), \
+           (True,) * 8, \
         "boarded in Jaunpur, the Anekbah row chosen from aboard: area 0 " \
         "loaded, the slider relinked at the lane nearest address 0 with him " \
         "aboard (state 6, arriving at once), out where it stopped, camera 17, " \

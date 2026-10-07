@@ -173,12 +173,13 @@ authored to meet, H_TAK031's +19.58 into H_PUT032's key 1 of +19.58).
   traffic. Left: Doppler (the host mixer has no pitch), and the host mixer's
   cap of 8 shots against the engine's 16 voices - a busy street can push the
   oldest out.
-- ~~**B2**~~ DONE 2026-10-06 (`engine: slider placement`). Left from it:
-  the CROSS-AREA arrival (`arriveAt`) still puts the slider at the lane
-  POINT and kills what stands there (`takeOverAt`) - its original path
-  (`sub_4541E0` / `sub_4544B0(0)` after the load) is unread; and a FULL pool
-  with nothing in the way relinks an ambient vehicle, where the engine uses
-  its reserved slot-0 mover. NOT PLAYED: a call now stops 30 units short of
+- ~~**B2**~~ DONE 2026-10-06 (`engine: slider placement`). Left from it: a
+  FULL pool with nothing in the way relinks an ambient vehicle, where the
+  engine uses its reserved slot-0 mover. ~~The cross-area arrival~~ DONE
+  2026-10-07: `sub_40E630` loads synchronously, `sub_4541E0` / `sub_4544B0(0)`
+  carry the slider across, and `sub_452CC0` places it in the new pool as in
+  the same area - `arriveAt` no longer parks it at the pickup or kills
+  (`engine: slider journey area`, 40 live). NOT PLAYED. NOT PLAYED: a call now stops 30 units short of
   where it did (1274 -6644 against 1304 -6651 on the checks' route).
 - ~~**B12 rest**~~ DONE 2026-10-07, NOT PLAYED: mode 8 (the coming slider
   and Manuelle) runs `sub_417070` with `sub_4141F0`'s pushes, and Manuelle's

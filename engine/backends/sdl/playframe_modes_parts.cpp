@@ -1608,8 +1608,10 @@ int PlayState::modesShoot() {
                             arrived = true;
                             std::printf("slider: JOURNEY to '%s' in area %d - loaded, "
                                         "the slider relinked at the lane nearest address "
-                                        "%d with him aboard, state 6\n",
-                                        d->name.c_str(), d->area, d->bit);
+                                        "%d with him aboard, state 6; %d vehicles live in "
+                                        "the new pool\n",
+                                        d->name.c_str(), d->area, d->bit,
+                                        session.sliders().liveVehicles());
                         } else {
                             session.sliders().dismountCalled();
                             boarded = false;

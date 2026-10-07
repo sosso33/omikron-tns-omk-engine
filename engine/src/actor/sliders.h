@@ -650,9 +650,6 @@ private:
     int  scanCallLane(const SliderCall& c, int own, float ownRadius, float body[3]) const;
     // The swap arm: the two SLOTS exchange MOVERS, each slot keeping its model.
     void swapMovers(int a, int b);
-    // The port's own, for the cross-area `arriveAt` only (not read yet - see
-    // there): ambient vehicles on `lane` within `radius` of `place` die.
-    void takeOverAt(int lane, const float place[3], float radius);
     int  callSwaps_ = 0, callSetBacks_ = 0;    // for veh_probe --place
 
     struct ActionState {                      // one of `dword_539928`'s 48-byte records

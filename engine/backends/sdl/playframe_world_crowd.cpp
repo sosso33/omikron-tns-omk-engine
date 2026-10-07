@@ -423,7 +423,7 @@ void PlayState::worldCrowd() {
                         vz = m.body[2] - view.cam.eye[2];
             if (vx * vx + vy * vy + vz * vz > vreach * vreach) { skipMine(2, "beyond the vehicle LOD reach"); continue; }
             // A SLOT IS REUSED, and with another model: a call spawns into
-            // the first dead slot (a cross-area arrival's `takeOverAt`), in a full
+            // the first dead slot, in a full
             // pool takes an ambient vehicle and rebinds its model to the
             // slider row (`sub_452CC0`'s take-over) - so a slot that drew a
             // MOTO can hold the player's slider next. `sv.mo` was taken once
