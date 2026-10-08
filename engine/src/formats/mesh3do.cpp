@@ -241,7 +241,7 @@ std::vector<BodySphere> readBodySpheres(std::span<const std::byte> d,
     if (base + 248 > d.size()) return out;
     const std::int32_t n = loadLE<std::int32_t>(d.data() + base + 244);
     if (n <= 0 || n > 4096) return out;
-    if (base + 248 + 16u * static_cast<std::size_t>(n) > d.size()) return out;
+    if (base + 248 + 16 * std::uint64_t(n) > d.size()) return out;
     out.reserve(static_cast<std::size_t>(n));
     for (int i = 0; i < n; ++i) {
         const std::size_t o = base + 248 + 16u * static_cast<std::size_t>(i);

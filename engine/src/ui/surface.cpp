@@ -52,7 +52,7 @@ Surface surfaceFromBmp(std::span<const std::byte> d) {
     // key stays pure black (`SetColorKey {0,0}`), which is 0 in 565 too.
     if (bpp == 24) {
         const std::size_t stride24 = (static_cast<std::size_t>(w) * 3u + 3u) / 4u * 4u;
-        if (bits + stride24 * static_cast<std::size_t>(h) > d.size()) return s;
+        if (bits + std::uint64_t{stride24} * std::uint64_t(h) > d.size()) return s;   // 64 bits: a 32-bit size_t wraps
         s = Surface(w, h);
         for (int y = 0; y < h; ++y) {
             const std::size_t row = bits + stride24 *

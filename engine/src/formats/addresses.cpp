@@ -30,7 +30,7 @@ std::vector<Address> readAddresses(std::span<const std::byte> b) {
     const auto n  = i16at(b, 82);
     if (n <= 0 || at <= 0) return out;
     const auto base = static_cast<std::size_t>(at);
-    if (base + 16u * static_cast<std::size_t>(n) > b.size()) return out;
+    if (base + 16 * std::uint64_t(n) > b.size()) return out;
     out.reserve(static_cast<std::size_t>(n));
     for (int i = 0; i < n; ++i) {
         const std::size_t o = base + 16u * static_cast<std::size_t>(i);

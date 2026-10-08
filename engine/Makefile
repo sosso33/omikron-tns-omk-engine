@@ -256,6 +256,34 @@ release:
 	$(MAKE) play OBJDIR=build/obj-release PLAY_BIN=build/release/omk-play INSTRUMENTS=0 \
 	    CXXFLAGS="$(RELEASE_FLAGS)"
 
+# ---------------------------------------------------------------- HARDENED
+#
+# `make hardened`: every tool again, with the standard library's own bounds
+# checks on - libc++'s hardening mode, or libstdc++'s assertions - so an
+# out-of-range `subspan`, `operator[]` or `front()` TRAPS where the normal
+# build reads past the buffer and carries on. The code audit of 2026-10-07
+# found five readers whose guard a crafted file wrapped; this is the switch
+# that turns that whole class into a crash at the faulty access instead of a
+# hunt. Its own objects and binaries (build/obj-hardened, build/hardened/),
+# so it never mixes with the normal build. `verify.py: engine: hardened`.
+HARDEN_FLAGS := $(CXXFLAGS) -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST \
+                -D_GLIBCXX_ASSERTIONS
+# make does not track flags, so the tree records the ones it was built with
+# and a change empties it - written AFTER the build, because the sub-make's
+# own VR stamp empties a directory that does not carry one yet.
+hardened:
+	@if [ "$$(cat build/obj-hardened/.flags 2>/dev/null)" != "$(HARDEN_FLAGS)" ]; then \
+	    rm -rf build/obj-hardened build/hardened; fi
+	$(MAKE) $(patsubst build/%,build/hardened/%,$(BINS)) OBJDIR=build/obj-hardened \
+	    CXXFLAGS="$(HARDEN_FLAGS)"
+	@echo "$(HARDEN_FLAGS)" > build/obj-hardened/.flags
+
+build/hardened/%: $(OBJDIR)/tools/%.o $(SRCOBJS)
+	@mkdir -p $(@D)
+	$(CXX) $(CXXFLAGS) -o $@ $^
+
+.PHONY: hardened
+
 .PHONY: play
 play: $(if $(SDL_PKG),$(PLAY_BIN))
 ifeq ($(SDL_PKG),)

@@ -35,7 +35,7 @@ std::vector<Placement> readPlacements(std::span<const std::byte> b, ChunkKind ki
     if (b.size() < co + 2u) return out;
     const std::size_t p = u32at(b, po);
     const int n = i16at(b, co);
-    if (n <= 0 || p == 0 || p + 20u * static_cast<std::size_t>(n) > b.size()) return out;
+    if (n <= 0 || p == 0 || p + 20 * std::uint64_t(n) > b.size()) return out;
     out.reserve(static_cast<std::size_t>(n));
     for (int i = 0; i < n; ++i) {
         const std::size_t o = p + 20u * static_cast<std::size_t>(i);

@@ -159,7 +159,7 @@ std::vector<Subscription> chunkSubscriptions(std::span<const std::byte> b,
     const auto lo = i32(b, tabPtr);
     const auto n  = i16(b, tabCnt);
     if (n <= 0 || lo <= 0 ||
-        static_cast<std::size_t>(lo) + 8u * static_cast<std::size_t>(n) > b.size())
+        static_cast<std::size_t>(lo) + 8 * std::uint64_t(n) > b.size())
         return out;
     for (int i = 0; i < n; ++i) {
         const auto o = static_cast<std::size_t>(lo) + 8u * static_cast<std::size_t>(i);

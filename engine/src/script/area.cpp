@@ -2513,7 +2513,7 @@ bool Session::actorRecord(int actor, std::vector<std::byte>& chunk,
         if (found || b.size() < co + 2) return;
         const std::size_t p = u32at(b, ao);
         const int n = i16at(b, co);
-        if (n <= 0 || p + 276u * static_cast<std::size_t>(n) > b.size()) return;
+        if (n <= 0 || p + 276 * std::uint64_t(n) > b.size()) return;
         for (int i = 0; i < n; ++i) {
             const std::size_t o = p + 276u * static_cast<std::size_t>(i);
             if (i16at(b, o + 272) != actor) continue;
@@ -3979,7 +3979,7 @@ void Session::loadProps(int slot, bool area, bool scene) {
         if (b.size() < co + 2) return;
         const std::size_t p = u32at(b, po);
         const int n = i16at(b, co);
-        if (n <= 0 || p + 24u * static_cast<std::size_t>(n) > b.size()) return;
+        if (n <= 0 || p + 24 * std::uint64_t(n) > b.size()) return;
         for (int i = 0; i < n; ++i) {
             const std::size_t o = p + 24u * static_cast<std::size_t>(i);
             const int id = i16at(b, o + 2), idx = i16at(b, o + 22);
@@ -4010,7 +4010,7 @@ void Session::unloadProps(int slot, bool area, bool scene) {
         if (b.size() < co + 2) return;
         const std::size_t p = u32at(b, po);
         const int n = i16at(b, co);
-        if (n <= 0 || p + 24u * static_cast<std::size_t>(n) > b.size()) return;
+        if (n <= 0 || p + 24 * std::uint64_t(n) > b.size()) return;
         for (int i = 0; i < n; ++i) {
             const std::size_t o = p + 24u * static_cast<std::size_t>(i);
             const int idx = i16at(b, o + 22);

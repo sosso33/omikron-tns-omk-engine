@@ -11013,7 +11013,10 @@ def c_engine_hostile_files():
     (a 32-bit record of 35 under a 16 MB audio block), the `.FNT` glyph's
     span is 2^64-6 long, the `.ani` reserves INT_MAX keys, the `.mpt` resizes
     ~4 GB of links (the probe reports its own peak memory, since both refuse
-    in the end), and the `.OPT` accepts 178956971 lanes. The two `.SCX` lines
+    in the end), and the `.OPT` accepts 178956971 lanes. A seventh case,
+    the `.mpt`'s WAYPOINT count, was resized before any check - not in the
+    audit, found by `engine: size guards`' sweep - and the unfixed reader was
+    killed for memory (exit 137). The two `.SCX` lines
     tell nothing apart on a 64-bit host - the wrap needs a 32-bit `size_t` -
     and guard the console builds' arithmetic. Not covered here: the `.CTL`
     move and effect counts and the `.3DT` negative dimension, which need a
@@ -11030,19 +11033,123 @@ def c_engine_hostile_files():
         return ("build failed",), ("built",), "engine/ must build"
     r = subprocess.run([binp], capture_output=True, text=True)
     got = tuple(l.split(" ", 1)[1] for l in r.stdout.splitlines())
-    if r.returncode != 0 or len(got) != 11:
-        return (r.returncode, len(got)), (0, 11), \
-            "the probe must exit cleanly with its 11 lines"
+    if r.returncode != 0 or len(got) != 12:
+        return (r.returncode, len(got)), (0, 12), \
+            "the probe must exit cleanly with its 12 lines"
     return got, (
         "0", "0",          # .3DM: no layout, no audio
         "0",               # .FNT: an empty coverage span
         "3", "1",          # .ani: the keys the file holds, and no more reserved
         "0", "1",          # .mpt: refused, and without the resize
+        "0",               # .mpt: a waypoint count the file cannot hold
         "0", "0",          # .OPT: refused, no lanes
         "0", "0"), \
         "crafted .3DM, .FNT, .ani, .mpt, .OPT and .SCX buffers whose counts " \
         "wrap a 32-bit guard or carry a negative dimension: each refused, " \
         "with small allocations and no read outside the buffer"
+
+
+def c_engine_size_guards():
+    r"""No size guard in `engine/src` multiplies a file count in 32 bits (the code audit's sweep, 2026-10-08).
+
+    The audit of 2026-10-07 found five readers whose guard, written as
+    `offset + 28u * n > b.size()`, wrapped for a crafted count and passed;
+    and on the Vita, 3DS and PowerPC builds `size_t` is 32 bits, so the same
+    guard written with `static_cast<std::size_t>(n)` wraps there too. The rule
+    is that such a guard multiplies in `std::uint64_t` - on its own line, so
+    a scan can see it.
+
+    This is a scan of ONE SHAPE, and says so: an `if (` whose condition holds
+    a multiplication by a literal and compares with ` > ... size()`. It
+    cannot see a sum computed on an earlier line - `gamestate.cpp`'s and
+    `morph.cpp`'s were - which is what `engine: hardened` is for, at run time.
+    It lists the guards, so it does not rot as call sites are added: a new
+    guard in 64 bits is counted, a new one in 32 is named. Before the audit's
+    fixes it named 17 lines (the `.mpt` links' among them).
+
+    `goldendiff.cpp`'s `2 * (f + 1) > operand.size()` is EXEMPT by name: `f`
+    is a field index out of `tables/vm_announce.json`, not a file count.
+    """
+    import glob, re
+    shape = re.compile(r"if \(.*(?:\b\d+u?\s*\*|\*\s*\d+u?\b)[^;]*\s>=?\s+[\w.\->]*size\(\)")
+    exempt = {("engine/src/script/goldendiff.cpp", "if (2 * (f + 1) > operand.size())")}
+    wide, narrow, exempted = 0, [], 0
+    files = sorted(glob.glob(os.path.join(ROOT, "engine", "src", "**", "*.[ch]*"), recursive=True))
+    for p in files:
+        rel = os.path.relpath(p, ROOT)
+        for i, l in enumerate(open(p, errors="replace"), 1):
+            if not shape.search(l):
+                continue
+            if "uint64" in l:
+                wide += 1
+            elif any(rel == f and frag in l for f, frag in exempt):
+                exempted += 1
+            else:
+                narrow.append(f"{rel}:{i}")
+    return (len(files) > 100, wide >= 19, narrow, exempted), (True, True, [], 1), \
+        "engine/src scanned; guards of the shape multiplying in 64 bits (19 on " \
+        "2026-10-08, at least that many since); those multiplying in 32, by " \
+        "file:line (must be none); the one exemption, found"
+
+
+def c_engine_hardened():
+    r"""`make hardened`: the corpus walks under the standard library's bounds checks (the code audit, 2026-10-08).
+
+    `make hardened` rebuilds every tool with libc++'s hardening mode (or
+    libstdc++'s assertions) into `build/hardened/`, so an out-of-range
+    `subspan`, `operator[]` or `front()` TRAPS where the normal build reads
+    on. The audit found its five readers by pattern; this turns the class into
+    a crash at the faulty access, including the shapes `engine: size guards`
+    cannot see.
+
+    Asserted: the CANARY (`tools/harden_canary.cpp`, one out-of-range
+    `subspan` on purpose) runs in `build/` and traps in `build/hardened/` -
+    so a hardened build that lost its flag fails HERE rather than passing
+    every walk for the wrong reason; then the five corpus walks
+    (`dump_anims` and `dump_ctl` over ANIMS, `dump_scx` and `dump_stream`
+    over SCPTDATA, `dump_fonts` over FONTS) and both hostile probes run
+    hardened with exit 0, and the walks' outputs are byte-identical to the
+    normal build's. `--slow`: the first `make hardened` compiles the tree
+    again (1:44 on the M3), every later one only what changed.
+    """
+    import subprocess, tempfile, shutil, filecmp
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    walks = [("dump_anims", "ANIMS"), ("dump_ctl", "ANIMS"), ("dump_scx", "SCPTDATA"),
+             ("dump_stream", "SCPTDATA"), ("dump_fonts", "FONTS")]
+    names = [w for w, _ in walks] + ["harden_canary", "hostile_files", "hostile_save"]
+    b1 = subprocess.run(["make", "-s"] + [f"build/{n}" for n in names], cwd=eng,
+                        capture_output=True, text=True)
+    b2 = subprocess.run(["make", "-s", "hardened"], cwd=eng, capture_output=True, text=True)
+    if b1.returncode != 0 or b2.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build, normal and hardened"
+    bn = lambda d, n: os.path.join(eng, "build", *d, n)
+    run = lambda argv: subprocess.run(argv, capture_output=True)
+    canary = (run([bn([], "harden_canary")]).returncode,
+              run([bn(["hardened"], "harden_canary")]).returncode < 0 or
+              run([bn(["hardened"], "harden_canary")]).returncode >= 128)
+    tmp = tempfile.mkdtemp()
+    walked = []
+    try:
+        for w, sub in walks:
+            src = omkpaths.data(sub)
+            outs = []
+            for d in ([], ["hardened"]):
+                o = os.path.join(tmp, f"{w}.{len(d)}.bin")
+                r = run([bn(d, w), src, o])
+                outs.append((r.returncode, r.stdout, o))
+            same = outs[0][1] == outs[1][1] and filecmp.cmp(outs[0][2], outs[1][2], shallow=False)
+            walked.append((w, outs[1][0], same))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    hostile = (run([bn(["hardened"], "hostile_files")]).returncode,
+               run([bn(["hardened"], "hostile_save"), omkpaths.data_root()]).returncode)
+    return (canary, walked, hostile), \
+        ((0, True), [(w, 0, True) for w, _ in walks], (0, 0)), \
+        "the canary: exit 0 normal, a trap hardened; each corpus walk hardened: " \
+        "its exit status and whether its output equals the normal build's; " \
+        "both hostile probes hardened"
 
 
 def c_engine_cam_mode13():
@@ -43426,9 +43533,10 @@ def c_licence_headers():
     # 593 the same day: + `engine/tools/menu_stick.cpp` (the Quest's menu stick)
     # 594 on 2026-10-08: + `engine/tools/hostile_save.cpp` (the code audit's
     # damaged-save probe, `engine: hostile save`); 595 the same day: +
-    # `engine/tools/hostile_files.cpp` (`engine: hostile files`)
+    # `engine/tools/hostile_files.cpp` (`engine: hostile files`); 596 the
+    # same day: + `engine/tools/harden_canary.cpp` (`engine: hardened`)
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (595, [], 1, []), \
+           (596, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -45865,6 +45973,7 @@ CHECKS = [
     ("vm table sources",   c_vm_table_sources,  "CLAUDE.md 2"),
     ("input paths",        c_input_paths,       "CLAUDE.md 2"),
     ("licence headers",    c_licence_headers,   "LICENSING.md"),
+    ("engine: size guards", c_engine_size_guards, "engine/README"),
     ("dialogue mode",     c_dialogue_mode,     "engine/README"),
     ("transcript index",   c_transcript_index,  "transcript/README"),
     ("held camera bracket",c_held_camera_bracket,"todo/omk-play 42"),
@@ -45946,6 +46055,7 @@ SLOW = [
     ("engine: game state", c_engine_game_state, "engine/README"),
     ("engine: hostile save", c_engine_hostile_save, "GAME_STATE 4; engine/README"),
     ("engine: hostile files", c_engine_hostile_files, "engine/README"),
+    ("engine: hardened", c_engine_hardened, "engine/Makefile"),
     ("engine: cam mode 13",    c_engine_cam_mode13,    "engine/README"),
     ("engine: screen close",   c_engine_screen_close,  "engine/README"),
     ("engine: pause",       c_engine_pause,       "todo/next-tasks 3; UI 3b"),

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+#include <algorithm>
 #include <utility>
 #include "formats/map2d.h"
 #include "formats/le.h"
@@ -62,11 +63,16 @@ bool Map2d::load(std::span<const std::byte> b) {
     for (auto& f : floors_) {
         const std::uint32_t k = u32(b, o);
         o += 4;
+        // a waypoint is at least 12 bytes (its length word and two more): a
+        // count the rest of the file cannot hold is refused BEFORE the resize,
+        // which would otherwise allocate it (the code audit's sweep, 2026-10-08)
+        if (std::uint64_t{k} * 12 > b.size() - std::min(o, b.size())) return false;
         f.waypoints.resize(k);
         for (auto& w : f.waypoints) {
             w.len = u32(b, o);
-            const std::size_t words = static_cast<std::size_t>(w.len) + 2;
-            if (o + 4 + 4 * words > b.size()) return false;
+            // 64 bits, as above: len + 2 wraps a 32-bit size_t
+            if (o + 4 + 4 * (std::uint64_t{w.len} + 2) > b.size()) return false;
+            const auto words = static_cast<std::size_t>(std::uint64_t{w.len} + 2);
             w.body.resize(words);
             for (std::size_t i = 0; i < words; ++i) w.body[i] = u32(b, o + 4 + 4 * i);
             // ...and the same dwords named (`formats/map2d.h`): id, flags, and

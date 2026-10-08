@@ -161,7 +161,7 @@ NodeTracks clipTracks(std::span<const std::byte> d) {
     const std::int32_t frames = i32(0);
     const std::int32_t n = i32(4);
     if (frames < 0 || frames >= 20000 || n <= 0 || n >= 512) return t;
-    if (8u + 40u * static_cast<std::size_t>(n) > d.size()) return t;
+    if (8u + 40 * std::uint64_t(n) > d.size()) return t;
 
     struct Track { std::int32_t node, rotKeys, rotOffset, posKeys, posOffset; std::string name; };
     std::vector<Track> tr;
@@ -234,14 +234,14 @@ std::vector<std::array<float, 3>> clipRootMotion(std::span<const std::byte> d) {
     std::vector<std::array<float, 3>> out;
     if (d.size() < 8) return out;
     const int frames = i32at(d, 0), n = i32at(d, 4);
-    if (frames <= 0 || n <= 0 || 8u + 40u * static_cast<std::size_t>(n) > d.size())
+    if (frames <= 0 || n <= 0 || 8u + 40 * std::uint64_t(n) > d.size())
         return out;
     out.assign(static_cast<std::size_t>(frames), {0.0f, 0.0f, 0.0f});
     for (int i = 0; i < n; ++i) {
         const std::size_t o = 8u + 40u * static_cast<std::size_t>(i);
         const int pk = i32at(d, o + 24), po = i32at(d, o + 28);
         if (!po || pk <= 1) continue;
-        if (static_cast<std::size_t>(po) + 12u * static_cast<std::size_t>(pk) > d.size())
+        if (static_cast<std::size_t>(po) + 12 * std::uint64_t(pk) > d.size())
             continue;
         std::array<float, 3> acc{0.0f, 0.0f, 0.0f};
         for (int f = 0; f < frames; ++f) {
@@ -264,7 +264,7 @@ std::vector<std::array<float, 3>> clipRootMotion(std::span<const std::byte> d) {
 bool clipRootStart(std::span<const std::byte> d, float out[3]) {
     if (d.size() < 8) return false;
     const int n = i32at(d, 4);
-    if (n <= 0 || 8u + 40u * static_cast<std::size_t>(n) > d.size()) return false;
+    if (n <= 0 || 8u + 40 * std::uint64_t(n) > d.size()) return false;
     for (int i = 0; i < n; ++i) {
         const std::size_t o = 8u + 40u * static_cast<std::size_t>(i);
         const int pk = i32at(d, o + 24), po = i32at(d, o + 28);
@@ -296,7 +296,7 @@ NodeTracks nodeTracks(std::span<const std::byte> d, int rootTrack) {
     t.rootTrack = rootTrack;
 
     // The preamble is the track table: `nodeCount` uint32 mesh indices.
-    if (16u + 4u * L.nodes > d.size()) return t;
+    if (16 + 4 * std::uint64_t{L.nodes} > d.size()) return t;
     t.ids.reserve(L.nodes);
     for (std::uint32_t i = 0; i < L.nodes; ++i)
         t.ids.push_back(static_cast<std::int32_t>(u32at(d, 16u + 4u * i)));
@@ -541,7 +541,7 @@ std::vector<float> faceFrame(std::span<const std::byte> d, int frame) {
     // The vertex block sits after the root's 12 bytes and every quaternion.
     const std::size_t vb0 = 12u + 16u * L.nodes;
     const std::size_t base = L.preamble + static_cast<std::size_t>(f) * L.record + vb0;
-    if (base + 24u * L.vertices > d.size()) return out;
+    if (base + 24 * std::uint64_t{L.vertices} > d.size()) return out;
     out.reserve(3u * L.vertices);
     for (std::uint32_t i = 0; i < L.vertices; ++i)
         for (int k = 0; k < 3; ++k)

@@ -67,7 +67,7 @@ void WorldCameras::read(std::span<const std::byte> b, std::size_t arrOff,
     if (b.size() < cntOff + 2 || b.size() < arrOff + 4) return;
     const std::size_t p = static_cast<std::uint32_t>(i32at(b, arrOff));
     const int n = i16at(b, cntOff);
-    if (n <= 0 || p + 44u * static_cast<std::size_t>(n) > b.size()) return;
+    if (n <= 0 || p + 44 * std::uint64_t(n) > b.size()) return;
     out.reserve(static_cast<std::size_t>(n));
     for (int i = 0; i < n; ++i) {
         const std::size_t o = p + 44u * static_cast<std::size_t>(i);

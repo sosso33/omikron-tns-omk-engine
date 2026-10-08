@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // DAMAGED GAME FILES against the format readers (the code audit of 2026-10-07).
 //
-//     hostile_files [case]     (morph fnt ani map2d opt scx; default all)
+//     hostile_files [case]     (morph fnt ani map2d map2d.waypoints opt scx; default all)
 //
 // Each case is a buffer built here whose counts or sizes were chosen to WRAP
 // the reader's old 32-bit arithmetic, or to be a negative int16 dimension,
@@ -98,6 +98,20 @@ int main(int argc, char** argv) {
         const unsigned long long peak = static_cast<unsigned long long>(ru.ru_maxrss) * 1024;   // KB
 #endif
         say("map2d.peak.under.256MB", peak < (256ull << 20));
+    }
+
+    // .mpt again: one floor with no links and no cells, then a WAYPOINT count
+    // of 0xFFFFFFFF - resized before anything was checked (found by the scan
+    // that followed the audit, not by the audit).
+    if (want("map2d.waypoints")) {
+        std::vector<std::byte> d(128);
+        put32(d, 0, 1);                  // scale
+        put32(d, 4, 1);                  // floors
+        put32(d, 8, 0);                  // links on floor 0
+        // +12: six bound floats, then w = h = 0 at +36 / +40 - all zero
+        put32(d, 44, 0xFFFFFFFFu);       // waypoints on floor 0
+        omk::Map2d m;
+        say("map2d.waypoints.loaded", m.load(d));
     }
 
     // .OPT: block 0 counted so that 24 * count wraps to 8, landing the chain
