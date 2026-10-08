@@ -410,7 +410,22 @@ and every later slice will meet the same thing.
 ```sh
 cd engine && make                     # needs only a C++20 compiler
 python3 ../tools/verify.py            # `engine: 3DT` runs the differential
+make hardened                         # every tool again, bounds-checked (below)
 ```
+
+**`make hardened`** (2026-10-08, after a code audit found five readers whose
+size guard a crafted file wrapped) rebuilds every tool into `build/hardened/`
+with the standard library's own bounds checks - libc++'s hardening mode, or
+libstdc++'s assertions - so an out-of-range `subspan`, `operator[]` or
+`front()` TRAPS where the normal build reads past the buffer and carries on.
+Its objects are its own (`build/obj-hardened`, flags stamped), so it never
+mixes with the normal build. `verify.py: engine: hardened` runs the corpus
+walks and the damaged-input probes (`engine: hostile save`, `engine: hostile
+files`) through it, beside a canary that must trap; `engine: size guards`
+keeps the one guard shape a scan can see - a multiplication compared with a
+`size()` - in 64 bits, which on the 32-bit builds (Vita, 3DS, PowerPC) is
+the difference between a guard and none. The original trusts every one of
+these counts; none of this changes what a shipped file does.
 
 **`verify.py: engine 3DT`** requires the decoded RGB to be **byte-identical to
 `tools/tex3dt.py`** on all **2534** textures. Not "looks right", not "decodes
