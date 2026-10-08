@@ -360,7 +360,8 @@ public:
                 auto tex = std::make_unique<C3D_Tex>();
                 bool onVram = false;
                 if (!uploadTex(*tex, x.idx.data(), x.pal.data(), x.width, x.height, vramTex_, onVram)) {
-                    std::printf("c3d: texture %zu (%s, %dx%d) has no memory - drawn untextured\n",
+                    std::printf("c3d: texture %zu (%s, %dx%d) has no memory or a size the PICA "
+                                "refuses - drawn untextured\n",
                                 i, x.name.c_str(), x.width, x.height);
                     ++failed;
                     continue;
@@ -1141,6 +1142,10 @@ private:
     void buildBands(const Surface& fb, const float fade[4], int vy, int vh, int k, std::vector<std::uint16_t>& out) {
         if (out.size() != 400 * 240) out.assign(400 * 240, 0);   // only the band rows are ever read
         bandRows_.clear();
+        // a frame wider or taller than the screen once reduced (`--res` up to
+        // 1024 is accepted) would centre at a NEGATIVE offset and write
+        // outside `out`; `presentHalf` refuses the same frame just after
+        if (w_ / k > 400 || h_ / k > 240) return;
         const int ox = (400 - w_ / k) / 2, oy = (240 - h_ / k) / 2;
         const bool fading = fade[3] > 0.0f;
         const float f = fade[3];
@@ -1712,6 +1717,13 @@ private:
     static constexpr std::size_t kVramKeep = 64 * 1024;
     bool uploadTex(C3D_Tex& tex, const std::uint8_t* idx, const std::uint8_t* palRgb, int w, int h,
                    bool tryVram, bool& onVram) {
+        // what `C3D_TexInit` accepts - a power of two from 8 to 1024 a side -
+        // refused BEFORE `tile()`, whose 8x8 layout writes past a buffer of
+        // `w * h` for any side that is not a multiple of 8 (the code audit of
+        // 2026-10-07). Every shipped texture is such a size; another one was
+        // refused by the init after the overflow, so nothing drawn changes.
+        const auto pow2 = [](int v) { return v >= 8 && v <= 1024 && !(v & (v - 1)); };
+        if (!pow2(w) || !pow2(h)) return false;
         std::uint16_t pal[256];
         for (int k = 0; k < 256; ++k) {
             const std::uint8_t* p = palRgb + 3 * k;
