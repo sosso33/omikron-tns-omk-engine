@@ -77,6 +77,9 @@ std::vector<PedClip> animGroupClips(std::span<const std::byte> ani, int group) {
         c.descriptor = clip.descriptor;
         for (const auto& t : desc->tracks) {
             if (!t.rotKeys) continue;
+            // the whole track inside the file, or no root - as a key past
+            // the end below decides, but before the allocation
+            if (t.posOffset + 12 * std::uint64_t(std::max<std::int32_t>(t.posKeys, 0)) > ani.size()) break;
             c.root.resize(static_cast<std::size_t>(std::max<std::int32_t>(t.posKeys, 0)) * 3);
             for (std::int32_t k = 0; k < t.posKeys; ++k) {
                 const std::size_t o = t.posOffset + 12 * static_cast<std::size_t>(k);
@@ -108,6 +111,9 @@ PedClips pedClipsFrom(std::span<const std::byte> ani) {
         // `sub_437FE0`: the root is the first track with rotation keys
         for (const auto& t : desc->tracks) {
             if (!t.rotKeys) continue;
+            // the whole track inside the file, or no root - as a key past
+            // the end below decides, but before the allocation
+            if (t.posOffset + 12 * std::uint64_t(std::max<std::int32_t>(t.posKeys, 0)) > ani.size()) break;
             c.root.resize(static_cast<std::size_t>(std::max<std::int32_t>(t.posKeys, 0)) * 3);
             for (std::int32_t k = 0; k < t.posKeys; ++k) {
                 const std::size_t o = t.posOffset + 12 * static_cast<std::size_t>(k);

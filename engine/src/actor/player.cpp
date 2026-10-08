@@ -748,7 +748,7 @@ const PlayerController::RootTrack* PlayerController::rootTrackOf(int clip) {
         // clips have exactly one
         for (const auto& t : d->tracks) {
             if (!t.posOffset || t.posKeys <= 0) continue;
-            if (t.posOffset + 12u * static_cast<std::size_t>(t.posKeys) > data_.size()) continue;
+            if (t.posOffset + 12 * std::uint64_t(t.posKeys) > data_.size()) continue;   // 64 bits: a 32-bit size_t wraps
             r.offset = t.posOffset;
             r.keys   = t.posKeys;
             break;

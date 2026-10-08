@@ -39,8 +39,9 @@ int main(int argc, char** argv) {
             // every code 33..255 carries a glyph and space (32) does not -
             // it falls to the font record's default advance
             if (c >= 33 && c <= 255) ++covered;
+            if (g.width < 0 || g.height < 0 || g.offset < omk::kFntHeader || g.offset > d.size() ||
+                g.pixels() > d.size() - g.offset) { ++outside; continue; }
             const auto end = g.offset + g.pixels();
-            if (g.offset < omk::kFntHeader || end > d.size()) { ++outside; continue; }
             lowest = std::min(lowest, g.offset);
             pixels += static_cast<long>(g.pixels());
             for (std::size_t k = g.offset; k < end; ++k)

@@ -117,6 +117,9 @@ std::vector<Texture> textures(std::span<const std::byte> d,
         const auto pal = t.subspan(off, palBytes);
         off += palBytes;
 
+        // a NEGATIVE width or height (int16 in the material; never shipped)
+        // would size the image near 2^64: the pair does not belong together
+        if (mat->width < 0 || mat->height < 0) break;
         const auto want = static_cast<std::size_t>(mat->width) *
                           static_cast<std::size_t>(mat->height);
         const auto dataSize = static_cast<std::size_t>(mat->dataSize < 0 ? 0 : mat->dataSize);

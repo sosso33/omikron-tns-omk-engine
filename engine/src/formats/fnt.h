@@ -58,7 +58,10 @@ struct Font {
     // -> the `width * height` coverage bytes of one glyph, or an empty span.
     std::span<const std::byte> coverage(unsigned char code) const {
         const Glyph& g = glyphs[code];
-        if (!g.present || g.offset + g.pixels() > blob.size()) return {};
+        // a NEGATIVE width or height (never shipped) makes `pixels()` wrap;
+        // the comparison is written so the sum cannot
+        if (!g.present || g.width < 0 || g.height < 0 || g.offset > blob.size() ||
+            g.pixels() > blob.size() - g.offset) return {};
         return std::span<const std::byte>(blob).subspan(g.offset, g.pixels());
     }
 };

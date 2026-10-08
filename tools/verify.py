@@ -10997,6 +10997,54 @@ def c_engine_hostile_save():
         "negative day formats inside the month table"
 
 
+def c_engine_hostile_files():
+    r"""`engine/`'s format readers against DAMAGED GAME FILES (the audit of 2026-10-07).
+
+    Six readers took a count or a size from the file and guarded it as
+    `offset + n * stride > size` in 32 bits, or took a negative int16
+    dimension as a `size_t`, so a crafted file passed the guard. None of these
+    shapes ships, and the original's loaders trust every count - a file like
+    these crashes it too - so what is asserted is only that the port refuses
+    them; the shipped files decoding as before is the format checks' job
+    (`engine: morph+ADPCM`, `fonts`, `anims`, `CTL`, `SCX`, `SCX stream`,
+    `3DT`, `pedestrians`, `opt tracks`, the map2d family).
+
+    Shown to fail on the unfixed code case by case: the `.3DM` SIGSEGVs
+    (a 32-bit record of 35 under a 16 MB audio block), the `.FNT` glyph's
+    span is 2^64-6 long, the `.ani` reserves INT_MAX keys, the `.mpt` resizes
+    ~4 GB of links (the probe reports its own peak memory, since both refuse
+    in the end), and the `.OPT` accepts 178956971 lanes. The two `.SCX` lines
+    tell nothing apart on a 64-bit host - the wrap needs a 32-bit `size_t` -
+    and guard the console builds' arithmetic. Not covered here: the `.CTL`
+    move and effect counts and the `.3DT` negative dimension, which need a
+    whole file around them; their guards are one line each.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s", "build/hostile_files"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "hostile_files")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp], capture_output=True, text=True)
+    got = tuple(l.split(" ", 1)[1] for l in r.stdout.splitlines())
+    if r.returncode != 0 or len(got) != 11:
+        return (r.returncode, len(got)), (0, 11), \
+            "the probe must exit cleanly with its 11 lines"
+    return got, (
+        "0", "0",          # .3DM: no layout, no audio
+        "0",               # .FNT: an empty coverage span
+        "3", "1",          # .ani: the keys the file holds, and no more reserved
+        "0", "1",          # .mpt: refused, and without the resize
+        "0", "0",          # .OPT: refused, no lanes
+        "0", "0"), \
+        "crafted .3DM, .FNT, .ani, .mpt, .OPT and .SCX buffers whose counts " \
+        "wrap a 32-bit guard or carry a negative dimension: each refused, " \
+        "with small allocations and no read outside the buffer"
+
+
 def c_engine_cam_mode13():
     r"""`engine/`'s CAMERA MODE 13 - the editing an object start hands the camera to.
 
@@ -43377,9 +43425,10 @@ def c_licence_headers():
     # 592 the same day: + step 5's `engine/backends/openxr/xrhost.h` / `.cpp`;
     # 593 the same day: + `engine/tools/menu_stick.cpp` (the Quest's menu stick)
     # 594 on 2026-10-08: + `engine/tools/hostile_save.cpp` (the code audit's
-    # damaged-save probe, `engine: hostile save`)
+    # damaged-save probe, `engine: hostile save`); 595 the same day: +
+    # `engine/tools/hostile_files.cpp` (`engine: hostile files`)
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (594, [], 1, []), \
+           (595, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -45896,6 +45945,7 @@ SLOW = [
     ("engine: dialogue line states", c_engine_dialogue_line_states, "dialogue.h; FILE_FORMATS 5b2a"),
     ("engine: game state", c_engine_game_state, "engine/README"),
     ("engine: hostile save", c_engine_hostile_save, "GAME_STATE 4; engine/README"),
+    ("engine: hostile files", c_engine_hostile_files, "engine/README"),
     ("engine: cam mode 13",    c_engine_cam_mode13,    "engine/README"),
     ("engine: screen close",   c_engine_screen_close,  "engine/README"),
     ("engine: pause",       c_engine_pause,       "todo/next-tasks 3; UI 3b"),

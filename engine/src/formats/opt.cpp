@@ -38,10 +38,10 @@ OptTrack loadOpt(std::span<const std::byte> d) {
     struct Block { std::uint32_t off, count, size; };
     const Block B[7] = {{h[6], h[5], 24}, {h[8], h[7], 20}, {h[10], h[9], 20}, {h[12], h[11], 12},
                         {h[14], h[13], 16}, {h[16], h[15], 4}, {h[18], h[17], 2}};
-    std::uint32_t o = 76;
+    std::uint64_t o = 76;                   // in 64 bits: size * count wraps in 32
     for (const auto& b : B) {
         if (b.off != o) return fail("a block does not start where the previous ends");
-        o = b.off + b.size * b.count;
+        o = std::uint64_t{b.off} + std::uint64_t{b.size} * b.count;
         if (o > d.size()) return fail("a block runs past the file");
     }
     if (o != d.size()) return fail("the last block does not end on the file size");

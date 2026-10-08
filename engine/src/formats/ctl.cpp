@@ -144,7 +144,11 @@ CtlFile readCtl(std::span<const std::byte> d) {
             for (auto& sl : p.slots) {
                 const auto [cnt, blk] = slots[si++];
                 for (std::uint32_t j = 0; j < cnt; ++j) {
-                    const auto n = u32(d, blk + 16u * j + 4u);
+                    // a count is a file word: no more words than the file
+                    // has left (in the shipped seven, every one fits)
+                    const std::size_t left = ip < d.size() ? (d.size() - ip) / 4 : 0;
+                    const auto n = static_cast<std::uint32_t>(
+                        std::min<std::size_t>(u32(d, blk + 16u * j + 4u), left));
                     std::vector<std::uint32_t> mv;
                     mv.reserve(n);
                     for (std::uint32_t t = 0; t < n; ++t) mv.push_back(u32(d, ip + 4u * t));
@@ -163,7 +167,7 @@ CtlFile readCtl(std::span<const std::byte> d) {
         if (!(u8(d, e + 76) & 8u)) continue;
         const auto n = u32(d, pos);
         auto& st = effectsOf[ei];
-        st.reserve(n);
+        st.reserve(std::min<std::size_t>(n, pos + 8 < d.size() ? (d.size() - pos - 8) / 32 : 0));
         for (std::uint32_t k = 0; k < n; ++k) {
             const auto r = pos + 8u + 32u * k;
             if (r + 32 > d.size()) break;

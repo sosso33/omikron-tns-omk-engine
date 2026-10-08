@@ -36,7 +36,7 @@ bool Map2d::load(std::span<const std::byte> b) {
     for (auto& f : floors_) {
         const std::uint32_t n = u32(b, o);
         o += 4;
-        if (o + 28u * n > b.size()) return false;
+        if (o + 28 * std::uint64_t{n} > b.size()) return false;   // in 64 bits: 28n wraps
         // the floor's INTER-FLOOR LINKS (`formats/map2d.h`): the destination
         // floor, then the point on THIS floor and the point on that one
         f.links.resize(n);
@@ -52,8 +52,9 @@ bool Map2d::load(std::span<const std::byte> b) {
         f.w = u32(b, o + 24);
         f.h = u32(b, o + 28);
         o += 32;
-        const std::size_t n2 = static_cast<std::size_t>(f.w) * f.h;
-        if (o + n2 > b.size()) return false;
+        const std::uint64_t cells = std::uint64_t{f.w} * f.h;      // in 64 bits, as above
+        if (o + cells > b.size()) return false;
+        const auto n2 = static_cast<std::size_t>(cells);
         f.cells.resize(n2);
         std::memcpy(f.cells.data(), b.data() + o, n2);
         o += n2;

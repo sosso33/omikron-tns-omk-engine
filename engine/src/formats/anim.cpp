@@ -101,7 +101,10 @@ std::optional<AnimDescriptor> animDescriptor(std::span<const std::byte> d,
 std::vector<Quat> animRotations(std::span<const std::byte> d, const AnimTrack& t) {
     std::vector<Quat> out;
     if (!t.rotOffset || t.rotKeys <= 0) return out;
-    out.reserve(static_cast<std::size_t>(t.rotKeys));
+    // no more than the file can hold: the count is a file word (the loop
+    // below stops at the end anyway)
+    const std::size_t room = t.rotOffset < d.size() ? (d.size() - t.rotOffset) / 16 : 0;
+    out.reserve(std::min(static_cast<std::size_t>(t.rotKeys), room));
     for (int k = 0; k < t.rotKeys; ++k) {
         const auto o = t.rotOffset + 16u * static_cast<std::size_t>(k);
         if (o + 16 > d.size()) break;

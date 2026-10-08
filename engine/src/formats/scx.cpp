@@ -54,7 +54,7 @@ ScxScene readScx(std::span<const std::byte> d) {
     if (d.size() < 16) return s;
     if (u32(d, 0) != 0x00DEAD00u || u32(d, 4) != 5u) return s;
     s.blockSize = u32(d, 12);
-    if (16 + s.blockSize > d.size()) return s;
+    if (16 + std::uint64_t{s.blockSize} > d.size()) return s;   // 64 bits: a 32-bit size_t wraps
     const auto b = d.subspan(16, s.blockSize);
     s.streamed = d.size() - 16 - s.blockSize;
 
@@ -138,8 +138,8 @@ ScxStream readScxStream(std::span<const std::byte> d) {
     ScxStream st;
     if (d.size() < 16) return st;
     if (u32(d, 0) != 0x00DEAD00u || u32(d, 4) != 5u) return st;
-    const auto blockSize = u32(d, 12);
-    if (16 + blockSize > d.size()) return st;
+    const std::size_t blockSize = u32(d, 12);
+    if (16 + std::uint64_t{blockSize} > d.size()) return st;   // in 64 bits: 16 + u32 wraps
     const auto b = d.subspan(16, blockSize);
 
     // walk the block for the chunk ORDER and the registries chunk 1/3/4 hold
