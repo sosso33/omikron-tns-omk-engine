@@ -10950,6 +10950,53 @@ def c_engine_game_state():
         "111 and 112 the opcode table names the wrong way round"
 
 
+def c_engine_hostile_save():
+    r"""`engine/`'s game-state accessors against a DAMAGED SAVE (the audit of 2026-10-07).
+
+    The six array offsets at DB `+8` are read out of the save file and the
+    original relocates them without a look - `Var_Set` (0x0040E510) is
+    `[db+8][i*4] = v` - so out of range it writes wherever the pointer lands,
+    and no in-range behaviour depends on what the port does there. The port's
+    guards summed offset and index in 32 bits, so an offset or index chosen to
+    WRAP passed the size test: `setVar` and `setSceneOfArea` wrote the DB
+    header, `var`/`sceneOfArea`/`propState`/`bit` read it, and on a 32-bit
+    build (Vita, 3DS, PowerPC) `size_t` wraps the same way. They now sum in 64
+    bits; this asserts each wrapped write changes no byte, each wrapped read
+    answers 0, and the same accessors on `IAM\START` as shipped still work.
+
+    The date: `Clock_FormatDate` (0x0041E690) is three signed `idiv`s, so a
+    negative day - which only a damaged save carries - indexes BEFORE the
+    month table. Unfixed, -41 printed `SCENE`, a string from wherever the
+    pointer landed. The month is folded into 0..12 and every day >= 0 formats
+    as before - 52, the new game's, is `12 Nadim 7216` (GAME_STATE 6).
+    Shown to fail on the unfixed code: 11 of the 17 lines differ.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    b = subprocess.run(["make", "-s", "build/hostile_save"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "hostile_save")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, omkpaths.data_root()], capture_output=True, text=True)
+    got = tuple(l.split(" ", 1)[1] for l in r.stdout.splitlines())
+    if len(got) != 17:
+        return (len(got), r.stderr.strip()[:200]), (17, ""), \
+            "the probe must print its 17 lines"
+    return got, (
+        # wrapped offsets and indices: reads answer 0, writes change nothing
+        "0", "1", "1", "0", "0", "1", "0", "1", "0", "1",
+        # the shipped image: the same accessors still work
+        "77", "42", "2", "1",
+        # the date: the new game's day, then two negative ones
+        "12 Nadim 7216", "0 Aqed 7216", "1 Primevat 7216"), \
+        "a save whose array offsets or indices wrap a 32-bit sum reads 0 and " \
+        "writes nothing; IAM\\START's own image unchanged in behaviour; a " \
+        "negative day formats inside the month table"
+
+
 def c_engine_cam_mode13():
     r"""`engine/`'s CAMERA MODE 13 - the editing an object start hands the camera to.
 
@@ -43329,8 +43376,10 @@ def c_licence_headers():
     # `engine/backends/android/android_main.cpp`, `scripts/android-build.sh`;
     # 592 the same day: + step 5's `engine/backends/openxr/xrhost.h` / `.cpp`;
     # 593 the same day: + `engine/tools/menu_stick.cpp` (the Quest's menu stick)
+    # 594 on 2026-10-08: + `engine/tools/hostile_save.cpp` (the code audit's
+    # damaged-save probe, `engine: hostile save`)
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (593, [], 1, []), \
+           (594, [], 1, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -45846,6 +45895,7 @@ SLOW = [
     ("engine: world ops",  c_engine_world_ops,  "script/hooks.h; SCRIPT_VM; GAME_STATE"),
     ("engine: dialogue line states", c_engine_dialogue_line_states, "dialogue.h; FILE_FORMATS 5b2a"),
     ("engine: game state", c_engine_game_state, "engine/README"),
+    ("engine: hostile save", c_engine_hostile_save, "GAME_STATE 4; engine/README"),
     ("engine: cam mode 13",    c_engine_cam_mode13,    "engine/README"),
     ("engine: screen close",   c_engine_screen_close,  "engine/README"),
     ("engine: pause",       c_engine_pause,       "todo/next-tasks 3; UI 3b"),

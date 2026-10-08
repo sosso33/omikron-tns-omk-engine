@@ -13,6 +13,20 @@ namespace omk {
 namespace {
 constexpr std::size_t kPtrBase = 8;    // +8  + 4*k
 constexpr std::size_t kCntBase = 32;   // +32 + 2*k
+
+// Where element `byteOff` of an array based at `base` lies, if `width` bytes
+// of it fit the image; kNoSlot otherwise. The base is the save's own offset
+// (+8 + 4*k) and the index a script operand, so the sum is taken in 64 bits:
+// in 32 it wraps - on the 32-bit builds size_t does too - and a wrapped
+// offset passes the size test. The original checks nothing here (`Var_Set`,
+// 0x0040E510, is `[db+8][i*4] = v`): out of range it writes wherever the
+// pointer lands, so no in-range behaviour depends on this.
+constexpr std::size_t kNoSlot = static_cast<std::size_t>(-1);
+std::size_t slotAt(std::uint32_t base, std::uint64_t byteOff, std::uint64_t width,
+                   std::size_t size) {
+    const std::uint64_t o = std::uint64_t{base} + byteOff;
+    return o + width <= size ? static_cast<std::size_t>(o) : kNoSlot;
+}
 }
 
 GameState GameState::fromBytes(std::span<const std::byte> d) {
@@ -52,15 +66,15 @@ std::uint16_t GameState::count(StateArray a) const {
 
 std::int32_t GameState::var(int i) const {
     if (i < 0) return 0;
-    const auto o = offset(StateArray::Variables) + 4u * static_cast<std::uint32_t>(i);
-    if (o + 4 > raw_.size()) return 0;
+    const auto o = slotAt(offset(StateArray::Variables), 4 * std::uint64_t(i), 4, raw_.size());
+    if (o == kNoSlot) return 0;
     return static_cast<std::int32_t>(u32(o));
 }
 
 void GameState::setVar(int i, std::int32_t v) {
     if (i < 0) return;
-    const auto o = offset(StateArray::Variables) + 4u * static_cast<std::uint32_t>(i);
-    if (o + 4 > raw_.size()) return;             // out of range is a no-op,
+    const auto o = slotAt(offset(StateArray::Variables), 4 * std::uint64_t(i), 4, raw_.size());
+    if (o == kNoSlot) return;                    // out of range is a no-op,
     const auto u = static_cast<std::uint32_t>(v); // as it is in the reference
     for (int k = 0; k < 4; ++k)
         raw_[o + static_cast<std::size_t>(k)] = static_cast<std::byte>(u >> (8 * k));
@@ -68,15 +82,15 @@ void GameState::setVar(int i, std::int32_t v) {
 
 int GameState::bit(StateArray a, int i) const {
     if (i < 0) return 0;
-    const auto o = offset(a) + static_cast<std::uint32_t>(i) / 8u;
-    if (o >= raw_.size()) return 0;
+    const auto o = slotAt(offset(a), std::uint64_t(i) / 8, 1, raw_.size());
+    if (o == kNoSlot) return 0;
     return (static_cast<std::uint8_t>(raw_[o]) >> (i % 8)) & 1;
 }
 
 void GameState::setBit(StateArray a, int i, int value) {
     if (i < 0) return;
-    const auto o = offset(a) + static_cast<std::uint32_t>(i) / 8u;
-    if (o >= raw_.size()) return;
+    const auto o = slotAt(offset(a), std::uint64_t(i) / 8, 1, raw_.size());
+    if (o == kNoSlot) return;
     const auto mask = static_cast<std::uint8_t>(1u << (i % 8));
     auto b = static_cast<std::uint8_t>(raw_[o]);
     b = static_cast<std::uint8_t>((b & ~mask) | (value ? mask : 0));
@@ -85,7 +99,8 @@ void GameState::setBit(StateArray a, int i, int value) {
 
 std::int16_t GameState::sceneOfArea(int area) const {
     if (area < 0 || area >= 259) return -1;
-    const auto o = offset(StateArray::SceneOfArea) + 2u * static_cast<std::uint32_t>(area);
+    const auto o = slotAt(offset(StateArray::SceneOfArea), 2 * std::uint64_t(area), 2, raw_.size());
+    if (o == kNoSlot) return 0;                  // as u16() answered before
     return static_cast<std::int16_t>(u16(o));
 }
 
@@ -163,8 +178,8 @@ void GameState::setCurrentScene(std::int16_t s) { put16(1416, s); }
 
 void GameState::setSceneOfArea(int area, std::int16_t scene) {
     if (area < 0 || area >= 259) return;
-    const auto o = offset(StateArray::SceneOfArea) + 2u * static_cast<std::uint32_t>(area);
-    if (o + 2 > raw_.size()) return;
+    const auto o = slotAt(offset(StateArray::SceneOfArea), 2 * std::uint64_t(area), 2, raw_.size());
+    if (o == kNoSlot) return;
     const auto u = static_cast<std::uint16_t>(scene);
     raw_[o]     = static_cast<std::byte>(u & 0xFF);
     raw_[o + 1] = static_cast<std::byte>(u >> 8);
@@ -303,9 +318,8 @@ void GameState::listClear(int list) {
 
 int GameState::propState(int index) const {
     if (index < 0) return 0;
-    const auto o = offset(StateArray::PropState) +
-                   static_cast<std::uint32_t>(index) / 4u;
-    if (o >= raw_.size()) return 0;
+    const auto o = slotAt(offset(StateArray::PropState), std::uint64_t(index) / 4, 1, raw_.size());
+    if (o == kNoSlot) return 0;
     const int sh = 2 * (index % 4);
     // Exactly the shipped arithmetic: a SIGNED byte, a mask built in a byte
     // register and sign-extended (0xC0 -> -64 at sh == 6), and an arithmetic
@@ -317,17 +331,15 @@ int GameState::propState(int index) const {
 
 int GameState::propStateBits(int index) const {
     if (index < 0) return 0;
-    const auto o = offset(StateArray::PropState) +
-                   static_cast<std::uint32_t>(index) / 4u;
-    if (o >= raw_.size()) return 0;
+    const auto o = slotAt(offset(StateArray::PropState), std::uint64_t(index) / 4, 1, raw_.size());
+    if (o == kNoSlot) return 0;
     return (static_cast<std::uint8_t>(raw_[o]) >> (2 * (index % 4))) & 3;
 }
 
 void GameState::setPropState(int index, int value) {
     if (index < 0) return;
-    const auto o = offset(StateArray::PropState) +
-                   static_cast<std::uint32_t>(index) / 4u;
-    if (o >= raw_.size()) return;
+    const auto o = slotAt(offset(StateArray::PropState), std::uint64_t(index) / 4, 1, raw_.size());
+    if (o == kNoSlot) return;
     const int sh = 2 * (index % 4);
     const auto mask = static_cast<std::uint8_t>(3u << sh);
     auto b = static_cast<std::uint8_t>(raw_[o]);
@@ -483,9 +495,9 @@ bool GameState::debugCopyWorldFrom(const GameState& src) {
                               StateArray::PropState, StateArray::ObjectShown,
                               StateArray::AddressEnabled, StateArray::ZoneState};
     for (const auto a : all) {
-        const auto o = offset(a);
         const auto n = arrayBytes(a);
-        if (o + n > raw_.size()) continue;
+        const auto o = slotAt(offset(a), 0, n, raw_.size());
+        if (o == kNoSlot) continue;
         for (std::size_t k = 0; k < n; ++k) raw_[o + k] = other[o + k];
     }
     // ...and the three object lists, which are a new game's inventory.

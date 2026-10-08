@@ -298,11 +298,18 @@ const std::array<const char*, 13>& monthNames() {
 }
 
 std::string formatDate(int day) {
+    // Clock_FormatDate (0x0041E690): three signed `idiv`s, the month name
+    // indexed by the second remainder. A negative day - only a damaged or
+    // hand-made save carries one, the clock counts up from 52 - makes that
+    // remainder negative and the original reads a pointer from BEFORE its
+    // name table; the month is folded into 0..12 here instead, and every
+    // day >= 0 formats exactly as it did.
+    int month = day / kDaysPerMonth % kMonthsPerYear;
+    if (month < 0) month += kMonthsPerYear;
     char buf[64];
     std::snprintf(buf, sizeof buf, "%d %s %d",
                   day % kDaysPerMonth + 1,
-                  monthNames()[static_cast<std::size_t>(
-                      day / kDaysPerMonth % kMonthsPerYear)],
+                  monthNames()[static_cast<std::size_t>(month)],
                   day / kDaysPerMonth / kMonthsPerYear + kYearZero);
     return buf;
 }
