@@ -30226,6 +30226,14 @@ def c_engine_gl1_backend():
     slot 31 samples another atlas - coverage 0.9884 and 45523 pixels
     (14.82%) differing, red on both bounds. Restored by an edit, the object
     and binary deleted, and green again at 0.9932 / 153.
+
+    And the FOG'S SECOND PASS (2026-10-30, `todo/handoff-classic-mac.md` 3i):
+    an OpenGL 1.1 driver has no colour sum, and a coloured fog drew black
+    (the reader's iMac G3: a light-blue band along Anekbah's horizon). Two
+    more frames with the fog coloured (`--fog-colour 91,160,171`): the colour
+    sum's, and the second pass's (`OMK_GL1_NO_COLOUR_SUM=1`) - passes made,
+    and <= 0.5% of the pixels off by > 24 (0 measured). Shown to fail with
+    the pass returning at once: 20362 pixels.
     """
     import subprocess, tempfile, shutil, platform
     eng = os.path.join(ROOT, "engine")
@@ -30247,12 +30255,15 @@ def c_engine_gl1_backend():
                                       ("cpu", {}, "nearest", ["--cpu-bodies"]),
                                       ("small", {"OMK_TEXTURE_MEMORY": "5500000"}, "nearest", []),
                                       ("skip", {}, "nearest", []),
-                                      ("noskip", {"OMK_GL1_NO_SKIP": "1"}, "nearest", [])):
+                                      ("noskip", {"OMK_GL1_NO_SKIP": "1"}, "nearest", []),
+                                      ("fogsum", {}, "nearest", ["--fog-colour", "91,160,171"]),
+                                      ("fogpass", {"OMK_GL1_NO_COLOUR_SUM": "1"}, "nearest",
+                                       ["--fog-colour", "91,160,171"])):
             out = os.path.join(tmp, tag + ".bin")
             r = subprocess.run([binp, fr, os.path.join(ROOT, "tables"),
                                 "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
                                 "--area", "0", "--stand", "1804,0,-6890,336", "--nofmv",
-                                "--frames", "130" if tag in ("skip", "noskip") else "60",
+                                "--frames", "130" if tag in ("skip", "noskip", "fogsum", "fogpass") else "60",
                                 "--res", "640x480", "--filter", filt,
                                 "--dump", out] + extra,
                                cwd=eng, capture_output=True, text=True,
@@ -30264,8 +30275,8 @@ def c_engine_gl1_backend():
                     return (f"{tag} dump {len(raw)} bytes",), ("640x480",), \
                         "the dump must be one 640x480 RGB565 frame: " + r.stdout[-400:]
                 frames[tag] = struct.unpack("<%dH" % (640 * 480), raw)
-        if len(frames) != 7:
-            return ("no frames",), ("seven frames",), "omk-play must render all seven"
+        if len(frames) != 9:
+            return ("no frames",), ("nine frames",), "omk-play must render all nine"
         g, sw, bl = frames["gl1"], frames["sw"], frames["bilinear"]
         N = len(g)
         def big(x, y):
@@ -30310,10 +30321,19 @@ def c_engine_gl1_backend():
         sk = re.search(r"(\d+) corners skipped unread", logs["skip"])
         skipped = int(sk.group(1)) if sk else -1
         skipGot = (skipped > 0, frames["noskip"] == frames["skip"])
+        # THE FOG'S SECOND PASS (2026-10-30, handoff-classic-mac.md 3i): with
+        # no colour sum (an OpenGL 1.1 driver - the reader's iMac G3; forced
+        # here by OMK_GL1_NO_COLOUR_SUM) a coloured fog (Anekbah's day/night
+        # 91 160 171) is added in a second pass, and the picture is the colour
+        # sum's: <= 0.5% of the pixels off by > 24
+        fp = re.search(r"(\d+) fog second passes", logs["fogpass"])
+        fogDiff = sum(1 for x, y in zip(frames["fogpass"], frames["fogsum"]) if x != y and big(x, y))
+        fogGot = ("added in a second pass" in logs["fogpass"], (int(fp.group(1)) if fp else 0) > 0,
+                  frames["fogsum"] != g, fogDiff <= N * 0.005)
         got = ("the world through OpenGL 1.x fixed-function" in logs["gl1"],
                g != sw, cover >= 0.99, differ <= N * 0.005,
                len(changed) >= N * 0.2, meanB <= 16.0, coverB >= 0.98, keptLater,
-               posedOn, posedAny <= N * 0.001 and posedDiff <= 8, smallGot, skipGot)
+               posedOn, posedAny <= N * 0.001 and posedDiff <= 8, smallGot, skipGot, fogGot)
         print(f"        gl1 vs software: coverage {cover:.4f}, {differ} pixels differ by >24 "
               f"({100.0 * differ / N:.2f}%); bilinear: {100.0 * len(changed) / N:.1f}% changed, "
               f"mean {meanB:.1f}, coverage {coverB:.4f}")
@@ -30324,8 +30344,10 @@ def c_engine_gl1_backend():
               f"against the whole textures")
         print(f"        runs off the screen skipped unread: {skipped} corners over 60 passes, "
               f"the frame {'identical' if skipGot[1] else 'DIFFERENT'} without the skip")
+        print(f"        coloured fog without the colour sum: {fp.group(1) if fp else 0} second passes, "
+              f"{fogDiff} pixels off the colour sum's by >24")
         return got, (True, True, True, True, True, True, True, True, True, True,
-                     ("0.5x1", False, True, True), (True, True)), \
+                     ("0.5x1", False, True, True), (True, True), (True, True, True, True)), \
             "the world drawn by the gl1 backend; its frame not the software one; " \
             "coverage agreement >= 0.99; <= 0.5% of pixels differing by > 24; " \
             "bilinear changes >= 20% of the pixels by a mean <= 16 and keeps coverage >= 0.98; " \

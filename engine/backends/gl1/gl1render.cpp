@@ -504,13 +504,24 @@ public:
         fogRGB_[1] = v.fogColour[1] / 255.0f;
         fogRGB_[2] = v.fogColour[2] / 255.0f;
         fogSum_ = fogRGB_[0] > 0 || fogRGB_[1] > 0 || fogRGB_[2] > 0;
-        if (fogSum_ && !hasColourSum_) {
-            // a renderer without EXT_secondary_color (Mac OS 9's software
-            // one): the fog's colour is lost, its fade kept. The game's fog is
-            // BLACK (`docs/ASSETS.md`), so the shipped scenes never get here.
+        fogPass_ = false;
+        static const bool noSum = envFlag("OMK_GL1_NO_COLOUR_SUM");   // the fallback, on a host that has the sum
+        if (fogSum_ && (!hasColourSum_ || noSum)) {
+            // A RENDERER WITHOUT EXT_secondary_color (OpenGL 1.1: Mac OS 9's
+            // software one, the reader's iMac G3's Rage 128): the fog's colour
+            // goes on in a SECOND PASS (`flush`). The streets' day/night fog
+            // IS coloured - Anekbah's 91 160 171 - and without it the far
+            // scene faded to black against the fog-coloured clear: a flat
+            // light-blue band along the iMac's horizon (2026-10-30).
             static bool told = false;
-            if (!told) { told = true; std::printf("gl1: no EXT_secondary_color - a coloured fog draws black\n"); }
+            if (!told) {
+                told = true;
+                std::printf("gl1: no EXT_secondary_color%s - a coloured fog is added in a second pass\n",
+                            noSum ? " (OMK_GL1_NO_COLOUR_SUM)" : "");
+            }
             fogSum_ = false;
+            fogPass_ = true;
+            fogByte_[0] = toByte(fogRGB_[0]); fogByte_[1] = toByte(fogRGB_[1]); fogByte_[2] = toByte(fogRGB_[2]);
         }
         if (fogSum_) { glEnable(OMK_GL_COLOR_SUM); glEnableClientState(OMK_GL_SECONDARY_ARRAY); }
         else if (hasColourSum_) { glDisable(OMK_GL_COLOR_SUM); glDisableClientState(OMK_GL_SECONDARY_ARRAY); }
@@ -872,6 +883,7 @@ public:
         if (passes_ == 60 || passes_ % 600 == 540) {
             sum_[0] = sum_[1] = sum_[2] = sum_[3] = sum_[4] = 0;
             statCorners_ = statTransformed_ = statSent_ = statSkipped_ = statTieBack_ = statTrusted_ = 0;
+            fogPasses_ = 0;
         }
         if (passes_ == 120 || passes_ % 600 == 0)
             std::printf("gl1: 60 passes drew %ld draws in %ld draw calls, %ld of %ld triangles "
@@ -881,6 +893,8 @@ public:
                         sum_[0], sum_[1], sum_[3], sum_[2], sum_[4],
                         statCorners_, statTransformed_, statSent_, statSkipped_, statTieBack_,
                         statTrusted_, passes_);
+        if ((passes_ == 120 || passes_ % 600 == 0) && fogPass_)
+            std::printf("gl1: ...and %ld fog second passes (no colour sum) in those draw calls\n", fogPasses_);
     }
 
     // THE MIRROR ON THE CARD, as the original draws it (`docs/ASSETS.md` 4c)
@@ -1641,6 +1655,9 @@ private:
         Current current(ctx_);
         const char* ext = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
         hasColourSum_ = ext && std::strstr(ext, "GL_EXT_secondary_color");
+        // the driver's extensions, whole: what a fallback may lean on is read
+        // off a real machine's log, not guessed (the iMac G3's OpenGL 1.1)
+        std::printf("gl1: extensions: %s\n", ext ? ext : "(none)");
         if (!omkSecondaryColorPointer) omkSecondaryColorPointer = findSecondaryColorPointer();
         std::printf("gl1: EXT_secondary_color %s by the renderer, glSecondaryColorPointerEXT %s in OpenGLLibrary\n",
                     hasColourSum_ ? "offered" : "not offered", omkSecondaryColorPointer ? "found" : "NOT found");
@@ -1801,6 +1818,12 @@ private:
             // 40-byte one - a third less written and read a corner
             outN_.push_back(OutN{{o.p[0], o.p[1], o.p[2], o.p[3]}, {o.c[0], o.c[1], o.c[2], o.c[3]},
                                  {o.uv[0], o.uv[1]}});
+            if (fogPass_) {
+                // the second pass's colour: the fog, with `a` as its alpha
+                const unsigned char ab = toByte(a);
+                fogCol_.push_back({fogByte_[0], fogByte_[1], fogByte_[2], ab});
+                fogAny_ = fogAny_ || ab != 0;
+            }
         }
         return at;
     }
@@ -1827,11 +1850,60 @@ private:
             OMK_ZONE("gl1: draw call");
             glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(idx_.size()), GL_UNSIGNED_SHORT, idx_.data());
             ++batches_;
+            if (fogPass_ && fogAny_) fogSecondPass();
             outN_.clear();
         }
+        fogCol_.clear();
+        fogAny_ = false;
         // the batch's vertices are gone: an index into them is no longer one
         idx_.clear();
         ++batchStamp_;
+    }
+
+    // THE FOG'S SECOND PASS, where there is no colour sum (`fogPass_`): the
+    // batch drawn again over itself, adding fog * a. The first pass drew
+    // texel * colour * (1 - a), so the sum is the reference's
+    // lerp(texel * colour, fog, a) - all OpenGL 1.1:
+    //   * depth GL_EQUAL, no depth write: the same vertices, so exactly the
+    //     fragments the first pass left in front;
+    //   * blended GL_SRC_ALPHA, GL_ONE with the vertex colour (fog, a);
+    //   * a CUTOUT batch keeps its texture under GL_BLEND with the fog as the
+    //     env colour - C = fog (1 - Ct) + fog Ct = fog, A = a * At - so a
+    //     keyed-out texel (alpha 0) adds nothing, as it drew nothing; an
+    //     opaque batch is drawn untextured (its black texels carry alpha 0 in
+    //     the 1555 page and would refuse the fog), C = fog, A = a.
+    // Only opaque and cutout batches: a translucent or additive one keeps
+    // the black fog, its colour sum not reproducible in one blend.
+    void fogSecondPass() {
+        const BlendRule r = blendRule(blend_);
+        if (r.blend || !r.depthWrite) return;
+        const bool textured = cutout_ && boundTex_ != ~1u && boundTex_ != ~0u;
+        glColorPointer(4, GL_UNSIGNED_BYTE, 4, fogCol_.data());
+        glDepthFunc(GL_EQUAL);
+        glDepthMask(GL_FALSE);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+        if (cutout_) glDisable(GL_ALPHA_TEST);
+        if (textured) {
+            const GLfloat env[4] = {fogRGB_[0], fogRGB_[1], fogRGB_[2], 1.0f};
+            glTexEnvfv(GL_TEXTURE_ENV, GL_TEXTURE_ENV_COLOR, env);
+            glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_BLEND);
+        } else if (boundTex_ != ~1u) {
+            glDisable(GL_TEXTURE_2D);
+        }
+        {
+            OMK_ZONE("gl1: draw call");
+            glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(idx_.size()), GL_UNSIGNED_SHORT, idx_.data());
+        }
+        ++batches_;
+        ++fogPasses_;
+        // back to the batch's state, as `setState` left it
+        if (textured) glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+        else if (boundTex_ != ~1u) glEnable(GL_TEXTURE_2D);
+        if (cutout_) glEnable(GL_ALPHA_TEST);
+        glDisable(GL_BLEND);
+        glDepthMask(GL_TRUE);
+        glDepthFunc(GL_LESS);
     }
 
     static unsigned char toByte(float v) {
@@ -1924,6 +1996,12 @@ private:
     int fogKind_ = -1;
     float fogStart_ = 0, fogEnd_ = 0, fogRGB_[3]{};
     bool fogSum_ = false;
+    bool fogPass_ = false;       // no colour sum: the fog added in a second pass (`fogSecondPass`)
+    unsigned char fogByte_[3]{};
+    struct FogCol { unsigned char c[4]; };
+    std::vector<FogCol> fogCol_;   // per pending vertex, beside `outN_`: (fog, a)
+    bool fogAny_ = false;          // a vertex of the pending batch has a > 0
+    long fogPasses_ = 0;
     bool hasColourSum_ = true;   // EXT_secondary_color, asked on AGL (makeContext)
     bool packed1555_ = true;     // the driver takes OpenGL 1.2's packed 1555 texels...
     bool packedKnown_ = false;   // ...as the first texture upload found

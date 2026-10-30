@@ -1346,6 +1346,52 @@ and was not kept: the cost is elsewhere in the parser (allocation, the maps).
 Emulator, `--nofmv`: first frame at 9.4 s, the start menu at 14.8 s; the
 system's load before `main` 0.7 s; the upload probe ~6 s on the emulator's
 software GL. The iMac's stamped log will say where ITS minute goes.
+**THE iMAC'S STREET, TWO FAULTS (the reader's photos and "3fps ... even for
+a software renderer, it is suspicious", 2026-10-30)**:
+  1. **A FLAT LIGHT-BLUE BAND along the horizon**, the far buildings and the
+     lower sky black against it. The log says why: `day/night (sub_41E7A0) -
+     area 0 ... fog and clear colour 91 160 171`, and `gl1: no
+     EXT_secondary_color - a coloured fog draws black`. GL1 draws the fog as
+     colour * (1 - a) plus fog * a through the colour sum; with no colour sum
+     the far scene fades to BLACK while the cleared background stays the fog
+     colour. `gl1render.cpp`'s comment that "the game's fog is BLACK ... the
+     shipped scenes never get here" is WRONG: the streets' day/night fog is
+     coloured. Not reproduced on the host's GL1 (it has the colour sum): the
+     same street through GL1 against software, 1098 pixels off by > 24.
+     **FIXED (step 1, the reader's "go with step 1")**: an OpenGL 1.1 SECOND PASS where there is no
+     colour sum - the same triangles with the texture env GL_BLEND, env colour
+     and vertex colour both the fog (so C = fog exactly) and alpha `a * texel
+     alpha`, blended GL_SRC_ALPHA/GL_ONE at GL_EQUAL depth: dst += fog * a, and
+     keyed texels (alpha 0) add nothing. Exact for opaque and keyed surfaces;
+     translucent ones keep the black fog. (ARB_multitexture would do it in
+     one pass with a luminance ramp on unit 1 and GL_BLEND, but whether the
+     iMac's driver has it is unknown - its extensions are not logged.)
+     Made as `fogSecondPass` (`gl1render.cpp`), the vertex's (fog, a) in
+     `fogCol_` beside `outN_`, `OMK_GL1_NO_COLOUR_SUM=1` forcing it on a host.
+     On the M1 with the fog forced to 91 160 171: the pass's frame against
+     the colour sum's, 0 pixels off by > 24 (8144 by less); both against the
+     software reference 138/139. Without the pass, 20362 pixels off -
+     `engine: gl1 backend` gained the two frames and is shown to fail so. On
+     the EMULATED OS 9 (no colour sum there either): `a coloured fog is added
+     in a second pass`, 996 passes in 60 (as on the host), the dumped frame
+     619 pixels (0.2%) off the host's colour sum. The AGL log now prints the
+     driver's whole `gl1: extensions:` line. Other backends, read: Vulkan, GLES
+     and the software reference lerp to the fog in their own shading, and
+     citro3d's TEV stage 1 blends the fog colour by the vertex alpha
+     (`c3drender.cpp` "THE FOG'S COLOUR") - only GL1 leaned on the colour sum.
+  2. **~3 fps in ANEKBAH, and it is the CPU**: `world begin..end (submit,
+     GL)` is 14-20 ms; `staged bodies` 124-210 ms with all 25 staged bodies
+     BEYOND the clip distance (not skinned - the cost is the per-body work
+     before the skin gate: the program lookup, the clip, the pose), and
+     `scripted motion: meshes placed` ~75 ms (`motion patch` 50, `motion
+     soups` 50, `motion gather` 26). Before ANEKBAH (Grid, the Impasse) the
+     frames were 10-30 ms. On the M1 the same spot (`--area 0 --stand
+     3688,2,-2142,3`, new-game state, 25 scene-driven far bodies) costs 0.3 ms
+     of staged bodies and 0.0 of motion: either the iMac's state after walking
+     in from AIMPASAS differs (the outgoing pool still ticking, its moving
+     meshes), or the work is memory-bound (a ~500x ratio; the G3's bus is
+     ~170 MB/s). Next: reproduce the walked arrival on the host, then read the
+     original for what it does with a far, script-driven actor.
 **Rule: on the classic build, an OpenGL 1.2 pixel format is never assumed;
 OpenGL 1.1's RGBA bytes is the fallback of every upload.** The iMac's menu
 frames: 67-116 ms of work (`screens, hud` ~35-49 ms). The launch has no
