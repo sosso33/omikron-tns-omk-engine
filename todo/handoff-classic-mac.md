@@ -1414,6 +1414,46 @@ a software renderer, it is suspicious", 2026-10-30)**:
      called `NewPtr` per block: Metrowerks' MSL `malloc` sub-allocates from
      pools. Step 3: the same for the classic build - small blocks from size
      classes carved out of large `NewPtr` slabs.
+     **STEP 3, DONE: `engine/backends/classic/classic_alloc.cpp`**, linked
+     into every classic application in place of `libretro/malloc.c` (it
+     defines `malloc`, `free`, `realloc`, `calloc`, `memalign`,
+     `aligned_alloc`, `posix_memalign` and newlib's `_r` forms; that archive
+     member is then never pulled). Requests up to 4080 bytes take a block of
+     one of 28 size classes (32..4096 with a 16-byte header) from a 32 KB
+     slab (64 KB past 2048), each slab its own free list; a slab whose last
+     block is freed goes back to `DisposePtr`, one empty slab kept per class;
+     larger requests are their own `NewPtr`. Single-threaded by construction
+     (the Sound Manager callback sets a flag and nothing more). On the
+     EMULATED OS 9, the street start (`--save save-appart --area 0 --stand
+     1804,0,-6890,336`, 200 frames, exit 0): a 32-byte new+delete **53.4 ->
+     0.40 us**, a span add 56.2 -> 0.48 us; the launch reaches `options:` at
+     **0.34 s instead of 7.84** (the JSON parse was its allocations); the
+     frame's sections, against the same street before (run of 2026-10-29):
+     scripted motion 45.3 -> 0.5 ms, props/guns 44.2 -> 0.1, pump 95.8 ->
+     30.1, the set at frame start 35.1 -> gone, pedestrians/traffic 29.8 ->
+     7.2, staged bodies 20.2 -> 3.0 - the CPU outside the draw ~345 -> ~87
+     ms (the emulator's software GL and the audio mix unchanged). The
+     partition: at most 44816 KB used (43713 before), 171 slabs at most, 70
+     at the end - inside the 64 MB budget. `engine: classic build` asserts
+     `.malloc` follows `classic_alloc.cpp`'s file entry in each app, shown to
+     fail with the entry points compiled out (`malloc from malloc.c`).
+     **CONFIRMED ON THE iMAC (the reader's `omk-out_03.txt`, 2026-10-30)**: a
+     new game through AIMPASSE, AIMPASAS, ANEKBAH, into the restaurant and
+     out again. A 32-byte new+delete **0.63 us** (1.38 with 2000 held); the
+     ANEKBAH street **37-48 ms of work + ~6 ms present a frame (~20 fps),
+     from 330-400 ms (~3 fps)**: staged bodies 4-5 ms (124-210), scripted
+     motion 1.6 (~75); the draw (`world begin..end`, GL) is now the largest
+     at 21-23 ms. ANEKBAH's set load: geometry 790 ms, soups 770 (3730 and
+     3150 before). THE LAUNCH: the system's load 1.1 s, `options:` at 0.43 s,
+     the window at 1.69 s, the GL probe done at 3.70 s, then the three films
+     (skipped by keys) and the original's unskippable 5 s splash - the menu
+     at 21.6 s. QuickTime drew the films at ~5-7 pictures a second (18 in
+     3.7 s), each sent to the card as RGBA bytes - the next thing to look at.
+     The driver's extensions: `GL_APPLE_specular_vector GL_APPLE_transform_hint
+     GL_EXT_compiled_vertex_array GL_ARB_multitexture GL_EXT_texture_env_add`
+     (and on): ARB_multitexture IS there, so the fog could be one pass.
+     The reader: "the band is gone, and the fog was correct" - the second
+     pass CONFIRMED ON THE iMAC.
 **Rule: on the classic build, an OpenGL 1.2 pixel format is never assumed;
 OpenGL 1.1's RGBA bytes is the fallback of every upload.** The iMac's menu
 frames: 67-116 ms of work (`screens, hud` ~35-49 ms). The launch has no

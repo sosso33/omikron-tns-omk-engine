@@ -32079,6 +32079,11 @@ def c_engine_classic_build():
     lacked `glSecondaryColorPointerEXT` and CFM refused to launch OMKPlay.
     Read from the PEF loader section's imports; shown to fail with the
     function imported again (see the handoff).
+    **And the SLAB ALLOCATOR in each** (2026-10-30, the same handoff's 3i
+    step 3): `classic_alloc.cpp` linked, so `malloc` is not Retro68's
+    `NewPtr` per block: the XCOFF symbol table's `.malloc` follows the file
+    entry of `classic_alloc.cpp`. Shown to fail with its C entry points
+    compiled out (Retro68's `malloc.c` linked again: `malloc from malloc.c`).
     Shown to fail (2026-10-03): a `std::ifstream` put back into
     `src/platform/json.cpp` (222 stream symbols); `kScxStride` made an
     `inline` variable again (weak objects without storage, red).
@@ -32115,9 +32120,22 @@ def c_engine_classic_build():
         weak0 = sorted({n for scl, typ, val, cls, n in ents.values()
                         if scl == 111 and typ == 2 and val in ents
                         and ents[val][1] in (1, 3) and ents[val][2] == 0 and ents[val][3] == 9})
+        # THE SLAB ALLOCATOR (2026-10-30, handoff-classic-mac.md 3i step 3):
+        # `malloc` is classic_alloc.cpp's, not Retro68's NewPtr per block (53
+        # us a new+delete on the emulated OS 9, 0.40 with the slabs)
+        # - the file entry (C_FILE, scl 103) that `.malloc` follows names it
+        mallocFrom, cur = None, None
+        for l in table:
+            fm = re.match(r"\[\s*\d+\]\(sec\s+-?\d+\).*\(scl\s+103\).* (\S+)$", l)
+            if fm:
+                cur = fm.group(1)
+            elif re.search(r"\(scl\s+2\).* \.malloc$", l):
+                mallocFrom = cur
+        slab = bool(mallocFrom) and mallocFrom.endswith("classic_alloc.cpp")
         print(f"        {a}: {len(syms)} symbols, {len(streams)} stream, "
-              f"{len(weak0)} weak .bss objects without storage {weak0[:3]}")
-        got.append((a, len(syms) > 1000, len(ents) > 1000, streams[:3], weak0[:4]))
+              f"{len(weak0)} weak .bss objects without storage {weak0[:3]}, malloc from "
+              f"{os.path.basename(mallocFrom) if mallocFrom else None}")
+        got.append((a, len(syms) > 1000, len(ents) > 1000, streams[:3], weak0[:4], slab))
     # OPENGL (2026-10-04): when the tools volume holds AGL's headers and Mac OS
     # 9's OpenGLLibrary (the CMake defaults, beside Retro68), OMKPlay must
     # IMPORT that fragment and call AGL - a build that fell back to the
@@ -32159,7 +32177,7 @@ def c_engine_classic_build():
           f"OpenGLLibrary imported: {glLinked}; {sum(map(len, imports.values()))} imports read, "
           f"{len(glImports)} from OpenGLLibrary, extension entry points {extImports}")
     got.append(("OpenGL", glInputs, glLinked, bool(imports), extImports))
-    return tuple(got), tuple((a, True, True, [], []) for a in apps) + (("OpenGL", glInputs, glInputs, True, []),), \
+    return tuple(got), tuple((a, True, True, [], [], True) for a in apps) + (("OpenGL", glInputs, glInputs, True, []),), \
         "make classic builds OMKBoot and OMKPlay (symbol tables read); in each, no C++ stream " \
         "code and no weak .bss object the linker left without storage; and OMKPlay imports " \
         "OpenGLLibrary (AGL) exactly when the tools volume has the inputs for it, and no " \
@@ -51016,8 +51034,10 @@ def c_licence_headers():
     # 694: + `engine/backends/remaster/playremaster_rain.cpp` (the rain in 3D)
     # 696: + `engine/backends/classic/launchguard.{h,cpp}` (Mac OS 9's launch
     # guard, `todo/handoff-classic-mac.md` 3i)
+    # 697: + `engine/backends/classic/classic_alloc.cpp` (the classic build's
+    # slab allocator under `malloc`, the same handoff's step 3)
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (696, [], 10, []), \
+           (697, [], 10, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \

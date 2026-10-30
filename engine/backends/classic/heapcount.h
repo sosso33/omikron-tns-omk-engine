@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // THE MEMORY BUDGET on classic Mac OS (`todo/classic-mac-port-1999.md` 3b):
 // what the partition in `omk-classic.r` has to hold. Mac OS 9 gives an
-// application a FIXED heap - the SIZE resource's partition - and Retro68's
-// `malloc` is `NewPtr` in it, so everything the engine allocates comes out of
-// that one block, and an allocation it cannot satisfy fails rather than
+// application a FIXED heap - the SIZE resource's partition - and `malloc` is
+// `classic_alloc.cpp`'s slabs and large blocks, all `NewPtr`s in it (Retro68's
+// own was a `NewPtr` per block), so everything the engine allocates comes out
+// of that one block, and an allocation it cannot satisfy fails rather than
 // paging. Mac OS X ignores the partition.
 //
 // Two measurements, because they answer different questions:

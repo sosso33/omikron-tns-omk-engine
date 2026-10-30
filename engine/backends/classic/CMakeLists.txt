@@ -81,6 +81,7 @@ function(omk_classic_tool app tool)
         ${OMK_HEAPCOUNT}
         printf_c99.cpp
         xcoff_weak_storage.cpp
+        classic_alloc.cpp
         ${ENGINE}/tools/${tool}.cpp
         omk-classic.r
         TYPE APPL CREATOR OMKt)
@@ -136,6 +137,7 @@ add_application(OMKPlay
     ${OMK_HEAPCOUNT}
     printf_c99.cpp
     xcoff_weak_storage.cpp
+    classic_alloc.cpp
     carbonfront.cpp
     launchguard.cpp
     playscene_off.cpp

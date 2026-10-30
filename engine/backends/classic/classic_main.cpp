@@ -45,6 +45,7 @@
 #  define OMK_CLASSIC_ENTRY omk_tool_main
 #endif
 int OMK_CLASSIC_ENTRY(int argc, char** argv);
+void classic_alloc_report();   // classic_alloc.cpp: the slab allocator under malloc
 
 namespace {
 
@@ -169,6 +170,7 @@ int main() {
 #if OMK_PROFILE
     classic_heap_report();
 #endif
+    classic_alloc_report();
 #if defined(OMK_LAUNCH_GUARD)
     classic_guard_clear();
 #endif
