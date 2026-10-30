@@ -7,7 +7,9 @@
  * MEASURED on Mac OS 9 (2026-10-04, `heapcount.cpp`): Anekbah's street with
  * its crowd peaks at 79886 KB of live C++ blocks and uses at most 79009 KB of
  * the heap by FreeMem - about 82 MB with the C allocations and the blocks'
- * own overhead; Kay'l's apartment, 49741 KB.
+ * own overhead; Kay'l's apartment, 49741 KB. MEASURED AGAIN 2026-10-29: the
+ * same street 42959 KB of C++ blocks and at most 43713 KB of the partition
+ * through GL1 (42387 KB in software) - inside the 64 MB.
  *
  * THE BUDGET IS 64 MB, and it is the GOAL, not a fit to the measurement (the
  * reader's rule, 2026-10-04): the original game runs correctly in 32 MB, so

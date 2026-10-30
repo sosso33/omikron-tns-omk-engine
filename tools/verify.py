@@ -32052,6 +32052,11 @@ def c_engine_classic_build():
     9's `OpenGLLibrary` on the tools volume, OMKPlay must import that fragment
     (`aglSwapBuffers` in its loader section). Shown to fail with the CMake
     condition forced off (OMKPlay built without GL while the inputs exist).
+    **And no EXTENSION ENTRY POINT imported from OpenGLLibrary** (2026-10-30,
+    `todo/handoff-classic-mac.md` 3i): the reader's iMac G3's older OpenGL
+    lacked `glSecondaryColorPointerEXT` and CFM refused to launch OMKPlay.
+    Read from the PEF loader section's imports; shown to fail with the
+    function imported again (see the handoff).
     Shown to fail (2026-10-03): a `std::ifstream` put back into
     `src/platform/json.cpp` (222 stream symbols); `kScxStride` made an
     `inline` variable again (weak objects without storage, red).
@@ -32101,13 +32106,42 @@ def c_engine_classic_build():
                                     "Frameworks", "AGL.framework", "Headers", "agl.h"))
     pef = open(os.path.join(eng, "build", "classic", "OMKPlay.APPL"), "rb").read()
     glLinked = b"OpenGLLibrary" in pef and b"aglSwapBuffers" in pef
+    # NO EXTENSION ENTRY POINT IMPORTED (2026-10-30): an import an older OS 9
+    # OpenGLLibrary lacks makes CFM refuse the whole application - the
+    # reader's iMac G3, "OpenGLLibrary--glSecondaryColorPointerEXT est
+    # introuvable". Read from the PEF loader section's imported symbols, by
+    # library; an extension's entry point is looked up by name instead
+    # (`gl1render.cpp` findSecondaryColorPointer).
+    imports = {}
+    at = pef.find(b"Joy!peff")
+    if at >= 0:
+        d = pef[at:]
+        for i in range(struct.unpack(">H", d[32:34])[0]):
+            h = d[40 + 28 * i:68 + 28 * i]
+            if h[24] != 4:                       # the loader section
+                continue
+            L = struct.unpack(">I", h[20:24])[0]
+            hdr = struct.unpack(">iIiIiIIIIIIIII", d[L:L + 56])
+            nLib, nSym, strOff = hdr[6], hdr[7], hdr[10]
+            name = lambda o: d[L + strOff + o:d.index(b"\0", L + strOff + o)].decode("latin1")
+            symAt = L + 56 + 24 * nLib
+            for j in range(nLib):
+                nm, _, _, cnt, first = struct.unpack(">IIIII", d[L + 56 + 24 * j:L + 76 + 24 * j])
+                imports.setdefault(name(nm), []).extend(
+                    name(struct.unpack(">I", d[symAt + 4 * k:symAt + 4 * k + 4])[0] & 0xFFFFFF)
+                    for k in range(first, first + cnt))
+            break
+    glImports = imports.get("OpenGLLibrary", [])
+    extImports = sorted(n for n in glImports if re.search(r"(EXT|ARB|APPLE|ATI|NV)$", n))
     print(f"        OMKPlay: OpenGL inputs {'present' if glInputs else 'absent'}, "
-          f"OpenGLLibrary imported: {glLinked}")
-    got.append(("OpenGL", glInputs, glLinked))
-    return tuple(got), tuple((a, True, True, [], []) for a in apps) + (("OpenGL", glInputs, glInputs),), \
+          f"OpenGLLibrary imported: {glLinked}; {sum(map(len, imports.values()))} imports read, "
+          f"{len(glImports)} from OpenGLLibrary, extension entry points {extImports}")
+    got.append(("OpenGL", glInputs, glLinked, bool(imports), extImports))
+    return tuple(got), tuple((a, True, True, [], []) for a in apps) + (("OpenGL", glInputs, glInputs, True, []),), \
         "make classic builds OMKBoot and OMKPlay (symbol tables read); in each, no C++ stream " \
         "code and no weak .bss object the linker left without storage; and OMKPlay imports " \
-        "OpenGLLibrary (AGL) exactly when the tools volume has the inputs for it"
+        "OpenGLLibrary (AGL) exactly when the tools volume has the inputs for it, and no " \
+        "extension entry point from it (an older OS 9 OpenGL refuses the launch)"
 
 
 def c_engine_texture_filter():
@@ -50958,8 +50992,10 @@ def c_licence_headers():
     # Mac OS X, `todo/handoff-classic-mac.md` 3g)
     # 693: + `engine/src/o3de/wetfloor.{h,cpp}` (the rain's wet floors, todo/remaster.md)
     # 694: + `engine/backends/remaster/playremaster_rain.cpp` (the rain in 3D)
+    # 696: + `engine/backends/classic/launchguard.{h,cpp}` (Mac OS 9's launch
+    # guard, `todo/handoff-classic-mac.md` 3i)
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (694, [], 10, []), \
+           (696, [], 10, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \

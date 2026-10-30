@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The Carbon frontend - see carbonfront.h.
 #include "carbonfront.h"
+#include "launchguard.h"
 #include "platform/profile.h"     // OMK_PROFILE, before it is tested
 #if OMK_PROFILE
 #  include "heapcount.h"
@@ -91,6 +92,7 @@ bool onMacOS9() {
 // `omk-out.txt` still says which one it was; without the flush OS 9's write
 // cache leaves nothing to read afterwards.
 void checkpoint(const char* what) {
+    classic_guard_arm(what);   // OS 9: the step named in `omk.guard`, flushed below
     std::printf("checkpoint: %s\n", what);
     std::fflush(stdout);
     if (onMacOS9()) FlushVol(nullptr, 0);
@@ -179,6 +181,10 @@ CarbonFrontend::~CarbonFrontend() {
 
 bool CarbonFrontend::openAudio(int rate, int channels) {
     if (chan_) return true;
+    if (classic_guard_skips("sound")) {
+        lastError_ = "omk.safe skips the Sound Manager (a run stopped in SndNewChannel)";
+        return false;
+    }
     static SndCallBackUPP played = NewSndCallBackUPP(soundPlayed);
     SndChannelPtr ch = nullptr;
     checkpoint("the sound channel (SndNewChannel)");
@@ -324,6 +330,13 @@ bool CarbonFrontend::open(int w, int h, const std::string& title) {
 
 bool CarbonFrontend::pump(HostInput& out) {
     refillAudio();
+    classic_guard_tick();
+#if OMK_PROFILE
+    // the memory budget's low-water mark, once a frame - HERE, not in
+    // `present`: a world frame swapped straight by the GL1 backend never
+    // calls it, and the street start sampled once in 90 frames
+    classic_heap_sample();
+#endif
     // OS 9 keeps written bytes in its cache: the log reaches the disk every
     // 2 s, so a freeze leaves the last of it readable
     if (onMacOS9()) {
@@ -412,12 +425,12 @@ bool CarbonFrontend::pump(HostInput& out) {
 void CarbonFrontend::present(const Surface& fb) {
     if (!win_ || fb.w <= 0 || fb.h <= 0) return;
     static bool first = true;
-    if (first) { first = false; checkpoint("the first frame presented"); }
+    if (first) {
+        first = false;
+        checkpoint(agl_ ? "the first frame presented through OpenGL" : "the first frame presented");
+    }
     if (agl_) {
         presentGL(fb);
-#if OMK_PROFILE
-        classic_heap_sample();
-#endif
         return;
     }
     if (!gw_ || gwW_ != fb.w || gwH_ != fb.h) {
@@ -463,9 +476,6 @@ void CarbonFrontend::present(const Surface& fb) {
     }
     UnlockPixels(pm);
     blit();
-#if OMK_PROFILE
-    classic_heap_sample();   // the memory budget's low-water mark, once a frame
-#endif
 }
 
 void CarbonFrontend::blit() {
@@ -1021,6 +1031,11 @@ pascal OSErr filmDrawn(::Movie, long refCon) {
 
 bool CarbonFrontend::filmOpen(const std::string& hostFile) {
     if (!win_ || qtState_ < 0) return false;
+    if (qtState_ == 0 && classic_guard_skips("quicktime")) {
+        std::printf("film: omk.safe skips QuickTime - the software decoder plays the films\n");
+        qtState_ = -1;
+        return false;
+    }
     if (qtState_ == 0) {
         long version = 0;
         if (Gestalt(gestaltQuickTime, &version) != noErr) {

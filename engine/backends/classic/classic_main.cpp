@@ -25,6 +25,9 @@
 #if OMK_PROFILE
 #  include "heapcount.h"
 #endif
+#if defined(OMK_LAUNCH_GUARD)
+#  include "launchguard.h"   // the viewer: a step that froze OS 9 is not taken twice
+#endif
 
 #include <cstdio>
 #include <exception>
@@ -37,6 +40,9 @@
 int OMK_CLASSIC_ENTRY(int argc, char** argv);
 
 int main() {
+#if defined(OMK_LAUNCH_GUARD)
+    classic_guard_launch();   // before the log is opened: the last run's is kept
+#endif
     std::freopen("omk-out.txt", "w", stdout);
     std::freopen("omk-out.txt", "a", stderr);
     // LINE-buffered: a crash otherwise takes the last buffer of output with
@@ -74,6 +80,13 @@ int main() {
         }
         std::fclose(f);
     }
+#if defined(OMK_LAUNCH_GUARD)
+    classic_guard_apply(args);
+    // the setup before the window (the session, area 118, the options) reads
+    // the data with no event taken: a stop there is named too
+    classic_guard_arm("the launch - the session and area 118, before the window");
+    FlushVol(nullptr, 0);
+#endif
     std::vector<char*> argv;
     for (auto& a : args) argv.push_back(a.data());
     argv.push_back(nullptr);
@@ -90,6 +103,9 @@ int main() {
     }
 #if OMK_PROFILE
     classic_heap_report();
+#endif
+#if defined(OMK_LAUNCH_GUARD)
+    classic_guard_clear();
 #endif
     std::printf("exit %d\n", rc);
     std::fflush(stdout);

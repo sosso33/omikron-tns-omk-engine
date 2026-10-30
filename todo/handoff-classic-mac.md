@@ -1212,6 +1212,80 @@ composes scaled frames on the CPU as before.
 
 **Next**: the reader's G4 run fullscreen (`--fullscreen --profile`).
 
+## 3i. MAC OS 9 TESTED AGAIN, AND THE LAUNCH GUARD (2026-10-29)
+
+The reader: *"test mac os 9 version to avoid performance issue (low fps,
+excessive ram usage, ...) or freezes (it happened at start the last time I
+tested on an ibook g3), fix it if needed"*. No log of that freeze exists in
+the tree: the iBook's OS 9 run was the `jaguar/` build of 2026-10-09, before
+the checkpoints (2g), so it could not have said where.
+
+**Run on the emulated Mac OS 9.2.1** (QEMU, `make classic` at `c925e0b` + this
+work, Startup Items recipe 3; the OS 9 disk's `omk:fr` now also holds MORPH,
+VOICEOFF, IMAGES and HASHCODE.TAB, so it is the whole data, as on the
+reader's stick):
+- **the default launch** (`omk.args` = data and tables only): every
+  checkpoint passed, the three films (EIDOS by pl_mpeg - QuickTime 5.0.2
+  refused it with -1404 - QUANTIC and GAME through QuickTime), the splash,
+  the start menu running; **no freeze**. 19.1 MB of C++ blocks at the peak.
+  Frames ~0.45 s, almost all `present, swap`: Apple's SOFTWARE GL renderer,
+  the only one the emulation has - not a G3's figure;
+- **the street start** (Anekbah, 25 bodies, 200 walkers, 90 frames):
+  through OpenGL peak **42959 KB** of live C++ blocks, at most **43713 KB
+  of the partition** (lowest FreeMem 53560 KB of 97274, MaxBlock 53545 -
+  almost no fragmentation); through the software renderer (`--software`)
+  40490 KB and 42387 KB. **Against 2026-10-04's 79886 KB / ~82 MB: the
+  street is now INSIDE the 64 MB budget**, with ~20 MB to spare.
+- a MEASUREMENT FIX: `classic_heap_sample` ran in `present`, which a world
+  frame swapped straight by GL1 never calls - the street sampled FreeMem once
+  in 90 frames. It runs in `pump` now, every frame on every path.
+
+**So the emulator does NOT reproduce the freeze**: it has no 3D card, and
+what is left untried on OS 9 is exactly the iBook's own - the ATI Rage 128's
+ACCELERATED AGL path (pixel format, context, drawable, the upload probe, the
+first GL frame), on real QuickTime and Sound Manager hardware.
+
+**The fix that does not need the cause: THE LAUNCH GUARD**
+(`backends/classic/launchguard.{h,cpp}`, OMKPlay only). On OS 9 each
+`checkpoint` also writes its step into `omk.guard` beside the application
+(flushed); the guard is removed 15 s after the last checkpoint and at a
+clean exit; the launch itself arms it before the window ("the launch - the
+session and area 118"). A guard found at the next launch means the last run
+stopped in that step: its log is kept as **`omk-freeze.txt`** (the new run
+would overwrite `omk-out.txt`), and the step is appended to **`omk.safe`**,
+read at every launch - `opengl` adds `--software`, `quicktime` sends the
+films to pl_mpeg, `sound` opens no Sound Manager channel; any other step is
+reported and nothing skipped. Deleting `omk.safe` tries every step again.
+Mac OS X never writes a guard. **Shown on the emulated OS 9**: a planted
+guard naming the upload probe + a fake `omk-out.txt` -> `omk-freeze.txt`
+holds the fake, `omk.safe` reads `opengl - the run stopped at: the upload
+probe ...`, the run said so, went `--software` and exited 0 with no guard
+left; and an emulator KILLED at 200 s left `omk.guard` naming the step its
+log ended in (the upload probe), truncated right over the longer launch line.
+
+**For the reader's iBook**: `engine/build/classic/ibook/` - `OMKPlay` (its
+resource fork as `._OMKPlay` on a FAT32 stick; `OMKPlay.bin` MacBinary the
+fallback) and `omk.args` (`fr`, `tables`). If OS 9 freezes, restart and
+launch again: the second launch skips the step and `omk-freeze.txt` names
+it - that file (and `omk-out.txt`) is what to bring back.
+
+**The reader's iMac G3 refused to LAUNCH it (2026-10-30)**: OS 9's alert
+"L'application OMKPlay n'a pu être ouverte car OpenGLLibrary--
+glSecondaryColorPointerEXT est introuvable". The import stub is MakeImport's
+over the 9.2.2 disk's `OpenGLLibrary` (OpenGL 1.2.1); an older OS 9 OpenGL
+has no `glSecondaryColorPointerEXT`, and CFM refuses an application with an
+unresolved strong import before a line of it runs (no log, no guard). It was
+the build's ONLY EXT import (the fog's colour sum). It is now looked up by name
+(`GetSharedLibrary` + `FindSymbol`, `gl1render.cpp`'s
+`findSecondaryColorPointer`). Not found means no colour sum: the fog fades
+without its colour, which the game's black fog never shows. The PEF's loader
+section confirms it: 61 OpenGLLibrary imports, none of them
+`glSecondaryColorPointerEXT`. Every launch logs `gl1: EXT_secondary_color
+... by the renderer, glSecondaryColorPointerEXT found|NOT found in
+OpenGLLibrary`. The rest of the imports are OpenGL 1.1 core and AGL 1.0. **Rule: no
+extension entry point is linked on the classic build; look it up.** `verify.py: engine: classic build` reads the PEF's imports and holds it
+(shown to fail: the function imported again, 62 imports, red).
+
 ## 4. What is next, in the order proposed
 
 1. ~~**The filtering DEFAULT**~~ - **DONE 2026-10-03**, the reader's
@@ -1293,7 +1367,9 @@ composes scaled frames on the CPU as before.
    Kay'l's apartment (`games-resto.bin` slot 0): **49741 KB**. The
    conversation itself (402, ~600 frames in) was NOT reached: twice the run
    on Tiger ended early with exit 0 and no reason given (the frontend now
-   prints each quit's cause), and OS 9 runs ~5 s a frame. **THE BUDGET IS
+   prints each quit's cause), and OS 9 runs ~5 s a frame. **2026-10-29:
+   the street at 42959 KB / 43713 KB of the partition - inside the budget
+   (3i).** **THE BUDGET IS
    64 MB, A GOAL** (the reader, 2026-10-04: "the original game works
    correctly with 32MB, we already ask for twice the requirement of the
    original") - so the street is **~18 MB OVER**, and that is the code's to

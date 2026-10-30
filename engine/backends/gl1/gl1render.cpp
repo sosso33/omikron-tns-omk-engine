@@ -66,6 +66,7 @@
 // `verify.py` runs it) the framebuffer object below is kept - decided in
 // `makeContext`, `onWindow_`.
 #if defined(OMK_GL1_AGL)
+#  include <CodeFragments.h>
 #  include <agl.h>
 #  include <gl.h>
 // Apple's upload extensions by value (gl.h has none); `gl1OverlayPath` says
@@ -127,7 +128,25 @@ GLenum glFactor(BlendFactor f) {
 // 1.4), and Mac OS 9's library exports the EXT names alone.
 #  define OMK_GL_COLOR_SUM GL_COLOR_SUM_EXT
 #  define OMK_GL_SECONDARY_ARRAY GL_SECONDARY_COLOR_ARRAY_EXT
-#  define omkSecondaryColorPointer glSecondaryColorPointerEXT
+// ...and only from OpenGL 1.2.1 on: an older OS 9 `OpenGLLibrary` (the
+// reader's iMac G3, 2026-10-30) has no `glSecondaryColorPointerEXT`, and an
+// import of it makes CFM refuse to launch the application at all
+// ("OpenGLLibrary--glSecondaryColorPointerEXT est introuvable"). So it is
+// looked up by name; not found, `hasColourSum_` is false and the fog loses
+// its colour, as on a renderer without the extension.
+using SecondaryColorPointerFn = void (*)(GLint, GLenum, GLsizei, const GLvoid*);
+SecondaryColorPointerFn omkSecondaryColorPointer = nullptr;
+SecondaryColorPointerFn findSecondaryColorPointer() {
+    CFragConnectionID conn = 0;
+    Ptr main = nullptr;
+    Str255 err;
+    if (GetSharedLibrary("\pOpenGLLibrary", kPowerPCCFragArch, kReferenceCFrag, &conn, &main, err) != noErr)
+        return nullptr;
+    Ptr sym = nullptr;
+    CFragSymbolClass cls = 0;
+    if (FindSymbol(conn, "\pglSecondaryColorPointerEXT", &sym, &cls) != noErr || !sym) return nullptr;
+    return reinterpret_cast<SecondaryColorPointerFn>(sym);   // a TVector: a function pointer here
+}
 using GlContext = AGLContext;
 GlContext currentContext() { return aglGetCurrentContext(); }
 void makeCurrent(GlContext c) { aglSetCurrentContext(c); }
@@ -1592,6 +1611,10 @@ private:
         Current current(ctx_);
         const char* ext = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
         hasColourSum_ = ext && std::strstr(ext, "GL_EXT_secondary_color");
+        if (!omkSecondaryColorPointer) omkSecondaryColorPointer = findSecondaryColorPointer();
+        std::printf("gl1: EXT_secondary_color %s by the renderer, glSecondaryColorPointerEXT %s in OpenGLLibrary\n",
+                    hasColourSum_ ? "offered" : "not offered", omkSecondaryColorPointer ? "found" : "NOT found");
+        hasColourSum_ = hasColourSum_ && omkSecondaryColorPointer;
         GLint vp[4] = {0, 0, 0, 0};
         glGetIntegerv(GL_VIEWPORT, vp);      // the default: the drawable's size
         std::printf("gl1: the window's drawable is %dx%d\n", static_cast<int>(vp[2]),

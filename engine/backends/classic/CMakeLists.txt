@@ -137,13 +137,14 @@ add_application(OMKPlay
     printf_c99.cpp
     xcoff_weak_storage.cpp
     carbonfront.cpp
+    launchguard.cpp
     playscene_off.cpp
     ${OMK_PLAY}
     ${OMK_PLAY_GPU}
     ${ENGINE}/backends/sdl/playharness_off.cpp
     omk-classic.r
     TYPE APPL CREATOR OMKp)
-target_compile_definitions(OMKPlay PRIVATE OMK_CLASSIC_ENTRY=omk_play_main)
+target_compile_definitions(OMKPlay PRIVATE OMK_CLASSIC_ENTRY=omk_play_main OMK_LAUNCH_GUARD)
 if(OMK_CLASSIC_GL)
     add_dependencies(OMKPlay omk_opengl_stub)
     target_compile_definitions(OMKPlay PRIVATE OMK_GL1_AGL)

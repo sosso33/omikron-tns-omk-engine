@@ -321,6 +321,11 @@ original runs correctly in 32 MB, so 64 is already twice its requirement,
 and the street's ~82 MB is ~18 MB of the PORT'S overshoot - the table above
 is the list of what takes it back. The partition's minimum stays 64 MB; the
 preferred 96 lets today's code reach the street meanwhile (`omk-classic.r`).
+**Measured again 2026-10-29** (`todo/handoff-classic-mac.md` 3i): the same
+street start through GL1 peaks at **42959 KB** of live C++ blocks and uses
+at most **43713 KB** of the partition (MaxBlock 53545 KB at the low-water
+mark); through the software renderer 40490 / 42387 KB; the start menu 19.1
+MB. The street is now inside the 64 MB budget.
 
 #### 3b-i. How a body poses - read 2026-10-01
 

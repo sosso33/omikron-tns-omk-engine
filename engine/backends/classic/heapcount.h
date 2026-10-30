@@ -15,7 +15,7 @@
 //     per-frame sample would miss. The profiler's 16-byte header per block
 //     is in FreeMem's figure, not in this one; a release build has neither;
 //   * the lowest `FreeMem` and `MaxBlock` seen, sampled once a frame
-//     (`classic_heap_sample`, called by the frontend's present) - the heap's
+//     (`classic_heap_sample`, called by the frontend's pump) - the heap's
 //     own overhead, the C allocations (`fopen` buffers, pl_mpeg) and the
 //     fragmentation, which decides whether a large block can still be had.
 //
