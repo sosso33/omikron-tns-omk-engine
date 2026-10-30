@@ -6,7 +6,11 @@
 //   * the arguments come from `omk.args` beside the application, ONE PER
 //     LINE - an HFS path has spaces in it ("Macintosh HD:omk:fr") - with
 //     `omk` as argv[0];
-//   * stdout and stderr go to `omk-out.txt` beside it;
+//   * stdout and stderr go to `omk-out.txt` beside it, EVERY LINE STAMPED
+//     with the seconds since `main` began (`[12.34s] `) - the reader's iMac
+//     G3 took more than a minute to launch (2026-10-30) and its log could not
+//     say where; the first line also says how long the system took to load
+//     the application before `main` (its Process Manager launch date);
 //   * the last line is the exit code, and the volume is FLUSHED: OS 9 caches
 //     writes, and an emulator stopped rather than shut down loses them.
 //
@@ -20,6 +24,8 @@
 // the Vita build does with `play.cpp`, and `OMK_CLASSIC_ENTRY` names it:
 // `omk_tool_main` for a tool, `omk_play_main` for the viewer.
 #include <Files.h>
+#include <Processes.h>
+#include <Timer.h>
 
 #include "platform/profile.h"
 #if OMK_PROFILE
@@ -29,6 +35,7 @@
 #  include "launchguard.h"   // the viewer: a step that froze OS 9 is not taken twice
 #endif
 
+#include <cstdint>
 #include <cstdio>
 #include <exception>
 #include <string>
@@ -39,16 +46,74 @@
 #endif
 int OMK_CLASSIC_ENTRY(int argc, char** argv);
 
+namespace {
+
+std::uint64_t microsNow() {
+    UnsignedWide us;
+    Microseconds(&us);
+    return (static_cast<std::uint64_t>(us.hi) << 32) | us.lo;
+}
+
+// THE STAMPED LOG: stdout and stderr are one `funopen` stream whose writer
+// puts `[seconds since main] ` before each line and hands it to the file,
+// unbuffered there (the stream itself is line-buffered, below).
+struct StampedLog {
+    std::FILE* file = nullptr;
+    std::uint64_t t0 = 0;
+    bool atLineStart = true;
+};
+StampedLog g_log;
+
+int stampedWrite(void* cookie, const char* buf, int n) {
+    auto* L = static_cast<StampedLog*>(cookie);
+    for (int i = 0; i < n;) {
+        if (L->atLineStart) {
+            char stamp[24];
+            const double s = static_cast<double>(microsNow() - L->t0) / 1e6;
+            const int k = std::snprintf(stamp, sizeof stamp, "[%.2fs] ", s);
+            std::fwrite(stamp, 1, static_cast<std::size_t>(k), L->file);
+            L->atLineStart = false;
+        }
+        int j = i;
+        while (j < n && buf[j] != '\n') ++j;
+        const bool eol = j < n;
+        std::fwrite(buf + i, 1, static_cast<std::size_t>(j - i + (eol ? 1 : 0)), L->file);
+        if (eol) L->atLineStart = true;
+        i = j + (eol ? 1 : 0);
+    }
+    return n;
+}
+
+}  // namespace
+
 int main() {
+    g_log.t0 = microsNow();
+    // the time the system took between launching the application and its
+    // `main`: the code fragment read off the disk and prepared (CFM)
+    long loadTicks = -1;
+    {
+        ProcessSerialNumber psn = {0, kCurrentProcess};
+        ProcessInfoRec info = {};
+        info.processInfoLength = sizeof info;
+        if (GetProcessInformation(&psn, &info) == noErr)
+            loadTicks = static_cast<long>(TickCount() - info.processLaunchDate);
+    }
 #if defined(OMK_LAUNCH_GUARD)
     classic_guard_launch();   // before the log is opened: the last run's is kept
 #endif
-    std::freopen("omk-out.txt", "w", stdout);
-    std::freopen("omk-out.txt", "a", stderr);
+    g_log.file = std::fopen("omk-out.txt", "w");
+    if (g_log.file) {
+        std::setvbuf(g_log.file, nullptr, _IONBF, 0);
+        if (std::FILE* f = funopen(&g_log, nullptr, stampedWrite, nullptr, nullptr)) stdout = stderr = f;
+    }
     // LINE-buffered: a crash otherwise takes the last buffer of output with
     // it, and that is the part that says where it happened
     std::setvbuf(stdout, nullptr, _IOLBF, 4096);
-    std::setvbuf(stderr, nullptr, _IOLBF, 4096);
+    if (stderr != stdout) std::setvbuf(stderr, nullptr, _IOLBF, 4096);
+    if (loadTicks >= 0)
+        std::printf("launch: the system loaded the application in %.1f s before its main "
+                    "(the Process Manager's launch date; every line is stamped from here)\n",
+                    static_cast<double>(loadTicks) / 60.0);
     // ...and std::terminate (an exception through a `noexcept`, say) ends the
     // same silent way; say that it happened, and what was in flight
     std::set_terminate([] {

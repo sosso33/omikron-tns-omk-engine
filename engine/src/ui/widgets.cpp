@@ -83,9 +83,10 @@ bool NameField::type(char ch) {
     return true;
 }
 
-UiWidgets UiWidgets::loadJson(const std::string& path) {
+UiWidgets UiWidgets::loadJson(const std::string& path) { return fromJson(Json::parseFile(path)); }
+
+UiWidgets UiWidgets::fromJson(const Json& doc) {
     UiWidgets w;
-    const auto doc = Json::parseFile(path);
     const auto& rows = doc["rows"];
     w.gridHook_ = static_cast<std::uint32_t>(rows["gridHook"].i64());
     // 0 when the table predates the lift; `press` then never matches it

@@ -559,9 +559,15 @@ private:
     bool done_ = false;
 };
 
+class Json;
+
 class UiWidgets {
 public:
     static UiWidgets loadJson(const std::string& path);
+    // ...from the document already parsed: `ui_widgets.json` is 567 KB, and
+    // the viewer's setup reads it for the widgets AND the options tree - one
+    // parse, not two (3.7 s each on the emulated Mac OS 9, 2026-10-30)
+    static UiWidgets fromJson(const Json& doc);
     // The screens table lives in tables/ui.json; loading it is optional and
     // only affects `textFile`.
     void loadScreens(const std::string& uiTable);

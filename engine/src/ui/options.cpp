@@ -12,13 +12,17 @@ namespace omk {
 
 OptionTree OptionTree::loadJson(const std::string& widgets,
                                 const std::string& uiTable) {
-    OptionTree t;
     // Hold both documents in locals. `Json::parseFile(p)["rows"]` returns a
     // reference INTO a temporary, and reference lifetime extension does not
     // reach through `operator[]` - binding it to a `const auto&` dangles at
     // the semicolon and reads as an empty table rather than crashing.
     const Json wdoc = Json::parseFile(widgets);
     const Json udoc = Json::parseFile(uiTable);
+    return fromJson(wdoc, udoc);
+}
+
+OptionTree OptionTree::fromJson(const Json& wdoc, const Json& udoc) {
+    OptionTree t;
     const Json& w = wdoc["rows"];
     t.rowWidgets = static_cast<int>(w["optionRows"].i64(16));
     const auto& ps = w["optionPages"];

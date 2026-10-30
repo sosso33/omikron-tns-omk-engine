@@ -1286,6 +1286,72 @@ OpenGLLibrary`. The rest of the imports are OpenGL 1.1 core and AGL 1.0. **Rule:
 extension entry point is linked on the classic build; look it up.** `verify.py: engine: classic build` reads the PEF's imports and holds it
 (shown to fail: the function imported again, 62 imports, red).
 
+**The iMac G3 with the fix (the reader, 2026-10-30; an iMac DV SE, 400 MHz,
+384 MB, 8 MB VRAM - the Rage 128 VR)**: "No error". It
+LAUNCHES, but **the start takes more than a minute**, and **after the films
+the window stays WHITE** while the game runs: the sound plays and the menu
+reacts to keys. So the menu's frames are composed and sent, but nothing of
+them reaches the screen, while the films did. A white frame is what GL draws
+from a texture the card refused (texturing then falls back to the plain
+colour, white). **Diagnosed from the iMac's `omk-out.txt`**:
+`Rage 128 OpenGL Engine, OpenGL 1.1.ATI-5.69`, 8160 KB of video memory, and
+the upload probe read `RGB565 -1.0, ARGB1555 -1.0, ARGB8888 -1.0 -> the
+menus as RGB565`. Every 16- and 32-bit menu format uses OpenGL 1.2 (the
+packed types `GL_UNSIGNED_SHORT_5_6_5` / `_1_5_5_5_REV` /
+`GL_UNSIGNED_INT_8_8_8_8_REV`, and `GL_BGRA`), the driver refused all three,
+and the probe fell back to RGB565 anyway, so every menu tile was sent in a
+refused format. The films (QuickTime, `sent to the card as RGBA bytes`) and
+the overlay (`RGBA bytes 96.3`) drew; the menu ran under the white (`frame
+229: start menu: Quitter -> Oui`, `exit 0`). The world's textures
+(`gl1render.cpp`, `GL_BGRA` + 1555_REV) would have been white too. Fixed:
+  * the menus: `kUiFmts` gains a fourth format, `RGBA bytes` (`GL_RGBA`,
+    `GL_UNSIGNED_BYTE`, stored as `GL_RGB5`). It is probed ONLY when the other
+    three are all refused, so a 1.2 driver's pick (the iBook's) is unchanged.
+    With nothing accepted, the pick is now RGBA bytes, not RGB565;
+  * the world: the first texture upload tries the packed 1555; refused
+    (`glGetError`), every texture from then on is widened to RGBA bytes
+    (`gl1: the driver refuses OpenGL 1.2's packed 1555 texels`). On the host
+    with the bytes path forced, `engine: gl1 backend` stayed green (146 pixels
+    off by > 24, 0.05%). Red and blue swapped in the widening turned it red
+    (49427 pixels, 16.09%), so the check reads that path.
+The menus' path shown on the emulated OS 9.2.1 with `uiFmt_` forced to RGBA
+bytes (a temporary line, removed): the start menu drawn whole, title and four
+entries, in QEMU's screendump. That run ended with `exit 0`.
+**Then the reader, on the iMac with the build BEFORE this fix: "New game, 3D
+visible then crash"** - after a blind ENTER on the white menu. Not
+diagnosed; it waits on that run's `omk-out.txt` / `omk-freeze.txt`, from the
+folder the iMac ran it from.
+**CONFIRMED ON THE iMAC (the reader's "it ran", 2026-10-30, the build with
+both fixes, its log 432 KB)**: the probe read `RGB565 -1.0, ARGB1555 -1.0,
+ARGB8888 -1.0, RGBA bytes 61.4 -> the menus as RGBA bytes`; the world logged
+`the driver refuses OpenGL 1.2's packed 1555 texels - the textures are sent
+as RGBA bytes`. Textures were at `0.5x1` (6360 KB free against the rule's
+8064). The reader went from a new game through AIMPASSE and AIMPASAS into
+ANEKBAH: 4 areas, `exit 0`, peak 56917 KB of the partition (inside 64 MB).
+But it is SLOW: 1391 slow frames; the street's `sim+draw` is **330-405 ms**
+a frame (~3 fps), present 0.1-4 ms. ANEKBAH's set load: geometry 3730 ms,
+soups 3150 ms.
+**THE LONG LAUNCH (the reader: "more than one minute", 2026-10-30)**. The
+log had no times before the window, so every line of `omk-out.txt` is now
+STAMPED with the seconds since `main` (`classic_main.cpp`, a `funopen`
+stream for stdout and stderr), and the first line gives the system's load
+time before `main` (Process Manager launch date). On the emulated OS 9.2.1,
+temporary markers put **7.5 s of the 7.8 s before `options:` into two parses
+of `tables/ui_widgets.json`** (567 KB): `UiWidgets::loadJson` 3.7 s,
+`OptionTree::loadJson` 3.8 s. It is parsed once now (`UiWidgets::fromJson`,
+`OptionTree::fromJson`, `playsetup_options.cpp`): the options tree 0.13 s,
+the stretch 4.3 s. An integer fast path in `Json` (no `strtod`; tree
+bit-identical over every table) measured NO gain - the parse stayed 3.9 s -
+and was not kept: the cost is elsewhere in the parser (allocation, the maps).
+Emulator, `--nofmv`: first frame at 9.4 s, the start menu at 14.8 s; the
+system's load before `main` 0.7 s; the upload probe ~6 s on the emulator's
+software GL. The iMac's stamped log will say where ITS minute goes.
+**Rule: on the classic build, an OpenGL 1.2 pixel format is never assumed;
+OpenGL 1.1's RGBA bytes is the fallback of every upload.** The iMac's menu
+frames: 67-116 ms of work (`screens, hud` ~35-49 ms). The launch has no
+wall-clock times in the log; the slow start is likely the USB 1.1 read of
+its loads (see the 2026-10-09 iBook report above).
+
 ## 4. What is next, in the order proposed
 
 1. ~~**The filtering DEFAULT**~~ - **DONE 2026-10-03**, the reader's

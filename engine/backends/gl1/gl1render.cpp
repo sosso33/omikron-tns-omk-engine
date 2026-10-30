@@ -371,9 +371,39 @@ public:
                     }
                     upload = small.data();
                 }
-                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB5_A1, static_cast<GLsizei>(sw),
-                             static_cast<GLsizei>(sh), 0, GL_BGRA, GL_UNSIGNED_SHORT_1_5_5_5_REV,
-                             upload);
+                // GL_UNSIGNED_SHORT_1_5_5_5_REV and GL_BGRA are OpenGL 1.2: an
+                // OpenGL 1.1 driver (the reader's iMac G3, "OpenGL 1.1.ATI-5.69",
+                // 2026-10-30) refuses them and the texture is left empty - the
+                // world drawn white. The first upload says which: refused, every
+                // texture from then on goes as RGBA bytes, the same 1555 texels
+                // widened, still stored at 16 bits by the card.
+                const GLsizei gw = static_cast<GLsizei>(sw), gh = static_cast<GLsizei>(sh);
+                if (packed1555_) {
+                    if (!packedKnown_) while (glGetError() != GL_NO_ERROR) {}
+                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB5_A1, gw, gh, 0, GL_BGRA, GL_UNSIGNED_SHORT_1_5_5_5_REV,
+                                 upload);
+                    if (!packedKnown_) {
+                        packedKnown_ = true;
+                        packed1555_ = glGetError() == GL_NO_ERROR;
+                        if (!packed1555_)
+                            std::printf("gl1: the driver refuses OpenGL 1.2's packed 1555 texels - "
+                                        "the textures are sent as RGBA bytes\n");
+                    }
+                }
+                if (!packed1555_) {
+                    bytes_.resize(static_cast<std::size_t>(sw) * sh * 4);
+                    for (std::size_t k = 0, n = static_cast<std::size_t>(sw) * sh; k < n; ++k) {
+                        const unsigned p = upload[k];
+                        const unsigned r5 = (p >> 10) & 31, g5 = (p >> 5) & 31, b5 = p & 31;
+                        bytes_[4 * k + 0] = static_cast<std::uint8_t>(r5 << 3 | r5 >> 2);
+                        bytes_[4 * k + 1] = static_cast<std::uint8_t>(g5 << 3 | g5 >> 2);
+                        bytes_[4 * k + 2] = static_cast<std::uint8_t>(b5 << 3 | b5 >> 2);
+                        bytes_[4 * k + 3] = (p & 0x8000u) ? 0xFF : 0x00;
+                    }
+                    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB5_A1, gw, gh, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                                 bytes_.data());
+                }
                 gpuNote("textures", omk::prof::kGlTexture, name, 2LL * sw * sh);   // 16 bits a texel
                 hit = uploaded_.emplace(keyOf(x), Uploaded{name, x.idx, x.pal, static_cast<float>(pw),
                                                            static_cast<float>(ph), true}).first;
@@ -1895,6 +1925,9 @@ private:
     float fogStart_ = 0, fogEnd_ = 0, fogRGB_[3]{};
     bool fogSum_ = false;
     bool hasColourSum_ = true;   // EXT_secondary_color, asked on AGL (makeContext)
+    bool packed1555_ = true;     // the driver takes OpenGL 1.2's packed 1555 texels...
+    bool packedKnown_ = false;   // ...as the first texture upload found
+    std::vector<std::uint8_t> bytes_;   // a texture widened to RGBA bytes, when it does not
     unsigned boundTex_ = ~0u;
     // THE PENDING BATCH, interleaved, kept between frames for its capacity
     // (no allocation per frame); `f` is the fog's secondary colour, read only

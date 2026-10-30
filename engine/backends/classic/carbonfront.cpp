@@ -133,11 +133,19 @@ CarbonFrontend* g_carbon = nullptr;     // the one frontend, for gl1WindowContex
 // 220-310 ms a menu frame to present (measured 2026-10-09). So `probeUploads`
 // TIMES each when the context is made and the presents use the fastest.
 struct UpFmt { GLint internal; GLenum format, type; int bytes; const char* name; };
-const UpFmt kUiFmts[3] = {
+// The first three are OpenGL 1.2's packed types (and GL_BGRA); an OpenGL 1.1
+// driver refuses all three - the reader's iMac G3, "Rage 128 OpenGL Engine,
+// OpenGL 1.1.ATI-5.69" (2026-10-30), whose menu then drew WHITE: every tile
+// sent in a refused format, so no texture. The fourth, plain RGBA bytes, is
+// OpenGL 1.1's own, probed only when the other three are all refused, stored
+// at 16 bits like the 565.
+const UpFmt kUiFmts[4] = {
     {GL_RGB5,    GL_RGB,  GL_UNSIGNED_SHORT_5_6_5,       2, "RGB565"},
     {GL_RGB5_A1, GL_BGRA, GL_UNSIGNED_SHORT_1_5_5_5_REV, 2, "ARGB1555"},
     {GL_RGBA8,   GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV,   4, "ARGB8888"},
+    {GL_RGB5,    GL_RGBA, GL_UNSIGNED_BYTE,              4, "RGBA bytes"},
 };
+constexpr int kUiRgbaBytes = 3;
 bool g_overlayArgb = false;              // the overlay's pick (`gl1OverlayArgb`)
 omk::Gl1UploadPath g_overlayPath;        // ...and how it is sent (`gl1OverlayPath`)
 long g_textureMemory = -1;               // free for textures, bytes (`gl1TextureMemory`); -1 unknown
@@ -158,6 +166,15 @@ void convert565(int f, const std::uint16_t* in, std::size_t n, std::uint8_t* out
             const unsigned p = in[i];
             const unsigned r5 = (p >> 11) & 31, g6 = (p >> 5) & 63, b5 = p & 31;
             o[i] = 0xFF000000u | (r5 << 3 | r5 >> 2) << 16 | (g6 << 2 | g6 >> 4) << 8 | (b5 << 3 | b5 >> 2);
+        }
+    } else if (f == kUiRgbaBytes) {
+        for (std::size_t i = 0; i < n; ++i) {
+            const unsigned p = in[i];
+            const unsigned r5 = (p >> 11) & 31, g6 = (p >> 5) & 63, b5 = p & 31;
+            out[4 * i + 0] = static_cast<std::uint8_t>(r5 << 3 | r5 >> 2);
+            out[4 * i + 1] = static_cast<std::uint8_t>(g6 << 2 | g6 >> 4);
+            out[4 * i + 2] = static_cast<std::uint8_t>(b5 << 3 | b5 >> 2);
+            out[4 * i + 3] = 0xFF;
         }
     }
 }
@@ -864,9 +881,10 @@ void CarbonFrontend::probeUploads() {
         glDeleteTextures(1, &t);
         return ok ? best : -1.0;
     };
-    double ui[3];
+    double ui[4] = {-1.0, -1.0, -1.0, -1.0};
     int pick = -1;
-    for (int f = 0; f < 3; ++f) {
+    for (int f = 0; f < 4; ++f) {
+        if (f == kUiRgbaBytes && pick >= 0) break;      // OpenGL 1.1's form, only as the last resort
         const UpFmt& u = kUiFmts[f];
         ui[f] = timeOne(u.internal, u.format, u.type, u.bytes, [&]() -> const void* {
             if (f == 0) return frame.data();
@@ -875,7 +893,7 @@ void CarbonFrontend::probeUploads() {
         }, false);
         if (ui[f] >= 0 && (pick < 0 || ui[f] < ui[pick])) pick = f;
     }
-    uiFmt_ = pick < 0 ? 0 : pick;
+    uiFmt_ = pick < 0 ? kUiRgbaBytes : pick;
     // APPLE'S FAST UPLOAD: the same frame through CLIENT STORAGE
     // - the texture's memory is ours and the card reads it there, with no
     // copy into the driver - then also as a RECTANGLE (640x480, not a
@@ -1005,8 +1023,8 @@ void CarbonFrontend::probeUploads() {
     }
     glDisable(GL_TEXTURE_2D);
     std::printf("gl1: upload probe, a 640x480 frame sent and drawn (ms, best of 4; -1 refused): "
-                "RGB565 %.1f, ARGB1555 %.1f, ARGB8888 %.1f -> the menus as %s; overlay RGBA "
-                "bytes %.1f, ARGB8888 %.1f -> %s\n", ui[0], ui[1], ui[2], kUiFmts[uiFmt_].name,
+                "RGB565 %.1f, ARGB1555 %.1f, ARGB8888 %.1f, RGBA bytes %.1f (tried only when those three are refused) -> the menus as %s; overlay RGBA "
+                "bytes %.1f, ARGB8888 %.1f -> %s\n", ui[0], ui[1], ui[2], ui[3], kUiFmts[uiFmt_].name,
                 ovBytes, ovArgb, g_overlayArgb ? "ARGB8888" : "RGBA bytes");
 }
 #endif

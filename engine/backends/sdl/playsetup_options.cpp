@@ -4,6 +4,9 @@
 // `PlayState::run` calls the sections in
 // order. Returns -1 to go on, or the exit code `main` returns.
 #include "playstate.h"
+#include "platform/json.h"
+
+#include <memory>
 
 int PlayState::setupOptions(int argc, char** argv) {
     // THE FLAGS (`todo/play-split.md` S2): `omk::PlayOptions`, parsed in
@@ -92,7 +95,10 @@ int PlayState::setupOptions(int argc, char** argv) {
     }
 
     const auto& fs = fs_.emplace(dataRoot);
-    uiWidgets = omk::UiWidgets::loadJson(tb + "/ui_widgets.json");
+    // ui_widgets.json parsed ONCE for the widgets and the options tree below
+    // (`UiWidgets::fromJson`); released when the setup is done with it
+    auto widgetsDoc = std::make_unique<omk::Json>(omk::Json::parseFile(tb + "/ui_widgets.json"));
+    uiWidgets = omk::UiWidgets::fromJson(*widgetsDoc);
     // `Ui_BuildLoadPanel`'s layout, applied for screen 29.  The four buttons
     // of the load panel all ship at (460, 210) and the builder moves three of
     // them apart; without this they draw on top of one another and the panel
@@ -111,7 +117,8 @@ int PlayState::setupOptions(int argc, char** argv) {
     // SCREEN 35, the options (`todo/options-menu.md`): the page tree out of
     // the widget lift, the 74 rows out of `ui.json`, and the screen's own
     // strings - the labels by `+24`, the save prompt's and Accel 3D's.
-    optTree = omk::OptionTree::loadJson(tb + "/ui_widgets.json", tb + "/ui.json");
+    optTree = omk::OptionTree::fromJson(*widgetsDoc, omk::Json::parseFile(tb + "/ui.json"));
+    widgetsDoc.reset();
     auto& optMenu = optMenu_.emplace(optTree);
     optMenu.setText(omk::iamStrings(fs, "IAM/Options"));
     // ...and OMK's own pages on it (`ui/omkoptions.h`, `playomkoptions.cpp`)

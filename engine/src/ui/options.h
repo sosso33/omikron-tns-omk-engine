@@ -66,6 +66,8 @@ struct OptionTree {
 
     static OptionTree loadJson(const std::string& widgets,
                                const std::string& uiTable);
+    // ...from the two documents already parsed (`UiWidgets::fromJson`)
+    static OptionTree fromJson(const Json& widgets, const Json& uiTable);
     const Page* page(int p) const;
 };
 
