@@ -4,6 +4,7 @@
 // `PlayState::run` calls the sections in
 // order. Returns -1 to go on, or the exit code `main` returns.
 #include "playstate.h"
+#include "platform/profile.h"   // OMK_PROFILE: the instruments' cost probe
 
 int PlayState::setupSplash() {
     const auto& fs = *fs_;
@@ -80,6 +81,34 @@ int PlayState::setupSplash() {
     // the GPU), the CPU compose after it, and the present with its swap.
     // Averaged over 60 frames and printed as one `frame phases:` line.
     phaseHz = static_cast<double>(front.perfFrequency());
+#if OMK_PROFILE
+    {
+        // WHAT THE INSTRUMENTS COST on this machine, so a span made of many
+        // small timed calls can be read for what it is: one clock read, and
+        // one add into a named span (a string key in a map)
+        constexpr int kN = 2000;
+        const double t0 = phaseNow();
+        double sink = 0.0;
+        for (int k = 0; k < kN; ++k) sink += phaseNow();
+        const double t1 = phaseNow();
+        for (int k = 0; k < kN; ++k) phases.span["instrument probe"] += 1e-9;
+        const double t2 = phaseNow();
+        phases.span.erase("instrument probe");
+        // ...and the ALLOCATOR under every container and string: one small
+        // block made and freed, alone and in a burst of kN held at once (on
+        // classic Mac OS each is a Memory Manager `NewPtr` / `DisposePtr`)
+        for (int k = 0; k < kN; ++k) { volatile char* p = new char[32]; p[0] = 1; delete[] p; }
+        const double t3 = phaseNow();
+        std::vector<char*> burst(kN);
+        for (auto& p : burst) p = new char[32];
+        for (auto* p : burst) delete[] p;
+        const double t4 = phaseNow();
+        std::printf("profile: a clock read costs %.2f us, a named span add %.2f us, a 32-byte "
+                    "new+delete %.2f us (%.2f in a burst of %d)%s\n",
+                    (t1 - t0) * 1e6 / kN, (t2 - t1) * 1e6 / kN, (t3 - t2) * 1e6 / kN,
+                    (t4 - t3) * 1e6 / kN, kN, sink < 0 ? " " : "");
+    }
+#endif
     phases.top = 0.0, phases.rb0 = -1.0, phases.rb1 = -1.0;
     phases.n = 0;
     phases.gpu = 0;                          // frames presented from the GPU

@@ -1392,6 +1392,28 @@ a software renderer, it is suspicious", 2026-10-30)**:
      meshes), or the work is memory-bound (a ~500x ratio; the G3's bus is
      ~170 MB/s). Next: reproduce the walked arrival on the host, then read the
      original for what it does with a far, script-driven actor.
+     **STEP 2, FOUND (2026-10-30): EVERY ALLOCATION IS A MEMORY MANAGER CALL.**
+     Retro68's `libretro/malloc.c` maps `malloc` to `NewPtr` and `free` to
+     `DisposePtr` one for one - no sub-allocator - and `operator new`, every
+     container and every string (libstdc++'s copy-on-write `std::string`,
+     no small-string buffer) go through it. The classic Memory Manager
+     searches the heap for each nonrelocatable block. Measured at launch by
+     a new probe (`playsetup_splash.cpp`, `profile:` line) on the EMULATED
+     OS 9: a 32-byte `new` + `delete` **53.4 us** (69.3 with 2000 held at
+     once), a named span add 56.2 us (its key string's allocation), a clock
+     read 1.25 us; on the M1 a span add is ~0.05 us. So the slow spans are the
+     ones that allocate (or are timed through `phases.span[...]` per body or
+     per mesh): `staged 2 drive+clip` 7.6 ms on the emulator (new per-step
+     spans `staged 1..7` in `worldStagedBody`), and the motion spans. Why the
+     iMac is so much worse than the emulator: its bus. The same walk over the
+     heap's block list costs a G3 at 100 MHz far more than QEMU on host RAM.
+     On the reader's host, the street's frame allocates 15-34 blocks in the
+     staged bodies and ~30 in the motion (counted by a temporary counter in
+     the profiler's `operator new`, removed) - under libc++'s small-string
+     buffer; the classic build allocates more. A 1999 port would not have
+     called `NewPtr` per block: Metrowerks' MSL `malloc` sub-allocates from
+     pools. Step 3: the same for the classic build - small blocks from size
+     classes carved out of large `NewPtr` slabs.
 **Rule: on the classic build, an OpenGL 1.2 pixel format is never assumed;
 OpenGL 1.1's RGBA bytes is the fallback of every upload.** The iMac's menu
 frames: 67-116 ms of work (`screens, hud` ~35-49 ms). The launch has no

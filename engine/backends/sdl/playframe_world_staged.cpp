@@ -138,6 +138,13 @@ void PlayState::worldStaged() {
                         firstBody);
     }
     {
+        // `worldStagedBody`'s steps before the skin gate, every body's
+        static const char* const kSub[kStagedSubs] = {
+            "staged 1 program", "staged 2 drive+clip", "staged 3 idle+shoot", "staged 4 pose",
+            "staged 5 head look", "staged 6 skeleton+LOD", "staged 7 gate"};
+        for (int k = 0; k < kStagedSubs; ++k) { phases.span[kSub[k]] += stagedSub_[k]; stagedSub_[k] = 0.0; }
+    }
+    {
         static long farTold = -1000;
         int stagedDrawn = 0, stagedGpu = 0;
         for (const auto& up : staged) if (up->drawn) { ++stagedDrawn; stagedGpu += up->gpu; }
@@ -173,6 +180,13 @@ void PlayState::worldStagedBody(std::unique_ptr<Staged>& up, const omk::SceneRun
     // everything before the skinning: the pose SOURCE, the scene
     // runner's queries, the clip, the look-at, the ground probe
     const double stagedResolve0 = phaseNow();
+    // THE STEPS BEFORE THE SKIN GATE, each timed for EVERY body (a far one
+    // included, which `staged resolve` below does not count) and summed into
+    // the frame's spans by `worldStaged` - the iMac G3 spent 100-190 ms a
+    // frame here in Anekbah, 25 bodies, and no other machine shows it
+    // (`todo/handoff-classic-mac.md` 3i)
+    double subT = stagedResolve0;
+    const auto subMark = [&](int k) { const double t = phaseNow(); stagedSub_[k] += t - subT; subT = t; };
     s.drawn = false;
     if (!s.mo || !s.mo->ready) {
         // A model with nothing to draw. `PA1_FN.3DO` is 1236
@@ -237,6 +251,7 @@ void PlayState::worldStagedBody(std::unique_ptr<Staged>& up, const omk::SceneRun
     // his channel owns his body, and no shipped case was measured.
     const omk::SceneRunner::Started::Drive* nameDrive = nullptr;
     worldStagedFindProgram(run, prog, sc, activeOnly, playerId, s, nameDrive);
+    subMark(0);
     // ...AND THE FALLBACK IS THE PLAYER'S ALONE.
     //
     // Not for whoever the frame's one body is: the reasoning
@@ -283,6 +298,7 @@ void PlayState::worldStagedBody(std::unique_ptr<Staged>& up, const omk::SceneRun
     const omk::SceneRunner::Started::Drive* drv = nameDrive;
     worldStagedProgramDrive(run, prog, stt, drv, driveView, sceneClip, scenePath, sceneFrame, s);
     worldStagedSceneClipChange(run, sceneClip, s, scenePath, stt, byLone);
+    subMark(1);
     // (b) THE CONVERSATION'S LINE, for its speaker only - the body
     // whose actor id is the DIALOG chunk's word 0. The model name
     // is no fallback: it would make EVERY body wearing the
@@ -317,6 +333,7 @@ void PlayState::worldStagedBody(std::unique_ptr<Staged>& up, const omk::SceneRun
     int shootFrame = 0;    // a death clip plays through; the rest hold frame 0
     const omk::AstarothActor* astGrid = nullptr;   // Astaroth on a 9-cell grid
     worldStagedShoot(s, shootTracks, shootFrame, astGrid);
+    subMark(2);
     // The program's placement wins over a `fromTable` reset every
     // frame it is driving, not only on the clip-change frame.
     if (s.progPlaced && sceneClip >= 0) {
@@ -343,6 +360,7 @@ void PlayState::worldStagedBody(std::unique_ptr<Staged>& up, const omk::SceneRun
     const char* src = "the rest pose (no bank clip)";
     worldStagedLinePose(run, useLine, lineT, s, sceneClip, sceneFrame, pose, rootW, rootFrame,
                         fv, src, shootTracks, astGrid, shootFrame, poseHeld, playerId);
+    subMark(3);
     if (useLine || s.sceneTracks.valid() || (shootTracks && shootTracks->valid()) ||
         (fightRun.active && fightRun.body == &s && fightRun.foePose.valid()) ||
         s.idle.valid())
@@ -354,6 +372,7 @@ void PlayState::worldStagedBody(std::unique_ptr<Staged>& up, const omk::SceneRun
     // space through the placement below (facing, pelvis, at).
     static const bool lookAll = omk::envFlag("OMK_LOOK_ALL");   // a diagnostic: everyone looks
     worldStagedHeadLook(lookAll, s, pose, useLine);
+    subMark(4);
     if (!s.placed) {
         if (!s.placeTold) {
             s.placeTold = true;
@@ -411,7 +430,10 @@ void PlayState::worldStagedBody(std::unique_ptr<Staged>& up, const omk::SceneRun
     // (`drawAt`) is the distance measured; a newly staged body has
     // none and is skinned. The root radius pads the reach, as the
     // set's runs are padded by their own bounds.
-    if (worldStagedSkinGate(s, src, stagedFar, stagedOff)) return;
+    subMark(5);
+    const bool gated = worldStagedSkinGate(s, src, stagedFar, stagedOff);
+    subMark(6);
+    if (gated) return;
     phases.span["staged resolve"] += phaseNow() - stagedResolve0;
     // THE GPU PATH (todo/gpu-skinning.md step 4), a walker's: where
     // the renderer poses bodies, the body is its rest and one affine

@@ -958,6 +958,8 @@ struct PlayState {
     bool spriteAnchorSet{};
     std::map<int, long> spriteLogged{};   // row -> the link tick already reported
     std::set<std::string> motionLogged{};   // mesh/pool pairs already reported
+    static constexpr int kStagedSubs = 7;
+    double stagedSub_[kStagedSubs] = {};   // `worldStagedBody`'s steps before the skin gate, this frame
     double paceNext{};
     double phaseHz{};
     struct PhaseTimes {
