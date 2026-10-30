@@ -1471,6 +1471,14 @@ a software renderer, it is suspicious", 2026-10-30)**:
      stick (`TRAJECTOIRES` is the one long folder name in the data; long
      names do work there - `SOUNDS\sliderm01.wav` loaded). Waiting on the
      stick's listing.
+     **SAID IN THE LOG FROM NOW ON** (2026-10-30): `Session::loadTrafficFor`
+     returned in silence on a circuit that would not load. It now prints
+     `street: NO CROWD AND NO TRAFFIC - the circuit TRAJECTOIRES/<opt>.OPT is
+     not loaded: <the parse's reason> (<the resolved path, or "the file is
+     not found">, N bytes)` and, when the file is not found, the data's
+     `TRAJECTOIRES` folder and every `.OPT` the File Manager lists in it.
+     Seen on the host with a data copy lacking the folder; the real data's
+     street unchanged (slot 0 SHOWN). The iMac's next log says which.
   4. **FASTER ON THE iMAC, items 1 and 5 of the list given to the reader
      (2026-10-30, "go with 1 and 5")**:
      * **the fog in ONE pass on ARB_multitexture's second unit** (`fogMT_`,

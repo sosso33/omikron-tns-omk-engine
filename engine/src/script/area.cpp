@@ -4453,8 +4453,24 @@ void Session::loadTrafficFor(int slot) {
     const ResidentSlot& s = slots_[slot & 1];
     if (s.opt.empty()) return;
     const DataFs fs(dataRoot_);
-    const auto track = loadOpt(fs.read("TRAJECTOIRES/" + s.opt + ".OPT"));
-    if (!track.valid) return;
+    const std::string optRel = "TRAJECTOIRES/" + s.opt + ".OPT";
+    const auto optBytes = fs.read(optRel);
+    const auto track = loadOpt(optBytes);
+    if (!track.valid) {
+        // Said, not skipped in silence: the iMac's streets came up empty with
+        // nothing in the log to say why (`todo/handoff-classic-mac.md` 3i).
+        // The folder's own listing is printed, as the data volume names it.
+        const auto real = fs.resolve(optRel);
+        std::printf("street: NO CROWD AND NO TRAFFIC - the circuit %s is not loaded: %s (%s, %zu bytes)\n",
+                    optRel.c_str(), track.error.c_str(), real ? real->c_str() : "the file is not found",
+                    optBytes.size());
+        if (!real) {
+            const auto dir = fs.resolve("TRAJECTOIRES");
+            std::printf("street: the data's TRAJECTOIRES folder: %s\n", dir ? dir->c_str() : "not found");
+            for (const auto& f : fs.list("TRAJECTOIRES", ".OPT")) std::printf("street:   %s\n", f.c_str());
+        }
+        return;
+    }
     const PedClips clips = pedClipsFrom(fs.read("ANIMS/" + s.ani + ".ANI"));
     // a fixed 1 with no session seed (every check); otherwise a fresh draw
     // per load from the session's (`setSessionSeed`, T5)
