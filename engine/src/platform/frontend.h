@@ -217,6 +217,10 @@ public:
     // means not taken - no player, or this file refused - and the software
     // decoder (`platform/movie.h`) plays it as before. `filmStep` shows
     // what is due and answers false once the film has ended.
+    // `--films-direct`: the host's player draws the film STRAIGHT INTO THE
+    // WINDOW, its own path, rather than into a buffer the frontend sends on
+    // (the classic Mac's QuickTime under OpenGL). Before `filmOpen`.
+    virtual void setFilmDirect(bool /*direct*/) {}
     virtual bool filmOpen(const std::string& /*hostFile*/) { return false; }
     virtual bool filmStep() { return false; }
     virtual void filmClose() {}

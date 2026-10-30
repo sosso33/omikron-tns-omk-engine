@@ -38,7 +38,9 @@ constexpr const char* kSwitches[] = {
     "OMK_GL1",                  // =0: the GL1 build draws with the software reference (engine: gl1 backend)
     "OMK_GL1_COMPOSITE",        // GL1: the interface composed on the CPU instead of drawn as an overlay
     "OMK_GL1_FIT_PROBE",        // =<file> GL1: the window fit's pixels read back and compared on the 60th fitted frame, the window written there (engine: gl1 window fit)
+    "OMK_GL1_FOG_PASS",         // GL1 with no colour sum: the fog in a second pass, not on ARB_multitexture's second unit (--gl1-fog-pass)
     "OMK_GL1_NO_CLIENT",        // GL1 on Mac OS X: GL_APPLE_client_storage left unused for the window's texture
+    "OMK_GL1_NO_COLOUR_SUM",    // GL1: the colour sum taken as absent, as on an OpenGL 1.1 driver - the fog on the second unit or in a second pass (engine: gl1 backend)
     "OMK_GL1_NO_FIT",           // GL1: every scaled frame composed on the CPU again, not fitted on the card (todo/handoff-classic-mac.md 3h)
     "OMK_GL1_NO_SKIP",          // GL1: the whole-mesh frustum skip off, to show it changes no pixel (engine: gl1 backend)
     "OMK_GL1_OFFSCREEN",        // GL1, the SDL build on Mac OS X: the offscreen target and its readback kept, not the window's own context

@@ -1454,6 +1454,51 @@ a software renderer, it is suspicious", 2026-10-30)**:
      (and on): ARB_multitexture IS there, so the fog could be one pass.
      The reader: "the band is gone, and the fog was correct" - the second
      pass CONFIRMED ON THE iMAC.
+  3. **NO PEDESTRIANS IN THE STREETS on the iMac (the reader, 2026-10-30)**.
+     Both iMac logs (`omk-out.txt` of the first run, `omk-out_03.txt`) have
+     the crowd library loaded (`ANIMS/PASSANTH.ANI`) but NEVER the line
+     `the circuit's slot N is SHOWN/HIDDEN`, printed the first frame
+     `session.sliders().loaded()` - so `Slider_Init` never loaded ANEKBAH's
+     circuit. The area load's `the traffic circuit` took 0.0 ms (10.0 in the
+     first run, the clock's step), where reading the circuit includes
+     `PASSANTH.ANI`'s 395 KB, hundreds of ms off the USB stick: it returned
+     EARLY. Ruled out: `--no-crowd` (not in the reader's `omk.args`, so
+     `loadTraffic` ran); the walked arrival - a host probe (Session, IAM\START,
+     `loadTraffic` first, AREA 142 then `requestArea(0)`) loads it: slot 1
+     ANEKBAH, 200 live; the classic code - the EMULATED OS 9's street start
+     has 200 walkers (its data is on the HFS+ disk). Left: the file -
+     `TRAJECTOIRES/ANEKBAH.OPT` absent or unreadable on the reader's FAT32
+     stick (`TRAJECTOIRES` is the one long folder name in the data; long
+     names do work there - `SOUNDS\sliderm01.wav` loaded). Waiting on the
+     stick's listing.
+  4. **FASTER ON THE iMAC, items 1 and 5 of the list given to the reader
+     (2026-10-30, "go with 1 and 5")**:
+     * **the fog in ONE pass on ARB_multitexture's second unit** (`fogMT_`,
+       `fogMTUnitOn`): a 256x1 luminance ramp sampled at the vertex's `a` under
+       GL_BLEND with the fog as env colour, the vertex colour not darkened -
+       the colour sum's texel * colour * (1 - a) + fog * a for every batch,
+       translucent and additive included. `glActiveTextureARB` /
+       `glClientActiveTextureARB` looked up by name. Taken when there is no
+       colour sum and the extension (2+ units) is there; `--gl1-fog-pass` /
+       `OMK_GL1_FOG_PASS` keeps the second pass. On the M1 with the fog forced:
+       0 pixels off the colour sum's by > 24 (1-3 five-bit steps on fogged
+       pixels: the 8-bit ramp's rounding), 1476 draw calls against the second
+       pass's 2472. `engine: gl1 backend` gained the frame, shown to fail with
+       the colour darkened as well (6172 pixels). Not yet run on the iMac.
+       `OMK_GL1_NO_COLOUR_SUM` had been left out of `env.cpp`'s table by the
+       second pass's commit (`8694ddd`), so `env switches` was red until now;
+     * **the films**: CORRECTION - QuickTime's pictures were already sent at
+       the film's 320x240, not 640x480 as the list said; on the iMac (no
+       EXT_bgra, no packed pixels) each is converted to RGBA bytes on the CPU
+       and uploaded. Where its time goes is now logged at each film's close
+       (`MoviesTask` total and per picture; converted / uploaded / drawn and
+       swapped per picture). And `--films-direct`: QuickTime draws STRAIGHT
+       INTO THE WINDOW, the AGL drawable set aside (`aglSetDrawable(ctx, 0)`)
+       and put back at the film's close - its own path to the screen. On the
+       EMULATED OS 9: QUANTIC 151 (and 111) pictures in 23.5 s direct against
+       51 through GL; GAME 312 in 51 s / 436 in 107 s against 200 in 107 s;
+       the film shown in the window (QEMU screendump) and the start menu drawn
+       by GL after it. Not yet run on the iMac: the A/B decides the default.
 **Rule: on the classic build, an OpenGL 1.2 pixel format is never assumed;
 OpenGL 1.1's RGBA bytes is the fallback of every upload.** The iMac's menu
 frames: 67-116 ms of work (`screens, hud` ~35-49 ms). The launch has no

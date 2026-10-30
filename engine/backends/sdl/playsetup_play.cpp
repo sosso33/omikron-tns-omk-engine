@@ -108,6 +108,7 @@ int PlayState::setupPlay() {
             // Mac, QuickTime - the picture and the sound decoded by the
             // system, the software decoder below too slow for a G3 (an
             // iBook: ~0.5 fps, `GAME.mpg: 82 of 115 frames dropped`). Same skip rules as the decoder's loop.
+            front.setFilmDirect(filmsDirect);
             if (real && front.filmOpen(*real)) {
                 const std::uint32_t t0 = front.ticksMs();
                 long steps = 0;

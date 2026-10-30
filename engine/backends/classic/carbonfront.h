@@ -85,6 +85,7 @@ public:
     // drawn into a 32-bit GWorld at the film's own 320x240 and sent to the
     // card in the probe's ARGB layout, the card scaling it to the window;
     // without GL, QuickTime draws into the window itself.
+    void setFilmDirect(bool direct) override { filmDirect_ = direct; }
     bool filmOpen(const std::string& hostFile) override;
     bool filmStep() override;
     void filmClose() override;
@@ -134,6 +135,13 @@ private:
     unsigned filmTex_ = 0;       // GLuint, power-of-two, made once
     int filmTexW_ = 0, filmTexH_ = 0;
     long filmFrames_ = 0;        // pictures QuickTime drew
+    bool filmDirect_ = false;    // `--films-direct`: QuickTime into the window even under GL
+    bool filmGL_ = false;        // this film's pictures go through the AGL context (`filmShow`)
+    bool filmDetached_ = false;  // the AGL context's drawable set aside for a direct film
+    // where a film's time goes, for its close line: QuickTime's `MoviesTask`
+    // (its decoding, and its drawing when direct), and `filmShow`'s three parts
+    std::uint64_t filmTaskUs_ = 0, filmConvUs_ = 0, filmUpUs_ = 0, filmDrawUs_ = 0;
+    long filmSteps_ = 0;
     int qtState_ = 0;            // 0 not asked, 1 QuickTime entered, -1 absent
     void filmShow();             // the GWorld's picture through the AGL context
     bool quit_ = false;

@@ -1100,7 +1100,21 @@ bool CarbonFrontend::filmOpen(const std::string& hostFile) {
     CGrafPtr port = GetWindowPort(static_cast<WindowRef>(win_));
     GetPortBounds(port, &win);
     const int ww = win.right - win.left, wh = win.bottom - win.top;
-    if (agl_) {
+    filmTaskUs_ = filmConvUs_ = filmUpUs_ = filmDrawUs_ = 0;
+    filmSteps_ = 0;
+    filmGL_ = agl_ && !filmDirect_;
+#if defined(OMK_GL1_AGL)
+    if (agl_ && filmDirect_) {
+        // `--films-direct`: the AGL context's drawable set aside for the film,
+        // so QuickTime's own drawing into the window is what shows - its
+        // decoder's own path to the screen, with no conversion or upload of
+        // ours (an OpenGL 1.1 driver takes the picture only as RGBA bytes,
+        // converted on the CPU). Put back by `filmClose`.
+        aglSetDrawable(static_cast<AGLContext>(agl_), nullptr);
+        filmDetached_ = true;
+    }
+#endif
+    if (filmGL_) {
         // under GL: QuickTime draws into a GWorld, `filmShow` sends it
         // AT 16 BITS when the probe found ARGB1555 the faster upload - an
         // iBook G3 in thousands of colours: 63 ms a 640x480 frame against
@@ -1142,7 +1156,7 @@ bool CarbonFrontend::filmOpen(const std::string& hostFile) {
     StartMovie(m);
     std::printf("film: %s through QuickTime, %dx%d, %.1f s, %s\n", hp.c_str(), filmW_, filmH_,
                 static_cast<double>(GetMovieDuration(m)) / GetMovieTimeScale(m),
-                agl_ ? (filmDepth_ == 16 ? "sent to the card as ARGB1555"
+                filmGL_ ? (filmDepth_ == 16 ? "sent to the card as ARGB1555"
                         : argbOk_ ? "sent to the card as ARGB8888" : "sent to the card as RGBA bytes")
                      : "drawn into the window");
     return true;
@@ -1151,11 +1165,14 @@ bool CarbonFrontend::filmOpen(const std::string& hostFile) {
 bool CarbonFrontend::filmStep() {
     if (!film_) return false;
     ::Movie m = static_cast<::Movie>(film_);
+    const std::uint64_t t0 = microseconds();
     MoviesTask(m, 0);
+    filmTaskUs_ += microseconds() - t0;
+    ++filmSteps_;
     if (filmDrawn_) {
         filmDrawn_ = false;
         ++filmFrames_;
-        if (agl_) filmShow();
+        if (filmGL_) filmShow();
         else QDFlushPortBuffer(GetWindowPort(static_cast<WindowRef>(win_)), nullptr);
     }
     return !IsMovieDone(m) && GetMoviesError() == noErr;
@@ -1184,7 +1201,23 @@ void CarbonFrontend::filmClose() {
         DisposeGWorld(static_cast<GWorldPtr>(filmGw_));
         filmGw_ = nullptr;
     }
-    std::printf("film: %ld pictures drawn by QuickTime\n", filmFrames_);
+#if defined(OMK_GL1_AGL)
+    if (filmDetached_) {
+        aglSetDrawable(static_cast<AGLContext>(agl_), GetWindowPort(static_cast<WindowRef>(win_)));
+        aglUpdateContext(static_cast<AGLContext>(agl_));
+        filmDetached_ = false;
+    }
+#endif
+    std::printf("film: %ld pictures drawn by QuickTime %s; MoviesTask %.0f ms over %ld steps (%.1f ms a "
+                "picture)%s",
+                filmFrames_, filmGL_ ? "and sent through OpenGL" : "straight into the window",
+                filmTaskUs_ / 1000.0, filmSteps_,
+                filmFrames_ ? filmTaskUs_ / 1000.0 / filmFrames_ : 0.0, filmGL_ ? "" : "\n");
+    if (filmGL_)
+        std::printf("; a picture shown: converted %.1f ms, uploaded %.1f, drawn and swapped %.1f\n",
+                    filmFrames_ ? filmConvUs_ / 1000.0 / filmFrames_ : 0.0,
+                    filmFrames_ ? filmUpUs_ / 1000.0 / filmFrames_ : 0.0,
+                    filmFrames_ ? filmDrawUs_ / 1000.0 / filmFrames_ : 0.0);
 }
 
 void CarbonFrontend::filmShow() {
@@ -1265,6 +1298,7 @@ void CarbonFrontend::filmShow() {
         filmTexH_ = th;
     }
     glBindTexture(target, tex);
+    std::uint64_t tUp = microseconds();
     {
         OMK_ZONE("film: upload");
         if (client) {
@@ -1297,11 +1331,16 @@ void CarbonFrontend::filmShow() {
                     o[0] = s[1]; o[1] = s[2]; o[2] = s[3]; o[3] = 255;
                 }
             }
+            const std::uint64_t tConv = microseconds();
+            filmConvUs_ += tConv - tUp;
+            tUp = tConv;
             glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, filmW_, filmH_, GL_RGBA, GL_UNSIGNED_BYTE,
                             uiConv_.data());
         }
     }
+    const std::uint64_t tDraw = microseconds();
+    filmUpUs_ += tDraw - tUp;
     glEnable(target);
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
     glColor4f(1, 1, 1, 1);
@@ -1312,6 +1351,7 @@ void CarbonFrontend::filmShow() {
         OMK_ZONE("film: swap");
         aglSwapBuffers(ctx);
     }
+    filmDrawUs_ += microseconds() - tDraw;
     if (prev != ctx) aglSetCurrentContext(prev);
 #endif
 }

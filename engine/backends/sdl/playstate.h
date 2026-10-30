@@ -191,6 +191,8 @@ struct PlayState {
     double & speed = opt.speed;
     bool & forceSoftware = opt.forceSoftware;
     bool & gl1Composite = opt.gl1Composite;
+    bool & gl1FogPass = opt.gl1FogPass;
+    bool & filmsDirect = opt.filmsDirect;
     bool & showFps = opt.showFps;
     bool & worldVulkan = opt.worldVulkan;
     omk::Game game{};

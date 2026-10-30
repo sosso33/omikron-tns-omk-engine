@@ -313,6 +313,14 @@ struct PlayOptions {
     // (todo/cpu-vs-original.md tier B) - a flag, as classic Mac OS has no
     // environment to set `OMK_GL1_COMPOSITE` in
     bool gl1Composite = false;
+    // ...and `--gl1-fog-pass`: on a driver with no colour sum, the coloured fog
+    // in a second pass rather than on ARB_multitexture's second unit - the A/B
+    // for a card whose second unit draws it wrong (`gl1SetFogPass`)
+    bool gl1FogPass = false;
+    // `--films-direct`: the boot films drawn by the host's player straight
+    // into the window (`Frontend::setFilmDirect`) - the classic Mac's
+    // QuickTime with the OpenGL context set aside for the film
+    bool filmsDirect = false;
     // A HARNESS flag, not a mode: draw the 3D world through a SURFACELESS
     // Vulkan renderer while the frame is still presented (or dumped) the
     // ordinary way. `--vulkan` needs a real window and therefore a real

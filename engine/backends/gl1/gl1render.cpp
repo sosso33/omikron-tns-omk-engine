@@ -134,9 +134,8 @@ GLenum glFactor(BlendFactor f) {
 // ("OpenGLLibrary--glSecondaryColorPointerEXT est introuvable"). So it is
 // looked up by name; not found, `hasColourSum_` is false and the fog loses
 // its colour, as on a renderer without the extension.
-using SecondaryColorPointerFn = void (*)(GLint, GLenum, GLsizei, const GLvoid*);
-SecondaryColorPointerFn omkSecondaryColorPointer = nullptr;
-SecondaryColorPointerFn findSecondaryColorPointer() {
+// An OpenGLLibrary export by name (a Pascal string), or nullptr.
+Ptr findOpenGLSymbol(ConstStr255Param name) {
     CFragConnectionID conn = 0;
     Ptr main = nullptr;
     Str255 err;
@@ -144,8 +143,20 @@ SecondaryColorPointerFn findSecondaryColorPointer() {
         return nullptr;
     Ptr sym = nullptr;
     CFragSymbolClass cls = 0;
-    if (FindSymbol(conn, "\pglSecondaryColorPointerEXT", &sym, &cls) != noErr || !sym) return nullptr;
-    return reinterpret_cast<SecondaryColorPointerFn>(sym);   // a TVector: a function pointer here
+    if (FindSymbol(conn, name, &sym, &cls) != noErr) return nullptr;
+    return sym;                                  // a TVector: a function pointer here
+}
+using SecondaryColorPointerFn = void (*)(GLint, GLenum, GLsizei, const GLvoid*);
+SecondaryColorPointerFn omkSecondaryColorPointer = nullptr;
+SecondaryColorPointerFn findSecondaryColorPointer() {
+    return reinterpret_cast<SecondaryColorPointerFn>(findOpenGLSymbol("\pglSecondaryColorPointerEXT"));
+}
+// ARB_multitexture's two selectors, for the fog in ONE pass (`fogMT_`) - by
+// name too, by the rule above
+using ActiveTextureFn = void (*)(GLenum);
+ActiveTextureFn findActiveTexture(bool client) {
+    return reinterpret_cast<ActiveTextureFn>(
+        findOpenGLSymbol(client ? "\pglClientActiveTextureARB" : "\pglActiveTextureARB"));
 }
 using GlContext = AGLContext;
 GlContext currentContext() { return aglGetCurrentContext(); }
@@ -154,6 +165,8 @@ void makeCurrent(GlContext c) { aglSetCurrentContext(c); }
 #  define OMK_GL_COLOR_SUM GL_COLOR_SUM
 #  define OMK_GL_SECONDARY_ARRAY GL_SECONDARY_COLOR_ARRAY
 #  define omkSecondaryColorPointer glSecondaryColorPointer
+using ActiveTextureFn = void (*)(GLenum);
+ActiveTextureFn findActiveTexture(bool client) { return client ? glClientActiveTexture : glActiveTexture; }
 using GlContext = CGLContextObj;
 GlContext currentContext() { return CGLGetCurrentContext(); }
 void makeCurrent(GlContext c) { CGLSetCurrentContext(c); }
@@ -505,8 +518,31 @@ public:
         fogRGB_[2] = v.fogColour[2] / 255.0f;
         fogSum_ = fogRGB_[0] > 0 || fogRGB_[1] > 0 || fogRGB_[2] > 0;
         fogPass_ = false;
+        const bool fogMTWas = fogMT_;
+        fogMT_ = false;
         static const bool noSum = envFlag("OMK_GL1_NO_COLOUR_SUM");   // the fallback, on a host that has the sum
-        if (fogSum_ && (!hasColourSum_ || noSum)) {
+        static const bool passEnv = envFlag("OMK_GL1_FOG_PASS");      // the second pass, not the second unit
+        if (fogSum_ && (!hasColourSum_ || noSum) && !forceFogPass_ && !passEnv && multitexture()) {
+            // THE FOG IN ONE PASS, ON THE SECOND TEXTURE UNIT (ARB_multitexture,
+            // which OpenGL 1.1 drivers carry - the iMac G3's Rage 128 does):
+            // unit 1 samples a luminance RAMP at the vertex's `a` (its one
+            // texture coordinate) under GL_BLEND with the fog as the env
+            // colour - C = previous * (1 - a) + fog * a, alpha untouched. With
+            // the vertex colour NOT darkened by (1 - a), that is the colour
+            // sum's texel * colour * (1 - a) + fog * a exactly, for every batch
+            // - opaque, cutout, translucent and additive alike - with none of
+            // the second pass's extra draw calls (19 of the iMac's 43 a frame).
+            static bool told = false;
+            if (!told) {
+                told = true;
+                std::printf("gl1: no EXT_secondary_color%s - a coloured fog is added on the second "
+                            "texture unit (ARB_multitexture, one pass)\n",
+                            noSum ? " (OMK_GL1_NO_COLOUR_SUM)" : "");
+            }
+            fogSum_ = false;
+            fogMT_ = true;
+            fogMTUnitOn(true);
+        } else if (fogSum_ && (!hasColourSum_ || noSum)) {
             // A RENDERER WITHOUT EXT_secondary_color (OpenGL 1.1: Mac OS 9's
             // software one, the reader's iMac G3's Rage 128): the fog's colour
             // goes on in a SECOND PASS (`flush`). The streets' day/night fog
@@ -523,6 +559,7 @@ public:
             fogPass_ = true;
             fogByte_[0] = toByte(fogRGB_[0]); fogByte_[1] = toByte(fogRGB_[1]); fogByte_[2] = toByte(fogRGB_[2]);
         }
+        if (fogMTWas && !fogMT_) fogMTUnitOn(false);
         if (fogSum_) { glEnable(OMK_GL_COLOR_SUM); glEnableClientState(OMK_GL_SECONDARY_ARRAY); }
         else if (hasColourSum_) { glDisable(OMK_GL_COLOR_SUM); glDisableClientState(OMK_GL_SECONDARY_ARRAY); }
         glDisable(GL_CULL_FACE);              // culled on the CPU, the reference's rule
@@ -870,6 +907,8 @@ public:
         // Tiger's Radeon leaves it zero, so it never shows there.
         // `begin` sets it again for the next frame.
         if (hasColourSum_) { glDisable(OMK_GL_COLOR_SUM); glDisableClientState(OMK_GL_SECONDARY_ARRAY); }
+        // ...and so does the second unit's ramp, for the same reason
+        if (fogMT_) { fogMTUnitOn(false); fogMT_ = false; }
         stateValid_ = false;
         glFlush();
         // what the batching saved: passes 61-120 summed (a street frame is
@@ -1508,6 +1547,7 @@ public:
     // `--full-textures`: every texture at its own size whatever the card's
     // memory - the port's own (an enhancement); before the first pool
     void setFullTextures(bool full) { fullTextures_ = full; }
+    void setFogPass(bool pass) { forceFogPass_ = pass; }
     int maxVertexLights() const override { return kPoseLights; }
     const char* name() const override { return "OpenGL 1.x fixed-function"; }
     // the texture filter alone (`Renderer::takes`)
@@ -1806,12 +1846,17 @@ private:
             const float f = (fogEnd_ - w) * fogInv_;
             a = 1.0f - (f < 0.0f ? 0.0f : (f > 1.0f ? 1.0f : f));
         }
-        const float k = 1.0f - a;
+        const float k = fogMT_ ? 1.0f : 1.0f - a;   // on the second unit the ramp darkens it
         o.c[0] = toByte(p.c[0] * k); o.c[1] = toByte(p.c[1] * k);
         o.c[2] = toByte(p.c[2] * k); o.c[3] = 255;
         o.uv[0] = p.u; o.uv[1] = p.t;
         if (fogSum_) {
             o.f[0] = fogRGB_[0] * a; o.f[1] = fogRGB_[1] * a; o.f[2] = fogRGB_[2] * a;
+            out_.push_back(o);
+        } else if (fogMT_) {
+            // the ramp's coordinate: texel i holds i / 255, sampled linearly
+            // at s * 256 - 0.5, so s = (255 a + 0.5) / 256 reads back `a`
+            o.f[0] = (255.0f * a + 0.5f) * (1.0f / 256.0f);
             out_.push_back(o);
         } else {
             // no secondary colour this pass: the 28-byte vertex, not the
@@ -1837,6 +1882,11 @@ private:
             glColorPointer(4, GL_UNSIGNED_BYTE, stride, out_[0].c);
             glTexCoordPointer(2, GL_FLOAT, stride, out_[0].uv);
             if (fogSum_) omkSecondaryColorPointer(3, GL_FLOAT, stride, out_[0].f);
+            if (fogMT_) {
+                omkClientActiveTexture_(kTexUnit1);
+                glTexCoordPointer(1, GL_FLOAT, stride, out_[0].f);
+                omkClientActiveTexture_(kTexUnit0);
+            }
             OMK_ZONE("gl1: draw call");          // the driver's share (todo/debug-tools.md)
             glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(idx_.size()), GL_UNSIGNED_SHORT, idx_.data());
             ++batches_;
@@ -1858,6 +1908,61 @@ private:
         // the batch's vertices are gone: an index into them is no longer one
         idx_.clear();
         ++batchStamp_;
+    }
+
+    // ARB_multitexture usable: offered, and both selectors found. Asked once,
+    // with the context current.
+    bool multitexture() {
+        if (!mtKnown_) {
+            mtKnown_ = true;
+            const char* ext = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
+            const bool offered = ext && std::strstr(ext, "GL_ARB_multitexture");
+            if (offered) {
+                omkActiveTexture_ = findActiveTexture(false);
+                omkClientActiveTexture_ = findActiveTexture(true);
+            }
+            GLint units = 0;
+            if (offered) glGetIntegerv(kMaxTextureUnits, &units);
+            hasMT_ = offered && omkActiveTexture_ && omkClientActiveTexture_ && units >= 2;
+            std::printf("gl1: ARB_multitexture %s (%d units)%s\n", offered ? "offered" : "not offered",
+                        static_cast<int>(units),
+                        offered && !hasMT_ ? " - but its selectors are not found or one unit only" : "");
+        }
+        return hasMT_;
+    }
+    // The second unit: the fog's ramp under GL_BLEND with the fog colour, its
+    // coordinate array on - or all of it off again, for whatever is drawn
+    // after the world. The first unit stays the selected one.
+    void fogMTUnitOn(bool on) {
+        omkActiveTexture_(kTexUnit1);
+        if (on) {
+            if (!fogRamp_) {
+                unsigned char ramp[256];
+                for (int i = 0; i < 256; ++i) ramp[i] = static_cast<unsigned char>(i);
+                glGenTextures(1, &fogRamp_);
+                glBindTexture(GL_TEXTURE_2D, fogRamp_);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+                glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE8, 256, 1, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, ramp);
+            }
+            glEnable(GL_TEXTURE_2D);
+            glBindTexture(GL_TEXTURE_2D, fogRamp_);
+            const GLfloat env[4] = {fogRGB_[0], fogRGB_[1], fogRGB_[2], 1.0f};
+            glTexEnvfv(GL_TEXTURE_ENV, GL_TEXTURE_ENV_COLOR, env);
+            glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_BLEND);
+            glMatrixMode(GL_TEXTURE);
+            glLoadIdentity();
+            glMatrixMode(GL_MODELVIEW);
+        } else {
+            glDisable(GL_TEXTURE_2D);
+        }
+        omkActiveTexture_(kTexUnit0);
+        omkClientActiveTexture_(kTexUnit1);
+        if (on) glEnableClientState(GL_TEXTURE_COORD_ARRAY); else glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+        omkClientActiveTexture_(kTexUnit0);
     }
 
     // THE FOG'S SECOND PASS, where there is no colour sum (`fogPass_`): the
@@ -1997,6 +2102,13 @@ private:
     float fogStart_ = 0, fogEnd_ = 0, fogRGB_[3]{};
     bool fogSum_ = false;
     bool fogPass_ = false;       // no colour sum: the fog added in a second pass (`fogSecondPass`)
+    bool fogMT_ = false;         // no colour sum: the fog on the second texture unit (`fogMTUnitOn`)
+    bool forceFogPass_ = false;  // `--gl1-fog-pass`: the second pass even where the unit is there
+    bool mtKnown_ = false, hasMT_ = false;
+    ActiveTextureFn omkActiveTexture_ = nullptr, omkClientActiveTexture_ = nullptr;
+    GLuint fogRamp_ = 0;
+    static constexpr GLenum kTexUnit0 = 0x84C0, kTexUnit1 = 0x84C1;   // GL_TEXTURE0/1(_ARB)
+    static constexpr GLenum kMaxTextureUnits = 0x84E2;                // GL_MAX_TEXTURE_UNITS(_ARB)
     unsigned char fogByte_[3]{};
     struct FogCol { unsigned char c[4]; };
     std::vector<FogCol> fogCol_;   // per pending vertex, beside `outN_`: (fog, a)
@@ -2197,6 +2309,9 @@ Renderer* makeGl1Renderer() { return new Gl1Renderer(); }
 
 void gl1SetFullTextures(Renderer* r, bool full) {
     if (r) static_cast<Gl1Renderer*>(r)->setFullTextures(full);
+}
+void gl1SetFogPass(Renderer* r, bool pass) {
+    if (r) static_cast<Gl1Renderer*>(r)->setFogPass(pass);
 }
 
 #if defined(OMK_GL1_ON_WINDOW)
