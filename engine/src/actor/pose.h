@@ -393,7 +393,12 @@ void applyPose(Geometry& g, const Geometry& rest,
 // `out` gets `meshes.size()` affines, 12 floats each: row r is R[r][0..2], t[r].
 // R's columns are `qrot` of the three axes, so the matrix is `qrot`'s own
 // rotation and cannot disagree with it about the conjugate (see the top).
+// `only`, as `composePose`'s: the meshes of one LOD skeleton, the others
+// left zero - a crowd model carries its four skeletons side by side and the
+// renderer draws one level's rest, so three quarters were built for nothing
+// (the iMac G3's crowd, `todo/handoff-classic-mac.md` 3i).
 void meshAffines(const std::vector<Mesh>& meshes, const std::vector<MeshPose>& pose,
-                 const float* place, std::vector<float>& out);
+                 const float* place, std::vector<float>& out,
+                 const std::uint8_t* only = nullptr);
 
 }  // namespace omk

@@ -31035,8 +31035,11 @@ def c_engine_lazy_collision():
     if not m or not dumps[0]:
         return ("no count",), ("count",), "the run must print the frame-600 placement line and dump"
     rec, made = int(m.group(1)), int(m.group(2))
+    # the timings dropped - microseconds too: the instruments' cost probe
+    # (`profile: a clock read costs 0.01 us, ...`, 2026-10-30) jitters run to
+    # run and turned this red one run in a few
     strip = lambda o: [ln for ln in o.splitlines()
-                       if not re.search(r"ms|MB|KB|took|fps|wrote|moving collision since", ln)]
+                       if not re.search(r"ms|MB|KB|took|fps|wrote|moving collision since|\d us\b", ln)]
     print("        frames 300..600: %d placements recorded, %d made" % (rec, made))
     return (rec > 0 and made * 10 < rec, dumps[0] == dumps[1], strip(outs[0]) == strip(outs[1])), \
         (True, True, True), \

@@ -236,7 +236,7 @@ void PlayState::worldCrowdPedestrians() {
                         wcs, 0.0f, -wsn, w.body[0] - (wcs * rootXZ[0] - wsn * rootXZ[1]),
                         0.0f, 1.0f, 0.0f, w.body[1] + w.footY - p.feet,
                         wsn, 0.0f, wcs, w.body[2] - (wsn * rootXZ[0] + wcs * rootXZ[1])};
-                    omk::meshAffines(p.mo->meshes, pose, place, p.affine);
+                    omk::meshAffines(p.mo->meshes, pose, place, p.affine, j.only);
                 }
                 if (!p.gpu) for (auto& c : p.posed.corners) {
                     const float in[3] = {c.x - rootXZ[0], c.y, c.z - rootXZ[1]};

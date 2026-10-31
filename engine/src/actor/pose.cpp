@@ -721,9 +721,10 @@ void applyPose(Geometry& g, const Geometry& rest,
 
 
 void meshAffines(const std::vector<Mesh>& meshes, const std::vector<MeshPose>& pose,
-                 const float* place, std::vector<float>& out) {
+                 const float* place, std::vector<float>& out, const std::uint8_t* only) {
     out.assign(meshes.size() * 12u, 0.0f);
     for (std::size_t m = 0; m < meshes.size(); ++m) {
+        if (only && !only[m]) continue;
         float R[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
         float t[3] = {0, 0, 0};
         if (m < pose.size()) {

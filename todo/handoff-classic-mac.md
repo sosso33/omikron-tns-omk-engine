@@ -1507,6 +1507,70 @@ a software renderer, it is suspicious", 2026-10-30)**:
        51 through GL; GAME 312 in 51 s / 436 in 107 s against 200 in 107 s;
        the film shown in the window (QEMU screendump) and the start menu drawn
        by GL after it. Not yet run on the iMac: the A/B decides the default.
+  5. **WHILE THE READER CANNOT TEST (2026-10-30, "do 1 to 4")**:
+     * **what the crowd will cost the iMac** (its ~20 fps was measured with
+       NO walkers, item 3). On the host GL1 build, Anekbah's street start
+       (`--stand 1804,0,-6890,336`, 60 frames): with the crowd 1476 draw
+       calls, 237749 triangles, 382918 vertices sent; `--no-crowd` 1236,
+       133111, 247571 - the walkers add ~80% triangles and ~55% vertices
+       there. The emulated OS 9 puts `pedestrians, traffic` at about the
+       staged bodies' cost (10-11 ms each there; 4.4 for the staged bodies
+       on the iMac). So expect ~5 ms of CPU and a heavier draw on the
+       iMac once the crowd loads. (Trap: `--profile` takes a FILE - written
+       before `--no-crowd` it swallowed the flag and wrote a file of that name.)
+     * **`meshAffines` takes the LOD mask** (`pose.h`): a crowd model holds
+       its four skeletons side by side (~76 meshes) and the renderer draws one
+       level, yet every mesh's affine was built each frame - `ped place`, ~2x
+       the staged pose's time in the emulator. Now only the level's, the rest
+       left zero: in the emulator `ped place` fell to ~0.5x the staged pose.
+       Host GL1 and Vulkan street frames BYTE-IDENTICAL before and after; the
+       mask inverted changes 31250 bytes of the GL1 frame (Vulkan poses the
+       walkers on the CPU and never reads the affines - test on GL1).
+     * **the release build** (`make classic-release`, no profiler) reaches the
+       street on the emulated OS 9 with its 200 walkers. `--fps` prints a
+       rate line every second in either build, now naming the world's
+       renderer ("OpenGL 1.x fixed-function"; GL1 sits in `worldVk` and was
+       labelled "software"). The emulator's frame is its software GL, so
+       only the iMac can say what the profiler costs.
+     * **the upload probe times only a CHOICE**: a form that is the only one
+       left (RGBA bytes for the menus when the three packed forms are
+       refused; the overlay's RGBA bytes when ARGB8888 is) is sent ONCE, not
+       best of four - on the iMac's OpenGL 1.1 ~0.45 s of the 0.76 s probe.
+       The overlay now tries ARGB8888 first. The emulator (OpenGL 1.2.1, all
+       forms accepted) still picks RGB565 and the overlay's RGBA bytes; the
+       one-try path itself is not reached there.
+  6. **THE iMAC'S RELEASE-BUILD RUN (the reader's `omk-out.txt`, 2026-10-31)**:
+     `build: RELEASE`, a new game GRID -> AIMPASSE -> AIMPASAS -> ANEKBAH, exit 0.
+     The save's settings differ from the earlier runs: **clip 100 m** (50
+     before), crowd 2 (3). `--fps` was not in `omk.args`.
+     * **THE CROWD LOADED (item 3)**: area 0's load `the traffic circuit 279.6`
+       ms, `crowd library - the circuit's slot 1 is SHOWN`, traffic 40 live,
+       PSH_FN / PSH1_FN walkers staged; no `NO CROWD` line. The stick's
+       `TRAJECTOIRES/ANEKBAH.OPT` is the same file as before (85192 bytes,
+       folder dated 2020). Why the earlier runs had none is still unknown;
+       the scratch copy of `omk-out_03.txt` read again on 2026-10-31 ends at
+       102 s in AIMPASSE, so it cannot be compared. Waiting on the reader's
+       eye: were walkers SEEN?
+     * **the street with walkers and the 100 m clip: ~12 fps** (frames
+       3119-3779 in 54.7 s): `world begin..end (submit, GL)` 25-78 ms a frame
+       (21-23 at 50 m with no walkers, item 2), `pedestrians, traffic` 3-8 ms
+       (~5 predicted, item 5), staged bodies 4-6, pump 9-30. Street entry:
+       one 2122 ms frame (game frame 862, props 336, GL 282, pedestrians 242).
+     * **the probe**: menus' RGBA bytes 61.0 ms, ONE try (`one try for the only
+       form left`); overlay RGBA bytes 96.0, ARGB8888 refused. The probe
+       checkpoint 2.60 s -> the next line at 2.89 s (it ended at 3.70 s in
+       the earlier run).
+     * **the fog**: `ARB_multitexture offered (2 units)`, `a coloured fog is
+       added on the second texture unit (ARB_multitexture, one pass)` - taken
+       on the iMac, and **WRONG THERE. The reader (2026-10-31): "The fog
+       appears as a blue hole again"** - the light-blue horizon of item 1
+       is back with the one-pass fog, where the second pass (`8694ddd`) had
+       removed it. Fog and clear colour in ANEKBAH 92 162 172, clip 100 m.
+     * **the films (through GL, not `--films-direct`)**: 56-80 ms of
+       `MoviesTask` a picture, ~6 pictures a second; a picture shown costs
+       converted 4.9 + uploaded 3.5 + drawn and swapped 9.4 ms. QuickTime's
+       own decoding is the cost, not the upload. The A/B is still to run.
+     * the slab allocator: 165 slabs at most, 70 at the end.
 **Rule: on the classic build, an OpenGL 1.2 pixel format is never assumed;
 OpenGL 1.1's RGBA bytes is the fallback of every upload.** The iMac's menu
 frames: 67-116 ms of work (`screens, hud` ~35-49 ms). The launch has no

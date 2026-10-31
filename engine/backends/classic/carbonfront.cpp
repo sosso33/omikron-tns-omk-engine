@@ -850,9 +850,13 @@ void CarbonFrontend::probeUploads() {
     glEnable(GL_TEXTURE_2D);
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
     glColor4f(1, 1, 1, 1);
-    // -> ms for one send-and-draw, best of four; -1 when the driver refused it
+    // -> ms for one send-and-draw, best of `reps` (four); -1 when the driver
+    // refused it. ONE try for a format that is the only one left: it is taken
+    // whatever its time, and on the iMac G3's OpenGL 1.1 (RGBA bytes, the
+    // menus' and the overlay's only form) the three spare tries were ~0.45 s
+    // of the launch (`todo/handoff-classic-mac.md` 3i).
     const auto timeOne = [&](GLint internal, GLenum format, GLenum type, int bytes,
-                             const std::function<const void*()>& source, bool blend) {
+                             const std::function<const void*()>& source, bool blend, int reps = 4) {
         while (glGetError() != GL_NO_ERROR) {}
         GLuint t = 0;
         glGenTextures(1, &t);
@@ -864,7 +868,7 @@ void CarbonFrontend::probeUploads() {
         if (blend) { glEnable(GL_BLEND); glBlendFunc(GL_ONE, GL_SRC_ALPHA); }
         else glDisable(GL_BLEND);
         double best = 1e30;
-        for (int rep = 0; rep < 4 && ok; ++rep) {
+        for (int rep = 0; rep < reps && ok; ++rep) {
             frame[static_cast<std::size_t>(rep)] ^= 0x0841u;
             glFinish();
             const std::uint64_t t0 = microseconds();
@@ -890,7 +894,7 @@ void CarbonFrontend::probeUploads() {
             if (f == 0) return frame.data();
             convert565(f, frame.data(), frame.size(), conv.data());
             return conv.data();
-        }, false);
+        }, false, f == kUiRgbaBytes ? 1 : 4);           // reached only as the one left
         if (ui[f] >= 0 && (pick < 0 || ui[f] < ui[pick])) pick = f;
     }
     uiFmt_ = pick < 0 ? kUiRgbaBytes : pick;
@@ -1000,10 +1004,11 @@ void CarbonFrontend::probeUploads() {
         }
         return rgba.data();
     };
-    const double ovBytes = timeOne(GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, 4,
-                                   [&]() { return fillRgba(false); }, true);
+    // ARGB8888 first: where it is refused, RGBA bytes is the one left
     const double ovArgb = timeOne(GL_RGBA8, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, 4,
                                   [&]() { return fillRgba(true); }, true);
+    const double ovBytes = timeOne(GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, 4,
+                                   [&]() { return fillRgba(false); }, true, ovArgb < 0 ? 1 : 4);
     g_overlayArgb = ovArgb >= 0 && (ovBytes < 0 || ovArgb < ovBytes);
     // the overlay through client storage when an ARGB8888 variant beat its
     // copy (the overlay is always 32-bit: it carries an 8-bit alpha)
@@ -1022,7 +1027,7 @@ void CarbonFrontend::probeUploads() {
         std::printf("gl1: the overlay will be sent through %s\n", how);
     }
     glDisable(GL_TEXTURE_2D);
-    std::printf("gl1: upload probe, a 640x480 frame sent and drawn (ms, best of 4; -1 refused): "
+    std::printf("gl1: upload probe, a 640x480 frame sent and drawn (ms, best of 4 - one try for the only form left; -1 refused): "
                 "RGB565 %.1f, ARGB1555 %.1f, ARGB8888 %.1f, RGBA bytes %.1f (tried only when those three are refused) -> the menus as %s; overlay RGBA "
                 "bytes %.1f, ARGB8888 %.1f -> %s\n", ui[0], ui[1], ui[2], ui[3], kUiFmts[uiFmt_].name,
                 ovBytes, ovArgb, g_overlayArgb ? "ARGB8888" : "RGBA bytes");
