@@ -322,6 +322,9 @@ struct PlayOptions {
     // draw call where EXT_compiled_vertex_array is there - the A/B
     // (`gl1SetNoLock`)
     bool gl1NoLock = false;
+    // ...and `--gl1-fetch-all`: every corner's bytes fetched ahead of the GL1
+    // submit loop, not only a not-yet-seen vertex's - the A/B (`gl1SetFetchAll`)
+    bool gl1FetchAll = false;
     // `--films-direct`: the boot films drawn by the host's player straight
     // into the window (`Frontend::setFilmDirect`) - the classic Mac's
     // QuickTime with the OpenGL context set aside for the film

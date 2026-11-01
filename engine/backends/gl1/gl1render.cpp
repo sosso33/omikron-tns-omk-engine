@@ -727,11 +727,20 @@ public:
             // THE TRIANGLE TWO AHEAD, ASKED FOR NOW: the G3 has no hardware
             // prefetch, so without it each corner's 48 bytes are a miss the
             // loop waits on (~170 MB/s, a street frame reads ~1 MB of them).
-            // A hint - `dcbt` on a PowerPC - over its 144 bytes, a 32-byte
-            // line at a time; it changes no value read.
-            if (t + 9 <= nCorner) {
+            // A hint - `dcbt` on a PowerPC - a 32-byte line at a time; it
+            // changes no value read. With the vertex index, ONLY THE CORNERS
+            // WHOSE VERTEX THIS DRAW HAS NOT SEEN (`fetchAhead`): a shared
+            // vertex's other corners are taken from its slot unread, so
+            // fetching their bytes spent the bus for nothing - the iMac G3's
+            // capture: ~29000 corners a 100 m street frame, ~12000 of them
+            // transformed (2026-11-01). `--gl1-fetch-all` fetches every
+            // corner, as before - the A/B.
+            if (vi && !fetchAll_) {
+                fetchAhead(g, *vi, d.start + t, d.start + nCorner);
+            } else if (t + 9 <= nCorner) {
                 const char* ahead = reinterpret_cast<const char*>(&g.corners[d.start + t + 6]);
                 for (std::size_t b = 0; b < 3 * sizeof(Corner); b += 32) __builtin_prefetch(ahead + b);
+                statFetched_ += 3;
             }
             Vtx in[3];
             unsigned oc[3];
@@ -942,6 +951,7 @@ public:
         if (passes_ == 60 || passes_ % 600 == 540) {
             sum_[0] = sum_[1] = sum_[2] = sum_[3] = sum_[4] = 0;
             statCorners_ = statTransformed_ = statSent_ = statSkipped_ = statTieBack_ = statTrusted_ = 0;
+            statFetched_ = 0;
             fogPasses_ = 0;
             lockedDraws_ = 0;
         }
@@ -955,6 +965,9 @@ public:
                         statTrusted_, passes_);
         if ((passes_ == 120 || passes_ % 600 == 0) && fogPass_)
             std::printf("gl1: ...and %ld fog second passes (no colour sum) in those draw calls\n", fogPasses_);
+        if (passes_ == 120 || passes_ % 600 == 0)
+            std::printf("gl1: ...%ld corners' bytes fetched ahead of the loop (%s)\n", statFetched_,
+                        fetchAll_ ? "every corner, --gl1-fetch-all" : "those of vertices not yet seen in their draw");
         if ((passes_ == 120 || passes_ % 600 == 0) && hasLock_)
             std::printf("gl1: ...%ld of those draw calls with their vertices locked (EXT_compiled_vertex_array)\n",
                         lockedDraws_);
@@ -1573,6 +1586,7 @@ public:
     void setFullTextures(bool full) { fullTextures_ = full; }
     void setFogUnit(bool unit) { fogUnit_ = unit; }
     void setNoLock(bool off) { noLock_ = off; }
+    void setFetchAll(bool all) { fetchAll_ = all || envFlag("OMK_GL1_FETCH_ALL"); }
     int maxVertexLights() const override { return kPoseLights; }
     const char* name() const override { return "OpenGL 1.x fixed-function"; }
     // the texture filter alone (`Renderer::takes`)
@@ -2242,6 +2256,8 @@ private:
     std::uint32_t drawStamp_ = 0, batchStamp_ = 1;
     long statCorners_ = 0, statTransformed_ = 0, statSent_ = 0, statSkipped_ = 0, statTieBack_ = 0;
     long statTrusted_ = 0;   // shared corners taken on the index's word, no compare
+    long statFetched_ = 0;   // corners whose bytes were fetched ahead (`fetchAhead`)
+    bool fetchAll_ = false;  // `--gl1-fetch-all`: every corner fetched ahead, as before
     // THE RUNS' BOUNDING SPHERES: a geometry's corners in runs of
     // `kClusterCorners` from corner 0 (4 triangles; a draw starts on a
     // triangle, so a run boundary is one too), a sphere (x, y, z, r) each,
@@ -2313,6 +2329,43 @@ private:
         const float lx = r * gxLen_, ly = r * gyLen_;
         return z * gx_ - x + lx < 0.0f || z * gx_ + x + lx < 0.0f ||
                z * gy_ - y + ly < 0.0f || z * gy_ + y + ly < 0.0f;
+    }
+    // THE LOOK-AHEAD OF A DRAW WITH A VERTEX INDEX (`submit`), at the
+    // triangle starting at corner `ci`, three distances ahead so each hint
+    // lands before it is needed and the one after reads what the one before
+    // brought in: the corners' vertex numbers 8 triangles ahead (8 to a
+    // 32-byte line, read in order); the vertex SLOTS of the triangle 4
+    // ahead; and the corner bytes of the triangle 2 ahead - only those whose
+    // vertex this draw has not transformed and SENT yet, i.e. that `submit`
+    // will transform, or colour for its first draw - and not one the corners between (this triangle and the
+    // next, not transformed yet) share: neighbouring triangles share edges,
+    // and without that test a third of the fetches were of a vertex the
+    // loop would have transformed by then. A miss costs a fetch, never a
+    // picture: these are hints.
+    void fetchAhead(const Geometry& g, const VIndex& vi, std::size_t ci, std::size_t end) {
+        if (ci + 24 < end) __builtin_prefetch(&vi.vert[ci + 24]);
+        if (ci + 15 <= end)
+            for (std::size_t k = ci + 12; k < ci + 15; ++k) __builtin_prefetch(&vs_[vi.vert[k]]);
+        if (ci + 9 <= end) {
+            const std::uint32_t* between = &vi.vert[ci];
+            for (std::size_t k = ci + 6; k < ci + 9; ++k) {
+                const std::uint32_t v = vi.vert[k];
+                // transformed already AND sent in this batch: nothing of it
+                // is read. Transformed but NOT sent (its first triangles were
+                // off the screen or facing away - ~12% of the colour reads in
+                // the M1's street) its colour still reads the corner when it
+                // is drawn, so its bytes come too
+                const VSlot& sl = vs_[v];
+                if (sl.stamp == drawStamp_ && sl.outStamp == batchStamp_) continue;
+                if (between[0] == v || between[1] == v || between[2] == v || between[3] == v ||
+                    between[4] == v || between[5] == v)
+                    continue;
+                const char* c = reinterpret_cast<const char*>(&g.corners[k]);
+                __builtin_prefetch(c);
+                __builtin_prefetch(c + sizeof(Corner) - 1);   // a corner may straddle two lines
+                ++statFetched_;
+            }
+        }
     }
     static constexpr std::size_t kIndexMinCorners = 64;
     bool sameCorner(const Geometry& g, std::size_t a, std::size_t b) const {
@@ -2405,6 +2458,10 @@ void gl1SetFogUnit(Renderer* r, bool unit) {
 
 void gl1SetNoLock(Renderer* r, bool off) {
     if (r) static_cast<Gl1Renderer*>(r)->setNoLock(off);
+}
+
+void gl1SetFetchAll(Renderer* r, bool all) {
+    if (r) static_cast<Gl1Renderer*>(r)->setFetchAll(all);
 }
 
 #if defined(OMK_GL1_ON_WINDOW)

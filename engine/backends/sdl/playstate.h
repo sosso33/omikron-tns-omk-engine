@@ -193,6 +193,7 @@ struct PlayState {
     bool & gl1Composite = opt.gl1Composite;
     bool & gl1FogUnit = opt.gl1FogUnit;
     bool & gl1NoLock = opt.gl1NoLock;
+    bool & gl1FetchAll = opt.gl1FetchAll;
     bool & filmsDirect = opt.filmsDirect;
     bool & showFps = opt.showFps;
     bool & worldVulkan = opt.worldVulkan;

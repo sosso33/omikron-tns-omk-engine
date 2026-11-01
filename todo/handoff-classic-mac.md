@@ -1697,6 +1697,43 @@ a software renderer, it is suspicious", 2026-10-30)**:
      batch is written to the same `out_` / `outN_` storage). Left ON by the
      reader's word ("just note this issue") while the per-vertex work goes
      on; `--gl1-no-lock` is the way out on the iMac.
+  10. **EACH VERTEX READ ONCE (the reader's "start on reading each vertex
+     once", 2026-11-01) - STEP 1, THE LOOK-AHEAD**. What the submit loop
+     already did: the vertex index (`indexFor`) gives each corner its
+     vertex, and a corner whose vertex this draw already transformed takes
+     the slot's position and outcode WITHOUT reading its 48 bytes. What it
+     still did: the look-ahead hint (`dcbt`, step 3f) brought in EVERY
+     corner's bytes two triangles ahead - 1.4 MB a 100 m street frame on
+     the iMac's 100 MHz bus, of which the loop used ~40%. Now `fetchAhead`:
+     the vertex numbers 8 triangles ahead, the slots 4 ahead, and the
+     bytes 2 ahead ONLY for a corner whose vertex has no slot stamped by
+     this draw and is not shared with the two triangles in between (one
+     test less fetched 755656 for 500622 transformed - neighbouring
+     triangles share edges). On the M1, 60 street passes: 471545 corners
+     fetched of 1116942 read (42%), 500622 transformed; the frame unchanged
+     (hints change no value; `engine: gl1 backend` green). The check now
+     asserts fetched <= transformed (+10%) and < 60% of those read - shown to
+     fail fetching every corner (1087596). `--gl1-fetch-all` /
+     `OMK_GL1_FETCH_ALL` fetches every corner as before, the iMac's A/B. NOT
+     MEASURED where it matters: the M1 has hardware prefetch and a big
+     cache; only the iMac's `gl1: submit` self time (29.2 ms at 100 m with
+     every corner fetched) says whether the bus was the limit. Both builds
+     on the stick.
+     **STEP 2, THE COLOURS (the reader's "do 2)", same day)**: MEASURED FIRST
+     (a probe on the M1's street, removed): of 789359 colour reads
+     (`colourOf`), 88% follow the same corner's transform in the same
+     triangle - its bytes already in the cache, so the colour read is NOT a
+     second memory trip (the plan's wording was wrong there); the other 12%
+     (96158) are corners whose vertex an earlier triangle transformed
+     without SENDING it (off the screen or facing away), coloured when a
+     later triangle draws them - and step 1 had stopped fetching those, so
+     on the iMac each became a miss. `fetchAhead` now skips only a vertex
+     both transformed AND sent in the current batch: 551819 fetched of
+     1116942 read (49%), 500622 transformed. The check's bound is now <= 1.2x
+     the transformed and < 60% of those read; shown to fail fetching every
+     corner (1087596). Both builds on the stick, `engine: classic build`
+     green. The iMac's A/B is unchanged: `--profile` with and without
+     `--gl1-fetch-all`, `gl1: submit` self time against 29.2 ms.
      * **the films (through GL, not `--films-direct`)**: 56-80 ms of
        `MoviesTask` a picture, ~6 pictures a second; a picture shown costs
        converted 4.9 + uploaded 3.5 + drawn and swapped 9.4 ms. QuickTime's

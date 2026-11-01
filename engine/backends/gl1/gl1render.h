@@ -33,6 +33,10 @@ void gl1SetFogUnit(Renderer* r, bool unit);
 // `--gl1-no-lock`: every batch drawn with its vertex arrays UNLOCKED, where
 // EXT_compiled_vertex_array would lock them around the draw - the A/B.
 void gl1SetNoLock(Renderer* r, bool off);
+// `--gl1-fetch-all`: every corner's bytes fetched ahead of the submit loop,
+// where only those of vertices not yet seen in their draw are by default -
+// the A/B (`OMK_GL1_FETCH_ALL` as well).
+void gl1SetFetchAll(Renderer* r, bool all);
 // THE WORLD ON THE WINDOW: the classic build's AGL context (`OMK_GL1_AGL`),
 // and the SDL build's on Mac OS X (`OMK_GL1_SDL_WINDOW`, `ppc-darwin.mk`) -
 // the world drawn into the window's own back buffer and swapped, not into a

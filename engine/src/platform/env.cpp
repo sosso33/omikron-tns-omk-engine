@@ -37,6 +37,7 @@ constexpr const char* kSwitches[] = {
     "OMK_FIGHT_REFUSE",         // the frontend refuses every fight, so a script's wait for event 2 shows (engine: fight park)
     "OMK_GL1",                  // =0: the GL1 build draws with the software reference (engine: gl1 backend)
     "OMK_GL1_COMPOSITE",        // GL1: the interface composed on the CPU instead of drawn as an overlay
+    "OMK_GL1_FETCH_ALL",        // GL1: every corner's bytes fetched ahead of the submit loop, not only a new vertex's (--gl1-fetch-all)
     "OMK_GL1_FIT_PROBE",        // =<file> GL1: the window fit's pixels read back and compared on the 60th fitted frame, the window written there (engine: gl1 window fit)
     "OMK_GL1_FOG_UNIT",         // GL1 with no colour sum: the fog on ARB_multitexture's second unit, not a second pass (--gl1-fog-unit)
     "OMK_GL1_LOCK_UNLISTED",    // GL1: EXT_compiled_vertex_array taken as offered where the driver exports it unlisted - the M1 (engine: gl1 backend)

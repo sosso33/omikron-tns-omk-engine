@@ -386,6 +386,8 @@ int PlayOptions::parse(int argc, char** argv) {
 "  --gl1-no-lock    the GL1 world drawn with its vertex arrays unlocked, not\n"
 "                   locked around each draw call by EXT_compiled_vertex_array\n"
 "                   (OMK_GL1_NO_LOCK=1)\n"
+"  --gl1-fetch-all  the GL1 submit fetches every corner's bytes ahead, not\n"
+"                   only those of vertices not yet seen (OMK_GL1_FETCH_ALL=1)\n"
 "  --films-direct   the classic Mac: QuickTime draws the boot films straight\n"
 "                   into the window, the OpenGL context set aside meanwhile\n"
 "  --letterbox      the 1.818:1 camera-mode bars, for laying a shot beside\n"
@@ -453,6 +455,7 @@ int PlayOptions::parse(int argc, char** argv) {
         else if (a == "--gl1-composite") gl1Composite = true;
         else if (a == "--gl1-fog-unit") gl1FogUnit = true;
         else if (a == "--gl1-no-lock") gl1NoLock = true;
+        else if (a == "--gl1-fetch-all") gl1FetchAll = true;
         else if (a == "--films-direct") filmsDirect = true;
         else if (a == "--world-vulkan") worldVulkan = true;
         // The frame rate, reported once a second on stdout. Off by default:
