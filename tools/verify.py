@@ -30234,9 +30234,12 @@ def c_engine_gl1_backend():
     sum's, and the second pass's (`OMK_GL1_NO_COLOUR_SUM=1`) - passes made,
     and <= 0.5% of the pixels off by > 24 (0 measured). Shown to fail with
     the pass returning at once: 20362 pixels. And a third, the fog on
-    ARB_multitexture's SECOND UNIT (`OMK_GL1_NO_COLOUR_SUM` alone; the pass
-    is `OMK_GL1_FOG_PASS` now): no second pass, the colour sum's draw calls
-    (1476 against the pass's 2472), <= 0.5% off by > 24 (0 measured).
+    ARB_multitexture's SECOND UNIT (`OMK_GL1_FOG_UNIT=1`): no second pass,
+    the colour sum's draw calls (1476 against the pass's 2472), <= 0.5% off
+    by > 24. OPT-IN since 2026-10-31: its first form (GL_BLEND on a luminance
+    ramp) drew the iMac G3's horizon as a light-blue hole; now GL_ADD of an
+    RGB ramp holding fog * a over the colour darkened by (1 - a). Shown to
+    fail with the colour NOT darkened: 6821 pixels.
     """
     import subprocess, tempfile, shutil, platform
     eng = os.path.join(ROOT, "engine")
@@ -30260,9 +30263,9 @@ def c_engine_gl1_backend():
                                       ("skip", {}, "nearest", []),
                                       ("noskip", {"OMK_GL1_NO_SKIP": "1"}, "nearest", []),
                                       ("fogsum", {}, "nearest", ["--fog-colour", "91,160,171"]),
-                                      ("fogpass", {"OMK_GL1_NO_COLOUR_SUM": "1", "OMK_GL1_FOG_PASS": "1"},
+                                      ("fogpass", {"OMK_GL1_NO_COLOUR_SUM": "1"},
                                        "nearest", ["--fog-colour", "91,160,171"]),
-                                      ("fogmt", {"OMK_GL1_NO_COLOUR_SUM": "1"}, "nearest",
+                                      ("fogmt", {"OMK_GL1_NO_COLOUR_SUM": "1", "OMK_GL1_FOG_UNIT": "1"}, "nearest",
                                        ["--fog-colour", "91,160,171"])):
             out = os.path.join(tmp, tag + ".bin")
             r = subprocess.run([binp, fr, os.path.join(ROOT, "tables"),

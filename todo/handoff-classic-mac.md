@@ -1566,6 +1566,22 @@ a software renderer, it is suspicious", 2026-10-30)**:
        appears as a blue hole again"** - the light-blue horizon of item 1
        is back with the one-pass fog, where the second pass (`8694ddd`) had
        removed it. Fog and clear colour in ANEKBAH 92 162 172, clip 100 m.
+       **FIXED THE SAME DAY (`gl1render.cpp`)**: the SECOND PASS is the
+       default again wherever there is no colour sum; the one pass is OPT-IN,
+       `--gl1-fog-unit` / `OMK_GL1_FOG_UNIT=1` (`--gl1-fog-pass` /
+       `OMK_GL1_FOG_PASS` are gone). Its form changed too, away from what the
+       Rage 128 most likely drew wrong (UNPROVEN: no iMac frame yet): GL_BLEND
+       with an env colour on a luminance ramp, and a one-coordinate texcoord
+       array, became GL_ADD (EXT_texture_env_add, in the iMac's list) of an
+       RGB ramp holding fog * i / 255 (rebuilt when the fog's colour moves)
+       over the vertex colour darkened by (1 - a), two coordinates. On the M1
+       with the sum forced off: 0 pixels off the colour sum's by > 24, the
+       sum's 1476 draw calls; `engine: gl1 backend` shown to fail with the
+       colour not darkened (6821 pixels). `engine: classic build` green; both
+       builds on the stick. NEXT ON THE iMAC: the default must show the fog
+       right again (as `8694ddd` did); then one run with `--gl1-fog-unit`
+       added says whether the GL_ADD form is right there too - only then
+       could it become the default.
      * **the films (through GL, not `--films-direct`)**: 56-80 ms of
        `MoviesTask` a picture, ~6 pictures a second; a picture shown costs
        converted 4.9 + uploaded 3.5 + drawn and swapped 9.4 ms. QuickTime's

@@ -380,9 +380,9 @@ int PlayOptions::parse(int argc, char** argv) {
 "                   todo/debug-tools.md - absent from `make release`)\n"
 "  --gl1-composite  the classic Mac's GL1: compose the frame on the CPU, not\n"
 "                   the straight present (OMK_GL1_COMPOSITE=1)\n"
-"  --gl1-fog-pass   the classic Mac's GL1 with no colour sum: the coloured\n"
-"                   fog in a second pass, not on the second texture unit\n"
-"                   (OMK_GL1_FOG_PASS=1)\n"
+"  --gl1-fog-unit   the classic Mac's GL1 with no colour sum: the coloured\n"
+"                   fog in one pass on the second texture unit, not the\n"
+"                   second pass (OMK_GL1_FOG_UNIT=1)\n"
 "  --films-direct   the classic Mac: QuickTime draws the boot films straight\n"
 "                   into the window, the OpenGL context set aside meanwhile\n"
 "  --letterbox      the 1.818:1 camera-mode bars, for laying a shot beside\n"
@@ -448,7 +448,7 @@ int PlayOptions::parse(int argc, char** argv) {
         // software reference, which is what every check is written against.
         else if (a == "--software") forceSoftware = true;
         else if (a == "--gl1-composite") gl1Composite = true;
-        else if (a == "--gl1-fog-pass") gl1FogPass = true;
+        else if (a == "--gl1-fog-unit") gl1FogUnit = true;
         else if (a == "--films-direct") filmsDirect = true;
         else if (a == "--world-vulkan") worldVulkan = true;
         // The frame rate, reported once a second on stdout. Off by default:

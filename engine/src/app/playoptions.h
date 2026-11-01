@@ -313,10 +313,11 @@ struct PlayOptions {
     // (todo/cpu-vs-original.md tier B) - a flag, as classic Mac OS has no
     // environment to set `OMK_GL1_COMPOSITE` in
     bool gl1Composite = false;
-    // ...and `--gl1-fog-pass`: on a driver with no colour sum, the coloured fog
-    // in a second pass rather than on ARB_multitexture's second unit - the A/B
-    // for a card whose second unit draws it wrong (`gl1SetFogPass`)
-    bool gl1FogPass = false;
+    // ...and `--gl1-fog-unit`: on a driver with no colour sum, the coloured fog
+    // in one pass on ARB_multitexture's second unit rather than the second
+    // pass - opt-in, the iMac G3's driver drew its first form wrong
+    // (`gl1SetFogUnit`)
+    bool gl1FogUnit = false;
     // `--films-direct`: the boot films drawn by the host's player straight
     // into the window (`Frontend::setFilmDirect`) - the classic Mac's
     // QuickTime with the OpenGL context set aside for the film

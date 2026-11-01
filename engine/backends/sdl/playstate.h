@@ -191,7 +191,7 @@ struct PlayState {
     double & speed = opt.speed;
     bool & forceSoftware = opt.forceSoftware;
     bool & gl1Composite = opt.gl1Composite;
-    bool & gl1FogPass = opt.gl1FogPass;
+    bool & gl1FogUnit = opt.gl1FogUnit;
     bool & filmsDirect = opt.filmsDirect;
     bool & showFps = opt.showFps;
     bool & worldVulkan = opt.worldVulkan;

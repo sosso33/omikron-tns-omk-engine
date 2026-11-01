@@ -25,10 +25,11 @@ Renderer* makeGl1Renderer();
 // size the original's rule gives the card's free memory (`docs/ASSETS.md` 4b).
 // Before the first texture pool.
 void gl1SetFullTextures(Renderer* r, bool full);
-// `--gl1-fog-pass`: where there is no colour sum, the coloured fog in a
-// second pass even when ARB_multitexture would put it on the second unit -
-// the A/B for a driver whose second unit draws it wrong.
-void gl1SetFogPass(Renderer* r, bool pass);
+// `--gl1-fog-unit`: where there is no colour sum, the coloured fog in ONE pass
+// on ARB_multitexture's second unit (GL_ADD) rather than the second pass -
+// opt-in, the A/B for the iMac G3, whose driver drew the first one-pass form
+// wrong (2026-10-31).
+void gl1SetFogUnit(Renderer* r, bool unit);
 // THE WORLD ON THE WINDOW: the classic build's AGL context (`OMK_GL1_AGL`),
 // and the SDL build's on Mac OS X (`OMK_GL1_SDL_WINDOW`, `ppc-darwin.mk`) -
 // the world drawn into the window's own back buffer and swapped, not into a
