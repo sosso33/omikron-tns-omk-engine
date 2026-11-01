@@ -1582,6 +1582,28 @@ a software renderer, it is suspicious", 2026-10-30)**:
        right again (as `8694ddd` did); then one run with `--gl1-fog-unit`
        added says whether the GL_ADD form is right there too - only then
        could it become the default.
+  7. **THE iMAC ON `4b74162` (the reader's `omk-out.txt`, 2026-11-01)**: the
+     development build, no `--fps`, 606 s, exit 0 - GRID, AIMPASSE, AIMPASAS,
+     ANEKBAH, area 46, ANEKBAH again, area 217. The second pass taken (`a
+     coloured fog is added in a second pass`; ~1179 fog second passes in 60
+     frames of the street). The crowd SHOWN again in ANEKBAH, HIDDEN and
+     SHOWN across the area changes. From the `sections` means (frames over
+     wall time; game frames, so a rate, not `--fps`):
+     | | frames/s | work ms | GL draw ms |
+     |---|---|---|---|
+     | AIMPASSE | 26.9 | 28 | 12.5 |
+     | ANEKBAH (195 s) | 15.7 | 63 | 28.3 |
+     | area 46 | 23.5 | 40 | 17.9 |
+     | ANEKBAH again (164 s) | 16.8 | 59 | 30.3 |
+     ANEKBAH also: present 6.2, `screens, hud` 4-6, game frame 4.3, staged
+     bodies 4.0, pump 4.0, pedestrians 3.0-3.5. Against item 6's release run
+     with the GL_BLEND one pass (~12 fps, GL 25-78 ms), this one is FASTER
+     with MORE draw calls - consistent with that GL_BLEND having sent the
+     Rage 128's driver down a slow path as well as a wrong one (a reading,
+     not measured). The slab allocator: 219 slabs at most, 81 at the end.
+     **The reader (2026-11-01): "the fog is right again"** - the second pass
+     CONFIRMED on the iMac a second time. The opt-in `--gl1-fog-unit`
+     (GL_ADD) is still untried there.
      * **the films (through GL, not `--films-direct`)**: 56-80 ms of
        `MoviesTask` a picture, ~6 pictures a second; a picture shown costs
        converted 4.9 + uploaded 3.5 + drawn and swapped 9.4 ms. QuickTime's
