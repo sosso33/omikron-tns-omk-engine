@@ -1592,15 +1592,21 @@ a software renderer, it is suspicious", 2026-10-30)**:
      | | frames/s | work ms | GL draw ms |
      |---|---|---|---|
      | AIMPASSE | 26.9 | 28 | 12.5 |
-     | ANEKBAH (195 s) | 15.7 | 63 | 28.3 |
      | area 46 | 23.5 | 40 | 17.9 |
-     | ANEKBAH again (164 s) | 16.8 | 59 | 30.3 |
-     ANEKBAH also: present 6.2, `screens, hud` 4-6, game frame 4.3, staged
-     bodies 4.0, pump 4.0, pedestrians 3.0-3.5. Against item 6's release run
-     with the GL_BLEND one pass (~12 fps, GL 25-78 ms), this one is FASTER
-     with MORE draw calls - consistent with that GL_BLEND having sent the
-     Rage 128's driver down a slow path as well as a wrong one (a reading,
-     not measured). The slab allocator: 219 slabs at most, 81 at the end.
+     | ANEKBAH at 100 m (14 s) | 8.7 | 114 | 52.0 |
+     | ANEKBAH at 50 m (163 s) | 16.5 | 60 | 29.1 |
+     | ANEKBAH again at 50 m (126 s) | 18.1 | 55 | 30.7 |
+     | ANEKBAH again at 100 m (29 s) | 12.3 | 81 | 52.4 |
+     THE READER CHANGED THE VIEW DISTANCE IN THIS RUN (the options page's
+     `Distance de clipping`): 100 m (the save) to 50 m at 206.7 s, back to
+     100 m at 539.7 s - so the clip, not the fog's form, sets the street's
+     rate: ~70% more GL draw at 100 m (52 against ~30 ms). CORRECTION: a
+     first reading of this log averaged the stays across both distances
+     (~16 frames/s) and called the run faster than item 6's GL_BLEND one
+     pass - at the same 100 m the two are alike (8.7-12.3 against ~12). At
+     50 m: present 6.2, `screens, hud` 4-6, game frame 4.3, staged bodies
+     4.0, pump 4.0, pedestrians 3.0-3.5. The slab allocator: 219 slabs at
+     most, 81 at the end.
      **The reader (2026-11-01): "the fog is right again"** - the second pass
      CONFIRMED on the iMac a second time. The opt-in `--gl1-fog-unit`
      (GL_ADD) is still untried there.
