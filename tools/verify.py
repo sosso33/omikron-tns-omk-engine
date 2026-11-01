@@ -30339,6 +30339,9 @@ def c_engine_gl1_backend():
                                       ("small", {"OMK_TEXTURE_MEMORY": "5500000"}, "nearest", []),
                                       ("skip", {}, "nearest", []),
                                       ("noskip", {"OMK_GL1_NO_SKIP": "1"}, "nearest", []),
+                                      ("lock", {"OMK_GL1_LOCK_UNLISTED": "1"}, "nearest", []),
+                                      ("nolock", {"OMK_GL1_LOCK_UNLISTED": "1", "OMK_GL1_NO_LOCK": "1"},
+                                       "nearest", []),
                                       ("fogsum", {}, "nearest", ["--fog-colour", "91,160,171"]),
                                       ("fogpass", {"OMK_GL1_NO_COLOUR_SUM": "1"},
                                        "nearest", ["--fog-colour", "91,160,171"]),
@@ -30348,7 +30351,7 @@ def c_engine_gl1_backend():
             r = subprocess.run([binp, fr, os.path.join(ROOT, "tables"),
                                 "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
                                 "--area", "0", "--stand", "1804,0,-6890,336", "--nofmv",
-                                "--frames", "130" if tag in ("skip", "noskip", "fogsum", "fogpass", "fogmt") else "60",
+                                "--frames", "130" if tag in ("skip", "noskip", "lock", "nolock", "fogsum", "fogpass", "fogmt") else "60",
                                 "--res", "640x480", "--filter", filt,
                                 "--dump", out] + extra,
                                cwd=eng, capture_output=True, text=True,
@@ -30360,8 +30363,8 @@ def c_engine_gl1_backend():
                     return (f"{tag} dump {len(raw)} bytes",), ("640x480",), \
                         "the dump must be one 640x480 RGB565 frame: " + r.stdout[-400:]
                 frames[tag] = struct.unpack("<%dH" % (640 * 480), raw)
-        if len(frames) != 10:
-            return ("no frames",), ("ten frames",), "omk-play must render all ten"
+        if len(frames) != 12:
+            return ("no frames",), ("twelve frames",), "omk-play must render all twelve"
         g, sw, bl = frames["gl1"], frames["sw"], frames["bilinear"]
         N = len(g)
         def big(x, y):
@@ -30423,10 +30426,25 @@ def c_engine_gl1_backend():
         mtDiff = sum(1 for x, y in zip(frames["fogmt"], frames["fogsum"]) if x != y and big(x, y))
         mtGot = ("on the second texture unit" in logs["fogmt"], "fog second passes" not in logs["fogmt"],
                  calls("fogmt") == calls("fogsum") != "-1", mtDiff <= N * 0.005)
+        # the VERTEX ARRAYS LOCKED around each draw call (2026-11-01,
+        # handoff-classic-mac.md 3i item 9; EXT_compiled_vertex_array, which
+        # the iMac G3's OpenGL 1.1 offers): draw calls were locked, none with
+        # `OMK_GL1_NO_LOCK`, and the frame is the unlocked one byte for byte -
+        # at 130 frames, with geometry that moves between frames drawn (the
+        # walkers posed by the renderer, and the set's moving meshes - the
+        # watchtowers, fans and signs of the motion pool), since a lock kept
+        # past its draw would hand the driver another batch's corners. The
+        # M1 exports the pair unlisted: `OMK_GL1_LOCK_UNLISTED` in both runs
+        lk = re.search(r"gl1: \.\.\.(\d+) of those draw calls with their vertices locked", logs["lock"])
+        lockN = int(lk.group(1)) if lk else 0
+        moving = len(re.findall(r"motion: mesh '[^']+' drawn by the RENDERER", logs["lock"]))
+        lockGot = (lockN > 0, "NOT used (--gl1-no-lock)" in logs["nolock"] and
+                   "vertices locked" not in logs["nolock"], frames["nolock"] == frames["lock"],
+                   moving > 0 and "walkers are posed and lit by the RENDERER" in logs["lock"])
         got = ("the world through OpenGL 1.x fixed-function" in logs["gl1"],
                g != sw, cover >= 0.99, differ <= N * 0.005,
                len(changed) >= N * 0.2, meanB <= 16.0, coverB >= 0.98, keptLater,
-               posedOn, posedAny <= N * 0.001 and posedDiff <= 8, smallGot, skipGot, fogGot, mtGot)
+               posedOn, posedAny <= N * 0.001 and posedDiff <= 8, smallGot, skipGot, fogGot, mtGot, lockGot)
         print(f"        gl1 vs software: coverage {cover:.4f}, {differ} pixels differ by >24 "
               f"({100.0 * differ / N:.2f}%); bilinear: {100.0 * len(changed) / N:.1f}% changed, "
               f"mean {meanB:.1f}, coverage {coverB:.4f}")
@@ -30437,12 +30455,15 @@ def c_engine_gl1_backend():
               f"against the whole textures")
         print(f"        runs off the screen skipped unread: {skipped} corners over 60 passes, "
               f"the frame {'identical' if skipGot[1] else 'DIFFERENT'} without the skip")
+        print(f"        vertex arrays locked: {lockN} draw calls of the street's 60 passes, the frame "
+              f"{'identical' if lockGot[2] else 'DIFFERENT'} drawn unlocked; {moving} moving set "
+              f"meshes drawn by the renderer, the walkers too")
         print(f"        coloured fog without the colour sum: {fp.group(1) if fp else 0} second passes, "
               f"{fogDiff} pixels off the colour sum's by >24; on the second unit {mtDiff}, "
               f"draw calls {calls('fogmt')} against the sum's {calls('fogsum')} and the pass's {calls('fogpass')}")
         return got, (True, True, True, True, True, True, True, True, True, True,
                      ("0.5x1", False, True, True), (True, True), (True, True, True, True),
-                     (True, True, True, True)), \
+                     (True, True, True, True), (True, True, True, True)), \
             "the world drawn by the gl1 backend; its frame not the software one; " \
             "coverage agreement >= 0.99; <= 0.5% of pixels differing by > 24; " \
             "bilinear changes >= 20% of the pixels by a mean <= 16 and keeps coverage >= 0.98; " \
@@ -30450,7 +30471,9 @@ def c_engine_gl1_backend():
             "the walkers and the player posed BY THE RENDERER, within 0.1% of the CPU-posed frame; " \
             "the original's texture size rule: 5.5 MB free -> 0.5x1 (128x256), coverage >= 0.99, " \
             "and no rule at all where the card does not answer; runs off the screen " \
-            "skipped unread and the frame byte-identical without the skip"
+            "skipped unread and the frame byte-identical without the skip; the vertex " \
+            "arrays locked around each draw call (EXT_compiled_vertex_array), the frame " \
+            "byte-identical unlocked, with moving meshes in view"
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

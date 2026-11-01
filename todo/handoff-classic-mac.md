@@ -1610,6 +1610,93 @@ a software renderer, it is suspicious", 2026-10-30)**:
      **The reader (2026-11-01): "the fog is right again"** - the second pass
      CONFIRMED on the iMac a second time. The opt-in `--gl1-fog-unit`
      (GL_ADD) is still untried there.
+  8. **THOUSANDS OF COLOURS CHANGE NOTHING (the reader, 2026-11-01, testing
+     live)**: "changing the number of colors does not seem to change
+     anything". Asked because the iMac's drawable was 8-8-8 (millions) while
+     the original ran 640x480x16; the classic build has no full screen (a
+     `NewCWindow`, its depth the desktop's; `--fullscreen` is SDL's only), so
+     the Monitors control panel is the only switch. If the log confirms
+     `the display is in thousands of colours`, fill and memory bandwidth are
+     NOT the street's limit - the time is in the geometry's path (our
+     transform or the driver's draw calls): measure with `--profile`, then
+     EXT_compiled_vertex_array (offered, unused) and `--gl1-fog-unit`.
+     **THE LOG (2026-11-01)**: `the drawable is 5-5-5 bits (alpha 1) - the
+     display is in thousands of colours`, back+depth 1200 KB (1800 in
+     millions), 6960 KB for textures. ANEKBAH at 50 m 17.5 frames/s (16.5
+     in millions), GL 23 ms (29), present 2.1 (5.5) - within the run-to-run
+     spread; at 100 m 9.4 (325 s, a longer walk than run 3's 29 s). The
+     reader is right: the depth is not the limit. ACROSS BOTH RUNS the GL
+     draw follows the TRIANGLES: 5-10 us a triangle where there are
+     thousands (10.0 and 9.8 us at ~9900 triangles a frame: 93-97 ms), and
+     a least-squares fit over the `60 passes` lines and the nearest
+     `sections` means of ~2-7 us a triangle + ~0.3 ms a draw call (noisy,
+     13-14 points a run). At 100 m a frame reaches ~9900 triangles and
+     ~13000 vertices sent, 62 draw calls (50 m: ~2000-2800, ~35). So the
+     time is in the GEOMETRY'S PATH - our transform and clip, or the Rage
+     128 driver's (no hardware T&L: the G3 transforms, clips and sets up
+     every triangle) - not the fill. Which of the two is what a `--profile`
+     capture splits (`gl1: submit` against its nested `gl1: draw call`):
+     the next run.
+  9. **THE VERTEX ARRAYS LOCKED (the reader's "do it", 2026-11-01, "be
+     careful about animations in some parts of the city, like fans")**:
+     `drawLocked` (`gl1render.cpp`) wraps each batch's `glDrawElements` in
+     `glLockArraysEXT(0, the batch's vertices)` / `glUnlockArraysEXT` where
+     EXT_compiled_vertex_array is offered (the iMac's list has it; the pair
+     looked up by name - `FindSymbol` on OS 9, `dlsym` on a host whose SDK
+     no longer declares it). A driver transforming on the CPU may then
+     transform a vertex once for all the triangles that share it (~1.9
+     corners a vertex sent in the street). THE LOCK NEVER OUTLIVES ITS DRAW:
+     every batch, the fog's second pass (its own colour array) and every
+     moving thing - the motion pool's meshes (watchtowers, fans, signs), the
+     walkers posed by the renderer - hands over fresh arrays each draw, so
+     nothing cached can be a frame old. The log: `gl1: EXT_compiled_vertex_array
+     offered - each batch's vertices locked around its draw call`, and
+     every 600 passes `...N of those draw calls with their vertices locked`.
+     `--gl1-no-lock` / `OMK_GL1_NO_LOCK` draws unlocked - the A/B. On the M1
+     (the pair exported but UNLISTED - `OMK_GL1_LOCK_UNLISTED` takes it as
+     offered): all 1476 draw calls locked, the street frame at 130
+     BYTE-IDENTICAL to the unlocked one with 33 moving set meshes and the
+     walkers drawn. `engine: gl1 backend` shown to fail with the lock never
+     taken (0 locked). NOT SHOWN TO FAIL: the identity - the M1's driver
+     ignores the lock (a lock of half the vertices left the frame identical),
+     and the emulated OS 9's OpenGL does not offer the extension; only the
+     iMac's driver uses it. NEXT ON THE iMAC: the street at 100 m with
+     `--profile omk-prof` (the split), then `--gl1-no-lock` once for the
+     A/B - and look for corrupt or frozen geometry on the fans, signs and
+     walkers. Both builds on the stick, `engine: classic build` green.
+     **THE iMAC'S CAPTURE (the reader's `omk_test_profile`, 2026-11-01)**:
+     the development build with `--profile`, millions of colours, 526 s,
+     exit 0; `EXT_compiled_vertex_array offered - each batch's vertices
+     locked`, every draw call locked. ANEKBAH at 100 m (frames 3960-6200,
+     2241 frames, `range.py` over `omkprof.read`): median frame 90 ms;
+     **`gl1: submit` 49.3 ms = 29.2 OUR OWN (self) + 20.3 IN THE DRIVER'S
+     DRAW CALLS** (43 a frame); then pump 6.4, staged 4.7, draw lists 3.7,
+     crowd 3.4, overlay compare 3.2. A frame there: ~11000 triangles looked
+     at, ~5900 drawn, ~29000 corners read (48 bytes each, ~1.4 MB on the
+     100 MHz bus), ~12000 transformed, ~8600 vertices sent, ~50 draw calls -
+     **~23 of them the fog's second pass** (1388 of 3039 in 60 passes).
+     So: OUR SIDE is the larger share (~2.6 us a triangle looked at, much
+     of it the corner reads), and HALF THE DRAW CALLS are the fog. Levers:
+     `--gl1-fog-unit` on the iMac (the 23 calls gone, if its GL_ADD form
+     draws right); `--gl1-no-lock` once (the lock's A/B - none yet); on our
+     side, reading each shared vertex once (63079 vertices under ANEKBAH's
+     139245 corners) instead of its corners. ALSO SEEN: every iMac run of
+     2026-11-01 (runs 3, 4 and this) used ~63 MB of the partition at its
+     lowest (`memory: ... used at most 62743-63108 KB`), at the END of the
+     run after several areas - against the 64 MB budget; to look at.
+     **AN ARTEFACT SINCE THE LOCK (the reader's two photos of the iMac,
+     2026-11-01, "this issue since the vertex lock implementation")**:
+     SHORT BLACK HORIZONTAL DASHES scattered over the SKY of ANEKBAH, one
+     to a few dozen pixels long, in rows - over the fogged sky and the far
+     buildings' tops, none over the near street or the walkers. (The arcs
+     across the photos are the camera's moire on the CRT, not the game.) Not
+     yet A/B'd with `--gl1-no-lock`, not yet explained. Readings to test:
+     the fog's second pass (depth GL_EQUAL) failing where the locked path
+     rounds a vertex differently from the first pass; or the driver keeping
+     a lock's transformed vertices by ARRAY ADDRESS past the unlock (every
+     batch is written to the same `out_` / `outN_` storage). Left ON by the
+     reader's word ("just note this issue") while the per-vertex work goes
+     on; `--gl1-no-lock` is the way out on the iMac.
      * **the films (through GL, not `--films-direct`)**: 56-80 ms of
        `MoviesTask` a picture, ~6 pictures a second; a picture shown costs
        converted 4.9 + uploaded 3.5 + drawn and swapped 9.4 ms. QuickTime's

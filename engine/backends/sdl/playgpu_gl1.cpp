@@ -64,6 +64,7 @@ void PlayState::gpuOpenWorldHarness() {
     if (texFilter > 0) r->setTextureFilter(texFilter);
     omk::gl1SetFullTextures(r, fullTexturesFlag);
     omk::gl1SetFogUnit(r, gl1FogUnit);
+    omk::gl1SetNoLock(r, gl1NoLock);
     if (r->init(dispW, dispH)) {
         worldVk = r;
 #if defined(OMK_GL1_ON_WINDOW)

@@ -30,6 +30,9 @@ void gl1SetFullTextures(Renderer* r, bool full);
 // opt-in, the A/B for the iMac G3, whose driver drew the first one-pass form
 // wrong (2026-10-31).
 void gl1SetFogUnit(Renderer* r, bool unit);
+// `--gl1-no-lock`: every batch drawn with its vertex arrays UNLOCKED, where
+// EXT_compiled_vertex_array would lock them around the draw - the A/B.
+void gl1SetNoLock(Renderer* r, bool off);
 // THE WORLD ON THE WINDOW: the classic build's AGL context (`OMK_GL1_AGL`),
 // and the SDL build's on Mac OS X (`OMK_GL1_SDL_WINDOW`, `ppc-darwin.mk`) -
 // the world drawn into the window's own back buffer and swapped, not into a

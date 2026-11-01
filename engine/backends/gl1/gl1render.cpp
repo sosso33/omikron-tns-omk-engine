@@ -88,6 +88,7 @@
 #  include <OpenGL/OpenGL.h>
 #  include <OpenGL/gl.h>
 #  include <OpenGL/glext.h>
+#  include <dlfcn.h>
 #else
 #  error "gl1render.cpp: CGL is Mac OS X only - another platform needs its own context"
 #endif
@@ -158,6 +159,13 @@ ActiveTextureFn findActiveTexture(bool client) {
     return reinterpret_cast<ActiveTextureFn>(
         findOpenGLSymbol(client ? "\pglClientActiveTextureARB" : "\pglActiveTextureARB"));
 }
+// EXT_compiled_vertex_array's pair (`drawLocked`) - by name too
+using LockArraysFn = void (*)(GLint, GLsizei);
+using UnlockArraysFn = void (*)();
+LockArraysFn findLockArrays() { return reinterpret_cast<LockArraysFn>(findOpenGLSymbol("\pglLockArraysEXT")); }
+UnlockArraysFn findUnlockArrays() {
+    return reinterpret_cast<UnlockArraysFn>(findOpenGLSymbol("\pglUnlockArraysEXT"));
+}
 using GlContext = AGLContext;
 GlContext currentContext() { return aglGetCurrentContext(); }
 void makeCurrent(GlContext c) { aglSetCurrentContext(c); }
@@ -167,6 +175,14 @@ void makeCurrent(GlContext c) { aglSetCurrentContext(c); }
 #  define omkSecondaryColorPointer glSecondaryColorPointer
 using ActiveTextureFn = void (*)(GLenum);
 ActiveTextureFn findActiveTexture(bool client) { return client ? glClientActiveTexture : glActiveTexture; }
+using LockArraysFn = void (*)(GLint, GLsizei);
+using UnlockArraysFn = void (*)();
+// by name: a current SDK declares the pair no more (`GL_EXT_compiled_vertex_array
+// 0` in its glext.h), while the framework still exports it
+LockArraysFn findLockArrays() { return reinterpret_cast<LockArraysFn>(dlsym(RTLD_DEFAULT, "glLockArraysEXT")); }
+UnlockArraysFn findUnlockArrays() {
+    return reinterpret_cast<UnlockArraysFn>(dlsym(RTLD_DEFAULT, "glUnlockArraysEXT"));
+}
 using GlContext = CGLContextObj;
 GlContext currentContext() { return CGLGetCurrentContext(); }
 void makeCurrent(GlContext c) { CGLSetCurrentContext(c); }
@@ -927,6 +943,7 @@ public:
             sum_[0] = sum_[1] = sum_[2] = sum_[3] = sum_[4] = 0;
             statCorners_ = statTransformed_ = statSent_ = statSkipped_ = statTieBack_ = statTrusted_ = 0;
             fogPasses_ = 0;
+            lockedDraws_ = 0;
         }
         if (passes_ == 120 || passes_ % 600 == 0)
             std::printf("gl1: 60 passes drew %ld draws in %ld draw calls, %ld of %ld triangles "
@@ -938,6 +955,9 @@ public:
                         statTrusted_, passes_);
         if ((passes_ == 120 || passes_ % 600 == 0) && fogPass_)
             std::printf("gl1: ...and %ld fog second passes (no colour sum) in those draw calls\n", fogPasses_);
+        if ((passes_ == 120 || passes_ % 600 == 0) && hasLock_)
+            std::printf("gl1: ...%ld of those draw calls with their vertices locked (EXT_compiled_vertex_array)\n",
+                        lockedDraws_);
     }
 
     // THE MIRROR ON THE CARD, as the original draws it (`docs/ASSETS.md` 4c)
@@ -1552,6 +1572,7 @@ public:
     // memory - the port's own (an enhancement); before the first pool
     void setFullTextures(bool full) { fullTextures_ = full; }
     void setFogUnit(bool unit) { fogUnit_ = unit; }
+    void setNoLock(bool off) { noLock_ = off; }
     int maxVertexLights() const override { return kPoseLights; }
     const char* name() const override { return "OpenGL 1.x fixed-function"; }
     // the texture filter alone (`Renderer::takes`)
@@ -1895,7 +1916,7 @@ private:
                 omkClientActiveTexture_(kTexUnit0);
             }
             OMK_ZONE("gl1: draw call");          // the driver's share (todo/debug-tools.md)
-            glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(idx_.size()), GL_UNSIGNED_SHORT, idx_.data());
+            drawLocked(out_.size());
             ++batches_;
             out_.clear();
         }
@@ -1904,8 +1925,10 @@ private:
             glVertexPointer(4, GL_FLOAT, stride, outN_[0].p);
             glColorPointer(4, GL_UNSIGNED_BYTE, stride, outN_[0].c);
             glTexCoordPointer(2, GL_FLOAT, stride, outN_[0].uv);
-            OMK_ZONE("gl1: draw call");
-            glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(idx_.size()), GL_UNSIGNED_SHORT, idx_.data());
+            {
+                OMK_ZONE("gl1: draw call");
+                drawLocked(outN_.size());
+            }
             ++batches_;
             if (fogPass_ && fogAny_) fogSecondPass();
             outN_.clear();
@@ -1915,6 +1938,48 @@ private:
         // the batch's vertices are gone: an index into them is no longer one
         idx_.clear();
         ++batchStamp_;
+    }
+
+    // THE BATCH DRAWN WITH ITS VERTICES LOCKED (EXT_compiled_vertex_array,
+    // offered by the iMac G3's OpenGL 1.1): the batch's arrays are locked
+    // just before its `glDrawElements` and unlocked just after, so a driver
+    // that transforms on the CPU - the Rage 128 has no hardware T&L - may
+    // transform each vertex ONCE however many triangles share it (a street
+    // frame sends ~1.9 corners a vertex), where an unlocked indexed draw lets
+    // it transform each corner as it comes. Nothing stays locked past the
+    // draw: the next batch, the fog's second pass with its own colours, a
+    // mesh moving between frames (the fans, the doors, the walkers) all hand
+    // over fresh arrays. `--gl1-no-lock` / `OMK_GL1_NO_LOCK` draws unlocked,
+    // the A/B (2026-11-01, `todo/handoff-classic-mac.md` 3i item 9).
+    void drawLocked(std::size_t verts) {
+        const bool lock = lockArrays() && verts > 0;
+        if (lock) omkLockArrays_(0, static_cast<GLsizei>(verts));
+        glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(idx_.size()), GL_UNSIGNED_SHORT, idx_.data());
+        if (lock) { omkUnlockArrays_(); ++lockedDraws_; }
+    }
+    // EXT_compiled_vertex_array usable: offered, both entry points found,
+    // not refused by `--gl1-no-lock`. Asked once, with the context current.
+    // `OMK_GL1_LOCK_UNLISTED` takes it as offered: the M1's OpenGL exports
+    // the pair but leaves the extension out of its list, and the check
+    // (`engine: gl1 backend`) needs the locked draw on the host.
+    bool lockArrays() {
+        if (!lockKnown_) {
+            lockKnown_ = true;
+            static const bool offEnv = envFlag("OMK_GL1_NO_LOCK");
+            static const bool unlisted = envFlag("OMK_GL1_LOCK_UNLISTED");
+            const char* ext = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
+            const bool offered = (ext && std::strstr(ext, "GL_EXT_compiled_vertex_array")) || unlisted;
+            if (offered) {
+                omkLockArrays_ = findLockArrays();
+                omkUnlockArrays_ = findUnlockArrays();
+            }
+            hasLock_ = offered && omkLockArrays_ && omkUnlockArrays_ && !noLock_ && !offEnv;
+            std::printf("gl1: EXT_compiled_vertex_array %s%s\n", offered ? "offered" : "not offered",
+                        hasLock_ ? " - each batch's vertices locked around its draw call"
+                        : !offered ? "" : (noLock_ || offEnv) ? " - NOT used (--gl1-no-lock)"
+                                                              : " - but its entry points are not found");
+        }
+        return hasLock_;
     }
 
     // ARB_multitexture usable: offered, and both selectors found. Asked once,
@@ -2016,7 +2081,7 @@ private:
         }
         {
             OMK_ZONE("gl1: draw call");
-            glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(idx_.size()), GL_UNSIGNED_SHORT, idx_.data());
+            drawLocked(outN_.size());
         }
         ++batches_;
         ++fogPasses_;
@@ -2123,6 +2188,10 @@ private:
     bool fogMT_ = false;         // no colour sum: the fog on the second texture unit (`fogMTUnitOn`)
     bool fogUnit_ = false;       // `--gl1-fog-unit`: the second unit, where it is there, not the second pass
     bool mtKnown_ = false, hasMT_ = false;
+    bool lockKnown_ = false, hasLock_ = false, noLock_ = false;   // `drawLocked`
+    LockArraysFn omkLockArrays_ = nullptr;
+    UnlockArraysFn omkUnlockArrays_ = nullptr;
+    long lockedDraws_ = 0;
     ActiveTextureFn omkActiveTexture_ = nullptr, omkClientActiveTexture_ = nullptr;
     GLuint fogRamp_ = 0;
     unsigned char fogRampRGB_[3]{};                                   // the fog the ramp holds
@@ -2332,6 +2401,10 @@ void gl1SetFullTextures(Renderer* r, bool full) {
 }
 void gl1SetFogUnit(Renderer* r, bool unit) {
     if (r) static_cast<Gl1Renderer*>(r)->setFogUnit(unit);
+}
+
+void gl1SetNoLock(Renderer* r, bool off) {
+    if (r) static_cast<Gl1Renderer*>(r)->setNoLock(off);
 }
 
 #if defined(OMK_GL1_ON_WINDOW)

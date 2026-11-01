@@ -39,9 +39,11 @@ constexpr const char* kSwitches[] = {
     "OMK_GL1_COMPOSITE",        // GL1: the interface composed on the CPU instead of drawn as an overlay
     "OMK_GL1_FIT_PROBE",        // =<file> GL1: the window fit's pixels read back and compared on the 60th fitted frame, the window written there (engine: gl1 window fit)
     "OMK_GL1_FOG_UNIT",         // GL1 with no colour sum: the fog on ARB_multitexture's second unit, not a second pass (--gl1-fog-unit)
+    "OMK_GL1_LOCK_UNLISTED",    // GL1: EXT_compiled_vertex_array taken as offered where the driver exports it unlisted - the M1 (engine: gl1 backend)
     "OMK_GL1_NO_CLIENT",        // GL1 on Mac OS X: GL_APPLE_client_storage left unused for the window's texture
     "OMK_GL1_NO_COLOUR_SUM",    // GL1: the colour sum taken as absent, as on an OpenGL 1.1 driver - the fog on the second unit or in a second pass (engine: gl1 backend)
     "OMK_GL1_NO_FIT",           // GL1: every scaled frame composed on the CPU again, not fitted on the card (todo/handoff-classic-mac.md 3h)
+    "OMK_GL1_NO_LOCK",          // GL1: the vertex arrays not locked around each draw call (EXT_compiled_vertex_array; --gl1-no-lock)
     "OMK_GL1_NO_SKIP",          // GL1: the whole-mesh frustum skip off, to show it changes no pixel (engine: gl1 backend)
     "OMK_GL1_OFFSCREEN",        // GL1, the SDL build on Mac OS X: the offscreen target and its readback kept, not the window's own context
     "OMK_GL1_WINDOW",           // =WxH GL1: the window opened at that size instead of the frame's - the scaled present (engine: gl1 window fit)

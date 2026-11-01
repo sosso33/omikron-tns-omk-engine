@@ -318,6 +318,10 @@ struct PlayOptions {
     // pass - opt-in, the iMac G3's driver drew its first form wrong
     // (`gl1SetFogUnit`)
     bool gl1FogUnit = false;
+    // ...and `--gl1-no-lock`: the world's vertex arrays NOT locked around each
+    // draw call where EXT_compiled_vertex_array is there - the A/B
+    // (`gl1SetNoLock`)
+    bool gl1NoLock = false;
     // `--films-direct`: the boot films drawn by the host's player straight
     // into the window (`Frontend::setFilmDirect`) - the classic Mac's
     // QuickTime with the OpenGL context set aside for the film
