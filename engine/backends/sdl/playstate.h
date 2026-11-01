@@ -778,6 +778,23 @@ struct PlayState {
     int gradeOvercast = 0;   // ...the shower's step it was built at, 0..16 (`remasterGrade`)
     std::size_t worldTexBase[2] = {0, 0};   // each slot's first index in `worldTex`
     unsigned int worldGen{};   // bumped by every `rebuildWorld`: re-bake the tie
+    // A DOOR'S TWIN (`o3de/settwin.h`): the faces each slot keeps of a mesh the
+    // other slot also carries, settled once per `worldGen`. `start` is the run's
+    // first corner in the set's buffer, `ordinal` the same corner in the mesh's
+    // own `MovingMesh::rest`, which is laid out batch by batch in the same order.
+    struct TwinRun {
+        std::uint32_t start = 0, ordinal = 0, count = 0, batch = 0;
+    };
+    struct TwinMesh {
+        int mesh = -1, other = -1;
+        long lost = 0;              // faces of this mesh that are not submitted
+        std::vector<TwinRun> keep;
+    };
+    std::vector<TwinMesh> setTwins[2];
+    unsigned int setTwinsGen = ~0u;
+    long twinFacesHeld = 0;         // this frame's, for the check
+    void settleSetTwins();
+    bool twinLive(int slot, const TwinMesh& t) const;
     Sky sky{};
     struct Shadows {
         omk::ShadowModel model{};

@@ -480,12 +480,135 @@ void PlayState::worldDrawLists() {
 }
 
 
+// A DOOR'S TWIN: which faces of a mesh both slots carry are never seen
+// (`o3de/settwin.h`), asked once per `worldGen` - the keys depend on `worldTexBase`.
+void PlayState::settleSetTwins() {
+    if (setTwinsGen == worldGen) return;
+    setTwinsGen = worldGen;
+    setTwins[0].clear();
+    setTwins[1].clear();
+    static const bool off = omk::envFlag("OMK_NO_SET_TWIN");
+    const WorldSlot& a = worldSlots[0];
+    const WorldSlot& b = worldSlots[1];
+    if (off || a.geo.corners.empty() || b.geo.corners.empty()) return;
+    const auto lower = [](std::string n) {
+        for (auto& ch : n) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+        return n;
+    };
+    std::unordered_map<std::string, int> inA;
+    for (const auto& m : a.meshes) inA.emplace(lower(m.name), m.index);
+    std::vector<std::pair<int, int>> pairs;
+    for (const auto& m : b.meshes) {
+        const auto it = inA.find(lower(m.name));
+        if (it == inA.end() || it->second < 0 ||
+            static_cast<std::size_t>(it->second) >= a.meshes.size()) continue;
+        const float* p = a.meshes[static_cast<std::size_t>(it->second)].pos;
+        // two meshes of one name elsewhere in the city are not a door's copies
+        if (std::fabs(p[0] - m.pos[0]) < 1.0f && std::fabs(p[1] - m.pos[1]) < 1.0f &&
+            std::fabs(p[2] - m.pos[2]) < 1.0f)
+            pairs.emplace_back(it->second, m.index);
+    }
+    if (pairs.empty()) return;
+    // a mesh's faces in batch order - the order `MovingMesh::rest` is laid out in
+    struct Face { omk::TwinFace f; std::uint32_t start, batch; };
+    const auto facesOf = [&](const WorldSlot& w, int slot, int mi) {
+        std::vector<Face> out;
+        const auto rest = w.restXyzOfMesh.find(mi);
+        std::size_t ordinal = 0;
+        const omk::Geometry& g = w.geo;
+        for (std::size_t bi = 0; bi < g.batches.size(); ++bi) {
+            const auto& bt = g.batches[bi];
+            const std::uint32_t key = keyOf(bt.blend, bt.cutout,
+                                            static_cast<std::uint32_t>(bt.material) +
+                                                static_cast<std::uint32_t>(worldTexBase[slot]));
+            for (std::uint32_t c = bt.start; c + 2 < bt.start + bt.count && c + 2 < g.cornerMesh.size(); c += 3) {
+                if (g.cornerMesh[c] != mi) continue;
+                Face fc{};
+                fc.start = c;
+                fc.batch = static_cast<std::uint32_t>(bi);
+                fc.f.order = key & 0x3FFFu;
+                fc.f.opaque = bt.blend == omk::Blend::Opaque && !bt.cutout;
+                for (std::size_t k = 0; k < 3; ++k) {
+                    // a mesh the CPU has placed keeps its rest beside the buffer
+                    const bool kept = rest != w.restXyzOfMesh.end() &&
+                                      3 * (ordinal + k) + 2 < rest->second.size();
+                    for (std::size_t j = 0; j < 3; ++j) {
+                        const omk::Corner& cr = g.corners[c + k];
+                        fc.f.xyz[3 * k + j] = kept ? rest->second[3 * (ordinal + k) + j]
+                                                   : (j == 0 ? cr.x : j == 1 ? cr.y : cr.z);
+                    }
+                }
+                out.push_back(fc);
+                ordinal += 3;
+            }
+        }
+        return out;
+    };
+    const auto keepOf = [](const std::vector<Face>& faces, const std::vector<std::uint8_t>& lose,
+                           int mesh, int other) {
+        TwinMesh t;
+        t.mesh = mesh;
+        t.other = other;
+        for (std::size_t i = 0; i < faces.size(); ++i) {
+            if (lose[i]) { ++t.lost; continue; }
+            const auto ordinal = static_cast<std::uint32_t>(3 * i);
+            if (!t.keep.empty() && t.keep.back().batch == faces[i].batch &&
+                t.keep.back().start + t.keep.back().count == faces[i].start &&
+                t.keep.back().ordinal + t.keep.back().count == ordinal) {
+                t.keep.back().count += 3;
+                continue;
+            }
+            t.keep.push_back({faces[i].start, ordinal, 3, faces[i].batch});
+        }
+        return t;
+    };
+    long tied = 0;
+    for (const auto& [ma, mb] : pairs) {
+        const auto fa = facesOf(a, 0, ma), fb = facesOf(b, 1, mb);
+        std::vector<omk::TwinFace> ta, tb;
+        ta.reserve(fa.size());
+        tb.reserve(fb.size());
+        for (const auto& x : fa) ta.push_back(x.f);
+        for (const auto& x : fb) tb.push_back(x.f);
+        const omk::TwinVerdict v = omk::settleTwinFaces(ta, tb);
+        if (!v.tied) continue;
+        tied += v.tied;
+        TwinMesh ka = keepOf(fa, v.loseA, ma, mb), kb = keepOf(fb, v.loseB, mb, ma);
+        omk::event("set.twin", {{"name", a.meshes[static_cast<std::size_t>(ma)].name},
+                                {"tied", v.tied}, {"lost0", ka.lost}, {"lost1", kb.lost}});
+        if (ka.lost) setTwins[0].push_back(std::move(ka));
+        if (kb.lost) setTwins[1].push_back(std::move(kb));
+    }
+    if (tied)
+        std::printf("door twins: %s and %s share %ld faces on %zu meshes; the later of each is not drawn\n",
+                    a.stem.c_str(), b.stem.c_str(), tied, pairs.size());
+}
+
+// Only while the other copy is on screen and in the same place: the moment it
+// is hidden, or one door has moved without the other, this mesh is drawn whole.
+bool PlayState::twinLive(int slot, const TwinMesh& t) const {
+    const WorldSlot& w = worldSlots[static_cast<std::size_t>(slot)];
+    const WorldSlot& o = worldSlots[static_cast<std::size_t>(1 - slot)];
+    if (!w.shown || !o.shown) return false;
+    if (t.other >= 0 && static_cast<std::size_t>(t.other) < o.meshHidden.size() &&
+        o.meshHidden[static_cast<std::size_t>(t.other)]) return false;
+    const auto mine = w.appliedPatch.find(t.mesh);
+    const auto theirs = o.appliedPatch.find(t.other);
+    if ((mine == w.appliedPatch.end()) != (theirs == o.appliedPatch.end())) return false;
+    if (mine == w.appliedPatch.end()) return true;
+    for (std::size_t k = 0; k < mine->second.size(); ++k)
+        if (std::fabs(mine->second[k] - theirs->second[k]) >= omk::kTwinCornerApart) return false;
+    return true;
+}
+
 // THE SETS' DRAW RUNS: the visible-set walk over both resident slots, at the clip distance (from `worldDrawLists`)
 void PlayState::worldDrawSetRuns(float clipReach, std::size_t& runsCulled,
                                  std::size_t& runsDrawn, std::size_t& hiddenMeshes,
                                  std::size_t& hiddenDrawn, std::size_t& movingCulled,
                                  std::size_t& movingDrawn) {
     omk::Renderer& world = *world_;
+    settleSetTwins();
+    twinFacesHeld = 0;
     for (int slot = 0; slot < 2; ++slot) {
         const WorldSlot& w = worldSlots[static_cast<std::size_t>(slot)];
         // loaded and solid, but not in the RENDER list (state 1)
@@ -527,6 +650,18 @@ void PlayState::worldDrawSetRuns(float clipReach, std::size_t& runsCulled,
         // Astaroth's souls): the drawable mask `flags & 0x800043` skips it
         for (std::size_t mi = 0; mi < w.meshHidden.size() && mi < vis.size(); ++mi)
             if (w.meshHidden[mi]) vis[mi] = 0;
+        // ...and a door's twin: drawn below, without the faces its copy in the
+        // other slot takes
+        static std::vector<const TwinMesh*> twinsNow;
+        twinsNow.clear();
+        for (const TwinMesh& t : setTwins[slot])
+            if (t.mesh >= 0 && static_cast<std::size_t>(t.mesh) < vis.size() && twinLive(slot, t))
+                twinsNow.push_back(&t);
+        const auto isTwinNow = [&](int mi) {
+            for (const TwinMesh* t : twinsNow) if (t->mesh == mi) return true;
+            return false;
+        };
+        for (const TwinMesh* t : twinsNow) vis[static_cast<std::size_t>(t->mesh)] = 0;
         const auto visible = [&](std::int32_t mi) -> bool {
             if (mi < 0 || static_cast<std::size_t>(mi) >= w.meshes.size()) return true;
             std::uint8_t& v = vis[static_cast<std::size_t>(mi)];
@@ -600,6 +735,7 @@ void PlayState::worldDrawSetRuns(float clipReach, std::size_t& runsCulled,
         for (const auto& kv : w.moving) {
             if (kv.first >= 0 && static_cast<std::size_t>(kv.first) < w.meshHidden.size() &&
                 w.meshHidden[static_cast<std::size_t>(kv.first)]) continue;   // flag 2
+            if (isTwinNow(kv.first)) continue;
             const WorldSlot::MovingMesh& mm = kv.second;
             const float dx = mm.at[0] - view.cam.eye[0], dy = mm.at[1] - view.cam.eye[1],
                         dz = mm.at[2] - view.cam.eye[2];
@@ -615,7 +751,34 @@ void PlayState::worldDrawSetRuns(float clipReach, std::size_t& runsCulled,
                 draws.back().meshPoses = 1;
             }
         }
+        // ...and the door twins, only the faces they keep. Set apart from the
+        // walk above by `vis` and `isTwinNow`, under its own two tests.
+        for (const TwinMesh* t : twinsNow) {
+            const auto mit = w.moving.find(t->mesh);
+            const bool moving = mit != w.moving.end();
+            const omk::Mesh& m = w.meshes[static_cast<std::size_t>(t->mesh)];
+            const float* at = moving ? mit->second.at : m.pos;
+            const float radius = moving ? mit->second.reach : m.radius;
+            const float dx = at[0] - view.cam.eye[0], dy = at[1] - view.cam.eye[1],
+                        dz = at[2] - view.cam.eye[2];
+            const float reach = radius + clipReach;
+            if (!(reach * reach > dx * dx + dy * dy + dz * dz) || outsideView(at, radius, false)) continue;
+            twinFacesHeld += t->lost;
+            for (const TwinRun& r : t->keep) {
+                const auto& b = w.geo.batches[r.batch];
+                const std::uint32_t key = keyOf(b.blend, b.cutout,
+                                                static_cast<std::uint32_t>(b.material) + texBase);
+                if (moving) {
+                    draws.push_back({key, &mit->second.rest, r.ordinal, r.count, b.blend, b.cutout});
+                    draws.back().meshPose = mit->second.affine;
+                    draws.back().meshPoses = 1;
+                } else {
+                    draws.push_back({key, &w.geo, r.start, r.count, b.blend, b.cutout});
+                }
+            }
+        }
     }
+    if (twinFacesHeld) omk::event("set.twin.held", {{"frame", frameNo}, {"faces", twinFacesHeld}});
 }
 
 // THE CHARACTER SHADOWS, option row 5's classic arm: the shipped quad under a fixed set of bones (`Actor_DrawShadow`) (from `worldDrawLists`)

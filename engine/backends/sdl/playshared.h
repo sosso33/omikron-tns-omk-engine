@@ -45,6 +45,7 @@
 #include "o3de/camobstruct.h"
 #include "o3de/daynight.h"
 #include "o3de/geom3do.h"
+#include "o3de/settwin.h"
 #include "o3de/greybank.h"
 #include "o3de/weather.h"
 #include "script/linesync.h"

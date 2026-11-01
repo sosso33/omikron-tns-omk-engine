@@ -1116,6 +1116,37 @@ frame driving the face, through the same data path the browser app uses:
   match put the later face in front and drew the wrong advert on Anekbah's
   billboards — see CLAUDE.md section 6.
 
+* **A door exists twice, and the two copies are lit differently (2026-11-01).**
+  A reader: *flickering on many doors when they are opening*, most restaurants
+  in Anekbah. A city's set and the interior behind a door each carry the door's
+  leaves: `Ported26` and `Porteg26` are in `Anekbah.3DO` and in `Aresto.3DO`, at
+  one place, moved by one path in both slots while both are shown (the slot only
+  appears when the door starts, which is why this is only seen while it opens).
+  `tools/door_twins.cpp` over Anekbah's interiors: **86 meshes, 931 faces, 73 of
+  the meshes lit differently**. Those 73 are the restaurants, the halls and the
+  airlocks; the 13 lit alike (the pharmacies, the bank, the bookshop, the armoury,
+  the hospital) fight just the same with nothing to see. `AToit`, the rooftops, is
+  apart: 128 meshes and 8987 faces shared with the city.
+
+  The copies' corners differ by the exporter's rounding, about 0.001. So they are
+  ties under the engine's strict test on its quantised buffer and the first drawn
+  keeps the pixel, and this repo's software reference agrees through `kDepthTie`.
+  They are not ties on a 32-bit depth buffer: Vulkan fought over them, 13000
+  flickering pixels over one opening against 1000 on the software reference, from
+  the camera's own motion. GLES's 16-bit depth quantises as the engine's does and
+  **did not show it** (4379 before, 4228 after, over a longer stretch). `DepthTie`
+  (`o3de/depthtie.h`) works inside one geometry and cannot see across two.
+
+  **The fix is in the shared draw list, so it needs no backend's cooperation**
+  (`o3de/settwin.h`, `PlayState::settleSetTwins`): a face of a mesh of one name at
+  one place, on the same corners in the same winding as a face of the other slot,
+  is decided by the two draws' sort keys, and the later one is not submitted. It
+  is per FACE, since two sets number their materials differently and `Porteg30`
+  has one corner 0.8 off, which is no tie. It holds only while the other copy is
+  shown, unhidden and in the same place. RECONSTRUCTION in one respect: the
+  engine draws both and lets its buffer decide, and which z-buffer depth it ran on
+  was not read from the binary. `verify.py: engine: door twin`.
+
 * **Coincident faces are common, and their tie-break is now known.** ANEKBAH
   carries **189** face groups whose world positions agree to four decimals,
   **18** of them pairing different materials with completely different UVs — two adverts printed on

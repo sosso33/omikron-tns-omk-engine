@@ -22626,6 +22626,83 @@ def c_engine_tuto_camera():
            ("AREA 222's tutorial shots 4290/4291/4292, each raised by the pelvis "
             "lift when resolved against the subject the follow camera uses")
 
+def c_engine_door_twin():
+    r"""`engine/`: a door's two copies do not fight while it opens.
+
+    A reader, 2026-11-01: *"there is an flickering issue on many doors when they
+    are opening. I think it is a vulkan-related issue"*. A city's set and the
+    interior behind a door each carry the door's leaves (`Ported26` is in
+    `Anekbah.3DO` and `Aresto.3DO`), at the same place, moved by the same path
+    while both sets are shown, baked with different light. The corners differ by
+    the exporter's rounding, so a depth buffer as fine as Vulkan's decides pixel
+    by pixel. `DepthTie` works inside one geometry and cannot see it.
+
+    Three things: the probe's reading of the files; the viewer settling the same
+    faces and holding them back (`set.twin`, `set.twin.held`); and the picture on
+    the backend that showed it, as pixels that stand out from both neighbouring
+    frames while those two agree. On a machine without Vulkan the picture is
+    skipped, since GLES's 16-bit depth never showed the fault.
+    """
+    import subprocess, tempfile, shutil, array
+    fr = omkpaths.data_root()
+    if not os.path.isdir(fr):
+        return ("no data",), ("data",), "needs the shipped tree"
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/door_twins", "play"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "door_twins")
+    play = os.path.join(eng, "build", "omk-play")
+    if b.returncode != 0 or not os.path.exists(binp) or not os.path.exists(play):
+        return ("build failed",), ("built",), "engine/ must build"
+    dec = os.path.join(fr, "MESHES", "DECORS")
+    r = subprocess.run([binp, os.path.join(dec, "Anekbah.3DO"), os.path.join(dec, "Aresto.3DO")],
+                       capture_output=True, text=True)
+    rows = dict((m.group(1), (int(m.group(2)), m.group(3))) for m in
+                re.finditer(r"^(\S+)\s+tied\s+(\d+) of \S+\s+lit (\w+)", r.stdout, re.M))
+    tmp = tempfile.mkdtemp(prefix="omk-twin-")
+    try:
+        w, h = 800, 600
+        run = subprocess.run([play, fr, os.path.join(ROOT, "tables"),
+                              "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+                              "--area", "0", "--stand", "6465,0,399,90", "--hold", "k200*90",
+                              "--frames", "84", "--nodelay", "--no-crowd", "--vulkan",
+                              "--res", "%dx%d" % (w, h), "--snaps", tmp, "--snap-every", "1"],
+                             capture_output=True, text=True,
+                             env=dict(os.environ, OMK_HIDDEN_WINDOW="1", OMK_EVENTS="1"))
+        evs = _events(run.stdout)
+        settled = sorted((e["name"], e["tied"], e["lost0"], e["lost1"])
+                         for n, e in evs if n == "set.twin")
+        held = [int(e["faces"]) for n, e in evs if n == "set.twin.held"]
+        vulkan = "renderer: VULKAN" in run.stdout
+        spikes = 0
+        if vulkan:
+            def luma(n):
+                a = array.array("H")
+                with open(os.path.join(tmp, "snap-%d.bin" % n), "rb") as f:
+                    a.frombytes(f.read())
+                out = []
+                for y in range(50, 500):
+                    for v in a[y * w + 180:y * w + 620]:
+                        out.append(((v >> 11 & 31) * 8 + (v >> 5 & 63) * 4 + (v & 31) * 8) // 3)
+                return out
+            f0, f1 = luma(54), luma(55)
+            for n in range(56, 81):
+                f2 = luma(n)
+                for p, q, s in zip(f0, f1, f2):
+                    if abs(q - p) > 40 and abs(q - s) > 40 and abs(s - p) < 20:
+                        spikes += 1
+                f0, f1 = f1, f2
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return (rows.get("Ported26"), rows.get("Porteg26"), tuple(settled),
+            len(held) > 30, max(held) if held else 0, spikes < 3000), \
+           ((6, "differently"), (6, "differently"),
+            (("Ported26", "6", "0", "6"), ("Porteg26", "6", "0", "6")),
+            True, 12, True), \
+           ("the restaurant door's copies in the files; what the viewer settled; held "
+            "on >30 frames, 12 faces; fewer than 3000 flickering pixels on Vulkan over "
+            "the opening (%d here, ~13000 with OMK_NO_SET_TWIN=1)" % spikes)
+
 def c_engine_shop_door():
     r"""`engine/`: the interior's OWN door opens, so you can walk back out.
 
@@ -51055,10 +51132,12 @@ def c_licence_headers():
     # 694: + `engine/backends/remaster/playremaster_rain.cpp` (the rain in 3D)
     # 696: + `engine/backends/classic/launchguard.{h,cpp}` (Mac OS 9's launch
     # guard, `todo/handoff-classic-mac.md` 3i)
+    # 700: + `engine/src/o3de/settwin.{h,cpp}`, `engine/tools/door_twins.cpp` (a
+    # door's two copies, `engine: door twin`).
     # 697: + `engine/backends/classic/classic_alloc.cpp` (the classic build's
     # slab allocator under `malloc`, the same handoff's step 3)
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (697, [], 10, []), \
+           (700, [], 10, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -53748,6 +53827,7 @@ SLOW = [
     ("engine: vita bench", c_engine_vita_bench, "todo/vita-port.md 0; backends/vita/bench_main.cpp"),
     ("engine: gles backend", c_engine_gles_backend, "todo/vita-port.md 0; backends/gles/glesrender.cpp"),
     ("engine: gles state cache", c_engine_gles_state_cache, "todo/optimization.md 17; backends/gles/glesrender.cpp"),
+    ("engine: door twin", c_engine_door_twin, "ASSETS 4b; o3de/settwin.h"),
     ("engine: tie census", c_engine_tie_census, "todo/optimization.md 27; o3de/depthtie.h"),
     ("engine: geometry release", c_engine_geometry_release, "todo/optimization.md 26; o3de/geom3do.h"),
     ("engine: gles pose", c_engine_gles_pose, "todo/gpu-skinning.md 1; backends/gles/glesrender.cpp"),
