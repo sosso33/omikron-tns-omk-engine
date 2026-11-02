@@ -37,10 +37,6 @@ void gl1SetNoLock(Renderer* r, bool off);
 // where there is none a second pass) instead of OpenGL's linear fog on the
 // card - the original's table fog, the default since 2026-11-02. The A/B.
 void gl1SetCpuFog(Renderer* r, bool cpu);
-// `--gl1-fetch-all`: every corner's bytes fetched ahead of the submit loop,
-// where only those of vertices not yet seen in their draw are by default -
-// the A/B (`OMK_GL1_FETCH_ALL` as well).
-void gl1SetFetchAll(Renderer* r, bool all);
 // THE WORLD ON THE WINDOW: the classic build's AGL context (`OMK_GL1_AGL`),
 // and the SDL build's on Mac OS X (`OMK_GL1_SDL_WINDOW`, `ppc-darwin.mk`) -
 // the world drawn into the window's own back buffer and swapped, not into a

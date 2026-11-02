@@ -30444,18 +30444,6 @@ def c_engine_gl1_backend():
         lk = re.search(r"gl1: \.\.\.(\d+) of those draw calls with their vertices locked", logs["lock"])
         lockN = int(lk.group(1)) if lk else 0
         moving = len(re.findall(r"motion: mesh '[^']+' drawn by the RENDERER", logs["lock"]))
-        # ONLY A NEW VERTEX'S CORNER FETCHED AHEAD (2026-11-01, handoff-
-        # classic-mac.md 3i item 10): with the vertex index, the submit loop's
-        # look-ahead brings in the bytes of a corner whose vertex its draw has
-        # not transformed and sent yet (step 2: a transformed vertex not yet
-        # sent is still coloured from its corner, ~12% of the colour reads) -
-        # about the corners transformed, well under the corners read (the
-        # iMac's 100 m street: ~12000 of ~29000)
-        cs = re.search(r"; (\d+) corners, (\d+) transformed", logs["skip"])
-        fe = re.search(r"gl1: \.\.\.(\d+) corners' bytes fetched ahead", logs["skip"])
-        cornersN, transN = (int(cs.group(1)), int(cs.group(2))) if cs else (0, 0)
-        fetchedN = int(fe.group(1)) if fe else -1
-        fetchGot = (cornersN > 0 and 0 < fetchedN <= transN * 1.2, fetchedN < cornersN * 0.6)
         # THE FOG ON THE CARD (2026-11-02, handoff-classic-mac.md 3i item
         # 12): OpenGL's linear fog from the eye depth - the original's table
         # fog - the default; the picture the CPU colour sum's (`fogsum`,
@@ -30480,7 +30468,7 @@ def c_engine_gl1_backend():
         got = ("the world through OpenGL 1.x fixed-function" in logs["gl1"],
                g != sw, cover >= 0.99, differ <= N * 0.005,
                len(changed) >= N * 0.2, meanB <= 16.0, coverB >= 0.98, keptLater,
-               posedOn, posedAny <= N * 0.001 and posedDiff <= 8, smallGot, skipGot, fogGot, mtGot, lockGot, fetchGot, cardGot)
+               posedOn, posedAny <= N * 0.001 and posedDiff <= 8, smallGot, skipGot, fogGot, mtGot, lockGot, cardGot)
         print(f"        gl1 vs software: coverage {cover:.4f}, {differ} pixels differ by >24 "
               f"({100.0 * differ / N:.2f}%); bilinear: {100.0 * len(changed) / N:.1f}% changed, "
               f"mean {meanB:.1f}, coverage {coverB:.4f}")
@@ -30493,7 +30481,6 @@ def c_engine_gl1_backend():
               f"the frame {'identical' if skipGot[1] else 'DIFFERENT'} without the skip")
         print(f"        the fog on the card: {cardDiff} pixels off the CPU colour sum's by >8, "
               f"{cardNoSum} without a colour sum; draw calls {calls('fogcard')} against {calls('fogsum')}")
-        print(f"        fetched ahead: {fetchedN} corners of {cornersN} read, {transN} transformed")
         print(f"        vertex arrays locked: {lockN} draw calls of the street's 60 passes, the frame "
               f"{'identical' if lockGot[2] else 'DIFFERENT'} drawn unlocked; {moving} moving set "
               f"meshes drawn by the renderer, the walkers too")
@@ -30502,7 +30489,7 @@ def c_engine_gl1_backend():
               f"draw calls {calls('fogmt')} against the sum's {calls('fogsum')} and the pass's {calls('fogpass')}")
         return got, (True, True, True, True, True, True, True, True, True, True,
                      ("0.5x1", False, True, True), (True, True), (True, True, True, True),
-                     (True, True, True, True), (True, True, True, True), (True, True),
+                     (True, True, True, True), (True, True, True, True),
                      (True, True, True, True)), \
             "the world drawn by the gl1 backend; its frame not the software one; " \
             "coverage agreement >= 0.99; <= 0.5% of pixels differing by > 24; " \
@@ -30513,9 +30500,7 @@ def c_engine_gl1_backend():
             "and no rule at all where the card does not answer; runs off the screen " \
             "skipped unread and the frame byte-identical without the skip; the vertex " \
             "arrays locked around each draw call (EXT_compiled_vertex_array), the frame " \
-            "byte-identical unlocked, with moving meshes in view; only the corners of " \
-            "vertices not yet transformed and sent fetched ahead (<= 1.2x the transformed, " \
-            "< 60% of those read); the fog on the card, the CPU colour sum's picture within " \
+            "byte-identical unlocked, with moving meshes in view; the fog on the card, the CPU colour sum's picture within " \
             "one step on all but 0.5%, no second pass without a colour sum, the same draw calls"
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

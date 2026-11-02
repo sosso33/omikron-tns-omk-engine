@@ -1839,6 +1839,14 @@ a software renderer, it is suspicious", 2026-10-30)**:
      unplugged - NOT yet copied. NEXT ON THE iMAC: the street at 100 m with
      `--profile`: the fog right, no second passes in the `60 passes` lines,
      the draw calls (46 before, ~23 of them fog), the frame time.
+     **STEPS 1-2 REMOVED (the reader's "remove steps 1 and 2", same day)**:
+     `fetchAhead`, `--gl1-fetch-all` / `OMK_GL1_FETCH_ALL` and the check's
+     fetch bound are gone; the submit loop's look-ahead is again every
+     corner of the triangle two ahead, as before `02b559a` (a `git revert`
+     conflicted with the card fog's neighbouring lines, so by hand; the code
+     matches `02b559a^`'s but for a comment naming item 10's measurement).
+     `engine: gl1 backend` green, both classic builds fresh and `engine:
+     classic build` ok; the stick still unplugged.
      * **the films (through GL, not `--films-direct`)**: 56-80 ms of
        `MoviesTask` a picture, ~6 pictures a second; a picture shown costs
        converted 4.9 + uploaded 3.5 + drawn and swapped 9.4 ms. QuickTime's
