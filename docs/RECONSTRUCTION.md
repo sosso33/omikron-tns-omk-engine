@@ -106,7 +106,7 @@ they are thin but they are the game's own code.
 ### Phase 1 — the script VM *(136 functions, high value, best harness)*
 
 **Done.** 127 of the 153 opcodes have a mnemonic; 114 of the 119 the world
-scripts exercise are named (112 of 117 since 2026-10-11 - ops 1 and 2 were op 142's phantom) — **99.97% of all executed instructions** — and the
+scripts exercise are named (112 of 117 since 2026-10-11 - ops 1 and 2 were op 142's phantom; **115 of 117, 99.99%**, once 134/135/137 were named the same day - recount of 2026-11-02, `docs/SCRIPT_VM.md` "Naming the opcodes") — **99.97% of all executed instructions** — and the
 five others are read with a recorded reason not to name (17 instructions in
 all). The 26 opcodes with no mnemonic are the ones the shipped scripts never
 execute; naming them is archaeology on dead code and can wait. This is

@@ -4,15 +4,16 @@
 recognise them by their SYMPTOM - which is never the error message you would
 expect, because in each of them every command succeeds.
 
-Each one cost real time here, and each is in `CLAUDE.md` §1 or §5 with the
-story. What they share: **a command exits 0 and did not do what you think.**
+Each one cost real time here, and each is in `CLAUDE.md` §1 as a one-line
+trap, and in `docs/PRACTICE.md` §1 or §5 with the story. What they share: **a command exits 0 and did not do what you think.**
 The defence is the same every time - assert the effect, not the exit status.
 
 ## Read
 
-* `CLAUDE.md` §1, "Known extraction traps": the bullets on a mutation that
-  does not apply, the stale object file, and `make`'s whole second.
-* `CLAUDE.md` §5, the box that begins "Passing arguments from a shell
+* `docs/PRACTICE.md` §1, "Known extraction traps": the bullet "A mutation
+  that does not apply passes, and a stale object file passes", with `make`'s
+  whole second. `grep -n` it - never read the file whole.
+* `docs/PRACTICE.md` §5, the box that begins "Passing arguments from a shell
   variable: this is zsh".
 
 ## Trap 1 — the flags that were one argument

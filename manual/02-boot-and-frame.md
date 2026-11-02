@@ -11,7 +11,7 @@ plays three MPEG films (`EIDOS`, `QUANTIC` and `GAME`), loads a scene file
 called `aventure.scx`, puts up a splash bitmap, and enters a loop that runs one
 frame at a time until you quit.
 
-Three things about that are worth knowing before anything else.
+Four things about that are worth knowing before anything else.
 
 **There is no "menu state".** The start menu is not a special mode the engine
 enters. `aventure.scx` is the game's global library of effect sprites and
@@ -27,11 +27,16 @@ of a single division, and it is why every duration in this repository is
 quoted in frames.
 
 One consequence is a gameplay fact rather than an implementation detail: the
-delta is **capped at 3.0**, so below 10 fps the game slows down rather than
-taking bigger steps. A replica that integrates real elapsed time on a slow
-machine is not being more accurate — it is being wrong. That rule turned out
-to matter in practice: the port's first console runs on a PS Vita, at a few
-frames a second, "shook" until the port adopted it.
+delta is **capped at three frames**, so below 10 fps the game slows down rather
+than taking bigger steps. A replica that integrates real elapsed time on a slow
+machine is not being more accurate — it is being wrong. That rule mattered in
+practice: the port's first console runs, at a few frames a second, "shook"
+until the port adopted it.
+
+**While someone is speaking, the voice is the clock.** During a conversation
+line the engine stops trusting the wall clock and steps the world by how far
+the line's recording has played — with no cap — so a face, a camera and a
+cutscene cannot drift from the voice however slow the machine.
 
 **And Escape is not a key the game binds.** The loop reads it by hand, one
 instruction before the frame, and opens the pause screen directly. Pausing
@@ -66,23 +71,24 @@ subsystem that longjmps out lands there, shuts down, and puts up
 which is why nothing inside it checks a return value (`docs/BOOT.md` §1).
 
 `aventure.scx` is the game's **global effect and sound library** — 20 effect
-sprites and 53 sounds — and not a menu (`engine/README.md`, the boot walk; the
-correction is logged in `docs/RECONSTRUCTION.md` on 2026-08-31). The start
-menu is `ui.open(29, …)` in AREA 118's own startup script, where that script
-parks until the screen answers (`CLAUDE.md` §2, on `engine/`; chapter 5) —
-which is why the port reaches the menu with nothing hand-wired.
+sprites and 53 sounds — and not a menu (`docs/BOOT.md` §1, the correction of
+2026-09-29, which supersedes the paragraph above it there). The start menu is
+`ui.open(29, …)` reached by AREA 118's own `+4` startup script, which parks
+until the screen answers (`verify.py: startup scripts`, `menu open site`;
+chapters 4 and 5) — which is why the port reaches the menu with nothing
+hand-wired.
 
 ### The three films, and the two different skips
 
 `gamedata/FLIS/` holds exactly three files, and they are plain MPEG-1 Program
-Streams — there is nothing proprietary to decode (`docs/BOOT.md` §2). Each is
-320×240 at 29.97 fps with one 44 100 Hz audio stream (`engine: movies`):
+Streams — there is nothing proprietary to decode (`docs/BOOT.md` §2;
+`docs/PORTING.md` A8). Each carries one 44 100 Hz audio stream (A5):
 
-| file | bytes | dated | length (`engine: movies`) |
-|---|---|---|---|
-| `EIDOS.MPG` | 5 714 716 | 28 Sept 1999 | 13 s |
-| `QUANTIC.MPG` | 10 265 108 | 28 Sept 1999 | 23 s |
-| `GAME.MPG` | 46 359 152 | 5 Oct 1999 | 107 s |
+| file | bytes | dated |
+|---|---|---|
+| `EIDOS.MPG` | 5 714 716 | 28 Sept 1999 |
+| `QUANTIC.MPG` | 10 265 108 | 28 Sept 1999 |
+| `GAME.MPG` | 46 359 152 | 5 Oct 1999 |
 
 They are also the first thing in the game that cannot work on a
 case-sensitive filesystem, before any asset and before any archive: the
@@ -118,8 +124,10 @@ stopped one film is read again by the next, so holding a key down skips all
 three by a different route from the latch.
 
 `Movie_Play` itself (0x0043B4E0) is **not read**: which API decodes and what
-its eight parameters are is untraced. Nothing needs it — a replica hands three
-MPEG-1 files to a decoder.
+its eight parameters are is untraced (`docs/BOOT.md` §2). The import table
+names DirectShow's `CoCreateInstance` and MCI's `mciSendCommandA`, and the
+image carries no MPEG decoder (`docs/PORTING.md` A8) — the original handed the
+files to the OS.
 
 ### `Game_RunLoop` — a Win32 idle loop, and what gates a frame
 
@@ -170,12 +178,12 @@ menu and the save screen.
 
 **What the pause flag does is force the frame delta to 0.0, and that is all**:
 every subsystem still runs, on nothing. The sound is a separate mechanism:
-screen 31's open callback calls the routine that suspends every buffer in the
-sound bank and three more suspend routines, and its close calls their partners
-(`docs/UI.md`, "Which screens stop the world"). *Quitter le jeu* on it does
-**not** quit the program: its *Oui* sets a request that the next script pump
-serves by tearing the session down and running `Game_NewGame`, which walks
-back out through AREA 118 to the start menu.
+screen 31's open and close callbacks suspend and resume it (`docs/UI.md`,
+"Which screens stop the world"). *Quitter le jeu* on it does **not** quit the
+program: its *Oui* sets a request that the next script pump serves by tearing
+the session down and running `Game_NewGame`, which walks back out through AREA
+118 to the start menu. That is also the only way the game loads mid-session —
+quit, then *Charger* on the start menu (§3h).
 
 ### `Input_Poll`'s own rules
 
@@ -188,9 +196,9 @@ without the first rule left Shift would reach no binding at all.
 A joystick binding code is a byte offset into `DIJOYSTATE` — the X axis at 0,
 Y at 4, button *k* at 48 + *k* — and the axes are **hardwired** to the first
 four slots, compared against a threshold that no instruction stores to, over a
-range of −1000..1000, with no dead zone set by the engine. This section is
-`engine: input poll`'s docstring and `engine/src/input/bindings.h`; the check
-asserts sixteen cases.
+range of −1000..1000, with no dead zone set by the engine (`docs/UI.md` §3c,
+corrected 2026-09-29; `verify.py: engine: input poll`;
+`engine/src/input/bindings.h`).
 
 ### `Game_Frame`, and where "one frame" comes from
 
@@ -215,16 +223,30 @@ ambient-effect periods, an object program's own clock. An ambient cadence once
 read as *seconds* ran a whole city 30× too slow, and that is how this constant
 was found from the other end (`docs/PORTING.md` A7).
 
+Note the fps it divides by is the **smoothed** one: each frame's interval is
+averaged with the last, `(prev + raw) >> 1`, in integer milliseconds, so a
+hitch is spread over the next few frames rather than taken whole; the raw
+interval feeds only the fps readout (`todo/drift-audit.md` T6).
+
 **The clamp is a gameplay fact, not a guard.** At 3.0 the step is at most three
 frames, a tenth of a second, so below 10 fps the game slows down.
 
 Cases 1..4 are fixed deltas read as immediates — frame-step and slow-motion
-modes. Three overrides sit after the switch: a forced delta (shipped off), a
-sync path where the delta becomes the advance of an **external clock** rather
-than the wall clock — whatever drives it pulls the simulation along, which is
-how a cutscene cannot drift from its soundtrack — and the pause, which forces
-the delta to **0.0** and is what the function returns for `Game_RunLoop` to
-gate Escape on.
+modes. Three overrides sit after the switch (`docs/BOOT.md` §4):
+
+* **a forced delta**, `flt_4C30E8`, which ships as −1.0, i.e. off;
+* **the line sync** — read 2026-10-06 (`todo/drift-audit.md` T2). While
+  `sub_42CC10` reports a conversation line loaded (the morph player's line
+  length is non-zero) on this frame *and* the last, the delta is replaced by
+  the advance of `sub_42BC30`, the line's voice position in frames of 30:
+  `dword_4EA844 * g_MorphFps * 0.25 / dword_4EA828`. On the first such frame
+  the anchor `flt_4E9704` takes the clock; on each one after, the anchor
+  advances by the previous delta and the delta becomes
+  `clock − anchor + delta`, or 0 when that is not positive. **This path has no
+  three-frame clamp**: the simulation catches up with the voice at any frame
+  rate;
+* **the pause**, which forces the delta to **0.0** and is what the function
+  returns for `Game_RunLoop` to gate Escape on.
 
 The first half of the function is shorter: re-baseline the timers if resuming,
 poll the input, compute the **edge-filtered** input word `a & (a ^ (prev &
@@ -237,6 +259,7 @@ prev2))`, and call `Game_Tick()`.
 | `flt_4BC1F4` | 3.0 | the clamp |
 | `flt_4C30D8` | 1.0 | the delta as shipped, i.e. 30 fps |
 | `flt_4C30E8` | −1.0 | the forced-delta override, off |
+| `flt_4C30E4` | −1.0 | a free-running accumulator, off; wraps past `flt_4BC208` = 10000.0 |
 
 ### What the port does with all this
 
@@ -244,110 +267,105 @@ prev2))`, and call `Game_Tick()`.
 announcement stream matches a capture of the original **42 events of 42, in
 order, from a cold start** (`engine: boot`, against `traces/intro.log`) —
 which is what makes "it boots" a measurement rather than a screenshot
-(chapter 12).
+(chapter 12). The viewer opens its window, plays the three films, then runs
+`Game_Start("aventure.scx")`, reading that file once for both the runtime and
+the sprites; area 118 and `Grid.SCX` still load before the window
+(`docs/BOOT.md` §1, the note of 2026-10-10).
 
-**The films, on the desktop.** They are decoded by a **vendored** copy of
-pl_mpeg (MIT), which is not a port of anything: the original handed the files
-to DirectShow and MCI, and its import table says so (`engine: movies`). Their
-44 100 Hz sound goes straight to the device, because the game's own primary
-buffer is 22 050 Hz and the films never went through it; routing them through
-the ported audio path would be wrong about both the rate and the route
-(`docs/PORTING.md` A5). Four rules of the port's own, none of them the
-engine's, keep the picture in step with that sound on a slow machine (commits
-`71a54b2`, `2340f36`, `c893c13`, `9a3a7e4`):
+**The films.** On the desktop they are decoded by a **vendored** copy of
+pl_mpeg (MIT), which is not a port of anything (`docs/PORTING.md` A8; `engine:
+movies`). Their 44 100 Hz sound goes straight to the device, because the
+game's own primary buffer is 22 050 Hz and the films never went through it
+(A5). The loop's rules are the port's own, none of them the engine's
+(`engine/backends/sdl/playsetup_play.cpp`):
 
-* the film is fitted to the display at the largest scale that fits both axes,
-  keeping its 4:3 ratio;
-* a frame that is **late** against the sound is decoded — MPEG cannot skip
+* the picture follows what the audio device has **played**, not what the
+  decoder has produced, and the wall clock when there is no device;
+* a frame that is **late** against that sound is decoded — MPEG cannot skip
   one — and **dropped**, but never more than **three in a row**, so a machine
-  that cannot decode a frame in a frame's time still shows one in four, a
-  slower picture still in step with its sound;
-* the sound is decoded **half a second ahead** of the picture rather than as
-  fast as the decoder will go — which, on a run with no hardware copies, had
-  decoded all 107 s of `GAME`'s sound on its first frame and run the Vita
-  emulator out of memory;
-* any **pad button** skips a film, as any key does, and the button must come
-  up before the next film (and before the menu), so one press does not skip
-  them all or confirm the menu behind them.
+  that cannot keep up still shows one frame in four, slower but in step;
+* the sound is decoded at most **half a second ahead** of the picture;
+* any key or **pad button** skips a film, left Alt skips them all, and the
+  input must come up before the next film or the menu, so one press does not
+  confirm the menu behind them.
 
-**The films, on the PS Vita.** pl_mpeg on the console's CPU showed 41 of
-`EIDOS`'s 386 frames (`todo/vita-port.md`, "The films are decoded in
-HARDWARE"). So the Vita plays **H.264 copies** of the three films, made once on
-the desktop by `scripts/vita-movies.sh` (Baseline profile, AAC sound, 320×240),
-through the console's hardware decoder, **SceAvPlayer**, converting its NV12
-frames to RGB565 — the chroma is U first, and read the other way `GAME`'s red
-cap drew blue (commit `223eac4`). The MPEG-1 path is the fallback when the
-copies are absent. This is a platform substitute for a platform service, like
-pl_mpeg, and carries no claim about the original.
+Three substitutes sit in front of that decoder, each a platform service
+standing in for a platform service and none a claim about the original: the
+host's **own player** where a frontend offers one (`Frontend::filmOpen` —
+QuickTime on the classic Mac, where software decoding ran at ~0.5 fps,
+`todo/handoff-classic-mac.md` step 2a); on the **PS Vita**, H.264 copies made
+once by `scripts/vita-movies.sh` and played through the console's hardware
+decoder, SceAvPlayer, with the MPEG-1 path as the fallback
+(`todo/handoff-vita-port.md` §3b); and on the desktop, an upscaled **film pack**
+from the remaster tier when one has been generated.
 
-Its state on the console is **partly established**. The decoder at first
-reported the films stopped with nothing shown, because vitaGL had taken every
-byte of the memory SceAvPlayer needs; with the port's own vitaGL build leaving
-16 MB to the system, the reader saw `GAME` play on 2026-09-23 — its picture
-running fast against its sound — while `EIDOS` and `QUANTIC` were still
-skipped (`todo/handoff-vita-port.md` §3b–3b2). Since then the strategy that
-played is the default for all three and the loop takes sound only as it plays,
-which paces the picture (`todo/vita-port.md`, 2026-09-23 midday; commit
-`f11e058`). No console log in the record yet confirms all three films playing
-at the right speed.
+**The frame delta.** The port takes the engine's rule as it is: the smoothed
+interval, `30 / fps`, capped at three frames (the port's comment "THE ENGINE'S
+OWN CLAMP", `engine/backends/sdl/playframe_input_parts.cpp`). Until 2026-09-22
+it did something else — a frame over 0.25 s was treated as a hitch and fed the
+game 1/30 — and a console whose frames straddled 0.25 s alternated six frames
+of motion with one, which the reader saw as the camera "shaking"
+(`todo/handoff-vita-port.md` §1). The smoothing was added on 2026-10-06
+(`todo/drift-audit.md` T6). A frame-bounded headless run keeps a fixed 1/30
+instead, so the checks stay deterministic.
 
-**The frame delta.** The port takes the engine's rule as it is: `30 / fps`,
-capped at three frames. Until 2026-09-22 it did something else — a frame over
-0.25 s was treated as a hitch and fed the game 1/30 — and a console whose
-frames straddled 0.25 s then alternated six frames of motion with one, which
-the reader saw as the camera "shaking". The engine's cap replaced it
-(`todo/vita-port.md`, 2026-09-22; `engine/backends/sdl/play.cpp`, "THE
-ENGINE'S OWN CLAMP"). A frame-bounded headless run keeps a fixed 1/30 instead,
-so the checks stay deterministic.
+**The line sync** is ported as `script/linesync.h` and **outranks the clamp**,
+as it does in the engine: while a line's voice plays, the viewer's delta is the
+advance of that voice's played cursor (`Frontend::soundPlayedSeconds`). Its
+check runs 60 frames at 6 fps and reaches 9.933 s with the sync against the
+voice's 9.833 s, and 6.000 s without it (`verify.py: engine: line sync`;
+`todo/drift-audit.md` T2). One choice is the port's: the sync runs only while
+the voice is still playing, because past its end the engine's clock may stand
+still and hold the delta at 0, and that is not traced.
 
 **The pacing.** A frame is paced to a **deadline**: each ends on a 1/30 s grid
 of the performance counter rather than sleeping "33 ms minus what was spent",
-which had held the capped street at a flat 28.8 fps; with the deadline it holds
-30.0. A late frame shortens the next, and a stall of more than a frame
-resynchronises instead of bursting (`todo/optimization.md`, "Capped at 30").
-The simulation steps on the measured delta either way; the pacer only decides
-when the frame is presented.
+which had held the capped street at a flat 28.8 fps. A late frame shortens the
+next, and a stall of more than a frame resynchronises instead of bursting
+(`todo/optimization.md`, "Capped at 30"; `playframe_present.cpp`). The
+simulation steps on the measured delta either way; the pacer only decides when
+the frame is presented.
 
 **Escape and the pause.** Escape opens screen 31 by the engine's own route —
 polled beside the frame, not bound to an action — and the pause is a zero
-delta rather than a mode, with the sound bank and both streams suspended the
-way screen 31's callbacks suspend them. The route and the zero delta were
-**confirmed in play** on 2026-09-07 (`todo/omk-play.md` 82; `engine: pause`).
-*Oui* on *Quitter le jeu* ends the run and says so, because the restart it
-should perform is not ported (below).
+delta rather than a mode, with the sound suspended the way screen 31's
+callbacks suspend it (`verify.py: engine: pause`, which asserts the Escape
+site and all six callback bodies byte for byte). **Since 2026-10-05 *Quitter
+le jeu* restarts** as the engine does — `Session::restart` is the pump's tear-
+down and new game, and op 152 `game.restart` writes the same request
+(`docs/UI.md` §3h; `todo/drift-audit.md` S3).
 
 ## Where it lives
 
 | | |
 |---|---|
-| the finding | `docs/BOOT.md`; the pause in `docs/UI.md` §3h; `Input_Poll`'s rules in `engine: input poll` and `engine/src/input/bindings.h` |
-| the checks | `verify.py: boot sequence`, `menu open site`, `engine: boot`, `engine: movies`, `engine: pause`, `engine: input poll` |
-| the port | `engine/src/platform/boot.*`, `movie.*`; the film loop, the frame delta and the pacer in `engine/backends/sdl/play.cpp`; `engine/src/input/` for the poll's rules |
-| the Vita films | `engine/backends/vita/avmovie.*`; `scripts/vita-movies.sh` makes the H.264 copies |
+| the finding | `docs/BOOT.md`; the pause in `docs/UI.md` §3h; `Input_Poll`'s rules in `docs/UI.md` §3c and `engine: input poll`; the line sync in `todo/drift-audit.md` T2 |
+| the checks | `verify.py: boot sequence`, `menu open site`, `startup scripts`, `engine: boot`, `engine: movies`, `engine: pause`, `engine: input poll`, `engine: line sync` |
+| the port | `engine/src/platform/boot.*`, `movie.*`; `engine/src/script/linesync.h`; the film loop in `engine/backends/sdl/playsetup_play.cpp`, the frame delta in `playframe_input_parts.cpp`, the pacer in `playframe_present.cpp`; `engine/src/input/` for the poll's rules |
+| the substitutes | `engine/backends/vita/avmovie.*` and `scripts/vita-movies.sh`; `Frontend::filmOpen` in `engine/src/platform/frontend.h` |
 | the frame oracle | `traces/intro.log` — the original's own announcements |
 
 ## What is not settled
 
-* **`Movie_Play`'s decoder and its eight parameters** are untraced. Nothing
-  here needs them, but the row is open rather than closed.
-* **What the external clock actually reads.** It is sampled where an audio
-  position would be, and that is an inference from where the call sits, not a
-  fact (`docs/BOOT.md`, "What this does not settle").
+* **`Movie_Play`'s decoder and its eight parameters** are untraced
+  (`docs/BOOT.md`, "What this does not settle"). Nothing here needs them, but
+  the row is open rather than closed.
+* **The unit of the 0.25 in the voice clock** — bytes or samples — is not
+  traced (`docs/BOOT.md` §4). The formula is read; its scale rests on that
+  factor.
+* **What the clock does after a voice ends** is not traced, so the port syncs
+  only while the voice plays — a declared choice, not a reading
+  (`todo/drift-audit.md` T2).
 * **The fixed-delta modes** (`dword_4E972C` cases 1..4) are clearly debug
   modes, and nothing observed has ever been seen to set them.
-* **Two sentences in `docs/` disagree with later readings**, and a reader of
-  the documents should know which is current. `docs/BOOT.md` §1 still says the
-  main menu *is* `aventure.scx`; the correction — a global effect and sound
-  library, the menu opened by AREA 118's script — is in `engine/README.md` and
-  the 2026-08-31 log row. And `docs/UI.md` §3c says the joystick's axes are
-  tested "against a deadzone", where `engine: input poll`'s later reading of
-  the same function finds a threshold nothing stores to and no dead zone of
-  the engine's own. This chapter follows the later readings.
-* **The pause's *Quitter le jeu* does not restart the game in the port.** The
-  engine serves it as a new game; `omk-play`'s boot is not yet a function it
-  can call again, so the run ends instead (`docs/UI.md` §3h).
-* **The Vita's films are not confirmed at speed on a console** — one of the
-  three was seen playing, too fast, before the pacing fix (above).
-* **A faithful clamp is not a playable rate.** At the Vita's measured frame
-  times the engine's rule makes the game run slowly but correctly; the port is
-  right to do so, and the console is still far from 30 fps (chapter 1).
+* **The port measures its delta before the tick; the original after.** That
+  order, and the per-frame work that runs at half a 1999 machine's rate under
+  the 30 fps cap, remain declared differences (`todo/drift-audit.md` T6).
+* **The Vita's films are not confirmed at speed on a console.** `GAME` was
+  seen playing on 2026-09-23 with its picture running fast; the console log of
+  2026-09-30 showed none playing, traced to a stale vitaGL library, which the
+  build now refuses (`todo/vita-port.md`, 2026-09-30 14:00). No later log in the
+  record shows all three.
+* **A faithful clamp is not a playable rate**: on a slow machine the engine's
+  rule makes the game run slowly but correctly, and the port is right to do
+  so (chapter 1, "The other machines").

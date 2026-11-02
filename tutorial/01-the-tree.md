@@ -6,7 +6,7 @@ player's feet.
 
 ## Read
 
-* `engine/backends/sdl/play.cpp`, the function `PlayState::run` — 57 lines:
+* `engine/backends/sdl/play.cpp`, the function `PlayState::run` — some 60 lines:
   the whole game, set up then looped.
 * `engine/backends/sdl/playframe.cpp`, `PlayState::step` — one frame, in six
   phases.
@@ -39,6 +39,7 @@ host**:
 | `o3de/` | the renderer BOUNDARY (`renderer.h`), the software rasterizer (`raster.*`), what every GPU backend shares (`drawcore.*`), cameras, collision, effects |
 | `ui/` | the 2D interface: the display list (`i2d.*`), the widget tree walk (`widgets.*`), screens, text |
 | `audio/`, `input/` | the mixer's decisions; the four control schemes (`bindings.*`) |
+| `vr/` | the headset's space against the game's, platform-free arithmetic (built only into a VR build, `VR=1`) |
 | `platform/` | the host's contract (`frontend.h`), all file access (`datafs.*`), the `OMK_*` switches (`env.*`), the profiler |
 | `app/` | the viewer's command line (`playoptions.*` - every `omk-play` flag and its default) and the game state its setup gathers (`game.h`) |
 
@@ -46,12 +47,14 @@ host**:
 |---|---|
 | `sdl/` | `omk-play`, the game on SDL - every `play*.cpp` |
 | `vulkan/`, `gles/`, `gl1/`, `n3ds/` | the GPU renderers: Vulkan, GLES (the PS Vita), fixed-function OpenGL 1.x (the PowerPC Mac), citro3d (the 3DS) |
-| `vita/`, `n3ds/`, `classic/`, `vr/` | the console and VR builds |
+| `vita/`, `n3ds/`, `classic/` | the console and classic Mac OS builds |
+| `vr/`, `openxr/`, `android/` | the VR build, on the Meta Quest (Android) |
+| `remaster/` | the remaster: enhancements the original never had (weather, the graphics menu...), compiled only with `OMK_REMASTER` and stubbed out of the low-end ports |
 
 **Game code reaches the host only through `omk::Frontend`.** No SDL header
 appears outside `sdlfront.*`, the GPU glue and the scene viewer, and
 `verify.py: engine: frontend gateway` fails if one does. That is why the same
-`src/` runs on a Mac, a Vita, a 3DS and a 2002 iBook.
+`src/` runs on a Mac, a Vita, a 3DS, a Quest, a 2002 iBook and an iMac G3.
 
 ## The frame
 

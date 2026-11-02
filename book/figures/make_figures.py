@@ -215,17 +215,22 @@ def fig_tie():
 def fig_port():
     s = Svg(780, 420)
     s.text(390, 26, "The port: one engine, reference and live backends behind one boundary", size=14, weight="bold")
-    s.box(20, 50, 740, 50, ["frontends:  omk-play (SDL: macOS/Linux, Tiger on PowerPC)   -   the PS Vita build   -   200 probes in engine/tools"], fill=C["grey"], size=12)
+    s.box(20, 50, 740, 50, ["frontends (omk::Frontend):  SDL - macOS, Linux, Vita, Quest  |  libctru - 3DS  |  Carbon - Mac OS 9",
+                            "and ~230 probes in engine/tools"], fill=C["grey"], size=12)
     s.box(20, 120, 740, 90, ["the engine  (engine/src, C++20, no required dependency)",
                              "formats/  script/ (Session, VM, zones, dialogue, scenes)  actor/ (.CTL, walker, crowd, fight, shoot)",
-                             "o3de/ (buckets, texture cache, depth tie, particles)  ui/  audio/  input/  platform/ (DataFs)"], fill=C["port"], size=12)
+                             "o3de/ (buckets, texture cache, depth tie, particles, weather)  ui/  audio/  input/  platform/ (DataFs)"], fill=C["port"], size=12)
     s.box(20, 230, 740, 40, ["the renderer boundary - DECISIONS, not API calls:  begin(view)  submit(draw)  end()"], fill="#fff", size=12)
-    s.box(20, 290, 175, 70, ["software rasterizer", "the REFERENCE", "what the checks measure"], fill=C["machine"], size=12)
-    s.box(208, 290, 175, 70, ["Vulkan (MoltenVK)", "live, desktop"], fill=C["machine"], size=12)
-    s.box(396, 290, 175, 70, ["GLES2", "live, the Vita", "poses bodies in its shader"], fill=C["machine"], size=12)
-    s.box(585, 290, 175, 70, ["OpenGL 1.x", "fixed function", "a 1999 Mac, on PowerPC"], fill=C["machine"], size=12)
-    for x in (107, 295, 483, 672):
-        s.arrow(x, 270, x, 288)
+    boxes = [["software", "the REFERENCE", "what checks measure"],
+             ["Vulkan", "live, desktop", "(MoltenVK on macOS)"],
+             ["GLES2", "desktop, the Vita,", "the Quest's two eyes"],
+             ["citro3d", "the 3DS's PICA GPU"],
+             ["OpenGL 1.x", "fixed function,", "PowerPC Macs"]]
+    w, gap = 140, 10
+    for k, b in enumerate(boxes):
+        x = 20 + k * (w + gap)
+        s.box(x, 290, w, 70, b, fill=C["machine"], size=12)
+        s.arrow(x + w / 2, 270, x + w / 2, 288)
     s.arrow(390, 100, 390, 118)
     s.arrow(390, 210, 390, 228)
     s.text(390, 395, "the same shape for sound (PCM buffers vs a device) and input (a replayable stream vs a pad)", size=12, italic=True)

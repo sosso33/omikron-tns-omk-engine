@@ -7,11 +7,14 @@ boot it, and see it agree with the original engine decision for decision.
 
 * `omk.conf.example` — the template for the one file that says where your
   inputs live. Read its header and the `data =` section; skip the rest.
-* `CLAUDE.md` §0, the "Inputs" table only — what each input directory is,
-  and why `gamedata/` is never written.
+* `docs/PRACTICE.md` §0, the "Inputs" table only (`grep -n Inputs` it) —
+  what each input directory is, and why `gamedata/` is never written.
+  `CLAUDE.md` §2 says the same in one paragraph.
 
-Nothing else yet. `CLAUDE.md` is long and is loaded by every AI session that
-works here; you will come back to its sections when a lesson sends you.
+Nothing else yet. `CLAUDE.md` is the short form of the rules and is loaded by
+every AI session that works here; `docs/PRACTICE.md` is its long form, with
+the same section numbers. You will come back to their sections when a lesson
+sends you - by `grep`, never by reading either whole.
 
 ## Run
 
@@ -40,6 +43,11 @@ asm      ok      .../omk/Runtime.exe.asm   [default]
 engine   ok      .../omk/gamedata/Runtime 2.exe   [largest of Runtime 2.exe, Runtime.exe]
 ```
 
+The lessons write ../gamedata (run from `engine/`) for the data directory.
+If the `data` line names another, use that path wherever a lesson's command
+says ../gamedata: `omk-play` given the wrong directory does not fail, it
+shows a black screen.
+
 The last line is worth a look: the engine executable is found by **size**,
 not by name, because the disc version ships a ~280 KB launcher called
 `Runtime.exe` beside the ~985 KB engine. Every address this repository
@@ -49,7 +57,7 @@ quotes refers to the engine.
 
 ```
 cd engine
-make            # the engine library, build/omk, and some 200 probes in build/
+make            # the engine library, build/omk, and some 230 probes in build/
 make play       # build/omk-play, the game - needs SDL2 or SDL3
 ```
 
@@ -132,11 +140,11 @@ python3 tools/verify.py --list | head
 python3 tools/verify.py --only "engine: intro"
 ```
 
-`--list` names every check (about six hundred) and the document that quotes
-its number. `--only` runs the checks whose names contain the text you give,
-and prints `ok` or the difference. **That is the normal way to run them**;
-the whole suite takes upwards of half an hour and is run every few tasks,
-not every change.
+`--list` names every check (about six hundred and fifty) and the document
+that quotes its number. `--only` runs the checks whose names contain the text
+you give, and prints `ok` or the difference. **That is the normal way to run
+them**; the whole suite (`--slow --jobs 6`) takes the better part of an hour
+even in parallel and is run every few tasks, not every change.
 
 A check prints its numbers only when it fails. To see them while it passes,
 call its function — every check is one function in `tools/verify.py`, and
@@ -164,19 +172,19 @@ this repository has, and lesson 9 is about writing checks against them.
 
 Nothing to change yet. Instead, read the docstring of the check you just
 ran: open `tools/verify.py` at `def c_engine_intro` (`grep -n` it - the file
-is 900 KB, never read it whole). The docstring says what the check proves,
+is 3 MB, never read it whole). The docstring says what the check proves,
 how it was shown to fail, and what was wrong before. Every check has one.
 
 ## Prove
 
-Run one more check, one that renders:
+Run one more check, one that runs the engine:
 
 ```
 python3 tools/verify.py --only "engine: arrival camera"
 ```
 
-It builds the viewer if it needs to, plays the opening's arrival in the
-Impasse headless, and asserts the camera's position against the floor the
+It builds the engine if it needs to, runs the probe `dump_arrival` over the
+opening's arrival in the Impasse, and asserts the camera's position against the floor the
 player stands on. If it says `ok`, your build, your data and your Python
 agree with the repository.
 

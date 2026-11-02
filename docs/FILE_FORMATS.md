@@ -818,7 +818,10 @@ bytes index 256-entry ramps at `unk_660BA8` and the add goes through a
 saturating table (`byte_6A2CE0`) — how a palette-era engine adds light without
 a multiply per channel. `verify.py: light consumers`.
 
-Not ported: `todo/mesh-lights.md` step 4.
+~~Not ported: `todo/mesh-lights.md` step 4.~~ **Ported 2026-09-05**
+(`todo/mesh-lights.md` "Step 4, done"): `formats/light3do.*` reads the table,
+`o3de/vertexlight.*` is `sub_493E40` transcribed, and the crowd is lit by
+every light of both resident slots (`--no-crowd-light` the before/after).
 
 ### Which meshes are geometry
 
@@ -3218,27 +3221,29 @@ extraction and says so. `--no-audio` turns it off.
   zone script does: `zone.enable`/`disable` re-register the live zones,
   `object.show` reaches its prop. The port ran it in a bare interpreter on the
   DB alone until `todo/drift-audit.md` S2; `verify.py: engine: reply action`.
-* How the engine reaches the 106 conversations that no script launches. Every
+* How the engine reaches the 106 conversations that no script launches (**105**
+  since 2026-08-29: Dialog 272 is launched by AREA 118's `+4` startup script -
+  `docs/PRACTICE.md` §6, `verify.py: unlaunched dialogs`). Every
   route in the shipped data has been checked and none of them reaches these -
   see section 5e. Either the mechanism is outside the data files entirely, or
   the content is cut.
-* Most VM opcodes are identified only by their `.TAG` domain, not decoded
-  individually. The conversation scripts use 25 of them; the **world** scripts
-  in `IAM\AREA`, `IAM\SCENE` and `IAM\GLOBAL` use **124**, so the great
-  majority are exercised but unnamed. Nine operand counts in the table at
-  0x004C0140 were wrong and are corrected in `tools/dialog_disasm.py`; the
-  method for recovering them from the handler assembly is in
-  [SCRIPT_VM.md](SCRIPT_VM.md) and `tools/vm_oplen.py`.
+* ~~Most VM opcodes are identified only by their `.TAG` domain~~ - **closed**
+  (struck 2026-11-02): the world scripts exercise **117** opcodes and 115 are
+  named, the other two (53, 101) read and deliberately unnamed; 22 operand
+  counts are corrected in `tools/dialog_disasm.py`'s `LEN_FIX`. See
+  [SCRIPT_VM.md](SCRIPT_VM.md) "Naming the opcodes" and `tools/vm_oplen.py`.
 * ~~`DialogCamera` fields at +26, +36, +38, +40.~~ **Solved**: +26 is a camera
   mode read by `Camera_RequestChanged`; +36/+38/+40 are two-shot framing
   parameters, non-zero on exactly the 33 cameras with `subject == 6`.
 * The `float[3]` at the start of each `.3DM` frame record, and what node
   slots 0 and 1 hold instead of quaternions.
-* `.CTL` entry flags: the bits that gate each optional block are known by
+* ~~`.CTL` entry flags: the bits that gate each optional block are known by
   position (0x10, 0x140, 0x280, 0x2000000, 0x8002) but not by meaning, and the
   32-byte group records and 156-byte second table are walked for their sizes
-  without their fields being understood. The clips they carry are fully
-  readable — see [ASSETS.md](ASSETS.md).
+  without their fields being understood.~~ **Closed** (struck 2026-11-02, found
+  by the manual regeneration): every flag-gated block has its traced consumer
+  and the 156-byte table is the fight AI's profiles (`Fight_FindAiProfile`) -
+  see [ASSETS.md](ASSETS.md) "The `.CTL` fight AI" and `docs/PRACTICE.md` §6.
 * The `.3DM` topology question is answered in [ASSETS.md](ASSETS.md): the
   triangle list lives in the speaking character's `MESHES/PERSOS/*.3DO`, and a
   `.3DM`'s vertex count matches that model's face mesh.

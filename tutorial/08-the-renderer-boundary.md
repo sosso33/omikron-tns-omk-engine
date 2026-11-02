@@ -37,6 +37,13 @@ coincident faces wins, what a blend mode does - they share it, in
 `drawcore.*`, and `verify.py: engine: draw core` holds that one copy against
 the reference path.
 
+The remaster is not a fifth backend. Its enhancements - the weather, the
+graphics menu, the wet floors - are code of their own (`backends/remaster/`,
+and the GLES backend's `backends/gles/glesrender_remaster.inl`), compiled only when
+`OMK_REMASTER` is on and stubbed out of the low-end ports
+(`backends/sdl/playremaster_off.cpp`); what they add is drawn through the
+same boundary.
+
 ## Run: one frame, three ways
 
 ```
@@ -76,7 +83,7 @@ python3 /tmp/cmp.py /tmp/sw.bin /tmp/vk.bin
 
 ```
 129146 of 307200 pixels differ, 240 by more than 24 levels
-148848 of 307200 pixels differ, 463 by more than 24 levels
+148845 of 307200 pixels differ, 463 by more than 24 levels
 ```
 
 The first line is the DITHER alone: the original's devices set
@@ -86,7 +93,8 @@ almost none by much. Part of it is the texture filter - a 3D card in 1999
 filtered bilinear, and the GPU backends do by default, while the software
 reference point-samples as the original's software device did. Add
 `--filter nearest` to the Vulkan run and the large differences fall from 463
-to 168 (on the machine this was written on).
+to 168, and the pixels that differ at all from 148845 to 81292 (on the
+machine this was written on, an Apple M3).
 
 **So two renderers are never compared pixel for pixel.** Floating-point
 rasterizers disagree in the last bit of a colour and on which pixel an edge

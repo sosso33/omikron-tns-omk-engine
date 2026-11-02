@@ -6,372 +6,429 @@
 
 ## In short
 
-`engine/` is the re-implementation: C++20, about 57 300 lines of engine source
-in nine directories and 28 000 more in four backends, and **no required
-dependencies at all**. `make` on a machine with nothing installed builds every
-probe and passes the test suite. SDL, the Vulkan loader, a GL context and the
-PS Vita SDK are optional, and each buys a window on some machine.
+`engine/` is the re-implementation. It is written in C++20, and it has **no
+required dependencies**: `make` on a machine with nothing installed builds every
+probe and passes the test suite. SDL, the Vulkan loader, an OpenGL context and
+the console SDKs are all optional. Each one adds a window on some machine.
 
-The shape of it comes from one decision. Every output subsystem — picture,
-sound, input — has **a reference implementation and a live one behind one
+One decision shapes the whole thing. Every output subsystem (picture, sound,
+input) has **a reference implementation and one or more live ones, behind one
 boundary**:
 
 | | the reference | the live ones |
 |---|---|---|
-| render | a software rasterizer into an RGB565 framebuffer | Vulkan (MoltenVK on macOS), and GLES2 — the PS Vita's |
+| render | a software rasterizer into an RGB565 framebuffer | Vulkan (MoltenVK on macOS); OpenGL ES (the PS Vita and the Quest); citro3d (the Nintendo 3DS); fixed-function OpenGL 1.x (the PowerPC Macs) |
 | audio | PCM buffers | an audio device |
-| input | a replayable event stream | a keyboard, or a pad read as the engine's own joystick |
+| input | a replayable event stream | a keyboard, a pad, a touch screen, VR controllers |
 
-The reference is what the checks measure. The live ones are what make the
-replica playable. Neither may be required to build the other.
+The checks measure the reference. The live ones make the game playable.
+Neither may be required to build the other.
 
-Beside it sits a second rule, about what the port may add: **anything the
-original did not do is an enhancement, and every enhancement is off by
-default.** And a third, about speed: an optimisation may change *how* an answer
-is computed, **never the answer** — every speed step is proven by the same
-frame, byte for byte, or by an exhaustive comparison.
+Three more rules sit beside that one:
 
-Since the last edition of this manual the port has left the desktop: **it runs
-on a real PS Vita, into the city** — slowly. The films, the menu, the flat and
-the intro cutscene play on the console, and Anekbah's street loads and runs, at
-well over a hundred milliseconds a frame against a budget of 33. Whether 30 fps
-is reachable there is **still open**, and the console log that should say how
-far off it now is has not yet been taken.
+* **Anything the original did not do is an enhancement, and every enhancement
+  is off by default.**
+* **The remaster is a separate tier.** It overrides the authored art, so it
+  lives in its own files and only some builds compile it at all.
+* **A speed-up may change *how* an answer is computed, never the answer.** Every
+  optimisation is proven by the same frame, byte for byte, or by an exhaustive
+  comparison.
+
+The port now runs on five kinds of machine besides the desktop. The Vita was
+already there at the last edition, and the other four have arrived since. It
+runs **on a real PS Vita** into the city, inside 30 frames a second in the one
+console run measured that way. It runs **on a real New
+3DS** into the city. It runs **in VR on a Quest 2**, as a prototype. And it
+runs **on Macs from 1999–2005**: an iBook G3 and an iMac G3 under Mac OS 9
+and early Mac OS X, at single-digit to high-teen frame rates. Each of these is
+a separate backend with its own handoff file. None of them is part of the
+coverage audit.
 
 ## In detail
 
 ### The layout
 
-Counted 2026-09-29 with `wc -l` over every `.cpp` and `.h` under `engine/src`
-(57 314 lines) and `engine/backends` (27 986); vendored code lives in
-`engine/third_party/` and is not counted. The probes in `engine/tools/` add
-another 27 569.
+Counted on 2026-11-02 with `wc -l` over every `.cpp` and `.h` file:
+`engine/src` holds **77 411** lines in ten directories, and `engine/backends`
+holds **58 963** in eleven (`.inl`, `.mm` and `.c` files counted too). The
+probes in `engine/tools/` add **32 411** lines over **229** `.cpp` files.
+Vendored code lives in `engine/third_party/` and is not counted.
 
-| directory | what is in it |
+| `src/` directory | what is in it |
 |---|---|
-| `formats/` | one reader per file format — iam, scx, sfx, ctl, anim, morph, mesh3do, tex3dt, fnt, adpcm, addresses, opt, map2d, the `.3DO` light table |
-| `script/` | the world-script runtime: the Session with its two resident slots and its frame, the VM handlers, the zone registry, conversations, the game state and the save file, the scene objects, the inventory |
-| `actor/` | the `.CTL` channel, the player controller and its cameras, skinning, the walker, the slider, melee, shoot mode's brains, weapons and projectiles, the street crowd and its vehicles, the spatial index |
-| `o3de/` | the renderer boundary and the software rasterizer, the draw buckets, geometry, the texture cache, the depth tie, lights, shadows, the shimmer, the point placement, world cameras, camera editings, particles, collision |
-| `ui/` | the I2D layer, the widget walk, screen drawing, text and its layout, surfaces, the options tree, the city map, the HUD bars, the radar |
+| `formats/` | one reader per file format; `le.h` and `bytes.h`, the byte-order readers every multi-byte read goes through (PORTING A9) |
+| `script/` | the world-script runtime: the Session with its two resident slots, the VM handlers, zones, conversations, the game state and the save, the scene objects, the inventory |
+| `actor/` | the `.CTL` channel, the player and his cameras, skinning, the walker, the slider, melee, shoot mode, the street crowd and its vehicles, the spatial index |
+| `o3de/` | the renderer boundary and the software rasterizer, buckets, geometry, the texture cache, the depth tie, lights and shadows, the day/night cycle, the weather, world cameras, particles, collision; and the shared `drawcore` (one CPU pose and light law for every GPU backend) |
+| `ui/` | the I2D layer, the widget walk, screen drawing, text, the options tree, the city map, the HUD, the overlay's change checks |
 | `audio/` | the voice bank and pool, the voice-over path, music |
 | `input/` | the four control schemes, `Input_Poll`'s rules, the pad |
-| `platform/` | all data access, the boot path, the frontend interface, the movie decoder, the settings and the ini, the thread pool, JSON |
-| `app/` | **new**: the first pieces lifted out of the viewer's single source file (below) |
+| `platform/` | data access, the boot path, the `Frontend` interface, the movie decoder, settings, threads, the profiler, the environment switches |
+| `app/` | the viewer's command line and helpers, lifted out of its old single file |
+| `vr/` | the head transform composed on the authored camera (only under `OMK_VR`) |
 
-Four backends: `sdl/` (the game and viewer, `omk-play`), `vulkan/`, `gles/`,
-and `vita/` (the console's entry point, the hardware film player, the on-screen
-keyboard for the name field, a bench and a smoke test). And **198** small
-command-line probes in `engine/tools/`, one per check, mostly (`ls | wc -l`,
-2026-09-29).
+The eleven backend directories are `sdl/` (the desktop game and viewer,
+`omk-play`), `vulkan/`, `gles/`, `gl1/`, `n3ds/`, `vita/`, `classic/` (the
+Carbon frontend for Mac OS 9 and Mac OS X), `android/`, `openxr/`, `vr/`, and
+`remaster/`.
+
+The viewer used to be one file. `todo/play-split.md` records how
+`backends/sdl/play.cpp` went from **23 069** lines to **57** on 2026-10-02:
+`main` became a `PlayState` with the phases as separate functions, checked at
+each step against a golden record of 28 scenes (frame, stdout and saves). On
+2026-11-02 `play.cpp` is 101 lines and `backends/sdl/` holds 49 files.
 
 ### The boundary is at the decision level
 
-This is the load-bearing choice (`docs/PORTING.md` §A2), and getting it wrong is
-expensive in a way that is hard to undo. What is ported is not triangles but
-**decisions** — the drawable mask, the bucket key, the blend modes, the texture
-cache, the visible-set walk (chapter 8). The interface takes those:
+This is the load-bearing choice (`docs/PORTING.md` §A2). What is ported is not
+triangles but **decisions**: the drawable mask `flags & 0x800043`, the 14-bit
+bucket key, the texture slot as its low six bits, the blend modes, the 58-slot
+texture cache, and the visible-set walk. The interface takes those:
 
 ```
 begin(view) · submit(draw) · submit2d(list) · end() -> Frame
 ```
 
-A backend receives decisions and turns them into API calls; it never makes one.
-Put the boundary at the API level instead and those decisions leak into
-API-specific code; a second backend then cannot be added without extracting
-them again, and the frame oracle becomes unusable.
+A backend receives decisions and turns them into API calls. It never makes one.
+That rule is why the boundary now carries **five** renderers (software,
+Vulkan, GLES, GL1, citro3d) without any of them owning a rule of the game.
 
-The boundary has since carried three backends. It grew for the enhancements by
-fields whose default changes nothing, and for the handheld by one question —
-`Renderer::posesBodies()`, *can this backend pose a body itself?* — which is
-false on every backend but GLES (`todo/gpu-skinning.md` step 1). So the
-software reference still poses and draws exactly as before, by construction.
+The boundary grew in one direction, for speed. `Renderer::posesBodies()` asks
+whether a backend can pose a body itself. Since October every GPU backend says
+yes (Vulkan, GLES, GL1 and citro3d). The software reference still poses on the
+CPU and draws exactly as before. The pose and light law they share is one
+copy in `o3de/drawcore`, held to `applyPose`/`applyLights` by
+`verify.py: engine: draw core`.
 
-### What "dependency-free" actually means
+**The host has a boundary too: `omk::Frontend`** (`src/platform/frontend.h`,
+PORTING A1, 2026-10-03). The window, keys, pad, audio device, clocks and
+display modes all cross it. The viewer's game code compiles with no SDL header
+(`verify.py: engine: frontend gateway`). That is what let a Carbon frontend
+stand in for SDL on Mac OS 9 by implementing one class.
+
+### What "dependency-free" means
 
 It is a property of the **verification path**, not of the program
 (`docs/PORTING.md` §A8). Everything the suite touches builds with nothing
-installed. The playable frontends need dependencies and should have them —
-hand-rolling Cocoa, Win32 and X11 to avoid SDL, or writing an MPEG decoder,
-would be more code, no verification benefit, and a port of nothing in the
-original.
-
+installed. The playable frontends need dependencies and should have them.
 Three rules keep that honest:
 
-1. **`make` with nothing installed builds every probe and passes the suite.** A
-   dependency that breaks this is rejected, not worked around.
-2. **No ported source includes a system dependency's header.** They appear only
-   in backend files, behind the boundary. A *vendored* dependency — the MPEG-1
-   decoder, checked in — is always present, so it may sit in ported code.
+1. **`make` with nothing installed builds every probe and passes the suite.**
+2. **No ported source includes a system dependency's header.** A *vendored*
+   one, such as the MPEG-1 decoder, is always present and may.
 3. **No dependency may do work a reference implementation is supposed to be a
-   port of.** Using a library's blitter or BMP loader instead of the ported one
-   means the check tests the library — and it passes exactly as green while
-   establishing nothing. PORTING calls this the one rule that is not hygiene.
+   port of.** If it did, the check would test the library and still pass.
+   PORTING calls this the one rule that is not hygiene.
 
-### Settings, and the enhancements
+SDL3 is preferred and SDL2 still works. SDL3 had silently stopped building
+until 2026-10-26. `verify.py: engine: sdl3` now builds and runs both where both
+exist (PORTING A8).
 
-The game's settings resolve from three sources, in order: the engine's own
-defaults, the `[Preferences]` section of the game's ini (the 65 keys the binary
-spells), and the **save file's header**, which carries all 74 option rows
-(`engine/README.md` §Coverage, the graphical-options paragraph). The port
-records which source supplied each field.
+### Rules the other machines added
 
-Everything else lives under `[Enhancements]`, a section the original never had.
-`todo/enhancements.md` lists eleven rows: anti-aliasing, bilinear filtering,
-mipmaps and anisotropy, filtered interface scaling, an unlimited draw distance,
-fitted shadows, mapped shadows, per-pixel lighting, the sets receiving the
-lights (held back — it overrides authored art — and marked not recommended),
-supersampling, and shoot mode's radar in every arena. Each is off by default;
-`all = max` turns every one to its top. The two fidelity fixes that came out of
-the same reading — the **dither** and the **shimmer** — are deliberately not in
-that list: the original does them, so they are on.
+Three of PORTING's sections exist because of the old Macs:
 
-### Speed: the rule, and what it has bought
+* **A9, byte order.** The data is little-endian and the host need not be. On
+  PowerPC, raw reads gave "0 actor records for 1032" with no error. Every
+  multi-byte read now goes through `loadLE`, and every tool call the checks
+  make was replayed on emulated PowerPC Tiger: **1927 of 1928 identical**, the
+  last differing only in directory order. That replay is **not** in
+  `verify.py`. It also missed three reads in the viewer, which a walker drawn
+  as a shard found later.
+* **A10, no C++ streams and no weak objects with constructors.** Retro68's
+  linker breaks both on classic Mac OS, in large programs only.
+  `verify.py: engine: classic build` holds it.
+* **Fused multiply-add is off** (`-ffp-contract=off`) wherever two builds must
+  agree to the byte. GCC fuses `a*b+c` on PowerPC, and a 300-frame traffic run
+  drifted by 0.1 unit (A9).
 
-`todo/optimization.md` is the record, and its principle is the one above: a
-step that moves a pixel or a position is a bug in the step. Every row of its
-steps table ends in an equivalence — frames byte-identical, a hash unchanged,
-or an exhaustive comparison — and most in a check named after it
-(`engine: probe grid`, `tie equivalence`, `pixel tables`, `gpu present`,
-`pose equivalence`, `adpcm table`, `gles state cache`).
+### Settings, the enhancements, and the remaster
 
-**Every millisecond in that file carries its machine, and the machines are not
-comparable.** Steps 1–14 were measured on an **M1**; step 15 onward, from
-2026-09-29, on an **M3** (`todo/optimization.md` §15). Counts — allocations,
-state calls, patches — compare across them; milliseconds do not.
+The game's settings resolve from three places in order: the engine's own
+defaults, the game ini's `[Preferences]`, and the save file's header. Anything
+else lives under sections the original never had.
 
-What the M1 steps did, in the file's order: grids for the ground probe, the
-walker and the body and camera sweeps (the shadows' probe had been scanning all
-15 137 walkable triangles of Anekbah per shadow bone, hot spot H1); the depth
-tie on hashed sets and then stored flat; the interface's pixel conversions by
-table, and a frame with nothing drawn over it dithered and presented on the
-GPU; the moving set meshes patched through an index; a revision that says
-*which* corners moved. Step 7 then took stock (below).
+**`[Enhancements]`** (`todo/enhancements.md`, rows 0–13): anti-aliasing,
+trilinear and anisotropic filtering, filtered interface scaling, an unlimited
+draw distance, fitted shadows, mapped shadows, per-pixel lighting, the sets
+receiving the lights (held back and not recommended), supersampling, shoot
+mode's radar in every arena, 60 fps, bodies smoothed between keys, and text
+scaling. Each is off by default, and `--enhance-all` turns them all on.
 
-What the M3 steps did, all on 2026-09-29:
+Three things look like enhancements and are **fidelity**, so they are **on**:
+the dither, the shimmer, and **bilinear filtering on every GPU backend**. That
+last one was row 1 until 2026-10-03, when the original's own render states were
+read: on a 3D card it filters bilinear, and only its software devices sample
+nearest (`docs/ASSETS.md` §4).
 
-* **§15, an audit** ranking what is left for the console. Its one correction to
-  itself is instructive: the music was called "the largest engine-owned span,
-  0.5–0.6 ms a frame", read off an *uncapped* run that does not pace audio;
-  paced at 30 fps it is ~0 on the M3 (§16). **A span read off an uncapped run
-  measures the run, not the game.**
-* **§16, the music decoded through a table** — a nibble's effect depends only on
-  (index, nibble), so 89 × 16 entries replace the branches. Exact over all
-  93 323 264 channel states, every track and every voice line; whole-file
-  decode 1469 → 1012 ms, a 120 s pull 52.0 → 31.7 ms (M3).
-  `engine: adpcm table`.
-* **§17, the GLES draw-state cache** — state a draw would set to the value it
-  already has is not set again. On the Anekbah street, **1809 → 92 state calls
-  over 248 draws a frame** (M3), the pictures identical.
-  `engine: gles state cache`. Its other half, merging dirty upload runs, was
-  **refuted and not committed**: it saved almost nothing, and it was not exact.
-* **§25, a suspected bug closed as not a bug.** A street frame that drew 537
-  pixels differently with whole and partial uploads looked like a GLES
-  dirty-upload fault. It was §17's own uncommitted merge, which assumed the
-  dirty list sorted; it is not, and the committed upload loop is exact
-  (0 corners missed and 0 different, by an audit mode kept in the backend). A
-  wrong turn on the way — dumps taken at frame one while the display slept,
-  read as a fix and committed as `446beb7`, then reverted — is recorded there
-  as a trap.
-* **§18, the frame's heap churn**, counted with a malloc interposer in the
-  software build: **1214 → 651 allocations a frame** on the street, and outside
-  the software rasterizer (the reference, and out of scope) **~724 → ~160**.
-  Byte-identical at every step.
+**`[Remaster]`** (`todo/remaster.md`, planned 2026-10-20 and largely built
+since) is a tier apart, because it **overrides authored art**. It is held to the
+same contract (off by default, byte-identical with it off, a check per feature
+shown to fail) but not to "the data backs it". Its pieces, from
+`engine/README.md`'s remaster paragraph:
 
-### The Vita decision, and its correction
+* texture, interface, font and film packs, which **each player generates from
+  their own copy** and which never enter the public repository;
+* bloom from the packs' light maps, and a colour grade per city;
+* reflecting water (with a Fresnel term) and reflecting floors;
+* bodies lit by their surroundings, emitters turned into point lights, tiled
+  lighting on Vulkan;
+* generated normal maps, ambient occlusion, mist, rounded bodies, FSR 1
+  upscaling;
+* the game's own rain and snow drawn as 3D drops and flakes, wet floors, walls
+  and bodies, and snow lying.
 
-Step 7 (`todo/optimization.md` §7, 2026-09-14, **M1**) measured the main thread
-at **6.0 ms** of work a frame, capped at 30 on the Anekbah street, with 137 MB
-of live heap. It could not measure the console's CPU factor — no sourced figure
-puts the M1 and a Cortex-A9 on one scale — so it framed the question by the
-break-even instead: 6.0 ms fits a 33 ms frame on a core up to ~5.5× slower, and
-the gap is, in the file's words, several times that — "a reading of the gap,
-not a measurement". Its decision: **a 30 fps Vita build doing this CPU work on
-one core is not in reach**, and the levers are GPU skinning and lighting, the
-other cores, and measuring on the device.
+`--remaster DIR` is a preset over the separate options. **F10** switches
+between original and remaster in play, and OMK's own options pages write all
+of it back to the ini (`todo/graphics-menu.md`). It compiles only under
+`OMK_REMASTER`: the desktop and Android (Quest) builds define it, and the Vita,
+3DS, classic Mac and PowerPC builds never do (PORTING A1,
+`verify.py: engine: remaster switch`). Measured before the switch existed, the
+remaster code cost the original mode no frame time and about +17% binary size
+on the Vulkan build (`todo/remaster.md` "The remaster switch").
 
-**Corrected 2026-09-29, and the correction changes what the cost *is*.** §7 had
-called the remaining work per-vertex detail that the 1999 engine did "at a
-fraction of this detail". That is not established, and the crowd says
-otherwise: its density is the engine's own rule, spawned from the same circuit
-on the same models (`docs/STREET_LIFE.md`), so **the port draws the same
-characters the original did** — and the original posed and transformed every
-one of them on the CPU, handing Direct3D vertices it had already transformed.
-What the port pays extra is **its own**: GL driver calls, uploads, and the
-depth tie — not more detail.
+Beside it sits **`[Restored] weather`** (`todo/restore-weather.md`,
+`docs/ASSETS.md` 4e): the showers that Qalisar and Lahoreh ship tracks for but
+never trigger, and the sand that type-3 areas have a complete code path for.
+The override is OMK's, so it is off by default.
 
-### The PS Vita port
+### Speed: the rule, and what it bought
 
-It began on 2026-09-17 as its own line of work — `todo/vita-port.md` is the plan
-and the record, `todo/handoff-vita-port.md` the state — and it is **not part of
-the coverage audit** (`engine/README.md` §Coverage says so).
+`todo/optimization.md` is the record. Its principle is the one above: a step
+that moves a pixel or a position is a bug in the step. Every row ends in an
+equivalence (frames byte-identical, a hash unchanged, or an exhaustive
+comparison), and most rows name a check.
 
-Where it stands, from the handoff (§1, §3) and the record's entries through
-2026-09-27:
+**Every millisecond carries its machine, and the machines do not compare.**
+The desktop work alternates between an **M1** and an **M3**. Counts
+(allocations, state calls, uploads) compare across machines. Milliseconds do
+not.
 
-* **It runs on a real console into the city.** The films, the menu, the flat,
-  the intro cutscene, then Anekbah — which first died of the music's 16 MB (now
-  streamed from the file as it plays, 0 mismatches over 82 million samples),
-  then took 8.4 s a frame (a whole-buffer copy on every tie patch, fixed), then
-  shook (the port's own delta clamp, replaced by the engine's three-frame cap).
-  The handoff's summary of 2026-09-22: ~200 ms a frame, all CPU, "a uniform
-  ~40× the M1" — a **console** figure over an **M1** one, and labelled so.
-* **The last console city log on the CPU path** (2026-09-27): ~150–160 ms of
-  work a frame — submit 42–47, staged bodies 29, pedestrians 20, meshes placed
-  6.8, grids 7, lights 5, with music top-ups of 25–34 ms in the frames that ran
-  one (since split into quarter-second pulls).
-* **The films** play through SceAvPlayer from hardware-decoded H.264 copies,
-  falling back to the MPEG-1 path when those are absent. On the console only
-  GAME has been seen to play, with its picture running fast against its sound;
-  the fixes for both (one memory strategy for all three films, the sound taken
-  from the decoder more slowly) are not yet confirmed there.
-* **Precompiled shaders travel in the VPK**: a console log of 2026-09-22 ran
-  with the runtime shader compiler absent and the game started — confirmed on
-  hardware.
-* **The heap is 192 MB**; 300 was refused by the console. The log is written by
-  its own thread, off the frame, and a run that dies still carries its last
-  line.
-* **The crowd is posed over several cores, by default** (P4): the pass is split
-  into a serial resolve, a parallel per-body pass writing only its own body, and
-  an in-order merge, and the frame is byte-identical threaded and inline
-  (`engine: threaded bodies`). The console's bench said `threads: EXACT`,
-  **2.71×** on three runners (2026-09-22), and 2.75× on 2026-09-27.
-* **Bodies posed on the GPU**, GLES only (`todo/gpu-skinning.md`): steps 1–4 are
-  done — the posing program, the crowd's light in the shader, the walkers, and
-  the staged bodies except a speaker whose line is morphing his face. The
-  exactness story is not "same bytes" but PORTING's coverage standard, on the
-  Mac: 0–6 pixels of 307 200 differing for a posed body, 0–17 with lights, 1–5
-  on the street at density 4. **Step 5, the player, is not done**, and step 6,
-  a console city log with the new programs, is owed.
-* **A fault only the console could show**: GPU-posed cutscene limbs flung from
-  their bodies. A start-up self-test now proves the posing program on the device
-  and falls back to the CPU if it fails. It failed on exactly the odd mesh
-  slots, and the fix (four rows a slot, every computed base a multiple of four)
-  has **not yet been confirmed by a console log** (`vita-port.md`, 2026-09-27).
-* **NEON is allowed, beside a generic path** (the reader's rule, 2026-09-25),
-  chosen at compile time and measured against it. Two kernels so far, each
-  bit-identical to its generic loop: the scripted motion's point placement
-  (EXACT, 1.17× on the A9) and the texture upload's keyed-RGBA conversion
-  (EXACT, 1.74× on the A9) — both from the console bench of 2026-09-27.
+The phases, in order:
 
-**What the next console log is expected to answer**
-(`handoff-vita-port.md` §4, added 2026-09-29). None of the M3 work of
-2026-09-29 — the state cache, the music table, the allocation cut — has been
-measured on a console. The next city log's per-section lines, set against
-2026-09-27's (submit 42–47 ms), and its new `gles state` line every 60 frames
-(draws, state calls made and skipped) are what will say how much of the submit
-was state-setting. After that, the largest single item left is **§27, the depth
-tie computed once per set load**: a coincident pair's winner is fixed by the
-texture slots, which change only at a load, so the original's answer — its
-texture-cache quirk included — can be baked in. That is **planned, not done**,
-and it starts with a census across all 635 models. And one run without the tie
-has already said it is not the whole lag: the reader found it "a little
-smoother, [but it] does not make a great difference".
+* **2026-09-12 to 09-14 (M1)**: grids for the ground probe, the walker and the
+  sweeps; the depth tie stored flat; the interface's conversions by table; the
+  moving set meshes patched through an index.
+* **2026-09-29 to 10-01 (M3)**: an audit for the console (§15); the music
+  through a table (exact over all 93 323 264 states, §16); the GLES state
+  cache (1809 → 92 state calls a street frame, §17); the frame's heap churn
+  cut (§18); and then **step 28, the port measured against the original on the
+  console**. That step ranked twelve places where the port did more than the
+  1999 engine, and steps 29–38 took them in order. The depth tie is now
+  decided once per set and drawn a step back (§29). Kay'l and the sky are moved
+  by the renderer as the original moves them (§30). Sets are prepared while
+  the game streams them (§31), and moving meshes are drawn and collided as
+  whole meshes (§37–38).
+* **2026-10-04/05 (M1): RAM and CPU against the original.**
+  `todo/ram-vs-original.md` went through the street's memory owner by owner
+  and took it from **72.7 to 40.1 MB**, with frames byte-identical at each cut
+  (`engine: street memory`). `todo/cpu-vs-original.md` did the same for time.
+  Its tier A made the software reference **7×** faster: the frame hash had been
+  computed every frame, and taking it out let the reference hold 30 fps capped
+  (`engine: raster cost`).
+* **The 4K yardstick** (the reader's, 2026-10-01, M3): 30 fps or more at
+  3840×2160. The lag seen there was **closed as not the engine**. macOS held
+  a bare binary's GPU at 338 MHz, and `make app` builds `OMK.app` so the game
+  runs in Game Mode (`f09b0e4`).
 
-### The viewer's one source file, and its split
+Step 28 also **withdrew a claim**. Step 7 had said the original did the work
+"at a fraction of this detail". The crowd's density is the engine's own rule on
+the same models, and the 1999 engine posed every body on the CPU too, so the
+port draws what the original drew. What it paid extra was its own: driver
+calls, uploads, the per-frame depth tie.
 
-`engine/backends/sdl/play.cpp` is the game and the viewer at once — 21 267
-lines on 2026-09-29 (`wc -l`). `todo/play-split.md` is the plan for breaking it
-up, and the reason is not the line count: its `main` declares 468 names that 95
-lambdas capture, so nothing in the frame loop has a parameter list. Done so
-far: **S0**, a golden record of six scenes (framebuffer and filtered stdout)
-that each step must reproduce, and **S1/S1b**, the pure helpers — the subtitle
-box, the WAV conversion, the text transcoding, the free-look camera and the
-light — moved to `src/app/playhelpers.*`. The rest, S1c to S9, is planned.
+### The machines
+
+The coverage audit covers none of these; `engine/README.md` §Coverage lists
+them as separate backends, each with a handoff file. Each row of the audit's
+"What is left" table gives them **no reachable tier**: what is asserted is
+agreement with the software reference, never with the original.
+
+**The PS Vita** (`todo/handoff-vita-port.md`; GLES2 through vitaGL; begun
+2026-09-17).
+
+* The 2026-09-21/22 console logs reached the city at ~200 ms a frame, first
+  through three crashes and stalls (the music's 16 MB, a whole-buffer copy on
+  every tie patch, the port's own delta clamp).
+* **The 2026-10-05 console run** (a development build, `--enhance-all
+  --no-tie`, 960×544): Anekbah's simulation and drawing took **22–25 ms** and
+  the present 2–7, so **~27–31 ms a frame, inside 30 fps** (handoff §3b4c).
+  That run had the per-frame depth tie turned off. The baked tie (step 29) was
+  first seen on the console at 40–50 ms a frame on 2026-09-30 (§3b5), and
+  whether the signs hold on the Vita's own depth buffer with the bake is a
+  question for the eye.
+* Bodies are posed by the GPU, behind a start-up self-test that falls back to
+  the CPU. Films go through the console's hardware decoder. Shaders are
+  precompiled. The crowd is posed over several cores (2.71× on three runners,
+  exact). NEON kernels sit beside generic ones and are measured against them.
+* **`--profile` does not work on the console**, which is unexplained: no
+  `profile:` line is printed at all (§3b4c). Until it works, console figures
+  are the log's own section lines.
+
+**The Nintendo 3DS** (`todo/handoff-3ds-port.md`; citro3d; begun 2026-10-05).
+
+* It runs on the reader's New 3DS: the films, the menu, a loaded save, the
+  restaurant, and Anekbah with its crowd. Sound and the touch screen work.
+* **In the Azahar emulator** the headless boot reproduces `traces/intro.log`
+  **42 of 42**. The menu frame is byte-identical to the desktop's. The street
+  agrees with the software reference at **99.8–99.9%** of pixels within 24
+  levels.
+* On the console the game side is **~30–48 ms** a frame. The dense street is
+  over budget on **both** CPU and GPU (the CPU waits 13–16 ms for the GPU;
+  citro3d's drawing reads 52 ms). About half of the GPU side is fill.
+* The present runs one frame behind, by the reader's decision. Textures follow
+  the original's own size rule for video memory (a New 3DS gets the 4 MB card's
+  answer, 128×128). Stereoscopic 3D is built, off unless asked, and
+  Azahar-proved only.
+
+**The Meta Quest 2** (`todo/handoff-quest-port.md`; OpenXR on Android, all
+under `OMK_VR`; a prototype).
+
+* Immersive at **72/72 fps**: each eye at the runtime's resolution, first
+  person on the Touch controllers, the interface as a transparent layer, and
+  the screens as windows fixed in the world over a shaded world.
+* The head is a **render** transform composed on the authored camera, so game
+  logic is unchanged. With no head pose every frame is byte-identical.
+  `verify.py`'s `engine: vr camera rule`, `vr frame`, `vr modes` and `vr aim`
+  check it through a simulated headset on the desktop.
+* The videophone's monitor and the system keyboard were built but not yet
+  played when the handoff was last updated (2026-10-07). The first play pass
+  (step 7) had not started.
+* It is the one console-class build that carries the remaster.
+
+**The classic Mac** (`todo/handoff-classic-mac.md`; Retro68 and Carbon, the
+GL1 backend; begun 2026-10-02).
+
+* **Emulated.** The headless boot and 30 frames of the street start are
+  **byte-identical to the host** on Mac OS 9.2 and on Tiger, in QEMU (§1).
+* **A real iBook G3** (500 MHz, an 8 MB Rage 128) under Mac OS X 10.2/10.3,
+  through the Carbon build. The street ran at 85–180 ms a frame in one run
+  and 146 ms in the next (§3f), and the iBook's "white screens" were traced to
+  OpenGL's colour sum being left on after the world.
+* **A real iMac G3** (400 MHz, Rage 128 VR, OpenGL 1.1) under **Mac OS 9**
+  (§3i). Every allocation had been a Memory Manager `NewPtr`. A slab allocator
+  under `malloc` took Anekbah **from ~3 to ~20 frames a second**. In a later
+  run where the reader changed the view distance, the street ran at
+  **16.5–18.1 frames/s at a 50 m clip** and **8.7–12.3 at 100 m**. The GL draw
+  there follows the triangle count, so the time is in the geometry path, not
+  in fill.
+* **The latest GL1 work** follows the original's Direct3D path on these cards:
+  one draw per bucket, indexed draws, the vertex arrays locked, and since
+  `7853dda` (2026-11-02) **the fog drawn by the card** as OpenGL's linear fog,
+  the equivalent of the original's table fog. On the emulated OS 9 that fog
+  frame is within 310 pixels of the host's. It had not yet been run on the
+  iMac when the handoff was written.
+* A **launch guard** records the step a frozen OS 9 launch stopped in and
+  skips it next time. It exists because an earlier iBook freeze left no log
+  to say where.
+
+**PowerPC Mac OS X 10.4** builds through `ppc-darwin.mk`, as the SDL viewer
+with the GL1 backend. On a real iBook G4 it ran at 6–8 fps, because it read
+every frame back from the card. The fix draws the world straight to the
+window, and it was measured only on the emulated Tiger, where the street's
+frame median fell to 32.2 ms, which is the 30 fps cap. The G4's own run with
+it is still the next step (§3g).
 
 ### Two rules that shaped the code more than any design
 
 **Everything counts in frames.** The simulation is fed thirtieths of a second,
-never seconds, however fast the frontend presents (`docs/PORTING.md` §A7;
-chapter 2 has why).
+never seconds, however fast the frontend presents (`docs/PORTING.md` §A7). The
+Quest steps the simulation on the measured delta at 72 Hz, and that delta is
+still expressed in frames.
 
-**All data access goes through one class.** `DataFs` resolves case-insensitively
-because Win95 did, and on the Vita it is also what stands in for a standard
-library that turned out not to be the platform (`std::filesystem` and the
-standard mutex broke there; `handoff-vita-port.md` §5). It is where the write
-guard lives too: `safeOutputPath` refuses any output path inside the shipped
-tree or carrying a shipped-data extension. That guard exists because a tool
-whose second positional argument was its output once truncated a file from the
-1999 disc, and the check that noticed ran afterwards — the wrong side of the
-event.
+**All data access goes through one class.** `DataFs` resolves names
+case-insensitively, because Win95 did. On each port it is the one place a file
+API is chosen: the Vita's, the 3DS's, and the classic Mac's File Manager with
+HFS paths through `omk::hostPath()` (PORTING A10). It is also where the write
+guard lives. `safeOutputPath` refuses any output path inside the shipped tree
+or with a shipped-data extension, because a tool once truncated a file from the
+1999 disc.
 
 ### The instruments
 
-Three things exist to be looked at rather than measured:
-
-* **`omk-play`** — the game, and also a free-look viewer for one set, on the
-  software, Vulkan or GLES renderer. It draws through the same boundary the
-  checks measure, so a fault you can see in it is a fault in the thing they
-  check. Its harness flags reach a flow without the playthrough that would.
-* **four web viewers** that read the data directly rather than through the port
-  — a conversation player, a cutscene player, the menus, and the world scripts
-  as annotated listings.
-* **`tools/sim`** — a Python model of the runtime that the C++ is compared
+* **`omk-play`**, which is the game and also a free-look viewer for one set,
+  on any desktop renderer. It draws through the boundary the checks measure.
+* **The profiler** (`todo/debug-tools.md`): `--profile run.prof`, read by
+  `tools/omkprof.py` (a summary, per frame, or a served page with a call tree,
+  memory by owner and GPU memory). It compiles out of release builds
+  (`make release`, `classic-release`, `vita-release`). Its one obligation is
+  to change nothing the game does, and `engine: profiler` holds it to that.
+* **Events**: `omk::event(...)` writes `@evt` lines that checks parse, so
+  rewording a log line cannot turn a check red (`engine: events`).
+* **Five web viewers** that read the data directly rather than through the
+  port: `/dialog`, `/cutscene`, `/ui`, `/model` (every `.3DO`) and `/world`.
+* **`tools/sim`**, a Python model of the runtime that the C++ is compared
   against.
 
 ### Where the port stands
 
-The coverage audit in `engine/README.md` §Coverage is the authority, written out
-row by row because it has been wrong twice. As of 2026-09-29 it still reads:
-**31 rows fully ported**, **7 partly**, **0 lifted as a table but never
-consumed**, **0 unported**, and **3 that are not portable subjects** — the
-simulator, the UI model and the trace rig, which are this project's instruments.
-The 41 rows predate most of chapter 6; melee, shoot mode's runtime, the slider,
-the water and the falls, the shadows, the lights and the street life are
-recorded in dated paragraphs above the table rather than as new rows. What is
-left on the table's own terms is essentially **device** and **native code
-outside the decompilation**: DirectSound's mix, and the screen callbacks that
-were never recognised as functions.
+The coverage audit in `engine/README.md` §Coverage is the authority, and it is
+written out row by row because it has been wrong twice. On 2026-11-02 it still
+reads: **31 rows fully ported**, **7 partly**, **0 lifted as a table but never
+consumed**, **0 not ported**, and **3 that are not portable subjects** (the
+simulator, the UI model and the golden traces). `verify.py: porting standard`
+checks that those buckets sum, and it was green on 2026-11-02.
 
-`verify.py --list` counts 485 entries on 2026-09-29: 484 checks, 257 of them
-behind `--slow`.
+The 41 rows date from 2026-08-31. Most of what has been ported since (street
+life, the weather, the day/night cycle, the `.3DO` light table, the slider
+audit, melee, shoot mode and both bosses) is recorded in dated paragraphs
+around the table, not as new rows. The partly-ported rows are still missing
+the same kind of thing: per-screen native callbacks never recognised as
+functions, the joystick axes, the player's own firing state, DirectSound's mix,
+and the Vulkan back end of I2D.
+
+What a person has played and what is only committed are kept apart.
+`todo/play-test.md` lists **41** items that have checks behind them and are
+still waiting for someone to play them.
 
 ## Where it lives
 
 | | |
 |---|---|
-| the standard | `docs/PORTING.md` — Part A is this chapter, Part B is chapter 12 |
-| the audit | `engine/README.md` §Coverage |
+| the standard | `docs/PORTING.md`. Part A is this chapter and Part B is chapter 12 |
+| the audit | `engine/README.md` §Coverage and its "What is left" table |
 | the enhancements | `todo/enhancements.md` |
-| the speed record | `todo/optimization.md` — the steps table, §7 (the decision and its correction), §15–§18, §25, §27 |
-| the handheld | `todo/handoff-vita-port.md` (the state), `todo/vita-port.md` (the plan and the record), `todo/gpu-skinning.md`, and the older `todo/handoff-vita.md` (the pre-port decision) |
+| the remaster | `todo/remaster.md`, `todo/graphics-menu.md`, `todo/restore-weather.md` |
+| the speed and memory record | `todo/optimization.md` (steps 1–38, the 4K benchmark), `todo/cpu-vs-original.md`, `todo/ram-vs-original.md`, `todo/debug-tools.md` |
+| the PS Vita | `todo/handoff-vita-port.md`, `todo/vita-port.md`, `todo/gpu-skinning.md` |
+| the Nintendo 3DS | `todo/handoff-3ds-port.md`, `todo/3ds-port.md` |
+| the Quest | `todo/handoff-quest-port.md`, `todo/quest-port.md` |
+| the classic Mac and PowerPC | `todo/handoff-classic-mac.md`, `todo/classic-mac-port-1999.md`; `engine/ppc-darwin.mk` |
 | the viewer's split | `todo/play-split.md` |
-| the build | `engine/Makefile`; `engine/backends/vita/CMakeLists.txt` for the console |
-| the enforcement | `verify.py: porting standard`, which asserts the audit's counts sum and that every item the standard calls unfinished is still called unfinished |
+| the enforcement | `verify.py: porting standard`, `engine: frontend gateway`, `engine: remaster switch`, `engine: classic build`, `engine: draw core` |
 
 ## What is not settled
 
-* **30 fps on the Vita is open.** Nothing since the 2026-09-27 CPU-path log has
-  been measured on a console as a whole frame in the city: not the GPU posing
-  with its odd-slot fix, not the state cache, the music table or the allocation
-  cut. The 2026-09-14 decision's numbers are the M1's, and its CPU factor was
-  never measured, only framed.
-* **The depth tie baked at load (§27) is a plan.** Its premise — that a
-  coincident pair keeps its winner for the life of a load — is argued from the
-  engine's draw order and from the pairs sitting inside one rigidly moving
-  mesh; the census that would find a pair spanning two independently moving
-  meshes has not been run.
-* **GPU skinning has no `verify.py` check for the walkers and the staged
-  bodies** (steps 3–4): `omk-play-gles` needs a real GL window, which a check
-  must not open, so those proofs are recorded runs; `engine: gles pose` covers
-  the maths through a windowless probe. The player (step 5) is still posed on
-  the CPU.
-* **The films on the console**: only GAME has been seen to play, too fast
-  against its sound; the fixes since are unconfirmed there.
-* **The port has been built and run on macOS on Apple Silicon, in the Vita3K
-  emulator and on a PS Vita.** Its core has no operating-system conditional, so
-  it is portable by construction, but that is a property of the source, not a
-  tested fact on Windows or Linux. Case-sensitive filesystems will break some of
-  the *Python* tools, which let the host do the resolving.
-* **The Vulkan backend has no reachable tier**, by construction: its correctness
-  is inherited from the software backend it mirrors (`docs/PORTING.md` §B6).
-  The GLES one is measured by coverage against the software reference (0.9961
-  plain, 0.9977 dithered, with the 565 present exact, on an M3 —
-  `todo/vita-port.md` §0), with one recorded blind spot: the probe's camera does
-  not exercise the cutout rule.
-* **A question found on the way and not changed**: `shadowBonesFor(-1)` returns
-  no bones, where its own comment reads the engine's switch as giving an npc at
+* **No backend but the software reference has a reachable tier.** Vulkan,
+  GLES, GL1 and citro3d are measured only against that reference, never
+  against the original (`docs/PORTING.md` §B6; `engine/README.md` "What is
+  left"). The GL1 backend agrees with the reference at coverage 0.9932 on the
+  street (`engine: gl1 backend`).
+* **The console figures are single runs and are not repeatable in
+  `verify.py`.** The Vita's ~27–31 ms is one run without the depth tie. The
+  3DS's numbers come from card sessions, and several of its fixes (the
+  one-frame-behind present's tiling, the 400×224 present, stereoscopic 3D) are
+  Azahar-proved only. The iMac's rates depend on the view distance, and the
+  card fog of 2026-11-02 had not yet run on it.
+* **The 3DS has an intermittent `bad_alloc` at the first world frame.** It was
+  seen twice in Azahar and never on the console. It depends on memory layout,
+  and the refusal now prints its own call site for the next time
+  (handoff §5).
+* **`--profile` does nothing on the Vita**, and the cause is unknown
+  (handoff §3b4c).
+* **The iBook's earlier OS 9 freeze has no cause.** The emulator does not
+  reproduce it. The launch guard works around it without explaining it
+  (handoff §3i).
+* **The Quest's last two built features had not been played** as of its
+  handoff, and its first play pass had not started.
+* **Windows and Linux desktops have never been tried** (`README.md`
+  "Platforms"). The core has no operating-system conditional outside
+  `src/platform/`, but that is a property of the source, not a tested fact.
+  The Python readers let the host resolve case and will break on a
+  case-sensitive volume. The golden-trace rig is macOS-only.
+* **The big-endian replay is not a check.** It needs the emulator, so a new
+  raw read is caught only when someone runs it again (PORTING A9).
+* **A question noticed and not changed**: `shadowBonesFor(-1)` returns no
+  bones, while its own comment reads the engine's switch as giving an NPC at
   detail 0 the chest's shadow. The engine's switch decides it, and it has not
   been re-read (`todo/optimization.md` §18).
-* **The trace rig is macOS-only** — it drives the original under CrossOver and
-  captures with a platform screenshot tool.

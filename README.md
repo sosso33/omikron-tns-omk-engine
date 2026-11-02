@@ -46,6 +46,22 @@ lighting, supersampling, enlarged text and 60 fps with the bodies smoothed
 between keys (`todo/enhancements.md`; `--enhance-all` turns them on;
 [pictured below](#what-it-looks-like), each with its limits).
 
+Beyond them is a **remaster**, a tier of its own because it overrides the
+authored art (`todo/remaster.md`): texture, interface, font and film packs
+each player generates from their own copy (never in this repository), bloom
+and a grade per city, reflecting water and floors, bodies and emitters lit by
+the set, generated normal maps, ambient occlusion, mist, rounded bodies, FSR
+upscaling, and the game's own rain and snow drawn in the scene, wetting the
+floors, walls and bodies they fall on. Every feature is its own option and
+off by default; `--remaster DIR` is a preset over them, **F10** switches
+between the original and the remaster in play, and OMK's own pages on the
+options screen write all of it back to the ini (`todo/graphics-menu.md`). It
+is compiled only where `OMK_REMASTER` is defined - the desktop viewers and
+the Quest - so the Vita, 3DS and classic Mac builds carry none of it. Beside
+it, `[Restored] weather` draws the showers the original planned and never
+shipped: Qalisar's and Lahoreh's rain, and the sand of the type-3 areas
+(`todo/restore-weather.md`, `docs/ASSETS.md` 4e).
+
 It is not a finished game, and no claim is made about anything a reader has
 not confirmed in play: [`todo/play-test.md`](todo/play-test.md) lists what is
 committed and still waiting for a person, and the play reports and what became
@@ -64,7 +80,7 @@ build recipe and its traps:
 |---|---|---|
 | **PS Vita** (VitaSDK, GLES2 through vitaGL) | runs on a real console from the films to the city; Anekbah's street measured at ~27-31 ms a frame, inside 30 fps | [`todo/handoff-vita-port.md`](todo/handoff-vita-port.md) |
 | **Nintendo 3DS** (devkitARM, citro3d) | runs on a New 3DS into the city with its crowd, sound and touch; ~30-48 ms a frame of game, the dense street GPU-bound; optional stereoscopic 3D. In Azahar the boot reproduces the original's trace 42 of 42 and the menu is byte-identical | [`todo/handoff-3ds-port.md`](todo/handoff-3ds-port.md) |
-| **Classic Mac** — Mac OS 9 and Mac OS X 10.2-10.4 on PowerPC (Retro68 / Carbon, a fixed-function OpenGL 1.x backend) | plays on a real **iBook G3** (500 MHz, an 8 MB Rage 128, Mac OS X 10.2 and 10.3) through the Carbon build: Anekbah's street at ~100 ms a frame, a fight at ~135, with the original's own rule for fitting its textures in video memory; boots byte-identical to the Mac on Mac OS 9 and Tiger in emulators; big-endian done. Being made faster step by step | [`todo/handoff-classic-mac.md`](todo/handoff-classic-mac.md) |
+| **Classic Mac** — Mac OS 9 and Mac OS X 10.2-10.4 on PowerPC (Retro68 / Carbon, a fixed-function OpenGL 1.x backend) | plays on a real **iBook G3** (500 MHz, an 8 MB Rage 128, Mac OS X 10.2 and 10.3) through the Carbon build: Anekbah's street at ~100 ms a frame, a fight at ~135, with the original's own rule for fitting its textures in video memory. And on a real **iMac G3** under Mac OS 9 (400 MHz, a Rage 128 VR with OpenGL 1.1): the street at ~17 frames/s with a 50 m clip, 9-12 at 100 m, after a slab allocator under `malloc` took it from ~3 to ~20; boots byte-identical to the Mac on Mac OS 9 and Tiger in emulators; big-endian done. Being made faster step by step | [`todo/handoff-classic-mac.md`](todo/handoff-classic-mac.md) |
 | **Meta Quest 2** (Android NDK, OpenXR) | runs immersive on a Quest 2 at 72 fps: each eye drawn at the runtime's resolution, first person on the Touch controllers, the interface as a transparent layer, screens as windows fixed in the world. A prototype; the system keyboard for the name field is built, and a first play pass is next | [`todo/handoff-quest-port.md`](todo/handoff-quest-port.md) |
 
 The name is not new — it is what the code has always called itself. The C++
@@ -83,7 +99,7 @@ Two halves, and the split is the point:
   engine, 42 events of 42, from a cold start — so "it boots" above is a
   measurement against the real thing, not a screenshot.
 
-Plus `tools/` (Python readers, four web viewers and the test suite) and
+Plus `tools/` (Python readers, five web viewers and the test suite) and
 `tables/` (the tables compiled *into* the executable, lifted to JSON — the one
 thing a replica cannot read out of the game's data files).
 
@@ -249,7 +265,7 @@ OMK_ASM=~/ida/Runtime.exe.asm OMK_CLEAN=~/ida/clean python3 tools/verify.py
 ```
 
 Without it, **the 18 checks that read it report `skipped`** — naming the
-variable to set — and the rest of the suite's 577 run normally. `tools/dialog_disasm.py`
+variable to set — and the rest of the suite's 633 run normally. `tools/dialog_disasm.py`
 falls back to the committed `tables/vm_opcodes.json`, which carries the same
 VM table; `verify.py: vm table sources` asserts the two agree, 153/153 operand
 counts and 49/49 `.TAG` domains, so the fallback cannot drift unnoticed.
@@ -366,13 +382,18 @@ can paste into a check.
 checked against. `--vulkan` presents through Vulkan, and `make play-gles`
 builds `build/omk-play-gles`, the OpenGL ES path the Vita and the Quest use;
 every GPU backend poses the bodies itself, from the rest corners and one
-matrix a mesh, where the software reference poses them on the CPU. `make release` builds
+matrix a mesh, where the software reference poses them on the CPU (the
+classic Mac's fixed-function OpenGL 1.x backend is built by
+`engine/ppc-darwin.mk` and `make classic`). `make app` wraps the same binary
+as `build/OMK.app`, which macOS runs as a game - play at 4K that way, since a
+bare binary's GPU clock can be held low - and `make noremaster` builds the
+viewers without the remaster, as the consoles get them. `make release` builds
 without the instruments and the profiler, and `make hardened` with the
 standard library's bounds checks; with the instruments,
 `omk-play --profile run.prof` records a frame-by-frame profile and
 `tools/omkprof.py` reads it or serves it as a page (`todo/debug-tools.md`).
 
-And four web viewers that read the data directly rather than through the
+And five web viewers that read the data directly rather than through the
 replica:
 
 ```sh
@@ -383,12 +404,14 @@ python3 tools/omkweb.py --port 8752     # http://127.0.0.1:8752
 speaker posed from the morph data, staged in its set under its own dialogue
 cameras. `/cutscene` flies an in-engine cutscene with its ambient particle
 emitters. `/ui` drives the game's own menus with its own input words.
-`/world` serves the world scripts as annotated listings.
+`/model` shows any `.3DO` - characters, objects, sets - with its textures,
+vertex colour, blend modes, mesh tree and cameras. `/world` serves the world
+scripts as annotated listings.
 
 ## What is established
 
 Solved and documented with evidence: the `IAM` archives and conversations, the
-script VM (153 opcodes, 133 named, 99.97% of executed instructions), textures
+script VM (153 opcodes, 133 named, 99.99% of executed instructions), textures
 (2534/2534 exact), meshes and sets, the animation libraries (243362/243362
 unit quaternions), the `.CTL` state machines (7/7 exact, all 2044 graph edges
 resolving), the scene scripts (220/220), morph animation and its ADPCM audio

@@ -92,6 +92,12 @@ texture by its **file name** alone, and on a match reuses what is already in
 memory. That is the cache chapter 5 described, whose side effect is that a
 set can draw its neighbour's version of a texture.
 
+The slots also had to fit the card. The game's stated minimum was a 4 MB card,
+and at start-up the engine asks the card how much memory it has and halves
+the textures' size until all 58 slots fit: a small card simply drew smaller
+textures. The port's backends for the old Macs and for the 3DS apply the same
+rule to their own hardware (chapter 14).
+
 ## Colour is baked
 
 A set is **pre-lit**. Every vertex carries a colour baked into the file, and
@@ -114,13 +120,20 @@ game's look:
 * textures filtered **bilinear** on a 3D card, sampled **point** on the
   software devices, and **no mipmaps** on either;
 * the driver's **dither on**;
-* fog **linear**, and **black**;
+* fog **linear**, in the place's own colour, which a day-and-night cycle moves
+  with the game clock (black only in a few interiors);
 * the sky a **flat painted ceiling** that follows the camera, not a dome;
 * a far skyline that **shimmers**: a 32-byte table oscillates the vertex
   colour of 233 set meshes on the frame clock.
 
 A replica has to do all of them, including the dither and the shimmer, which
 are easy to leave out because they look like defects. They are the original.
+
+The fog's colour is a lesson of its own. It was read as black for months: the
+loader zeroes it, and nothing near the renderer writes it again. The writer
+was in the game's tick. Every frame, it blends four colours stored with the
+area by the time of day, and the screen is cleared to the same colour, so
+Anekbah's horizon goes from a pale blue-green at dawn to near-black at night.
 
 ## Shadows are blobs
 
@@ -129,6 +142,25 @@ under a handful of bones (the chest always, the head and legs from detail
 level 1, the arms at level 2) and faded by distance to the floor below each
 bone. The floor is found by probing straight down, the same kind of probe the
 walker uses.
+
+## Weather is drawn over the picture
+
+Some of the cities rain, and one snows. It is not a particle system in the
+3D sense. Each frame a small function moves up to 200 drops near the camera,
+projects them, and draws rain as short lines and snow as a copied bitmap,
+straight onto the picture. A ray cast upward from the eye stops the shower
+under a roof. The shower comes and goes on a timer of its own, on the wall
+clock, and as it starts and ends it sends the area a message, which is how the
+music switches to a rainy version of the city's track. All of it runs only at
+the highest *detail level* option; at the setting the game starts with, there
+is no weather at all.
+
+The code holds a third weather, **sand**, written as a shower like the rain,
+its texture shipped. One test in the caller lets only rain and snow through,
+so the sand never draws. And two cities have rainy music that nothing ever
+plays, because their weather type is zero. The port reproduces all of it, and
+offers the unfinished parts back behind a separate, labelled switch (chapter
+12).
 
 ## Mirrors are a second pass
 
@@ -255,6 +287,16 @@ the same fonts, and matches the original's framebuffer pixel for pixel.
 
 ![The start menu's labels, drawn by the port.](../manual/images/menu-text-port.png)
 <p class="caption">The start menu's four labels drawn by the port from the game's own fonts: 6 132 pixels, each the same as in the original's capture shown in chapter 2 (<code>manual/images/menu-text-port.png</code>).</p>
+
+## A screen that closes late
+
+Some screens do not close the moment you answer. Type the right code into a
+door's keypad, and the screen stays up a few seconds before it goes. That delay is a timer, one of the interface's small
+oscillators, started *instead of* the close. While it runs the screen ignores
+input, and the answer reaches the parked script only when the screen finally
+closes. The port first closed such screens on the answer's own frame, which
+looked harmless: a script woke a few seconds early, and one screen, which
+answers nothing, never closed at all.
 
 ## Input is shared
 

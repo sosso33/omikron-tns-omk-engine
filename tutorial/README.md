@@ -32,7 +32,7 @@ Every lesson has the same six parts:
 | **Traps** | the mistakes that have already cost time on this subject |
 
 The outputs printed in the lessons were produced by running the commands on
-the tree as it is. If yours differ, something changed - which is itself
+the tree as it is (first on 2026-10-13, re-run on 2026-11-02). If yours differ, something changed - which is itself
 worth understanding before going on.
 
 Lessons name **functions and files, not line numbers**: lines move with every

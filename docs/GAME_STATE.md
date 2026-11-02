@@ -1010,6 +1010,14 @@ Three things follow that neither the scripts nor a player could state:
   the save point's script, not the panel: reach the panel with no rings and it
   writes for free. Which is presumably why the free save point in AREA 152
   needs no special case in the panel at all.
+  *(Cross-reference, 2026-11-02: [UI.md](UI.md) §3g reads a gate one step
+  EARLIER — screen 30's `Sauvegarde` item (`0x004AE060`) opens
+  `off_4E2FB0`, "Je n'ai pas assez d'Anneaux", instead of the slot panel when
+  property 5 reads zero. The two readings are of different functions and do
+  not contradict each other: the item refuses at the panel's entry, and this
+  `jz` is what the confirm does if it is reached with zero rings anyway.
+  Whether any route reaches it so is not established, and no check ties the
+  two.)*
 * **And the charge can be waived** by the screen's `+78`: not −1, no charge.
 
 `verify.py: save points`, `save price`. For the port this fixes two things: the

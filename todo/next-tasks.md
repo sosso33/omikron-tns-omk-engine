@@ -12,6 +12,30 @@ usually a better predictor of cost than the size of the feature.
 
 ---
 
+## Where the list stands, 2026-11-02
+
+Every feature item on the list has since been built; the headings below now
+say so, each with the file that records it. What is still open is the BUGS
+whose reports were never reproduced or never re-confirmed - of this list, only 6:
+
+| # | state | where |
+|---|---|---|
+| 6 | the mechanism CLOSED 2026-10-05 (`953e6e0`); the street report itself unreproduced - open until a reader says it is gone | §6 below, `todo/drift-audit.md` M1 |
+| 7 | closed by 2026-09-09 ("The order as of 2026-09-09" lists it among the closed; the heading below still says REOPENED) | §7 below |
+| 9 | **DONE**: OPTIONS (screen 35 hosted by the menu) and QUIT (`kCbStartQuitYes`), 2026-10-01 | `todo/start-menu.md` 3b, 3c |
+| 10 | **DONE**: identity, characteristics and the character view CONFIRMED IN PLAY 2026-09-16; Options 2026-10-01; Quit 2026-09-16 | `todo/sneak.md` 5e |
+| 12 | **DONE, CONFIRMED IN PLAY 2026-09-15** | `todo/multiplan.md` step 6 |
+| 13 | **DONE**: all five screens it surveyed, the videophone's close last, 2026-10-12 | `todo/missing-ui.md` |
+| 16 | **DONE, PLAYED AND CONFIRMED 2026-09-08** | `todo/slider.md` "What is left", `todo/handoff-slider.md` |
+| 17 | **DONE**: every step of the plan, confirmed in play 2026-09-17 | `todo/handoff-fight-mode.md` 8 |
+| 18 | **DONE**: the gunmen, the first-person arm and the phase confirmed in play; the two bosses Astaroth (2026-10-05) and Gandhar (2026-10-06) | `todo/handoff-shoot-mode.md` 2, `todo/astaroth.md`, `todo/gandhar.md` |
+| 22 | closed by 2026-09-09 (the same list; every fault in §22 is struck through as FIXED) | §22 below |
+
+The work that has filled the time since lives in its own files and is not
+this list's: the ports (`todo/handoff-*.md`), the remaster
+(`todo/remaster.md`, `todo/graphics-menu.md`, `todo/restore-weather.md`),
+the drift audits and the scene/gameplay audit.
+
 ## The order as of 2026-09-09
 
 The 2026-09-06 triage below still holds its principle; this is the same list
@@ -510,14 +534,14 @@ end (`GAME_STATE` §8, §8a): the slot geometry, the DB, the clock fields, the
 What is missing is the writing and the two menus, not the knowledge. Ranked
 high because a port you cannot save is hard to test anything else in.
 
-### 9. Main menu completed — M, very strong evidence
+### 9. Main menu completed — M, very strong evidence — **DONE 2026-10-01**, `todo/start-menu.md` 3b/3c
 
 The start menu already ANSWERS FOR ITSELF in both the simulator and the port
 (type a name, walk to Confirmer, the empty-name gate refuses). `ui_widgets`
 carries the panels, items and answer sites. New game works but is "not
 correct" per the reader — worth pinning what differs before building the rest.
 
-### 10. Sneak: character / info / config pages — M, very strong evidence — **STARTED 2026-09-15, `todo/sneak.md` §5**
+### 10. Sneak: character / info / config pages — M, very strong evidence — **STARTED 2026-09-15, `todo/sneak.md` §5; DONE 2026-10-01 (steps 1-4 CONFIRMED IN PLAY 2026-09-16)**
 
 `engine/src/ui/widgets.h` already names `kPanelSneakIdentity`,
 `kPanelSneakMemory`, `kPanelSneakOptions`, the tab column, the shared row and
@@ -536,13 +560,13 @@ second `Ui_OpenShop`, not the shops.) The shops are **83 of the world's 242
 AREA 39 opens screen 21 after its conversation, and today it draws the title
 over empty placeholder boxes. The plan and the reading are in the file.
 
-### 12. Multiplan UI — M, **STARTED 2026-09-15, `todo/multiplan.md`** - it is a STORAGE LOCKER (sneak <-> kiosk, event 36 requests 7/8), not a map
+### 12. Multiplan UI — M, **STARTED 2026-09-15, `todo/multiplan.md`; DONE, CONFIRMED IN PLAY 2026-09-15** - it is a STORAGE LOCKER (sneak <-> kiosk, event 36 requests 7/8), not a map
 
 The tile-map background is read (and `ui page` asserts that MULTIPLAN's
 lit-copy strip is black in the composed background, which is a real detail).
 The panel behaviour is not. Nothing in `engine/` references it yet.
 
-### 13. Any remaining UI — M, fair evidence
+### 13. Any remaining UI — M, fair evidence — **DONE 2026-10-12**, `todo/missing-ui.md` (all five screens)
 
 37 screens are enumerated with their bitmaps and text files resolving; 28 are
 walked. This is the tail after 9-12, and should be re-scoped once those are
@@ -588,7 +612,7 @@ The walker is ported with the 30° slope limit and the 30 cm step, and the
 is a fall that landed), so the two may want doing together — read for 14
 first, then decide.
 
-### 16. Slider: call one from the sneak, transport, drive — L, good evidence
+### 16. Slider: call one from the sneak, transport, drive — L, good evidence — **DONE, PLAYED AND CONFIRMED 2026-09-08**, `todo/slider.md`
 
 Already measured, which is why it is trusted: `todo/standing-unknowns.md` §5
 puts `Slider_TickRide` at ~600 lines of undecompiled machinery
@@ -597,7 +621,7 @@ already pinned — the ride runs at HALF SPEED, camera mode 8's subject is the
 slider not the player, and the mount binds the player's `node+156` to the
 slider's matrix. The sneak's slider page exists in the widget tree.
 
-### 17. Fight mode — L, good evidence
+### 17. Fight mode — L, good evidence — **DONE 2026-09-17, CONFIRMED IN PLAY**, `todo/handoff-fight-mode.md` 8
 
 The `.CTL` combat block is fully decoded (damage, hit window, reaction by id,
 knockback), the four AI profiles are read (button combos injected into the
@@ -608,7 +632,7 @@ Note the oracle problem: `traces/fight.log` proved combat CANNOT be captured
 by the trace rig, because `fight.begin` announces nothing. So this will be
 data-constrained rather than trace-verified, like the `.CTL` channel.
 
-### 18. Shoot mode — L, good evidence, and a DECISION to revisit
+### 18. Shoot mode — L, good evidence, and a DECISION to revisit — **DONE**, `todo/handoff-shoot-mode.md`; the bosses in `todo/astaroth.md` (2026-10-05) and `todo/gandhar.md` (2026-10-06)
 
 Read: four callbacks by character type, Gandhar's three compiled behaviour
 scripts, 302/3/1/0 over 306 sites. `todo/standing-unknowns.md` §2 records that
@@ -738,7 +762,7 @@ a rerun in the same session proves nothing.
 
 ---
 
-### 22. The Telis cutscene in Kay'l's flat — four faults, two fixed
+### 22. The Telis cutscene in Kay'l's flat — four faults, two fixed — **all FIXED, closed by 2026-09-09** (see below)
 
 Reported by a reader on 2026-09-06, from the first slot of `omk-saves/GAMES`:
 after the goodbye scene, *"she's looking at the wrong direction then goes back

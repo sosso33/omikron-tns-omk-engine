@@ -96,6 +96,7 @@ grep -a 'screen 18\|answered' /tmp/arch.txt
 
 ```
 frame 104: screen 18 is asking - arrows move, ENTER confirms, TAB closes
+screen 18: its own sound (slot 4, `arc007`)
 terminal family: screen 18 cell 0 - the bar says '{fCC}Consulter le dossier "Manek"'
 terminal family: screen 18 - the display says '...(string 5, the cover page)
 terminal family: screen 18 cell 1 - the bar says '{fCC}Consulter le dossier "KHONSU"'

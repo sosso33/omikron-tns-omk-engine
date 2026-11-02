@@ -240,6 +240,27 @@ ppc-darwin.mk            the engine, every tool and `omk-play` for Mac OS X
                          10.4 on POWERPC, cross-compiled - the big-endian
                          build that holds PORTING A9. Its own object
                          directory, so it never touches the host build.
+backends/gles/           the OpenGL ES 2 renderer - `make play-gles` on the
+                         desktop, vitaGL on the Vita, the Quest's eyes; its
+                         remaster half in two `.inl` under OMK_REMASTER.
+backends/vita/           the PS VITA build (`make vita`, VitaSDK through
+                         CMake; `todo/handoff-vita-port.md`): `vita_main.cpp`,
+                         the films through AvPlayer, the IME, a bench.
+backends/n3ds/           the NINTENDO 3DS build (`make -C backends/n3ds`,
+                         devkitARM): a citro3d renderer, its own frontend and
+                         the bottom screen's panel (`todo/handoff-3ds-port.md`).
+backends/android/, backends/openxr/, backends/vr/
+                         the META QUEST build (`scripts/android-build.sh`, the
+                         NDK through CMake, no Gradle): the OpenXR host and
+                         the viewer's VR half, compiled only under OMK_VR
+                         (`todo/handoff-quest-port.md`).
+backends/remaster/       the viewer's REMASTER half (the packs and preset, a
+                         set's water, floors and lights, the bodies, the
+                         mist, the rain, the preload, the F10 switch),
+                         compiled only under OMK_REMASTER; the shared files
+                         call it through one-line hooks that
+                         `backends/sdl/playremaster_off.cpp` stubs
+                         (`todo/remaster.md` "The remaster switch").
 ```
 
 **`build/omk-play ../fr ../tables` LAUNCHES THE GAME**: the three FLIS movies
@@ -3517,6 +3538,22 @@ drawn one grain of `sand.bmp` a drop, following the shower's ramp - OMK's
 design, the reader's choice). Checks: `engine: weather` (its restored legs),
 `engine: rain 3d` (the sand in the remaster's scene).
 
+**And 2026-10-29, OUT OF BREATH and THE HEALTH FLASH** (`c925e0b`) —
+`MDRUN` / `MDWALK` count the run's loops and `MDSTOPR` / `MDSTOPW` enter
+H1Avnt's groups 164 / 166 (`H_BREATH`) past 30 of them, read from the raw
+image (`PlayerController::breathMove`); op 93's player arm calls
+`Hud_ShowValue` (0x0041CE50), whose bar `Actors_TickAll` eases from the old
+value to the new over 2.5 s and drops at 3 s - the flash on a fall or a
+run-over, refused in shoot mode. Checks: `engine: out of breath`, `engine:
+hud flash`. Not yet played.
+
+**And 2026-11-01, A DOOR'S TWIN** (`d08e0f6`) — a city's set and the interior
+behind a door both carry the door's leaves, moved by one path while both are
+shown, their corners ~0.001 apart: the engine's quantised buffer keeps the
+first drawn, Vulkan's 32-bit depth fought over them. The later face is left
+out of the shared draw list (`o3de/settwin.h`), so every backend gets it; GL1,
+the Vita and the 3DS were not run. Check: `engine: door twin`.
+
 **And 2026-09-16, MELEE** (`todo/fight-mode.md`, `docs/ASSETS.md`) —
 `actor/fight.{h,cpp}`: the two combat contexts `Fight_Begin` builds from the
 fighters' properties (Vie, Carac Attack, Carac Dodge, and the options row-16
@@ -3752,6 +3789,24 @@ it off every frame tried is byte-identical to the build before. **Not a
 port**: the original has mirrors (flag `0x100000`), not this. Check:
 `engine: water reflection` (shown to fail three ways; the orientation is
 judged by eye).
+
+**And 2026-10-20..29, THE REST OF THE REMASTER** (`todo/remaster.md`; none of
+it a port, all of it off by default, `--remaster DIR` the preset over it,
+compiled only under OMK_REMASTER - `engine: remaster switch`, `engine:
+remaster preset`): the bodies lit by their surroundings and the emitters'
+light (A5, `engine: body light`, `emitter light`), generated normal maps and
+relief (B3, `normal maps`, `relief`), ambient occlusion and mist (A4, `ao`,
+`mist`), reflecting floors on one or two levels (`floors`, `floor levels`),
+FSR 1 upscaling (A6, `upscale`, `gles upscale`), rounded bodies (D1,
+`smooth bodies`), the interface, font and film packs (Tier E, `ui pack`,
+`font pack`, `film pack`), the pack in GPU block formats (`block formats`),
+the preload of the sets behind doors (`preload`), and the weather drawn in
+the scene - the game's own rain and snow as 3D drops and flakes, wet floors
+with ripples and puddles, wet walls and bodies, snow lying (`rain 3d`, `wet
+floors`). OMK's own pages on the options screen write it back to the ini and
+apply what the running game can take; F10 switches original and remaster in
+play (`todo/graphics-menu.md`; `engine: graphics menu`, `graphics menu
+live`, `remaster mode`).
 
 **And 2026-09-09, THE SHIMMER - a defect, not an enhancement.** Mesh flag
 `0x8000000` oscillates the vertex colour of 233 set meshes, the far skyline of
@@ -4028,18 +4083,19 @@ branch, all three in I2D, behind two rasterizers that are both ported.
 | the I2D primitives | **4** for the quad's geometry, 6 for the rest | the quad reproduces the engine's own selection outline 1518/1518; line and triangle have no captured frame that draws one |
 | the software rasterizers (2D) | **4**, and both already met | there are **two**, not six: `sub_48C4C0` (Bresenham) and `sub_48C060` (box fill), reproduced 1518/1518 and 138/138 |
 | the 3D rasterizer | **4, for ONE camera**, geometry and ordering only | **the back-face cull (2026-10-01) is the ENGINE's, tier 6 + one shot indicative of 4 - see "The back-face cull";** the engine has none — D3D drew every triangle — so this is a **reference implementation**, not a port. Its projection agrees with `camshot.py` on 106/106 sampled corners (worst 0.0018 px) and the mirrored reading moves 349998/352000 pixels (tier 3, `engine: raster`). **Tier 4 2026-09-01** (`engine: silhouette`): measured against the engine's own framebuffer through dialog 402's camera 4555 — directed edge alignment **0.73/0.83** on a chance floor of **0.27/0.30**, and the holes a set-only render leaves falling where the capture is black, **92%/99%** against 33% frame-wide. Mid-sweep captures of the same set reach 0.14–0.38; the mirrored reading sits below its own floor; and **removing the depth test** — geometry untouched, ordering destroyed — drops it to 0.66/0.75, so B5's *and ordering* is tested. **Not covered**: any second camera, the characters and props the render omits (the directed metric cannot see them missing), any pixel's value, and the drawable mask (0 pixels differ here). The one-camera limit is not theoretical: the missing **near-plane clip** - triangles with a vertex behind the cut dropped rather than cut - changes 0 pixels through 4555 and 12710 one step into the room, and was found by a player flying the scene viewer, not by any check (`engine: near clip`) |
-| the two render BANKS | 2 | six two-entry arrays swapped by `sub_42FA00`; opcode 150 installs bank 1 at 14 shipped sites. What each bank **draws** is unread and has no oracle |
+| the two render BANKS | 2 | six two-entry arrays swapped by `sub_42FA00`; opcode 150 installs bank 1 at 14 shipped sites. What each bank **draws** was read 2026-10-06 (bank 1 greys the scene, its clears, its textures and its fog - `SCRIPT_VM.md` 150/151; ported as `o3de/greybank.h`, `engine: grey bank`) and has no oracle |
 | audio mixing | **2** for the loader, 6 for the bookkeeping, **none** for the law | the criterion was wrong: **the engine does not mix**, DirectSound does. The decisions are ported and the loader runs over all 61 shipped `.wav`; the attenuation and pan law has no reachable oracle |
 | the cutscene VOICES - `media.play` (op 92) | **PORTED** `src/audio/voiceover.{h,cpp}`, `tools/voice_probe.cpp` | **tier 4** for the resolution (the golden traces' own media ids: 102 announcements, 56 distinct, 56/56 resolving, and `impasse-walk` opening 142/141/404/410 in order - `media.play`'s `"OBJECTS"` literal at 0x004C0844 has one `push offset` in the image, so the traces separate it from the nine other OBJECTS announcers); **tier 3** for the decode (four FNV hashes over the PCM, re-derived by `tools/adp.py`); **tier 2** for the 10 + 520 + 31 = 561 partition and the filter's 1-in-1584 collision rate; **tier 6** for the `{C}` subtitle and the kind-16 `IMAGES\<stem>.BMP` document arm, which are resolved and reported and NOT drawn; **no tier** for loudness or placement, which are DirectSound's. `verify.py: engine voice over` |
 | the PLAYER in adventure mode | **the chain, run from the keyboard**: `Input::frame`'s word (Aventure scheme, the world's repeat mask 0) -> `CefChannel` -> the clip's root delta (`Anim_RootDelta`, fractional ends, ROTATED by the facing matrix - node+156 = actor+288, which closes CLAUDE.md 6's "optional 3x3" for the actor path) -> `Walker` -> the floor; the window and whole-on-transition turn and root shift through `Cef_ApplyTurn`/`Cef_ApplyRootShift`; the idle word `sub_4A7A20` makes when nothing is held; the follow camera as `sub_415D10`/`sub_415E60` resolve and lag it (f42/f44/f46 = 3/8/8 for mode 0). Tier **5**: four replayable streams on `AIMPASSE`, `H_STAND -> H_SD-WK -> H_WALK -> H_WK-SD -> H_STAND`, 69.5 units in 60 frames along the facing, the eye 118.11 behind at fov 75, 1539/1595 tracks resolving | `Actor_Move`'s slide (a blocked step stops); the camera's flag 8 / 0x10 passes (`sub_417070`, `sub_416450`) and `sub_413C00`'s 0.7 x height rule, so the eye keeps the offset's own height and passes through walls; a blend is drawn as a cut; feet-or-pelvis for `+244..+252`; the world camera's own smoothing shorts (the preset's 3/8/8 stand in) |
 | input | 3 | the binding tables reproducing `tools/sim`'s decisions |
 | the Vulkan backend | none | explicitly unverifiable; correctness inherited from the software backend it mirrors. **It also carries the port's first ENHANCEMENT, off by default** (2026-09-08): `--aa N`, or `antialiasing = N` under the config's `[Enhancements]` section, is N-sample MSAA resolved into the same image the readback reads — an option the original explicitly turns OFF (ASSETS 4), so it has no tier by construction, and the software reference does not have it. `engine: anti-aliasing` pins that the default is off and that 4x moves only edge pixels (2.7% of the frame, 99.7% on an edge). **Bilinear texture filtering** (`--filter bilinear` / `texturefiltering = bilinear`) was the second, with the colour key carried in alpha so a keyed edge does not fringe; `engine: texture filter` pins the nearest path bit-identical and the filter's shape (55.6% of pixels moved by a mean of 4.6 levels). **Since 2026-10-03 it is not an enhancement but the DEFAULT** on every GPU backend (GLES and GL1 learned it too): the original's hardware device set MAG/MIN LINEAR (ASSETS 4). **Trilinear and anisotropic** (`--filter trilinear --anisotropy N`) generate the mip chain at upload, the key averaging correctly down it; `engine: mipmaps` pins the gradient order trilinear < anisotropic < bilinear. **Interface scaling** (`--ui-scaling linear`) filters the 640x480 layer's stretch and is the one enhancement BOTH backends draw, the interface being composed on the CPU; the colour key decides the silhouette and the blend the colour, so a keyed edge cannot fringe without an alpha to premultiply into (`engine: ui scaling`) |
-| the fixed-function OpenGL 1.x backend (`backends/gl1/`, 2026-10-02) | none | the same standing as Vulkan: what is asserted is agreement with the software reference, never with the original. `engine: gl1 backend` (macOS) - coverage 0.9932 and 153 pixels past 24 levels on Anekbah's street, and a bilinear frame. On Tiger's emulated Radeon 9700 it draws the street at 6-10 fps against ~1 in software; a wall grazed by the camera flashing flat for a frame there is open and suspected to be the emulator's (`todo/handoff-classic-mac.md` 5) |
-| classic Mac OS (`backends/classic/`, 2026-10-03) | none | the engine booted headless (`tools/omk.cpp`) as one Carbon binary: its boot dump BYTE-IDENTICAL to the Mac's on Mac OS 9.2 and on Tiger, run in the emulators (not repeatable in `verify.py`). `engine: classic build` keeps it building and free of C++ streams (PORTING A10). And the VIEWER through the Carbon frontend (`OMKPlay`): 30 frames of the street start byte-identical to the host on both, after three big-endian fixes in the viewer and the weak-object rule (PORTING A10). Sound Manager audio (`8b536ad`); not yet played by hand |
+| the fixed-function OpenGL 1.x backend (`backends/gl1/`, 2026-10-02) | none | the same standing as Vulkan: what is asserted is agreement with the software reference, never with the original. `engine: gl1 backend` (macOS) - coverage 0.9932 and 153 pixels past 24 levels on Anekbah's street, and a bilinear frame. On Tiger's emulated Radeon 9700 it draws the street at 6-10 fps against ~1 in software; a wall grazed by the camera flashing flat for a frame there is open and suspected to be the emulator's (`todo/handoff-classic-mac.md` 5). On real Rage 128 cards (iBook G3, iMac G3 with OpenGL 1.1) since: the overlay sent in tiles, indexed draws, the depth tie, the original's texture size rule, the vertex arrays locked (EXT_compiled_vertex_array), and the fog drawn by the card as OpenGL's linear fog, the original's table fog (2026-11-02, `7853dda`) |
+| classic Mac OS (`backends/classic/`, 2026-10-03) | none | the engine booted headless (`tools/omk.cpp`) as one Carbon binary: its boot dump BYTE-IDENTICAL to the Mac's on Mac OS 9.2 and on Tiger, run in the emulators (not repeatable in `verify.py`). `engine: classic build` keeps it building and free of C++ streams (PORTING A10), its `malloc` the slab allocator and its PEF free of imported GL extension entry points. And the VIEWER through the Carbon frontend (`OMKPlay`): 30 frames of the street start byte-identical to the host on both, after three big-endian fixes in the viewer and the weak-object rule (PORTING A10). Sound Manager audio (`8b536ad`). PLAYED BY HAND since: walked in both Tiger builds and the music played by hand on Tiger and OS 9 (2026-10-04), then on a real iBook G3 (Mac OS X 10.2/10.3, from 2026-10-09) and a real iMac G3 (Mac OS 9, from 2026-10-30; ~17 frames/s in Anekbah's street at a 50 m clip) - `todo/handoff-classic-mac.md` 3e-3i |
 | big-endian hosts (`formats/le.h`, `ppc-darwin.mk`) | none | PORTING A9: every raw read through `loadLE`; 1927 of the 1928 tool calls the checks make identical on PowerPC (the last, directory order). The replay runs in the emulator, not in `verify.py` |
 | the OpenGL ES backend (`backends/gles/`, the Vita's and the Quest's) | none | the same standing as Vulkan: agreement with the software reference, never with the original. `engine: gles backend`, `gles overlay`, `gles pose`, `gles state cache`; the console's own runs are in `todo/handoff-vita-port.md` |
 | the Nintendo 3DS (`backends/n3ds/`, citro3d) | none | in the Azahar emulator: the boot reproduces `traces/intro.log` 42 of 42, the menu frame is byte-identical to the desktop's, the street agrees with the software reference at 99.8-99.9% of pixels within 24 levels. `engine: 3ds build` keeps it building; the runs themselves are not in `verify.py` |
 | the Meta Quest (`backends/openxr/`, `backends/android/`, `src/vr/`) | none | the head is a RENDER transform composed on the authored camera, so game logic is unchanged; asserted on the desktop through `--vr-sim` (`engine: vr camera rule`, `vr frame`, `vr modes`, `vr aim`). The headset runs are not in `verify.py` |
+| the REMASTER (`backends/remaster/`, OMK_REMASTER, 2026-10-20..29) | none, by design | not a port: it overrides authored art, so it is held only to "off by default, every frame byte-identical with it off" and a check per feature shown to fail (`todo/remaster.md`; the paragraph "THE REST OF THE REMASTER" above). Desktop and Quest only; the Vita, 3DS and classic Mac builds compile none of it (`engine: remaster switch`) |
 
 **Still deliberately excluded**: DirectX, win32 and the C runtime. Those are
 host APIs the backends replace rather than code to port.

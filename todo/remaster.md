@@ -1,4 +1,8 @@
-# The remaster mode - a plan, nothing built (2026-10-20)
+# The remaster mode - the plan of 2026-10-20, and what was built from it
+
+**Status, 2026-11-02:** planned 2026-10-20 and largely BUILT since - steps 1-3,
+the packs, the preload radius, the weather and the `OMK_REMASTER` switch each
+have an "as built" section below; the plan that follows is kept as written.
 
 The reader asked (2026-10-20) for a mode that improves the graphics as far as
 they go - lighting, reflections, AI-improved textures and models, "a big

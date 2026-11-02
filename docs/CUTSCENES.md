@@ -437,7 +437,10 @@ The cameras come from the **world camera table** `Camera_FindWorld` scans:
 two **subject** fields at `+32`/`+34` — the same shape as a `DialogCamera`.
 Those last two are why a quarter of the table is not a pair of world
 coordinates at all: `-1` means the point is absolute, anything else makes it an
-OFFSET from that actor, decided per point by `Camera_LoadParams`. 1440 of 5381
+OFFSET from the request's subject, decided per point by `Camera_LoadParams` —
+and the value is a resolver KIND, not an actor (corrected 2026-10-05,
+`todo/drift-audit.md` S14): 0 the subject actor, 1 and 3 his head, 9 an
+ADDRESS ([FILE_FORMATS](FILE_FORMATS.md), "The subject fields are KINDS"). 1440 of 5381
 set at least one, and [FILE_FORMATS](FILE_FORMATS.md) carries the decode.
 **And they are not a corner of the table.** Over every `camera.set` /
 `camera.set.wait` site whose id resolves, the camera is actor-relative in

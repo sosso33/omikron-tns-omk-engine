@@ -81,8 +81,8 @@ void SoftwareRenderer::submit(const Draw& d) {
     // THE FOG's two exclusions are applied HERE, because this is where the
     // bucket key is - `renderer.h`'s View documents them. Key bits 0x2080 (the
     // near bucket and the transparent state) are not fogged at all, and key
-    // bit 0x800 (the cutout path, and the sky through mesh flag 0x10000)
-    // doubles both ends.
+    // bit 0x800 (the sky's state, assigned by mesh flag 0x10000 - NOT the
+    // cutout, which is key 0x400; docs/ASSETS.md §4b) doubles both ends.
     Fog fog;
     if (view_.fog && !(d.bucketKey & 0x2080u)) {
         const float k = (d.bucketKey & 0x800u) ? 2.0f : 1.0f;

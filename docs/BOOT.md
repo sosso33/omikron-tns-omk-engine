@@ -47,6 +47,12 @@ for it.
 > `verify.py: startup scripts`). What the paragraph gets right stands: there is
 > no separate menu state - the menu is a screen over an ordinary scene.
 
+> **The port launches in this order** (2026-10-10, `3ae81767`): the window,
+> the three films, then `Game_Start("aventure.scx")`, with `aventure.scx`
+> read once for both the runtime and the sprites. Before that commit the
+> viewer booted a throwaway headless session ahead of the window, reading the
+> file three times; area 118 and `Grid.SCX` still load before the window.
+
 ## 2. The three movies, and the two different skips
 
 `gamedata/FLIS/` holds exactly three files, and they are plain MPEG-1 — there is
@@ -192,6 +198,15 @@ Three overrides sit after the switch:
   `sub_42BC30` (audio position, on the evidence of where it is sampled) pulls
   the simulation along, which is how a cutscene's animation cannot drift from
   its soundtrack.
+  **Read 2026-10-06** (`todo/drift-audit.md` T2): `sub_42CC10` is "a line is
+  loaded" (the morph player's line length `flt_4EB10C` non-zero), and
+  `sub_42BC30` is the voice's play position in frames of `g_MorphFps` = 30,
+  `dword_4EA844 * g_MorphFps * 0.25 / dword_4EA828`. On the first such frame
+  `flt_4E9704` takes the clock; on each one after, `flt_4E9704` advances by
+  the previous delta and the delta is `clock - flt_4E9704 + delta`, 0 when
+  not positive - and this path has **no** three-frame clamp. The port runs it as
+  `script/linesync.h` while a line's voice plays (`verify.py: engine: line
+  sync`).
 * `dword_4E9728` forces the delta to **0.0** — the pause. The function returns
   it, and `Game_RunLoop` uses that to gate Escape.
 
@@ -219,7 +234,6 @@ the second parameter suppresses it.
 
 ## What this does not settle
 
-`Movie_Play`'s decoder and parameters (§2); what `sub_42BC30` actually reads,
-which would turn "on the evidence of where it is sampled" into a fact (§4);
-and `dword_4E972C`, whose non-zero cases are clearly debug modes but which
+`Movie_Play`'s decoder and parameters (§2); the unit of the 0.25 in
+`sub_42BC30`'s formula - bytes or samples - which is not traced (§4); and `dword_4E972C`, whose non-zero cases are clearly debug modes but which
 nothing observed has ever been seen to set.

@@ -59,12 +59,14 @@ special move: MDWALK (tab_special_move[60] = 0x0046c050)
 special move: MDWALK (tab_special_move[60] = 0x0046c050)
 special move: MDSTOPW (tab_special_move[62] = 0x0046c070)
 special move: MDSTAND (tab_special_move[56] = 0x0046bf90)
+player: ends at 1759.1 0.0 -6986.5 facing 336, channel entry 0 group 0
 player: HO1_FN/H1AVNT at 1759.1 0.0 -6986.5 facing 336.0, ACTOR_STATE 1, .CTL state 0 'H_STAND' clip H_STAND frame 21.0, walked 106.4 over 89 ticks, pose tracks valid
+player: Vie 10 (the DB player record's property 1); 0 run-overs posted
 ```
 
 Standing, the walk (entered through a start), the stop, standing again -
 each entry announcing its move name, each name an engine function at the
-address shown. The last line is the summary: Kay'l's model `HO1_FN`, his
+address shown. The second `player:` line is the summary: Kay'l's model `HO1_FN`, his
 animation bank `H1AVNT`, back in `.CTL` state 0 `H_STAND`, 106 inches
 walked.
 
@@ -125,11 +127,12 @@ python3 tools/verify.py --jobs 6 --only "engine: walk" "engine: stairs down" \
 ```
 
 ```
-engine: walker falls FAIL ((663, 326, 0, 0), (36, 14, 0, 0), (326, 116, 0, 0)) != ((663, 310, 0, 0), (36, 14, 0, 0), (326, 116, 0, 0))
-10 checks, 1 failed
+engine: walker falls FAIL ((663, 326, 0, 0), (36, 14, 0, 0), (326, 115, 0, 0)) != ((663, 310, 0, 0), (36, 14, 0, 0), (326, 115, 0, 0))
+11 checks, 1 failed
 ```
 
-One of ten. `engine: walker falls` stands the walker at every spot beside a
+One of eleven (`engine: walk` matches `engine: walk edges` and `engine:
+walk-in scene` too, and there are two `engine: airlock walk` checks). `engine: walker falls` stands the walker at every spot beside a
 drop in three sets - Kay'l's apartment `Aapkayl`, the `AImpasse` alley and
 the `Anekbah` street - and counts where he actually goes down. In the
 apartment, 310 became 326: sixteen spots where a 20-30 cm edge used to be a
@@ -140,7 +143,9 @@ started it.
 
 Notice also what did NOT fail. `engine: walk` walks a 400-step spiral across
 a FLAT restaurant floor and cannot see a step limit; `engine: player walk`
-walks the Impasse's flat ground. A check measures the states it visits.
+walks the Impasse's flat ground; `engine: walk edges` walks off a ledge
+over the void and down a ramp, neither of them in the 20-30 cm band. A check
+measures the states it visits.
 Restore `11.811023622`, `touch src/actor/walk.h`, and run `engine: walker
 falls` green.
 

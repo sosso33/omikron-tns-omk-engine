@@ -1,4 +1,4 @@
-# Meta Quest - a VR prototype, steps 1-3 of 7 done
+# Meta Quest - a VR prototype, steps 1-5 of 7 done, step 6 mostly
 
 **State and recipes: [`handoff-quest-port.md`](handoff-quest-port.md).** The
 paragraph below is the record as first written.

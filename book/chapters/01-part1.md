@@ -53,7 +53,7 @@ same few hundred functions.
 
 1. **The reading.** The findings about how the original engine works, each one
    tied to the function in the executable that establishes it. They live in
-   `docs/`, and roughly five hundred automatic checks (`tools/verify.py`) keep
+   `docs/`, and some six hundred and fifty automatic checks (`tools/verify.py`) keep
    every number in them honest.
 2. **The replica.** `engine/` is a new implementation of the machine, written
    in C++20, which reads *your* copy of the game's data and runs it. It
@@ -140,6 +140,13 @@ would not be more accurate; it would be doing something the original never
 did. The port learned this the hard way. On a PS Vita running at 200–300 ms a
 frame, an earlier clamp of its own made the camera visibly "shake"; replacing
 it with the engine's own cap of three frames fixed it.
+
+One path skips the cap, and it is the most interesting. While a line of
+dialogue is playing, the step is not taken from the wall clock at all: it
+becomes however far the line's **voice** has advanced since the last frame,
+counted in thirtieths of a second. The voice pulls the simulation along, so a
+face cannot drift from the words it is mouthing, and on that path there is no
+cap of three.
 
 > **From Unity:** `dt` is the engine's `Time.deltaTime`, but expressed in
 > thirtieths of a second and clamped at 0.1 s, the equivalent of setting

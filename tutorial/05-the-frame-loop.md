@@ -62,20 +62,24 @@ python3 ../tools/omkprof.py /tmp/run.prof | head -12
 
 ```
 120 frames (+ the setup)
-setup: 27.4 ms
-frame time: median 11.42 ms, 90% 12.23, max 40.98 (frame 0)
+setup: 39.2 ms
+frame time: median 8.55 ms, 90% 9.49, max 32.70 (frame 0)
 
 zone (mean per frame)                            total ms      self ms    calls
-raster: drawGeometry                                10.08        10.08     90.5
-present                                              0.29         0.29      1.0
-world: mirror                                       10.44         0.26      1.0
+raster: drawGeometry                                 7.83         7.83     90.5
+present                                              0.19         0.19      1.0
+world: crowd                                         0.15         0.15      1.0
+music                                                0.12         0.12      1.0
+set: prepare                                         0.11         0.11      0.0
+world: mirror                                        7.99         0.08      1.0
 ...
 ```
 
 Further down, the six phases (`input`, `control`, `modes`, `world`,
 `screens`, `present`) each with their total: on the machine this was written
-on, `world` is 10.99 ms of an 11.72 ms frame and `session: frame` - every
-script, zone and program of Anekbah - is 0.05 ms. The software reference
+on (an Apple M3), `world` is 8.42 ms of an 8.91 ms frame and `session: frame`
+- every script, zone and program of Anekbah - is 0.04 ms. Timings are the
+machine's: compare two captures only from the same one. The software reference
 rasterizer is almost the whole frame; a GPU build moves that off the CPU
 (lesson 8). Every zone is an `OMK_ZONE("name")` in the code, so `grep -rn
 'OMK_ZONE("world: mirror")'` finds where a number comes from.
@@ -105,8 +109,10 @@ if (frameNo % 30 == 0)
                                  {"contexts", static_cast<long>(session.liveContexts())}});
 ```
 
-and add `#include "platform/events.h"` under the file's
-`#include "playframe.h"`. Build, and run the archives terminal of lesson 4,
+(the file already includes `src/platform/events.h`; a file that does not needs
+it for `omk::event`). In the tree as it is, the call is wrapped:
+`spanned("session", [&] { session.frame(); });` - put yours on the line after
+it. Build, and run the archives terminal of lesson 4,
 using it after 40 frames:
 
 ```

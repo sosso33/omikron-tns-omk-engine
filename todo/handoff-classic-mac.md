@@ -1785,7 +1785,7 @@ a software renderer, it is suspicious", 2026-10-30)**:
      | face tests | on the pool's PROJECTED values: screen x/y against the screen, an integer near depth, a 2D cross product | outcodes against five view-space planes, a 3D determinant |
      | clipping | NEAR plane only on the CPU; the device clips the edges (no `DONOTCLIP`) | near AND the four edges on the CPU (a Tiger Radeon misdrew unclipped triangles) |
      | submission | one `DrawPrimitive(TRIANGLELIST)` a bucket, TL vertices (`XYZRHW`, 32/40 bytes), not indexed | `glDrawElements` a state run, 4-float clip positions through identity matrices, locked |
-     | FOG | **Direct3D TABLE fog** (`FOGTABLEMODE` 3, linear, start D/4, end D; per bucket: off for near and transparent, doubled for cutouts) - THE CARD'S | per vertex on the CPU, folded into the colour; with no colour sum (OS 9's OpenGL 1.1) a SECOND PASS - **23-26 of the 46 draw calls a 100 m frame** |
+     | FOG | **Direct3D TABLE fog** (`FOGTABLEMODE` 3, linear, start D/4, end D; per bucket: off for near and transparent, doubled for key 0x800, the sky's state - not the cutouts, `docs/ASSETS.md` §4b corrected 2026-11-02) - THE CARD'S | per vertex on the CPU, folded into the colour; with no colour sum (OS 9's OpenGL 1.1) a SECOND PASS - **23-26 of the 46 draw calls a 100 m frame** |
      | set in memory | the `.3DO` as loaded, 2.26 MB; faces index vertices | 11.3 MB of corners (+ 6.7 MB copy for the moving meshes) - why every iMac run ends near 63 MB |
      WHAT IT SUGGESTS, by size: (1) THE FOG ON THE CARD, as the original's:
      OpenGL 1.1's own `GL_FOG` (linear) is the table fog's equal and the Rage

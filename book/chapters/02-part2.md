@@ -256,6 +256,14 @@ In **shoot mode**, each gunman has a small brain picked by character type, and
 it walks the level's navigation grid, the same `MAP2D` file the player sees as
 a map.
 
+The game's last boss is the exception. **Astaroth** has no row in that table:
+he is a machine written by hand in the executable, which walks at you, winds
+up, leaps onto where you stand and slams the floor, firing bolts between. He
+has six weak points; the engine counts the hits on each, and as one goes it
+hides it and posts a message to the fight's scripts, which decide the rest. For a
+long time the port had no Astaroth, so the game could not be finished;
+chapter 13 tells how that was found.
+
 ## The walker
 
 Around the graph sits a **walker** that decides whether a step is possible: a
@@ -263,6 +271,11 @@ slope steeper than 30° is a wall, a ledge up to 30 cm can be climbed, a fall is
 sorted into tiers by height. It knows when the floor is water, which puts the
 body into the swimming state. A jump is a clip whose forward motion (2.5 m) and
 flight time come from the animation itself.
+
+Some states call native code by name, through a table of **special moves** in
+the executable. Stopping is one of them: stop after a long run, and the move
+counts how many times the run clip has looped. Past thirty loops, Kay'l does
+not simply stand; he stops out of breath.
 
 The state numbers the engine keeps for a body, `ACTOR_STATE` 0 to 17, name
 these conditions: 14 is water; 7 and 8 are mounting and riding the slider, the
@@ -324,6 +337,14 @@ starts a sequence of **objects**. Each object is a little program of steps:
 play this clip, move along this path, play this sound. Some objects have a
 **camera editing** attached, a recorded camera move that takes over the view
 while the object plays.
+
+A cutscene can also speak without a conversation. A script instruction plays
+a **voice-over** named by an object record, through the same streamer a
+dialogue line uses. Most of them are not voices at all: for 520 of the 561
+voice-over records, the instruction's handler overwrites the file name, before
+playing it, with one fixed name, a two-second jingle that ships beside them.
+The narration was a placeholder when the game shipped, and the engine itself
+says so. The port plays the jingle, because the original does.
 
 A program's steps can be linked into **sync chains**, so that a sound starts
 exactly when a clip reaches a given frame, or two steps run together. And a

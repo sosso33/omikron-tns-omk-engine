@@ -215,7 +215,8 @@ Restore each by editing, `touch`, rebuild.
 * the guard: `python3 tools/refactor_guard.py record <label>` before and after
   - your change should move no recorded run, because none ends on these
   screens; if one moves, find out why;
-* the consoles: the 3DS and Vita builds compile `src/ui` too;
+* the other targets: the 3DS, Vita, classic Mac and Quest builds compile
+  `src/ui` too;
 * the documents: `docs/UI.md` (the dossier reader's paragraph) and
   `todo/missing-ui.md` both said the outline was not drawn;
 * a commit that says what was ported, the evidence, and the check.

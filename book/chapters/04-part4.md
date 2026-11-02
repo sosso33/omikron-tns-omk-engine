@@ -78,6 +78,15 @@ real. And a length later "confirmed wrong" by the corpus (op 103) turned out
 right once three *other* lengths had been fixed: a test of one value while
 others are wrong tests all of them at once.
 
+The last one was found only by reading. The handler of the instruction that
+shows the shooting gallery's high-score board advances over six operand
+bytes; the table says four. In most of the places it is used, the two
+leftover bytes decoded as harmless instructions. In one script they decoded
+as `end`: the decode stopped there and reported success, and every check
+passed. A wrong length can produce a parse that looks complete. The tool that
+sums the handlers' advances had printed the right answer all along; nobody had
+read that line.
+
 ## The traps are in the tools
 
 A surprising share of the wrong turns came from the tools, not the game:

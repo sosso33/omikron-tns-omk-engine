@@ -1,6 +1,7 @@
 # Restore the weather - the showers the original planned and never shipped
 
-PLANNED 2026-10-27, nothing built. The reader's "do a restore weather plan
+PLANNED 2026-10-27, and built the same week - see "Progress" below (steps
+1-4 and 7 done). The reader's "do a restore weather plan
 and save it", after the reading in `docs/ASSETS.md` 4e ("The shower's
 music, and two cities that never get it", "Type 3's draw is complete code
 behind the wrong test") - the evidence is there; this file is the work.

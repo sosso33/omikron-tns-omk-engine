@@ -19,7 +19,7 @@ long form — the worked mistakes behind every rule, the full file map, the
 layout, the viewers' history, the open questions — is
 [`docs/PRACTICE.md`](docs/PRACTICE.md), **with the same section numbers**, so
 a `CLAUDE.md §N` reference anywhere in the tree resolves there. Grep it; never
-read it whole (~37k tokens). It was split out on 2026-10-14 because this file
+read it whole (~39k tokens). It was split out on 2026-10-14 because this file
 had grown to 153k characters and Claude Code warns past ~40k.
 
 [`docs/PORTING.md`](docs/PORTING.md) is the working practice for PORTING —
@@ -45,7 +45,7 @@ Every agent that may commit is briefed with this rule.
 
 ## 0. What to read, and when — the reading budget
 
-The docs run to roughly 300k tokens and this file is loaded into every agent;
+The docs run to roughly 500k tokens and this file is loaded into every agent;
 one batch of nine agents once cost 2.9 million tokens, mostly re-reading it.
 "Reading for context" is the single largest cost this repo incurs.
 
@@ -74,8 +74,8 @@ grep it for the file you are about to open.
 
 | file / dir | read when |
 |---|---|
-| docs/PORTING.md (~8k) | before ANY change to engine/'s output half; the evidence tiers |
-| docs/RECONSTRUCTION.md (~124k) | NEVER whole; grep the log by date/subsystem; §"what is left" |
+| docs/PORTING.md (~10k) | before ANY change to engine/'s output half; the evidence tiers |
+| docs/RECONSTRUCTION.md (~210k) | NEVER whole; grep the log by date/subsystem; §"what is left" |
 | docs/FILE_FORMATS.md | containers: IAM, DIALOG, VM bytecode, TAG, 3DM, 3DO, SCX, GLOBAL/START |
 | docs/ASSETS.md | assets: ADPCM, .ani, .CTL, textures, cameras, sets, effects, clip types |
 | docs/SCRIPT_VM.md | the 153-opcode VM, how scripts run and park, how conversations launch |
@@ -84,8 +84,8 @@ grep it for the file you are about to open.
 | docs/UI.md | I2D, the 37 screens, the 45 sounds, the options tree, fonts and markup |
 | docs/BOOT.md | launch → FLIS → aventure.scx → the frame loop, the 30 fps clock |
 | docs/STREET_LIFE.md | pedestrians, authored extras, the crowd push, road traffic |
-| docs/PRACTICE.md (~37k) | the long form of this file; grep only |
-| engine/README.md (~31k) | NEVER whole; §"Coverage", §"Building and proving it" |
+| docs/PRACTICE.md (~39k) | the long form of this file; grep only |
+| engine/README.md (~70k) | NEVER whole; §"Coverage", §"Building and proving it" |
 | tables/README.md, readable/README.md, readable/INDEX.md | the exe's tables; finding a decompiled function |
 | todo/handoff*.md | **read FIRST to pick up that work** (handoff.md on a new machine; -vita-port, -3ds-port, -quest-port, -classic-mac, -shoot-mode, -fight-mode, -slider, -drift-audit) |
 | todo/next-tasks.md | the reader's list of what to do next |

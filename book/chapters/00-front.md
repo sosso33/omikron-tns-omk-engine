@@ -4,7 +4,7 @@
 
 <p><strong>The engine of <em>Omikron: The Nomad Soul</em> (1999), and the replica that runs it again</strong></p>
 <p>A book for developers, to be read in order</p>
-<p><em>Draft of 2026-10-03</em></p>
+<p><em>Draft of 2026-11-02</em></p>
 
 </div>
 
@@ -58,8 +58,9 @@ without a mixer, and how the interface is built.
 not have the source code of, and how you know when you have read it right.
 
 **Part V** is the rebuilding: the shape of the replica, the renderers behind
-it, the long work of making it fast enough for a handheld, and how that work
-compares with what the original engine did.
+it and the machines they now run on (two handhelds, a VR headset, and Macs of
+the game's own day), the long work of making it fast enough for them, and how
+that work compares with what the original engine did.
 
 Throughout, boxes like this one translate an idea into terms you may already
 know:

@@ -3412,15 +3412,17 @@ five rows `"%d.- %s"` left and `"%d'%02d\"%02d"` right. The rows live in the
 fixture and reads them back off the drawn screen.
 
 **Not ported, and labelled in each source**: the interface sounds these
-screens play and the oscillator-5 timers their success arms start (in the
+screens play. The oscillator-5 timers their success arms start (in the
 engine Den's wheels blink for two seconds, XACHEN's lamps for four, before the
-screen closes; the port closes at once). **The high-score board's last line
+screen closes) were on this list until 2026-10-12 and are ported: oscillator 5
+is the engine's delayed close (§3b's table, `UiWalk::startCloseTimer`,
+`verify.py: engine: delayed close`). **The high-score board's last line
 was on this list until 2026-10-11** and is ported: `sub_42B5E0(0)`/`sub_42B5F0`
 are `Ui_Oscillator(0)` / `Ui_OscillatorFlags`, the line is the message
 oscillator 0 holds for 5000 ms, and what posts it is screen 36's own OPEN
 callback (0x004AD9A0) on a level page - with the player released and
 oscillator 5 closing the board after 10000 ms (`docs/SCRIPT_VM.md`, "142 —
-`ui.highscore`"; `verify.py: engine: ui highscore`). Screen 0, the VIDEOPHONE, is the one left of the survey.
+`ui.highscore`"; `verify.py: engine: ui highscore`). Screen 0, the VIDEOPHONE, was the one left of the survey; it is done too - its close last, 2026-10-12 (§3i; `todo/missing-ui.md`: "All five are done").
 
 ## 3e. The inventory screen's data channel — `Game_HandleEvent` 25..42
 
@@ -4444,6 +4446,10 @@ comes up on **`Non`**.
 so it ends the GAME and starts a fresh one, which walks back out through AREA
 118's startup script into `ui.open 29` — the start menu. Quitting the process
 is that menu's own `Quitter`.
+That one does end the process (read 2026-10-01, `todo/start-menu.md` 3c):
+panel `0x004CF488`'s `Oui` calls `0x0047BC10` - by its bytes `mov dword
+[eax+8], 3` (the screen's close) and `PostQuitMessage(0)`. Ported as
+`kCbStartQuitYes`; `verify.py: engine: start menu quit`.
 
 Ported into `omk-play` 2026-09-07 (`todo/next-tasks` 3), with the restart the
 one part missing: this viewer's boot is `main`'s body rather than a function,

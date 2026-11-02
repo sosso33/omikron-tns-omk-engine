@@ -12,12 +12,13 @@ time, and then you write its sibling.
 ## Read
 
 * `tools/verify.py`, the function `c_engine_close_button` (`grep -n` it).
-  About forty lines, half of them its docstring.
+  About fifty lines, half of them its docstring.
 * `tools/verify.py`, the helpers above the checks: `_play_built`,
   `_play_out`, `_events`, and `wait` / `press` / `hold`.
 * `docs/PORTING.md` Part B, "every check must be SHOWN to fail".
-* `CLAUDE.md` §1, the bullets that begin "A CHECK MUST BUILD THE BINARY IT
-  MEASURES" and "A LOG LINE PRINTED WHERE A VALUE IS HANDED OVER".
+* `docs/PRACTICE.md` §1, the bullets that begin "A CHECK MUST BUILD THE
+  BINARY IT MEASURES" and "A LOG LINE PRINTED WHERE A VALUE IS HANDED OVER"
+  (`grep -n` them; `CLAUDE.md` §1 keeps each as a one-line trap).
 
 ## The decisions, in order
 

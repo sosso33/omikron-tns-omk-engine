@@ -557,6 +557,15 @@ The five that remain are read but deliberately not named (see the table below);
 together they are 17 instructions, 0.029% of the corpus. The 23 opcodes with no
 mnemonic at all are the ones the shipped scripts never execute (122 was the
 24th, unnamed while it ran only from a startup script).
+
+> **Updated 2026-11-02** (found by the manual regeneration; the counts above
+> predate the same day's naming of 134/135/137): `dialog_disasm.NAME` now holds
+> **133 of 153**, the full table below names **115 of the 117** exercised
+> opcodes, and only **53 and 101** remain read and unnamed - **5 instructions of
+> 58 449, 0.009%**, so **99.99%** of executed instructions are named. The 20
+> opcodes without a name are those two and 18 no shipped script executes.
+> (134/135 `set.mirror.on`/`.off` and 137 `ui.close_all`, read 2026-10-11,
+> `405974d`; recount: the `uses` column of "The full table".)
 Names are added only with the handler traced — the table below is generated
 from the same `NAME` and `LEN_FIX` the disassembler uses
 (`python3 tools/vm_doc.py`), so the doc cannot drift from the decoder.
@@ -617,8 +626,8 @@ handler again.
 
 | op | uses | what is established | why not named |
 |---|---|---|---|
-| 137 | 7 | jumps to a function the disassembler mislabelled with a mangled C++ symbol (`?classic@locale@…`) | the target has not been located |
-| 134 / 135 | 2 / 3 | save / restore of object-instance slot 48's mesh pointer via `sub_41E1D0` | nothing establishes what slot 48 holds |
+| ~~137~~ | 7 | ~~jumps to a function the disassembler mislabelled~~ | **named 2026-10-11** `ui.close_all` - see "134 / 135 / 137" |
+| ~~134 / 135~~ | 2 / 3 | ~~save / restore of object-instance slot 48's mesh pointer~~ | **named 2026-10-11** `set.mirror.on` / `.off` - the saved pointer is the live mirror |
 | 53 | 3 | fetches a `CAMERAS` operand, logs it, and does nothing else | a no-op — the acting half was cut |
 | 101 | 2 | the handler is a bare `retn` | a no-op |
 
@@ -1228,6 +1237,21 @@ either way. The old name survived because every variable the opcode touches
 *is* displayable; that is a consequence of it being the stat channel, not
 evidence about what it does.
 
+**The flash itself, read and ported 2026-10-29** (`todo/falls.md` §6): the call
+comes BEFORE the write, and is also refused while ACTOR_STATE is 3. Property 1
+(`Vie`) sets mode 0, the gauge, with the new value in `dword_910688` and `Vie`
+as it stood (`+0xAA`) in `dword_930748`; any other stat sets mode 2 (the gauge
+and the stat card); then the stamp `dword_4E90A4 = Sys_GetTimeMs()` and
+`Hud_Refresh`. `Actors_TickAll`'s ACTOR_STATE-1 arm (the bytes at 0x468A04 -
+the CLEAN body had dropped that arm as "an ambience fade", corrected in
+`readable/src/21_d3d.c`) draws it: `Hud_DrawBar` from the old value eased to the
+new over 2500 ms, off at 3000 ms, and only in state 1, so a flash armed in a
+fight or a screen waits for it. Every fall and run-over handler ends
+`actor.stat.set -1, 1, Vie`, so this is the gauge a landing shows (the
+catacombs' 5 m landing: `Hud_ShowValue(1, -35, Vie 10)`, off after 90 frames).
+`WorldHooks::hudShowValue` → `Session::takeHudShows` → `PlayState::hudFlash`;
+`verify.py: engine: hud flash`.
+
 This is the pair that moves health, money and every other stat a script changes.
 **Ported 2026-09-02 at both ends** (`engine/src/script/interp.cpp`, `props.h`),
 with two things the assembly settles that the decompilation only implies:
@@ -1569,8 +1593,12 @@ bitmap the earlier three-array table listed as "not yet traced". Every one of
 their 63 operands is a city destination with a postal-style name — `'Anekbah -
 Bar Zone 52'`, `"Lahoreh - Place d'Yrmali"`, `'Jaunpur - 46, Temple Square'` —
 and never an internal address like `'Dialogue Telis Cuisine'`. That reads as
-the slider's unlocked-destination list, but no reader of the bit has been
-traced, so the names stay neutral.
+the slider's unlocked-destination list, ~~but no reader of the bit has been
+traced, so the names stay neutral~~ — and the readers have since been traced:
+`sub_40E540` / `sub_40E8E0` keep only the `IAM\GLOBAL +16` slider destinations
+whose bit is set in this array, for the sneak's slider page and for the city
+map's destination markers ([UI.md](UI.md) §3g, "`IAM\GLOBAL +16` — the slider
+destinations", and §3g-bis; `verify.py: slider destinations`).
 
 ### 126 — `camera.set.at_address`, and the world camera table
 
@@ -1695,7 +1723,11 @@ section E SET PIECE, an effect row (`SetPiece_Find` over 19-dword rows, `+72
 &= ~1`), not decor geometry, so it switches an effect off and changes no
 collision; ported, `todo/drift-audit.md` S11, `verify.py: engine: hide piece`), 98 `object.place_at` (the ring a beaten character drops,
 placed under him - ported 2026-10-06, `engine: prop place`), 127 `player.pos.sync` (reset the collision walker's position pair to
-the node transform and invalidate the ground cache), 129/130
+the node transform and invalidate the ground cache - `sub_41C140`, read from
+the bytes 2026-10-11: the node position into `+244`/`+232`, the ground cache
+`FLT_MAX`, and `+416`, `+216..+224`, `+1304`, `+280`/`+284` and `dword_6A52CC`
+zeroed; ported as `PlayerController::posSync`, `verify.py: engine: follow and
+sync`, `todo/scene-gameplay-audit.md` row 16), 129/130
 `walk.ledges.ignore` / `.obey` (the walker refuses a step down of more than
 11.81 units — 30 raw — unless `g_IgnoreLedges` is set; scripts bracket staged
 moves with the pair). Both handlers are `sub_41C260(1 / 0)`, which is
@@ -1704,7 +1736,11 @@ reset - read from the image since neither has a `proc` label; the port's
 walker had the flag and no writer until 2026-10-05 (`todo/drift-audit.md` S5,
 `verify.py: engine: ledges flag`).
 
-**Presentation** — 54 `camera.follow_player` (mode-0 request), 136
+**Presentation** — 54 `camera.follow_player` (mode-0 request:
+`sub_41DDB0(player)`, `Camera_Request(0)` with no blend - ported 2026-10-11 as a
+Session flag the next camera request clears, the viewer installing preset 0;
+its `byte_910308 = 0`, a set-mesh camera block this port does not run, is
+labelled; row 15 of the same audit), 136
 `camera.shake` (`Camera_SetShake`: a decaying vertical sine on eye and aim;
 duration, then amplitude ÷ 2.54 - **ported 2026-10-05**, `todo/astaroth.md`
 4: the camera tick's `sub_418030` runs it in every mode but 13, `dy =
@@ -2153,9 +2189,11 @@ that reduced failures were kept. The rest are left as they are.
 | 152 | 0x406090 | 0 |  | `game.restart` | JINGOFF2.ADP | 3 |
 ## Open
 
-* Opcodes 43–152 are named only by their domain. The four in real use worth
-  chasing are 92 (builds `"%s.ADP"` and `"IMAGES\%s"` — plays a voice line and
-  shows a picture), 93, 52 and 76.
+* ~~Opcodes 43–152 are named only by their domain. The four in real use worth
+  chasing are 92, 93, 52 and 76.~~ All four are named (92 `media.play`, 93
+  `actor.stat.set`, 52 `inventory.remove_all`, 76 `object.show`); see "Naming
+  the opcodes" for the two exercised opcodes still unnamed, 53 and 101
+  (struck 2026-11-02).
 * Opcode 77's handler needs extracting by hand.
 * ~~The `fixups` indirection at `ctx+36` is never exercised by the shipped
   scripts~~ — **true of the dialogue corpus only, and the reading of it was

@@ -6,8 +6,8 @@
 
 ## What it is
 
-`engine/` is the replica: C++20, roughly 60 000 lines in the engine proper and
-33 000 in the backends that draw and play it, and **no required dependency**.
+`engine/` is the replica: C++20, roughly 77 000 lines in the engine proper and
+59 000 in the backends and frontends that draw and play it, and **no required dependency**.
 `make` on a machine with nothing installed builds every probe and passes the
 test suite. SDL and a Vulkan loader are optional; they buy you a window.
 
@@ -25,6 +25,7 @@ The engine's directories follow the original's subsystems:
 | `ui/`, `audio/`, `input/` | the interface, the sound decisions, the four control schemes |
 | `platform/` | `DataFs` (every file access, case-insensitively), boot, films, threads |
 | `app/` | what a frontend needs and SDL does not: the command line, the game's state (no drawing in it), shared helpers |
+| `vr/` | the headset's cameras and controls, a path beside the original's, never instead of it |
 
 ## The one design decision
 
@@ -33,7 +34,7 @@ behind **one boundary**:
 
 | | reference | live |
 |---|---|---|
-| picture | a software rasterizer into an RGB565 framebuffer | Vulkan (MoltenVK on macOS), GLES2 for the PS Vita, and fixed-function OpenGL 1.x for a PowerPC Mac |
+| picture | a software rasterizer into an RGB565 framebuffer | Vulkan (MoltenVK on macOS); OpenGL ES for the PS Vita and the Quest; citro3d for the Nintendo 3DS; fixed-function OpenGL 1.x for PowerPC Macs |
 | sound | PCM buffers | an audio device |
 | input | a replayable event stream | a keyboard, or a gamepad as the engine's joystick |
 
@@ -55,7 +56,8 @@ end()              the frame
 Put the boundary at the API level instead, and the ported decisions, which
 are the thing that was actually reverse-engineered, would leak into
 Vulkan-specific code. A second backend would mean extracting them again. The
-boundary is what made four backends possible.
+boundary is what made five renderers possible, on machines twenty years
+apart.
 
 > **From Unity:** it is the difference between writing game code against
 > `Graphics.DrawMesh` and writing it against the Vulkan API. The engine speaks
@@ -85,6 +87,33 @@ whether the game already did the thing and the port had dropped it. The
 dither and the shimmer (chapter 8) were found that way: they looked like
 missing features and were missing *fidelity*.
 
+## Two more switches: restored, and remastered
+
+The enhancements are held to one standard: the data backs them. Two further
+switches sit beside them, each with its own section in the settings file and
+its own place in the options screen, and both are off by default.
+
+**Restored** is for what the 1999 game wrote and never shipped. The clearest
+case is the weather of chapter 8: two cities whose rainy music nothing plays,
+and a sandstorm whose code is complete behind the wrong test. Turned on, the
+port lets them run. What had to be invented to do so (which weather those two
+cities get, how one grain is cut from the sand texture) is written down as
+invented.
+
+**The remaster** goes further, and says so: it overrides authored art. A
+pipeline, shipped as code, builds an upscaled texture pack from the player's
+own copy of the game, because generated assets are derivatives of it and
+never enter the repository. On top of the pack, the remaster adds what a
+modern GPU can: glowing light maps, reflecting water and floors, ambient
+occlusion, relief from generated normal maps, mist, rounded bodies, an
+upscaled interface, fonts and films, and a rain that falls in 3D, wets the
+streets and runs down the walls. Every feature is its own option, a preset
+turns them on together, and one key switches between the original's look and
+the remaster's while the game runs. It is compiled only for the desktop and
+the Quest; the Vita, the 3DS and the old Macs never carry a line of it. And
+the rule that protects the evidence still holds: with the remaster off, the
+frames are the original's.
+
 <div class="pagebreak"></div>
 
 # 13. Running the world
@@ -102,7 +131,9 @@ scripts ran and what they announced is what is compared against the golden
 traces. From a cold start, it reproduces the capture of the game's opening
 **42 of 42 events, in order**, with nothing wired by hand. The start menu,
 the name field and the first conversation all come out of AREA 118's own
-startup script.
+startup script. From there the game plays on through the city: the
+conversations, the fights, shoot mode, the flying car, and both of the game's
+bosses.
 
 ## The frame loop of the viewer
 
@@ -130,9 +161,24 @@ street, change one line of code, render it again and compare the two dumps
 byte for byte. Most of the speed work in the next two chapters was proven
 exactly that way: **same output, less time**.
 
+## Looking for drift
+
+Matching a trace proves the opening. It does not prove the rest of the game,
+and a replica can drift quietly: a script that never fires, a model never
+placed, a clock that never runs. So the port was audited the other way round.
+Instead of asking whether what it does is right, the audit read the
+original's frame and asked what the original does that the port does not.
+
+The first pass found that the game clock had never advanced in the port, so
+the timed bombs of the story never went off; that a fight did not always
+begin; and that nobody sent the six messages of the last boss's weak points,
+because the port had no last boss (chapter 6). Each finding became a fix, a
+check shown to fail, and a play test. The flying car got an audit of its own,
+phase by phase, from the call to getting out.
+
 <div class="pagebreak"></div>
 
-# 14. Four renderers, and two faces in the same place
+# 14. Five renderers, and two faces in the same place
 
 ## The software rasterizer
 
@@ -149,7 +195,8 @@ It is too slow to play the city. It does not need to be fast.
 
 The live renderers turn the same draws into GPU work. Vulkan, through MoltenVK
 on macOS, is the desktop one. GLES2 was written for the PS Vita, whose GPU is
-programmed through vitaGL, an OpenGL ES 2 layer. Both agree with the software
+programmed through vitaGL, an OpenGL ES 2 layer, and it later drew the Quest's
+two eyes as well. Both agree with the software
 reference on coverage, to 99% or better (Vulkan 0.995 through dialogue 402's
 camera; GLES 0.996 there and 0.992 on the street), which is the right measure
 for a GPU:
@@ -167,9 +214,35 @@ lights the characters in its vertex shader**: the rest geometry stays on the
 GPU, and each frame sends only one matrix per mesh and the lights that reach
 the body. The original did all of that on the CPU. A handheld needs it,
 because what a Pentium II did for this game's bodies is a large part of a
-Cortex-A9's frame.
+Cortex-A9's frame. Every GPU backend now poses the bodies this way, Vulkan
+included, for consistency rather than need.
 
-## A fourth, for a 1999 Mac
+## A handheld with two screens
+
+The Nintendo 3DS has a GPU of its own kind, the PICA, programmed through
+citro3d with small vertex shaders written in its own assembly. Its backend
+keeps the GLES backend's ideas, the geometry resident on the GPU and the
+bodies posed and lit in the vertex shader, in a far smaller budget of
+registers. The port's instruments go to the bottom screen. Under an emulator
+it reproduces the original's opening trace event for event and draws the
+menu byte for byte as the Mac does; on a real console it plays into the city
+with its crowd, its sound and its touch screen. The dense street is still
+bound by the GPU.
+
+## Two eyes
+
+The Quest is the opposite kind of question: not a smaller machine, but a
+different way of looking. The game is drawn twice a frame, once per eye, at
+the headset's own resolution and rate, through GLES on Android and OpenXR.
+Every camera mode needed a rule of its own: first person moves where your head
+looks and recentres at an authored cut; a fight keeps a calm camera; shoot
+mode aims with the controller's ray as it did with the mouse. The interface
+floats as a transparent layer, and a screen becomes a window fixed in the
+world over a dimmed scene. All of it is a path beside the original's, in its
+own files, and the flat game is never changed by it. It is a prototype, and it
+runs at the headset's 72 frames a second.
+
+## The fifth, for a 1999 Mac
 
 The fourth renderer answers a what-if: how would Omikron have looked ported
 to a Macintosh of its own day? Such a machine has no shaders and, in 1999,
@@ -178,11 +251,11 @@ function** and does what the original did with Direct3D: one draw per bucket,
 a render state changed only when it differs, the texture chosen by the key's
 low six bits, 16-bit textures, the colour key as an alpha test, and the
 vertices transformed, clipped and culled **on the CPU**, with the fog
-computed per vertex. Doing the CPU's share by hand was faithful, and it was
-also forced: under emulation, the card's own transform let triangles that
+first computed per vertex. Doing the CPU's share by hand was faithful, and at
+first it was also forced: under emulation, the card's own transform let triangles that
 cross the near plane through as garbage, and its fog darkened the near scene.
 
-It runs, cross-compiled, on Mac OS X 10.4 on PowerPC, in an emulator: the
+It first ran, cross-compiled, on Mac OS X 10.4 on PowerPC, in an emulator: the
 films, the menu and Anekbah's street at 6 to 10 frames per second, against
 about one for the software rasterizer on the same emulated machine. It
 agrees with the reference on coverage to 0.993. Getting there needed the
@@ -195,7 +268,7 @@ off on both sides. The original, on an x87, had no fused operation at all.
 Mac OS 9 itself has no SDL. So the viewer's game code now reaches the host
 (the window, the keys, the sound, the clocks) through **one interface**, the
 renderer boundary's counterpart for the host, and compiles without a single
-SDL header. A Carbon frontend will replace SDL by implementing that one class.
+SDL header. A Carbon frontend replaces SDL by implementing that one class.
 
 The engine underneath is already there. Built once as a Carbon program, the
 headless boot runs on Mac OS 9 and on Tiger, and what it decides is
@@ -216,6 +289,26 @@ does. On the way it found three places where the viewer copied animation
 data straight into floats, which is wrong on a big-endian machine. Every
 tool had already been checked on the PowerPC, and none of them runs the
 viewer's crowd: a check covers what it runs, and nothing else.
+
+Then the emulator was left behind. On a real iBook G3, with an 8 MB Rage 128
+card, the street ran at about a tenth of a second a frame, and the work there
+became chapter 15 in miniature: one draw call for each run of equal state, as
+the original made one call a bucket; each vertex transformed once and drawn
+indexed; the interface sent only in the blocks that changed; the original's
+texture-size rule (chapter 8) fitting the textures to the card. On an iMac G3
+under Mac OS 9 the first street ran at three frames a second, and the cause
+was not the drawing at all: on Mac OS 9 every allocation is a call into the
+system's Memory Manager. A slab allocator under `malloc`, carving small blocks
+out of large ones, took the street to about twenty.
+
+The latest step closed a circle with the original. Reading again how the 1999
+engine fed Direct3D showed that its fog was the card's own *table fog*,
+linear, set bucket by bucket. So the backend stopped computing the fog on the
+CPU and hands it to OpenGL's linear fog, with a real projection matrix so the
+card sees the true eye depth. The fault that had once darkened the near scene
+under emulation was the card reading the wrong depth; given the right one, it
+draws the fog as the original's card did, and on OpenGL 1.1 a second pass
+over half the frame's draws is gone.
 
 ## Two faces in the same place
 
@@ -273,6 +366,18 @@ draws. No per-frame walk, no hybrid. The frames are byte-identical to the
 per-frame tie's over a walk past the signs, and the tie's share of a street
 frame (up to 4.4 ms on an M3, about 50 ms on the console) is gone for the
 set. Only posed bodies keep the per-frame tie.
+
+One more pair turned up later, and it crosses the line between two places. A
+door between a street and a restaurant exists twice: in the city's set and in
+the interior's, at the same place, moved by the same path. Only while the door
+opens are both places shown, and only then do the two copies compete. Their
+corners differ by the exporter's rounding, far below a step of the original's
+depth buffer, so there the first drawn wins; on a 32-bit float buffer they
+flickered, and because the copies are often lit differently, the flicker
+showed. A set's tie cannot see across two sets, so the port settles these in
+the shared draw list, before any backend: a face that repeats a face of the
+other slot, on the same corners in the same winding, is decided by the two
+draws' keys, and the later one is not submitted.
 
 <div class="pagebreak"></div>
 
@@ -406,6 +511,19 @@ against the half second of slices the original would allow, so the frame
 waited. The original simply waits on its reader, however long the disc
 takes, and so does the port now.
 
+A later run on the console put Anekbah's street at about **27 to 31 ms** a
+frame: inside the original's thirty frames a second, on a handheld.
+
+## The same lessons, carried across
+
+The other machines repeated the method, and what one taught was carried to
+the rest. The interface sent in blocks only where it changed was written for
+the iBook and now runs on the Vita and the 3DS too. The original's
+texture-size rule went from the old Macs to the 3DS. Bodies posed by the renderer went
+from GLES to every GPU backend. The 3DS reaches 30 to 48 ms of game per frame
+in the street, its dense parts bound by its GPU; the iMac's lesson, an
+allocator that costs more than the drawing, is chapter 14's.
+
 ## Compared with the original
 
 Put side by side with the 1999 engine, the pattern is clear.
@@ -450,10 +568,12 @@ For the next step, go by question:
   behind each figure.
 * **"What is the standard for the port?"** `docs/PORTING.md`, the tiers and
   the boundary.
-* **"What is being worked on?"** `todo/`: the optimisation record, the Vita
-  handoff, the classic-Mac handoff, the task files.
+* **"What is being worked on?"** `todo/`: the optimisation record, a handoff
+  per machine (the Vita, the 3DS, the Quest, the classic Mac), the
+  remaster's plan, the drift audits, the task files.
 * **"Why is it done this way, and what went wrong on the way?"** `CLAUDE.md`
-  §1, the ground rules and the traps, each with the mistake that produced it.
+  §1 for the ground rules and the traps, and `docs/PRACTICE.md` §1 for the
+  mistake behind each one.
 
 ## Glossary: Omikron ↔ Unity
 

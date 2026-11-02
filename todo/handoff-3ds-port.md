@@ -72,7 +72,7 @@ What is done, by the plan's numbering (details in `3ds-port.md`):
 | 5 controls, saves, films | partly: films play in software (MPEG-1 kept, by decision); name-field keyboard owed (shared code) |
 | 6 performance (second core) | not started |
 | 7 Old 3DS | not started |
-| 8 stereoscopic 3D | not started |
+| 8 stereoscopic 3D | first version built 2026-10-07 (`4dec582`), OFF unless `stereo3d` is on the card; Azahar-proved, **not yet on the console** (`3ds-port.md` Step 8; corrected 2026-11-02 by the manual regeneration) |
 | 9 packaging | `.3dsx` only |
 | 10 per-screen survey (EXTRA, last) | not started - the reader made it the final step |
 

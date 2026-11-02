@@ -10,10 +10,12 @@ you have it. Without it, read along: every output below is printed.
 
 ## Read
 
-* `CLAUDE.md` §1, from the top to the end of "Make the parse self-checking",
-  and then the bullet "And the same trap is not confined to the VM" under
-  "Known extraction traps". This lesson is that bullet, met for real.
-* `CLAUDE.md` §3, the table of the four `@status` values.
+* `CLAUDE.md` §1, from the top to the end of "Make the parse self-checking".
+  Then, in its long form `docs/PRACTICE.md` §1, the bullet "And the same trap
+  is not confined to the VM" under "Known extraction traps" (`grep -n` it;
+  `CLAUDE.md` keeps it as the one-line trap "A function with no direct `E8`
+  caller gets no `proc` label"). This lesson is that bullet, met for real.
+* `CLAUDE.md` §3, the four `@status` values.
 * `readable/INDEX.md`: just look at its shape - one row a function.
 
 ## The three sources
@@ -114,9 +116,10 @@ grep -rn '0x0042A990' engine/src
 ```
 
 ```
-engine/src/ui/widgets.h:1681:inline constexpr std::uint32_t kCbSaveAnnuler    = 0x0042A990u;
-engine/src/ui/widgets.cpp:1900:        // `Annuler` on the save screen (0x0042A990): it closes.
-engine/src/ui/widgets.cpp:1906:            closeNow("close (0x0042A990)");
+engine/src/ui/widgets.h:1209:    // carrying 0x10, `0x0042A990`'s button). For the TERMINAL that is
+engine/src/ui/widgets.h:1701:inline constexpr std::uint32_t kCbSaveAnnuler    = 0x0042A990u;
+engine/src/ui/widgets.cpp:1911:        // `Annuler` on the save screen (0x0042A990): it closes.
+engine/src/ui/widgets.cpp:1917:            closeNow("close (0x0042A990)");
 ```
 
 In `UiWalk::confirm`, the arm for that callback logs and calls

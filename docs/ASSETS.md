@@ -1793,7 +1793,11 @@ being drawn:
 * fog is **off** for key bits `0x2080` — the near bucket (`0x80`, geometry
   closer than the fog start anyway) and the transparent state (`0x2000`);
 * it is off entirely when the device flag `dword_7CAD20` is clear;
-* for key bit `0x800` (the cutout path) both start and end are **doubled**.
+* for key bit `0x800` both start and end are **doubled**. (Corrected
+  2026-11-02: this said "the cutout path". Key `0x800` is the state mesh flag
+  `0x10000` ASSIGNS - the sky's ("The sky" above: its "doubled fog range");
+  the cutout, mesh flag `0x800`, is key `0x400`, by the key code in "The key"
+  and `Raster_DrawTriangles`' `(key & 0x400)` alpha test in §4.)
 
 **Ported, both backends** (2026-09-05). The clip distance resolves from the
 config file and the save header (`engine/src/platform/settings.h`) and drives
@@ -1864,6 +1868,11 @@ There is a **second** bucket walk, `sub_42FF80`, at vtable entry 1 of
 `off_4C4918`. It is **never installed**: `sub_42F9A0` wires entry [0] at
 startup and `sub_42FA00` is called exactly once, with `0`. Its four vtable
 siblings in the 0x431xxx range are dead with it. Recorded so nobody reads them.
+**(Corrected 2026-09-01, and this paragraph had kept the old reading: it IS
+installed - VM opcode 150 is `sub_42FA00(1)`, at 14 shipped sites, and bank 1
+draws the game's black-and-white cutscenes; its four siblings were read
+2026-10-06 and grey the clears, the textures and the fog. See §4c's correction
+and `SCRIPT_VM.md` 150/151; `verify.py: render back ends`, `engine: grey bank`.)**
 
 ### Where the texture comes from — and the 58-slot cache
 
@@ -3116,12 +3125,14 @@ Entry (88 bytes)
 
 **What the flag-gated blocks hold.** Established from the shipped values and
 the states' own names; the `0x2000000` combat block, `0x8002`, bit 2 and
-bit `0x20` are now confirmed from their runtime consumers (below); the turn
-and root-shift consumers remain untraced.
+bit `0x20` are now confirmed from their runtime consumers (below); ~~the turn
+and root-shift consumers remain untraced~~ so are the turn and the root shift
+since (`Cef_ApplyTurn`, `Cef_ApplyRootShift`, and their gates in
+`Cef_TickChannel`, read 2026-10-11 — the `0x140` / `0x280` rows).
 
 | flag | block | contents |
 |---|---|---|
-| `0x10` | +64, 12 B | ~~"appears nowhere else"~~ **the state's engine callback**: `Cef_QueueSpecialMove` (0x0045D0E0) matches it — player only — against the binary's own **`tab_special_move[]`** (its debug string's name; 66 rows of `char[8]` + function pointer at 0x004CB168, invisible to a string search because the names pack as dword pairs) and queues the handler. All **54 distinct shipped names, 209 sites, resolve**. The rows are gameplay events: locomotion (`MDSTAND/WALK/RUN/STOPR/STOPW/ROT000/ADJSTP`), actions (`MDGETOBJ/LETOBJ/NOTAKE`, `MDJUMP0A..03`, `MDDIVBEG/END`, `MDSLIDIN/OU`, `MDSNEAK0`, `MDSHOOT0`), camera modes (`MDCAMADV/SHT/FGT`), input tokens and the 2D-menu keys (`I2DM0..9`) |
+| `0x10` | +64, 12 B | ~~"appears nowhere else"~~ **the state's engine callback**: `Cef_QueueSpecialMove` (0x0045D0E0) matches it — player only — against the binary's own **`tab_special_move[]`** (its debug string's name; 66 rows of `char[8]` + function pointer at 0x004CB168, invisible to a string search because the names pack as dword pairs) and queues the handler. All **54 distinct shipped names, 209 sites, resolve**. The rows are gameplay events: locomotion (`MDSTAND/WALK/RUN/STOPR/STOPW/ROT000/ADJSTP`), actions (`MDGETOBJ/LETOBJ/NOTAKE`, `MDJUMP0A..03`, `MDDIVBEG/END`, `MDSLIDIN/OU`, `MDSNEAK0`, `MDSHOOT0`), camera modes (`MDCAMADV/SHT/FGT`), input tokens and the 2D-menu keys (`I2DM0..9`). **The out-of-breath stop, read 2026-10-29** (`todo/scene-gameplay-audit.md` row 18): `MDRUN` 0x0046C0C0 / `MDWALK` 0x0046C050 store the channel's `+220` repeat count in `dword_53B07C` / `dword_53B080`; `MDSTOPR` 0x0046C0E0 enters group 164 (`H_RUN-SD`, `H_BREATH`) when the run's is over 30 (unsigned), `MDSTOPW` 0x0046C070 group 166 when the run's is over 30 and the walk's under 3, and both zero what they read - about 19 s of running (`PlayerController::breathMove`, `verify.py: engine: out of breath`) |
 | `+76` bit 3 | +28, 8 + 32·n B | the state's **effect records** — frame-triggered sprites and sounds, fully decoded from `Cef_UpdateStateEffects`/`Cef_SpawnEffect`/`Cef_TickEffects` (0x0045B260/0x0045B3B0/0x0045ADF0):
 ```
 +0  f32 sprite duration     +4/+8  f32 active window (+8 = 0 -> open)
@@ -3478,7 +3489,8 @@ metres up. `MDJUMP03`'s `sub_414DE0(actor, 18, 1)` had been read as an
 "ACTOR_STATE 18", which does not exist.
 
 `Walk_GroundResponse`, stepping off a ledge (not in a jump), bands the
-clearance below once per fall: under 7.87 snap, under 1.5 m nothing, else
+clearance below once per fall: under 7.87 snap (only where `sub_47CF00` lets
+it - never in adventure mode, see "A DROP UNDER 20 cm" above), under 1.5 m nothing, else
 `+1304` = 1 / 3 / 4 for 1.5 / 3 / 5 m, `.CTL` group 2 (`H_FALL`) and camera
 18. On landing, by the accumulated fall: under 1.5 m back to group 100;
 1.5..3 m group 4 (`H_LFL`); 3..5 m group 4 and **message 10**; 5 m and more
@@ -3664,7 +3676,13 @@ cameras. Of 5381 world-camera records only the 406 with eye subject 0 take the
 pass. So it is **not** what clears the restaurant dialogue's high crane or
 the lift's dark arrival (camera 2986, absolute): measured, switching the pass
 off moves 0 frames of dialog 387's 22 shots. The lift's arrival is the car
-mesh `CSPont04` around the lens, and what the engine does about it is open.
+mesh `CSPont04` around the lens, and what the engine does about it ~~is open~~
+was found on 2026-10-01: **the back-face cull**. `Render_SubmitMesh` drops
+every face whose screen winding is backwards (unless its mesh carries
+`0x20000000`), so the crane's ceiling, the wall behind 402's 4577 and the
+inside of the lift car are seen from behind and not drawn; the lift's arrival
+goes from 90.3% to 56.9% dark (`docs/RECONSTRUCTION.md`, 2026-10-01;
+`verify.py: engine: back-face cull`).
 `verify.py: engine: camera obstruction`, `engine: camera collision`.
 
 ---
@@ -4209,8 +4227,8 @@ growth at `+40` by the section's per-frame scale step (the Waver's streak),
 the ACTOR sweep (`sub_45E9C0`: every attached actor's node sphere, then each
 mesh's sphere and local box) and then the WORLD ray (`sub_4449E0`: every mesh
 but those flagged 0x800000). A hit or 1968.5 units (50 m) retires the entry.
-The actor sweep and what a hit does (`sub_4240E0`) are read and not yet ported
-(§7j).
+The actor sweep and what a hit does (`sub_4240E0`) were read here before they
+were ported; **ported 2026-09-10** (`todo/shoot-mode.md` §7j, `actor/shoothit.h`).
 
 `todo/shoot-mode.md` §5b/§5c/§7.
 

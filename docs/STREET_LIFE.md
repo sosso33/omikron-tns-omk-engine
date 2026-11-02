@@ -11,7 +11,7 @@ found. In order of what a player sees:
 | mechanism | what it is | port status (2026-09-03) |
 |---|---|---|
 | **A. the procedural pedestrians** — the `.OPT` "trajectoires" | anonymous walkers spawned along authored lanes, density from the options menu | **ported and drawn** (`engine: pedestrians`, `engine: street frame`); to be watched in play |
-| **B. the authored extras** — scene programs on placed characters | couples kissing, beggars, sport, patrolling Mecaguards, walking pairs; one looping `.SCX` program each | ported and running in every city **except Anekbah** (one operand misread) |
+| **B. the authored extras** — scene programs on placed characters | couples kissing, beggars, sport, patrolling Mecaguards, walking pairs; one looping `.SCX` program each | ported and running in every city, ~~**except Anekbah** (one operand misread)~~ Anekbah included since the misread was fixed on 2026-09-03 (§1, `engine: city crowd`) |
 | **C. the crowd push** — the spatial index | the player is shoved by nearby bodies | **ported** (`engine: crowd push`), with the bump and talk messages |
 | **A2. the road traffic** — the `.OPT` vehicle lanes | the hover-taxis (`sli_fn`) and the motos, spawned on the same circuit and driven by the same mover step | **ported and drawn** 2026-09-04 (`engine: road traffic`, `engine: traffic frame`); seen crossing a street |
 
@@ -22,7 +22,12 @@ run through the zone registry, the message path and the voice-over path the
 port has. **The voices themselves do not ship**: the `ZVO P*`/`V*`/`VH*`
 lines those scripts play are among the 551 of 561 `VOICEOFF` entries absent
 from this data set (17 files ship), so the talk and the bump run their
-scripts and stay silent here. The camera shake the bump handlers ask for
+scripts and ~~stay silent here~~ do not play their own lines — **but they are
+not all silent** (corrected 2026-11-02): `media.play` substitutes
+`JINGOFF3.ADP` for every name starting `ZVOT` or `ZVOP`, so the `P` lines play
+the engine's jingle ([CUTSCENES.md](CUTSCENES.md) §5, "Music, and the missing
+voices"; `verify.py: engine: voice over`); how the `V*`/`VH*` lines split is
+not counted here. The camera shake the bump handlers ask for
 (`camera.shake 5, 5`) is the visible half.
 
 ---
@@ -612,7 +617,10 @@ the same 240-slot pool the walkers use, spawned with `+52` and `+56` both
 whose mover has `flags & 9` — flag 8 being the spawner's own mark (§2) and 1
 "blocked". `sub_456530` switches on the record's `+8`: **0 is ambient
 traffic** and falls to the default; **1..7 are the player mounting and
-riding**, and are the part not ported.
+riding** - not ported when this section was written; the ride has been ported
+since 2026-09-07 (`engine/src/actor/slider.h`, `todo/slider.md`) and audited
+against the original on 2026-10-06 (`todo/slider-drift-audit.md`,
+`todo/handoff-slider.md`).
 
 Ambient is three calls — `sub_456C70`, the spatial-index update, `sub_456B40`:
 
@@ -724,8 +732,11 @@ circuit's walkers and vehicles to that test.
 * **The player's ride**: `sub_452570` / `sub_452CC0` (the mount),
   `Slider_TickRide` (0x00458150), `ACTOR_STATE` 7 and 8, and the
   `dword_8F5E44` hand-over that preserves his slider across an area load.
-  A ride record in state 1..7 is left alone by the port rather than driven
-  wrongly.
+  ~~A ride record in state 1..7 is left alone by the port rather than driven
+  wrongly.~~ **Ported** (transcribed 2026-09-07, `engine/src/actor/slider.h`;
+  the cross-area journey read 2026-10-07): the call, the ride, the exit and
+  their cameras, audited row by row in `todo/slider-drift-audit.md`;
+  `verify.py: engine: slider *`. Pick it up from `todo/handoff-slider.md`.
 * **What one person has now seen, and what is still unwatched.** A moto and
   a hover taxi were watched crossing a street on 2026-09-04, which settles
   that they draw, sit on the road and lead with the nose — the last of those
@@ -810,8 +821,8 @@ the reservation groups the vehicles now share with it.)
 | the `.OPT` pedestrians and the density option | `formats/opt.*`, `actor/pedestrians.*`, `Session::loadTraffic` | ported and run headless; drawing is step 4 |
 | the crowd push | `actor/spatial.*`, `Session::crowdPush` | ported; the bump and talk messages post; since 2026-10-07 every shown CHARACTER is a body in the index too (`Actor_Attach` registers every attached actor) - they had been the shoot gunmen alone, and the player walked through the rest (`engine: actor body`) |
 | the road traffic (§2b) | `actor/vehicles.cpp`, the vehicle masks in `Session::loadTrafficFor`, staged by `omk-play` | ported, drawn and seen (`engine: road traffic`, `engine: traffic frame`); the pace and the corners still unwatched |
-| the player riding a slider | - | not ported: `Slider_TickRide`, `ACTOR_STATE` 7/8, `sub_456530` states 1..7 |
-| a way to stand in a street without replaying the intro | `omk-play` | nothing |
+| the player riding a slider | `actor/slider.h`, `actor/vehicles.cpp` | ported (`Slider_TickRide`, `ACTOR_STATE` 7/8, `sub_456530` states 1..7; `todo/slider-drift-audit.md`, `engine: slider *`) |
+| a way to stand in a street without replaying the intro | `omk-play` | the street start: `--save ... --area N` with `--address A` or `--stand x,y,z,yaw` (§2) |
 
 ## The Mecaguards' raised weapon - zones, not code (read 2026-10-07)
 
