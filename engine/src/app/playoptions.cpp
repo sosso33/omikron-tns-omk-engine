@@ -380,6 +380,8 @@ int PlayOptions::parse(int argc, char** argv) {
 "                   todo/debug-tools.md - absent from `make release`)\n"
 "  --gl1-composite  the classic Mac's GL1: compose the frame on the CPU, not\n"
 "                   the straight present (OMK_GL1_COMPOSITE=1)\n"
+"  --gl1-cpu-fog    GL1: the fog computed per vertex on the CPU, not OpenGL's\n"
+"                   linear fog on the card (OMK_GL1_CPU_FOG=1)\n"
 "  --gl1-fog-unit   the classic Mac's GL1 with no colour sum: the coloured\n"
 "                   fog in one pass on the second texture unit, not the\n"
 "                   second pass (OMK_GL1_FOG_UNIT=1)\n"
@@ -455,6 +457,7 @@ int PlayOptions::parse(int argc, char** argv) {
         else if (a == "--gl1-composite") gl1Composite = true;
         else if (a == "--gl1-fog-unit") gl1FogUnit = true;
         else if (a == "--gl1-no-lock") gl1NoLock = true;
+        else if (a == "--gl1-cpu-fog") gl1CpuFog = true;
         else if (a == "--gl1-fetch-all") gl1FetchAll = true;
         else if (a == "--films-direct") filmsDirect = true;
         else if (a == "--world-vulkan") worldVulkan = true;

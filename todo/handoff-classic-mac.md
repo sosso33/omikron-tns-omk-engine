@@ -1803,6 +1803,42 @@ a software renderer, it is suspicious", 2026-10-30)**:
      (the 29 ms; steps 1-2 showed the memory fetches are not it). The large
      change, and it would also bring the set's memory towards the
      original's. (3) the edges left to the driver where it clips right.
+  12. **THE FOG ON THE CARD (the reader's "do 1", 2026-11-02)**: GL1's fog
+     is now OpenGL's own LINEAR fog - the original's Direct3D table fog's
+     equal - by default, on every GL1 build. How: the vertices go VIEW-space
+     (x, y, z, 1) and the projection is a MATRIX (`loadProjection`: rows
+     x/th, y/tv, z - 2 near q, z - the same clip coordinates `emit` wrote on
+     the CPU, the driver's 4x4 that was identity before), so the card's fog
+     reads the true eye depth; `applyFog` sets it per batch as
+     `Raster_DrawTriangles` keys it (off for 0x2080, start and end doubled
+     for 0x800), and `submit` flushes when the kind changes. A tie loser's
+     depth push rides in q (q = 1 - (4/65535) z / 2 near: clip z moves, x, y
+     and w do not). The colour is no longer darkened, no colour sum, no
+     second pass, no second unit. Tiger's old note ("its fog darkened the
+     near scene") was the fog reading CLIP z with the GPU transform; here
+     it reads the eye z. `--gl1-cpu-fog` / `OMK_GL1_CPU_FOG` keeps the CPU
+     fog (and with it `--gl1-fog-unit`, the second pass) - the A/B.
+     On the M1, the street at 130 with the fog coloured 91 160 171: the card's
+     frame against the CPU colour sum's - 11993 pixels differ, NONE by more
+     than one 5-bit step (per pixel against per vertex); the same with the
+     colour sum taken away (OS 9's case) and no second pass; 1476 draw calls
+     as before - the fog's kind changed 180 times in 60 passes, always at a
+     batch boundary there already. `engine: gl1 backend` +2 frames: <= 0.5%
+     off by > 8 (> 24 was too coarse - a fog starting at half its distance
+     stayed under it), shown to fail with that mutation (68412 pixels).
+     ON THE EMULATED OS 9 (its OpenGL 1.2.1 software renderer, no colour sum;
+     the street start, the fog coloured, 60 frames): `the fog ON THE CARD`
+     taken, 60 frames presented, exit 0; the dumped frame against the host's
+     card-fog frame: 310 pixels (0.1%) off by > 24 (the host's CPU second
+     pass: 251) - the size of the earlier emulator-to-host gap (619) - and
+     to the eye the fog hazes the far set while the near scene is NOT
+     darkened (Tiger's old fault absent). TRAP met: `omk.args` must be LF -
+     written with CR, Retro68's `fgets` reads it as ONE argument and the
+     run exits at once (`no VM opcode table`). Both classic builds fresh
+     (newer than `gl1render.cpp`, `engine: classic build` ok); the stick was
+     unplugged - NOT yet copied. NEXT ON THE iMAC: the street at 100 m with
+     `--profile`: the fog right, no second passes in the `60 passes` lines,
+     the draw calls (46 before, ~23 of them fog), the frame time.
      * **the films (through GL, not `--films-direct`)**: 56-80 ms of
        `MoviesTask` a picture, ~6 pictures a second; a picture shown costs
        converted 4.9 + uploaded 3.5 + drawn and swapped 9.4 ms. QuickTime's

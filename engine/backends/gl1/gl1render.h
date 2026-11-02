@@ -33,6 +33,10 @@ void gl1SetFogUnit(Renderer* r, bool unit);
 // `--gl1-no-lock`: every batch drawn with its vertex arrays UNLOCKED, where
 // EXT_compiled_vertex_array would lock them around the draw - the A/B.
 void gl1SetNoLock(Renderer* r, bool off);
+// `--gl1-cpu-fog`: the fog computed per vertex on the CPU (a colour sum, or
+// where there is none a second pass) instead of OpenGL's linear fog on the
+// card - the original's table fog, the default since 2026-11-02. The A/B.
+void gl1SetCpuFog(Renderer* r, bool cpu);
 // `--gl1-fetch-all`: every corner's bytes fetched ahead of the submit loop,
 // where only those of vertices not yet seen in their draw are by default -
 // the A/B (`OMK_GL1_FETCH_ALL` as well).

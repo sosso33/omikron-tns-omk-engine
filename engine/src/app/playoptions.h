@@ -322,6 +322,10 @@ struct PlayOptions {
     // draw call where EXT_compiled_vertex_array is there - the A/B
     // (`gl1SetNoLock`)
     bool gl1NoLock = false;
+    // ...and `--gl1-cpu-fog`: the fog per vertex on the CPU, not OpenGL's
+    // linear fog on the card (the default, the original's table fog) - the
+    // A/B (`gl1SetCpuFog`)
+    bool gl1CpuFog = false;
     // ...and `--gl1-fetch-all`: every corner's bytes fetched ahead of the GL1
     // submit loop, not only a not-yet-seen vertex's - the A/B (`gl1SetFetchAll`)
     bool gl1FetchAll = false;

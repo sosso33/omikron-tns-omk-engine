@@ -30342,16 +30342,22 @@ def c_engine_gl1_backend():
                                       ("lock", {"OMK_GL1_LOCK_UNLISTED": "1"}, "nearest", []),
                                       ("nolock", {"OMK_GL1_LOCK_UNLISTED": "1", "OMK_GL1_NO_LOCK": "1"},
                                        "nearest", []),
-                                      ("fogsum", {}, "nearest", ["--fog-colour", "91,160,171"]),
-                                      ("fogpass", {"OMK_GL1_NO_COLOUR_SUM": "1"},
+                                      ("fogsum", {"OMK_GL1_CPU_FOG": "1"}, "nearest",
+                                       ["--fog-colour", "91,160,171"]),
+                                      ("fogcard", {}, "nearest", ["--fog-colour", "91,160,171"]),
+                                      ("fogcardnosum", {"OMK_GL1_NO_COLOUR_SUM": "1"}, "nearest",
+                                       ["--fog-colour", "91,160,171"]),
+                                      ("fogpass", {"OMK_GL1_NO_COLOUR_SUM": "1", "OMK_GL1_CPU_FOG": "1"},
                                        "nearest", ["--fog-colour", "91,160,171"]),
-                                      ("fogmt", {"OMK_GL1_NO_COLOUR_SUM": "1", "OMK_GL1_FOG_UNIT": "1"}, "nearest",
+                                      ("fogmt", {"OMK_GL1_NO_COLOUR_SUM": "1", "OMK_GL1_FOG_UNIT": "1",
+                                                 "OMK_GL1_CPU_FOG": "1"}, "nearest",
                                        ["--fog-colour", "91,160,171"])):
             out = os.path.join(tmp, tag + ".bin")
             r = subprocess.run([binp, fr, os.path.join(ROOT, "tables"),
                                 "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
                                 "--area", "0", "--stand", "1804,0,-6890,336", "--nofmv",
-                                "--frames", "130" if tag in ("skip", "noskip", "lock", "nolock", "fogsum", "fogpass", "fogmt") else "60",
+                                "--frames", "130" if tag in ("skip", "noskip", "lock", "nolock", "fogsum", "fogcard", "fogcardnosum",
+                                                "fogpass", "fogmt") else "60",
                                 "--res", "640x480", "--filter", filt,
                                 "--dump", out] + extra,
                                cwd=eng, capture_output=True, text=True,
@@ -30363,8 +30369,8 @@ def c_engine_gl1_backend():
                     return (f"{tag} dump {len(raw)} bytes",), ("640x480",), \
                         "the dump must be one 640x480 RGB565 frame: " + r.stdout[-400:]
                 frames[tag] = struct.unpack("<%dH" % (640 * 480), raw)
-        if len(frames) != 12:
-            return ("no frames",), ("twelve frames",), "omk-play must render all twelve"
+        if len(frames) != 14:
+            return ("no frames",), ("fourteen frames",), "omk-play must render all fourteen"
         g, sw, bl = frames["gl1"], frames["sw"], frames["bilinear"]
         N = len(g)
         def big(x, y):
@@ -30450,13 +30456,31 @@ def c_engine_gl1_backend():
         cornersN, transN = (int(cs.group(1)), int(cs.group(2))) if cs else (0, 0)
         fetchedN = int(fe.group(1)) if fe else -1
         fetchGot = (cornersN > 0 and 0 < fetchedN <= transN * 1.2, fetchedN < cornersN * 0.6)
+        # THE FOG ON THE CARD (2026-11-02, handoff-classic-mac.md 3i item
+        # 12): OpenGL's linear fog from the eye depth - the original's table
+        # fog - the default; the picture the CPU colour sum's (`fogsum`,
+        # OMK_GL1_CPU_FOG) within <= 0.5% off by MORE THAN ONE STEP (> 8: 0
+        # measured - per pixel against per vertex, one 5-bit step at most;
+        # > 24 is too coarse here: a fog starting at half its distance stays
+        # under it, and showed 68412 pixels > 8), and taken alike without a
+        # colour sum (OS 9's OpenGL 1.1): no second pass, the same draw calls
+        def step(x, y):
+            return max(abs(((x >> 11) & 31) - ((y >> 11) & 31)) * 8,
+                       abs(((x >> 5) & 63) - ((y >> 5) & 63)) * 4,
+                       abs((x & 31) - (y & 31)) * 8) > 8
+        cardDiff = sum(1 for x, y in zip(frames["fogcard"], frames["fogsum"]) if x != y and step(x, y))
+        cardNoSum = sum(1 for x, y in zip(frames["fogcardnosum"], frames["fogsum"]) if x != y and step(x, y))
+        cardGot = ("the fog ON THE CARD" in logs["fogcard"] and "the fog ON THE CARD" not in logs["fogsum"],
+                   cardDiff <= N * 0.005 and frames["fogcard"] != frames["skip"],
+                   cardNoSum <= N * 0.005 and "fog second passes" not in logs["fogcardnosum"],
+                   calls("fogcard") == calls("fogsum") != "-1")
         lockGot = (lockN > 0, "NOT used (--gl1-no-lock)" in logs["nolock"] and
                    "vertices locked" not in logs["nolock"], frames["nolock"] == frames["lock"],
                    moving > 0 and "walkers are posed and lit by the RENDERER" in logs["lock"])
         got = ("the world through OpenGL 1.x fixed-function" in logs["gl1"],
                g != sw, cover >= 0.99, differ <= N * 0.005,
                len(changed) >= N * 0.2, meanB <= 16.0, coverB >= 0.98, keptLater,
-               posedOn, posedAny <= N * 0.001 and posedDiff <= 8, smallGot, skipGot, fogGot, mtGot, lockGot, fetchGot)
+               posedOn, posedAny <= N * 0.001 and posedDiff <= 8, smallGot, skipGot, fogGot, mtGot, lockGot, fetchGot, cardGot)
         print(f"        gl1 vs software: coverage {cover:.4f}, {differ} pixels differ by >24 "
               f"({100.0 * differ / N:.2f}%); bilinear: {100.0 * len(changed) / N:.1f}% changed, "
               f"mean {meanB:.1f}, coverage {coverB:.4f}")
@@ -30467,6 +30491,8 @@ def c_engine_gl1_backend():
               f"against the whole textures")
         print(f"        runs off the screen skipped unread: {skipped} corners over 60 passes, "
               f"the frame {'identical' if skipGot[1] else 'DIFFERENT'} without the skip")
+        print(f"        the fog on the card: {cardDiff} pixels off the CPU colour sum's by >8, "
+              f"{cardNoSum} without a colour sum; draw calls {calls('fogcard')} against {calls('fogsum')}")
         print(f"        fetched ahead: {fetchedN} corners of {cornersN} read, {transN} transformed")
         print(f"        vertex arrays locked: {lockN} draw calls of the street's 60 passes, the frame "
               f"{'identical' if lockGot[2] else 'DIFFERENT'} drawn unlocked; {moving} moving set "
@@ -30476,7 +30502,8 @@ def c_engine_gl1_backend():
               f"draw calls {calls('fogmt')} against the sum's {calls('fogsum')} and the pass's {calls('fogpass')}")
         return got, (True, True, True, True, True, True, True, True, True, True,
                      ("0.5x1", False, True, True), (True, True), (True, True, True, True),
-                     (True, True, True, True), (True, True, True, True), (True, True)), \
+                     (True, True, True, True), (True, True, True, True), (True, True),
+                     (True, True, True, True)), \
             "the world drawn by the gl1 backend; its frame not the software one; " \
             "coverage agreement >= 0.99; <= 0.5% of pixels differing by > 24; " \
             "bilinear changes >= 20% of the pixels by a mean <= 16 and keeps coverage >= 0.98; " \
@@ -30488,7 +30515,8 @@ def c_engine_gl1_backend():
             "arrays locked around each draw call (EXT_compiled_vertex_array), the frame " \
             "byte-identical unlocked, with moving meshes in view; only the corners of " \
             "vertices not yet transformed and sent fetched ahead (<= 1.2x the transformed, " \
-            "< 60% of those read)"
+            "< 60% of those read); the fog on the card, the CPU colour sum's picture within " \
+            "one step on all but 0.5%, no second pass without a colour sum, the same draw calls"
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

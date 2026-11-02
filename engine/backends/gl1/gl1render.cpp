@@ -461,6 +461,7 @@ public:
                                   // CPU share from the driver's (`todo/handoff-classic-mac.md` 3f)
         Current current(ctx_);
         flush();
+        inFrame_ = false;
         setCamera(v);
         RCamera cam = v.cam;
         cam.w = camW_;
@@ -508,12 +509,16 @@ public:
 #endif
         glViewport(0, h_ - vy_ - cam.h, cam.w, cam.h);
 
-        // THE CAMERA is applied on the CPU (`setCamera`, in submit). Both GL
-        // matrices stay identity: what reaches GL is already in clip space.
-        glMatrixMode(GL_PROJECTION);
-        glLoadIdentity();
+        // THE CAMERA is applied on the CPU (`setCamera`, in submit). With the
+        // fog on the CPU both GL matrices stay identity: what reaches GL is
+        // already in clip space. With the fog ON THE CARD (`cardFog_`) the
+        // vertices are VIEW-space and the projection is a matrix
+        // (`loadProjection`) - the same clip coordinates, and the eye depth
+        // the card's fog needs.
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
+        loadProjection();
+        inFrame_ = true;
 
         // the D3D device's fixed states, set once (`sub_4638C0`)
         glShadeModel(GL_SMOOTH);
@@ -522,17 +527,42 @@ public:
         glEnable(GL_TEXTURE_2D);
         glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
         glAlphaFunc(GL_GREATER, 0.5f);
-        // THE FOG IS COMPUTED PER VERTEX, on the CPU (submit) - the
-        // original's own fallback for a card without table fog, and what
-        // keeps it off the device's fog unit altogether: under emulation that
-        // unit darkened the near scene. colour * (1 - a) plus the fog colour
-        // * a as a SECONDARY colour added after texturing is the reference's
-        // lerp(texel * colour, fog, a), vertex by vertex.
+        // THE FOG ON THE CARD, as the original's: Direct3D TABLE fog
+        // (`Raster_DrawTriangles`: FOGTABLEMODE 3, linear, per bucket - off
+        // for the near and transparent keys, start and end doubled for 0x800;
+        // `docs/ASSETS.md`), which the card computes from the depth. OpenGL
+        // 1.1's own linear `GL_FOG` is its equal: the colour fogged after
+        // texturing, `lerp(texel * colour, fog, 1 - f)` with f = (end - z) /
+        // (end - start) - the reference's - and on a card without a colour
+        // sum (OS 9's OpenGL 1.1, the iMac G3) no second pass: that pass was
+        // 23-26 of a 100 m street frame's 46 draw calls there (2026-11-02,
+        // `todo/handoff-classic-mac.md` 3i item 12). The state goes per batch
+        // (`fogKindFor`, `applyFog`). `--gl1-cpu-fog` keeps the fog on the CPU
+        // below, the A/B.
+        //
+        // ...THE FOG ON THE CPU: computed per vertex (`emit`). colour * (1 - a)
+        // plus the fog colour * a as a SECONDARY colour added after texturing
+        // is the reference's lerp(texel * colour, fog, a), vertex by vertex.
+        // It was the default until 2026-11-02 for a note from Tiger, "under
+        // emulation that unit darkened the near scene" - with the GPU's own
+        // transform, whose clip-space z the card's fog then read.
         glDisable(GL_FOG);
+        glFogState_ = -1;
         fogRGB_[0] = v.fogColour[0] / 255.0f;
         fogRGB_[1] = v.fogColour[1] / 255.0f;
         fogRGB_[2] = v.fogColour[2] / 255.0f;
-        fogSum_ = fogRGB_[0] > 0 || fogRGB_[1] > 0 || fogRGB_[2] > 0;
+        if (cardFog_) {
+            const GLfloat c[4] = {fogRGB_[0], fogRGB_[1], fogRGB_[2], 1.0f};
+            glFogi(GL_FOG_MODE, GL_LINEAR);
+            glFogfv(GL_FOG_COLOR, c);
+            static bool told = false;
+            if (!told) {
+                told = true;
+                std::printf("gl1: the fog ON THE CARD - OpenGL's linear fog from the eye depth, "
+                            "the original's table fog (--gl1-cpu-fog: per vertex on the CPU)\n");
+            }
+        }
+        fogSum_ = !cardFog_ && (fogRGB_[0] > 0 || fogRGB_[1] > 0 || fogRGB_[2] > 0);
         fogPass_ = false;
         const bool fogMTWas = fogMT_;
         fogMT_ = false;
@@ -614,7 +644,7 @@ public:
             const bool hasTex = slot < tex_.size() && tex_[slot] != 0;
             const unsigned want = hasTex ? static_cast<unsigned>(slot) : ~1u;
             if (pending() && (!stateValid_ || d.blend != blend_ || d.cutout != cutout_ ||
-                                  want != boundTex_))
+                                  want != boundTex_ || (cardFog_ && fogKindFor(d) != fogKind_)))
                 flush();
         }
         setState(d);
@@ -936,8 +966,12 @@ public:
         // Tiger's Radeon leaves it zero, so it never shows there.
         // `begin` sets it again for the next frame.
         if (hasColourSum_) { glDisable(OMK_GL_COLOR_SUM); glDisableClientState(OMK_GL_SECONDARY_ARRAY); }
-        // ...and so does the second unit's ramp, for the same reason
+        // ...and so does the second unit's ramp, for the same reason, and the
+        // card's fog: the overlay is drawn unfogged
         if (fogMT_) { fogMTUnitOn(false); fogMT_ = false; }
+        if (glFogState_ > 0) glDisable(GL_FOG);
+        glFogState_ = -1;
+        inFrame_ = false;
         stateValid_ = false;
         glFlush();
         // what the batching saved: passes 61-120 summed (a street frame is
@@ -954,6 +988,7 @@ public:
             statFetched_ = 0;
             fogPasses_ = 0;
             lockedDraws_ = 0;
+            fogChanges_ = 0;
         }
         if (passes_ == 120 || passes_ % 600 == 0)
             std::printf("gl1: 60 passes drew %ld draws in %ld draw calls, %ld of %ld triangles "
@@ -965,6 +1000,8 @@ public:
                         statTrusted_, passes_);
         if ((passes_ == 120 || passes_ % 600 == 0) && fogPass_)
             std::printf("gl1: ...and %ld fog second passes (no colour sum) in those draw calls\n", fogPasses_);
+        if ((passes_ == 120 || passes_ % 600 == 0) && cardFog_)
+            std::printf("gl1: ...%ld fog state changes on the card (the original's table fog)\n", fogChanges_);
         if (passes_ == 120 || passes_ % 600 == 0)
             std::printf("gl1: ...%ld corners' bytes fetched ahead of the loop (%s)\n", statFetched_,
                         fetchAll_ ? "every corner, --gl1-fetch-all" : "those of vertices not yet seen in their draw");
@@ -1586,6 +1623,7 @@ public:
     void setFullTextures(bool full) { fullTextures_ = full; }
     void setFogUnit(bool unit) { fogUnit_ = unit; }
     void setNoLock(bool off) { noLock_ = off; }
+    void setCpuFog(bool cpu) { cardFog_ = !(cpu || envFlag("OMK_GL1_CPU_FOG")); }
     void setFetchAll(bool all) { fetchAll_ = all || envFlag("OMK_GL1_FETCH_ALL"); }
     int maxVertexLights() const override { return kPoseLights; }
     const char* name() const override { return "OpenGL 1.x fixed-function"; }
@@ -1850,6 +1888,13 @@ private:
         ith_ = 1.0f / th_; itv_ = 1.0f / tv_;
         gx_ = th_ * 1.01f; gy_ = tv_ * 1.01f;   // the screen edges' hair of margin
         gxLen_ = std::sqrt(1.0f + gx_ * gx_); gyLen_ = std::sqrt(1.0f + gy_ * gy_);   // `sphereOutside`
+        // mid-frame (the mirror's reflected pass and back): the pending batch
+        // was projected by the matrix of the camera before
+        if (cardFog_ && inFrame_) {
+            Current current(ctx_);
+            flush();
+            loadProjection();
+        }
     }
 
     // The reference's cull (`raster.cpp`: the screen area's sign, flipped
@@ -1874,14 +1919,23 @@ private:
         ++statSent_;
         OutV o;
         const float w = p.v[2];
-        o.p[0] = p.v[0] * ith_; o.p[1] = p.v[1] * itv_;
-        o.p[2] = w - 2.0f * kNearCut; o.p[3] = w;
-        // a tie loser two 16-bit depth steps back (GL's NDC z spans 2, so a
-        // window step of 1/65535 is 2/65535 of it), as the Vulkan and GLES
-        // shaders draw theirs
-        if (tieBack_) o.p[2] += (4.0f / 65535.0f) * w;
+        if (cardFog_) {
+            // VIEW space, projected by `loadProjection`; a tie loser's depth
+            // pushed back through q: clip z = z - 2 near q, so q = 1 -
+            // (4 / 65535) z / (2 near) is the same push as below, with x, y
+            // and w untouched
+            o.p[0] = p.v[0]; o.p[1] = p.v[1]; o.p[2] = w;
+            o.p[3] = tieBack_ ? 1.0f - (4.0f / 65535.0f) * w / (2.0f * kNearCut) : 1.0f;
+        } else {
+            o.p[0] = p.v[0] * ith_; o.p[1] = p.v[1] * itv_;
+            o.p[2] = w - 2.0f * kNearCut; o.p[3] = w;
+            // a tie loser two 16-bit depth steps back (GL's NDC z spans 2, so a
+            // window step of 1/65535 is 2/65535 of it), as the Vulkan and GLES
+            // shaders draw theirs
+            if (tieBack_) o.p[2] += (4.0f / 65535.0f) * w;
+        }
         float a = 0.0f;
-        if (fogKind_ != 0 && w > fogStart_) {
+        if (!cardFog_ && fogKind_ != 0 && w > fogStart_) {
             const float f = (fogEnd_ - w) * fogInv_;
             a = 1.0f - (f < 0.0f ? 0.0f : (f > 1.0f ? 1.0f : f));
         }
@@ -2108,6 +2162,46 @@ private:
         glDepthFunc(GL_LESS);
     }
 
+    // the fog's two exclusions (View::fog), as `Raster_DrawTriangles` keys
+    // them: 0x2080 (near, transparent) none, 0x800 start and end doubled
+    int fogKindFor(const Draw& d) const {
+        return !view_.fog || view_.fogEnd <= view_.fogStart ? 0
+             : (d.bucketKey & 0x2080) ? 0 : (d.bucketKey & 0x800) ? 2 : 1;
+    }
+    // ...as the card's fog state, set only when it changes (the batch it
+    // belongs to was flushed by `submit` first)
+    void applyFog(int kind) {
+        if (kind == glFogState_) return;
+        if (kind == 0) {
+            glDisable(GL_FOG);
+        } else {
+            glFogf(GL_FOG_START, fogStart_);
+            glFogf(GL_FOG_END, fogEnd_);
+            glEnable(GL_FOG);
+        }
+        glFogState_ = kind;
+        ++fogChanges_;
+    }
+    // THE PROJECTION, with the fog on the card: view-space (x, y, z, q) to
+    // the clip coordinates `emit` writes on the CPU otherwise - (x / th,
+    // y / tv, z - 2 near q, z). q is 1 but for a tie loser's corner (`emit`).
+    // Column-major for `glLoadMatrixf`. Identity with the fog on the CPU.
+    void loadProjection() {
+        glMatrixMode(GL_PROJECTION);
+        if (!cardFog_) {
+            glLoadIdentity();
+        } else {
+            GLfloat m[16] = {};
+            m[0] = ith_;                  // row 0: x / th
+            m[5] = itv_;                  // row 1: y / tv
+            m[10] = 1.0f;                 // row 2: z ...
+            m[14] = -2.0f * kNearCut;     //        ... - 2 near q
+            m[11] = 1.0f;                 // row 3: w = z
+            glLoadMatrixf(m);
+        }
+        glMatrixMode(GL_MODELVIEW);
+    }
+
     static unsigned char toByte(float v) {
         // the corner colour is 0..1; the reference clamps after the multiply,
         // fixed function clamps the vertex colour first - equal for 0..1.
@@ -2142,14 +2236,13 @@ private:
             if (d.cutout) glEnable(GL_ALPHA_TEST); else glDisable(GL_ALPHA_TEST);
             cutout_ = d.cutout;
         }
-        // the fog's two exclusions (View::fog): 0x2080 none, 0x800 doubled
-        const int fogKind = !view_.fog || view_.fogEnd <= view_.fogStart ? 0
-                          : (d.bucketKey & 0x2080) ? 0 : (d.bucketKey & 0x800) ? 2 : 1;
+        const int fogKind = fogKindFor(d);
         fogKind_ = fogKind;
         const float fk = fogKind == 2 ? 2.0f : 1.0f;
         fogStart_ = view_.fogStart * fk;
         fogEnd_ = view_.fogEnd * fk;
         fogInv_ = fogKind != 0 ? 1.0f / (fogEnd_ - fogStart_) : 0.0f;
+        if (cardFog_) applyFog(fogKind);
         const unsigned want = hasTex ? slot : ~1u;
         if (want != boundTex_) {
             if (hasTex) {
@@ -2200,6 +2293,10 @@ private:
     bool fogSum_ = false;
     bool fogPass_ = false;       // no colour sum: the fog added in a second pass (`fogSecondPass`)
     bool fogMT_ = false;         // no colour sum: the fog on the second texture unit (`fogMTUnitOn`)
+    bool cardFog_ = true;        // the fog on the card (`loadProjection`, `applyFog`); `--gl1-cpu-fog` false
+    int glFogState_ = -1;
+    bool inFrame_ = false;       // between `begin`'s setup and `end`: the projection is live        // the card's fog as last set: -1 unknown, 0 off, 1 / 2 the fog kind
+    long fogChanges_ = 0;        // fog state changes, for the 60-pass line
     bool fogUnit_ = false;       // `--gl1-fog-unit`: the second unit, where it is there, not the second pass
     bool mtKnown_ = false, hasMT_ = false;
     bool lockKnown_ = false, hasLock_ = false, noLock_ = false;   // `drawLocked`
@@ -2454,6 +2551,10 @@ void gl1SetFullTextures(Renderer* r, bool full) {
 }
 void gl1SetFogUnit(Renderer* r, bool unit) {
     if (r) static_cast<Gl1Renderer*>(r)->setFogUnit(unit);
+}
+
+void gl1SetCpuFog(Renderer* r, bool cpu) {
+    if (r) static_cast<Gl1Renderer*>(r)->setCpuFog(cpu);
 }
 
 void gl1SetNoLock(Renderer* r, bool off) {
