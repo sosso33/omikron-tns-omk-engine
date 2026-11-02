@@ -378,6 +378,11 @@ int PlayOptions::parse(int argc, char** argv) {
 "  --software       force the software rasteriser\n"
 "  --profile F      write a profiler capture to F (tools/omkprof.py reads it;\n"
 "                   todo/debug-tools.md - absent from `make release`)\n"
+"  --profile-window S  the capture sums its frames S seconds at a time: a few\n"
+"                   KB per window, not a chunk a frame (a slow disk)\n"
+"  --profile-ab NAME[:S]  flip the renderer's switch NAME every S seconds\n"
+"                   (20), so one run measures both sides; windows implied.\n"
+"                   GL1: lock, cardfog\n"
 "  --gl1-composite  the classic Mac's GL1: compose the frame on the CPU, not\n"
 "                   the straight present (OMK_GL1_COMPOSITE=1)\n"
 "  --gl1-cpu-fog    GL1: the fog computed per vertex on the CPU, not OpenGL's\n"
@@ -494,6 +499,14 @@ int PlayOptions::parse(int argc, char** argv) {
         else if (a == "--snap-every" && i + 1 < argc) snapEvery = std::max(1, std::atoi(argv[++i]));
         else if (a == "--flicker" && i + 1 < argc) flickerDir = argv[++i];
         else if (a == "--profile" && i + 1 < argc) profilePath = argv[++i];
+        else if (a == "--profile-window" && i + 1 < argc) profileWindow = std::atof(argv[++i]);
+        else if (a == "--profile-ab" && i + 1 < argc) {
+            profileAb = argv[++i];
+            if (const auto c = profileAb.find(':'); c != std::string::npos) {
+                profileAbSec = std::atof(profileAb.c_str() + c + 1);
+                profileAb.resize(c);
+            }
+        }
         else if (a == "--res" && i + 1 < argc) {
             std::sscanf(argv[++i], "%dx%d", &dispW, &dispH);
             resFlag = true;

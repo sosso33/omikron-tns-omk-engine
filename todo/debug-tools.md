@@ -131,20 +131,40 @@ cut: which code allocates what, which function takes the frame.
    classic-release` (no profiler, no `heapcount`) and `make vita-release`
    (no profiler, instruments off), each scanned by `engine: release build`
    where its toolchain is present.
+8. ~~WINDOWS AND THE A/B, for a slow disk~~ - **DONE 2026-11-02**. The
+   reader's iMac G3 (a 2000 hard drive) took a 26 MB capture of one run: a
+   FRAME chunk and an `fflush` every frame, and OS 9's `FlushVol` every 2 s
+   then wrote ~100 KB at a time - a quarter of the `pump` zone's 6.4 ms a
+   frame was frames over 15 ms, most of them ~2 s apart. `--profile-window S`
+   sums the frames IN THE GAME and writes one WINDOW chunk (7) every S
+   seconds: every frame's duration, per zone its total, self time and calls,
+   then the window's slowest frame whole and the memory at its end (its peak
+   the window's). `prof::split()` ends a window early. `--profile-ab
+   NAME[:S]` flips a renderer's switch every S seconds (20) between frames,
+   the windows dividing the period so none straddles a flip, each window
+   carrying its phase (0 as started, 1 flipped); the GL1 offers `lock` and
+   `cardfog` (`prof::abSwitch`). `omkprof.py` prints one summary per phase,
+   and `--frames A B` limits any summary. On the M1, 900 street frames: 138
+   bytes a frame (a chunk a frame is ~2 KB); the self times sum to the
+   frames within 0.5%. `verify.py: engine: profiler windows`, shown to fail
+   both ways (the setter a no-op; a zone's time not taken from its parent).
+   `gl1: draw locked` is a zone of its own, so the A/B can be read.
 
 ## Done - what there is, in one place
 
 | what | where |
 |---|---|
 | record a run | `omk-play ... --profile run.prof` |
-| read it | `python3 tools/omkprof.py run.prof` (summary), `--frame N`, `--slowest K` |
+| read it | `python3 tools/omkprof.py run.prof` (summary), `--frame N`, `--slowest K`, `--frames A B` |
+| record on a slow disk | `--profile run.prof --profile-window 10`: a chunk every 10 s, not a frame |
+| A/B in one run | `--profile run.prof --profile-ab cardfog[:20]` (GL1: `lock`, `cardfog`): the summary per phase |
 | the page | `python3 tools/omkprof.py run.prof --serve 8753`: frame graph, call tree, sections, memory and GPU memory by category, pause / step / resume / snapshot |
 | steer a game from a shell | `python3 tools/omkprof.py run.prof --ctl pause` (`resume`, `step N`, `snapshot`) |
 | time a scope | `OMK_ZONE("name")` - also names the memory allocated in it |
 | name memory | `OMK_MEM_TAG("name")` |
 | report GPU memory | `OMK_GPU_ALLOC(tag, key, bytes)` / `OMK_GPU_FREE(key)` |
 | build without any of it | `make release`, `make classic-release`, `make vita-release` (`OMK_PROFILE=0`) |
-| the checks | `engine: profiler`, `profiler control`, `profiler gpu`, `release build`, `profiler page` |
+| the checks | `engine: profiler`, `profiler control`, `profiler gpu`, `profiler windows`, `release build`, `profiler page` |
 
 What it already found, for the work it was built for: the street's software
 frame is the rasterizer (77 submits, ~1 ms each); `submit` copies each

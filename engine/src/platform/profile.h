@@ -75,6 +75,26 @@
 // buffer name...) into the handle. The categories share the memory's names.
 //       5 GPU    i32 frame, u64 live bytes, u32 categories, then per
 //                category: u32 id, u64 bytes, u32 resources
+//
+// THE WINDOWS (step 8, `--profile-window S`): a slow disk (the iMac G3's,
+// 2000) took a 26 MB capture of one run, a FRAME chunk and an fflush every
+// frame. A window adds the frames up IN MEMORY for S seconds and writes one
+// WINDOW chunk - every frame's duration, and per zone its total, self time
+// and calls - then the window's slowest frame whole (a FRAME chunk, for its
+// tree) and the memory at its end (MEM, its peak the window's; GPU): a few
+// KB every S seconds. `prof::split()` ends a window early, where what
+// follows is not comparable (a view distance changed).
+//       7 WINDOW i32 first frame, i32 last frame, u64 start (us since the
+//                capture opened), u32 duration (us), i32 the A/B phase (-1
+//                none), u32 frames, u32 dropped, u32 per frame its duration
+//                (us), u32 zones, then per zone: u32 name id, u16 kind, u16 0,
+//                u64 total (us), u64 self (us), u32 calls
+//
+// THE A/B (`--profile-ab NAME[:S]`, windows implied): the switch NAME, which
+// a renderer offers (`abSwitch`), flipped every S seconds between frames, so
+// ONE run measures both sides on the same streets; each window carries its
+// phase - 0 the run as started, 1 the switch flipped.
+//       8 AB     u32 the period (ms), the switch's name   (once, as it starts)
 #pragma once
 
 #include <cstdint>
@@ -109,6 +129,17 @@ void setClock(Clock now, std::uint64_t ticksPerSecond);
 bool open(const std::string& path);
 void close();
 bool on();                         // a capture is being written
+
+// The windows (step 8): `seconds` > 0 sums the frames that long before a
+// write; 0 (the default) writes every frame.
+void setWindow(double seconds);
+void split();                      // the open window ends with this frame
+// The A/B: `name` flipped every `seconds` once offered. A renderer OFFERS a
+// switch: `set(ctx, flipped)` between frames, flipped true for phase 1.
+void setAb(const std::string& name, double seconds);
+using AbSet = void (*)(void* ctx, bool flipped);
+void abSwitch(const char* name, AbSet set, void* ctx);
+void abSwitchGone(void* ctx);      // the renderer is going: its switches with it
 
 void beginFrame(long frame);       // the frame's root zone opens
 void endFrame();                   // ...closes, and the frame is written
@@ -184,6 +215,12 @@ inline void setClock(Clock, std::uint64_t) {}
 inline bool open(const std::string&) { return false; }
 inline void close() {}
 inline bool on() { return false; }
+inline void setWindow(double) {}
+inline void split() {}
+inline void setAb(const std::string&, double) {}
+using AbSet = void (*)(void* ctx, bool flipped);
+inline void abSwitch(const char*, AbSet, void*) {}
+inline void abSwitchGone(void*) {}
 inline void beginFrame(long) {}
 inline void endFrame() {}
 inline std::uint64_t now() { return 0; }

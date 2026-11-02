@@ -221,7 +221,17 @@ class Gl1Renderer final : public Renderer {
 public:
     // the caches keyed by a geometry's ADDRESS (the vertex index, the runs'
     // spheres) are dropped when it is destroyed (`geom3do.h` GpuResidency)
-    Gl1Renderer() { addGeometryListener(&Gl1Renderer::geometryGone, this); }
+    Gl1Renderer() {
+        addGeometryListener(&Gl1Renderer::geometryGone, this);
+        // the profiler's A/B (`--profile-ab lock|cardfog`): each flipped
+        // between frames, against the run's own setting - `begin` reads both
+        // afresh every frame
+        prof::abSwitch("lock", [](void* r, bool f) { auto* g = static_cast<Gl1Renderer*>(r); g->abFlip(f, g->abLock_, g->noLock_); }, this);
+        prof::abSwitch("cardfog", [](void* r, bool f) { auto* g = static_cast<Gl1Renderer*>(r); g->abFlip(f, g->abFog_, g->cardFog_); }, this);
+    }
+    void abFlip(bool flipped, bool& now, bool& flag) {
+        if (flipped != now) { now = flipped; flag = !flag; }
+    }
     static void geometryGone(void* self, const Geometry* g) {
         auto* r = static_cast<Gl1Renderer*>(self);
         r->vindex_.erase(g);
@@ -230,6 +240,7 @@ public:
     }
     ~Gl1Renderer() override {
         removeGeometryListener(&Gl1Renderer::geometryGone, this);
+        prof::abSwitchGone(this);
         if (!ctx_) return;
 #if defined(OMK_GL1_ON_WINDOW)
         // the context is the frontend's, and it may have closed first
@@ -2009,10 +2020,18 @@ private:
     // over fresh arrays. `--gl1-no-lock` / `OMK_GL1_NO_LOCK` draws unlocked,
     // the A/B (2026-11-01, `todo/handoff-classic-mac.md` 3i item 9).
     void drawLocked(std::size_t verts) {
-        const bool lock = lockArrays() && verts > 0;
-        if (lock) omkLockArrays_(0, static_cast<GLsizei>(verts));
+        const bool lock = lockArrays() && !noLock_ && verts > 0;
+        if (!lock) {
+            glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(idx_.size()), GL_UNSIGNED_SHORT, idx_.data());
+            return;
+        }
+        // its own zone: the profile's A/B reads which draws were locked
+        // (`engine: profiler windows`), and the iMac what they cost
+        OMK_ZONE("gl1: draw locked");
+        omkLockArrays_(0, static_cast<GLsizei>(verts));
         glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(idx_.size()), GL_UNSIGNED_SHORT, idx_.data());
-        if (lock) { omkUnlockArrays_(); ++lockedDraws_; }
+        omkUnlockArrays_();
+        ++lockedDraws_;
     }
     // EXT_compiled_vertex_array usable: offered, both entry points found,
     // not refused by `--gl1-no-lock`. Asked once, with the context current.
@@ -2030,9 +2049,10 @@ private:
                 omkLockArrays_ = findLockArrays();
                 omkUnlockArrays_ = findUnlockArrays();
             }
-            hasLock_ = offered && omkLockArrays_ && omkUnlockArrays_ && !noLock_ && !offEnv;
+            // `noLock_` is asked per draw (the A/B flips it); OMK_GL1_NO_LOCK is for the run
+            hasLock_ = offered && omkLockArrays_ && omkUnlockArrays_ && !offEnv;
             std::printf("gl1: EXT_compiled_vertex_array %s%s\n", offered ? "offered" : "not offered",
-                        hasLock_ ? " - each batch's vertices locked around its draw call"
+                        hasLock_ && !noLock_ ? " - each batch's vertices locked around its draw call"
                         : !offered ? "" : (noLock_ || offEnv) ? " - NOT used (--gl1-no-lock)"
                                                               : " - but its entry points are not found");
         }
@@ -2289,6 +2309,7 @@ private:
     bool fogUnit_ = false;       // `--gl1-fog-unit`: the second unit, where it is there, not the second pass
     bool mtKnown_ = false, hasMT_ = false;
     bool lockKnown_ = false, hasLock_ = false, noLock_ = false;   // `drawLocked`
+    bool abLock_ = false, abFog_ = false;   // the profiler's A/B: flipped now (`abFlip`)
     LockArraysFn omkLockArrays_ = nullptr;
     UnlockArraysFn omkUnlockArrays_ = nullptr;
     long lockedDraws_ = 0;

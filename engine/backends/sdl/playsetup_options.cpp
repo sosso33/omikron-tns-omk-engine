@@ -6,6 +6,8 @@
 #include "playstate.h"
 #include "platform/json.h"
 
+#include <algorithm>
+#include <cmath>
 #include <memory>
 
 int PlayState::setupOptions(int argc, char** argv) {
@@ -20,10 +22,21 @@ int PlayState::setupOptions(int argc, char** argv) {
         static omk::Frontend* profFront = nullptr;
         profFront = &front;
         omk::prof::setClock([] { return profFront->perfCounter(); }, front.perfFrequency());
-        if (omk::prof::open(opt.profilePath))
-            std::printf("profile: writing %s - one chunk a frame, for tools/omkprof.py\n",
-                        opt.profilePath.c_str());
-        else
+        if (omk::prof::open(opt.profilePath)) {
+            // the windows and the A/B (step 8): a few KB every S seconds, for
+            // a slow disk - the iMac G3's took 26 MB a run a chunk a frame
+            omk::prof::setWindow(opt.profileWindow);
+            if (!opt.profileAb.empty()) omk::prof::setAb(opt.profileAb, opt.profileAbSec);
+            if (opt.profileWindow > 0 || !opt.profileAb.empty())
+                std::printf("profile: writing %s - the frames summed in windows of %g s%s%s, "
+                            "for tools/omkprof.py\n", opt.profilePath.c_str(),
+                            opt.profileWindow > 0 ? opt.profileWindow
+                                                  : opt.profileAbSec / std::ceil(opt.profileAbSec / 10.0),
+                            opt.profileAb.empty() ? "" : ", A/B on ", opt.profileAb.c_str());
+            else
+                std::printf("profile: writing %s - one chunk a frame, for tools/omkprof.py\n",
+                            opt.profilePath.c_str());
+        } else
             std::printf("profile: cannot write %s\n", opt.profilePath.c_str());
     }
 #else

@@ -51,6 +51,9 @@ struct PlayOptions {
     // 640x480 after the display size), which is how the walk was LOOKED at.
     std::string holdStream, snapsDir, flickerDir;
     std::string profilePath;   // --profile: the profiler's capture (todo/debug-tools.md)
+    double profileWindow = 0;  // --profile-window S: the frames summed S seconds a chunk
+    std::string profileAb;     // --profile-ab NAME[:S]: a renderer's switch flipped every S s
+    double profileAbSec = 20;
     bool waterCamPreset = false;   // `--water-cam preset`: the old fixed-offset reading
     int snapEvery = 30;            // `--snap-every N`: 1 catches a flicker
     // A STREET START (docs/STREET_LIFE.md, step 4): `--save FILE` takes the

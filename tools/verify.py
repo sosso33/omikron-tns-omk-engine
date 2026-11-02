@@ -31958,6 +31958,87 @@ def c_engine_release_build():
         "Vita's instruments) where their development builds have them"
 
 
+def c_engine_profiler_windows():
+    r"""The profiler's WINDOWS and A/B (`todo/debug-tools.md` step 8), for a
+    slow disk: the iMac G3's 2000 drive took a 26 MB capture of one run, a
+    chunk and an fflush a frame. `--profile-window S` sums the frames in the
+    game and writes a chunk every S seconds; `--profile-ab NAME[:S]` flips a
+    renderer's switch every S seconds so ONE run measures both sides.
+
+    The host's GL1 (`_host_gl1_play`, the lock taken as offered:
+    OMK_GL1_LOCK_UNLISTED) in the street, 900 frames, `--profile-ab lock:0.5`:
+    windows of both phases, alternating; every window's frame durations, its
+    "frame" zone and its zones' SELF times (the game's sums) agreeing within
+    1% - the self times partition the frame; each window's slowest frame
+    written whole, its duration the window's longest; the switch EFFECTIVE -
+    `gl1: draw locked` in every phase-0 window and in no phase-1 one; under
+    300 bytes a frame (a chunk a frame is ~2 KB).
+
+    Shown to fail (2026-11-02): the switch's setter made a no-op (red: locked
+    draws in phase 1); a zone's time not taken from its parent's self (red:
+    the self times sum to more than the frames). The `cardfog` switch was
+    shown by hand: its phase-1 passes print no "fog state changes on the
+    card" line.
+    """
+    import subprocess, tempfile, shutil, platform
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import omkprof
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    if platform.system() != "Darwin":
+        return ("skipped",), ("skipped",), "the gl1 backend is CGL: macOS only"
+    if not os.path.isdir(os.path.join(fr, "IAM")):
+        return ("skipped",), ("skipped",), "no game data"
+    binp, err = _host_gl1_play()
+    if binp is None and err == "no SDL2":
+        return ("skipped",), ("skipped",), "no SDL2 (pkg-config)"
+    if binp is None:
+        return ("build failed",), ("built",), "ppc-darwin.mk play (host) must build: " + err
+    tmp = tempfile.mkdtemp()
+    cap = os.path.join(tmp, "w.prof")
+    try:
+        r = subprocess.run([binp, fr, os.path.join(ROOT, "tables"),
+                            "--save", os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "0",
+                            "--stand", "1804,0,-6890,336", "--nofmv", "--frames", "900",
+                            "--res", "640x480", "--saves", os.path.join(tmp, "saves"),
+                            "--profile", cap, "--profile-ab", "lock:0.5"],
+                           cwd=eng, capture_output=True, text=True,
+                           env=dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_GL1_LOCK_UNLISTED="1"))
+        c = omkprof.Capture(cap)
+        if os.path.exists(cap):
+            c.poll()
+        size = os.path.getsize(cap) if os.path.exists(cap) else 0
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    ws = [w for w in c.windows if w["phase"] >= 0]
+    if not ws:
+        return ("no windows",), ("windows",), "the capture must hold windows: " + r.stdout[-400:]
+    phases = [w["phase"] for w in ws]
+    alternate = all(a != b for a, b in zip(phases, phases[1:]))
+    both = phases.count(0) >= 2 and phases.count(1) >= 2
+    worst = 0.0
+    for w in ws:
+        d = float(sum(w["durs"]))
+        own = sum(z[1] for z in w["zones"].values())
+        worst = max(worst, abs(w["zones"]["frame"][0] - d) / d, abs(own - d) / d)
+    slow = {f["frame"]: f["dur"] for f in c.frames if f["frame"] >= 0}
+    slowOk = all(abs(slow.get(max(range(w["first"], w["last"] + 1),
+                                  key=lambda k: w["durs"][k - w["first"]]), -10) - max(w["durs"])) <= 1
+                 for w in ws)
+    locked = [w["zones"].get("gl1: draw locked", (0, 0, 0))[2] for w in ws]
+    effective = all((n > 0) == (ph == 0) for n, ph in zip(locked, phases))
+    nframes = sum(len(w["durs"]) for w in c.windows)
+    perFrame = size / max(1, nframes)
+    print("        %d windows (phases %s), %d frames, %.0f bytes a frame; worst sum %.2f%%; "
+          "locked draws per window %s" % (len(ws), "".join(map(str, phases)), nframes, perFrame,
+                                          100 * worst, locked))
+    return (alternate, both, worst < 0.01, slowOk, effective, perFrame < 300), \
+           (True, True, True, True, True, True), \
+        "windows of both A/B phases, alternating; the frames, the frame zone and the self times " \
+        "agreeing within 1%; each window's slowest frame whole; the lock switched off in phase 1 " \
+        "alone; under 300 bytes a frame"
+
+
 def c_engine_profiler_gpu():
     r"""The profiler's GPU MEMORY (`todo/debug-tools.md` step 5): what a
     renderer holds on the device, as it reports it - the street through the
@@ -54078,6 +54159,7 @@ SLOW = [
     ("engine: vr strafe", c_engine_vr_strafe, "todo/handoff-quest-port.md; backends/vr/playvr_camera.cpp"),
     ("engine: profiler control", c_engine_profiler_control, "todo/debug-tools.md step 3"),
     ("engine: profiler gpu", c_engine_profiler_gpu, "todo/debug-tools.md step 5"),
+    ("engine: profiler windows", c_engine_profiler_windows, "todo/debug-tools.md step 8"),
     ("engine: release build", c_engine_release_build, "todo/debug-tools.md"),
     ("engine: sdl3",     c_engine_sdl3,         "PORTING A8; backends/sdl/sdlfront.cpp; engine/Makefile SDL_PKG"),
     ("engine: anti-aliasing", c_engine_anti_aliasing, "ASSETS 4"),

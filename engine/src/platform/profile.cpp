@@ -8,6 +8,8 @@
 #include "platform/threads.h"
 #include "platform/sync.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -400,6 +402,30 @@ struct State {
     long toldFrame = -1000000;
     long ctlFrame = -1000000;   // the last frame the control file was looked for
     int tagsWritten = 0;                // TAG chunks already in the capture
+    // the windows (step 8)
+    double windowSec = 0;               // 0: a FRAME chunk a frame
+    bool inWin = false, splitOwed = false;
+    std::uint64_t winT0 = 0;            // the first frame's start (ticks)
+    long winFirst = 0, winLast = 0;
+    std::vector<std::uint32_t> winDurs;
+    struct Agg { std::uint64_t total = 0, self = 0; std::uint32_t calls = 0; std::uint16_t kind = 0; };
+    std::unordered_map<const char*, Agg> agg;   // by the name's pointer, as `names`
+    std::vector<std::int64_t> selfT;    // a frame's self times, per zone (scratch)
+    std::vector<int> tree;              // ...and its open zones (scratch)
+    long long winPeak = 0;
+    std::uint32_t winDropped = 0;
+    std::vector<Rec> slow;              // the window's slowest frame, whole
+    std::uint64_t slowDur = 0;
+    long slowFrame = 0;
+    std::uint32_t slowDropped = 0;
+    // the A/B
+    std::string abName;
+    double abSec = 0;
+    int abPhase = -1;                   // -1 not started (the switch not offered yet)
+    std::uint64_t abT0 = 0;
+    bool abMissingTold = false;
+    struct Switch { const char* name; AbSet set; void* ctx; };
+    std::vector<Switch> switches;
 };
 
 State& st() {                            // made on first use, never destroyed
@@ -471,6 +497,9 @@ bool open(const std::string& path) {
     s.snaps = 0;
     s.told.clear();
     s.tagsWritten = 0;
+    s.inWin = s.splitOwed = false;
+    s.abPhase = -1;
+    s.abMissingTold = false;
     // a control file from an earlier run is not a command to this one
     if (std::FILE* c = std::fopen(hostPath(path + ".ctl").c_str(), "r")) {
         long q = -1;
@@ -524,9 +553,11 @@ void writeSites() {
 }
 }  // namespace
 
+namespace { void closeWindow(); }
+
 void close() {
     State& s = st();
-    if (s.file && g_on) writeSites();
+    if (s.file && g_on) { closeWindow(); writeSites(); }
     g_on = false;
     if (s.file) { std::fclose(s.file); s.file = nullptr; }
 }
@@ -570,24 +601,28 @@ void beginFrame(long frame) {
     enter("frame");
 }
 
-void endFrame() {
-    if (!g_on || !mine()) return;
+namespace {
+
+std::uint64_t us64(std::uint64_t ticks) {
+    return static_cast<std::uint64_t>(static_cast<double>(ticks) * 1e6 / static_cast<double>(st().hz));
+}
+
+// A FRAME chunk: the names first, so the reader meets each before a frame
+// uses it
+void writeFrame(long frame, const std::vector<Rec>& zones, std::uint32_t dropped) {
     State& s = st();
-    while (s.sp > 0) leave();               // anything left open closes with the frame
-    if (s.zones.empty()) return;
-    const std::uint64_t f0 = s.zones.front().t0, f1 = s.zones.front().t1;
-    // the names first, so the reader meets each before a frame uses it
+    const std::uint64_t f0 = zones.front().t0, f1 = zones.front().t1;
     std::vector<std::uint32_t> ids;
-    ids.reserve(s.zones.size());
-    for (const Rec& z : s.zones) ids.push_back(nameId(z.name));
+    ids.reserve(zones.size());
+    for (const Rec& z : zones) ids.push_back(nameId(z.name));
     const std::size_t at = beginChunk(2);
-    put32(static_cast<std::uint32_t>(s.frame));
+    put32(static_cast<std::uint32_t>(frame));
     put64(us(f0 - s.openedAt));
     put32(us(f1 - f0));
-    put32(static_cast<std::uint32_t>(s.zones.size()));
-    put32(s.dropped);
-    for (std::size_t k = 0; k < s.zones.size(); ++k) {
-        const Rec& z = s.zones[k];
+    put32(static_cast<std::uint32_t>(zones.size()));
+    put32(dropped);
+    for (std::size_t k = 0; k < zones.size(); ++k) {
+        const Rec& z = zones[k];
         put32(ids[k]);
         put16(z.depth);
         put16(z.kind);
@@ -595,55 +630,226 @@ void endFrame() {
         put32(us((z.t1 >= z.t0 ? z.t1 : z.t0) - z.t0));
     }
     endChunk(at);
-    // THE MEMORY at the frame's end, every category that ever held a block
-    {
-        const int n = mem::g_count;
-        for (; s.tagsWritten < n; ++s.tagsWritten) {
-            const std::size_t t = beginChunk(4);
-            put32(static_cast<std::uint32_t>(s.tagsWritten));
-            for (const char* p = mem::g_names[s.tagsWritten]; *p; ++p) put8(static_cast<unsigned char>(*p));
-            endChunk(t);
-        }
-        const std::size_t m = beginChunk(3);
-        put32(static_cast<std::uint32_t>(s.frame));
-        put64(static_cast<std::uint64_t>(static_cast<long long>(mem::g_total)));
-        put64(static_cast<std::uint64_t>(static_cast<long long>(mem::g_framePeak)));
-        put32(static_cast<std::uint32_t>(static_cast<long long>(mem::g_totalBlocks)));
-        int used = 0;
-        for (int i = 0; i < n; ++i)
-            if (static_cast<long long>(mem::g_blocks[i]) != 0) ++used;
-        put32(static_cast<std::uint32_t>(used));
-        for (int i = 0; i < n; ++i) {
-            const long long b = mem::g_blocks[i];
-            if (b == 0) continue;
-            put32(static_cast<std::uint32_t>(i));
-            put64(static_cast<std::uint64_t>(static_cast<long long>(mem::g_live[i])));
-            put32(static_cast<std::uint32_t>(b));
-        }
-        endChunk(m);
+}
+
+// THE MEMORY now, every category that ever held a block; `peak` the frame's
+// (or the window's)
+void writeMemory(long frame, long long peak) {
+    State& s = st();
+    const int n = mem::g_count;
+    for (; s.tagsWritten < n; ++s.tagsWritten) {
+        const std::size_t t = beginChunk(4);
+        put32(static_cast<std::uint32_t>(s.tagsWritten));
+        for (const char* p = mem::g_names[s.tagsWritten]; *p; ++p) put8(static_cast<unsigned char>(*p));
+        endChunk(t);
     }
-    // THE GPU MEMORY at the frame's end, as the renderers reported it
-    {
-        Gpu& g = gpu();
-        omk::ScopedLock lk(g.lock);
-        const int n = mem::g_count;
-        const std::size_t m = beginChunk(5);
-        put32(static_cast<std::uint32_t>(s.frame));
-        put64(static_cast<std::uint64_t>(g.total));
-        int used = 0;
-        for (int i = 0; i < n; ++i) if (g.count[i]) ++used;
-        put32(static_cast<std::uint32_t>(used));
-        for (int i = 0; i < n; ++i) {
-            if (!g.count[i]) continue;
-            put32(static_cast<std::uint32_t>(i));
-            put64(static_cast<std::uint64_t>(g.live[i]));
-            put32(static_cast<std::uint32_t>(g.count[i]));
-        }
-        endChunk(m);
+    const std::size_t m = beginChunk(3);
+    put32(static_cast<std::uint32_t>(frame));
+    put64(static_cast<std::uint64_t>(static_cast<long long>(mem::g_total)));
+    put64(static_cast<std::uint64_t>(peak));
+    put32(static_cast<std::uint32_t>(static_cast<long long>(mem::g_totalBlocks)));
+    int used = 0;
+    for (int i = 0; i < n; ++i)
+        if (static_cast<long long>(mem::g_blocks[i]) != 0) ++used;
+    put32(static_cast<std::uint32_t>(used));
+    for (int i = 0; i < n; ++i) {
+        const long long b = mem::g_blocks[i];
+        if (b == 0) continue;
+        put32(static_cast<std::uint32_t>(i));
+        put64(static_cast<std::uint64_t>(static_cast<long long>(mem::g_live[i])));
+        put32(static_cast<std::uint32_t>(b));
     }
+    endChunk(m);
+}
+
+// THE GPU MEMORY now, as the renderers reported it
+void writeGpu(long frame) {
+    Gpu& g = gpu();
+    omk::ScopedLock lk(g.lock);
+    const int n = mem::g_count;
+    const std::size_t m = beginChunk(5);
+    put32(static_cast<std::uint32_t>(frame));
+    put64(static_cast<std::uint64_t>(g.total));
+    int used = 0;
+    for (int i = 0; i < n; ++i) if (g.count[i]) ++used;
+    put32(static_cast<std::uint32_t>(used));
+    for (int i = 0; i < n; ++i) {
+        if (!g.count[i]) continue;
+        put32(static_cast<std::uint32_t>(i));
+        put64(static_cast<std::uint64_t>(g.live[i]));
+        put32(static_cast<std::uint32_t>(g.count[i]));
+    }
+    endChunk(m);
+}
+
+void flushOut() {
+    State& s = st();
     std::fwrite(s.out.data(), 1, s.out.size(), s.file);
-    std::fflush(s.file);                    // a live reader sees each frame as it ends
+    std::fflush(s.file);                    // a live reader sees each chunk as it ends
     s.out.clear();
+}
+
+// The frame just ended, added to the window: its duration, and per zone its
+// total and SELF time (the duration less its children's - `omkprof.tree`'s
+// rule, a parent the nearest zone before of one less depth) and a call.
+void addToWindow(std::uint64_t f0, std::uint64_t f1) {
+    State& s = st();
+    if (!s.inWin) {
+        s.inWin = true;
+        s.winT0 = f0;
+        s.winFirst = s.frame;
+        s.winDurs.clear();
+        s.agg.clear();
+        s.winPeak = 0;
+        s.winDropped = 0;
+        s.slowDur = 0;
+    }
+    s.winLast = s.frame;
+    s.winDurs.push_back(us(f1 - f0));
+    s.winDropped += s.dropped;
+    s.winPeak = std::max(s.winPeak, static_cast<long long>(mem::g_framePeak));
+    const std::size_t n = s.zones.size();
+    s.selfT.assign(n, 0);
+    s.tree.clear();
+    for (std::size_t k = 0; k < n; ++k) {
+        const Rec& z = s.zones[k];
+        if (z.kind != 0) continue;
+        const auto dur = static_cast<std::int64_t>(z.t1 >= z.t0 ? z.t1 - z.t0 : 0);
+        s.selfT[k] = dur;
+        const std::size_t d = std::min<std::size_t>(z.depth, s.tree.size());
+        s.tree.resize(d);
+        if (d > 0) s.selfT[static_cast<std::size_t>(s.tree[d - 1])] -= dur;
+        s.tree.push_back(static_cast<int>(k));
+    }
+    for (std::size_t k = 0; k < n; ++k) {
+        const Rec& z = s.zones[k];
+        State::Agg& a = s.agg[z.name];
+        a.kind = z.kind;
+        a.total += z.t1 >= z.t0 ? z.t1 - z.t0 : 0;
+        if (z.kind == 0) a.self += static_cast<std::uint64_t>(std::max<std::int64_t>(0, s.selfT[k]));
+        ++a.calls;
+    }
+    if (f1 - f0 >= s.slowDur) {
+        s.slowDur = f1 - f0;
+        s.slowFrame = s.frame;
+        s.slow = s.zones;
+        s.slowDropped = s.dropped;
+    }
+}
+
+// The window written: the slowest frame whole, the WINDOW chunk, the memory
+// at its end with the window's peak, the GPU's
+void closeWindow() {
+    State& s = st();
+    if (!s.inWin) return;
+    s.inWin = false;
+    if (!s.slow.empty()) writeFrame(s.slowFrame, s.slow, s.slowDropped);
+    std::vector<std::pair<std::uint32_t, const State::Agg*>> rows;
+    rows.reserve(s.agg.size());
+    for (const auto& [name, a] : s.agg) rows.emplace_back(nameId(name), &a);
+    std::uint64_t span = 0;
+    for (std::uint32_t d : s.winDurs) span += d;
+    const std::size_t at = beginChunk(7);
+    put32(static_cast<std::uint32_t>(s.winFirst));
+    put32(static_cast<std::uint32_t>(s.winLast));
+    put64(us(s.winT0 - s.openedAt));
+    put32(static_cast<std::uint32_t>(span));
+    put32(static_cast<std::uint32_t>(s.abPhase));
+    put32(static_cast<std::uint32_t>(s.winDurs.size()));
+    put32(s.winDropped);
+    for (std::uint32_t d : s.winDurs) put32(d);
+    put32(static_cast<std::uint32_t>(rows.size()));
+    for (const auto& [id, a] : rows) {
+        put32(id);
+        put16(a->kind);
+        put16(0);
+        put64(us64(a->total));
+        put64(us64(a->self));
+        put32(a->calls);
+    }
+    endChunk(at);
+    writeMemory(s.winLast, s.winPeak);
+    writeGpu(s.winLast);
+    flushOut();
+}
+
+// THE A/B, between frames: started once its switch is offered, flipped every
+// period (the open window ends first, so a window holds one phase)
+void abStep(std::uint64_t t) {
+    State& s = st();
+    if (s.abName.empty()) return;
+    const State::Switch* sw = nullptr;
+    for (const State::Switch& x : s.switches)
+        if (s.abName == x.name) sw = &x;
+    if (!sw) {
+        if (!s.abMissingTold && s.frame >= 300) {
+            s.abMissingTold = true;
+            std::printf("profile: no A/B switch '%s' offered here -", s.abName.c_str());
+            for (const State::Switch& x : s.switches) std::printf(" %s", x.name);
+            std::printf("%s\n", s.switches.empty() ? " none" : "");
+        }
+        return;
+    }
+    if (s.abPhase < 0) {
+        s.abPhase = 0;
+        s.abT0 = s.inWin ? s.winT0 : t;     // the phases on the windows' clock
+        const std::size_t at = beginChunk(8);
+        put32(static_cast<std::uint32_t>(s.abSec * 1000.0));
+        for (const char* p = sw->name; *p; ++p) put8(static_cast<unsigned char>(*p));
+        endChunk(at);
+        std::printf("profile: A/B '%s' from frame %ld - flipped every %g s\n", sw->name, s.frame, s.abSec);
+        return;
+    }
+    if (static_cast<double>(t - s.abT0) < s.abSec * static_cast<double>(s.hz)) return;
+    closeWindow();
+    s.abPhase ^= 1;
+    s.abT0 = t;
+    sw->set(sw->ctx, s.abPhase == 1);
+    std::printf("profile: A/B '%s' phase %d from frame %ld\n", sw->name, s.abPhase, s.frame + 1);
+}
+
+}  // namespace
+
+void setWindow(double seconds) { st().windowSec = seconds > 0 ? seconds : 0; }
+
+void split() { st().splitOwed = true; }
+
+void setAb(const std::string& name, double seconds) {
+    State& s = st();
+    s.abName = name;
+    s.abSec = seconds > 0 ? seconds : 20;
+    s.abPhase = -1;
+    // windows of at most 10 s that divide the period, so none straddles a flip
+    if (!name.empty() && s.windowSec <= 0) s.windowSec = s.abSec / std::ceil(s.abSec / 10.0);
+}
+
+void abSwitch(const char* name, AbSet set, void* ctx) {
+    st().switches.push_back({name, set, ctx});
+}
+
+void abSwitchGone(void* ctx) {
+    auto& w = st().switches;
+    w.erase(std::remove_if(w.begin(), w.end(), [ctx](const State::Switch& x) { return x.ctx == ctx; }), w.end());
+}
+
+void endFrame() {
+    if (!g_on || !mine()) return;
+    State& s = st();
+    while (s.sp > 0) leave();               // anything left open closes with the frame
+    if (s.zones.empty()) return;
+    const std::uint64_t f0 = s.zones.front().t0, f1 = s.zones.front().t1;
+    if (s.windowSec <= 0 || s.frame < 0) {  // a chunk a frame (and the setup, whole)
+        writeFrame(s.frame, s.zones, s.dropped);
+        writeMemory(s.frame, static_cast<long long>(mem::g_framePeak));
+        writeGpu(s.frame);
+        flushOut();
+    } else {
+        addToWindow(f0, f1);
+        if (s.splitOwed || static_cast<double>(f1 - s.winT0) >= s.windowSec * static_cast<double>(s.hz))
+            closeWindow();
+        s.splitOwed = false;
+        abStep(f1);
+    }
     s.zones.clear();
 }
 

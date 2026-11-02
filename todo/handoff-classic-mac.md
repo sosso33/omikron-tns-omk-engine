@@ -1847,6 +1847,21 @@ a software renderer, it is suspicious", 2026-10-30)**:
      matches `02b559a^`'s but for a comment naming item 10's measurement).
      `engine: gl1 backend` green, both classic builds fresh and `engine:
      classic build` ok; the stick still unplugged.
+  13. **THE PROFILE LIGHT ON THE iMAC'S DISK (the reader: "I try to limit
+     run with profiling to not force too much on the old 2000 hard drive",
+     2026-11-02)**. Read from capture 1 first: the 26 MB capture was a chunk
+     and an `fflush` a frame; `pump` (6.4 ms mean, 4.8 median) has 125 of
+     2241 frames over 15 ms, most ~2 s apart - the 2 s `FlushVol`
+     (`carbonfront.cpp`) writing what had piled up - 24% of the pump's time.
+     Now `--profile-window S` (a few KB every S s; 138 bytes a frame on the
+     M1 against ~2 KB) and `--profile-ab lock|cardfog[:S]`, one run measuring
+     both sides on the same streets (`todo/debug-tools.md` step 8; `engine:
+     profiler windows`). `gl1: draw locked` is its own zone. Also seen in that
+     log: 2478 `SLOW FRAME` lines - on the iMac nearly every frame is one;
+     the log is 3% of what the run wrote, so left as it is. **The next iMac
+     run**: `--profile omk-prof --profile-ab cardfog`, a minute or two at
+     100 m in Anekbah; `python3 tools/omkprof.py omk-prof` gives the two
+     phases side by side.
      * **the films (through GL, not `--films-direct`)**: 56-80 ms of
        `MoviesTask` a picture, ~6 pictures a second; a picture shown costs
        converted 4.9 + uploaded 3.5 + drawn and swapped 9.4 ms. QuickTime's

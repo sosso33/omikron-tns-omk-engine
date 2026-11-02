@@ -21,6 +21,12 @@ analysis costs the game nothing.
                                                     defaults to engine/build/omk-play)
     python3 tools/omkprof.py run.prof --ctl pause   one command to the game
                                                     (pause, resume, step N, snapshot)
+    python3 tools/omkprof.py run.prof --frames A B  the summary over frames A..B only
+
+A capture written with `--profile-window S` holds WINDOWS (S seconds of
+frames summed in the game, chunk 7) and each window's slowest frame whole;
+the summary is then the windows', and with `--profile-ab NAME` one per A/B
+phase - 0 the run as started, 1 the switch flipped - side by side.
 
 Zones nest by the depth and order the recorder wrote them: a zone's parent
 is the nearest zone before it of one less depth. SECTIONS (the viewer's
@@ -44,6 +50,8 @@ class Capture:
         self.path, self.names, self.frames, self.offset = path, {}, [], 0
         self.tags = {}                      # memory category id -> name
         self.sites = None                   # the SITE table (chunk 6), at the capture's end
+        self.windows = []                   # chunk 7 (`--profile-window`), as `parseChunks` makes them
+        self.ab = None                      # chunk 8: {"name", "period"} (s)
 
     def poll(self):
         with open(self.path, "rb") as f:
@@ -116,9 +124,11 @@ def parseChunks(data, o, names, frames, tags=None, cap=None):
                 q += 16
             if q != len(p):
                 raise ValueError("frame %d: memory chunk of %d bytes, %d read" % (fr, len(p), q))
-            if frames and frames[-1]["frame"] == fr:
-                frames[-1]["mem"] = {"live": live, "peak": peak, "blocks": blocks,
-                                     "tags": sorted(per, key=lambda t: -t[1])}
+            m = {"live": live, "peak": peak, "blocks": blocks, "tags": sorted(per, key=lambda t: -t[1])}
+            if cap is not None and cap.windows and cap.windows[-1]["last"] == fr and cap.windows[-1]["mem"] is None:
+                cap.windows[-1]["mem"] = m          # a window's: written after it, its peak the window's
+            elif frames and frames[-1]["frame"] == fr:
+                frames[-1]["mem"] = m
         elif typ == 6:
             # THE SITES (todo/ram-vs-original.md 1): the runtime address of
             # omk::prof::open, then (site, live bytes, live blocks)
@@ -142,8 +152,40 @@ def parseChunks(data, o, names, frames, tags=None, cap=None):
                 q += 16
             if q != len(p):
                 raise ValueError("frame %d: GPU chunk of %d bytes, %d read" % (fr, len(p), q))
-            if frames and frames[-1]["frame"] == fr:
-                frames[-1]["gpu"] = {"live": live, "tags": sorted(per, key=lambda t: -t[1])}
+            g = {"live": live, "tags": sorted(per, key=lambda t: -t[1])}
+            if cap is not None and cap.windows and cap.windows[-1]["last"] == fr and cap.windows[-1]["gpu"] is None:
+                cap.windows[-1]["gpu"] = g
+            elif frames and frames[-1]["frame"] == fr:
+                frames[-1]["gpu"] = g
+        elif typ == 7:
+            # A WINDOW (step 8): its frames' durations, and per zone the
+            # total, self time and calls summed over them in the game
+            first, last, start, dur, phase, nf, dropped = struct.unpack_from("<iiQIiII", p, 0)
+            q = 32
+            durs = list(struct.unpack_from("<%dI" % nf, p, q))
+            q += 4 * nf
+            nz = struct.unpack_from("<I", p, q)[0]
+            q += 4
+            zones, sections = {}, {}
+            for _ in range(nz):
+                nid, kind, _pad, tot, own, calls = struct.unpack_from("<IHHQQI", p, q)
+                q += 28
+                name = names.get(nid, "?%d" % nid)
+                if kind == 1:
+                    sections[name] = sections.get(name, 0) + tot
+                else:                               # two pointers may carry one name: merged
+                    t0, s0, c0 = zones.get(name, (0, 0, 0))
+                    zones[name] = (t0 + tot, s0 + own, c0 + calls)
+            if q != len(p):
+                raise ValueError("window %d-%d: %d bytes read of %d" % (first, last, q, len(p)))
+            if cap is not None:
+                cap.windows.append({"first": first, "last": last, "start": start, "dur": dur,
+                                    "phase": phase, "durs": durs, "dropped": dropped,
+                                    "zones": zones, "sections": sections, "mem": None, "gpu": None})
+        elif typ == 8:
+            period = struct.unpack_from("<I", p, 0)[0]
+            if cap is not None:
+                cap.ab = {"name": p[4:].decode("latin-1"), "period": period / 1000.0}
         o += 5 + n
     return o
 
@@ -236,6 +278,62 @@ def summary(frames, out=sys.stdout):
         for name, by, cnt in g["tags"]:
             out.write("%-44s %12.2f %10d\n" % (name, by / 1048576.0, cnt))
     dropped = sum(f["dropped"] for f in frames)
+    if dropped:
+        out.write("\n%d zones DROPPED (a frame's buffer full)\n" % dropped)
+
+
+def windowSummary(windows, ab=None, out=sys.stdout):
+    """The summary of a windowed capture: the frame times from every frame's
+    duration, the zones' mean per frame from the game's sums - per A/B phase
+    when the capture has one."""
+    if not windows:
+        out.write("no windows\n")
+        return
+    groups = [(None, windows)]
+    if ab:
+        groups = [(ph, [w for w in windows if w["phase"] == ph]) for ph in (0, 1)]
+        out.write("A/B '%s', flipped every %g s: phase 0 the run as started, 1 flipped\n" % (
+            ab["name"], ab["period"]))
+        pre = [w for w in windows if w["phase"] < 0]
+        if pre:
+            out.write("(%d windows before the A/B started, left out)\n" % len(pre))
+    for ph, ws in groups:
+        if not ws:
+            out.write("\nphase %s: no windows\n" % ph)
+            continue
+        ds = sorted(d for w in ws for d in w["durs"])
+        n = len(ds)
+        out.write("\n%s%d windows, %d frames (%d..%d)\n" % (
+            "PHASE %d: " % ph if ph is not None else "", len(ws), n,
+            min(w["first"] for w in ws), max(w["last"] for w in ws)))
+        out.write("frame time: median %.2f ms, mean %.2f, 90%% %.2f, max %.2f\n" % (
+            ds[n // 2] / 1000.0, sum(ds) / n / 1000.0, ds[int(n * 0.9)] / 1000.0, ds[-1] / 1000.0))
+        tot = {}
+        for w in ws:
+            for name, (t, s_, c) in w["zones"].items():
+                a = tot.setdefault(name, [0, 0, 0])
+                a[0] += t; a[1] += s_; a[2] += c
+        out.write("%-44s %12s %12s %8s\n" % ("zone (mean per frame)", "total ms", "self ms", "calls"))
+        for name in sorted(tot, key=lambda k: -tot[k][1])[:40]:
+            t, s_, c = tot[name]
+            out.write("%-44s %12.2f %12.2f %8.1f\n" % (name, t / 1000.0 / n, s_ / 1000.0 / n, c / n))
+        sec = {}
+        for w in ws:
+            for name, t in w["sections"].items():
+                sec[name] = sec.get(name, 0) + t
+        if sec:
+            out.write("%-44s %12s\n" % ("section (the viewer's marks; mean per frame)", "ms"))
+            for name in sorted(sec, key=lambda k: -sec[k])[:25]:
+                out.write("%-44s %12.2f\n" % (name, sec[name] / 1000.0 / n))
+    last = next((w for w in reversed(windows) if w.get("mem")), None)
+    if last:
+        m = last["mem"]
+        peak = max(w["mem"]["peak"] for w in windows if w.get("mem"))
+        out.write("\nmemory at frame %d: %.1f MB live in %d blocks (the run's peak: %.1f MB)\n" % (
+            last["last"], m["live"] / 1048576.0, m["blocks"], peak / 1048576.0))
+        for name, by, bl in m["tags"][:15]:
+            out.write("%-44s %12.2f %10d\n" % (name, by / 1048576.0, bl))
+    dropped = sum(w["dropped"] for w in windows)
     if dropped:
         out.write("\n%d zones DROPPED (a frame's buffer full)\n" % dropped)
 
@@ -476,7 +574,14 @@ def main(argv):
         n = int(argv[k + 2]) if len(argv) > k + 2 and argv[k + 2].isdigit() else 1
         print("seq", control(argv[1], cmd, n))
         return 0
-    _, frames = read(argv[1])
+    cap = Capture(argv[1])
+    cap.poll()
+    frames = cap.frames
+    if "--frames" in argv:
+        k = argv.index("--frames")
+        a, b = int(argv[k + 1]), int(argv[k + 2])
+        frames = [f for f in frames if a <= f["frame"] <= b]
+        cap.windows = [w for w in cap.windows if a <= w["first"] and w["last"] <= b]
     if "--frame" in argv:
         want = int(argv[argv.index("--frame") + 1])
         f = next((f for f in frames if f["frame"] == want), None)
@@ -489,6 +594,8 @@ def main(argv):
         for f in sorted((f for f in frames if f["frame"] >= 0), key=lambda f: -f["dur"])[:k]:
             print("--- frame %d" % f["frame"])
             printTree(tree(f), minUs=100)
+    elif cap.windows:
+        windowSummary(cap.windows, cap.ab)
     else:
         summary(frames)
     return 0
