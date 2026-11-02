@@ -122,6 +122,11 @@ sensitivities, R2 fires and L2 is Action; everywhere else L2/R2 are L1/R1's twin
 Vita or a 3DS, with no triggers, the right stick keeps its three buttons. **The button layout and the stick's dead zone are
 this port's choices** (`src/input/pad.h`) - say if they feel wrong.
 
+Every pad connected is read at once, and one switched on later is picked up within
+a second. A pad SDL does not know is named in the log and not read: put a
+`gamecontrollerdb.txt` (the community's file, or one line of your own) beside the
+executable or in the directory you run from.
+
 **Rebinding the pad**: `Options` > `Contrôles` > `Configuration de la manette` >
 a group > a row, CONFIRM, wait half a second, press a button. The row shows
 `JoyPad Bt<k>`. A taken button swaps with its row; any key or START cancels;

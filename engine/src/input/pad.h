@@ -137,6 +137,20 @@ struct Pad {
 // Does the right stick aim, rather than press three buttons, under this group?
 inline bool stickAims(const Pad& p, int group) { return group == kShootGroup && p.hasTriggers; }
 
+// SEVERAL PADS AT ONCE are one pad: a button down on any is down, and each
+// axis is whichever stick is pushed furthest, so a pad lying idle (or a second
+// one that a Mac paired and connected by itself) takes nothing from the one in
+// the player's hands. A CHOICE: the game has one player.
+inline void merge(Pad& into, const Pad& from) {
+    into.buttons |= from.buttons;
+    into.hasTriggers = into.hasTriggers || from.hasTriggers;
+    const auto far = [](int& a, int b) {
+        if ((b < 0 ? -b : b) > (a < 0 ? -a : a)) a = b;
+    };
+    far(into.lx, from.lx); far(into.ly, from.ly);
+    far(into.rx, from.rx); far(into.ry, from.ry);
+}
+
 // SELECT / BACK as THE ORIGINAL/REMASTER SWITCH (`backends/remaster/
 // playremaster_mode.cpp`, F10's twin), in every group - the sneak and `Arme`,
 // which it carried, moved to TRIANGLE (the reader's, 2026-10-27). Not a

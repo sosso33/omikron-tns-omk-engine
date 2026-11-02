@@ -25,6 +25,11 @@ namespace {
 // VIEWER below and reach no binding table at all - an unbound code produces no
 // bit, so adding them cannot change what the interface does. They are the real
 // set-1 scan codes rather than invented ones, so this map stays one thing.
+// The optional mapping file, and how often the attached pads are rescanned: a
+// pump is a frame, so about once a second.
+constexpr const char* kPadMappingFile = "gamecontrollerdb.txt";
+constexpr int kPadRescanPumps = 30;
+
 const std::map<int, int>& keymap() {
     static const std::map<int, int> m = {
         {SDL_SCANCODE_UP,     0xC8}, {SDL_SCANCODE_DOWN,  0xD0},
@@ -443,8 +448,8 @@ bool SdlFrontend::pump(omk::HostInput& out) {
 // PlayStation CROSS - which is also how SDL2 reports the Vita's own
 // pad), handed on as `pad::Pad`; `pad::toDevices` then makes it the
 // engine's JOYSTICK device. The subsystem is started HERE, lazily, rather
-// than in `open`, because a Vulkan window never calls `open`. The first
-// pad found is used and a pad plugged in later is picked up.
+// than in `open`, because a Vulkan window never calls `open`. Every pad
+// attached is read and merged, and one plugged in later is picked up.
 #if OMK_OPENXR
 bool SdlFrontend::headPose(omk::vr::HeadPose& out) { return omk::xr::headPose(out); }
 bool SdlFrontend::paces() const { return omk::xr::running(); }
@@ -459,6 +464,83 @@ int SdlFrontend::displayModes(int curW, int curH, std::vector<std::string>& name
     return optionDisplayModes(curW, curH, names);
 }
 
+// `gamecontrollerdb.txt`, the community's mapping file (or one's own line for an
+// odd pad), beside the executable or in the directory the game runs from - both
+// are read if both are there. Not shipped; SDL already knows the common pads.
+// SDL also reads SDL_GAMECONTROLLERCONFIG from the environment by itself.
+void SdlFrontend::loadPadMappings() {
+    std::vector<std::string> paths;
+#if defined(OMK_SDL3)
+    if (const char* base = SDL_GetBasePath()) paths.push_back(std::string(base) + kPadMappingFile);
+#else
+    if (char* base = SDL_GetBasePath()) {
+        paths.push_back(std::string(base) + kPadMappingFile);
+        SDL_free(base);
+    }
+#endif
+    paths.push_back(kPadMappingFile);
+    if (paths.front() == paths.back()) paths.pop_back();
+    for (const std::string& p : paths) {
+        std::FILE* f = std::fopen(p.c_str(), "rb");
+        if (!f) continue;
+        std::fclose(f);
+#if defined(OMK_SDL3)
+        const int n = SDL_AddGamepadMappingsFromFile(p.c_str());
+#else
+        const int n = SDL_GameControllerAddMappingsFromFile(p.c_str());
+#endif
+        std::printf("pad: %d mappings from %s\n", n, p.c_str());
+    }
+}
+
+// Open what is attached and not open yet. `Open` on an open pad hands back the
+// same object with its count raised, which is what tells them apart on every
+// SDL this builds with - 2.0.3 on Tiger has no device-instance call.
+void SdlFrontend::scanPads() {
+#if defined(OMK_SDL3)
+    int n = 0;
+    SDL_JoystickID* ids = SDL_GetGamepads(&n);
+    for (int i = 0; ids && i < n; ++i) {
+        if (SDL_GetGamepadFromID(ids[i])) continue;
+        if (SDL_Gamepad* p = SDL_OpenGamepad(ids[i])) {
+            pads_.push_back(p);
+            std::printf("pad: %s\n", SDL_GetGamepadName(p));
+        }
+    }
+    SDL_free(ids);
+    if (!padUnmappedTold_) {
+        int joys = 0;
+        SDL_JoystickID* js = SDL_GetJoysticks(&joys);
+        for (int i = 0; js && i < joys; ++i)
+            if (!SDL_IsGamepad(js[i])) {
+                padUnmappedTold_ = true;
+                std::printf("pad: \"%s\" has no mapping and is not read - one line in %s adds it\n",
+                            SDL_GetJoystickNameForID(js[i]), kPadMappingFile);
+            }
+        SDL_free(js);
+    }
+#else
+    for (int i = 0; i < SDL_NumJoysticks(); ++i) {
+        if (!SDL_IsGameController(i)) {
+            if (!padUnmappedTold_) {
+                padUnmappedTold_ = true;
+                std::printf("pad: \"%s\" has no mapping and is not read - one line in %s adds it\n",
+                            SDL_JoystickNameForIndex(i), kPadMappingFile);
+            }
+            continue;
+        }
+        SDL_GameController* p = SDL_GameControllerOpen(i);
+        if (!p) continue;
+        if (std::find(pads_.begin(), pads_.end(), p) != pads_.end()) {
+            SDL_GameControllerClose(p);   // the count this call raised
+            continue;
+        }
+        pads_.push_back(p);
+        std::printf("pad: %s\n", SDL_GameControllerName(p));
+    }
+#endif
+}
+
 void SdlFrontend::readPad(omk::HostInput& out) {
     out.pad = {};
     if (!padInit_) {
@@ -468,62 +550,73 @@ void SdlFrontend::readPad(omk::HostInput& out) {
 #else
         SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER);
 #endif
+        loadPadMappings();
+    }
+    if (--padRescan_ <= 0) {
+        padRescan_ = kPadRescanPumps;
+        scanPads();
     }
 #if defined(OMK_SDL3)
-    if (!pad_) {
-        int n = 0;
-        SDL_JoystickID* ids = SDL_GetGamepads(&n);
-        if (ids && n > 0) pad_ = SDL_OpenGamepad(ids[0]);
-        SDL_free(ids);
-        if (pad_) std::printf("pad: %s\n", SDL_GetGamepadName(pad_));
+    for (std::size_t i = 0; i < pads_.size();) {
+        SDL_Gamepad* pad = pads_[i];
+        if (!SDL_GamepadConnected(pad)) {
+            SDL_CloseGamepad(pad);
+            pads_.erase(pads_.begin() + static_cast<std::ptrdiff_t>(i));
+            continue;
+        }
+        ++i;
+        omk::pad::Pad one;
+        const auto btn = [&](SDL_GamepadButton b) { return SDL_GetGamepadButton(pad, b); };
+        const auto axis = [&](SDL_GamepadAxis a) {
+            return static_cast<int>(SDL_GetGamepadAxis(pad, a)) * 1000 / 32767; };
+        const std::pair<SDL_GamepadButton, omk::pad::Button> map[] = {
+            {SDL_GAMEPAD_BUTTON_SOUTH, omk::pad::South}, {SDL_GAMEPAD_BUTTON_EAST, omk::pad::East},
+            {SDL_GAMEPAD_BUTTON_WEST, omk::pad::West}, {SDL_GAMEPAD_BUTTON_NORTH, omk::pad::North},
+            {SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, omk::pad::LeftShoulder},
+            {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, omk::pad::RightShoulder},
+            {SDL_GAMEPAD_BUTTON_BACK, omk::pad::Back}, {SDL_GAMEPAD_BUTTON_START, omk::pad::Start},
+            {SDL_GAMEPAD_BUTTON_DPAD_UP, omk::pad::DpadUp}, {SDL_GAMEPAD_BUTTON_DPAD_DOWN, omk::pad::DpadDown},
+            {SDL_GAMEPAD_BUTTON_DPAD_LEFT, omk::pad::DpadLeft}, {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, omk::pad::DpadRight}};
+        for (const auto& [b, m] : map) if (btn(b)) one.buttons |= m;
+        one.lx = axis(SDL_GAMEPAD_AXIS_LEFTX);  one.ly = axis(SDL_GAMEPAD_AXIS_LEFTY);
+        one.rx = axis(SDL_GAMEPAD_AXIS_RIGHTX); one.ry = axis(SDL_GAMEPAD_AXIS_RIGHTY);
+        if (axis(SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > omk::pad::kTriggerPress)  one.buttons |= omk::pad::LeftTrigger;
+        if (axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > omk::pad::kTriggerPress) one.buttons |= omk::pad::RightTrigger;
+        one.hasTriggers = SDL_GamepadHasAxis(pad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
+        omk::pad::merge(out.pad, one);
     }
-    if (!pad_) return;
-    if (!SDL_GamepadConnected(pad_)) { SDL_CloseGamepad(pad_); pad_ = nullptr; return; }
-    const auto btn = [&](SDL_GamepadButton b) { return SDL_GetGamepadButton(pad_, b); };
-    const auto axis = [&](SDL_GamepadAxis a) {
-        return static_cast<int>(SDL_GetGamepadAxis(pad_, a)) * 1000 / 32767; };
-    const std::pair<SDL_GamepadButton, omk::pad::Button> map[] = {
-        {SDL_GAMEPAD_BUTTON_SOUTH, omk::pad::South}, {SDL_GAMEPAD_BUTTON_EAST, omk::pad::East},
-        {SDL_GAMEPAD_BUTTON_WEST, omk::pad::West}, {SDL_GAMEPAD_BUTTON_NORTH, omk::pad::North},
-        {SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, omk::pad::LeftShoulder},
-        {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, omk::pad::RightShoulder},
-        {SDL_GAMEPAD_BUTTON_BACK, omk::pad::Back}, {SDL_GAMEPAD_BUTTON_START, omk::pad::Start},
-        {SDL_GAMEPAD_BUTTON_DPAD_UP, omk::pad::DpadUp}, {SDL_GAMEPAD_BUTTON_DPAD_DOWN, omk::pad::DpadDown},
-        {SDL_GAMEPAD_BUTTON_DPAD_LEFT, omk::pad::DpadLeft}, {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, omk::pad::DpadRight}};
-    for (const auto& [b, m] : map) if (btn(b)) out.pad.buttons |= m;
-    out.pad.lx = axis(SDL_GAMEPAD_AXIS_LEFTX);  out.pad.ly = axis(SDL_GAMEPAD_AXIS_LEFTY);
-    out.pad.rx = axis(SDL_GAMEPAD_AXIS_RIGHTX); out.pad.ry = axis(SDL_GAMEPAD_AXIS_RIGHTY);
-    if (axis(SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > omk::pad::kTriggerPress)  out.pad.buttons |= omk::pad::LeftTrigger;
-    if (axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > omk::pad::kTriggerPress) out.pad.buttons |= omk::pad::RightTrigger;
-    out.pad.hasTriggers = SDL_GamepadHasAxis(pad_, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
 #else
-    if (!pad_) {
-        for (int i = 0; i < SDL_NumJoysticks() && !pad_; ++i)
-            if (SDL_IsGameController(i)) pad_ = SDL_GameControllerOpen(i);
-        if (pad_) std::printf("pad: %s\n", SDL_GameControllerName(pad_));
-    }
-    if (!pad_) return;
-    if (!SDL_GameControllerGetAttached(pad_)) { SDL_GameControllerClose(pad_); pad_ = nullptr; return; }
-    const auto btn = [&](SDL_GameControllerButton b) { return SDL_GameControllerGetButton(pad_, b) != 0; };
-    const auto axis = [&](SDL_GameControllerAxis a) {
-        return static_cast<int>(SDL_GameControllerGetAxis(pad_, a)) * 1000 / 32767; };
-    const std::pair<SDL_GameControllerButton, omk::pad::Button> map[] = {
-        {SDL_CONTROLLER_BUTTON_A, omk::pad::South}, {SDL_CONTROLLER_BUTTON_B, omk::pad::East},
-        {SDL_CONTROLLER_BUTTON_X, omk::pad::West}, {SDL_CONTROLLER_BUTTON_Y, omk::pad::North},
-        {SDL_CONTROLLER_BUTTON_LEFTSHOULDER, omk::pad::LeftShoulder},
-        {SDL_CONTROLLER_BUTTON_RIGHTSHOULDER, omk::pad::RightShoulder},
-        {SDL_CONTROLLER_BUTTON_BACK, omk::pad::Back}, {SDL_CONTROLLER_BUTTON_START, omk::pad::Start},
-        {SDL_CONTROLLER_BUTTON_DPAD_UP, omk::pad::DpadUp}, {SDL_CONTROLLER_BUTTON_DPAD_DOWN, omk::pad::DpadDown},
-        {SDL_CONTROLLER_BUTTON_DPAD_LEFT, omk::pad::DpadLeft}, {SDL_CONTROLLER_BUTTON_DPAD_RIGHT, omk::pad::DpadRight}};
-    for (const auto& [b, m] : map) if (btn(b)) out.pad.buttons |= m;
-    out.pad.lx = axis(SDL_CONTROLLER_AXIS_LEFTX);  out.pad.ly = axis(SDL_CONTROLLER_AXIS_LEFTY);
-    out.pad.rx = axis(SDL_CONTROLLER_AXIS_RIGHTX); out.pad.ry = axis(SDL_CONTROLLER_AXIS_RIGHTY);
-    if (axis(SDL_CONTROLLER_AXIS_TRIGGERLEFT) > omk::pad::kTriggerPress)  out.pad.buttons |= omk::pad::LeftTrigger;
-    if (axis(SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > omk::pad::kTriggerPress) out.pad.buttons |= omk::pad::RightTrigger;
+    for (std::size_t i = 0; i < pads_.size();) {
+        SDL_GameController* pad = pads_[i];
+        if (!SDL_GameControllerGetAttached(pad)) {
+            SDL_GameControllerClose(pad);
+            pads_.erase(pads_.begin() + static_cast<std::ptrdiff_t>(i));
+            continue;
+        }
+        ++i;
+        omk::pad::Pad one;
+        const auto btn = [&](SDL_GameControllerButton b) { return SDL_GameControllerGetButton(pad, b) != 0; };
+        const auto axis = [&](SDL_GameControllerAxis a) {
+            return static_cast<int>(SDL_GameControllerGetAxis(pad, a)) * 1000 / 32767; };
+        const std::pair<SDL_GameControllerButton, omk::pad::Button> map[] = {
+            {SDL_CONTROLLER_BUTTON_A, omk::pad::South}, {SDL_CONTROLLER_BUTTON_B, omk::pad::East},
+            {SDL_CONTROLLER_BUTTON_X, omk::pad::West}, {SDL_CONTROLLER_BUTTON_Y, omk::pad::North},
+            {SDL_CONTROLLER_BUTTON_LEFTSHOULDER, omk::pad::LeftShoulder},
+            {SDL_CONTROLLER_BUTTON_RIGHTSHOULDER, omk::pad::RightShoulder},
+            {SDL_CONTROLLER_BUTTON_BACK, omk::pad::Back}, {SDL_CONTROLLER_BUTTON_START, omk::pad::Start},
+            {SDL_CONTROLLER_BUTTON_DPAD_UP, omk::pad::DpadUp}, {SDL_CONTROLLER_BUTTON_DPAD_DOWN, omk::pad::DpadDown},
+            {SDL_CONTROLLER_BUTTON_DPAD_LEFT, omk::pad::DpadLeft}, {SDL_CONTROLLER_BUTTON_DPAD_RIGHT, omk::pad::DpadRight}};
+        for (const auto& [b, m] : map) if (btn(b)) one.buttons |= m;
+        one.lx = axis(SDL_CONTROLLER_AXIS_LEFTX);  one.ly = axis(SDL_CONTROLLER_AXIS_LEFTY);
+        one.rx = axis(SDL_CONTROLLER_AXIS_RIGHTX); one.ry = axis(SDL_CONTROLLER_AXIS_RIGHTY);
+        if (axis(SDL_CONTROLLER_AXIS_TRIGGERLEFT) > omk::pad::kTriggerPress)  one.buttons |= omk::pad::LeftTrigger;
+        if (axis(SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > omk::pad::kTriggerPress) one.buttons |= omk::pad::RightTrigger;
 #if !defined(__vita__)   // the Vita's own pad has no triggers, whatever a mapping says
-    out.pad.hasTriggers = SDL_GameControllerGetBindForAxis(pad_, SDL_CONTROLLER_AXIS_TRIGGERRIGHT).bindType
+        one.hasTriggers = SDL_GameControllerGetBindForAxis(pad, SDL_CONTROLLER_AXIS_TRIGGERRIGHT).bindType
                           != SDL_CONTROLLER_BINDTYPE_NONE;
 #endif
+        omk::pad::merge(out.pad, one);
+    }
 #endif
     // START is the menu key, read straight from `held` (`pad::kEscape`)
     if (out.pad.buttons & omk::pad::Start) out.held.insert(omk::pad::kEscape);
@@ -791,6 +884,7 @@ void SdlFrontend::close() {
     if (tex_) SDL_DestroyTexture(tex_);
     if (ren_) SDL_DestroyRenderer(ren_);
     if (win_) SDL_DestroyWindow(win_);
+    pads_.clear();   // SDL_Quit closes them
     SDL_Quit();
 }
 

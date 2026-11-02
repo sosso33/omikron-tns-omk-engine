@@ -68,7 +68,7 @@ SRC   := $(wildcard src/*/*.cpp)
 # nothing installed must build every tool and pass the suite. It is built by
 # the `vulkan` target instead. Sweeping it in here broke exactly that property
 # the first time, with an undefined-symbol link error on a clean build.
-TOOLS := $(filter-out tools/run_vulkan.cpp tools/shadow_probe.cpp tools/perpixel_probe.cpp tools/present_probe.cpp,$(wildcard tools/*.cpp))
+TOOLS := $(filter-out tools/run_vulkan.cpp tools/shadow_probe.cpp tools/perpixel_probe.cpp tools/present_probe.cpp tools/pad_probe.cpp,$(wildcard tools/*.cpp))
 # ...and without the remaster, its own tools: they ARE its modules' drivers
 REMASTER_TOOLS := tools/texpack_tool.cpp tools/tex_encode.cpp tools/font_hd.cpp tools/door_census.cpp \
                   tools/smooth_probe.cpp
@@ -525,6 +525,11 @@ else
 gles-probe:
 	@echo "gles-probe makes its context with CGL (macOS); on this host it is skipped."
 endif
+
+# The SDL frontend's pads, driven with SDL's virtual joysticks: `verify.py: engine:
+# pads`. Needs SDL, so it is out of the default set (A1/A8 rule 1).
+build/pad_probe: tools/pad_probe.cpp backends/sdl/sdlfront.cpp $(SRCOBJS)
+	$(CXX) $(CXXFLAGS) $(SDL_CFLAGS) $(SDL_DEFS) -Ibackends/sdl -o $@ tools/pad_probe.cpp backends/sdl/sdlfront.cpp $(SRCOBJS) $(SDL_LIBS)
 
 build/gles_probe: backends/gles/gles_probe.cpp backends/gles/glesrender.cpp $(SRCOBJS)
 	@mkdir -p $(@D)

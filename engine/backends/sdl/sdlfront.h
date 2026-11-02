@@ -60,6 +60,8 @@ public:
 #endif
 
     void readPad(omk::HostInput& out);
+    void scanPads();
+    void loadPadMappings();
 
     void setRelativeMouse(bool on) override;
 
@@ -136,11 +138,15 @@ private:
     int arate_ = 0, achan_ = 2;
     bool droppedToldOnce_ = false;   // queueAudio's one line with no device
     bool padInit_ = false;           // the controller subsystem, started lazily
+    // Every pad attached (`pad::merge`), rescanned every so often: a pad plugged
+    // in or switched on later is simply there.
 #if defined(OMK_SDL3)
-    SDL_Gamepad* pad_ = nullptr;
+    std::vector<SDL_Gamepad*> pads_;
 #else
-    SDL_GameController* pad_ = nullptr;
+    std::vector<SDL_GameController*> pads_;
 #endif
+    int padRescan_ = 0;              // pumps to the next scan
+    bool padUnmappedTold_ = false;   // the one line about a pad SDL has no mapping for
 
     // SDL's own mutex, not `std::mutex`: on the Vita the standard library's
     // threading sits on the SDK's pthread layer, and the engine keeps to the

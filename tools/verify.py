@@ -7357,6 +7357,54 @@ def c_engine_pad_layout():
             "Triangle, first-person view on Square; shoot mode's `Arme` on Triangle; the fight's kicks "
             "unmoved; Select the switch in all four; the frame feeding the installed group and Select to it")
 
+def c_engine_pads():
+    r"""engine: EVERY PAD ATTACHED, through the real `SdlFrontend::pump`.
+
+    `tools/pad_probe.cpp` plugs SDL's virtual joysticks in: a second pad pressed
+    while the first lies idle is read (a Mac that connects a DualSense and a
+    DUALSHOCK 4 by itself must not make the player's pad the one that is
+    ignored); the furthest stick wins whichever pad and sign; a trigger counts
+    past its threshold; unplugging one leaves the other, and plugging one in
+    later is picked up. And a `gamecontrollerdb.txt` is read when it is there.
+    """
+    import subprocess, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    mk = subprocess.run(["make", "-s", "build/pad_probe"], cwd=eng, capture_output=True, text=True)
+    tool = os.path.join(eng, "build", "pad_probe")
+    if mk.returncode != 0 or not os.path.exists(tool):
+        return ("skipped",), ("skipped",), "pad_probe did not build (no SDL?)"
+    tmp = tempfile.mkdtemp()
+    try:
+        # the dummy window has no focus, and SDL2 ignores a joystick then, rightly
+        r = subprocess.run([tool], cwd=tmp, capture_output=True,
+                           env=dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy",
+                                    SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS="1"))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    lines = r.stdout.decode("latin-1").splitlines()
+    if "no virtual joysticks" in lines:
+        return ("skipped",), ("skipped",), "this SDL has no virtual joysticks"
+    steps = [ln for ln in lines if " buttons " in ln]
+    if len(steps) != 11:
+        return (lines,), ("11 steps",), "the probe's steps read - it stopped early"
+    south, east, trig = 1, 2, 1 << 16
+    return (steps, sum(ln.startswith("pad: virtual") for ln in lines),
+            sum(ln == "pad: 1 mappings from gamecontrollerdb.txt" for ln in lines)), \
+           (["none buttons 0 lx 0 triggers 0",
+             "one idle buttons 0 lx 0 triggers 1",
+             "one south buttons %d lx 0 triggers 1" % south,
+             "second east buttons %d lx 0 triggers 1" % east,
+             "both buttons %d lx 0 triggers 1" % (south | east),
+             "sticks buttons 0 lx -900 triggers 1",
+             "trigger light buttons 0 lx 0 triggers 1",
+             "trigger full buttons %d lx 0 triggers 1" % trig,
+             "first gone buttons %d lx 0 triggers 1" % east,
+             "all gone buttons 0 lx 0 triggers 0",
+             "plugged again buttons %d lx 0 triggers 1" % south], 3, 1), \
+           "what `pump` reports at each step; how many pads it opened (three: two, then " \
+           "one plugged in after both had gone); and the mapping file read once"
+
+
 def c_engine_stick_aim():
     r"""engine: THE RIGHT STICK AIMS AND THE RIGHT TRIGGER FIRES, in shoot mode,
     through the viewer (`input/pad.h`, the reader's of 2026-11-02).
@@ -51486,7 +51534,7 @@ def c_licence_headers():
     # 697: + `engine/backends/classic/classic_alloc.cpp` (the classic build's
     # slab allocator under `malloc`, the same handoff's step 3)
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (703, [], 10, []), \
+           (704, [], 10, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -54213,6 +54261,7 @@ SLOW = [
     ("engine: pad layout", c_engine_pad_layout, "todo/graphics-menu B; input/pad.h"),
     ("engine: rebinding",  c_engine_rebinding,  "docs/UI.md; ui/options.h; ui/keynames.h"),
     ("engine: stick aim",  c_engine_stick_aim,  "input/pad.h"),
+    ("engine: pads",       c_engine_pads,       "input/pad.h; backends/sdl/sdlfront.cpp"),
     ("engine: audio",      c_engine_audio,      "PORTING B6"),
     ("engine: shoot AI",   c_engine_shoot_ai,   "engine/README"),
     ("engine: I2D",        c_engine_i2d,        "engine/README"),
