@@ -152,6 +152,10 @@ int PlayState::setupOptions(int argc, char** argv) {
     auto& in = in_.emplace(schemes);
     in.installScheme(0);
     in.setRepeatMask(0x203F);          // `Ui_BeginScreen`
+    // The keybinding rows' defaults and value column (`ui/keynames.h`)
+    keyNames = omk::KeyNames::loadJson(tb + "/key_names.json");
+    keyNames.setKeyCap([this](int dik) { return front.keyCap(dik); });
+    optMenu.setBindingSources(&schemes, &keyNames);
 
     OMK_HEAPCHECK("before boot chain");
     return phase::Continue;

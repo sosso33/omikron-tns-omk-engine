@@ -91,6 +91,27 @@ int PlayState::setupSession() {
     // not const: the options menu writes `settings.v` as the game's apply
     // hooks write `byte_90E180`, and what reads it later reads the new value
     settings = omk::resolveSettings(ini, saveSettings);
+    // `Input_InstallScheme` reads the block's three tables, not the compiled
+    // ones: what a saves file's header holds is what the keys ARE. A header with
+    // no keyboard at all (a block that was never a game's) is no such thing.
+    {
+        omk::Input& keys = *in_;
+        auto& v = settings.v;
+        const bool fromSave = settings.bindings == omk::Settings::Source::Save &&
+            std::any_of(v.keyboard.begin(), v.keyboard.end(), [](std::uint32_t c) { return c != 0; });
+        if (fromSave) {
+            keys.setTables(v.keyboard, v.mouse, v.joystick);
+        } else {
+            for (int g = 0; g < omk::kGroups; ++g)
+                for (int a = 0; a < omk::kSlots; ++a) {
+                    const auto k = static_cast<std::size_t>(g * omk::kSlots + a);
+                    v.keyboard[k] = static_cast<std::uint32_t>(keys.bound(g, a, omk::Device::Keyboard));
+                    v.mouse[k]    = static_cast<std::uint32_t>(keys.bound(g, a, omk::Device::Mouse));
+                    v.joystick[k] = static_cast<std::uint32_t>(keys.bound(g, a, omk::Device::Joystick));
+                }
+        }
+        keys.installScheme(keys.group() < 0 ? 0 : keys.group());
+    }
     // THE DISPLAY SIZE: `--res`, else row 2 as the settings resolved it - the
     // save header (`+12`/`+14`, what the menu last saved) over the ini's
     // `screen_x` / `screen_y` - else 800x600. A run that must be a given size

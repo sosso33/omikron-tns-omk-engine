@@ -45,6 +45,8 @@ OptionTree OptionTree::fromJson(const Json& wdoc, const Json& udoc) {
         r.kind  = os[i]["kind"].str();
         r.type  = static_cast<int>(os[i]["type"].i64());
         r.labelId = static_cast<int>(os[i]["label_id"].i64(-1));
+        r.group = static_cast<int>(os[i]["group"].i64(-1));
+        r.action = static_cast<int>(os[i]["action"].i64(-1));
         const auto& ch = os[i]["choices"];
         for (std::size_t k = 0; k < ch.size(); ++k)
             r.choices.push_back({ch[k][0].str(),
@@ -212,7 +214,13 @@ constexpr int kRowResolution = 2, kRowClip = 3, kRowSky = 4, kRowShadows = 5,
               kRowVolDialogue = 10, kRowVolMusic = 11, kRowVolEffects = 12,
               kRowSound3d = 13, kRowSubtitles = 15, kRowFight = 16, kRowShoot = 17,
               kRowCombatCam = 18, kRowSensX = 23, kRowSensY = 24, kRowInvert = 25,
-              kRowForceFeedback = 27, kRowBack = 72;
+              kRowForceFeedback = 27, kRowBack = 72,
+              kRowKeysTitle = 20, kRowPadTitle = 21, kRowDefaults = 73;
+// Page 5 (`Contrôles`), whose selection is `dword_4DD628`; the four keybinding
+// pages, Aventure first, whose builders end with `Ui_StartOscillator(6, 500)`;
+// and oscillator 6's period at both of its starts in `Opt_RowInput`.
+constexpr int kPageControls = 5, kPageKeysFirst = 7, kPageKeysLast = 10;
+constexpr double kOsc6Ms = 500.0;
 
 // The page records' `+0`, so BACK knows where it goes. Pages 2..5 return
 // through page 0, the save prompt; the control-scheme pages through 5 and 6.
@@ -279,6 +287,9 @@ void OptionsMenu::open(int param, const SettingsBlock& s) {
     built_ = false;
     dirty_ = false;
     page_ = 1;
+    osc6Ms_ = 0.0;
+    listen_ = false;
+    install_ = false;
 }
 
 void OptionsMenu::focus() {
@@ -324,6 +335,17 @@ int OptionsMenu::sliderValue(int item) const {
 void OptionsMenu::readBack(int item) {
     if (item < 0 || item >= 74) return;
     auto& r = rows_[static_cast<std::size_t>(item)];
+    // A KEYBIND row, 0x00490320: the three tables into +96 / +100 / +104 -
+    // keyboard, JOYSTICK, mouse, which is the order of `Opt_RebindKey`'s slots
+    if (const auto ro = t_->rows.find(item);
+        ro != t_->rows.end() && ro->second.type == 3 && ro->second.action >= 0) {
+        const auto k = static_cast<std::size_t>(ro->second.group * kSlots + ro->second.action);
+        r.value[0] = ro->second.group;
+        r.value[1] = static_cast<int>(s_.keyboard[k]);
+        r.value[2] = static_cast<int>(s_.joystick[k]);
+        r.value[3] = static_cast<int>(s_.mouse[k]);
+        return;
+    }
     const int n = choices(item);
     const auto clampCur = [&](int v) { r.current = (v >= n) ? n - 1 : v; };
     switch (item) {
@@ -369,6 +391,17 @@ void OptionsMenu::readBack(int item) {
 void OptionsMenu::apply(int item) {
     if (item < 0 || item >= 74) return;
     auto& r = rows_[static_cast<std::size_t>(item)];
+    // A KEYBIND row, 0x004902C0: +96 / +104 / +100 into the three tables at
+    // `group * 14 + action` - what `Input_InstallScheme` reads
+    if (const auto ro = t_->rows.find(item);
+        ro != t_->rows.end() && ro->second.type == 3 && ro->second.action >= 0) {
+        const auto k = static_cast<std::size_t>(ro->second.group * kSlots + ro->second.action);
+        s_.keyboard[k] = static_cast<std::uint32_t>(r.value[1]);
+        s_.joystick[k] = static_cast<std::uint32_t>(r.value[2]);
+        s_.mouse[k]    = static_cast<std::uint32_t>(r.value[3]);
+        applied_.push_back(item);
+        return;
+    }
     const int c = std::clamp(r.current, 0, 9);
     const int v = r.value[static_cast<std::size_t>(c)];
     switch (item) {
@@ -430,6 +463,13 @@ int OptionsMenu::rowAt(int w) const {
     // the START MENU hosts the screen, and empty under the sneak, whose own
     // tabs are the way out (0x004912F0)
     if (page_ == 1 && w == 4) return param_ == 1 ? kRowBack : -1;
+    // `Opt_PageControlScheme`: the title is the row of page 5 that came here
+    if (page_ == 6 && w == 0) return controlDevice() == 2 ? kRowPadTitle : kRowKeysTitle;
+    // The four keybinding builders: on the gamepad's pages rows 1..4 - the
+    // four movement slots, `Input_Poll`'s hardwired axes - are not bound
+    if (page_ >= kPageKeysFirst && page_ <= kPageKeysLast && w >= 1 && w <= 4 &&
+        controlDevice() == 2)
+        return -1;
     const auto* p = t_->page(page_);
     if (!p) return -1;
     const auto it = p->bind.find(w);
@@ -459,6 +499,8 @@ bool OptionsMenu::selectableRow(int w) const {
 
 void OptionsMenu::build(int p) {
     page_ = p;
+    listen_ = false;     // every builder: `dword_660B84 = 0`
+    if (p >= kPageKeysFirst && p <= kPageKeysLast) osc6Ms_ = kOsc6Ms;
     if (p == 0) {
         // 0x00492A70: the prompt only while a setting has changed; otherwise
         // straight on to the root, and leaving page 0 clears the latch
@@ -491,6 +533,8 @@ void OptionsMenu::gotoPage(int k) {
     // page 0's clears the latch (0x00492AA0)
     if (page_ == 0) dirty_ = false;
     else            pageSel_[page_] = sel_;
+    // ...and Aventure's keys page's alone (`sub_491FE0`) reinstalls the scheme
+    if (page_ == kPageKeysFirst) install_ = true;
     build(k);
 }
 
@@ -509,6 +553,9 @@ bool OptionsMenu::moveVertical(int step) {
 bool OptionsMenu::press(std::uint32_t bits) {
     moved_ = false;
     if (!focused_ || !bits) return false;
+    // `Ui_ScreenInput` while oscillator 6 runs; and with the latch set
+    // `Opt_RowInput` skips the move, and panel flag 0x80 refuses BACK
+    if (listen_ || suspended()) return false;
     if (page_ == 0) {
         if (bits & (kUiUp | kUiDown)) { moved_ = moveVertical((bits & kUiUp) ? -1 : 1); return true; }
         if (bits & kUiConfirm) {
@@ -580,9 +627,97 @@ bool OptionsMenu::press(std::uint32_t bits) {
         // the root's `Retour` - `UI_FocusScreen(29)` and the page slides out
         if ((bits & kUiConfirm) && page_ == 1) { pageSel_[1] = sel_; unfocus(); return true; }
         return false;
+    case 3:
+        // Case 3, unlatched: CONFIRM with oscillator 6 idle latches the row
+        if (!(bits & kUiConfirm)) return false;
+        osc6Ms_ = kOsc6Ms;
+        listen_ = true;
+        return true;
+    case 5:
+        if (!(bits & kUiConfirm)) return false;
+        restoreDefaults();
+        return true;
     default:
-        return false;   // 3 keybind, 5 defaults: not modelled (see the class)
+        return false;
     }
+}
+
+int OptionsMenu::controlDevice() const {
+    const auto s = pageSel_.find(kPageControls);
+    return s != pageSel_.end() && s->second == 2 ? 2 : 1;
+}
+
+int OptionsMenu::listenGroup() const {
+    if (!listen_) return -1;
+    const auto ro = t_->rows.find(rowAt(sel_));
+    return ro == t_->rows.end() ? -1 : ro->second.group;
+}
+
+void OptionsMenu::listenEnd() {
+    osc6Ms_ = kOsc6Ms;
+    listen_ = false;
+}
+
+void OptionsMenu::cancelListen() {
+    if (listen_) listenEnd();
+}
+
+// `Opt_RebindKey`, one device: slot 1 the keyboard, 2 the joystick, 3 the mouse.
+bool OptionsMenu::rebindFrom(const DeviceState& st, Device d, int item) {
+    int code = 0;
+    if (!readOneControl(st, d, code) || !bindableCode(code)) return false;
+    const std::size_t slot = d == Device::Keyboard ? 1 : d == Device::Joystick ? 2 : 3;
+    const auto me = t_->rows.find(item);
+    if (me == t_->rows.end()) return false;
+    // The scan over the whole table, in its order: the first keybind row of
+    // the same group holding the code takes this row's OLD code - a SWAP, so
+    // nothing is left unbound. It can find this row itself, which changes
+    // nothing.
+    for (const auto& [i, o] : t_->rows) {
+        if (o.type != 3 || o.group != me->second.group) continue;
+        auto& other = rows_[static_cast<std::size_t>(i)];
+        if (other.value[slot] != code) continue;
+        other.value[slot] = rows_[static_cast<std::size_t>(item)].value[slot];
+        changed(i);
+        break;
+    }
+    rows_[static_cast<std::size_t>(item)].value[slot] = code;
+    changed(item);
+    return true;
+}
+
+void OptionsMenu::pollRebind(const DeviceState& st) {
+    if (!listen_ || suspended()) return;
+    const int item = rowAt(sel_);
+    bool done = false;
+    if (controlDevice() == 2) {
+        // `Opt_RebindKey(item, 2) || Opt_RebindKey(item, -1)`: a button binds,
+        // and any KEY leaves the row as it was
+        int key = 0;
+        done = rebindFrom(st, Device::Joystick, item) || readOneControl(st, Device::Keyboard, key);
+    } else {
+        // `Opt_RebindKey(item, 1) || Opt_RebindKey(item, 3)`: ESC is refused,
+        // so on this page a key or a mouse button is the only way out
+        done = rebindFrom(st, Device::Keyboard, item) || rebindFrom(st, Device::Mouse, item);
+    }
+    if (done) listenEnd();
+}
+
+// Case 5: the compiled tables over the device's own - all four groups, whichever
+// page the row was on - and `Ui_GoToPanel` re-enters the page so its rows redraw.
+void OptionsMenu::restoreDefaults() {
+    if (!defaults_) return;
+    const bool pad = controlDevice() == 2;
+    for (int g = 0; g < kGroups; ++g)
+        for (int a = 0; a < kSlots; ++a) {
+            const auto k = static_cast<std::size_t>(g * kSlots + a);
+            const auto code = [&](Device d) { return static_cast<std::uint32_t>(defaults_->code(g, a, d)); };
+            if (pad) s_.joystick[k] = code(Device::Joystick);
+            else { s_.keyboard[k] = code(Device::Keyboard); s_.mouse[k] = code(Device::Mouse); }
+        }
+    dirty_ = true;
+    applied_.push_back(kRowDefaults);
+    gotoPage(page_);
 }
 
 // ---- what is drawn ----------------------------------------------------------
@@ -739,6 +874,16 @@ std::vector<OptionsMenu::Widget> OptionsMenu::widgets() const {
                 w.value = d->second[static_cast<std::size_t>(st.current)];
         } else if (o.type == 1)
             w.slider = sliderValue(item);
+        else if (o.type == 3 && names_) {
+            // the draw hook 0x00493380: `"%s; %s"` of the keyboard's name and
+            // the mouse's on the first device's pages, `"%s"` of the joystick's
+            // on the gamepad's
+            if (controlDevice() == 2)
+                w.value = names_->name(KeyNames::Joystick, st.value[2]);
+            else
+                w.value = names_->name(KeyNames::Keyboard, st.value[1]) + "; " +
+                          names_->name(KeyNames::Mouse, st.value[3]);
+        }
         out.push_back(std::move(w));
     }
     layOut(out);

@@ -117,6 +117,20 @@ struct DeviceState {
 // left-hand Shift or Ctrl does nothing. -> the codes as the bindings see them.
 std::vector<int> keyboardAsPolled(const std::vector<int>& held);
 
+// `Input_ReadOneControl` (0x0043E360): the first control of ONE device held
+// down - the lowest scan code, the lowest of the ten joystick buttons (48..57),
+// the mouse's 12, 13, 14 in order. A joystick with no button down but a stick
+// off centre answers with an AXIS code, 0 or 4, whichever axis is further out;
+// `Opt_RebindKey` refuses those. -> whether anything was down.
+//
+// (The decompiler has the keyboard arm fall through into the joystick's. The
+// listing does not: `loc_43E3DA` re-tests the device against 4, so each read
+// touches only its own device.)
+bool readOneControl(const DeviceState& st, Device d, int& code);
+
+// `Opt_RebindKey`'s refusal: 0 and 4 are the joystick axes, 1 is ESC.
+inline bool bindableCode(int code) { return code != 0 && code != 1 && code != 4; }
+
 // The four compiled schemes, lifted to `tables/key_bindings.json`.
 class ControlSchemes {
 public:
@@ -160,11 +174,22 @@ public:
     std::uint32_t frame(const DeviceState& st);
 
     // `Opt_RebindKey`: group-local, and it refuses codes 0, 1 and 4 - the two
-    // joystick axes and ESC - BEFORE the scan. Clears the code from any other
-    // slot of the same group and device, which is exactly why `Avancer` is UP
-    // in Aventure while `Sauter` is UP in Combat and neither disturbs the
-    // other. Returns false when the code is refused.
+    // joystick axes and ESC - BEFORE the scan. The first OTHER action of the
+    // same group and device holding the code takes this action's OLD code: the
+    // two SWAP (`rec[other][slot] = rec[me][slot]`), no key is ever left
+    // unbound. Group-local is why `Avancer` is UP in Aventure while `Sauter`
+    // is UP in Combat and neither disturbs the other. Only an action with a
+    // row in the options takes part, since the scan walks the rows - which
+    // is the labelled slots. Returns false when the code is refused.
     bool rebind(int group, int slot, Device d, int code);
+
+    // The block's three tables (`0x90E1B4` / `0x90E294` / `0x90E374`), which
+    // are what `Input_InstallScheme` reads: a save's, or what the options menu
+    // wrote. NOT installed here - the live tables move at the next install.
+    void setTables(const std::array<std::uint32_t, 56>& keyboard,
+                   const std::array<std::uint32_t, 56>& mouse,
+                   const std::array<std::uint32_t, 56>& joystick);
+    int  bound(int group, int slot, Device d) const;
 
     const ControlSchemes& schemes() const { return schemes_; }
 

@@ -2130,7 +2130,7 @@ def c_engine_input():
     from the installed scheme moves 18/19 to **28/57**; edge-filtering the mask
     against `held` instead of `lastFrame` moves the fires to **0/3** and takes
     the whole walk with it (no word survives the filter, so both answers go
-    to -1); not clearing the old slot on a rebind moves 0 to **203**; and
+    to -1); not swapping the old slot on a rebind moves 200 to **203**; and
     holding the keys moves the answer from 1 to -1, which is the run itself
     rather than a mutation.
 
@@ -2159,7 +2159,7 @@ def c_engine_input():
                168, 0, 93,
                1, 3,
                1, 3, -1, 2,
-               0, 0, 0, 1, 0, 203, 203), \
+               0, 0, 0, 1, 200, 203, 203), \
            "the live keyboard table's slots 4 and 5 BEFORE Game_Init's " \
            "install (18, 19 - E and R, the static initialiser docs/UI.md " \
            "read as the default) and after (28, 57 - ENTER and SPACE); then " \
@@ -2172,7 +2172,7 @@ def c_engine_input():
            "released, and the same three HELD, where the third frame adds " \
            "no edge and there is no answer; and finally rebinding - codes " \
            "0, 1 and 4 all refused, LEFT accepted, Aventure's slot 0 " \
-           "cleared to 0 by it and Combat's left at 203"
+           "taking Avancer's old UP (200) and Combat's left at 203"
 
 
 def c_engine_i2d():
@@ -28248,6 +28248,90 @@ def c_engine_options_menu():
            "comes up at"
 
 
+def c_engine_rebinding():
+    r"""engine: THE KEYBINDING ROWS - `Opt_RowInput` cases 3 and 5, `Opt_RebindKey`.
+
+    Two halves. `tools/rebind_menu.cpp` drives `OptionsMenu` with raw device
+    states, because a run of the viewer cannot hold a gamepad button: the pad's
+    pages hide the four movement rows, oscillator 6 suspends input for 500 ms
+    (which is what stops the confirm press binding itself), an axis is refused,
+    a taken button SWAPS, group-local, a key cancels, the defaults row restores
+    only its device, and the live table moves only at the next install.
+
+    Then the viewer, end to end, keyboard: `Avancer` bound to V, then LEFT, which
+    `Tourner a gauche` held, so that row takes V. Leaving Aventure's page
+    reinstalls the scheme, so the prompt's UP is now LEFT - pressing UP there
+    would select nothing, and the file would not be written at all. Read from
+    the OUTPUT: the header the run wrote, and the page a SECOND start draws from
+    it.
+    """
+    import json, subprocess, struct, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    tb = os.path.join(ROOT, "tables")
+    mk = subprocess.run(["make", "-s", "build/rebind_menu", "play"], cwd=eng,
+                        capture_output=True, text=True)
+    tool = os.path.join(eng, "build", "rebind_menu")
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(tool) or not os.path.exists(play):
+        return ("build",), ("built",), mk.stderr[-300:]
+    lines = subprocess.run([tool, tb], capture_output=True).stdout.decode("latin-1").splitlines()
+    want_lines = [
+        "page5 5", "page6 6 device 2",
+        'padpage 7 rows 9 movement "<no row>" action "JoyPad Bt0"',
+        "entered suspended 1 press 0", "after period suspended 0",
+        "latch 1 listening 1 group 0 heldconfirm 54",
+        "latched press 0 page same 1", "axis listening 1 cell 54",
+        "bound listening 0 suspended 1 slot10 48 slot4 54 dirty 1",
+        "group-local combat slot10 54 slot4 48",
+        'names sidestep "JoyPad Bt0" action "JoyPad Bt6"',
+        "keyboard untouched 157", "key cancels listening 0 cell 48",
+        "start cancels listening 0 cell 48", "square aventure 51 tirer 50",
+        "defaults slot10 54 slot4 48 install 1",
+        'keypage rows 13 device 1 avancer "Up; " vue "L; Mouse Bt0"',
+        "esc listening 1 slot2 200", "button listening 1 slot2 200",
+        "mouse listening 0 kbd 200 mouse 14", "two keys slot2 45",
+        "install on leaving 7: 1", "live before install 200 after 45"]
+    if len(lines) != len(want_lines):
+        return (len(lines),), (len(want_lines),), "rebind_menu's lines read - it stopped early"
+    tmp = tempfile.mkdtemp()
+    try:
+        saves = os.path.join(tmp, "GAMES")
+        env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+        base = [play, omkpaths.data_root(), tb, "--software", "--nofmv", "--saves", saves,
+                "--res", "800x600", "--keydelay", "30"]
+        down3 = "0,0xD0,0xD0,0x1C,0xD0,0xD0,0xD0,0x1C,"
+        subprocess.run(base + ["--frames", "700", "--keys", down3 +
+                               "0x1C,0x1C,0x1C,0x2F,0x1C,0xCB,0,0x39,0x39,0x39,0xCB,0x1C,0x39"],
+                       capture_output=True, env=env)
+        head = None
+        if os.path.exists(saves):
+            d = open(saves, "rb").read(52 + 224 * 3)
+            # Aventure: slots 0 (Tourner a gauche) and 2 (Avancer); Combat's 0 and 2
+            head = (struct.unpack_from("<I", d, 52)[0], struct.unpack_from("<I", d, 52 + 8)[0],
+                    struct.unpack_from("<I", d, 52 + 42 * 4)[0], struct.unpack_from("<I", d, 52 + 44 * 4)[0])
+        # The second start's menu UP is LEFT, or the walk stops on `Quitter`: three
+        # DOWNs pass `Options`, and only the saved table brings LEFT back up to it
+        r2 = subprocess.run(base + ["--frames", "400", "--keys", "0,0xD0,0xD0,0xD0,0xCB,0x1C,"
+                                    "0xD0,0xD0,0xD0,0x1C,0x1C,0x1C"],
+                            capture_output=True, env=env)
+        page = [ln for ln in r2.stdout.decode("latin-1").splitlines() if "options: page 7" in ln]
+        second = page[0].split("[Avancer|")[1].split("]")[0] if page else None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    cb = {r["group"] * 14 + r["action"]: r["keyboard"]
+          for r in json.load(open(os.path.join(tb, "key_bindings.json")))["rows"]["rows"]}
+    # the frame's own wiring: the pad read under the ROW'S group, START cancelling
+    src = open(os.path.join(eng, "backends", "sdl", "playframe_modes_parts.cpp")).read()
+    src = re.sub(r"//[^\n]*", "", re.sub(r"/\*.*?\*/", "", src, flags=re.S))
+    wired = ("toDevices(host.pad, raw, optMenu.listenGroup())" in src,
+             bool(re.search(r"pad::Start\)\)\s*\{\s*optMenu\.cancelListen\(\)", src)))
+    return (lines, head, second, wired), \
+           (want_lines, (0x2F, 0xCB, cb[42], cb[44]), "Left; ", (True, True)), \
+           "the probe's lines, each a rule of `Opt_RowInput` case 3 or 5; then the " \
+           "header the viewer wrote - Tourner a gauche holding V, Avancer LEFT, the " \
+           "Combat group untouched - and the value a second start draws from it"
+
+
 def c_engine_start_quit():
     r"""engine: the start menu's QUIT ends the program (`todo/start-menu.md`).
 
@@ -38571,9 +38655,9 @@ def c_keybindings():
     halves are known to line up rather than assumed to.
 
     The rebind rule is `Opt_RebindKey`'s: the scan runs over the whole 74-row
-    table but clears only a row in the SAME group, which is why "Avancer" is
-    UP in Aventure and "Reculer" is LEFT in Combat with neither disturbing the
-    other. Codes 0, 1 and 4 are refused before the scan.
+    table but swaps only with a row in the SAME group, which is why "Avancer"
+    is UP in Aventure and "Reculer" is LEFT in Combat with neither disturbing
+    the other. Codes 0, 1 and 4 are refused before the scan.
     """
     sys.path.insert(0, os.path.join(ROOT, "tools"))
     from sim.ui import bindings, rebind, BIND_GROUPS, BIND_SLOTS
@@ -38593,19 +38677,19 @@ def c_keybindings():
     rows = {29: {"group": 0, "slot": {1: 200}},
             30: {"group": 0, "slot": {1: 208}},
             62: {"group": 3, "slot": {1: 200}}}
-    cleared = rebind(rows, 30, 1, 200)
+    swapped = rebind(rows, 30, 1, 200)
     return (labelled, sum(1 for x in kb if x), sum(1 for x in ms if x),
             sum(1 for x in js if x), spaces, named,
-            cleared, rows[29]["slot"][1], rows[62]["slot"][1],
+            swapped, rows[29]["slot"][1], rows[62]["slot"][1],
             rebind(rows, 30, 1, 4)), \
            ({0: 10, 1: 7, 2: 13, 3: 10}, 41, 4, 48, (True, True, True),
             ("Avancer", 200, "Coup de poing 1", 16, "Tir", 12),
-            [29], 0, 200, None), \
+            [29], 208, 200, None), \
            "labelled actions per group; non-zero cells in the keyboard, " \
            "mouse and joystick tables and whether each stays inside " \
            "Input_ReadOneControl's own code space; three cells that name " \
            "themselves (Avancer=UP, Coup de poing 1=Q, Tir=left button); " \
-           "then the rebind - taking UP for another Aventure row CLEARS it, " \
+           "then the rebind - taking UP for another Aventure row SWAPS with it, " \
            "leaves the Combat row holding UP alone, and an axis code is refused"
 
 
@@ -41724,7 +41808,7 @@ def c_exe_tables():
     return (exetables.check(), sorted(exetables.OUT and
             [n for n, _, _, _ in exetables._TABLES])), \
            ([], ["adpcm", "camera_presets", "city_maps", "fight_ai_moves",
-                 "key_bindings", "shoot_ai", "shoot_weapons", "special_moves",
+                 "key_bindings", "key_names", "shoot_ai", "shoot_weapons", "special_moves",
                  "ui", "ui_widgets", "vm_announce", "vm_opcodes"]), \
            "complaints from exetables --check (stale, missing or failing a " \
            "table's own check), and the tables that must be present"
@@ -51344,7 +51428,7 @@ def c_licence_headers():
     # 697: + `engine/backends/classic/classic_alloc.cpp` (the classic build's
     # slab allocator under `malloc`, the same handoff's step 3)
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (700, [], 10, []), \
+           (703, [], 10, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -54069,6 +54153,7 @@ SLOW = [
     ("engine: input poll", c_engine_input_poll, "todo/vita-port.md F3; input/bindings.h"),
     ("engine: menu stick", c_engine_menu_stick, "todo/handoff-quest-port.md; input/pad.h"),
     ("engine: pad layout", c_engine_pad_layout, "todo/graphics-menu B; input/pad.h"),
+    ("engine: rebinding",  c_engine_rebinding,  "docs/UI.md; ui/options.h; ui/keynames.h"),
     ("engine: audio",      c_engine_audio,      "PORTING B6"),
     ("engine: shoot AI",   c_engine_shoot_ai,   "engine/README"),
     ("engine: I2D",        c_engine_i2d,        "engine/README"),

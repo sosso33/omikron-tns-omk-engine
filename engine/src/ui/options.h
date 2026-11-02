@@ -25,7 +25,9 @@
 //     type 6      (back)            CONFIRM at the root returns to screen 29
 #pragma once
 
+#include "input/bindings.h"
 #include "script/savefile.h"
+#include "ui/keynames.h"
 #include "ui/widgets.h"
 
 #include <map>
@@ -50,6 +52,7 @@ struct OptionRow {
     std::string kind;                 // "choice" | "slider" | "header" | ...
     int         type = 0;             // +0: 0 choice 1 slider 2 header 3 keybind 4 device 5 defaults 6 back
     int         labelId = -1;         // +24, an index into `IAM\Options`
+    int         group = -1, action = -1;   // a keybind row's +92 and +112
     std::vector<std::pair<std::string, int>> choices;   // caption, value
 };
 
@@ -119,10 +122,18 @@ private:
 // state each of the sixteen row widgets is left in by `Opt_BindRow` - which
 // is what the draw hook 0x00493380 reads.
 //
-// What it does NOT do, labelled: the keybinding rows (type 3) read no key
-// and the defaults row (type 5) restores nothing - their value column needs
-// the key-name table at 0x004D10CC, which is not lifted - and the panels do
-// not SLIDE in and out (`Ui_SlidePanelFrom`), they appear.
+// THE KEYBINDING ROWS (type 3) AND THE DEFAULTS ROW (type 5), `Opt_RowInput`'s
+// cases 3 and 5 and `Opt_RebindKey`. One set of four pages serves two devices,
+// by which row of page 5 was taken (`dword_4DD628`, `controlDevice`): the
+// keyboard and mouse, or the gamepad - which does not show the four movement
+// rows, those slots being `Input_Poll`'s hardwired axes. CONFIRM latches the
+// row (`dword_660B84`) and starts oscillator 6, which suspends the whole
+// interface for 500 ms (`Ui_ScreenInput`) - that is what stops the confirm
+// press binding itself. From then on `pollRebind` reads the raw devices each
+// frame until one gives a code it accepts.
+//
+// What it does NOT do, labelled: the panels do not SLIDE in and out
+// (`Ui_SlidePanelFrom`), they appear.
 class OptionsMenu {
 public:
     explicit OptionsMenu(const OptionTree& t);
@@ -173,6 +184,36 @@ public:
     const SettingsBlock& settings() const { return s_; }
     // Items whose APPLY hook ran since the last call, in order.
     std::vector<int> takeApplied() { auto a = std::move(applied_); applied_.clear(); return a; }
+    // ---- the keybinding rows ---------------------------------------------
+    // The compiled defaults the type 5 row restores, and the value column's
+    // names. Without them the rows are drawn with no value and restore nothing.
+    void setBindingSources(const ControlSchemes* defaults, const KeyNames* names) {
+        defaults_ = defaults; names_ = names;
+    }
+    // Oscillator 6's clock, once a frame while the screen is focused.
+    void tick(double ms) { if (osc6Ms_ > 0.0) osc6Ms_ -= ms; }
+    // `byte_4C3F9C & 1`: `Ui_ScreenInput` takes no input.
+    bool suspended() const { return osc6Ms_ > 0.0; }
+    // `dword_660B84`: waiting for a control; the selection cannot move.
+    bool listening() const { return listen_; }
+    // The group of the row being listened on, or -1 - the pad's layout differs
+    // per group (`pad::toDevices`), so a frontend must read the pad under THIS
+    // group's layout or the code it hands in means another button there.
+    int  listenGroup() const;
+    // Case 3's latched arm, one frame of the raw devices. Does nothing while
+    // suspended or not listening.
+    void pollRebind(const DeviceState& st);
+    // OMK's: stop listening, the row unchanged. The original has no way out of
+    // the keyboard page's wait but a key, and a Vita has no key; a pad's START
+    // calls this.
+    void cancelListen();
+    // `dword_4DD628`: 1 the keyboard and mouse, 2 the gamepad.
+    int  controlDevice() const;
+    // Page 7's leave hook (`sub_491FE0`): `Input_InstallScheme(0)`. The live
+    // tables do not move before it, so the key that confirms stays the key
+    // that confirms while its own row is being rebound.
+    bool takeInstall() { const bool r = install_; install_ = false; return r; }
+
     // `Oui` on the save prompt - `sub_4092A0`, the settings-only save.
     bool takeSaveRequest() { const bool r = saveReq_; saveReq_ = false; return r; }
     // `dword_9103C8`.
@@ -231,8 +272,16 @@ private:
     std::vector<Widget> omkWindow(std::vector<Widget> all) const;
     mutable int omkTop_ = 0;                   // the first scrolled row shown
 
+    bool rebindFrom(const DeviceState& st, Device d, int item);   // `Opt_RebindKey`
+    void restoreDefaults();                    // case 5's copies
+    void listenEnd();
+
     const OptionTree* t_;
     OmkOptions* omk_ = nullptr;
+    const ControlSchemes* defaults_ = nullptr;
+    const KeyNames* names_ = nullptr;
+    double osc6Ms_ = 0.0;
+    bool listen_ = false, install_ = false;
     std::vector<std::string> text_;
     std::vector<RowState> rows_;               // 74
     std::map<int, std::vector<std::string>> devices_;

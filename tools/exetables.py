@@ -303,7 +303,7 @@ def t_key_bindings(e):
     The groups are contexts and the engine installs them where their names
     say: `Game_Init` and the end of a fight or a shoot install 0 (Aventure),
     `Fight_Begin` 3, `Shoot_Enter` 2, the swim transitions 1.  Rebinding is
-    group-local — `Opt_RebindKey` scans all 74 option rows but clears only a
+    group-local — `Opt_RebindKey` scans all 74 option rows but swaps only with a
     row in the same group, which is why "Avancer" is UP in Aventure and
     "Reculer" is LEFT in Combat without either disturbing the other.
 
@@ -340,6 +340,47 @@ def c_key_bindings(rows, e):
              {g: sum(1 for x in r if x["group"] == g and x["label"])
               for g in sorted({x["group"] for x in r})},
              {0: 10, 1: 7, 2: 13, 3: 10})]
+
+
+def t_key_names(e):
+    r"""The names a keybinding row shows - 142 records at 0x004D10C8.
+
+    `sub_490BB0(type, code, out)` walks them: `{u32 code, u32 type, char
+    name[260]}`, stopping at 0x004DA574, the option table that follows. Type 1
+    is a keyboard scan code, 2 a joystick code (button k is 48 + k, the axes 0
+    and 4, the rest of the DIJOYSTATE's offsets named too), 3 a mouse button.
+    A keyboard name of one character or less is not the answer: the hook asks
+    Windows (`MapVirtualKeyA`, then the layout table at 0x004DD9B8), because a
+    scan code is a position and the letter on it depends on the keyboard.
+    """
+    base = 0x004D10C8
+    n = (0x004DA574 - base) // 268
+    rows = []
+    for i in range(n):
+        b = e.read(base + 268 * i, 268)
+        code, typ = struct.unpack_from("<II", b, 0)
+        name = b[8:268].split(b"\0")[0].decode("cp1252")
+        rows.append(dict(code=code, type=typ, name=name))
+    return {"names": rows}
+
+
+def c_key_names(rows, e):
+    r = rows["names"]
+    # The cross-reference the data can fail: every code the three compiled
+    # schemes bind has a name, on its own device.
+    named = {(x["type"], x["code"]) for x in r}
+    b = t_key_bindings(e)["rows"]
+    missing = [(t, x[k]) for x in b for k, t in
+               (("keyboard", 1), ("mouse", 3), ("joystick", 2))
+               if x[k] and (t, x[k]) not in named]
+    return [("records", len(r), 142),
+            ("keyboard names", sum(1 for x in r if x["type"] == 1), 122),
+            ("joystick names", sum(1 for x in r if x["type"] == 2), 15),
+            ("mouse names", sum(1 for x in r if x["type"] == 3), 4),
+            ("...the ten joystick buttons, 48..57",
+             sorted(x["code"] for x in r if x["type"] == 2 and x["code"] >= 48),
+             list(range(48, 58))),
+            ("bound codes with no name", missing, [])]
 
 
 def t_ui(e):
@@ -1615,6 +1656,7 @@ _TABLES = [
     ("camera_presets", t_camera_presets, c_camera_presets, "ASSETS"),
     ("adpcm",          t_adpcm,          c_adpcm,          "ASSETS"),
     ("key_bindings",   t_key_bindings,   c_key_bindings,   "ASSETS"),
+    ("key_names",      t_key_names,      c_key_names,      "UI"),
     ("ui",             t_ui,             c_ui,             "UI"),
     ("ui_widgets",     t_ui_widgets,     c_ui_widgets,     "UI"),
     ("vm_announce",    t_vm_announce,    c_vm_announce,    "SCRIPT_VM"),

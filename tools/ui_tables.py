@@ -279,11 +279,16 @@ def options(e=None):
         ch = []
         if 0 < n <= 10:
             ch = [(txt(_i(r, 52 + 4 * k)), _i(r, 92 + 4 * k)) for k in range(n)]
-        out.append(dict(
+        row = dict(
             index=i, type=_i(r, 0), kind=OPT_TYPE.get(_i(r, 0), "?"),
             label=txt(_i(r, 24)), label_id=_i(r, 24), choices=ch,
             hooks=(_i(r, 12) & 0xFFFFFFFF, _i(r, 16) & 0xFFFFFFFF),
-            seq=_i(r, 136)))
+            seq=_i(r, 136))
+        # A KEYBIND row's +92 is its GROUP and its +112 its ACTION: the apply
+        # hook 0x004902C0 writes `table[group * 14 + action]` from them.
+        if _i(r, 0) == 3:
+            row["group"], row["action"] = _i(r, 92), _i(r, 112)
+        out.append(row)
     return out
 
 

@@ -171,14 +171,57 @@ std::uint32_t Input::frame(const DeviceState& st) {
 bool Input::rebind(int group, int slot, Device d, int code) {
     if (group < 0 || group >= kGroups || slot < 0 || slot >= kSlots) return false;
     // Refused before the scan: 0 and 4 are the joystick axes, 1 is ESC.
-    if (code == 0 || code == 1 || code == 4) return false;
+    if (!bindableCode(code)) return false;
+    const std::size_t me = static_cast<std::size_t>(cell(group, slot, d));
     for (int a = 0; a < kSlots; ++a) {
-        if (a == slot) continue;
+        if (a == slot || schemes_.label(group, a).empty()) continue;
         const std::size_t k = static_cast<std::size_t>(cell(group, a, d));
-        if (bound_[k] == code) bound_[k] = 0;   // group-local, same device
+        if (bound_[k] == code) { bound_[k] = bound_[me]; break; }   // the swap
     }
-    bound_[static_cast<std::size_t>(cell(group, slot, d))] = code;
+    bound_[me] = code;
     if (group == group_) installScheme(group);
+    return true;
+}
+
+void Input::setTables(const std::array<std::uint32_t, 56>& keyboard,
+                      const std::array<std::uint32_t, 56>& mouse,
+                      const std::array<std::uint32_t, 56>& joystick) {
+    for (int g = 0; g < kGroups; ++g)
+        for (int a = 0; a < kSlots; ++a) {
+            const std::size_t i = static_cast<std::size_t>(g * kSlots + a);
+            bound_[static_cast<std::size_t>(cell(g, a, Device::Keyboard))] = static_cast<int>(keyboard[i]);
+            bound_[static_cast<std::size_t>(cell(g, a, Device::Mouse))]    = static_cast<int>(mouse[i]);
+            bound_[static_cast<std::size_t>(cell(g, a, Device::Joystick))] = static_cast<int>(joystick[i]);
+        }
+}
+
+int Input::bound(int group, int slot, Device d) const {
+    if (group < 0 || group >= kGroups || slot < 0 || slot >= kSlots) return 0;
+    return bound_[static_cast<std::size_t>(cell(group, slot, d))];
+}
+
+bool readOneControl(const DeviceState& st, Device d, int& code) {
+    code = 0;
+    const auto lowest = [&](int lo, int hi) {
+        int best = -1;
+        for (int c : st.of(d))
+            if (c >= lo && c <= hi && (best < 0 || c < best)) best = c;
+        return best;
+    };
+    int c = -1;
+    switch (d) {
+    case Device::Keyboard: c = lowest(0, 255); break;
+    case Device::Mouse:    c = lowest(12, 14); break;
+    case Device::Joystick:
+        c = lowest(48, 57);
+        if (c < 0 && (st.joyX != 0 || st.joyY != 0)) {
+            const int ax = st.joyX < 0 ? -st.joyX : st.joyX, ay = st.joyY < 0 ? -st.joyY : st.joyY;
+            c = ax <= ay ? 4 : 0;
+        }
+        break;
+    }
+    if (c < 0) return false;
+    code = c;
     return true;
 }
 

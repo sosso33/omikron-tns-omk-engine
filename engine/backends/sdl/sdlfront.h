@@ -115,6 +115,7 @@ public:
     void setWindowTitle(const std::string& t) override;
     void startTextInput() override;
     void fieldKeyboard(bool on) override;
+    std::string keyCap(int dik) const override;
     std::string lastError() const override;
 
     void close() override;

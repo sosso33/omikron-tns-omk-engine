@@ -232,6 +232,7 @@ struct PlayState {
     omk::Surface view3dPic{};
     omk::MenuCloud cloud{};
     omk::ControlSchemes schemes{};
+    omk::KeyNames keyNames{};
     std::optional<omk::Input> in_;
     omk::OpcodeTable opcodes{};
     omk::GameState state{};

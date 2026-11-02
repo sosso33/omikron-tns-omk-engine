@@ -1982,10 +1982,10 @@ void ScreenComposer::drawItemSprite(std::uint32_t (&eff0)[3], bool sheetOk, bool
 // lit - and lit is bank B 0x40000008, or the selected row (the screen's one
 // list is always its panel's current one).
 //
-// NOT DRAWN, labelled: the keybinding rows' value column (`"%s; %s"` of two
-// key names out of the table at 0x004D10CC, not lifted), and Accel 3D's
-// special case, string 68 for the last driver, which the caller supplies as
-// the list entry itself.
+// A keybinding row's value column is `OptionsMenu::widgets`' (`"%s; %s"` of two
+// key names, `ui/keynames.h`), drawn as a caption is. NOT DRAWN, labelled:
+// Accel 3D's special case, string 68 for the last driver, which the caller
+// supplies as the list entry itself.
 OptionsDrawn ScreenComposer::drawOptions(Surface& fb, const OptionsMenu& m) const {
     OptionsDrawn out;
     std::uint8_t lc[3];

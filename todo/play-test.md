@@ -119,6 +119,12 @@ and X/SQUARE is the first-person view (the adventure group's own layout,
 original's look and the remaster's everywhere, START is the pause screen. **The button layout and the stick's dead zone are
 this port's choices** (`src/input/pad.h`) - say if they feel wrong.
 
+**Rebinding the pad**: `Options` > `Contrôles` > `Configuration de la manette` >
+a group > a row, CONFIRM, wait half a second, press a button. The row shows
+`JoyPad Bt<k>`. A taken button swaps with its row; any key or START cancels;
+nothing on screen says the row is waiting, as in the original. BACK down the
+pages to `Sauvegarder les options` to keep it across a restart.
+
 ## 11. THE GAME THROUGH THE VITA'S RENDERER, on this Mac
 
 ```

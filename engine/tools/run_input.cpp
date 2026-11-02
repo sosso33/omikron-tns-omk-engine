@@ -124,13 +124,13 @@ int main(int argc, char** argv) {
     const bool refuse4 = r.rebind(0, 2, Device::Keyboard, 4);
     // bind Avancer to LEFT, which slot 0 of the same group already holds
     const bool took = r.rebind(0, 2, Device::Keyboard, 203);
-    const int slot0After = r.live(0, Device::Keyboard);     // cleared -> 0
+    const int slot0After = r.live(0, Device::Keyboard);     // swapped -> 200, UP
     const int slot2After = r.live(2, Device::Keyboard);     // 203
     r.installScheme(3);
     const int combatSlot0 = r.live(0, Device::Keyboard);    // untouched, 203
     out.insert(out.end(), {refuse0 ? 1 : 0, refuse1 ? 1 : 0, refuse4 ? 1 : 0,
                            took ? 1 : 0, slot0After, slot2After, combatSlot0});
-    std::printf("rebind: codes 0/1/4 %s; binding Avancer to LEFT clears "
+    std::printf("rebind: codes 0/1/4 %s; binding Avancer to LEFT swaps with "
                 "Aventure slot 0 (%d) and leaves Combat's alone (%d)\n",
                 (!refuse0 && !refuse1 && !refuse4) ? "all refused" : "NOT refused",
                 slot0After, combatSlot0);

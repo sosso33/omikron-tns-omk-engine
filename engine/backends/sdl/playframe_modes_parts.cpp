@@ -1616,6 +1616,22 @@ void PlayState::modesScreenWalk(omk::Input& in, omk::OptionsMenu& optMenu, omk::
 // The input word handed to a hosted options page (from `modesScreenWalk`)
 void PlayState::modesOptionsInput(std::uint32_t& uiBits, bool optActive, bool ate,
                                   omk::OptionsMenu& optMenu) {
+    // A KEYBINDING ROW: oscillator 6's clock, and the latched row reading the
+    // raw devices (`Opt_RowInput` case 3) - the pad under the ROW'S group, whose
+    // layout is the one the code must mean. While either holds, the interface
+    // takes no word at all.
+    if (optActive) {
+        optMenu.tick(frameSec * 1000.0);
+        if (optMenu.listening() && (host.pad.buttons & omk::pad::Start)) {
+            optMenu.cancelListen();
+        } else if (optMenu.listening()) {
+            omk::DeviceState raw = devices;
+            raw.joystick.clear();
+            omk::pad::toDevices(host.pad, raw, optMenu.listenGroup());
+            optMenu.pollRebind(raw);
+        }
+        if (optMenu.listening() || optMenu.suspended()) uiBits = 0;
+    }
     if (uiBits && optActive) {
         // `Ui_ScreenInput` on the FOCUSED screen, and its sound
         if (!ate) optMenu.press(uiBits);
@@ -1691,7 +1707,15 @@ void PlayState::modesOptionsHost(bool optHost, bool optOnSneakTab, omk::OptionsM
         // and the viewer's own copies are refreshed from it - unless a
         // flag on the command line holds one, which outranks the menu
         // the way it outranks the save.
-        for (const int item : optMenu.takeApplied()) {
+        // `Input_InstallScheme` reads the block, so the tables follow it at
+        // once; the live ones wait for the next install, as in the engine
+        const std::vector<int> appliedItems = optMenu.takeApplied();
+        if (!appliedItems.empty()) {
+            const omk::SettingsBlock& b = optMenu.settings();
+            in.setTables(b.keyboard, b.mouse, b.joystick);
+        }
+        if (optMenu.takeInstall()) in.installScheme(0);
+        for (const int item : appliedItems) {
             settings.v = optMenu.settings();
             // a slot save writes the header too (`Game_WriteSave`'s
             // first copy), so it must carry what the menu changed
@@ -1763,21 +1787,9 @@ void PlayState::modesOptionsHost(bool optHost, bool optOnSneakTab, omk::OptionsM
         // settings-only save - the 3496 bytes over the file's head,
         // or a new file of 256 empty slots behind them
         if (optMenu.takeSaveRequest()) {
-            omk::SettingsBlock out = settings.v;
-            if (settings.bindings != omk::Settings::Source::Save) {
-                // the header carries the three binding tables verbatim,
-                // and a block that never came from a save has none
-                for (int g = 0; g < 4; ++g)
-                    for (int k = 0; k < 14; ++k) {
-                        const std::size_t i = static_cast<std::size_t>(g * 14 + k);
-                        out.keyboard[i] = static_cast<std::uint32_t>(
-                            std::max(0, in.schemes().code(g, k, omk::Device::Keyboard)));
-                        out.mouse[i] = static_cast<std::uint32_t>(
-                            std::max(0, in.schemes().code(g, k, omk::Device::Mouse)));
-                        out.joystick[i] = static_cast<std::uint32_t>(
-                            std::max(0, in.schemes().code(g, k, omk::Device::Joystick)));
-                    }
-            }
+            // the header carries the three binding tables verbatim, and boot
+            // filled them from the compiled ones if there was no save
+            const omk::SettingsBlock& out = settings.v;
             auto file = omk::readSaveFile(savesPath, dataRoot + "/IAM/GAMES");
             if (file.size() < omk::kSaveFileSize) file = omk::blankSaveFile(out);
             else omk::putSettings(file, out);

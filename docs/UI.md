@@ -2184,8 +2184,8 @@ sliding onto the heading switches the page under it.
 
 ### Rebinding
 
-`Input_ReadOneControl(out, device)` returns the first control held down, in one
-code space: **0..255** a keyboard scan code, **48..57** a joystick button (its
+`Input_ReadOneControl(out, device)` returns the first control held down of that
+one device (the C misleads here, see "The keybinding rows"), in one code space: **0..255** a keyboard scan code, **48..57** a joystick button (its
 index plus 48 — the offset of `rgbButtons` in `DIJOYSTATE`), **12/13/14** a
 mouse button. `Opt_RebindKey` calls it with the device for the slot it is
 filling — keyboard, joystick, mouse — and stores the code in the option
@@ -3801,7 +3801,7 @@ hook and the last of this module's big unread bodies:
 |---|---|
 | 0 choice, 4 device | LEFT steps the choice back, **RIGHT and CONFIRM** step it forward, both wrapping |
 | 1 slider | LEFT −10 with a floor of 0, RIGHT +10 |
-| 3 keybind | reads a control; `dword_660B84` latches the rebind so the selection cannot move while it waits |
+| 3 keybind | reads a control; `dword_660B84` latches the rebind so the selection cannot move while it waits (below, "The keybinding rows") |
 | 5 defaults | CONFIRM copies one of **three compiled 224-byte tables** over the live bindings, chosen by `dword_4DD628` (1 keyboard/mouse, 2 gamepad) |
 | 6 back | CONFIRM at the **root** returns to screen 29 |
 
@@ -4525,7 +4525,7 @@ Options (page 1, Opt_PageRoot 0x00491200)
 └── Contrôles
     ├── Configuration du clavier et de la souris ─┐
     ├── Configuration de la manette ──────────────┤  (both, device 1 vs 2)
-    │   └── Contrôles Aventure · Nager · Tirer · Combat   — 44 keybinding rows
+    │   └── Contrôles Aventure · Nager · Tirer · Combat   — 40 keybinding rows
     ├── Configuration de la souris   Sensibilité H/V · Souris inversée
     └── ⟨page 12⟩  Configuration de la manette · Force FeedBack   ← unreachable
 ```
@@ -4546,6 +4546,65 @@ Two findings out of that tree, and the second is the kind that needs the code:
   it. Force Feedback ships as a setting no menu can reach. Item **15,
   `Sous-titres`,** is the same story one level down: a complete choice row with
   both hooks, on no page.
+
+### The keybinding rows
+
+Ported 2026-11-02 (`ui/options.cpp`, `ui/keynames.h`; `verify.py: engine:
+rebinding`). What the pages do, each read from the code:
+
+* **The device is which row of page 5 you took.** `dword_4DD628` is that page's
+  saved selection: 1 `Configuration du clavier et de la souris`, 2 `Configuration
+  de la manette`. It titles page 6 and decides everything below.
+* **The gamepad's pages do not show the four movement rows.** Each of the four
+  builders leaves rows 1..4 unbound under device 2, and those rows are slots
+  0..3 in every group - `Input_Poll`'s hardwired axes. A row's group and action
+  are its record's `+92` and `+112`, the apply hook 0x004902C0 writing
+  `table[group * 14 + action]`; `tools/ui_tables.py` lifts them.
+* **Oscillator 6 suspends the whole interface for 500 ms** (`Ui_ScreenInput`
+  tests `byte_4C3F9C & 1`). It runs when a keybinding page is built, when a row
+  latches and when a row binds. That is the only thing stopping the confirm press
+  from binding itself: the rebind reads the RAW device, not the edge-filtered
+  word, so ENTER still held half a second later does bind ENTER.
+* **A taken code SWAPS.** The scan walks the 74 records for the first keybind row
+  of the same group holding the code, and gives it THIS row's old code. It is
+  not a clear (this repo read it as one until now: `Input::rebind`, `tools/sim`
+  and the function's banner all said so) - nothing is ever left unbound. The
+  assembly is unambiguous: a `mov` from one record's cell to the other's.
+* **The ways out.** Device 1: a key or a mouse button; ESC is refused, so nothing
+  else ends the wait. Device 2: a joystick button binds, an axis is refused and
+  keeps waiting, and ANY key (`Opt_RebindKey(item, -1)`, ESC included) leaves the
+  row as it was. OMK adds one: a pad's START cancels on either device, because a
+  Vita has no key to press on the keyboard's page.
+* **The live tables do not follow at once.** The rows write the block's tables,
+  and `Input_InstallScheme` reads those; on these pages only Aventure's leave
+  hook `sub_491FE0` calls it. So the key that confirms keeps confirming while its
+  own row is rebound, and once the page closes the menu itself answers to the new
+  keys: rebind `Avancer` and the menus' UP has moved too.
+* **The defaults row** copies the compiled tables, ALL four groups, keyboard and
+  mouse on device 1 and joystick on device 2, and re-enters the page.
+* **The value column** is `"%s; %s"` of the keyboard's name and the mouse's on
+  device 1, `"%s"` of the joystick's on device 2, out of the 142 records at
+  0x004D10C8 (`tables/key_names.json`): `{code, type, name[260]}`. A keyboard name
+  of one character or less is not the answer: `sub_490BB0` asks Windows, since a
+  scan code is a position (`Frontend::keyCap` is the port's).
+* **There is no visible cue that a row is listening.** Bank B 0x40000002 keeps
+  the row lit by selection and panel flag 0x80 refuses BACK; nothing blinks. The
+  port does the same.
+
+**A decompiler trap:** `Input_ReadOneControl` reads in the C as if the keyboard
+arm falls through into the joystick's (`goto LABEL_6`), which would have a
+keyboard page bind pad buttons as scan codes. The listing does not:
+`loc_43E3DA` re-tests the device against 4. Each read touches its own device.
+
+**The port's frontends must read the pad under the ROW'S group**
+(`optMenu.listenGroup()`): SQUARE is button 3 under Aventure and button 2 under
+Tirer (`input/pad.h`), so a code read under the wrong layout means another
+button once that group is installed.
+
+**The tables are the block's, at boot too.** `Input_InstallScheme` copies the
+header's tables, not the compiled ones; the port read them from a saves file and
+then ignored them until this work. The shipped `IAM/GAMES` holds the compiled
+values, so nothing changes until someone rebinds.
 
 ### An extraction trap in this range
 

@@ -1542,29 +1542,31 @@ def bindings(exe=None):
 def rebind(rows, item, slot, code):
     """`Opt_RebindKey`'s conflict rule, over a {item: {slot: code}} map.
 
-    The scan is over the whole 74-record option table but it only clears a row
+    The scan is over the whole 74-record option table but it only touches a row
     in the SAME GROUP - `*(v7-23) == 3 && *v7 == rec[item].+92` - which is why
     "Avancer" can be the same key in Aventure and in Combat without either
-    losing it. Codes 0, 1 and 4 are refused before the scan (0 and 4 are the
-    joystick axes, 1 is ESC).
+    losing it. The first such row holding the code takes THIS row's old code,
+    `rec[other][slot] = rec[item][slot]`: a swap, not a clear. Codes 0, 1 and 4
+    are refused before the scan (0 and 4 are the joystick axes, 1 is ESC).
 
-    `rows` is {item: {"group": g, "slot": {n: code}}}; returns the items whose
-    binding was cleared.
+    `rows` is {item: {"group": g, "slot": {n: code}}}; returns the items that
+    took this row's old code.
     """
     if code in (0, 1, 4):
         return None
     me = rows.get(item)
     if me is None:
         return None
-    cleared = []
-    for other, r in rows.items():
+    swapped = []
+    for other, r in sorted(rows.items()):
         if other == item or r["group"] != me["group"]:
             continue
         if r["slot"].get(slot) == code:
-            r["slot"][slot] = 0
-            cleared.append(other)
+            r["slot"][slot] = me["slot"].get(slot, 0)
+            swapped.append(other)
+            break
     me["slot"][slot] = code
-    return cleared
+    return swapped
 
 # ------------------------------------------------------------ the name field
 #: The start menu's new-game panel keeps a text field in its list 0, whose

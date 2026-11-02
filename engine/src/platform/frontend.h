@@ -268,6 +268,10 @@ public:
     // Everywhere else typing is already on (`startTextInput`) or the field
     // asks for itself (the Vita's modal IME), and this does nothing.
     virtual void fieldKeyboard(bool) {}
+    // The character on the key at this scan code on the host's keyboard, as the
+    // interface's fonts encode it, or "" when the host cannot say. What
+    // `sub_490BB0` asks Windows (`ui/keynames.h`).
+    virtual std::string keyCap(int) const { return {}; }
     // The host library's last error, for a message - "" when it has none.
     virtual std::string lastError() const { return {}; }
 
