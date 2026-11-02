@@ -2103,7 +2103,18 @@ colour is `D3DFVF_DIFFUSE` in both:
 | **708** | `0x2C4` | `XYZRHW \| DIFFUSE \| SPECULAR \| TEX2` | **40** |
 
 and both sizes are exactly the strides the two emit loops step by — 32 for the
-plain path, 40 for the environment-map one that carries a second UV set. A
+plain path, 40 for the environment-map one that carries a second UV set. The
+flags `24` are `D3DDP_DONOTUPDATEEXTENTS | D3DDP_DONOTLIGHT` (8 | 16) - and NOT
+`D3DDP_DONOTCLIP` (4): the device clips the transformed triangles to the
+viewport itself; the engine clips only against the NEAR plane
+(`sub_495E40`, from `Render_SubmitMesh`), whose per-face tests are all on
+the pool's projected values - the screen x/y at `+20`/`+24` against `0` and
+the screen size (`flt_6A2BA0`/`flt_6A2BA4`), the integer depth at `+16`
+against `dword_6A2B98`, and the facing as the sign of a SCREEN-SPACE cross
+product (read 2026-11-02, `todo/handoff-classic-mac.md` 3i item 11). Not
+indexed: `Render_FlushBuckets` writes each face's three vertices out of the
+pool into the 32/40-byte buffer, clamping the colour, and makes one
+`DrawPrimitive` a non-empty bucket. A
 `D3DFVF_DIFFUSE` field is a **`D3DCOLOR`**, which is `0xAARRGGBB`: little-endian
 byte 0 **B**, byte 1 **G**, byte 2 **R**, byte 3 **A**. That is the D3D ABI, not
 an inference, and it settles the order without any judgement about which render

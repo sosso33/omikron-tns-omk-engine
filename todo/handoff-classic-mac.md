@@ -1734,6 +1734,75 @@ a software renderer, it is suspicious", 2026-10-30)**:
      corner (1087596). Both builds on the stick, `engine: classic build`
      green. The iMac's A/B is unchanged: `--profile` with and without
      `--gl1-fetch-all`, `gl1: submit` self time against 29.2 ms.
+     **CORRECTION (2026-11-02): STEPS 1 AND 2 NEVER REACHED THE STICK.** The
+     Crucial_X8 drive - and with it `omk-devtools.sparsebundle`, Retro68 -
+     had been disconnected since ~22:58 on 2026-11-01; `make classic` then
+     prints "No Retro68 at RETRO68=... the classic Mac build is optional",
+     exits 0 and builds nothing, the filters on its output hid that line,
+     and `engine: classic build` SKIPPED (counted as not failed). The
+     stick's apps stayed the lock build of 22:41 (`cmp` equal to it), and
+     "both builds on the stick" above was false for steps 1 and 2. TRAP: after
+     `make classic`, assert `build/classic/OMKPlay.APPL` is newer than the
+     change, and read the check's `ok`/`skipped`, not its failure count.
+     **The reader's second capture (`omk_test_profile_02`, 2026-11-02) is
+     therefore the LOCK BUILD AGAIN** - a repeat of the first, not the A/B:
+     ANEKBAH at 100 m (frames 4110-6370, 2261 frames): median frame 84.7 ms
+     (90.2 the first time), `gl1: submit` 47.4 = 27.6 our own + 20.0 in the
+     draw calls (29.2 + 20.3), 45.9 draw calls a frame, 23-26 of them fog
+     passes. The baseline repeats within ~6% - the noise the A/B must beat.
+     Memory again ~63 MB used by the end (lowest FreeMem 33287 KB).
+     REBUILT once the drive was back (2026-11-02 00:15): both apps newer than
+     `gl1render.cpp`, `engine: classic build` ok (not skipped), copied to
+     the stick and `cmp`-equal - steps 1 and 2 are on it now.
+     **STEPS 1-2 MEASURED ON THE iMAC (the reader's `omk_test_profile_03`,
+     2026-11-02): NO GAIN.** The new build (the `fetched ahead` line, the
+     lock taken), ANEKBAH at 100 m, frames 3670-6850 (3181): median frame
+     89.1 ms; `gl1: submit` 51.3 = **29.9 our own** + 21.7 in 46.0 draw
+     calls. The three captures did the same work a frame (the `60 passes`
+     lines over each 100 m stretch):
+     | capture | build | triangles looked at | corners | transformed | our own ms | us a triangle |
+     |---|---|---|---|---|---|---|
+     | 1 | lock | 10525 | 26763 | 11314 | 29.2 | 2.77 |
+     | 2 | lock | 10461 | 25653 | 10530 | 27.6 | 2.64 |
+     | 3 | lock + steps 1-2 | 10202 | 24703 | 10151 | 29.9 | 2.93 |
+     On the iMac the look-ahead now fetched 44-50% of the corners
+     (787472 of 1773879 in one window), as on the M1 - and the time did not
+     move. So the corner bytes' bus traffic was NOT the submit loop's limit
+     (the old hints were hiding their latency; the bus had room). The 29 ms
+     is elsewhere in the loop - per-triangle work, the slot lookups, the
+     colour and emit, the near/edge clip - and the capture cannot split it
+     (a named span costs 0.86 us on the iMac, a third of a triangle). The
+     unlocked capture (`--gl1-no-lock`) is still to come.
+  11. **THE ORIGINAL'S DIRECT3D PATH AGAINST GL1 (the reader's "the original
+     game was made for computers of the iMac G3 era - analyse it, especially
+     the D3D part", 2026-11-02)**. Read: `Raster_DrawTriangles` (20_ddraw.c
+     1534), `Render_FlushBuckets` (873), `Render_SubmitMesh` (26_ole.c 2551),
+     with what `docs/ASSETS.md` and `todo/cpu-vs-original.md` /
+     `ram-vs-original.md` had already read (`sub_4947F0`, the pools).
+     | | the original (D3D, IDirect3DDevice3) | GL1 on the iMac |
+     |---|---|---|
+     | vertex work | `sub_4947F0`: a MESH's vertices transformed ONCE, in order, into a shared 48-byte pool (75000), one divide a vertex | per CORNER (3 a triangle, 48 bytes each, flattened at load), a vertex re-found by a hash index, per-vertex slots with draw stamps, "doubt" bytes |
+     | face tests | on the pool's PROJECTED values: screen x/y against the screen, an integer near depth, a 2D cross product | outcodes against five view-space planes, a 3D determinant |
+     | clipping | NEAR plane only on the CPU; the device clips the edges (no `DONOTCLIP`) | near AND the four edges on the CPU (a Tiger Radeon misdrew unclipped triangles) |
+     | submission | one `DrawPrimitive(TRIANGLELIST)` a bucket, TL vertices (`XYZRHW`, 32/40 bytes), not indexed | `glDrawElements` a state run, 4-float clip positions through identity matrices, locked |
+     | FOG | **Direct3D TABLE fog** (`FOGTABLEMODE` 3, linear, start D/4, end D; per bucket: off for near and transparent, doubled for cutouts) - THE CARD'S | per vertex on the CPU, folded into the colour; with no colour sum (OS 9's OpenGL 1.1) a SECOND PASS - **23-26 of the 46 draw calls a 100 m frame** |
+     | set in memory | the `.3DO` as loaded, 2.26 MB; faces index vertices | 11.3 MB of corners (+ 6.7 MB copy for the moving meshes) - why every iMac run ends near 63 MB |
+     WHAT IT SUGGESTS, by size: (1) THE FOG ON THE CARD, as the original's:
+     OpenGL 1.1's own `GL_FOG` (linear) is the table fog's equal and the Rage
+     128 does it; it needs the driver to know eye depth - the view-space
+     position sent with a projection MATRIX (the 4x4 the driver already
+     runs, with identity, today) instead of clip coordinates - and the per-
+     batch rules above as `glFog` state. It would remove the second pass
+     (half the draw calls, a blended refill of every fogged pixel) and the
+     per-vertex fog arithmetic. Caution on record: on Tiger, "the GPU's own
+     transform ... its fog darkened the near scene" (classic-mac-port-1999.md
+     544) - to be understood, not repeated. (2) THE SUBMIT IN THE
+     ORIGINAL'S SHAPE: a mesh's vertices transformed once and in order, its
+     faces indexing them, tests on projected values - the per-corner
+     hashing, stamps and doubt bytes are what the flat corner layout costs
+     (the 29 ms; steps 1-2 showed the memory fetches are not it). The large
+     change, and it would also bring the set's memory towards the
+     original's. (3) the edges left to the driver where it clips right.
      * **the films (through GL, not `--films-direct`)**: 56-80 ms of
        `MoviesTask` a picture, ~6 pictures a second; a picture shown costs
        converted 4.9 + uploaded 3.5 + drawn and swapped 9.4 ms. QuickTime's
