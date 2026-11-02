@@ -195,6 +195,10 @@ int PlayOptions::parse(int argc, char** argv) {
 "  --op-at F:OP     HARNESS: one opcode (106, 107, 116, 117, 150, 151 or 152) run as a\n"
 "                   context at frame F; repeatable as a comma list\n"
 "  --shoot-end N    shoot.end 1 at frame N - the harness's way OUT of the mode\n"
+"  --pad A-B:F,...  hold a pad over frames A..B, with no controller: buttons south east\n"
+"                   west north lshoulder rshoulder ltrigger rtrigger start back up down\n"
+"                   left right, sticks lx= ly= rx= ry= (-1000..1000), and triggers (the\n"
+"                   pad has them). Repeatable\n"
 "  --water-cam preset  the swim camera's OLD fixed-offset reading, to lay\n"
 "                   beside the chase camera the port now uses\n""  --shoot-eye N    raise the shoot camera N inches. A DEPARTURE: camera\n"
 "                   preset row 4 puts the eye at (0,0,0) on the subject -\n"
@@ -841,6 +845,40 @@ int PlayOptions::parse(int argc, char** argv) {
                         &hideShow[2], &hideShow[3]);
         else if (a == "--shoot") startShoot = true;
         else if (a == "--shoot-end" && i + 1 < argc) shootEndAt = std::atol(argv[++i]);
+        else if (a == "--pad" && i + 1 < argc) {
+            const std::string spec = argv[++i];
+            PadRun run;
+            int used = 0;
+            if (std::sscanf(spec.c_str(), "%ld-%ld:%n", &run.from, &run.to, &used) < 2 || !used) {
+                std::fprintf(stderr, "--pad wants FROM-TO:field,...: %s\n", spec.c_str());
+                return 2;
+            }
+            std::size_t at = static_cast<std::size_t>(used);
+            while (at < spec.size()) {
+                const std::size_t end = std::min(spec.find(',', at), spec.size());
+                const std::string f = spec.substr(at, end - at);
+                at = end + 1;
+                static const std::pair<const char*, std::uint32_t> kBits[] = {
+                    {"south", omk::pad::South}, {"east", omk::pad::East}, {"west", omk::pad::West},
+                    {"north", omk::pad::North}, {"lshoulder", omk::pad::LeftShoulder},
+                    {"rshoulder", omk::pad::RightShoulder}, {"ltrigger", omk::pad::LeftTrigger},
+                    {"rtrigger", omk::pad::RightTrigger}, {"start", omk::pad::Start},
+                    {"back", omk::pad::Back}, {"up", omk::pad::DpadUp}, {"down", omk::pad::DpadDown},
+                    {"left", omk::pad::DpadLeft}, {"right", omk::pad::DpadRight}};
+                bool known = false;
+                for (const auto& [name, bit] : kBits)
+                    if (f == name) { run.pad.buttons |= bit; known = true; }
+                if (f == "triggers") { run.pad.hasTriggers = true; known = true; }
+                const std::string key = f.substr(0, f.find('='));
+                const int value = f.find('=') == std::string::npos ? 0 : std::atoi(f.c_str() + f.find('=') + 1);
+                if (key == "lx") { run.pad.lx = value; known = true; }
+                if (key == "ly") { run.pad.ly = value; known = true; }
+                if (key == "rx") { run.pad.rx = value; known = true; }
+                if (key == "ry") { run.pad.ry = value; known = true; }
+                if (!known) { std::fprintf(stderr, "--pad: no field \"%s\"\n", f.c_str()); return 2; }
+            }
+            padRuns.push_back(run);
+        }
         else if (a == "--shoot-health" && i + 1 < argc) shootHealth = std::atoi(argv[++i]);
         else if (a == "--player-at" && i + 1 < argc) {
             // a second `--player-at` is a second, later placement

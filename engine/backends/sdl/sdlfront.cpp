@@ -493,6 +493,9 @@ void SdlFrontend::readPad(omk::HostInput& out) {
     for (const auto& [b, m] : map) if (btn(b)) out.pad.buttons |= m;
     out.pad.lx = axis(SDL_GAMEPAD_AXIS_LEFTX);  out.pad.ly = axis(SDL_GAMEPAD_AXIS_LEFTY);
     out.pad.rx = axis(SDL_GAMEPAD_AXIS_RIGHTX); out.pad.ry = axis(SDL_GAMEPAD_AXIS_RIGHTY);
+    if (axis(SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > omk::pad::kTriggerPress)  out.pad.buttons |= omk::pad::LeftTrigger;
+    if (axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > omk::pad::kTriggerPress) out.pad.buttons |= omk::pad::RightTrigger;
+    out.pad.hasTriggers = SDL_GamepadHasAxis(pad_, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
 #else
     if (!pad_) {
         for (int i = 0; i < SDL_NumJoysticks() && !pad_; ++i)
@@ -515,6 +518,12 @@ void SdlFrontend::readPad(omk::HostInput& out) {
     for (const auto& [b, m] : map) if (btn(b)) out.pad.buttons |= m;
     out.pad.lx = axis(SDL_CONTROLLER_AXIS_LEFTX);  out.pad.ly = axis(SDL_CONTROLLER_AXIS_LEFTY);
     out.pad.rx = axis(SDL_CONTROLLER_AXIS_RIGHTX); out.pad.ry = axis(SDL_CONTROLLER_AXIS_RIGHTY);
+    if (axis(SDL_CONTROLLER_AXIS_TRIGGERLEFT) > omk::pad::kTriggerPress)  out.pad.buttons |= omk::pad::LeftTrigger;
+    if (axis(SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > omk::pad::kTriggerPress) out.pad.buttons |= omk::pad::RightTrigger;
+#if !defined(__vita__)   // the Vita's own pad has no triggers, whatever a mapping says
+    out.pad.hasTriggers = SDL_GameControllerGetBindForAxis(pad_, SDL_CONTROLLER_AXIS_TRIGGERRIGHT).bindType
+                          != SDL_CONTROLLER_BINDTYPE_NONE;
+#endif
 #endif
     // START is the menu key, read straight from `held` (`pad::kEscape`)
     if (out.pad.buttons & omk::pad::Start) out.held.insert(omk::pad::kEscape);

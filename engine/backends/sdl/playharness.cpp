@@ -298,6 +298,18 @@ void PlayState::harnessHoldAndCall() {
     }
 }
 
+// --pad: a pad held over a stretch of frames, as a frontend would report it.
+// START reaches `held` the way `readPad` puts it there.
+void PlayState::harnessPad() {
+    for (const auto& run : padRuns) {
+        if (frameNo < run.from || frameNo > run.to) continue;
+        const std::uint32_t b = host.pad.buttons | run.pad.buttons;
+        host.pad = run.pad;
+        host.pad.buttons = b;
+        if (b & omk::pad::Start) host.held.insert(omk::pad::kEscape);
+    }
+}
+
 // --shoot-end: shoot.end 1 at a frame
 void PlayState::harnessShootEnd() {
     auto& session = *session_;

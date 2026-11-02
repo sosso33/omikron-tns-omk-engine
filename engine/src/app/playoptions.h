@@ -8,6 +8,7 @@
 // a platform with no command line (the Vita) can fill one directly.
 #pragma once
 
+#include "input/pad.h"       // `--pad`
 #include "actor/sliders.h"   // kDefaultStreetActivity, `--density`'s default
 
 #include <cstdint>
@@ -286,6 +287,10 @@ struct PlayOptions {
     // --gandhar-health N: HARNESS, his record +92 at his entry
     int   gandharHealth = -1;
     int fightHealth = -1;   // --fight-health N: a HARNESS, the player's Vie at Fight_Begin
+    // --pad FROM-TO:field,...: a pad held over those frames, for a run with no
+    // controller - a harness, as `--hold` is for the keys
+    struct PadRun { long from = 0, to = 0; omk::pad::Pad pad; };
+    std::vector<PadRun> padRuns;
     long shootEndAt = -1;      // --shoot-end N: `shoot.end 1` at frame N
     float standAt[4] = {0, 0, 0, 0};
     bool haveStand = false;      // `--stand x,y,z,yaw`: put the player down there after the hand-over

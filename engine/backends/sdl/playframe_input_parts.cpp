@@ -152,6 +152,7 @@ void PlayState::inputPause() {
     // the only way it produces an edge - `Game_Frame`'s filter is why
     // holding a direction does not scroll (docs/UI.md 3c), and a driver
     // that held them would send one word and see one move.
+    harnessPad();    // --pad
     devices = omk::DeviceState{};
     for (int dik : host.held) devices.keyboard.push_back(dik);
     // The mouse BUTTONS are a device like any other - the scheme's own
@@ -165,6 +166,16 @@ void PlayState::inputPause() {
     // the stick on slots 0..3 through `Input_Poll`'s hardwired axes. Zero
     // when there is no pad.
     omk::pad::toDevices(host.pad, devices, in.group());
+    // ...and in shoot mode, on a pad with triggers, the right stick is the
+    // MOUSE: into the motion the aim block reads (`pad::StickAim`). Not under a
+    // screen, and only while the shoot camera holds, as for the mouse.
+    {
+        static omk::pad::StickAim stickAim;
+        if (!walk && shootMode && shootCameraLive && omk::pad::stickAims(host.pad, in.group()))
+            stickAim.step(host.pad, static_cast<float>(frameSec * 30.0), host.mouseDX, host.mouseDY);
+        else
+            stickAim.reset();
+    }
     // ...and under a SCREEN the stick is one direction with hysteresis, so a
     // held push is one press (`pad::MenuStick`, the Quest's report)
     {

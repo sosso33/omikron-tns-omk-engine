@@ -7313,12 +7313,16 @@ def c_engine_pad_layout():
         if m:
             rows[(int(m.group(1)), m.group(2))] = (m.group(3), m.group(4) == "1",
                                                    [x for x in m.group(5).split("|") if x])
-    if len(rows) != 28:
-        return (len(rows),), (28,), "pad_layout output parsed - the tool's format changed"
+    if len(rows) != 36:
+        return (len(rows),), (36,), "pad_layout output parsed - the tool's format changed"
+    stick = [ln for ln in r.stdout.decode("utf-8", "replace").splitlines()
+             if ln.startswith(("stick ", "aim "))]
     got = [(g, n, rows[(g, n)]) for g, n in [
         (0, "south"), (0, "east"), (0, "west"), (0, "north"), (0, "back"),
         (1, "north"), (1, "back"), (2, "west"), (2, "north"), (2, "back"),
-        (3, "west"), (3, "north"), (3, "back")]]
+        (3, "west"), (3, "north"), (3, "back"),
+        (0, "ltrigger"), (0, "rtrigger"), (1, "rtrigger"), (2, "ltrigger"), (2, "rtrigger"),
+        (3, "rtrigger")]]
     want = [(0, "south", ("4", False, ["Action / Utiliser"])),
             (0, "east", ("5", False, ["Annuler / Sauter"])),
             (0, "west", ("7", False, ["Vue première personne"])),
@@ -7331,16 +7335,70 @@ def c_engine_pad_layout():
             (2, "back", ("-", True, [])),
             (3, "west", ("6", False, ["Coup de pied 1"])),
             (3, "north", ("7", False, ["Coup de pied 2"])),
-            (3, "back", ("-", True, []))]
+            (3, "back", ("-", True, [])),
+            (0, "ltrigger", ("10", False, ["Pas de côté / Demi-tour"])),
+            (0, "rtrigger", ("11", False, ["Courir"])),
+            (1, "rtrigger", ("11", False, ["Crawl"])),
+            (2, "ltrigger", ("8", False, ["Action / Utiliser"])),
+            (2, "rtrigger", ("4", False, ["Tir"])),
+            (3, "rtrigger", ("11", False, ["Glisser à droite"]))]
+    want_stick = ["stick triggers 1 rx 0 word 0", "stick triggers 1 rx 1000 word 0",
+                  "stick triggers 0 rx 0 word 0", "stick triggers 0 rx 1000 word 256",
+                  "aim 1000,0 x1 -> 50,0", "aim 0,-1000 x1 -> 0,-25",
+                  "aim 200,0 x30 -> 0,0", "aim 400,0 x30 -> 60,0",
+                  "aim -625,625 x10 -> -125,62"]
     # the code, its comments taken out (a call commented away is not wired)
     src = open(os.path.join(eng, "backends", "sdl", "playframe_input_parts.cpp")).read()
     src = re.sub(r"//[^\n]*", "", re.sub(r"/\*.*?\*/", "", src, flags=re.S))
     wired = ("toDevices(host.pad, devices, in.group())" in src,
              bool(re.search(r"remasterModeFrame\([^;]*pad::switchPressed\(host\.pad\)", src)))
-    return (got, wired), (want, (True, True)), \
+    return (got, stick, wired), (want, want_stick, (True, True)), \
            ("per group, the slots a button sets and their labels, and the switch: Aventure's sneak on "
             "Triangle, first-person view on Square; shoot mode's `Arme` on Triangle; the fight's kicks "
             "unmoved; Select the switch in all four; the frame feeding the installed group and Select to it")
+
+def c_engine_stick_aim():
+    r"""engine: THE RIGHT STICK AIMS AND THE RIGHT TRIGGER FIRES, in shoot mode,
+    through the viewer (`input/pad.h`, the reader's of 2026-11-02).
+
+    A `--pad` held over stretches of the gallery's frames, read from the events
+    the aim block and the shot's latch give. Full right is the keys' 50 units a
+    tick, 10 degrees at the default sensitivity; full up the look keys' 25, 3.75
+    degrees. The trigger arms `MDSHOOT0`. A pad WITHOUT triggers (a Vita's) must
+    not aim: its right stick keeps the three buttons, or it has no Action.
+    """
+    import subprocess, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("build",), ("built",), mk.stderr[-300:]
+    tmp = tempfile.mkdtemp()
+    try:
+        r = subprocess.run(
+            [play, omkpaths.data_root(), os.path.join(ROOT, "tables"), "--software", "--res", "800x600",
+             "--saves", os.path.join(tmp, "GAMES"), "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+             "--area", "59", "--stand", "5000,0,-2900,0", "--shoot", "--shoot-health", "100000",
+             "--frames", "60", "--nodelay",
+             "--pad", "5-15:rx=1000,triggers", "--pad", "20-26:ry=-1000,triggers",
+             "--pad", "30-34:rtrigger,triggers", "--pad", "40-44:rx=1000"],
+            capture_output=True, env=dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_EVENTS="1"))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    ev = _events(r.stdout.decode("latin-1"))
+    aim = [e for n, e in ev if n == "shoot.aim"]
+    if not aim:
+        return ("no shoot.aim event",), ("events",), "the run gave no aim at all"
+    at = {int(e["frame"]): e for e in aim}
+    first = min(int(e["frame"]) for n, e in ev if n == "shoot.latch") if any(
+        n == "shoot.latch" for n, _ in ev) else None
+    return (float(at[5]["facing"]), float(at[15]["facing"]), float(at[20]["pitch"]), float(at[26]["pitch"]),
+            first, sorted(f for f in at if f >= 27)), \
+           (350.0, 250.0, -3.75, -26.25, 30, []), \
+           "facing after the stick's first frame and its eleventh; pitch after full up's " \
+           "first and seventh; the first frame the trigger armed the shot; and any aim " \
+           "after frame 26 - none, so a pad with no triggers (frames 40..44) did not aim"
+
 
 def c_engine_perpixel_lighting():
     r"""`lighting = perpixel` - the ENHANCEMENT of `todo/enhancements.md` 7.
@@ -54154,6 +54212,7 @@ SLOW = [
     ("engine: menu stick", c_engine_menu_stick, "todo/handoff-quest-port.md; input/pad.h"),
     ("engine: pad layout", c_engine_pad_layout, "todo/graphics-menu B; input/pad.h"),
     ("engine: rebinding",  c_engine_rebinding,  "docs/UI.md; ui/options.h; ui/keynames.h"),
+    ("engine: stick aim",  c_engine_stick_aim,  "input/pad.h"),
     ("engine: audio",      c_engine_audio,      "PORTING B6"),
     ("engine: shoot AI",   c_engine_shoot_ai,   "engine/README"),
     ("engine: I2D",        c_engine_i2d,        "engine/README"),

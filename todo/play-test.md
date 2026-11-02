@@ -116,7 +116,10 @@ stick or d-pad walks and turns, A/CROSS is Action and the UI's confirm, B/
 CIRCLE cancels / jumps, the right shoulder RUNS, Y/TRIANGLE opens the sneak
 and X/SQUARE is the first-person view (the adventure group's own layout,
 2026-10-27; in shoot mode Y/TRIANGLE is `Arme`), BACK/SELECT switches the
-original's look and the remaster's everywhere, START is the pause screen. **The button layout and the stick's dead zone are
+original's look and the remaster's everywhere, START is the pause screen. In shoot
+mode, on a pad with triggers, the right stick AIMS as the mouse does, at the options'
+sensitivities, R2 fires and L2 is Action; everywhere else L2/R2 are L1/R1's twins. On a
+Vita or a 3DS, with no triggers, the right stick keeps its three buttons. **The button layout and the stick's dead zone are
 this port's choices** (`src/input/pad.h`) - say if they feel wrong.
 
 **Rebinding the pad**: `Options` > `Contrôles` > `Configuration de la manette` >

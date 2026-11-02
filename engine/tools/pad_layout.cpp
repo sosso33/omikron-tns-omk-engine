@@ -27,6 +27,7 @@ int main(int argc, char** argv) {
         {"south", omk::pad::South}, {"east", omk::pad::East}, {"west", omk::pad::West},
         {"north", omk::pad::North}, {"lshoulder", omk::pad::LeftShoulder},
         {"rshoulder", omk::pad::RightShoulder}, {"back", omk::pad::Back},
+        {"ltrigger", omk::pad::LeftTrigger}, {"rtrigger", omk::pad::RightTrigger},
     };
     for (int g = 0; g < 4; ++g) {
         omk::Input in(schemes);
@@ -46,6 +47,35 @@ int main(int argc, char** argv) {
             std::printf("group %d %s slots %s switch %d %s\n", g, b.name, slots.empty() ? "-" : slots.c_str(),
                         omk::pad::switchPressed(p) ? 1 : 0, labels.c_str());
         }
+    }
+    // THE RIGHT STICK under Tirer: aiming on a pad with triggers, its three old
+    // buttons on one without - and the aim's own arithmetic.
+    {
+        omk::Input in(schemes);
+        in.installScheme(omk::pad::kShootGroup);
+        for (const bool triggers : {true, false})
+            for (const int rx : {0, 1000}) {
+                omk::pad::Pad p;
+                p.hasTriggers = triggers;
+                p.rx = rx;
+                omk::DeviceState st;
+                omk::pad::toDevices(p, st, omk::pad::kShootGroup);
+                std::printf("stick triggers %d rx %d word %u\n", triggers ? 1 : 0, rx, in.poll(st));
+            }
+        omk::pad::Pad p;
+        p.hasTriggers = true;
+        const auto run = [&](int rx, int ry, int ticks) {
+            omk::pad::StickAim aim;
+            float dx = 0.0f, dy = 0.0f;
+            p.rx = rx; p.ry = ry;
+            for (int i = 0; i < ticks; ++i) aim.step(p, 1.0f, dx, dy);
+            std::printf("aim %d,%d x%d -> %.0f,%.0f\n", rx, ry, ticks, double(dx), double(dy));
+        };
+        run(1000, 0, 1);       // the keys' 50 units a tick
+        run(0, -1000, 1);      // the look keys' 25, up is negative as a mouse's is
+        run(200, 0, 30);       // inside the dead zone
+        run(400, 0, 30);       // a slow push, whole units from fractions
+        run(-625, 625, 10);
     }
     return 0;
 }

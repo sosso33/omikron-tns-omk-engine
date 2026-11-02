@@ -115,6 +115,8 @@ void PlayState::adventureAim() {
         const float at[3]  = {0.0f, 787.4016f * std::sin(rad),
                               787.4016f * std::cos(rad)};
         player->setCameraOffsets(eye, at, 75.0f);
+        omk::event("shoot.aim", {{"frame", frameNo}, {"facing", static_cast<double>(player->facing())},
+                                 {"pitch", static_cast<double>(shootPitch)}});
     }
     // A TELEPORT under him: `actor.goto_address` wrote the
     // Session's position outright (the airlock beat's 653,
@@ -2076,8 +2078,10 @@ void PlayState::adventureSpecialMove(const std::string& mv, omk::Input& in, omk:
     // `MDSHOOT0` (0x0046B610): the latch, in ACTOR_STATE 3
     // only - the next frame's channel tick hands it to the gate.
     if (mv == "MDSHOOT0" &&
-        omk::mdShoot0(shotLatch, static_cast<int>(player->state())))
+        omk::mdShoot0(shotLatch, static_cast<int>(player->state()))) {
         std::printf("frame %ld: MDSHOOT0 - the latch (dword_53AE3C) armed\n", frameNo);
+        omk::event("shoot.latch", {{"frame", frameNo}});
+    }
     // MOVING IN FIRST PERSON (`actor/shootmove.h`). Group 200's
     // movement entries play no clip: they queue these, and the
     // handlers only raise INTENTS for next frame's mover. What

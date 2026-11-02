@@ -19,6 +19,13 @@
 //   * WHICH GROUP sees which layout. The game's own tables already differ per
 //     group (`Input_InstallScheme`), and the Aventure group takes its own
 //     (`kAventure`, the reader's of 2026-10-27): the sneak on a face button;
+//   * THE TRIGGERS AND THE RIGHT STICK IN SHOOT MODE (the reader's, 2026-11-02):
+//     the game knew neither - a 1999 stick had neither. A trigger is its
+//     shoulder's twin in every group but shoot mode, where the right one fires
+//     and the left is Action, and where the right stick AIMS as the mouse does,
+//     through the same sensitivity rows (`StickAim`). A pad with no triggers (a
+//     Vita, a 3DS) keeps the older layout: taking the stick's side push would
+//     leave it no Action at all;
 //   * the stick's DEAD ZONE. The engine compares the axis against 0 over a
 //     range of -1000..1000 and sets none itself - that was the Windows
 //     driver's job - so an analog stick, which never rests exactly at centre,
@@ -42,6 +49,7 @@ enum Button : std::uint32_t {
     Back = 1u << 6, Start = 1u << 7,
     DpadUp = 1u << 8, DpadDown = 1u << 9, DpadLeft = 1u << 10, DpadRight = 1u << 11,
     RightStickUp = 1u << 12, RightStickDown = 1u << 13, RightStickSide = 1u << 14,
+    LeftTrigger = 1u << 15, RightTrigger = 1u << 16,
 };
 
 // Button -> DirectInput button index k (code 48 + k, slot 4 + k by default),
@@ -61,6 +69,8 @@ inline constexpr Map kButtons[] = {
     {LeftShoulder,   6},   // slot 10  Pas de cote / Glisser a gauche
     {RightShoulder,  7},   // slot 11  Courir / Glisser a droite
     {RightStickDown, 8},   // slot 12  Regarder En-Bas
+    {LeftTrigger,    6},
+    {RightTrigger,   7},
 };
 
 // THE AVENTURE GROUP'S LAYOUT (group 0 - also what the screens run under):
@@ -78,6 +88,8 @@ inline constexpr Map kAventure[] = {
     {LeftShoulder,   6},   // slot 10  Pas de cote
     {RightShoulder,  7},   // slot 11  Courir
     {RightStickDown, 8},
+    {LeftTrigger,    6},
+    {RightTrigger,   7},
 };
 // THE SHOOT GROUP'S (group 2, `Shoot_Enter`'s): `Arme` on TRIANGLE / Y -
 // button 9, where SELECT carried it - whose button 3 this group leaves
@@ -93,6 +105,8 @@ inline constexpr Map kShoot[] = {
     {LeftShoulder,   6},   // slot 10  Glisser a gauche
     {RightShoulder,  7},   // slot 11  Glisser a droite
     {RightStickDown, 8},   // slot 12  Regarder En-Bas
+    {RightTrigger,   0},   // slot 4   Tir
+    {LeftTrigger,    4},   // slot 8   Action / Utiliser
 };
 
 
@@ -107,13 +121,21 @@ inline constexpr int kDeadZone = 250;
 // The right stick counts as "pressed" past this, for the three slots it
 // carries as buttons.
 inline constexpr int kRightStickPress = 500;
+// A trigger counts as pressed past this, of its 0..1000.
+inline constexpr int kTriggerPress = 500;
 
 struct Pad {
     std::uint32_t buttons = 0;    // `Button` bits
     // Both sticks in -1000..1000, +x right, +y DOWN (DirectInput's sense and
     // SDL's).
     int lx = 0, ly = 0, rx = 0, ry = 0;
+    // Has the pad triggers at all? Said by the frontend, not guessed from the
+    // bits: it decides who carries the shoot group's Action (`stickAims`).
+    bool hasTriggers = false;
 };
+
+// Does the right stick aim, rather than press three buttons, under this group?
+inline bool stickAims(const Pad& p, int group) { return group == kShootGroup && p.hasTriggers; }
 
 // SELECT / BACK as THE ORIGINAL/REMASTER SWITCH (`backends/remaster/
 // playremaster_mode.cpp`, F10's twin), in every group - the sneak and `Arme`,
@@ -136,7 +158,7 @@ inline std::uint32_t withRightStick(const Pad& p) {
 // caller put in. START is not here (see `kEscape`), nor SELECT (the switch,
 // `switchPressed`).
 inline void toDevices(const Pad& p, DeviceState& st, int group) {
-    const std::uint32_t b = withRightStick(p);
+    const std::uint32_t b = stickAims(p, group) ? p.buttons : withRightStick(p);
     const auto feed = [&](const auto& layout) {
         for (const auto& m : layout)
             if (b & m.button) st.joystick.push_back(48 + m.index);
@@ -153,6 +175,36 @@ inline void toDevices(const Pad& p, DeviceState& st, int group) {
     st.joyX = x;
     st.joyY = y;
 }
+
+// THE RIGHT STICK AS THE MOUSE (`stickAims`): its motion in the mouse's own
+// units, which `sub_45D1D0` then turns by the player's sensitivity rows and the
+// inverted row, as for a mouse. Full deflection is the keys' own step per 30 Hz
+// tick - `MDRG`/`MDRD` turn 50 units, `MDLUP`/`MDLDO` look 25. The push is
+// squared past the dead zone, a CHOICE: a thumb cannot hold a small angle on a
+// linear stick. The aim block rounds to whole units, so the fraction is carried
+// here, or a slow push would never move at all.
+inline constexpr float kAimYawUnits = 50.0f, kAimPitchUnits = 25.0f;
+
+struct StickAim {
+    float carryX = 0.0f, carryY = 0.0f;
+
+    void reset() { carryX = carryY = 0.0f; }
+    // `ticks` is the frame's length in 30 Hz ticks. Adds to `dx` / `dy`.
+    void step(const Pad& p, float ticks, float& dx, float& dy) {
+        const auto curve = [](int v) {
+            const int m = v < 0 ? -v : v;
+            if (m < kDeadZone) return 0.0f;
+            const float n = static_cast<float>(m - kDeadZone) / static_cast<float>(1000 - kDeadZone);
+            return (v < 0 ? -n : n) * n;
+        };
+        carryX += curve(p.rx) * kAimYawUnits * ticks;
+        carryY += curve(p.ry) * kAimPitchUnits * ticks;
+        const float wx = static_cast<float>(static_cast<int>(carryX));
+        const float wy = static_cast<float>(static_cast<int>(carryY));
+        dx += wx; carryX -= wx;
+        dy += wy; carryY -= wy;
+    }
+};
 
 // THE STICK UNDER A SCREEN: ONE DIRECTION, WITH HYSTERESIS. A CHOICE, like
 // the dead zone, and a frontend's, not the engine's: a 1999 DirectInput

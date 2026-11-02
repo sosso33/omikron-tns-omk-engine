@@ -174,6 +174,7 @@ struct PlayState {
     int & gandharHealth = opt.gandharHealth;
     int & fightHealth = opt.fightHealth;
     long & shootEndAt = opt.shootEndAt;
+    std::vector<omk::PlayOptions::PadRun> & padRuns = opt.padRuns;
     float (&standAt)[4] = opt.standAt;
     bool & haveStand = opt.haveStand;
     std::string & scene = opt.scene;
@@ -1478,6 +1479,8 @@ struct PlayState {
     void harnessRide();   // --ride: mounted where he stands, without MDSLIDIN
     void harnessSaveSlot();   // --save-slot: a save written when the run ends, without the panel
     void harnessHoldAndCall();   // --anim-hold and --call: a held player, the sneak call, fired once
+    void harnessPad();   // --pad
+
     void harnessShootEnd();   // --shoot-end: shoot.end 1 at a frame
     void closeAllScreens(const char* who);   // UI_CloseAllScreens 0x0042A340
     void releaseFromScreen(int screen, const char* who);   // sub_466B60 / Actor_TickUiHeld 3: the held-object press
