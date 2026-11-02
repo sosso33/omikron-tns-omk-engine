@@ -71,6 +71,8 @@ public:
     static int parent(int page) { return page == kPageGraphics ? 1 : kPageGraphics; }
 
     bool selectable(int page, int w) const;
+    // how many widgets the page has (`widgets(page).size()`)
+    int count(int page) const { return static_cast<int>(shownRows(page).size()); }
     // the page's widgets, unplaced (`OptionsMenu` lays them out)
     std::vector<OptionsMenu::Widget> widgets(int page, int sel) const;
     // LEFT / RIGHT / CONFIRM on widget `w` of `page` (UP, DOWN and BACK are

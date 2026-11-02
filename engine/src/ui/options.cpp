@@ -475,8 +475,15 @@ void OptionsMenu::build(int p) {
     const auto saved = pageSel_.find(p);
     sel_ = saved == pageSel_.end() ? 0 : saved->second;
     if (!selectableRow(sel_))
-        for (int w = 0; w < t_->rowWidgets; ++w)
+        for (int w = 0; w < rowCount(); ++w)
             if (selectableRow(w)) { sel_ = w; break; }
+}
+
+int OptionsMenu::rowCount() const {
+    if (page_ == 0) return 3;
+    // OMK's pages run past the sixteen row widgets (the Remaster page has 18)
+    if (OmkOptions::isPage(page_)) return omk_ ? omk_->count(page_) : 0;
+    return t_->rowWidgets;
 }
 
 void OptionsMenu::gotoPage(int k) {
@@ -488,7 +495,7 @@ void OptionsMenu::gotoPage(int k) {
 }
 
 bool OptionsMenu::moveVertical(int step) {
-    const int n = page_ == 0 ? 3 : t_->rowWidgets;
+    const int n = rowCount();
     int j = sel_;
     for (int t = 0; t < n; ++t) {
         j = ((j + step) % n + n) % n;
@@ -587,6 +594,59 @@ int OptionsMenu::listX() const {
     return param_ == 1 ? 70 : 100;
 }
 
+std::vector<OptionsMenu::Widget> OptionsMenu::omkWindow(std::vector<Widget> all) const {
+    const int n = static_cast<int>(all.size());
+    // the held rows: a caption on top, the defaults and Retour at the bottom
+    int head = 0;
+    while (head < n && all[static_cast<std::size_t>(head)].type == 2 && !all[static_cast<std::size_t>(head)].selectable)
+        ++head;
+    int tail = 0;
+    while (tail < n - head && (all[static_cast<std::size_t>(n - 1 - tail)].type == 5 ||
+                               all[static_cast<std::size_t>(n - 1 - tail)].type == 6))
+        ++tail;
+    const int mid = n - head - tail;
+    // two of the slots between are the "..." marks, there or not
+    const int win = std::max(1, kOmkVisible - head - tail - 2);
+    // keep the selection in view; on the held rows at the bottom the window
+    // shows the last rows - the ones above them, even when a flag holds
+    // every row between and the selection skipped them
+    const int s = sel_ - head;
+    if (s >= mid) omkTop_ = mid - win;
+    else if (s >= 0) {
+        if (s < omkTop_) omkTop_ = s;
+        if (s >= omkTop_ + win) omkTop_ = s - win + 1;
+    }
+    omkTop_ = std::max(0, std::min(omkTop_, mid - win));
+
+    std::vector<Widget> out;
+    int y = param_ == 0 ? 80 : 120;
+    const auto place = [&](Widget w) { w.y = y; y += kOmkStep; out.push_back(std::move(w)); };
+    const auto mark = [&](bool more) {
+        if (more) {
+            Widget w;
+            w.type = 2;
+            w.label = "...";
+            w.font = 'J';
+            w.align = 8;
+            w.x = -40;
+            w.w = 580;
+            w.noWrap = true;
+            w.white = false;
+            w.alwaysLit = true;
+            w.selectable = false;
+            place(std::move(w));
+        } else {
+            y += kOmkStep;
+        }
+    };
+    for (int k = 0; k < head; ++k) place(all[static_cast<std::size_t>(k)]);
+    mark(omkTop_ > 0);
+    for (int k = 0; k < win && omkTop_ + k < mid; ++k) place(all[static_cast<std::size_t>(head + omkTop_ + k)]);
+    mark(omkTop_ + win < mid);
+    for (int k = n - tail; k < n; ++k) place(all[static_cast<std::size_t>(k)]);
+    return out;
+}
+
 void OptionsMenu::listColour(std::uint8_t rgb[3]) const {
     // `byte_4DE0D8..DA` for the rows, and for the prompt under the sneak;
     // white for the prompt under the start menu
@@ -609,8 +669,15 @@ std::vector<OptionsMenu::Widget> OptionsMenu::widgets() const {
     };
     if (OmkOptions::isPage(page_)) {
         if (omk_) out = omk_->widgets(page_, sel_);
-        layOut(out);
-        return out;
+        // a wider label column than the game's (230 pixels): OMK's labels
+        // run longer ("Lumière ambiante sur les personnages") and would wrap
+        // onto the row below. The split stays where it was.
+        for (auto& w : out) { w.x = -40; w.w = 580; w.noWrap = true; }
+        if (static_cast<int>(out.size()) <= kOmkVisible) {
+            layOut(out);
+            return out;
+        }
+        return omkWindow(std::move(out));
     }
     if (page_ == 0) {
         for (int k = 0; k < 3; ++k) {

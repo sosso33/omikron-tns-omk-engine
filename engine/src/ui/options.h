@@ -200,6 +200,10 @@ public:
         int  align = 4;           // Text_DrawBlock style: 2 left, 4 right, 8 centred
         bool selectable = true;   // NOT bank A 0x20000004
         bool selected = false;
+        // OMK's rows: one line however wide the text draws - the label runs
+        // on to the left, the value to the right, a heading both ways - never
+        // wrapped onto the row below (enlarged text, `textscaling fit`)
+        bool noWrap = false;
     };
     std::vector<Widget> widgets() const;
     int  page() const { return page_; }
@@ -219,6 +223,13 @@ private:
     void apply(int item);                      // the row's +12 hook
     void changed(int item);                    // Opt_RowInput's tail
     bool moveVertical(int step);
+    int  rowCount() const;                     // the rows UP / DOWN walk
+    // OMK's pages, longer than the game's ever are: a window of
+    // `kOmkVisible` rows, the caption on top and the defaults / Retour at the
+    // bottom held, the rows between scrolled to keep the selection in view
+    static constexpr int kOmkVisible = 13, kOmkStep = 22;
+    std::vector<Widget> omkWindow(std::vector<Widget> all) const;
+    mutable int omkTop_ = 0;                   // the first scrolled row shown
 
     const OptionTree* t_;
     OmkOptions* omk_ = nullptr;

@@ -164,6 +164,20 @@ the viewer's `backends/sdl/*.cpp` by hand** (`backends/vita/CMakeLists.txt`),
 unlike the 3DS, the classic Mac, Android and the PowerPC Mac, which glob - so
 `playomkoptions.cpp` was added there, and a new viewer file always must be.
 
+**The layout on a GPU renderer, 2026-11-02 - CONFIRMED IN PLAY.** The pages
+were only ever checked on software, where `Renderer::takes` leaves them short.
+On Vulkan the Remaster page has 18 rows: UP / DOWN walked the game's 16 row
+widgets, so its `Valeurs par défaut` and `Retour` were unreachable, and 280
+pixels for 18 rows overlapped them. Now (`OptionsMenu::omkWindow`): a page
+over 13 rows is a window at 22 pixels, the caption and the defaults/Retour
+held, the rows between scrolled with the selection, `...` where rows are
+hidden; a row a flag holds is SELECTABLE (its value still fixed - under
+`--enhance-all` only `Suréchantillonnage` was otherwise); OMK's rows never
+wrap (`Widget::noWrap`: the label runs left, the value right - enlarged text,
+`textscaling fit`, wrapped the long ones onto the next row); and
+`msg.heldby` is `(%s)`, short enough for enlarged text. The checks run on
+software and do not reach the scroll: it was judged by eye and in play.
+
 #### The plan, as first written
 
 * the root gains **"Graphismes (OMK)"** - a header row (type 2) in a free row

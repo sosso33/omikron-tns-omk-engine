@@ -258,7 +258,9 @@ bool OmkOptions::selectable(int page, int w) const {
     if (w < 0 || w >= static_cast<int>(rows.size())) return false;
     const Row& r = rows_[static_cast<std::size_t>(rows[static_cast<std::size_t>(w)])];
     if (r.type == 2) return r.page >= 0;       // a caption is not
-    if (r.type == 0) return r.held.empty();    // a row a flag holds cannot move
+    // a row a flag holds IS reached - it reads "fixé par --flag" - but its
+    // value cannot move (`press`); skipping it left a page under
+    // `--enhance-all` with one row to stand on (the reader, 2026-11-02)
     return true;
 }
 
@@ -319,7 +321,7 @@ std::vector<OptionsMenu::Widget> OmkOptions::widgets(int page, int sel) const {
                 std::string h = tx("msg.heldby");
                 const auto at = h.find("%s");
                 if (at != std::string::npos) h.replace(at, 2, r.held);
-                w.value += " - " + h;
+                w.value += " " + h;   // short: it must fit enlarged text
             }
         }
         out.push_back(std::move(w));

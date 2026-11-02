@@ -2009,11 +2009,18 @@ OptionsDrawn ScreenComposer::drawOptions(Surface& fb, const OptionsMenu& m) cons
         };
         const int x = lx + w.x, y = w.y;
         std::string value;
+        // a no-wrap row's boxes run to the screen's edges (a centred one by as
+        // much on each side, so its centre stays)
+        const int half = std::min(scaleX(x + w.w / 2), fb.w - scaleX(x + w.w / 2));
         if (w.type < 0 || w.type == 2 || w.type == 5 || w.type == 6) {
-            block(scaleX(x), scaleY(y), scaleX(w.w) + scaleX(x), scaleY(w.h) + scaleY(y),
-                  w.label, w.align);
+            if (w.noWrap)
+                block(scaleX(x + w.w / 2) - half, scaleY(y), scaleX(x + w.w / 2) + half,
+                      scaleY(w.h) + scaleY(y), w.label, w.align);
+            else
+                block(scaleX(x), scaleY(y), scaleX(w.w) + scaleX(x), scaleY(w.h) + scaleY(y),
+                      w.label, w.align);
         } else {
-            block(scaleX(x), scaleY(y), scaleX(w.w / 2 - 20) + scaleX(x),
+            block(w.noWrap ? 0 : scaleX(x), scaleY(y), scaleX(w.w / 2 - 20) + scaleX(x),
                   scaleY(w.h) + scaleY(y), w.label, w.align);
             if (w.type == 1) {
                 const int x0 = scaleX(w.w / 2 + x + 20);
@@ -2026,7 +2033,7 @@ OptionsDrawn ScreenComposer::drawOptions(Surface& fb, const OptionsMenu& m) cons
                 ++out.sliders;
                 value = std::to_string(w.slider);
             } else {
-                block(scaleX(w.w / 2 + x + 20), scaleY(y), scaleX(w.w) + scaleX(x),
+                block(scaleX(w.w / 2 + x + 20), scaleY(y), w.noWrap ? fb.w : scaleX(w.w) + scaleX(x),
                       scaleY(w.h) + scaleY(y), w.value, 2);
                 value = w.value;
             }
