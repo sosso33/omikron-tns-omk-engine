@@ -155,8 +155,7 @@ bool blt(Surface& dst, Rect dr, const Surface& src, Rect sr,
     // library call. Per pixel, the start menu scaled to 960x544 spends ~360 ms
     // a frame in them on the console. The same expressions, evaluated once per column
     // instead of once per pixel, so the output is byte-identical.
-    thread_local std::vector<int> colNear, colX0, colX1;
-    thread_local std::vector<double> colWx;
+    thread_local std::vector<int> colNear, colX0, colX1, colWx;
     colNear.resize(static_cast<std::size_t>(dw));
     for (int x = 0; x < dw; ++x) colNear[static_cast<std::size_t>(x)] = sw == dw ? x : x * sw / dw;
     // the CALLER's tables, by reference: inside a row run on a pool worker the
@@ -164,76 +163,142 @@ bool blt(Surface& dst, Rect dr, const Surface& src, Rect sr,
     const std::vector<int>& nearCol = colNear;
     const std::vector<int>& x0Col = colX0;
     const std::vector<int>& x1Col = colX1;
-    const std::vector<double>& wxCol = colWx;
+    const std::vector<int>& wxCol = colWx;
     if (filter >= 1 && (sw != dw || sh != dh)) {
+        // THE WEIGHTS IN FIXED POINT, 16 bits - as a blitter's hardware does.
+        // This was double arithmetic per pixel, and the menus' animated cloud,
+        // composed at 640x480 and stretched every frame, cost three cores at
+        // 3024x1964 (the reader's "300% in the menu", 2026-11-02). The tap
+        // positions are the same exact pixel-centre rationals,
+        // `((2x + 1) sw - dw) / 2dw`, so the taps are the same; only a
+        // colour's last rounding step can differ from the double result.
+        constexpr int kOne = 1 << 16;
+        const auto tap = [](int i, int s, int d, int& i0, int& i1, int& w) {
+            const long long num = static_cast<long long>(2 * i + 1) * s - d;   // fx * 2d
+            const long long den = 2LL * d;
+            long long f = num >= 0 ? num / den : -((-num + den - 1) / den);   // floor
+            w = static_cast<int>(((num - f * den) * kOne + den / 2) / den);
+            int a = static_cast<int>(f), b = a + 1;
+            i0 = a < 0 ? 0 : a > s - 1 ? s - 1 : a;
+            i1 = b < 0 ? 0 : b > s - 1 ? s - 1 : b;
+        };
         colX0.resize(static_cast<std::size_t>(dw));
         colX1.resize(static_cast<std::size_t>(dw));
         colWx.resize(static_cast<std::size_t>(dw));
-        for (int x = 0; x < dw; ++x) {
-            const double fx = (x + 0.5) * sw / dw - 0.5;
-            int x0 = static_cast<int>(std::floor(fx));
-            const double wx = fx - x0;
-            int x1 = x0 + 1;
-            x0 = x0 < 0 ? 0 : x0 > sw - 1 ? sw - 1 : x0;
-            x1 = x1 < 0 ? 0 : x1 > sw - 1 ? sw - 1 : x1;
-            colX0[static_cast<std::size_t>(x)] = x0;
-            colX1[static_cast<std::size_t>(x)] = x1;
-            colWx[static_cast<std::size_t>(x)] = wx;
+        for (int x = 0; x < dw; ++x)
+            tap(x, sw, dw, colX0[static_cast<std::size_t>(x)], colX1[static_cast<std::size_t>(x)],
+                colWx[static_cast<std::size_t>(x)]);
+        const auto r8 = [](std::uint16_t v) { const int c = (v >> 11) & 31; return (c << 3) | (c >> 2); };
+        const auto g8 = [](std::uint16_t v) { const int c = (v >> 5) & 63;  return (c << 2) | (c >> 4); };
+        const auto b8 = [](std::uint16_t v) { const int c = v & 31;         return (c << 3) | (c >> 2); };
+        // ---- NO KEY: SEPARABLE (the menus' cloud, 640x480 to the window) ----
+        // With no key there is nothing to renormalise, and bilinear is two
+        // linear passes: each SOURCE row is interpolated across once - a band
+        // of output rows shares ~dh/sh of them - and each output pixel is the
+        // vertical blend of two such rows, a loop the compiler vectorises.
+        // The rows are held at 8 fractional bits and the vertical weight
+        // taken to 8 bits, a hardware blitter's precision. Each band computes
+        // its own source rows from the source alone, so the pool's split
+        // changes nothing (`threads.h`'s rule).
+        if (!keySrc && !keyDest) {
+            const auto band = [&](std::size_t yFrom, std::size_t yTo) {
+                if (yFrom >= yTo) return;
+                int ya, yb, wq;
+                tap(static_cast<int>(yFrom), sh, dh, ya, yb, wq);
+                const int first = ya;
+                tap(static_cast<int>(yTo) - 1, sh, dh, ya, yb, wq);
+                const int last = std::max(ya, yb);
+                const int n = last - first + 1;
+                // planar R, G, B rows ALREADY in 565's 5/6-bit ranges, << 8 -
+                // the quantisation folded into this pass (a division per
+                // source pixel, not per output one), so the vertical loop
+                // below is plain int32 arithmetic the compiler vectorises
+                // this runner's own (a pool worker's thread_local is its own)
+                thread_local std::vector<std::int32_t> hr;
+                hr.resize(static_cast<std::size_t>(n) * 3 * dw);
+                for (int k = 0; k < n; ++k) {
+                    const std::uint16_t* row = &src.px[static_cast<std::size_t>(sr.top + first + k) * src.w + sr.left];
+                    std::int32_t* R = &hr[(static_cast<std::size_t>(k) * 3 + 0) * dw];
+                    std::int32_t* G = R + dw;
+                    std::int32_t* B = G + dw;
+                    for (int x = 0; x < dw; ++x) {
+                        const std::uint16_t p0 = row[x0Col[static_cast<std::size_t>(x)]];
+                        const std::uint16_t p1 = row[x1Col[static_cast<std::size_t>(x)]];
+                        const int w1 = wxCol[static_cast<std::size_t>(x)], w0 = kOne - w1;
+                        // (8-bit value << 16) * 31 / 255, then >> 8
+                        R[x] = ((r8(p0) * w0 + r8(p1) * w1) / 255 * 31 + 128) >> 8;
+                        G[x] = ((g8(p0) * w0 + g8(p1) * w1) / 255 * 63 + 128) >> 8;
+                        B[x] = ((b8(p0) * w0 + b8(p1) * w1) / 255 * 31 + 128) >> 8;
+                    }
+                }
+                for (int y = static_cast<int>(yFrom); y < static_cast<int>(yTo); ++y) {
+                    int y0, y1, wy;
+                    tap(y, sh, dh, y0, y1, wy);
+                    const int v1 = (wy + 128) >> 8, v0 = 256 - v1;
+                    const std::int32_t* R0 = &hr[(static_cast<std::size_t>(y0 - first) * 3) * dw];
+                    const std::int32_t* R1 = &hr[(static_cast<std::size_t>(y1 - first) * 3) * dw];
+                    const std::int32_t *G0 = R0 + dw, *B0 = G0 + dw, *G1 = R1 + dw, *B1 = G1 + dw;
+                    std::uint16_t* out = &dst.px[static_cast<std::size_t>(dr.top + y) * dst.w + dr.left];
+                    for (int x = 0; x < dw; ++x) {
+                        // (value << 8) * (weight of 256) = value << 16
+                        const int r = (R0[x] * v0 + R1[x] * v1 + (1 << 15)) >> 16;
+                        const int g = (G0[x] * v0 + G1[x] * v1 + (1 << 15)) >> 16;
+                        const int b = (B0[x] * v0 + B1[x] * v1 + (1 << 15)) >> 16;
+                        out[x] = static_cast<std::uint16_t>((r << 11) | (g << 5) | b);
+                    }
+                }
+            };
+            rows(dw, dh, band);
+            return true;
         }
         // THE ROWS ON THE THREAD POOL: each is computed alone and writes only
         // itself (a dest-keyed test reads its own pixel), so split they are
         // byte-identical - and a 640x480 screen stretched to 4K is 8.3
-        // million of them: the start menu took 88 ms a frame on the M3, the
-        // reader's inventory 38. A small blit stays inline.
+        // million of them. A small blit stays inline.
         const auto rowsF = [&](std::size_t yFrom, std::size_t yTo) {
         for (int y = static_cast<int>(yFrom); y < static_cast<int>(yTo); ++y) {
             // Pixel CENTRES, which is what puts the resampled grid where the
             // nearest one is rather than half a texel off it.
-            const double fy = (y + 0.5) * sh / dh - 0.5;
-            int y0 = static_cast<int>(std::floor(fy));
-            const double wy = fy - y0;
-            int y1 = y0 + 1;
-            y0 = y0 < 0 ? 0 : y0 > sh - 1 ? sh - 1 : y0;
-            y1 = y1 < 0 ? 0 : y1 > sh - 1 ? sh - 1 : y1;
+            int y0, y1, wy;
+            tap(y, sh, dh, y0, y1, wy);
             const int ny = sh == dh ? y : y * sh / dh;   // the nearest path's row
+            const std::uint16_t* row0 = &src.px[static_cast<std::size_t>(sr.top + y0) * src.w + sr.left];
+            const std::uint16_t* row1 = &src.px[static_cast<std::size_t>(sr.top + y1) * src.w + sr.left];
+            const std::uint16_t* rowN = &src.px[static_cast<std::size_t>(sr.top + ny) * src.w + sr.left];
+            std::uint16_t* out = &dst.px[static_cast<std::size_t>(dr.top + y) * dst.w + dr.left];
             for (int x = 0; x < dw; ++x) {
-                const int nx = nearCol[static_cast<std::size_t>(x)];
-                const std::uint16_t nearest = src.at(sr.left + nx, sr.top + ny);
+                const std::uint16_t nearest = rowN[nearCol[static_cast<std::size_t>(x)]];
                 if (keySrc && nearest == srcKey) continue;
-                if (keyDest && dst.at(dr.left + x, dr.top + y) != dstKey) continue;
+                if (keyDest && out[x] != dstKey) continue;
 
                 const int x0 = x0Col[static_cast<std::size_t>(x)];
                 const int x1 = x1Col[static_cast<std::size_t>(x)];
-                const double wx = wxCol[static_cast<std::size_t>(x)];
-
-                const std::uint16_t t[4] = {src.at(sr.left + x0, sr.top + y0),
-                                            src.at(sr.left + x1, sr.top + y0),
-                                            src.at(sr.left + x0, sr.top + y1),
-                                            src.at(sr.left + x1, sr.top + y1)};
-                const double w[4] = {(1 - wx) * (1 - wy), wx * (1 - wy),
-                                     (1 - wx) * wy,       wx * wy};
-                double r = 0, g = 0, b = 0, tot = 0;
+                const int wx = wxCol[static_cast<std::size_t>(x)];
+                const std::uint16_t t[4] = {row0[x0], row0[x1], row1[x0], row1[x1]};
+                // the four weights, summing to kOne (the products in 64 bits
+                // before the shift: 2^16 * 2^16 overflows an int)
+                const int w11 = static_cast<int>((static_cast<long long>(wx) * wy) >> 16);
+                const int w10 = wx - w11, w01 = wy - w11;
+                const int w[4] = {kOne - wx - wy + w11, w10, w01, w11};
+                int r = 0, g = 0, b = 0, tot = 0;
                 for (int i = 0; i < 4; ++i) {
                     if (keySrc && t[i] == srcKey) continue;   // never averaged in
-                    const int r5 = (t[i] >> 11) & 31, g6 = (t[i] >> 5) & 63, b5 = t[i] & 31;
-                    r += w[i] * ((r5 << 3) | (r5 >> 2));
-                    g += w[i] * ((g6 << 2) | (g6 >> 4));
-                    b += w[i] * ((b5 << 3) | (b5 >> 2));
+                    r += w[i] * r8(t[i]);
+                    g += w[i] * g8(t[i]);
+                    b += w[i] * b8(t[i]);
                     tot += w[i];
                 }
                 // `tot` is 0 only when every tap is the key, and the nearest
                 // tap is one of the four, so the test above has already
                 // continued - but a renormalisation must never divide by a
-                // number it has not looked at.
-                if (tot <= 0.0) { dst.set(dr.left + x, dr.top + y, nearest); continue; }
-                const auto q = [](double v) {
-                    const int i = static_cast<int>(v + 0.5);
-                    return i < 0 ? 0 : i > 255 ? 255 : i;
-                };
+                // number it has not looked at. A weight can round to 0 too.
+                if (tot <= 0) { out[x] = nearest; continue; }
                 // ROUNDED, not dithered: the dither is for a 3D frame's
                 // gradients, and noise in a menu is noise in a menu.
-                dst.set(dr.left + x, dr.top + y,
-                        quantise888(q(r / tot), q(g / tot), q(b / tot)));
+                if (tot == kOne)
+                    out[x] = quantise888((r + kOne / 2) >> 16, (g + kOne / 2) >> 16, (b + kOne / 2) >> 16);
+                else
+                    out[x] = quantise888((r + tot / 2) / tot, (g + tot / 2) / tot, (b + tot / 2) / tot);
             }
         }
         };
