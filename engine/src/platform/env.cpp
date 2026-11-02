@@ -75,6 +75,7 @@ constexpr const char* kSwitches[] = {
     "OMK_NO_DUST",              // =1 the restored sand's dust fog left out, its grains and grade kept (engine: rain 3d)
     "OMK_NO_FX_GATE",           // A/B: every particle drawn, none gated by distance (engine: particle gate)
     "OMK_NO_GEOMETRY_RELEASE",  // GLES: a destroyed geometry's GPU state kept (engine: geometry release)
+    "OMK_NO_GPU_CLOUD",         // the menus' cloud stretched on the CPU, not under the interface on the GPU (engine: gpu cloud)
     "OMK_NO_GPU_PRESENT",       // the GPU window hidden and every frame read back - a measurement run (engine: grey bank)
     "OMK_NO_GROUND_GRID",       // A/B: the floor probe as a linear scan instead of through the grid (engine: ground grid)
     "OMK_NO_GUSTS",             // =1 the 3D rain and its veils lean only with the original's wind - no gusts (engine: rain 3d)
@@ -132,6 +133,7 @@ constexpr const char* kSwitches[] = {
     "OMK_TRANSIENT_MOTIONS",    // A/B: a scene's mesh motions per tick - the old, wrong reading (engine: node rest)
     "OMK_TUNNEL",               // =1 log: the transition refusals that lost the tunnel's far door
     "OMK_UPLOAD_LOG",           // log: every whole vertex upload, by geometry and size
+    "OMK_VERIFY_GPU_CLOUD",     // the GPU cloud's frame checked against the CPU's composition (engine: gpu cloud)
     "OMK_VERIFY_GPU_PRESENT",   // the GPU present's picture checked against the CPU's (engine: gpu present)
     "OMK_VERIFY_GROUND",        // the floor probe through the grid and the scan both, counted (engine: ground grid)
     "OMK_VERIFY_PATCH",         // the full merge beside the in-place one, compared bit for bit (engine: patch index)

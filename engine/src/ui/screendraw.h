@@ -446,6 +446,14 @@ public:
     // actually stretches, so at the authored 640x480 it changes nothing.
     void setScaling(int f) { filter_ = f; }
     int  scaling() const { return filter_; }
+    // THE CLOUD ON THE GPU (the reader's "do the gpu rendering like the
+    // original", 2026-11-02): `sub_4B19C0`'s surface is 640x480 whatever the
+    // display, and DirectDraw's blitter stretched it out on the card. With a
+    // target set, `draw` computes the cloud into it at 640x480 and fills the
+    // frame with `kOverlayKey` instead of stretching it on the CPU; the caller
+    // has begun the overlay planes (`ui/overlay.h`) and its backend draws the
+    // cloud under the key. Null - the default - stretches it here as before.
+    void setCloudTarget(Surface* s) { cloudTarget_ = s; }
     int  scaleX(int v) const { return v * dw_ / 640; }
     // `I2D_DrawRectOutline` (0x004777A0): four mode-1 quads of thickness
     // `I2D_ScaleX(1)` round the 640-space rectangle (x, y, w, h) - the load
@@ -548,6 +556,7 @@ private:
     int              dw_ = 640, dh_ = 480;
     int              filter_ = 0;   // the scaling enhancement; 0 is the game's
     mutable Surface  cloudSurf_;    // the cloud's 640x480 surface, for the filtered path
+    Surface*         cloudTarget_ = nullptr;   // `setCloudTarget`
     // the load panel's picture, decoded once per (file, slot, write)
     mutable std::string                thumbPath_;
     mutable int                        thumbSlot_ = -1;

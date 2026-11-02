@@ -384,7 +384,11 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
     // The animated background goes down FIRST, and the screen's sheet is
     // colour-keyed over it.
     if (cloud_ && cloud_->valid()) {
-        if (fb.w == 640 && fb.h == 480) {
+        if (cloudTarget_) {
+            if (cloudTarget_->w != 640 || cloudTarget_->h != 480) *cloudTarget_ = Surface(640, 480, 0);
+            cloud_->draw(*cloudTarget_, frame_);
+            std::fill(fb.px.begin(), fb.px.end(), kOverlayKey);
+        } else if (fb.w == 640 && fb.h == 480) {
             cloud_->draw(fb, frame_);
         } else {
             // `sub_4B19C0` makes its surface 0x280 x 0x1E0 whatever the

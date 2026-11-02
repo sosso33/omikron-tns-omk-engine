@@ -756,7 +756,19 @@ void PlayState::screensInterfaceLayer(omk::ScreenComposer& comp, omk::OptionsMen
     auto& session = *session_;
     if (!omk::envFlag("OMK_NOUI")) {
         omk::ScreenFrame sf;
+        // THE CLOUD ON THE GPU: a backend that draws it, a screen over it,
+        // and nothing that reads `fb` as a picture - the instruments, the
+        // save's thumbnail, the GPU-present verification - which would see
+        // the key where the cloud goes
+        cloudGpuFrame = cloudUnderGpu && cloudCoversFrame() && dump.empty() && flickerDir.empty() &&
+                        snapsDir.empty() && !verifyGpuPresent && !screenReadsPicture && !g_ov.on;
+        if (cloudGpuFrame) {
+            g_ov.begin(fb.w, fb.h);
+            comp.setCloudTarget(&cloudPic);
+        }
         spanned("screen draw", [&] { sf = comp.draw(fb, openScreen, *walk); });
+        comp.setCloudTarget(nullptr);
+        if (cloudGpuFrame && !sf.cloudDrawn) cloudGpuFrame = false;   // no cloud after all: plain frame
         // screen 35 over the menu while it has the focus - its panel
         // paints no background, so the menu's sheet shows through
         const bool optShown = (openScreen == omk::screen::StartMenu && optMenu.focused()) ||

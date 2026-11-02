@@ -2516,6 +2516,74 @@ branchy decoder differently. Step 28's console sections are what decide.
 Side note: the GLES build's `--fps` line labels itself `software` (the
 counter tests only `vkRen`). It is an instrument label, not a finding.
 
+### 39. The menus' cloud stretched on the card, as DirectDraw blitted it (2026-11-02, M3)
+
+The reader: *"the cpu was used at 300% when I was in the menu"*, then, after
+step one below, *"100-150% for a simple 1999 game menu is still too much, do
+the gpu rendering like the original"*. Measured in the start menu's options
+page, `--enhance-all`, a hidden 3024x1964 Vulkan window (the reader's Retina
+window), `ps` %CPU:
+
+| build | CPU | `screens, hud` | `present, swap` |
+|---|---|---|---|
+| before (`acedcd9`) | ~285-310% | 11-20 ms | ~4.5 ms |
+| `blt` fixed point, separable (`0e356fd`) | ~150% | ~5.5 ms | ~5 ms |
+| the cloud on the GPU | **~70%** | ~4 ms | ~7 ms (the GPU's wait included) |
+
+**What the original does.** `sub_4B19C0` makes the cloud's surface 640x480
+whatever the display; `sub_4B1B00` computes it there each frame and it is
+blitted out - DirectDraw's `Blt`, a stretch on the card. The port computed
+it at 640x480 too and then stretched it on the CPU to the window, 6 million
+pixels a frame in double arithmetic under `uiscaling linear`: three cores.
+
+**Step one, `0e356fd`**: `blt`'s filtered path in 16-bit fixed point, and with
+no colour key SEPARABLE - each source row interpolated once, the 565
+quantisation folded into that pass. Against the double path 2.49% of pixels
+move by one 565 step, none more.
+
+**Step two, the card's stretch.** With a Vulkan WINDOW (`vkRen`; the
+`--world-vulkan` harness keeps the CPU path) `ScreenComposer::setCloudTarget`
+computes the cloud into a 640x480 surface and fills the frame with
+`kOverlayKey`; the passes that blend over it (the text's edges, the fades)
+write the overlay planes as on the GLES window (`ui/overlay.h`). The present
+uploads the frame's 565 words and the planes' M as they are - two `memcpy`s,
+no per-pixel expansion - and the cloud's words, and `under.frag` stretches it
+with the CPU blit's OWN integer arithmetic (nearest's column table; the
+separable fixed point of step one), applies `C + cloud * M` and quantises to
+565. Off on any frame whose `fb` something reads as a picture: `--dump`, the
+flicker catcher, the snapshots, the save thumbnail, `OMK_VERIFY_GPU_PRESENT`;
+off altogether with `OMK_NO_GPU_CLOUD`.
+
+**Two widenings of 565, a trap met here.** The blit widens blue as
+`(b << 3) | (b >> 2)`, the present's table (`expand565Rgba`, `present.frag`)
+as `(b << 3) | (b >> 3)`. A cloud uploaded through the table differed from the
+CPU picture on ~1% of the pixels at every size; the shader now takes the raw
+words and widens each way where each belongs.
+
+**Checked**: `engine: gpu cloud` - `OMK_VERIFY_GPU_CLOUD` reads every
+presented frame back and composes it on the CPU (`blt` + the planes' law):
+0 pixels differ over 260 frames each, nearest and linear, at 1280x720 and
+800x600 (and 3024x1964 by hand); a `--dump` run keeps the path off and dumps
+no key pixel. Shown to fail: blue widened the present's way inside the blit
+arithmetic, 4888 pixels of a 1280x720 frame.
+
+**What is left of the 70%**: the enlarged text drawn every frame on the CPU
+(~0.35 core), the planes' resolve and the two uploads. The text is the next
+candidate - the original drew it with its own blitter too.
+
+**And the main menu's logo** (the reader: *"still high on main menu, maybe
+linked to the logo"*). The start menu's title band is a 640x150 colour-keyed
+SPRITE, stretched with the key every frame - at 3024x1964 2.1 million keyed
+bilinear pixels, the main menu at ~158% while the options page sat at ~60%.
+It never changes, so `blt` now KEEPS a big scaled key-source blit
+(`SpriteCache`, `ui/surface.cpp`): per destination row the runs of pixels it
+writes and their values, found by drawing it once over black and once over
+white (a written pixel is the same in both). A later blit of the same source
+pixels (an FNV-1a hash of the source rectangle), sizes, key and filter copies
+the runs. The main menu ~158% -> ~45%. Byte-identical: the main menu dumped
+at 1600x1200 on the software renderer with the cache and with it disabled,
+nearest and linear, `cmp` equal.
+
 ## What is NOT in scope
 
 * The software renderer's speed. It is the reference and a comparison tool;

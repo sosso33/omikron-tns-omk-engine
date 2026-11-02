@@ -18747,6 +18747,81 @@ def c_engine_tie_memory():
         "are 95% or more of the bytes for the set and for a body"
 
 
+def c_engine_gpu_cloud():
+    r"""The menus' animated cloud is stretched on the GPU, under the interface,
+    and the window shows what the CPU composition shows (2026-11-02, the
+    reader's "300% CPU in the menu"; `backends/vulkan/shaders/under.frag`).
+
+    `sub_4B19C0` computes the cloud into a 640x480 surface whatever the
+    display, and DirectDraw's blitter stretched it out on the card. The port
+    stretched it on the CPU every frame - three cores at 3024x1964. With a
+    Vulkan WINDOW (`vkRen`, not the `--world-vulkan` harness) the composer now
+    leaves the cloud's pixels as `kOverlayKey`, the passes that blend over them
+    write the overlay planes, and `under.frag` stretches the cloud with the
+    CPU blit's own integer arithmetic (nearest's column table; the linear
+    enhancement's separable fixed point) and applies `C + cloud * M`.
+
+    Tier 4-ish differential (PORTING B1 3): the shader against `blt` itself.
+    `OMK_VERIFY_GPU_CLOUD` reads back every presented frame and composes the
+    same frame on the CPU - the cloud stretched by `blt`, the planes' law per
+    8-bit channel, 565 - and counts the pixels that differ. Four runs in a
+    HIDDEN window (the dummy driver has no Vulkan surface): the start menu into
+    the options page, nearest and linear (`--ui-scaling`), at 1280x720 (no
+    integer scale) and 800x600. Each must verify frames, put cloud pixels
+    under the key (the path taken at all) and differ in none. And the GATE: a
+    run with `--dump` must keep the path off (no verify line) and dump a frame
+    with no key pixel in it - an instrument reading `fb` sees the picture.
+    Skipped without a Vulkan window renderer.
+
+    SHOWN TO FAIL, 2026-11-02: the shader widening blue as the present does
+    (`>> 3`) inside the blit's arithmetic - 4888 pixels of a 1280x720 linear
+    frame, 4807 of them cloud alone; before that fix, the cloud uploaded
+    through `expand565Rgba` differed on ~1% of the pixels at every size, and a
+    float bilinear on ~5%.
+    """
+    import subprocess, tempfile, shutil
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "omk-play did not build"
+    keys = "0,0xD0,0xD0,0x1C,0xD0,0xD0,0xD0,0xD0,0x1C,0x1C"
+    tmp = tempfile.mkdtemp()
+    got = []
+    try:
+        def run(res, mode, extra=()):
+            d = tempfile.mkdtemp(dir=tmp)
+            r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"), "--nofmv",
+                                "--saves", os.path.join(d, "GAMES"), "--res", res, "--ui-scaling", mode,
+                                "--frames", "260", "--keydelay", "20", "--keys", keys] + list(extra),
+                               cwd=eng, capture_output=True,
+                               env=dict(os.environ, OMK_HIDDEN_WINDOW="1", OMK_VERIFY_GPU_CLOUD="1"))
+            return (r.stdout + r.stderr).decode("latin-1")
+        for res in ("1280x720", "800x600"):
+            for mode in ("nearest", "linear"):
+                out = run(res, mode)
+                if "renderer: VULKAN" not in out:
+                    return ("skipped",), ("skipped",), "no Vulkan window renderer"
+                v = re.findall(r"^gpu cloud verify: frame \d+, \S+ (\w+), (\d+) key pixels, \d+ blended, "
+                               r"(\d+) differ", out, re.M)
+                got.append((res, mode, len(v) >= 200, all(m == mode for m, _, _ in v),
+                            all(int(k) > 0 for _, k, _ in v), sum(int(x) for _, _, x in v)))
+        dump = os.path.join(tmp, "f.bin")
+        out = run("800x600", "nearest", ("--dump", dump))
+        px = open(dump, "rb").read() if os.path.exists(dump) else b""
+        keyed = sum(1 for i in range(0, len(px) - 1, 2) if px[i] == 0x1F and px[i + 1] == 0xF8)
+        got.append(("dump", len(re.findall(r"^gpu cloud verify", out, re.M)), len(px) == 800 * 600 * 2, keyed))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    want = [(res, mode, True, True, True, 0) for res in ("1280x720", "800x600") for mode in ("nearest", "linear")]
+    want.append(("dump", 0, True, 0))
+    return got, want, ("per run: 200+ frames verified, all in the mode asked, every one with cloud pixels "
+                       "under the key, and the differing pixels summed; then a --dump run: no verify line, "
+                       "the dump read, and no key pixel in it")
+
+
 def c_engine_gpu_present():
     r"""An adventure frame nothing is drawn over is dithered and presented on the
     GPU, and gives the bytes the CPU round trip gave (todo/optimization.md 4b).
@@ -53872,6 +53947,7 @@ SLOW = [
     ("engine: dirty corners", c_engine_dirty_corners, "todo/optimization.md 8; o3de/geom3do.h, o3de/depthtie.h"),
     ("engine: ground grid", c_engine_ground_grid, "todo/optimization.md 9; actor/walk.h"),
     ("engine: gpu present", c_engine_gpu_present, "todo/optimization.md 4; backends/vulkan/shaders/present.frag"),
+    ("engine: gpu cloud",  c_engine_gpu_cloud,  "todo/optimization.md; backends/vulkan/shaders/under.frag"),
     ("engine: pose equivalence", c_engine_pose_equivalence, "todo/optimization.md 10; actor/pose.h"),
     ("engine: mesh name index", c_engine_mesh_name_index, "todo/handoff-vita.md 2; o3de/shadow.h"),
     ("engine: tie memory", c_engine_tie_memory, "todo/handoff-vita.md 2; o3de/depthtie.h"),

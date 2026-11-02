@@ -154,7 +154,7 @@ VK_SHADERS := build/shaders/scene.vert.inc build/shaders/scene.frag.inc build/sh
               build/shaders/scene_cut.frag.inc build/shaders/scene_tiled_cut.frag.inc \
               build/shaders/fsq.vert.inc build/shaders/fsq.frag.inc \
               build/shaders/shadow.vert.inc \
-              build/shaders/present.frag.inc build/shaders/easu.frag.inc \
+              build/shaders/present.frag.inc build/shaders/easu.frag.inc build/shaders/under.frag.inc \
               build/shaders/post.frag.inc \
               build/shaders/ao.frag.inc build/shaders/ao_ms.frag.inc
 

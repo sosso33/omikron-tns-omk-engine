@@ -65,6 +65,13 @@ bool  vulkanAttachSurface(Renderer*, unsigned long long);
 bool  vulkanPresent(Renderer*);
 bool  vulkanPresentSurface(Renderer*, const Surface&);
 bool  vulkanPresentWorld(Renderer*, int vy, int vh);
+// the menus' cloud stretched on the card under the interface (`under.frag`):
+// `ui` the window-sized frame whose `kOverlayKey` pixels are the cloud's,
+// `mask`/`maskRow` the overlay planes' M as `resolveOverlayPlanes` left them,
+// `under` the 640x480 cloud, `filter` 0 nearest / 1 bilinear
+bool  vulkanPresentUnder(Renderer*, const Surface& ui, const unsigned char* mask,
+                         const unsigned char* maskRow, const Surface& under, int filter,
+                         std::vector<unsigned char>* readback = nullptr);
 bool  vulkanWorldPicture(Renderer*, int vy, int vh, std::vector<unsigned char>&);
 bool  vulkanResize(Renderer*, int w, int h);
 bool  vulkanRetarget(Renderer*, int samples, int ss, float up, float ao);   // OMK's options menu

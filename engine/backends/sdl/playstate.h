@@ -1181,6 +1181,12 @@ struct PlayState {
     bool haveEdit{};
     const omk::UiItem * vpItem{};
     bool screenReadsPicture{};
+    // THE CLOUD ON THE GPU (`ScreenComposer::setCloudTarget`, `under.frag`):
+    // the window's backend can draw it (Vulkan's, unless OMK_NO_GPU_CLOUD),
+    // this frame does, and the 640x480 picture it draws from
+    bool cloudUnderGpu{};
+    bool cloudGpuFrame{};
+    omk::Surface cloudPic{};
     omk::View view{};
     // `sub_4815D0`'s state and this frame's projected drops: the rain's
     // streaks (head colour, tail grey) and the snow's flake squares

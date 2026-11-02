@@ -437,6 +437,7 @@ int PlayState::phaseWorld() {
         overlayFrame = false, softGate = false;   // G6 step 2, the GLES window
         ovFade[0] = ovFade[1] = ovFade[2] = ovFade[3] = 0;   // the colour fade, for its shader
         g_ov.on = false;
+        cloudGpuFrame = false;
         (void)softGate;
         gpuVy = 0, gpuVh = 0;
         gpuKeep = "no world";   // the first gate that kept the frame on the CPU path

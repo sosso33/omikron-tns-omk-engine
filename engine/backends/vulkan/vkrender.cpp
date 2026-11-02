@@ -70,6 +70,7 @@
 #include "o3de/colourgrade.h"
 #include "o3de/lighttiles.h"
 #include "o3de/fsrcon.h"
+#include "ui/overlay.h"
 #include "platform/events.h"
 #include "platform/env.h"
 
@@ -120,6 +121,11 @@ const uint32_t kPresentFrag[] =
 #include "present.frag.inc"
 ;
 struct PresentPush { int32_t vy, vh, w, dither, ss, rcas; uint32_t rcasCon; int32_t raw; };
+// The menus' cloud under the interface (`under.frag`)
+const uint32_t kUnderFrag[] =
+#include "under.frag.inc"
+;
+struct UnderPush { int32_t W, H, uw, uh, filter; };
 // THE UPSCALE (`todo/remaster.md` A6): AMD FSR 1's EASU, vendored (MIT,
 // `third_party/ffx_fsr1.h`); its RCAS is in the present pass above
 const uint32_t kEasuFrag[] =
@@ -901,6 +907,26 @@ public:
     bool resizing_ = false;
     bool presentDirect();
     bool presentSurface(const omk::Surface& s);
+    // THE CLOUD UNDER THE INTERFACE (`under.frag`): the frame uploaded with
+    // the overlay's M in alpha, the 640x480 cloud beside it, one pass into
+    // `presImg_`. Its own images, set and pipeline, made on first use and
+    // dropped with the present pass's (`killUnder`).
+    bool presentUnder(const omk::Surface& ui, const unsigned char* mask, const unsigned char* maskRow,
+                      const omk::Surface& under, int filter, std::vector<unsigned char>* readback);
+    bool makeUnder(int uw, int uh);
+    void killUnder();
+    VkImage          undUi_ = VK_NULL_HANDLE;    VkDeviceMemory undUiMem_ = VK_NULL_HANDLE;
+    VkImageView      undUiView_ = VK_NULL_HANDLE;
+    VkImage          undImg_ = VK_NULL_HANDLE;   VkDeviceMemory undImgMem_ = VK_NULL_HANDLE;
+    VkImageView      undView_ = VK_NULL_HANDLE;
+    VkImage          undMask_ = VK_NULL_HANDLE;  VkDeviceMemory undMaskMem_ = VK_NULL_HANDLE;
+    VkImageView      undMaskView_ = VK_NULL_HANDLE;
+    VkBuffer         undBuf_ = VK_NULL_HANDLE;   VkDeviceMemory undBufMem_ = VK_NULL_HANDLE;
+    VkSampler        undSampler_ = VK_NULL_HANDLE;
+    VkDescriptorSetLayout undDsl_ = VK_NULL_HANDLE;
+    VkDescriptorPool undPool_ = VK_NULL_HANDLE;  VkDescriptorSet undDs_ = VK_NULL_HANDLE;
+    VkPipelineLayout undPlo_ = VK_NULL_HANDLE;   VkPipeline undPipe_ = VK_NULL_HANDLE;
+    int              undW_ = 0, undH_ = 0;
     void setViewport(const omk::View& view);
     // The present pass's three uses: present the frame (a window only), read
     // the pass's output back (the verification), and load `colour_` with a
@@ -2261,6 +2287,7 @@ bool VulkanRenderer::resize(int w, int h) {
     buf(readBuf_, readMem_);
     buf(upBuf_, upMem_);
     killUpscale();   // before the present's pool and layout, which it borrows
+    killUnder();     // it draws into the present pass's image
     // the present pass reads `colourView_`, so all of it goes; its guard is
     // `presPipe_`, and it is rebuilt at the new size on its next use
     if (presPipe_) { vkDestroyPipeline(dev_, presPipe_, nullptr); presPipe_ = VK_NULL_HANDLE; }
@@ -2467,6 +2494,243 @@ bool VulkanRenderer::presentSurface(const omk::Surface& s) {
                          VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &b);
     oneShotEnd(cb);
     return up ? presentImage(presImg_, w_, h_) : presentDirect();
+}
+
+// ---- THE CLOUD UNDER THE INTERFACE (`under.frag`) ------------------------------
+
+void VulkanRenderer::killUnder() {
+    if (undPipe_) { vkDestroyPipeline(dev_, undPipe_, nullptr); undPipe_ = VK_NULL_HANDLE; }
+    if (undPlo_) { vkDestroyPipelineLayout(dev_, undPlo_, nullptr); undPlo_ = VK_NULL_HANDLE; }
+    if (undPool_) { vkDestroyDescriptorPool(dev_, undPool_, nullptr); undPool_ = VK_NULL_HANDLE; }
+    undDs_ = VK_NULL_HANDLE;
+    if (undDsl_) { vkDestroyDescriptorSetLayout(dev_, undDsl_, nullptr); undDsl_ = VK_NULL_HANDLE; }
+    if (undSampler_) { vkDestroySampler(dev_, undSampler_, nullptr); undSampler_ = VK_NULL_HANDLE; }
+    const auto img = [&](VkImageView& v, VkImage& i, VkDeviceMemory& m) {
+        if (v) vkDestroyImageView(dev_, v, nullptr);
+        if (i) vkDestroyImage(dev_, i, nullptr);
+        if (m) freeDeviceMemory(m);
+        v = VK_NULL_HANDLE; i = VK_NULL_HANDLE; m = VK_NULL_HANDLE;
+    };
+    img(undUiView_, undUi_, undUiMem_);
+    img(undView_, undImg_, undImgMem_);
+    img(undMaskView_, undMask_, undMaskMem_);
+    if (undBuf_) vkDestroyBuffer(dev_, undBuf_, nullptr);
+    if (undBufMem_) freeDeviceMemory(undBufMem_);
+    undBuf_ = VK_NULL_HANDLE; undBufMem_ = VK_NULL_HANDLE;
+    undW_ = undH_ = 0;
+}
+
+bool VulkanRenderer::makeUnder(int uw, int uh) {
+    if (undPipe_ != VK_NULL_HANDLE && undW_ == uw && undH_ == uh) return true;
+    killUnder();
+    if (!makePresentPass()) return false;
+    const auto image = [&](int w, int h, VkFormat fmt, const char* what, VkImage& i, VkDeviceMemory& m,
+                           VkImageView& v) {
+        VkImageCreateInfo ii{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+        ii.imageType = VK_IMAGE_TYPE_2D; ii.format = fmt;
+        ii.extent = {static_cast<uint32_t>(w), static_cast<uint32_t>(h), 1};
+        ii.mipLevels = 1; ii.arrayLayers = 1;
+        ii.samples = VK_SAMPLE_COUNT_1_BIT; ii.tiling = VK_IMAGE_TILING_OPTIMAL;
+        ii.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        ii.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        ii.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        return makeImage2D(ii, VK_IMAGE_ASPECT_COLOR_BIT, what, i, m, &v);
+    };
+    // the frame as its own 565 words and the planes' M as bytes - both
+    // copied as they are, the expansion the shader's
+    if (!image(w_, h_, VK_FORMAT_R16_UINT, "under: interface", undUi_, undUiMem_, undUiView_) ||
+        !image(w_, h_, VK_FORMAT_R8_UNORM, "under: mask", undMask_, undMaskMem_, undMaskView_) ||
+        !image(uw, uh, VK_FORMAT_R16_UINT, "under: cloud", undImg_, undImgMem_, undView_) ||
+        !makeBuffer(static_cast<VkDeviceSize>(uw) * uh * 2, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                    undBuf_, undBufMem_)) {
+        killUnder();
+        return false;
+    }
+    {
+        // texelFetch only: the sampler's filter is never consulted
+        VkSamplerCreateInfo si{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+        si.magFilter = VK_FILTER_NEAREST; si.minFilter = VK_FILTER_NEAREST;
+        si.addressModeU = si.addressModeV = si.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        VKCHECK(vkCreateSampler(dev_, &si, nullptr, &undSampler_), "under sampler");
+        VkDescriptorSetLayoutBinding b[3]{};
+        for (uint32_t k = 0; k < 3; ++k) {
+            b[k].binding = k; b[k].descriptorCount = 1;
+            b[k].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            b[k].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        }
+        VkDescriptorSetLayoutCreateInfo dli{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+        dli.bindingCount = 3; dli.pBindings = b;
+        VKCHECK(vkCreateDescriptorSetLayout(dev_, &dli, nullptr, &undDsl_), "under set layout");
+        VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3};
+        VkDescriptorPoolCreateInfo pi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+        pi.maxSets = 1; pi.poolSizeCount = 1; pi.pPoolSizes = &ps;
+        VKCHECK(vkCreateDescriptorPool(dev_, &pi, nullptr, &undPool_), "under pool");
+        VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+        ai.descriptorPool = undPool_; ai.descriptorSetCount = 1; ai.pSetLayouts = &undDsl_;
+        VKCHECK(vkAllocateDescriptorSets(dev_, &ai, &undDs_), "under set");
+        VkDescriptorImageInfo info[3] = {
+            {undSampler_, undUiView_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+            {undSampler_, undView_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+            {undSampler_, undMaskView_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}};
+        VkWriteDescriptorSet wr[3]{};
+        for (uint32_t k = 0; k < 3; ++k) {
+            wr[k] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            wr[k].dstSet = undDs_; wr[k].dstBinding = k; wr[k].descriptorCount = 1;
+            wr[k].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; wr[k].pImageInfo = &info[k];
+        }
+        vkUpdateDescriptorSets(dev_, 3, wr, 0, nullptr);
+    }
+    {
+        VkPushConstantRange pcr{VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(UnderPush)};
+        VkPipelineLayoutCreateInfo pli{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+        pli.setLayoutCount = 1; pli.pSetLayouts = &undDsl_;
+        pli.pushConstantRangeCount = 1; pli.pPushConstantRanges = &pcr;
+        VKCHECK(vkCreatePipelineLayout(dev_, &pli, nullptr, &undPlo_), "under pipeline layout");
+        const auto module = [&](const uint32_t* code, size_t bytes) {
+            VkShaderModuleCreateInfo si{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+            si.codeSize = bytes; si.pCode = code;
+            VkShaderModule m = VK_NULL_HANDLE;
+            vkCreateShaderModule(dev_, &si, nullptr, &m);
+            return m;
+        };
+        VkShaderModule qv = module(kFsqVert, sizeof(kFsqVert));
+        VkShaderModule qf = module(kUnderFrag, sizeof(kUnderFrag));
+        if (!qv || !qf) {
+            if (qv) vkDestroyShaderModule(dev_, qv, nullptr);
+            if (qf) vkDestroyShaderModule(dev_, qf, nullptr);
+            std::fprintf(stderr, "vulkan: under shader module\n");
+            killUnder();
+            return false;
+        }
+        VkPipelineShaderStageCreateInfo st[2]{};
+        st[0] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0,
+                 VK_SHADER_STAGE_VERTEX_BIT, qv, "main", nullptr};
+        st[1] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0,
+                 VK_SHADER_STAGE_FRAGMENT_BIT, qf, "main", nullptr};
+        VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+        VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+        ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        VkViewport vp{0, 0, static_cast<float>(w_), static_cast<float>(h_), 0.0f, 1.0f};
+        VkRect2D sc{{0, 0}, {static_cast<uint32_t>(w_), static_cast<uint32_t>(h_)}};
+        VkPipelineViewportStateCreateInfo vps{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+        vps.viewportCount = 1; vps.pViewports = &vp; vps.scissorCount = 1; vps.pScissors = &sc;
+        VkPipelineRasterizationStateCreateInfo rs{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+        rs.polygonMode = VK_POLYGON_MODE_FILL; rs.cullMode = VK_CULL_MODE_NONE;
+        rs.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE; rs.lineWidth = 1.0f;
+        VkPipelineMultisampleStateCreateInfo ms{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+        ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+        VkPipelineColorBlendAttachmentState cba{};
+        cba.blendEnable = VK_FALSE; cba.colorWriteMask = 0xF;
+        VkPipelineColorBlendStateCreateInfo cb{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+        cb.attachmentCount = 1; cb.pAttachments = &cba;
+        VkGraphicsPipelineCreateInfo gp{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+        gp.stageCount = 2; gp.pStages = st;
+        gp.pVertexInputState = &vi; gp.pInputAssemblyState = &ia;
+        gp.pViewportState = &vps; gp.pRasterizationState = &rs;
+        gp.pMultisampleState = &ms; gp.pColorBlendState = &cb;
+        gp.layout = undPlo_; gp.renderPass = presPass_;
+        const VkResult pr = vkCreateGraphicsPipelines(dev_, VK_NULL_HANDLE, 1, &gp, nullptr, &undPipe_);
+        vkDestroyShaderModule(dev_, qv, nullptr);
+        vkDestroyShaderModule(dev_, qf, nullptr);
+        if (pr != VK_SUCCESS) { std::fprintf(stderr, "vulkan: under pipeline\n"); killUnder(); return false; }
+    }
+    undW_ = uw; undH_ = uh;
+    return true;
+}
+
+bool VulkanRenderer::presentUnder(const omk::Surface& s, const unsigned char* mask, const unsigned char* maskRow,
+                                  const omk::Surface& under, int filter, std::vector<unsigned char>* readback) {
+    if (swap_ == VK_NULL_HANDLE || s.w != w_ || s.h != h_ || !under.valid()) return false;
+    if (!makeUnder(under.w, under.h)) return false;
+    const VkDeviceSize bytes = static_cast<VkDeviceSize>(w_) * h_ * 4;
+    if (upBuf_ == VK_NULL_HANDLE &&
+        !makeBuffer(bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                    upBuf_, upMem_)) return false;
+    // THE INTERFACE: the 565 words as they are, then the planes' M - both
+    // straight copies (a 565 -> RGBA8 expansion per pixel was a third of a
+    // core at 3024x1964); `under.frag` expands, and reads the key itself
+    const VkDeviceSize uiBytes = static_cast<VkDeviceSize>(w_) * h_ * 2;
+    const VkDeviceSize maskBytes = static_cast<VkDeviceSize>(w_) * h_;
+    {
+        void* p = nullptr;
+        vkMapMemory(dev_, upMem_, 0, uiBytes + maskBytes, 0, &p);
+        auto* dst = static_cast<unsigned char*>(p);
+        std::memcpy(dst, s.px.data(), static_cast<std::size_t>(uiBytes));
+        if (mask) std::memcpy(dst + uiBytes, mask, static_cast<std::size_t>(maskBytes));
+        else std::memset(dst + uiBytes, 0, static_cast<std::size_t>(maskBytes));
+        (void)maskRow;   // M is 0 outside the rows the planes touched, `resolveOverlayPlanes`'s
+        vkUnmapMemory(dev_, upMem_);
+    }
+    // THE CLOUD, 640x480, its 565 words too: the shader widens them as the
+    // BLIT does, which is not the present's table (blue `>> 2` against `>> 3`)
+    {
+        void* p = nullptr;
+        const VkDeviceSize ub = static_cast<VkDeviceSize>(under.w) * under.h * 2;
+        vkMapMemory(dev_, undBufMem_, 0, ub, 0, &p);
+        std::memcpy(p, under.px.data(), static_cast<std::size_t>(ub));
+        vkUnmapMemory(dev_, undBufMem_);
+    }
+    VkCommandBuffer cb = oneShotBegin();
+    const auto layout = [&](VkImage img, VkImageLayout from, VkImageLayout to, VkAccessFlags srcA,
+                            VkAccessFlags dstA, VkPipelineStageFlags srcS, VkPipelineStageFlags dstS) {
+        VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+        b.oldLayout = from; b.newLayout = to;
+        b.srcQueueFamilyIndex = b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.image = img;
+        b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        b.srcAccessMask = srcA; b.dstAccessMask = dstA;
+        vkCmdPipelineBarrier(cb, srcS, dstS, 0, 0, nullptr, 0, nullptr, 1, &b);
+    };
+    const auto upload = [&](VkBuffer buf, VkDeviceSize at, VkImage img, int w, int h) {
+        // the last frame's pass read it; every texel is rewritten
+        layout(img, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_SHADER_READ_BIT,
+               VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+        VkBufferImageCopy cp{};
+        cp.bufferOffset = at;
+        cp.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        cp.imageExtent = {static_cast<uint32_t>(w), static_cast<uint32_t>(h), 1};
+        vkCmdCopyBufferToImage(cb, buf, img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &cp);
+        layout(img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+               VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+               VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+    };
+    upload(upBuf_, 0, undUi_, w_, h_);
+    upload(upBuf_, uiBytes, undMask_, w_, h_);
+    upload(undBuf_, 0, undImg_, under.w, under.h);
+    VkRenderPassBeginInfo rp{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
+    rp.renderPass = presPass_; rp.framebuffer = presFbuf_;
+    rp.renderArea = {{0, 0}, {static_cast<uint32_t>(w_), static_cast<uint32_t>(h_)}};
+    vkCmdBeginRenderPass(cb, &rp, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, undPipe_);
+    vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, undPlo_, 0, 1, &undDs_, 0, nullptr);
+    const UnderPush up{w_, h_, under.w, under.h, filter >= 1 ? 1 : 0};
+    vkCmdPushConstants(cb, undPlo_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof up, &up);
+    vkCmdDraw(cb, 3, 1, 0, 0);
+    vkCmdEndRenderPass(cb);   // `presImg_` left TRANSFER_SRC by the pass
+    // the verification's copy of what is presented (OMK_VERIFY_GPU_CLOUD)
+    if (readback && (presRead_ != VK_NULL_HANDLE ||
+                     makeBuffer(bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                presRead_, presReadMem_))) {
+        VkBufferImageCopy cp{};
+        cp.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        cp.imageExtent = {static_cast<uint32_t>(w_), static_cast<uint32_t>(h_), 1};
+        vkCmdCopyImageToBuffer(cb, presImg_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, presRead_, 1, &cp);
+    }
+    oneShotEnd(cb);
+    if (readback && presRead_ != VK_NULL_HANDLE) {
+        readback->resize(static_cast<std::size_t>(bytes));
+        void* p = nullptr;
+        if (vkMapMemory(dev_, presReadMem_, 0, bytes, 0, &p) == VK_SUCCESS) {
+            std::memcpy(readback->data(), p, static_cast<std::size_t>(bytes));
+            vkUnmapMemory(dev_, presReadMem_);
+        } else {
+            readback->clear();
+        }
+    }
+    return presentImage(presImg_, w_, h_);
 }
 
 // ---- THE PRESENT PASS (todo/optimization.md step 4b) --------------------------
@@ -4170,6 +4434,7 @@ VulkanRenderer::~VulkanRenderer() {
     if (depth_) vkDestroyImage(dev_, depth_, nullptr);
     if (depthMem_) freeDeviceMemory(depthMem_);
     killUpscale();
+    killUnder();
     if (presPipe_) vkDestroyPipeline(dev_, presPipe_, nullptr);
     if (presPlo_) vkDestroyPipelineLayout(dev_, presPlo_, nullptr);
     if (presSampler_) vkDestroySampler(dev_, presSampler_, nullptr);
@@ -4250,6 +4515,12 @@ bool vulkanAttachSurface(Renderer* r, unsigned long long surf) {
 bool vulkanPresent(Renderer* r) {
     auto* v = dynamic_cast<VulkanRenderer*>(r);
     return v && v->presentDirect();
+}
+bool vulkanPresentUnder(Renderer* r, const Surface& ui, const unsigned char* mask,
+                        const unsigned char* maskRow, const Surface& under, int filter,
+                        std::vector<unsigned char>* readback) {
+    auto* v = dynamic_cast<VulkanRenderer*>(r);
+    return v && v->presentUnder(ui, mask, maskRow, under, filter, readback);
 }
 bool vulkanPresentSurface(Renderer* r, const Surface& s) {
     auto* v = dynamic_cast<VulkanRenderer*>(r);

@@ -10,6 +10,9 @@
 
 #include <algorithm>
 #include <cstring>
+#if OMK_THREADS
+#include <mutex>
+#endif
 
 namespace omk {
 namespace {
@@ -96,10 +99,68 @@ Surface surfaceFromBmp(std::span<const std::byte> d) {
 
 namespace {
 
+// THE STRETCHED-SPRITE CACHE (the reader's "still high on main menu, maybe
+// linked to the logo", 2026-11-02). The start menu's title band is a 640x150
+// colour-keyed sprite stretched to the window every frame - 2.1 million
+// keyed bilinear pixels at 3024x1964, a core and a half - and it never
+// changes. A big scaled key-source blit is therefore kept as what it WRITES:
+// per destination row, the runs of pixels it draws and their values. A later
+// blit of the same source pixels (a hash of the source rectangle), the same
+// rectangles' sizes, key and filter copies the runs. The pixels a keyed blit
+// draws are found by drawing it twice, over two different fills: a pixel it
+// writes is the same in both (with no dest key nothing it computes reads the
+// destination), one it leaves is each fill. Byte-identical to drawing it.
+struct SpriteRun { int x, n; std::size_t at; };
+struct SpriteCache {
+    std::uint64_t hash = 0;
+    int sw = 0, sh = 0, dw = 0, dh = 0, filter = 0;
+    std::uint16_t key = 0;
+    std::vector<std::vector<SpriteRun>> rows;
+    std::vector<std::uint16_t> px;
+    long used = 0;
+};
+#if OMK_THREADS
+std::mutex g_spriteMu;
+using SpriteLock = std::lock_guard<std::mutex>;
+#else
+struct SpriteLock { explicit SpriteLock(int) {} };   // one thread: nothing to order
+int g_spriteMu = 0;
+#endif
+std::vector<SpriteCache> g_sprites;   // a handful: the screens' big sprites
+long g_spriteTick = 0;
+thread_local bool t_spriteFilling = false;
+
+// A fingerprint of a rectangle's pixels: the 64-bit FNV-1a hash, fed one
+// 565 word at a time. Its two constants are the published ones
+// (Fowler, Noll, Vo): where the hash starts, and what each step multiplies by.
+constexpr std::uint64_t kFnv64OffsetBasis = 14695981039346656037ull;
+constexpr std::uint64_t kFnv64Prime = 1099511628211ull;
+
+std::uint64_t rectHash(const Surface& s, Rect r) {
+    std::uint64_t hash = kFnv64OffsetBasis;
+    for (int y = r.top; y < r.bottom; ++y) {
+        const std::uint16_t* row = &s.px[static_cast<std::size_t>(y) * s.w + r.left];
+        for (int x = 0; x < r.right - r.left; ++x) {
+            hash ^= row[x];
+            hash *= kFnv64Prime;
+        }
+    }
+    return hash;
+}
+
+// "Big": a quarter of a 640x480 frame and up - the size from which a blit
+// is worth splitting over the thread pool, and worth caching
+constexpr long kBigBlitPixels = 640L * 480L / 4L;
+
+// the two backgrounds a keyed sprite is drawn over once, to see which
+// pixels it writes: black and white, as different as two words can be
+constexpr std::uint16_t kFillBlack = 0x0000;
+constexpr std::uint16_t kFillWhite = 0xFFFF;
+
 // A blit's rows, split over the shared pool when it is big (a quarter of a
 // 640x480 frame and up), whole on the caller's thread otherwise
 void rows(int dw, int dh, const std::function<void(std::size_t, std::size_t)>& body) {
-    if (static_cast<long>(dw) * dh < 76800) { body(0, static_cast<std::size_t>(dh)); return; }
+    if (static_cast<long>(dw) * dh < kBigBlitPixels) { body(0, static_cast<std::size_t>(dh)); return; }
     Threads::shared().parallelFor(0, static_cast<std::size_t>(dh), 16, body);
 }
 
@@ -132,6 +193,56 @@ bool blt(Surface& dst, Rect dr, const Surface& src, Rect sr,
                        flags, srcKey, dstKey, filter);
         }
 #endif
+
+    // ---- THE STRETCHED-SPRITE CACHE (above) -------------------------------
+    if (keySrc && !keyDest && (sw != dw || sh != dh) && static_cast<long>(dw) * dh >= kBigBlitPixels &&
+        !t_spriteFilling) {
+        const std::uint64_t srcHash = rectHash(src, sr);
+        SpriteLock lock(g_spriteMu);
+        ++g_spriteTick;
+        SpriteCache* hit = nullptr;
+        for (auto& c : g_sprites)
+            if (c.hash == srcHash && c.sw == sw && c.sh == sh && c.dw == dw && c.dh == dh && c.key == srcKey &&
+                c.filter == filter) { hit = &c; break; }
+        if (!hit) {
+            Surface overBlack(dw, dh, kFillBlack), overWhite(dw, dh, kFillWhite);
+            t_spriteFilling = true;
+            blt(overBlack, {0, 0, dw, dh}, src, sr, flags, srcKey, dstKey, filter);
+            blt(overWhite, {0, 0, dw, dh}, src, sr, flags, srcKey, dstKey, filter);
+            t_spriteFilling = false;
+            SpriteCache c;
+            c.hash = srcHash; c.sw = sw; c.sh = sh; c.dw = dw; c.dh = dh; c.key = srcKey; c.filter = filter;
+            c.rows.resize(static_cast<std::size_t>(dh));
+            for (int y = 0; y < dh; ++y) {
+                const std::size_t o = static_cast<std::size_t>(y) * dw;
+                // a pixel the sprite writes came out the same over both fills
+                const auto written = [&](int x) { return overBlack.px[o + x] == overWhite.px[o + x]; };
+                for (int x = 0; x < dw;) {
+                    if (!written(x)) { ++x; continue; }
+                    const int runStart = x;
+                    while (x < dw && written(x)) ++x;
+                    c.rows[static_cast<std::size_t>(y)].push_back({runStart, x - runStart, c.px.size()});
+                    c.px.insert(c.px.end(), overBlack.px.begin() + static_cast<long>(o + runStart),
+                                overBlack.px.begin() + static_cast<long>(o + x));
+                }
+            }
+            // at most eight: the least recently used goes
+            if (g_sprites.size() >= 8)
+                g_sprites.erase(std::min_element(g_sprites.begin(), g_sprites.end(),
+                                                 [](const SpriteCache& l, const SpriteCache& r) {
+                                                     return l.used < r.used;
+                                                 }));
+            g_sprites.push_back(std::move(c));
+            hit = &g_sprites.back();
+        }
+        hit->used = g_spriteTick;
+        for (int y = 0; y < dh; ++y) {
+            std::uint16_t* out = &dst.px[static_cast<std::size_t>(dr.top + y) * dst.w + dr.left];
+            for (const SpriteRun& r : hit->rows[static_cast<std::size_t>(y)])
+                std::memcpy(out + r.x, &hit->px[r.at], static_cast<std::size_t>(r.n) * 2);
+        }
+        return true;
+    }
 
     // ---- THE INTERFACE SCALING ENHANCEMENT (surface.h) -------------------
     //
