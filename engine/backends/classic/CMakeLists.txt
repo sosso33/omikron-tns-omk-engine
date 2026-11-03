@@ -139,6 +139,7 @@ add_application(OMKPlay
     xcoff_weak_storage.cpp
     classic_alloc.cpp
     carbonfront.cpp
+    classicpad.cpp
     launchguard.cpp
     playscene_off.cpp
     ${OMK_PLAY}

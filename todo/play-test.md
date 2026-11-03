@@ -127,6 +127,15 @@ a second. A pad SDL does not know is named in the log and not read: put a
 `gamecontrollerdb.txt` (the community's file, or one line of your own) beside the
 executable or in the directory you run from.
 
+**On Mac OS 9** (the Carbon `OMKPlay`, `backends/classic/classicpad.cpp`) a USB pad
+goes through InputSprocket, so it needs its vendor's InputSprocket driver, and the log
+says `pad: <name>, N controls read of M` or why not. To test on the iMac: that line,
+then that up on the stick walks forward (if it walks BACK, `kYMaximumIsUp` in
+`src/input/isppad.h` is the wrong way round - the header does not say and no pad could
+be tried), then which physical button is which (`Assigner`, the driver's order). The
+Carbon build on Mac OS X has no pad, InputSprocket does not exist there; the SDL
+build's pads are the ones to use.
+
 **Rebinding the pad**: `Options` > `Contrôles` > `Configuration de la manette` >
 a group > a row, CONFIRM, wait half a second, press a button. The row shows
 `JoyPad Bt<k>`. A taken button swaps with its row; any key or START cancels;

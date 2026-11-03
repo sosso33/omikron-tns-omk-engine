@@ -7316,7 +7316,7 @@ def c_engine_pad_layout():
     if len(rows) != 36:
         return (len(rows),), (36,), "pad_layout output parsed - the tool's format changed"
     stick = [ln for ln in r.stdout.decode("utf-8", "replace").splitlines()
-             if ln.startswith(("stick ", "aim "))]
+             if ln.startswith(("stick ", "aim ", "isp "))]
     got = [(g, n, rows[(g, n)]) for g, n in [
         (0, "south"), (0, "east"), (0, "west"), (0, "north"), (0, "back"),
         (1, "north"), (1, "back"), (2, "west"), (2, "north"), (2, "back"),
@@ -7346,7 +7346,19 @@ def c_engine_pad_layout():
                   "stick triggers 0 rx 0 word 0", "stick triggers 0 rx 1000 word 256",
                   "aim 1000,0 x1 -> 50,0", "aim 0,-1000 x1 -> 0,-25",
                   "aim 200,0 x30 -> 0,0", "aim 400,0 x30 -> 60,0",
-                  "aim -625,625 x10 -> -125,62"]
+                  "aim -625,625 x10 -> -125,62",
+                  # Mac OS 9's elements: 2 is a button, 1 a role of none, 3 the d-pad,
+                  # 4..7 the axes. A second `xaxi` and a second d-pad are not read,
+                  # nor a throttle; a `none` axis takes the next free, `yaxi` is taken
+                  "isp btn1 role 1 button 1", "isp fire role 1 button 2",
+                  "isp strt role 1 button 128", "isp btn3 role 1 button 4",
+                  "isp optn role 1 button 64", "isp dpad role 2 button 0",
+                  "isp dpad2 role 0 button 0", "isp xaxi role 3 button 0",
+                  "isp yaxi role 4 button 0", "isp thrt role 0 button 0",
+                  "isp xaxi2 role 0 button 0", "isp none role 5 button 0",
+                  # 1 south + 4 west + 128 start + up and left (256 + 1024) from state 2
+                  "isp pad buttons 1413 lx 1000 ly -1000 rx 0 triggers 0",
+                  "isp axis 0 -> -1000, middle -> 0, max -> 1000"]
     # the code, its comments taken out (a call commented away is not wired)
     src = open(os.path.join(eng, "backends", "sdl", "playframe_input_parts.cpp")).read()
     src = re.sub(r"//[^\n]*", "", re.sub(r"/\*.*?\*/", "", src, flags=re.S))
@@ -51534,7 +51546,7 @@ def c_licence_headers():
     # 697: + `engine/backends/classic/classic_alloc.cpp` (the classic build's
     # slab allocator under `malloc`, the same handoff's step 3)
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (704, [], 10, []), \
+           (707, [], 10, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \

@@ -436,6 +436,10 @@ bool CarbonFrontend::pump(HostInput& out) {
     out.mouse.clear();
     if (Button()) out.mouse.insert(12);
     out.mouseDX = out.mouseDY = 0.0f;
+    // the gamepad; START is the menu key, read straight from `held`
+    out.pad = pad::Pad{};
+    pads_.read(out.pad);
+    if (out.pad.buttons & pad::Start) out.held.insert(pad::kEscape);
     return !out.quit;
 }
 
@@ -529,6 +533,7 @@ void CarbonFrontend::close() {
         filmTexW_ = filmTexH_ = 0;
     }
 #endif
+    pads_.close();
     if (gw_) { DisposeGWorld(static_cast<GWorldPtr>(gw_)); gw_ = nullptr; }
     if (win_) { DisposeWindow(static_cast<WindowRef>(win_)); win_ = nullptr; }
 }

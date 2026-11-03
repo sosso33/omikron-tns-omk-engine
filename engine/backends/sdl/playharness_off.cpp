@@ -22,6 +22,7 @@ void PlayState::harnessScriptForcing() {}
 void PlayState::harnessRide() {}
 void PlayState::harnessSaveSlot() {}
 void PlayState::harnessHoldAndCall() {}
+void PlayState::harnessPad() {}
 void PlayState::harnessShootEnd() {}
 void PlayState::harnessBoard(float (&)[3], float (&)[3]) {}
 void PlayState::harnessFight() {}

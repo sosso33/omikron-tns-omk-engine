@@ -1992,6 +1992,17 @@ its loads (see the 2026-10-09 iBook report above).
 
 ## 5. Traps that cost time
 
+* **A headless OS 9 boot on this machine** (2026-11-03, the gamepad's run):
+  `-display none -audiodev none,id=snd0` keeps QEMU off the reader's keyboard and
+  `-monitor unix:mon.sock,server,nowait` gives `screendump`, the only way to see what
+  it is doing. Keep the socket path RELATIVE: past 104 bytes QEMU does not start at
+  all, and the wait looks like a slow boot. Run it on an IDLE machine: with a build
+  on every core it stayed at OpenBIOS and then black for 24 minutes, and alone it
+  reached the Finder and ran `OMKPlay` inside 16 - a stopped VM's Disk First Aid is
+  several of those. Reading an absent `omk-out.txt` is not a verdict on the binary:
+  look at the screen first. The Finder's "could not open omk.args" dialog is the
+  Startup Items folder opening everything in it, after the program, and is harmless.
+
 * **ppcosxkvm is patched locally** (`scripts/ppcosxkvm-r300-txo-endian.patch`):
   32-bit textures with TXO_ENDIAN 2 drew byte-reversed (black as BLUE) -
   SDL 2.0.3's window texture is the only one. `ppcosx update` discards it;

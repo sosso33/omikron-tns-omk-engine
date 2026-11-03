@@ -26,6 +26,7 @@
 #pragma once
 
 #include "audio/hostmix.h"
+#include "classicpad.h"
 #include "platform/frontend.h"
 
 #include <cstdint>
@@ -105,6 +106,7 @@ private:
     std::vector<float> mixed_;
     bool droppedToldOnce_ = false;
     long refills_ = 0;           // buffers mixed and queued after the first ring
+    classic::IspPads pads_;               // a gamepad, through InputSprocket on Mac OS 9
     std::uint64_t quitAt_ = 0;   // `omk.quit`: the run ends by itself (an instrument)
     std::string lastError_;
     void* win_ = nullptr;        // WindowRef
