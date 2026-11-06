@@ -84,13 +84,15 @@ the row hook.
 
 The other pages' rows apply into the same block, which a slot save and `Oui`
 write to the header; the viewer reads the fight and shoot difficulty and the
-fight camera from it when they next start, and the volumes and mouse rows from
-nowhere yet.
+fight camera from it when they next start; the volumes (`PlayState::fxGain` /
+`dialogueGain`, `playstate.cpp`) and the mouse rows 23-25
+(`playsetup_bodies.cpp`) are read from it too (corrected 2026-11-06).
 
 ## Not done, labelled
 
-* the keybinding rows (type 3) read no key and show no value, and `Défaut`
-  (type 5) restores nothing - both need the key-name table at `0x004D10CC`;
+* ~~the keybinding rows (type 3) read no key and show no value, and `Défaut`
+  (type 5) restores nothing~~ - **DONE** (`577eb9c`, `Opt_RowInput` cases 3
+  and 5 and `Opt_RebindKey`; `verify.py: engine: rebinding`);
 * the panels do not SLIDE (`Ui_SlidePanelFrom`), they appear;
 * the sneak's cursor highlight (`0x40000200`, set under param 0) is not drawn
   on the options rows;

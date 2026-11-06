@@ -58,7 +58,7 @@ of its six steps are done:
   `+188`, the cell at `+136`/`+140`, and the occupancy stamp/restore pair
   (`sub_435970` / `sub_420C10`) that the port now has a reader for but does
   not run;
-* `Shoot_StartTargetScripts` (0x0047BEF0), unread;
+* ~~`Shoot_StartTargetScripts` (0x0047BEF0), unread~~ - read since: `todo/shoot-mode.md` §4e (the doors are reference counted); its door arm is still not ported;
 * `Shoot_InitWeapon`'s event 48 arm, and **what a shot IS** — projectile, ray
   or scripted event. Nothing traced yet; `Projectiles_Tick` is in the frame
   loop and is the place to start.

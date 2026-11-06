@@ -1385,12 +1385,11 @@ void PlayState::inputSounds() {
     // 280 - Kay'l's footsteps. `SceneRunner` reports what each frame
     // started; the payload is a whole RIFF sitting in the `.SCX` stream.
     //
-    // POSITION IS NOT APPLIED. `Sound_Play3D` takes the node's world
-    // position and a pair of distances, and the attenuation and pan law
-    // beyond that point is DirectSound's - `PORTING` B5: it has no
-    // reachable tier and imitating it precisely would be invention. The
-    // cue, its timing and its loop flag are the decisions, and those are
-    // what this plays.
+    // `Sound_Play3D` takes the node's world position and a pair of
+    // distances, and the attenuation and pan law beyond that point is
+    // DirectSound's - `PORTING` B5: it has no reachable tier. The cue, its
+    // timing and its loop flag are the decisions; the POSITION is applied
+    // below ("POSITIONAL"), as a labelled reconstruction of the curve.
     {
         const auto& sc = session.scene();
         if (sc.file() != sfxSceneWas) {          // the scene's library changed

@@ -556,17 +556,26 @@ rendered at the moments it names and read by eye (not the same as playing):
 
 ## What is NOT fixed, so do not report it as new
 
-* **The lift arrival is still black** and the camera is inside the lift-car
-  mesh `CSPont04`. Identified, measured, not fixed — `todo/missing-ui.md` §6b,
-  which also records the three candidate mechanisms and why guessing between
-  them was refused.
-* **The lift door opens and then shuts itself.** The program moves it, then the
-  port drops the motion patch. Being worked on separately; §6d.
+Re-checked 2026-11-06 against the tree; the list of 2026-09-18 had gone stale.
+
+* **The overwrite dialog does not name the file** -
+  `todo/ui-save-confirm-and-quit.md` §1 (`0x0047BC30`, both confirm panels
+  lose their subject line). Decoded, not transcribed.
 * **Tab strips switch pages on the confirm, not on the move.**
-  `todo/ui-child-on-move.md` — nine lines, held back because they change the
-  shared walk.
-* **The overwrite dialog does not name the file** and the start menu's
-  `Quitter` is not the real exit — `todo/ui-save-confirm-and-quit.md`, both
-  decoded and ready to transcribe.
-* `engine: UI`, `ui item bindings` and `licence headers` are red for census
-  drift that predates all of this; `todo/sweep-log.md` has the attribution.
+  `todo/ui-child-on-move.md` - nine lines, held back because they change the
+  shared walk. Not done.
+
+No longer open (kept so nobody re-reports them as new):
+
+* ~~The lift arrival is black, the camera inside the lift-car mesh
+  `CSPont04`~~ - the engine's answer is the BACK-FACE CULL, ported
+  2026-10-01: the arrival goes from 90.3% to 56.9% dark (`docs/ASSETS.md`
+  "the lift's dark arrival", `verify.py: engine: back-face cull`). Whether
+  that frame now matches the original is not yet confirmed by a person.
+* ~~The lift door opens and then shuts itself~~ - REFUTED 2026-09-18: the
+  door stays where its program left it (`todo/missing-ui.md` §6d).
+* ~~The start menu's `Quitter` is not the real exit~~ - ported as
+  `kCbStartQuitYes` (`todo/start-menu.md` 3c, `verify.py: engine: start menu
+  quit`).
+* ~~`engine: UI`, `ui item bindings` and `licence headers` are red for census
+  drift~~ - cleared 2026-09-22 (`todo/sweep-log.md`).

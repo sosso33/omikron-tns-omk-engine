@@ -15,12 +15,11 @@ int PlayState::setupBoot() {
     // directly means the menu appears because the SCRIPT asked for it, which
     // is what `engine: boot` reproduces 42 of 42 from a cold start.
     //
-    // **THE MOVIES ARE STEPPED, NOT DECODED.** `gamedata/FLIS/` holds three MPEG-1
-    // program streams and `PORTING` A8 names pl_mpeg as the vendored decoder
-    // for them; it is not integrated, so the boot finds the three files,
-    // reports them, and moves on. The first thing a player sees is therefore
-    // missing here, and saying so is the point - a window that opens on the
-    // menu would imply the app starts there.
+    // **THE MOVIES ARE NOT PLAYED HERE.** `gamedata/FLIS/` holds three MPEG-1
+    // program streams, decoded by the vendored pl_mpeg (`platform/movie.*`,
+    // `PORTING` A8) and played before the menu by `playsetup_play.cpp`
+    // (`--nofmv` skips them, as the engine's own switch does); this section
+    // only reports the boot.
     //
     // **AND THE VIEWER DOES NOT RUN `omk::boot`** for this one report line:
     // that is a whole headless boot - `aventure.scx` (3 MB) read to COUNT its
