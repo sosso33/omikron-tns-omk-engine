@@ -175,6 +175,9 @@ struct SaveSlot {
 // slot 0's first 8232 bytes, so a reader that insisted on the whole 8402344
 // could not read the only real save there is.
 std::optional<SaveSlot> readSaveSlot(std::span<const std::byte> d, int slot);
+// The same, reading the slot's 8232 bytes alone out of the file at `path`
+// (`readSaveBytes`), never the whole ~8.4 MB.
+std::optional<SaveSlot> readSaveSlotAt(const std::string& path, int slot);
 
 // ------------------------------------------------------------- WRITING one
 //
@@ -252,6 +255,9 @@ std::vector<std::byte> thumbFromRgb565(std::span<const std::uint16_t> px,
 // bytes), not on the draw, which is why the picture beside the selected row
 // changes as the selection does.
 std::vector<std::uint16_t> readSaveThumb(std::span<const std::byte> file, int slot);
+// ...and out of the file at `path`, its 24576 bytes read alone - `sub_408D70`'s
+// own read, into a 24576-byte buffer.
+std::vector<std::uint16_t> readSaveThumbAt(const std::string& path, int slot);
 
 // --------------------------------------------------------------- the STORE
 //
@@ -264,6 +270,16 @@ std::vector<std::byte> readSaveFile(const std::string& writablePath,
                                     const std::string& shippedPath,
                                     std::string* usedPath = nullptr);
 bool writeSaveFile(const std::string& path, std::span<const std::byte> file);
+// WHICH FILE a reader means - `readSaveFile`'s choice without the read: the
+// writable file once it holds anything, else the shipped one.
+std::string saveFileInUse(const std::string& writablePath, const std::string& shippedPath);
+// `n` bytes from `offset` of a save file, read alone (fewer at its end, none
+// when it cannot be opened). THE WHOLE FILE IS READ ONLY TO WRITE IT: the
+// directory, a slot and its picture are read as the parts they are. Reading
+// the whole ~8.4 MB to look at one of them - up to three copies at once on the
+// save screen's open - ran the iMac G3's 100 MB partition out at the second
+// save of a 10-minute run (2026-11-06, `todo/ram-vs-original.md`).
+std::vector<std::byte> readSaveBytes(const std::string& path, std::size_t offset, std::size_t n);
 // How many times `writeSaveFile` has written, so a reader holding something
 // decoded from the file (the load panel's picture) knows to read it again.
 std::uint32_t saveFileWrites();

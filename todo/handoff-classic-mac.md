@@ -1926,7 +1926,7 @@ a software renderer, it is suspicious", 2026-10-30)**:
      OpenGL's spec allows a driver to read as |z_e| but which a driver
      taking -z_e, or deriving the fog's depth through a projection it
      expects in `glFrustum`'s form, sees as behind the eye: no fog. The
-     ATI 5.69 driver's choice is not known - this is the HYPOTHESIS that
+     ATI 5.81 driver's choice is not known - this is the HYPOTHESIS that
      fits the photo. The fix: `loadProjection` puts the eye in OpenGL's own
      convention (a modelview negating z, the projection an infinite-far
      `glFrustum`), the clip coordinates the same to the bit - `engine: gl1
@@ -1937,6 +1937,21 @@ a software renderer, it is suspicious", 2026-10-30)**:
      its second pass, CONFIRMED on the iMac 2026-11-01) says whether the
      card's fog is the cause, and `--profile-ab cardfog` flips the two in
      one run.
+  17. **OUT OF MEMORY AT THE SECOND SAVE (the reader's `0611/omk-out.txt`,
+     the same run, 2026-11-06)**: Mac OS 9.0.4, `Rage 128 OpenGL Engine,
+     OpenGL 1.1.ATI-5.81` (not 5.69), partition 102754 KB. GRID -> the
+     alleys -> Anekbah -> ARESTO -> ARESTO14, a save at its ring, then the
+     ring again: `new: 8402345 bytes REFUSED - 79610 KB live`, uncaught
+     `std::bad_alloc`, exit 1 at 614 s. The save screen read the whole
+     8.4 MB `IAM\GAMES` up to three times at once; now it reads the parts
+     (`todo/ram-vs-original.md` "The save file read whole to look at a part
+     of it", `engine: save read in parts`). The log also confirms the fog
+     ON THE CARD was taken there (no second passes, 180 fog state changes a
+     60 passes) - item 16. Its other numbers: the shape path took 2400-6200
+     of the draws a 60 passes in Anekbah, Anekbah's shape 1857 KB; the
+     live blocks ~60 MB in Anekbah, PEAKS of 84.4 and 85.7 MB on a city's
+     load (open, see that section); 1700 `SLOW FRAME` lines; the save
+     screen's frames ~390 ms of `screens, hud` each (not yet read).
 **Rule: on the classic build, an OpenGL 1.2 pixel format is never assumed;
 OpenGL 1.1's RGBA bytes is the fallback of every upload.** The iMac's menu
 frames: 67-116 ms of work (`screens, hud` ~35-49 ms). The launch has no

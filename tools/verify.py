@@ -24325,6 +24325,48 @@ def c_engine_save_write():
            "its X1R5G5B5"
 
 
+def c_engine_save_read_in_parts():
+    r"""The save file read in PARTS: every slot and every picture the same.
+
+    The save screen read the whole ~8.4 MB `IAM\GAMES` to build its directory
+    - twice more only to test the file for empty, and once as a string copied
+    into a vector - and the in-game load held the whole file through the area
+    load; on the reader's iMac G3 (2026-11-06) the second save of a 10-minute
+    run asked for a third copy at once and the 100 MB partition refused it
+    (`new: 8402345 bytes REFUSED - 79610 KB live`). The original reads the
+    whole file only to write it (`Game_WriteSave`), builds the directory from
+    a load it frees at once (`SaveDir_Build`), and reads a slot's picture
+    alone into a 24576-byte buffer (`sub_408D70`). So the port now reads the
+    directory as 140 bytes a slot, the picture as its 24576 bytes and a loaded
+    slot as its 8232 (`savefile.h` `readSaveBytes`).
+
+    `engine/tools/save_parts` reads all 256 slots of `traces/games-resto.bin`
+    (a whole file, three named slots with their pictures) both ways and counts
+    the ones that agree; `engine: load panel walk` holds the directory's rows.
+    Shown to fail (2026-11-06): the picture read 2 bytes early (253 the same -
+    only the 253 black ones), the slot read without its last DB byte (0 slots
+    the same: one byte short is no slot at all).
+    """
+    eng = os.path.join(ROOT, "engine")
+    fx = os.path.join(ROOT, "traces", "games-resto.bin")
+    if not (os.path.isdir(eng) and os.path.exists(fx)):
+        return ("skipped",), ("skipped",), "engine/ or the save fixture absent"
+    b = subprocess.run(["make", "-s", "build/save_parts"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "save_parts")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    out = subprocess.run([binp, fx], capture_output=True, text=True).stdout
+    m = re.search(r"slots (\d+), the same read alone (\d+) \((\d+) named\); "
+                  r"pictures (\d+), the same read alone (\d+) \((\d+) not black\)", out)
+    if not m:
+        return ("no save parts line",), ("a save parts line",), "save_parts must report"
+    v = tuple(int(x) for x in m.groups())
+    return v, (256, 256, 3, 256, 256, 3), \
+        "every slot of a whole save file read alone the same as out of the whole " \
+        "file (256 of 256, 3 of them named), and every picture the same (256 of " \
+        "256, 3 of them not black)"
+
+
 def c_engine_save_load():
     r"""LOADING a slot: `Game_LoadSave` -> `State_Apply`, run in the viewer.
 
@@ -54393,6 +54435,7 @@ SLOW = [
     ("engine: save+clock", c_engine_save,       "engine/README"),
     ("engine: save write", c_engine_save_write, "engine/README"),
     ("engine: save load", c_engine_save_load,  "engine/README"),
+    ("engine: save read in parts", c_engine_save_read_in_parts, "script/savefile.h readSaveBytes; todo/ram-vs-original.md"),
     ("engine: save round trip", c_engine_save_round_trip, "engine/README"),
     ("engine: scene loop", c_engine_scene_loop, "engine/README"),
     ("engine: golden traces", c_engine_golden_traces, "engine/README"),

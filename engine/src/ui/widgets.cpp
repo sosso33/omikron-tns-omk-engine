@@ -3116,9 +3116,16 @@ bool UiWalk::press(std::uint32_t bits) {
 std::vector<SaveEntry> saveDirectory(const std::string& gamesPath,
                                      const UiWidgets& w) {
     std::vector<SaveEntry> out;
-    if (fileSize(gamesPath) < 0) return out;
-    const std::string bytes = readTextFile(gamesPath);   // binary: a byte string
-    const std::vector<char> d(bytes.begin(), bytes.end());
+    // THE FOUR FIELDS READ AS THE PARTS THEY ARE: the first 140 bytes of
+    // each slot, where `SaveDir_Build` loads the whole ~8.4 MB file and frees
+    // it. The directory is the same; the memory is 140 bytes, not 8.4 MB (the
+    // whole file read here, as a string and then copied, ran the iMac G3 out
+    // of memory on the save screen's open, 2026-11-06).
+    HostFile f;
+    if (!f.open(gamesPath)) return out;
+    const auto size = static_cast<std::size_t>(f.size());
+    constexpr std::size_t kHead = 140;   // name, day, time ... the character's name at +108
+    char d[kHead];
     const auto u32 = [&d](std::size_t o) {
         std::uint32_t v = 0;
         for (int k = 3; k >= 0; --k)
@@ -3127,17 +3134,19 @@ std::vector<SaveEntry> saveDirectory(const std::string& gamesPath,
     };
     for (int k = 0; k < w.saveSlots(); ++k) {
         const std::size_t s = w.savesHeader() + w.saveSlot() * static_cast<std::size_t>(k);
-        if (s + 108 > d.size()) break;
+        if (s + 108 > size) break;
+        const std::size_t got = f.readAt(s, d, kHead);
+        if (got < 108) break;
         SaveEntry e;
         e.slot = k;
-        for (std::size_t i = 0; i < 32 && d[s + i]; ++i) e.name.push_back(d[s + i]);
-        e.day  = u32(s + 32);
-        e.time = u32(s + 36);
+        for (std::size_t i = 0; i < 32 && d[i]; ++i) e.name.push_back(d[i]);
+        e.day  = u32(32);
+        e.time = u32(36);
         // the directory's fourth field: `qmemcpy(v7, v3 + 19, 0x20)` with v3
         // at slot + 32, so +76 bytes FROM v3 - slot + 108, the player
         // record's +8, the character's name (GAME_STATE 8)
-        for (std::size_t i = 0; i < 32 && s + 108 + i < d.size() && d[s + 108 + i]; ++i)
-            e.character.push_back(d[s + 108 + i]);
+        for (std::size_t i = 0; i < 32 && 108 + i < got && d[108 + i]; ++i)
+            e.character.push_back(d[108 + i]);
         out.push_back(std::move(e));
     }
     return out;

@@ -75,9 +75,10 @@ std::optional<SettingsBlock> readSettingsBlock(std::span<const std::byte> d) {
 
 SettingsBlock defaultSettingsBlock() { return SettingsBlock{}; }
 
-std::optional<SaveSlot> readSaveSlot(std::span<const std::byte> d, int slot) {
-    if (slot < 0) return std::nullopt;
-    const std::size_t base = kSaveHeader + kSaveSlotSize * static_cast<std::size_t>(slot);
+namespace {
+// A slot's name, date and DB out of `d` at `base` - the whole file's bytes
+// (`readSaveSlot`) or the slot's alone, read on their own (`readSaveSlotAt`).
+std::optional<SaveSlot> slotFrom(std::span<const std::byte> d, std::size_t base) {
     if (base + kSaveSlotDb + kGameDbSize > d.size()) return std::nullopt;
     SaveSlot s;
     for (std::size_t k = 0; k < 32; ++k) {
@@ -89,6 +90,19 @@ std::optional<SaveSlot> readSaveSlot(std::span<const std::byte> d, int slot) {
     s.time = i32(d, base + 36);
     s.state = GameState::fromBytes(d.subspan(base + kSaveSlotDb, kGameDbSize));
     return s;
+}
+}  // namespace
+
+std::optional<SaveSlot> readSaveSlot(std::span<const std::byte> d, int slot) {
+    if (slot < 0) return std::nullopt;
+    return slotFrom(d, kSaveHeader + kSaveSlotSize * static_cast<std::size_t>(slot));
+}
+
+std::optional<SaveSlot> readSaveSlotAt(const std::string& path, int slot) {
+    if (slot < 0) return std::nullopt;
+    const auto d = readSaveBytes(path, kSaveHeader + kSaveSlotSize * static_cast<std::size_t>(slot),
+                                 kSaveSlotDb + kGameDbSize);
+    return slotFrom(d, 0);
 }
 
 // ------------------------------------------------------------------ writing
@@ -256,10 +270,10 @@ std::vector<std::byte> thumbFromRgb565(std::span<const std::uint16_t> px,
     return out;
 }
 
-std::vector<std::uint16_t> readSaveThumb(std::span<const std::byte> file, int slot) {
+namespace {
+// The 128x96 picture out of `file` at `b`, X1R5G5B5 to RGB565.
+std::vector<std::uint16_t> thumbFrom(std::span<const std::byte> file, std::size_t b) {
     std::vector<std::uint16_t> out;
-    if (slot < 0 || slot >= static_cast<int>(kSaveSlots)) return out;
-    const std::size_t b = slotBase(slot) + kSaveSlotDb + kGameDbSize;
     if (b + kSaveShot > file.size()) return out;
     out.resize(static_cast<std::size_t>(kThumbW) * kThumbH);
     for (std::size_t i = 0; i < out.size(); ++i) {
@@ -272,6 +286,17 @@ std::vector<std::uint16_t> readSaveThumb(std::span<const std::byte> file, int sl
         out[i] = static_cast<std::uint16_t>((r << 11) | ((g << 1) << 5) | bl);
     }
     return out;
+}
+}  // namespace
+
+std::vector<std::uint16_t> readSaveThumb(std::span<const std::byte> file, int slot) {
+    if (slot < 0 || slot >= static_cast<int>(kSaveSlots)) return {};
+    return thumbFrom(file, slotBase(slot) + kSaveSlotDb + kGameDbSize);
+}
+
+std::vector<std::uint16_t> readSaveThumbAt(const std::string& path, int slot) {
+    if (slot < 0 || slot >= static_cast<int>(kSaveSlots)) return {};
+    return thumbFrom(readSaveBytes(path, slotBase(slot) + kSaveSlotDb + kGameDbSize, kSaveShot), 0);
 }
 
 std::vector<std::byte> readSaveFile(const std::string& writablePath,
@@ -286,6 +311,21 @@ std::vector<std::byte> readSaveFile(const std::string& writablePath,
     d = DataFs::readPath(shippedPath);
     if (usedPath && !d.empty()) *usedPath = shippedPath;
     return d;
+}
+
+std::string saveFileInUse(const std::string& writablePath, const std::string& shippedPath) {
+    // `readSaveFile`'s choice, made from the sizes: the writable file once it
+    // holds anything
+    return shippedPath.empty() || fileSize(writablePath) > 0 ? writablePath : shippedPath;
+}
+
+std::vector<std::byte> readSaveBytes(const std::string& path, std::size_t offset, std::size_t n) {
+    std::vector<std::byte> out;
+    HostFile f;
+    if (!f.open(path)) return out;
+    out.resize(n);
+    out.resize(f.readAt(offset, out.data(), n));
+    return out;
 }
 
 namespace { std::uint32_t g_saveFileWrites = 0; }

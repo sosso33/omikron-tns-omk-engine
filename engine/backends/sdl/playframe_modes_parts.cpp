@@ -580,12 +580,11 @@ int PlayState::modesShoot() {
             // callback, which is why it is read here and not once at start-up:
             // a save written during this run has to show up next time the
             // panel opens.
-            loadPanelState = omk::buildLoadPanel(
-                omk::saveDirectory(omk::readSaveFile(savesPath, dataRoot + "/IAM/GAMES").empty()
-                                       ? dataRoot + "/IAM/GAMES" : savesPath, uiWidgets));
-            loadPanelState.path =
-                omk::readSaveFile(savesPath, dataRoot + "/IAM/GAMES").empty()
-                    ? dataRoot + "/IAM/GAMES" : savesPath;
+            // Which file is chosen from the sizes, not by reading it: the
+            // whole ~8.4 MB was read twice here only to test it for empty.
+            const std::string games = omk::saveFileInUse(savesPath, dataRoot + "/IAM/GAMES");
+            loadPanelState = omk::buildLoadPanel(omk::saveDirectory(games, uiWidgets));
+            loadPanelState.path = games;
             fresh->attachLoadPanel(&loadPanelState);
             // `Ui_BuildLoadPanel` runs in the OPEN callback and lays the
             // shared panel out differently for each of its two screens - 29
@@ -2155,8 +2154,10 @@ int PlayState::modesQuitLoad() {
         if (pendingLoadSlot >= 0 && session.bootContext() < 0) {
             const int slotNo = pendingLoadSlot;
             pendingLoadSlot = -1;
-            const auto bytes = omk::readSaveFile(savesPath, dataRoot + "/IAM/GAMES");
-            if (const auto sl = omk::readSaveSlot(bytes, slotNo)) {
+            // the slot's 8232 bytes alone, not the ~8.4 MB file held through
+            // the area load below
+            if (const auto sl = omk::readSaveSlotAt(omk::saveFileInUse(savesPath, dataRoot + "/IAM/GAMES"),
+                                                    slotNo)) {
                 state = sl->state;
                 state.setClockDay(sl->day);
                 state.setClock(sl->time);

@@ -291,6 +291,9 @@ int PlayState::setupSession() {
         std::printf("\n");
     }
     if (int retVal{}; setupSessionLoadSave(retVal)) return retVal;
+    // the slot is applied: the whole ~8.4 MB file `--slot` read goes, rather
+    // than staying beside the game for the whole run
+    std::vector<std::byte>().swap(saveBytes);
     // Asking for a SLOT is asking to resume: adventure mode in the save's own
     // area, at its own placement, which is what `Game_LoadSave` does.  A bare
     // `--save FILE` keeps its old meaning - the DB as a starting state, the

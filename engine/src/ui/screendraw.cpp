@@ -1567,15 +1567,15 @@ void ScreenComposer::drawLoadSelection(const omk::LoadPanel& lp, const omk::UiIt
         // way `sub_408D70` reads it.
         const int sl = lp.slotOfRow();
         if (sl >= 0 && !lp.path.empty()) {
-            // READ ON A CHANGE, not every frame: the file is the whole
-            // save directory (3496 + 256 x 32808 bytes, ~8.4 MB) and
-            // was read from the card on every frame a row was
-            // selected. Again when the row, the file or a write moves.
+            // READ ON A CHANGE, not every frame - and only the slot's
+            // 24576 bytes, as `sub_408D70` reads them, never the whole
+            // ~8.4 MB directory it sits in. Again when the row, the file
+            // or a write moves.
             if (thumbPath_ != lp.path || thumbSlot_ != sl || thumbWrites_ != saveFileWrites()) {
                 thumbPath_ = lp.path;
                 thumbSlot_ = sl;
                 thumbWrites_ = saveFileWrites();
-                thumbPx_ = readSaveThumb(DataFs::readPath(lp.path), sl);
+                thumbPx_ = readSaveThumbAt(lp.path, sl);
             }
             const auto& px = thumbPx_;
             // WALK THE DESTINATION AND SAMPLE THE SOURCE, never the

@@ -2189,7 +2189,7 @@ private:
     // eye looking down +z (the first form, 2026-11-02) a driver free to take
     // the fog's distance as -z_e, or to derive it through a projection it
     // expects in glFrustum's form, saw every vertex behind the eye: the
-    // reader's iMac G3 (Rage 128, OpenGL 1.1.ATI-5.69) drew NO fog at all
+    // reader's iMac G3 (Rage 128, OpenGL 1.1.ATI-5.81) drew NO fog at all
     // (2026-11-06), where Apple's software renderer (|z_e|) had drawn it.
     void loadProjection() {
         glMatrixMode(GL_PROJECTION);

@@ -288,3 +288,39 @@ grows with every directory listed (bounded by the data tree).
 **Not yet measured**: how much of the iMac's ~20 MB growth these were. The
 next measurement is an inventory by owner (`--profile` + `omkprof.py
 --sites`) at the END of a multi-area run, on the iMac.
+
+## The save file read whole to look at a part of it (2026-11-06)
+
+The reader's iMac G3 run of 2026-11-06 (`omk-out.txt` in the stick's
+`0611/`, the build of `b7ea36b`, a 102754 KB partition) ENDED ON
+`std::bad_alloc` at 614 s: back at the restaurant's save ring a second time
+(zone 3731, `ARESTO14`, the first save written 2 s earlier), the next
+`new` asked for **8402345 bytes - `IAM\GAMES`'s 8402344 and one** - with
+79610 KB live, where the samples a few seconds before read 63.7 MB. Two
+copies of the save file were live and a third was refused.
+
+The save file is 3496 + 256 x 32808 bytes whatever it holds, and the port
+read ALL of it to look at a part:
+
+| reader | read | the original |
+|---|---|---|
+| the save/load screen's open | the whole file twice, only to test it for empty, and once more as a string copied into a vector to build the directory - up to three copies at once | `SaveDir_Build`: one load, four fields lifted per slot, freed |
+| the picture beside a row, on each move | the whole file | `sub_408D70`: the slot's 24576 bytes into a buffer of that size |
+| a slot loaded from the screen | the whole file, held through the area load | the slot's part |
+| `--slot` at start-up | the whole file, kept for the whole run | (the boot reads the header) |
+
+Now (`savefile.h` `readSaveBytes`, `saveFileInUse`, `readSaveSlotAt`,
+`readSaveThumbAt`): the directory is 140 bytes a slot read alone, the
+picture its 24576, a loaded slot its 8232, the start-up copy dropped once
+the slot is applied. The whole file is read only to WRITE it (a save, a
+slot cleared, the options), as `Game_WriteSave` does - one copy.
+`engine: save read in parts` holds every slot and picture of a whole file
+read both ways equal, shown to fail; `engine: load panel walk` the rows;
+`engine: hint shop` opens screen 30 in play. Seen on the host: the slot list
+draws its rows and the picture as before.
+
+**Also in that log, NOT fixed here**: the live C++ blocks sit near 60 MB in
+Anekbah (63.7 MB at the save ring), and PEAK at 84.4 MB at Anekbah's load
+(~165-210 s) and 85.7 MB at the return from `ARESTO` (~436 s) - a ~24 MB
+transient on a city's load. "Used at most 66786 KB" of the partition. The
+64 MB budget stands; those two numbers are the next things to read.
