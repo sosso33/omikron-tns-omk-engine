@@ -533,8 +533,9 @@ public:
         // fog on the CPU both GL matrices stay identity: what reaches GL is
         // already in clip space. With the fog ON THE CARD (`cardFog_`) the
         // vertices are VIEW-space and the projection is a matrix
-        // (`loadProjection`) - the same clip coordinates, and the eye depth
-        // the card's fog needs.
+        // (`loadProjection`, behind a modelview that turns them into
+        // OpenGL's own eye space, looking down -z) - the same clip
+        // coordinates, and the eye depth the card's fog needs.
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
         loadProjection();
@@ -2180,18 +2181,33 @@ private:
     // the clip coordinates `emit` writes on the CPU otherwise - (x / th,
     // y / tv, z - 2 near q, z). q is 1 but for a tie loser's corner (`emit`).
     // Column-major for `glLoadMatrixf`. Identity with the fog on the CPU.
+    //
+    // THE EYE SPACE IS OPENGL'S OWN: the modelview negates z, so the eye
+    // looks down -z as every OpenGL 1.1 program's did, and the projection
+    // takes -z back - an infinite-far `glFrustum` (row 2 (0, 0, -1, -2 near),
+    // row 3 (0, 0, -1, 0)), the same clip coordinates to the bit. With the
+    // eye looking down +z (the first form, 2026-11-02) a driver free to take
+    // the fog's distance as -z_e, or to derive it through a projection it
+    // expects in glFrustum's form, saw every vertex behind the eye: the
+    // reader's iMac G3 (Rage 128, OpenGL 1.1.ATI-5.69) drew NO fog at all
+    // (2026-11-06), where Apple's software renderer (|z_e|) had drawn it.
     void loadProjection() {
         glMatrixMode(GL_PROJECTION);
         if (!cardFog_) {
+            glLoadIdentity();
+            glMatrixMode(GL_MODELVIEW);
             glLoadIdentity();
         } else {
             GLfloat m[16] = {};
             m[0] = ith_;                  // row 0: x / th
             m[5] = itv_;                  // row 1: y / tv
-            m[10] = 1.0f;                 // row 2: z ...
+            m[10] = -1.0f;                // row 2: -z_e (= z) ...
             m[14] = -2.0f * kNearCut;     //        ... - 2 near q
-            m[11] = 1.0f;                 // row 3: w = z
+            m[11] = -1.0f;                // row 3: w = -z_e = z
             glLoadMatrixf(m);
+            glMatrixMode(GL_MODELVIEW);
+            static const GLfloat flipZ[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1};
+            glLoadMatrixf(flipZ);         // view space (x, y, z) to OpenGL's eye (x, y, -z)
         }
         glMatrixMode(GL_MODELVIEW);
     }

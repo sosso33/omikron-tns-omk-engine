@@ -1916,6 +1916,27 @@ a software renderer, it is suspicious", 2026-10-30)**:
      what they cache", `engine: caches released`. Classic builds rebuilt.
      **NEXT ON THE iMAC**: the same multi-area play as the 63 MB runs, the
      log's `memory: ... used at most` against them.
+  16. **NO FOG ON THE iMAC (the reader's report and three photos,
+     2026-11-06, the build of `b7ea36b`)**: Anekbah's streets drawn sharp to
+     the clip, the sky and the far set unhazed - "Le brouillard ne s'affiche
+     plus". The first iMac run of item 12's fog ON THE CARD (OpenGL's
+     `GL_FOG`): until then it had been seen only on the host and under
+     Apple's software renderer in the emulated OS 9. Its eye space looked
+     down +z (modelview identity, view-space z positive in front), which
+     OpenGL's spec allows a driver to read as |z_e| but which a driver
+     taking -z_e, or deriving the fog's depth through a projection it
+     expects in `glFrustum`'s form, sees as behind the eye: no fog. The
+     ATI 5.69 driver's choice is not known - this is the HYPOTHESIS that
+     fits the photo. The fix: `loadProjection` puts the eye in OpenGL's own
+     convention (a modelview negating z, the projection an infinite-far
+     `glFrustum`), the clip coordinates the same to the bit - `engine: gl1
+     backend` green, its card-fog frame unchanged. The host cannot show the
+     driver's behaviour, so no check can be made to fail on it; the iMac is
+     the judge. **NEXT ON THE iMAC**: the street with the new build - the
+     far set hazed? If not, `--gl1-cpu-fog` in `omk.args` (the CPU fog and
+     its second pass, CONFIRMED on the iMac 2026-11-01) says whether the
+     card's fog is the cause, and `--profile-ab cardfog` flips the two in
+     one run.
 **Rule: on the classic build, an OpenGL 1.2 pixel format is never assumed;
 OpenGL 1.1's RGBA bytes is the fallback of every upload.** The iMac's menu
 frames: 67-116 ms of work (`screens, hud` ~35-49 ms). The launch has no
