@@ -33,6 +33,14 @@ GpuResidency::~GpuResidency() {
     for (const auto& l : g_geometryListeners)
         if (l.fn) l.fn(l.ctx, g);
 }
+
+bool releaseResidency(const Geometry& g) {
+    if (!g.resident.on_) return false;
+    for (const auto& l : g_geometryListeners)
+        if (l.fn) l.fn(l.ctx, &g);
+    g.resident.on_ = false;
+    return true;
+}
 namespace {
 
 // A vertex index is per-MESH, so each mesh's block starts at the running sum

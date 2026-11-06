@@ -1907,6 +1907,15 @@ a software renderer, it is suspicious", 2026-10-30)**:
      **NEXT ON THE iMAC**: `--profile omk-prof --profile-ab shape`, a minute
      or two at 100 m in Anekbah; `python3 tools/omkprof.py omk-prof` gives
      `gl1: submit`'s self time per phase (29.9 ms per corner on 2026-11-02).
+  15. **THE ~63 MB AFTER SEVERAL AREAS, two caches (the reader's "check the
+     cache handling", then "fix both", 2026-11-06)**: the crowd's and
+     traffic's model cuts were never released (0.97 + 0.19 MB a city's
+     crowd, piling up), and an emptied world slot kept its renderer state
+     (GL1's 1.8 MB shape for Anekbah, a GPU buffer) until a new set was
+     drawn there. Both fixed, `todo/ram-vs-original.md` "Caches outliving
+     what they cache", `engine: caches released`. Classic builds rebuilt.
+     **NEXT ON THE iMAC**: the same multi-area play as the 63 MB runs, the
+     log's `memory: ... used at most` against them.
 **Rule: on the classic build, an OpenGL 1.2 pixel format is never assumed;
 OpenGL 1.1's RGBA bytes is the fallback of every upload.** The iMac's menu
 frames: 67-116 ms of work (`screens, hud` ~35-49 ms). The launch has no

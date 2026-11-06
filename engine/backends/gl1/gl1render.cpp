@@ -239,6 +239,9 @@ public:
     }
     static void geometryGone(void* self, const Geometry* g) {
         auto* r = static_cast<Gl1Renderer*>(self);
+        // a set's state said once as it goes (the slots' release, `releaseResidency`)
+        if (const auto it = r->shapes_.find(g); it != r->shapes_.end() && it->second.n >= 20000)
+            std::printf("gl1: a geometry of %zu corners gone - its shape released\n", it->second.n);
         r->vindex_.erase(g);
         r->shapes_.erase(g);
         r->clusters_.erase(g);

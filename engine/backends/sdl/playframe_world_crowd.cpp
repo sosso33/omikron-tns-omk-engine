@@ -1320,6 +1320,31 @@ void PlayState::worldCrowdPlayerRootDrop(const omk::NodeTracks*& pt, float& root
 // street capture had the slots' copies at ~9 MB after three minutes and
 // climbing (`todo/debug-tools.md`). Two seconds, not one frame: a walker on
 // the edge of the draw distance would otherwise re-allocate every frame.
+std::size_t PlayState::releaseModelCuts(const std::string& model) {
+    std::size_t cuts = 0;
+    if (const auto it = crowd.lodRest.find(model); it != crowd.lodRest.end()) {
+        cuts += it->second.size();
+        crowd.lodRest.erase(it);
+    }
+    for (auto it = vehAtRest.begin(); it != vehAtRest.end();) {
+        if (it->first.first == model) { it = vehAtRest.erase(it); ++cuts; }
+        else ++it;
+    }
+    // A VEHICLE SLOT TAKES ITS MODEL ONCE (`if (!sv.mo)`), and keeps it while
+    // its vehicle is not live - which is when the eviction may let the model
+    // go. Left, a slot that came back to life with the same model would draw
+    // through the freed `CharModel` and the released cut. Restaged instead,
+    // as a slot whose model changed is.
+    for (auto& sv : traffic.staged)
+        if (sv && sv->model == model) {
+            sv->mo = nullptr; sv->atRest = nullptr; sv->built = false; sv->lodRoot = -1;
+        }
+    // the walkers look their model up every frame, but cache the cuts:
+    // a new generation refills them (`PedStaged::cacheGen`)
+    if (cuts) ++crowd.cacheGen;
+    return cuts;
+}
+
 const omk::Geometry & PlayState::vehAtRestFor(const std::string& model, const CharModel& mo, int rootMesh) {
     OMK_MEM_TAG("crowd: vehicle sub-objects");   // the profiler's category (todo/debug-tools.md)
     auto it = vehAtRest.find({model, rootMesh});

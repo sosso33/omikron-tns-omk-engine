@@ -236,3 +236,55 @@ four red, all this work's. `engine: vita build`, `classic build` and
 the Mac's headers had supplied and the cross toolchains do not; fixed, all
 three green. `licence headers` - the census (547 -> 549, the two probes).
 
+
+## Caches outliving what they cache (2026-11-06)
+
+The reader's "check the cache handling in the code", after the iMac G3's
+runs ended near 63 MB after several areas (`todo/handoff-classic-mac.md` 3i
+item 7) against ~43 MB at the street start. Every cache that holds model,
+set, texture, sound or file data was read for what empties or bounds it.
+
+**Correct already**: GL1's textures (`uploaded_`: whatever a new pool does
+not use is deleted from the card and its pixels freed); a world slot's own
+data (`w = WorldSlot{}` in `askSet` frees the set's corners, soups, grids and
+moving-mesh copies); `charModels` (a model nobody wears leaves at once,
+`playframe_world.cpp`); `sfxCache` (cleared when the scene's library
+changes); the crowd's and the player's track caches (cleared with their
+library / bank); `SceneRunner::nodeCache_` (per scene); the stretched-sprite
+cache (8 entries, least recently used); `ClipMemo` and every backend's
+per-geometry state (dropped when the geometry is destroyed).
+
+**Two that were not, FIXED** (`engine: caches released`):
+1. **The crowd's and the traffic's cuts** - a model's rest cut to one
+   skeleton (`crowd.lodRest`, `lodRestFor`) or one vehicle sub-object
+   (`vehAtRest`) - were kept by the model's NAME and never cleared: when
+   `charModels` let a model go, its cuts stayed, city after city. Anekbah's:
+   0.97 + 0.19 MB, 16 cuts over 6 models. `PlayState::releaseModelCuts` now
+   drops them as the model leaves, renews the walkers' caches
+   (`crowd.cacheGen`) and RESETS the vehicle slots holding the model: a
+   vehicle slot takes its model once (`if (!sv.mo)`) and keeps it while its
+   vehicle is not live - which is exactly when the eviction may free it - so
+   a slot coming back to life with the same model would have drawn through
+   the freed `CharModel` (a latent use-after-free; the walkers had been
+   fixed for the same reason earlier, they look their model up each frame).
+2. **An emptied world slot's renderer state.** `askSet` resets the slot in
+   place, so `w.geo` keeps its address and no destructor tells the
+   backends: GL1's shape (1.8 MB for Anekbah), runs and tie, a GPU vertex
+   buffer (6.7 MB on Vulkan), stayed until a new set was drawn in that slot
+   - an interior visited after a city kept the city's. `releaseResidency`
+   (`o3de/geom3do.h`) tells the listeners as a destruction would, and every
+   backend that keeps per-geometry state (Vulkan, GLES and so the Vita, GL1,
+   the 3DS) listens. Measured with `--game-restart`: Vulkan's buffer goes on
+   the restart's frame where it went at the process's exit before.
+
+**Bounded by count, not bytes - to watch**: GL1's `shapes_` and `vindex_`
+(256 entries; reaching it clears all, and the set's shape is rebuilt - a
+hitch on a G3); GL1's transient arrays (`vx_`, `vs_`, the batch arrays) keep
+their peak size (`vs_` 2 MB after a `--profile-ab shape` run); the sprite
+cache's 8 entries are each the destination's size (up to ~4.9 MB at
+640x480, only when the interface is stretched on the CPU); `DataFs::index_`
+grows with every directory listed (bounded by the data tree).
+
+**Not yet measured**: how much of the iMac's ~20 MB growth these were. The
+next measurement is an inventory by owner (`--profile` + `omkprof.py
+--sites`) at the END of a multi-area run, on the iMac.

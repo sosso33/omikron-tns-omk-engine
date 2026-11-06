@@ -1441,6 +1441,11 @@ struct PlayState {
     // (`playframe_world_crowd.cpp`, the end of `worldCrowd`).
     std::map<std::pair<std::string, int>, omk::Geometry> vehAtRest;
     const omk::Geometry& vehAtRestFor(const std::string& model, const CharModel& mo, int rootMesh);
+    // A model leaving the pool (`charModels`' eviction): its crowd cuts
+    // (`crowd.lodRest`) and vehicle cuts (`vehAtRest`) released, the
+    // vehicle slots that held it reset - they take their model once - and
+    // the walkers' caches renewed (`crowd.cacheGen`). -> the geometries let go.
+    std::size_t releaseModelCuts(const std::string& model);
     void releaseIdleCrowd();
     void releaseIdleStaged();
     void lazyPlace(int key);       // the moving collision, placed on demand

@@ -2193,6 +2193,11 @@ bool PlayState::askSet(int slot, const std::string& stem, int area, long frame) 
     slot &= 1;
     WorldSlot& w = worldSlots[static_cast<std::size_t>(slot)];
     const bool had = !w.stem.empty();
+    // what the renderer keeps for the outgoing set goes WITH it: `w.geo`
+    // stays at its address, so no destructor would say so (`releaseResidency`)
+    if (omk::releaseResidency(w.geo))
+        std::printf("frame %ld: slot %d's set '%s' (%zu corners) let go - the renderer's state for it "
+                    "released with it\n", frame, slot, w.stem.c_str(), w.geo.corners.size());
     w = WorldSlot{};
     mergedValid = false;
     w.geo.revision = ++worldGeoRev;

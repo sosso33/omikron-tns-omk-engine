@@ -39,6 +39,7 @@ public:
     void mark() const { on_ = true; }
     bool marked() const { return on_; }
 private:
+    friend bool releaseResidency(const struct Geometry& g);
     mutable bool on_ = false;
 };
 struct Geometry;
@@ -46,6 +47,17 @@ using GeometryGone = void (*)(void* ctx, const Geometry* g);
 // at most eight listeners; main thread only
 void addGeometryListener(GeometryGone fn, void* ctx);
 void removeGeometryListener(GeometryGone fn, void* ctx);
+// THE CONTENTS GONE, THE OBJECT KEPT: what the backends keep for `g` is told
+// gone now, as at its destruction, and the mark cleared - for a geometry
+// emptied in place and left so, a world slot the Session took back
+// (`PlayState::askSet`): its address stays, so no destructor runs, and the
+// backends held the old set's state (GL1's shape and runs, a GPU vertex
+// buffer, the depth tie) until a new set was drawn there - an interior
+// visited after a city kept the city's (2026-11-06). Not for a per-frame
+// re-pose: a backend would drop and rebuild its state every frame (the
+// revision rule covers that). Main thread only, as the notice is.
+// -> whether anything was kept for it (the mark was set).
+bool releaseResidency(const Geometry& g);
 
 // Which meshes to draw.
 enum class DrawFilter {

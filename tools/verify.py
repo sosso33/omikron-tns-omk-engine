@@ -31773,6 +31773,96 @@ def c_engine_street_memory():
         "read a chunk at a time, the archives holding directories only"
 
 
+def c_engine_caches_released():
+    r"""WHAT IS KEPT FOR A MODEL OR A SET GOES WITH IT (2026-11-06,
+    `todo/ram-vs-original.md` "Caches outliving what they cache").
+
+    Two caches outlived the thing they were made from, so memory grew zone
+    after zone:
+      * the crowd's and the traffic's CUTS - a model's rest geometry cut to a
+        skeleton (`crowd.lodRest`, `vehAtRest`), kept by the model's NAME -
+        stayed when `charModels` let the model go; now `releaseModelCuts`
+        drops them with it, resets the vehicle slots that held the model
+        (they take it once; one coming back to life would have drawn through
+        the freed model) and renews the walkers' caches;
+      * a world SLOT emptied by `askSet` keeps its `Geometry` at the same
+        address, so no destructor told the renderers, and the outgoing set's
+        state (a GPU vertex buffer, GL1's shape and runs, the depth tie)
+        stayed until a new set was drawn there; now `releaseResidency`
+        tells them as a destruction would.
+
+    The street start (Anekbah, 25 bodies, 200 walkers), the world through
+    Vulkan offscreen, `--game-restart 90` - op 152, `Game_NewGame` into AREA
+    118 alone: the walkers' and vehicles' models leave the pool, slot 0 is
+    asked for GRID. With `--profile`:
+      * the log names cuts released as their models left (16 measured),
+        and the profiler's `crowd: LOD rest geometry` and `crowd: vehicle
+        sub-objects` go from over 0.5 and 0.1 MB (0.97, 0.19) before the
+        restart to NONE at the end;
+      * the log says slot 0's ANEKBAH (139245 corners) was let go, and
+        Vulkan that its vertex buffer was released, BEFORE GRID's set is in -
+        without the release it goes only at the process's end (no world
+        frame is drawn after the restart, the buffer stayed keyed on the
+        slot's address).
+
+    TIER: none for the original (the original holds a model's LOD
+    sub-objects once and frees an area's set with it, `sub_453A70`,
+    `Read3DO_Init`; this is the port's own bookkeeping). Shown to fail
+    (2026-11-06): the `releaseModelCuts` call taken out (no cut released,
+    the two categories still 0.97 / 0.19 MB), and the `releaseResidency`
+    call taken out (the slot's line gone, and Vulkan's only at the exit,
+    after GRID's rebuild - the order this check asks for).
+    """
+    import subprocess, tempfile, shutil
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import omkprof
+    eng = os.path.join(ROOT, "engine")
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    tmp = tempfile.mkdtemp()
+    cap = os.path.join(tmp, "r.prof")
+    saves = os.path.join(tmp, "saves")
+    os.mkdir(saves)
+    try:
+        r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                            "--save", os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "0",
+                            "--stand", "1804,0,-6890,336", "--game-restart", "90", "--world-vulkan",
+                            "--nofmv", "--frames", "200", "--res", "640x480", "--filter", "nearest",
+                            "--saves", saves, "--profile", cap],
+                           capture_output=True, text=True, errors="replace",
+                           env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+        frames = [f for f in omkprof.read(cap)[1] if f["frame"] >= 0 and f.get("mem")]
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    o = r.stdout
+    if "op 152 queued" not in o or len(frames) < 150:
+        return ("restart", len(frames)), ("restart", 200), "the run must restart at frame 90 and write its frames"
+    MB = 1048576.0
+    def tags(want):
+        f = min(frames, key=lambda f: abs(f["frame"] - want))
+        return {t[0]: t[1] / MB for t in f["mem"]["tags"]}
+    before, after = tags(85), tags(frames[-1]["frame"])
+    cuts = sum(int(n) for n in re.findall(r"left the pool - (\d+) crowd/traffic cut", o))
+    lod0, veh0 = before.get("crowd: LOD rest geometry", 0.0), before.get("crowd: vehicle sub-objects", 0.0)
+    lod1, veh1 = after.get("crowd: LOD rest geometry", 0.0), after.get("crowd: vehicle sub-objects", 0.0)
+    vulkan = "the world through VULKAN offscreen" in o
+    slotLet = "slot 0's set 'ANEKBAH' (139245 corners) let go" in o
+    # ...AT THE RELEASE, before the new set is in: at the process's end every
+    # buffer goes, the mutation's case
+    vkAt = o.find("vulkan: a geometry of 139245 corners gone - its vertex buffer released")
+    gridAt = o.find("world: rebuilt - slot 0 'GRID'")
+    vkGone = vkAt >= 0 and gridAt >= 0 and vkAt < gridAt
+    print(f"        {cuts} cuts released; LOD rest {lod0:.2f} -> {lod1:.2f} MB, vehicle sub-objects "
+          f"{veh0:.2f} -> {veh1:.2f} MB; slot let go {slotLet}, Vulkan's buffer released {vkGone}"
+          f"{'' if vulkan else ' (no Vulkan here: its line not asked)'}")
+    return (cuts >= 10, lod0 > 0.5 and veh0 > 0.1, lod1 == 0.0 and veh1 == 0.0,
+            slotLet, vkGone or not vulkan), (True,) * 5, \
+        "the models' cuts released as they leave the pool (their two categories to none), and the " \
+        "emptied slot's set released by the renderer (Vulkan's vertex buffer)"
+
+
 def c_engine_gpu_readback_on_demand():
     r"""THE READBACK BUFFERS ON DEMAND (`todo/perf-audit.md` B2-B5, 2026-10-20):
     a GPU-presented frame is never read back, so the CPU copies of it are made
@@ -54395,6 +54485,7 @@ SLOW = [
     ("engine: music ring", c_engine_music_ring, "audio/hostmix.h; todo/debug-tools.md"),
     ("engine: crowd memory", c_engine_crowd_memory, "STREET_LIFE; todo/debug-tools.md"),
     ("engine: street memory", c_engine_street_memory, "todo/ram-vs-original.md tier A"),
+    ("engine: caches released", c_engine_caches_released, "todo/ram-vs-original.md; o3de/geom3do.h releaseResidency"),
     ("engine: gpu readback on demand", c_engine_gpu_readback_on_demand, "todo/perf-audit.md B2-B5"),
     ("engine: device sounds", c_engine_device_sounds, "todo/ram-vs-original.md tier B; audio/hostmix.h"),
     ("engine: sight mask", c_engine_sight_mask, "todo/ram-vs-original.md tier B; o3de/collision.h"),

@@ -4346,6 +4346,9 @@ void VulkanRenderer::geometryGone(void* self, const omk::Geometry* g) {
     if (!r->releaseOn_) return;
     bool had = false;
     if (auto it = r->vbo_.find(g); it != r->vbo_.end()) {
+        // a set's buffer said once as it goes (the slots' release, `releaseResidency`)
+        if (const auto nIt = r->vboN_.find(g); nIt != r->vboN_.end() && nIt->second >= 20000)
+            std::printf("vulkan: a geometry of %zu corners gone - its vertex buffer released\n", nIt->second);
         r->deadBufs_.push_back(it->second);
         r->vbo_.erase(it);
         had = true;

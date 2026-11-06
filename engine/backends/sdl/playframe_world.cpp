@@ -188,6 +188,11 @@ int PlayState::phaseWorld() {
                 if (it->first == playerModel)
                     std::printf("frame %ld: the PLAYER's model %s evicted - playerReady %d, "
                                 "nobody staged wears it\n", frameNo, it->first.c_str(), playerReady ? 1 : 0);
+                // ...and the cuts made from it: kept by NAME, they outlived
+                // the model and piled up city after city (2026-11-06)
+                if (const std::size_t cuts = releaseModelCuts(it->first))
+                    std::printf("frame %ld: model %s left the pool - %zu crowd/traffic cut(s) released\n",
+                                frameNo, it->first.c_str(), cuts);
                 it = charModels.erase(it);
                 ++texPool.composition;
             }
