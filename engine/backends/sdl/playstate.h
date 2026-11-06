@@ -1206,6 +1206,13 @@ struct PlayState {
     bool haveEdit{};
     const omk::UiItem * vpItem{};
     bool screenReadsPicture{};
+    // THE SAVE'S THUMBNAIL, taken ONCE from the world's picture on the save
+    // screen's first frame (`saveThumbDue`), before the screen is drawn over
+    // it - as `sub_4187B0` has `sub_4331B0` copy the back buffer's 128x96 once,
+    // when the save point's camera (flag 0x2000) is set - and written by every
+    // save made before the screen closes (`modesSaveRequest`).
+    std::vector<std::byte> saveThumb{};
+    bool saveThumbDue{};
     // THE CLOUD ON THE GPU (`ScreenComposer::setCloudTarget`, `under.frag`):
     // the window's backend can draw it (Vulkan's, unless OMK_NO_GPU_CLOUD),
     // this frame does, and the 640x480 picture it draws from

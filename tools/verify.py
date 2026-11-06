@@ -24325,6 +24325,77 @@ def c_engine_save_write():
            "its X1R5G5B5"
 
 
+def c_engine_save_screen_present():
+    r"""The SAVE screen reads the picture ONCE - its thumbnail - not every frame.
+
+    The original takes a save's thumbnail once: `sub_4187B0`, on a camera
+    whose +356 carries 0x2000 (the save point's own `camera.set`, before
+    `ui.open 30`), calls `sub_433320` -> `sub_4331B0`, a 128x96 copy of the
+    back buffer before the screen is drawn over it. The port held the save
+    screen on the CPU composite EVERY frame it was open (a hard gate, "the
+    slot's thumbnail is taken from `fb`"): a whole-frame readback each frame,
+    ~420 of ~490 ms a frame on the reader's iMac G3 (2026-11-06,
+    `todo/handoff-classic-mac.md` 3i item 17). Now the screen's FIRST frame
+    composes on the CPU and takes `saveThumb` from the world's picture, and
+    its other frames go the way any open screen's does.
+
+    The host's GL1 build (a hidden window), Kay'l at the apartment's ring
+    with three rings: the screen opened, a save made, closed, opened again.
+    Asserted: two openings, each `gl1 present: screen` for ONE frame and
+    then `overlay (open screen)`; the thumbnail taken once an opening; the
+    save written; and the written thumbnail is the WORLD - not black, and
+    not the save panel's black ground (over half its pixels non-black).
+    Shown to fail (2026-11-07): the gate back on every frame of the screen
+    (the first opening 83 frames on the CPU composite, no overlay frame);
+    the thumbnail taken from `fb` at the save as before (the save panel's
+    frame: under half its pixels lit).
+    """
+    fr = omkpaths.data_root()
+    fx = os.path.join(ROOT, "traces", "games-resto.bin")
+    if not (os.path.isdir(os.path.join(fr, "IAM")) and os.path.exists(fx)):
+        return ("skipped",), ("skipped",), "no game data or save fixture"
+    binp, err = _host_gl1_play()
+    if binp is None and err == "no SDL2":
+        return ("skipped",), ("skipped",), "no SDL2 (pkg-config)"
+    if binp is None:
+        return ("build failed",), ("built",), "ppc-darwin.mk play (host) must build: " + err
+    import shutil, tempfile
+    tmp = tempfile.mkdtemp()
+    try:
+        games = os.path.join(tmp, "GAMES")
+        shutil.copyfile(fx, games)
+        keys = ("k*10,k28*4,k*8,k28*4,k*10,k208*4,k*6,k208*4,k*6,k208*4,k*6,"
+                "k28*4,k*10,k28*4,k*10,k28*4,k*10,k28*4,k*20")
+        out = subprocess.run(
+            [binp, fr, os.path.join(ROOT, "tables"), "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+             "--slot", "0", "--saves", games, "--nofmv", "--nodelay", "--no-crowd", "--res", "640x480",
+             "--rings", "3", "--frames", "120", "--hold", keys],
+            capture_output=True, text=True, errors="replace", timeout=600,
+            env=dict(os.environ, OMK_HIDDEN_WINDOW="1")).stdout
+        paths = [(m.group(1), int(m.group(2))) for m in
+                 re.finditer(r"gl1 present: (.+?) from frame (\d+)", out)]
+        runs = []          # (frames on the `screen` path, the path after it)
+        for k, (p, f) in enumerate(paths):
+            if p == "screen":
+                nxt = paths[k + 1] if k + 1 < len(paths) else ("(end)", 120)
+                runs.append((nxt[1] - f, nxt[0]))
+        taken = len(re.findall(r"the save screen's thumbnail taken", out))
+        m = re.search(r"save: slot (\d+) written", out)
+        lit = -1
+        if m:
+            d = open(games, "rb").read()
+            b = 3496 + 32808 * int(m.group(1)) + 40 + 8192
+            px = struct.unpack_from("<12288H", d, b)
+            lit = sum(1 for v in px if v & 0x7FFF) * 100 // len(px)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return (len(runs), tuple(runs), taken, m is not None, lit > 50), \
+           (2, ((1, "overlay (open screen)"), (1, "overlay (open screen)")), 2, True, True), \
+        "two openings of the save screen; each on the CPU composite for ONE frame, " \
+        "then the overlay as any open screen; the thumbnail taken once an opening; " \
+        "the save written; its thumbnail the world (over half its pixels lit)"
+
+
 def c_engine_save_read_in_parts():
     r"""The save file read in PARTS: every slot and every picture the same.
 
@@ -54436,6 +54507,7 @@ SLOW = [
     ("engine: save write", c_engine_save_write, "engine/README"),
     ("engine: save load", c_engine_save_load,  "engine/README"),
     ("engine: save read in parts", c_engine_save_read_in_parts, "script/savefile.h readSaveBytes; todo/ram-vs-original.md"),
+    ("engine: save screen present", c_engine_save_screen_present, "todo/handoff-classic-mac.md 3i 17; playframe_world.cpp saveThumb"),
     ("engine: save round trip", c_engine_save_round_trip, "engine/README"),
     ("engine: scene loop", c_engine_scene_loop, "engine/README"),
     ("engine: golden traces", c_engine_golden_traces, "engine/README"),

@@ -1558,5 +1558,13 @@ void PlayState::worldMirror() {
         fbStale = false;
     }
     }   // the CPU composite
+    // the save screen's thumbnail, from the world's picture in `fb` - before
+    // the screen is drawn over it (`saveThumbDue`)
+    if (saveThumbDue && !gpuFrame && !overlayFrame && !vpItem) {
+        saveThumb = omk::thumbFromRgb565(fb.px, fb.w, fb.h);
+        saveThumbDue = false;
+        std::printf("frame %ld: the save screen's thumbnail taken from the world's picture, "
+                    "once - the screen's other frames are presented as any open screen's\n", frameNo);
+    }
     ++worldFrames;
 }

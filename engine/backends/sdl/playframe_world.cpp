@@ -428,9 +428,22 @@ int PlayState::phaseWorld() {
             : nullptr;
         comp.attachView3D(nullptr);
         screenReadsPicture = false;
+        // SAVE GAME reads the picture ONCE, for its thumbnail - on its first
+        // frame, the one frame it holds the CPU composite; every other frame
+        // of the screen goes the way any open screen's does. It read the
+        // picture back EVERY frame before: ~420 of the ~490 ms of each
+        // frame of the open save screen on the reader's iMac G3 (2026-11-06),
+        // where the original copies its 128x96 once.
+        const bool saveOpen = walk && openScreen == omk::screen::SaveGame;
+        if (!saveOpen) {
+            saveThumb.clear();
+            saveThumbDue = false;
+        } else if (saveThumb.empty()) {
+            saveThumbDue = true;
+        }
         if (walk && openScreen >= 0) {
             constexpr std::uint32_t kDrawInterference = 0x00477ED0u;   // `ui/interference.h`
-            screenReadsPicture = openScreen == omk::screen::SaveGame;                     // SAVE GAME
+            screenReadsPicture = saveThumbDue;                                            // SAVE GAME, once
             if (const omk::UiPanel* rp = walk->panel() ? walk->panel() : uiWidgets.screen(openScreen))
                 for (const auto& l : rp->lists)
                     for (const auto& it : l.items)

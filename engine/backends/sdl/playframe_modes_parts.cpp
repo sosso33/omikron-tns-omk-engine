@@ -1986,7 +1986,9 @@ void PlayState::modesSaveRequest() {
         out.day  = state.clockDay();
         out.time = state.clock();
         out.state = state;
-        const auto thumb = omk::thumbFromRgb565(fb.px, fb.w, fb.h);
+        // the picture taken on the screen's first frame (`saveThumb`); `fb`
+        // only if none was (a frame that never composed the world)
+        const auto thumb = !saveThumb.empty() ? saveThumb : omk::thumbFromRgb565(fb.px, fb.w, fb.h);
         auto file = omk::readSaveFile(savesPath, dataRoot + "/IAM/GAMES");
         if (file.size() < omk::kSaveFileSize)
             file = omk::blankSaveFile(saveSettings ? *saveSettings

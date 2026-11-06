@@ -1952,6 +1952,38 @@ a software renderer, it is suspicious", 2026-10-30)**:
      live blocks ~60 MB in Anekbah, PEAKS of 84.4 and 85.7 MB on a city's
      load (open, see that section); 1700 `SLOW FRAME` lines; the save
      screen's frames ~390 ms of `screens, hud` each (not yet read).
+     The reader: the iMac was UPDATED recently - Mac OS 9.0.4 and the ATI
+     5.81 OpenGL are the machine as it is now, not a misreading of 5.69.
+     **THE NEXT RUN, ON `af6439e` (the reader's second `0611/omk-out.txt`,
+     same evening)**: the same route (GRID -> the alleys -> Anekbah ->
+     ARESTO -> ARESTO14), one save at the ring (slot 2 written), quit by the
+     close box at 589 s, EXIT 0. Peak 70647 KB of live blocks, reached at
+     the save's WRITE (63.0 MB live + the one 8.4 MB copy `Game_WriteSave`'s
+     shape needs) - the screen's OPEN no longer moves the peak (65176 KB
+     before it). Anekbah's load peaked at 61.8 MB this time (84.4 MB in the
+     first run; not explained). Used at most 67322 KB of the partition. The
+     open's frame cost 2.5 s (`modes: shoot` self - no finer span there);
+     each frame of the open screen ~486 ms, 417 of it under `world:
+     mirror`'s zone, and the first run's phase lines put 42-66 ms a frame
+     in `readback` there. THE LIKELY CAUSE, NOT YET READ IN GL1's PATH: the
+     save screen reads the picture (`playframe_world_draw.cpp`, "SAVE GAME
+     (the slot's thumbnail is taken from `fb` itself)"), so the frame is
+     read back and composed on the CPU every frame the screen is open -
+     where the original copies 128x96 once, at the save (`sub_4331B0`).
+     CONFIRMED on the host's GL1 build (`gl1 present: screen` every frame the
+     screen was open) and FIXED (the reader's "occupe toi de l'écran de
+     sauvegarde", 2026-11-07): the original takes its thumbnail ONCE -
+     `sub_4187B0`, on a camera whose +356 carries 0x2000 (the save point's
+     `camera.set`), calls `sub_433320` -> `sub_4331B0`, a 128x96 copy of the
+     back buffer before the screen is drawn - and the port now does the
+     same: the save screen holds the CPU composite on its FIRST frame only,
+     takes `saveThumb` from the world's picture there (before the screen is
+     drawn over it) and every save made before it closes writes that; its
+     other frames go the way any open screen's does (GL1: `overlay (open
+     screen)`). The thumbnail is now the world without the save panel over
+     it, as the original's own saves' are. Host GL1 log: `gl1 present:
+     screen from frame 13` then `overlay (open screen) from frame 14`.
+     **NEXT ON THE iMAC**: the save screen's frames (were ~490 ms). **THE FOG IS BACK - CONFIRMED ON THE iMAC** (the reader, same evening: "Le brouillard refonctionne"): item 16's eye space in OpenGL's own convention was the cause.
 **Rule: on the classic build, an OpenGL 1.2 pixel format is never assumed;
 OpenGL 1.1's RGBA bytes is the fallback of every upload.** The iMac's menu
 frames: 67-116 ms of work (`screens, hud` ~35-49 ms). The launch has no
