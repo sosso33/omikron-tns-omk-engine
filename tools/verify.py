@@ -30594,6 +30594,25 @@ def c_engine_gl1_backend():
     ramp) drew the iMac G3's horizon as a light-blue hole; now GL_ADD of an
     RGB ramp holding fog * a over the colour darkened by (1 - a). Shown to
     fail with the colour NOT darkened: 6821 pixels.
+
+    And THE SUBMIT IN THE ORIGINAL'S SHAPE (2026-11-06, handoff-classic-
+    mac.md 3i item 14): a geometry's distinct vertices transformed once, a
+    run at a time, its faces indexing them (`submitShape`), the default;
+    `OMK_GL1_PER_CORNER=1` the corner-by-corner submit it replaced. Four
+    more frames, 130 each: the street as `skip` draws it, corner by corner -
+    the frame BYTE-IDENTICAL, the shape's log naming the set's 139245
+    corners and draws taken that way, the other's none; and the same pair
+    with `--cpu-bodies`, where the moving set meshes are patched into the
+    set through its DIRTY LISTS - vertices re-taken from them (204660
+    measured over 60 passes) and the two frames byte-identical again.
+    Shown to fail (2026-11-06): a vertex an earlier run introduced NOT
+    transformed on first use (step 2 off) - 34056 pixels in both pairs; a
+    dirty list's vertices not re-taken (the record left as built) - the
+    `--cpu-bodies` pair 304 pixels, the street's pair still identical (its
+    moving meshes are posed by the renderer, no dirty list). A mutation
+    that moved NOTHING, kept on record: the sent index reused without its
+    batch stamp - within one draw the batch changes only past `kBatchMax`
+    (49152 vertices), which the street never reaches.
     """
     import subprocess, tempfile, shutil, platform
     eng = os.path.join(ROOT, "engine")
@@ -30628,13 +30647,16 @@ def c_engine_gl1_backend():
                                        "nearest", ["--fog-colour", "91,160,171"]),
                                       ("fogmt", {"OMK_GL1_NO_COLOUR_SUM": "1", "OMK_GL1_FOG_UNIT": "1",
                                                  "OMK_GL1_CPU_FOG": "1"}, "nearest",
-                                       ["--fog-colour", "91,160,171"])):
+                                       ["--fog-colour", "91,160,171"]),
+                                      ("corner", {"OMK_GL1_PER_CORNER": "1"}, "nearest", []),
+                                      ("cbshape", {}, "nearest", ["--cpu-bodies"]),
+                                      ("cbcorner", {"OMK_GL1_PER_CORNER": "1"}, "nearest", ["--cpu-bodies"])):
             out = os.path.join(tmp, tag + ".bin")
             r = subprocess.run([binp, fr, os.path.join(ROOT, "tables"),
                                 "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
                                 "--area", "0", "--stand", "1804,0,-6890,336", "--nofmv",
                                 "--frames", "130" if tag in ("skip", "noskip", "lock", "nolock", "fogsum", "fogcard", "fogcardnosum",
-                                                "fogpass", "fogmt") else "60",
+                                                "fogpass", "fogmt", "corner", "cbshape", "cbcorner") else "60",
                                 "--res", "640x480", "--filter", filt,
                                 "--dump", out] + extra,
                                cwd=eng, capture_output=True, text=True,
@@ -30646,8 +30668,8 @@ def c_engine_gl1_backend():
                     return (f"{tag} dump {len(raw)} bytes",), ("640x480",), \
                         "the dump must be one 640x480 RGB565 frame: " + r.stdout[-400:]
                 frames[tag] = struct.unpack("<%dH" % (640 * 480), raw)
-        if len(frames) != 14:
-            return ("no frames",), ("fourteen frames",), "omk-play must render all fourteen"
+        if len(frames) != 17:
+            return ("no frames",), ("seventeen frames",), "omk-play must render all seventeen"
         g, sw, bl = frames["gl1"], frames["sw"], frames["bilinear"]
         N = len(g)
         def big(x, y):
@@ -30739,13 +30761,29 @@ def c_engine_gl1_backend():
                    cardDiff <= N * 0.005 and frames["fogcard"] != frames["skip"],
                    cardNoSum <= N * 0.005 and "fog second passes" not in logs["fogcardnosum"],
                    calls("fogcard") == calls("fogsum") != "-1")
+        # THE SUBMIT IN THE ORIGINAL'S SHAPE (2026-11-06): the set and draws
+        # taken that way, none per corner under OMK_GL1_PER_CORNER, the frames
+        # byte for byte the corner-by-corner ones - with the dirty lists of
+        # `--cpu-bodies` re-taken too
+        def shapeLine(t):
+            m = re.search(r"gl1: \.\.\.(\d+) of those draws submitted in the original's shape .*?; "
+                          r"(\d+) vertices re-taken from dirty lists", logs[t])
+            return (int(m.group(1)), int(m.group(2))) if m else (-1, -1)
+        shapeDraws, _ = shapeLine("skip")
+        cornerDraws, _ = shapeLine("corner")
+        _, patched = shapeLine("cbshape")
+        shapeGot = (shapeDraws > 0 and "gl1: a geometry of 139245 corners in the original's shape" in logs["skip"],
+                    cornerDraws == 0 and "(--gl1-per-corner)" in logs["corner"],
+                    frames["corner"] == frames["skip"],
+                    patched > 0 and frames["cbshape"] == frames["cbcorner"])
         lockGot = (lockN > 0, "NOT used (--gl1-no-lock)" in logs["nolock"] and
                    "vertices locked" not in logs["nolock"], frames["nolock"] == frames["lock"],
                    moving > 0 and "walkers are posed and lit by the RENDERER" in logs["lock"])
         got = ("the world through OpenGL 1.x fixed-function" in logs["gl1"],
                g != sw, cover >= 0.99, differ <= N * 0.005,
                len(changed) >= N * 0.2, meanB <= 16.0, coverB >= 0.98, keptLater,
-               posedOn, posedAny <= N * 0.001 and posedDiff <= 8, smallGot, skipGot, fogGot, mtGot, lockGot, cardGot)
+               posedOn, posedAny <= N * 0.001 and posedDiff <= 8, smallGot, skipGot, fogGot, mtGot, lockGot, cardGot,
+               shapeGot)
         print(f"        gl1 vs software: coverage {cover:.4f}, {differ} pixels differ by >24 "
               f"({100.0 * differ / N:.2f}%); bilinear: {100.0 * len(changed) / N:.1f}% changed, "
               f"mean {meanB:.1f}, coverage {coverB:.4f}")
@@ -30764,10 +30802,16 @@ def c_engine_gl1_backend():
         print(f"        coloured fog without the colour sum: {fp.group(1) if fp else 0} second passes, "
               f"{fogDiff} pixels off the colour sum's by >24; on the second unit {mtDiff}, "
               f"draw calls {calls('fogmt')} against the sum's {calls('fogsum')} and the pass's {calls('fogpass')}")
+        shapePix = sum(1 for x, y in zip(frames["corner"], frames["skip"]) if x != y)
+        cbPix = sum(1 for x, y in zip(frames["cbshape"], frames["cbcorner"]) if x != y)
+        print(f"        the original's shape: {shapeDraws} draws over 60 passes ({cornerDraws} under "
+              f"OMK_GL1_PER_CORNER), the frame {'identical' if shapeGot[2] else 'DIFFERENT'} corner by "
+              f"corner ({shapePix} pixels); --cpu-bodies: {patched} vertices re-taken from dirty lists, "
+              f"the frame {'identical' if shapeGot[3] else 'DIFFERENT'} ({cbPix} pixels)")
         return got, (True, True, True, True, True, True, True, True, True, True,
                      ("0.5x1", False, True, True), (True, True), (True, True, True, True),
                      (True, True, True, True), (True, True, True, True),
-                     (True, True, True, True)), \
+                     (True, True, True, True), (True, True, True, True)), \
             "the world drawn by the gl1 backend; its frame not the software one; " \
             "coverage agreement >= 0.99; <= 0.5% of pixels differing by > 24; " \
             "bilinear changes >= 20% of the pixels by a mean <= 16 and keeps coverage >= 0.98; " \
@@ -30778,7 +30822,9 @@ def c_engine_gl1_backend():
             "skipped unread and the frame byte-identical without the skip; the vertex " \
             "arrays locked around each draw call (EXT_compiled_vertex_array), the frame " \
             "byte-identical unlocked, with moving meshes in view; the fog on the card, the CPU colour sum's picture within " \
-            "one step on all but 0.5%, no second pass without a colour sum, the same draw calls"
+            "one step on all but 0.5%, no second pass without a colour sum, the same draw calls; " \
+            "the submit in the original's shape taken by the set, none under OMK_GL1_PER_CORNER, the frame " \
+            "byte-identical corner by corner, and with --cpu-bodies' dirty lists re-taken"
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

@@ -47,6 +47,7 @@ constexpr const char* kSwitches[] = {
     "OMK_GL1_NO_LOCK",          // GL1: the vertex arrays not locked around each draw call (EXT_compiled_vertex_array; --gl1-no-lock)
     "OMK_GL1_NO_SKIP",          // GL1: the whole-mesh frustum skip off, to show it changes no pixel (engine: gl1 backend)
     "OMK_GL1_OFFSCREEN",        // GL1, the SDL build on Mac OS X: the offscreen target and its readback kept, not the window's own context
+    "OMK_GL1_PER_CORNER",       // GL1: every draw submitted corner by corner, not in the original's shape (--gl1-per-corner)
     "OMK_GL1_WINDOW",           // =WxH GL1: the window opened at that size instead of the frame's - the scaled present (engine: gl1 window fit)
     "OMK_GLES_NO_HIGHP",        // GLES: the fragment stage taken for one with no highp float - the upscale refused (engine: gles upscale)
     "OMK_GLES_NO_STATE_CACHE",  // GLES: the draw-state cache off (engine: gles state cache)

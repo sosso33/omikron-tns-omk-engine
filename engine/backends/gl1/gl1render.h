@@ -37,6 +37,12 @@ void gl1SetNoLock(Renderer* r, bool off);
 // where there is none a second pass) instead of OpenGL's linear fog on the
 // card - the original's table fog, the default since 2026-11-02. The A/B.
 void gl1SetCpuFog(Renderer* r, bool cpu);
+// `--gl1-per-corner`: every draw submitted corner by corner (a hash index of
+// the corners, cache slots and their stamps) instead of in the original's
+// shape - a geometry's distinct vertices transformed once, in order, its
+// faces indexing them (`submitShape`, the default since 2026-11-06). The A/B;
+// `OMK_GL1_PER_CORNER=1` the same.
+void gl1SetPerCorner(Renderer* r, bool on);
 // THE WORLD ON THE WINDOW: the classic build's AGL context (`OMK_GL1_AGL`),
 // and the SDL build's on Mac OS X (`OMK_GL1_SDL_WINDOW`, `ppc-darwin.mk`) -
 // the world drawn into the window's own back buffer and swapped, not into a

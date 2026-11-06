@@ -397,6 +397,9 @@ int PlayOptions::parse(int argc, char** argv) {
 "  --gl1-no-lock    the GL1 world drawn with its vertex arrays unlocked, not\n"
 "                   locked around each draw call by EXT_compiled_vertex_array\n"
 "                   (OMK_GL1_NO_LOCK=1)\n"
+"  --gl1-per-corner the GL1 world submitted corner by corner, not in the\n"
+"                   original's shape - vertices transformed once, faces\n"
+"                   indexing them (OMK_GL1_PER_CORNER=1)\n"
 "  --films-direct   the classic Mac: QuickTime draws the boot films straight\n"
 "                   into the window, the OpenGL context set aside meanwhile\n"
 "  --letterbox      the 1.818:1 camera-mode bars, for laying a shot beside\n"
@@ -464,6 +467,7 @@ int PlayOptions::parse(int argc, char** argv) {
         else if (a == "--gl1-composite") gl1Composite = true;
         else if (a == "--gl1-fog-unit") gl1FogUnit = true;
         else if (a == "--gl1-no-lock") gl1NoLock = true;
+        else if (a == "--gl1-per-corner") gl1PerCorner = true;
         else if (a == "--gl1-cpu-fog") gl1CpuFog = true;
         else if (a == "--films-direct") filmsDirect = true;
         else if (a == "--world-vulkan") worldVulkan = true;

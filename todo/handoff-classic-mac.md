@@ -1803,6 +1803,7 @@ a software renderer, it is suspicious", 2026-10-30)**:
      (the 29 ms; steps 1-2 showed the memory fetches are not it). The large
      change, and it would also bring the set's memory towards the
      original's. (3) the edges left to the driver where it clips right.
+     **(2) DONE 2026-11-06 - item 14.**
   12. **THE FOG ON THE CARD (the reader's "do 1", 2026-11-02)**: GL1's fog
      is now OpenGL's own LINEAR fog - the original's Direct3D table fog's
      equal - by default, on every GL1 build. How: the vertices go VIEW-space
@@ -1867,11 +1868,52 @@ a software renderer, it is suspicious", 2026-10-30)**:
        converted 4.9 + uploaded 3.5 + drawn and swapped 9.4 ms. QuickTime's
        own decoding is the cost, not the upload. The A/B is still to run.
      * the slab allocator: 165 slabs at most, 70 at the end.
+  14. **THE SUBMIT IN THE ORIGINAL'S SHAPE (the reader's "do point 2",
+     2026-11-06; item 11's suggestion 2)**. `Gl1Renderer::submitShape`, the
+     default on every GL1 build: a geometry is held as a `Shape` - its
+     distinct vertices (24 bytes: position, texel, the baked colour as the
+     bytes it is sent as) and a vertex number a corner (16 bits under 65536
+     vertices) - and a draw goes as `sub_4947F0` then `Render_SubmitMesh`
+     went: a run of 4 triangles not off the screen first transforms THE
+     VERTICES IT INTRODUCES, one contiguous block in order (vertices are
+     numbered by first use), in a plain loop; its faces then read three
+     numbers and the transformed records (a vertex an earlier, skipped run
+     introduced is transformed on first use); a face sent copies its
+     vertices once into the batch, the colour STRAIGHT THROUGH as bytes
+     (the original's +44 dword) - only a shimmering vertex, the greyscale
+     bank or the CPU fog computes one, from the corner as before. Gone from
+     that path: the per-corner hash lookup, the 32-byte cache slots, the
+     doubt bytes and the 48-byte corner read for every corner. A dirty list
+     (`--cpu-bodies`' moving meshes, the clock's re-floor) re-takes its
+     vertices in place when it names every corner of each; anything else
+     builds the shape again, and a geometry rebuilt three times in a row
+     within three passes (a particle cloud; `OMK_NO_DIRTY`) goes corner by
+     corner for good. Posed bodies, and geometries under 64 corners, stay
+     corner by corner (`submit`). The face tests and the clip are the old
+     ones (`backFacing`, the new `emitClipped`), so THE FRAME IS THE
+     CORNER-BY-CORNER ONE BYTE FOR BYTE - asserted by `engine: gl1 backend`
+     on the street and with `--cpu-bodies` (204660 vertices re-taken over 60
+     passes), shown to fail twice (34056 and 304 pixels). Memory: Anekbah's
+     set 1857 KB of shape + 1.5 MB of transient records, against the old
+     0.7 MB index + 2.0 MB of slots - **+0.6 MB**, to weigh against the
+     64 MB goal. Measured on the M1 (indicative only; `--profile-ab
+     shape:5`, capped, the street start): `gl1: submit` self 0.96 ->
+     0.82 ms a frame, -15%. The PowerPC code of the release build was read:
+     the transform loop inlined, no call in the per-triangle path. The A/B:
+     `--gl1-per-corner` / `OMK_GL1_PER_CORNER=1`, and `--profile-ab shape`.
+     All four builds made: host GL1, OS 9 profiled and release (Retro68 -
+     the `omk-devtools` volume must be MOUNTED, else `engine: classic build`
+     says ok on "no Retro68" without building), Tiger `ppc-darwin8`.
+     **NEXT ON THE iMAC**: `--profile omk-prof --profile-ab shape`, a minute
+     or two at 100 m in Anekbah; `python3 tools/omkprof.py omk-prof` gives
+     `gl1: submit`'s self time per phase (29.9 ms per corner on 2026-11-02).
 **Rule: on the classic build, an OpenGL 1.2 pixel format is never assumed;
 OpenGL 1.1's RGBA bytes is the fallback of every upload.** The iMac's menu
 frames: 67-116 ms of work (`screens, hud` ~35-49 ms). The launch has no
-wall-clock times in the log; the slow start is likely the USB 1.1 read of
-its loads (see the 2026-10-09 iBook report above).
+wall-clock times in the log. **CORRECTION (the reader, 2026-11-06): the
+iMac runs the game from its INTERNAL HARD DISK; the USB 1.1 stick only
+carries the builds across.** So the iMac's slow start is NOT a USB read (the
+earlier guess here); its load times are a 2000-era IDE disk's.
 
 ## 4. What is next, in the order proposed
 

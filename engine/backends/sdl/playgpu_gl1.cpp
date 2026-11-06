@@ -66,6 +66,7 @@ void PlayState::gpuOpenWorldHarness() {
     omk::gl1SetFogUnit(r, gl1FogUnit);
     omk::gl1SetNoLock(r, gl1NoLock);
     omk::gl1SetCpuFog(r, gl1CpuFog);
+    omk::gl1SetPerCorner(r, gl1PerCorner);
     if (r->init(dispW, dispH)) {
         worldVk = r;
 #if defined(OMK_GL1_ON_WINDOW)

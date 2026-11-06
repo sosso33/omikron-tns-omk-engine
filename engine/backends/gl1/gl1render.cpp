@@ -23,7 +23,9 @@
 //   * the vertices are TRANSFORMED ON THE CPU, near-clipped and culled there,
 //     and handed over already projected - the original's `D3DTLVERTEX`
 //     (sx, sy, sz, rhw), here as clip-space (x w, y w, z w, w) so the
-//     texturing stays perspective-correct;
+//     texturing stays perspective-correct; and in the original's SHAPE
+//     (`submitShape`): a geometry's distinct vertices transformed once and
+//     in order, its faces indexing them;
 //   * the fog is computed PER VERTEX on the CPU - the original's own path for
 //     a card without table fog - with the bucket key's two exclusions
 //     (`renderer.h`, View::fog).
@@ -228,6 +230,9 @@ public:
         // afresh every frame
         prof::abSwitch("lock", [](void* r, bool f) { auto* g = static_cast<Gl1Renderer*>(r); g->abFlip(f, g->abLock_, g->noLock_); }, this);
         prof::abSwitch("cardfog", [](void* r, bool f) { auto* g = static_cast<Gl1Renderer*>(r); g->abFlip(f, g->abFog_, g->cardFog_); }, this);
+        // ...and `shape`: the submit in the original's shape against the
+        // corner-by-corner one (`--gl1-per-corner`)
+        prof::abSwitch("shape", [](void* r, bool f) { auto* g = static_cast<Gl1Renderer*>(r); g->abFlip(f, g->abShape_, g->perCorner_); }, this);
     }
     void abFlip(bool flipped, bool& now, bool& flag) {
         if (flipped != now) { now = flipped; flag = !flag; }
@@ -235,6 +240,7 @@ public:
     static void geometryGone(void* self, const Geometry* g) {
         auto* r = static_cast<Gl1Renderer*>(self);
         r->vindex_.erase(g);
+        r->shapes_.erase(g);
         r->clusters_.erase(g);
         r->tieBaked_.erase(g);
     }
@@ -661,6 +667,23 @@ public:
         setState(d);
         ++submits_;
 
+        // IN THE ORIGINAL'S SHAPE (`submitShape`) wherever it applies: the
+        // geometry's distinct vertices transformed once and in order, its
+        // faces indexing them. A body posed here (its rest corners, an affine
+        // a mesh, lit per corner) and a geometry too small or changing every
+        // frame stay corner by corner below, as does every draw under
+        // `--gl1-per-corner` - the A/B.
+        const bool posedDraw = d.meshPose && d.meshPoses && g.cornerMesh.size() == g.corners.size();
+        if (!perCorner_ && !posedDraw) {
+            if (Shape* s = shapeFor(g)) {
+                ++statShapeDraws_;
+                if (!s->vert16.empty()) submitShape(d, *s, s->vert16.data());
+                else submitShape(d, *s, s->vert.data());
+                return;
+            }
+        }
+        ++statCornerDraws_;
+
         // Per triangle, what the original's own vertex loop did before
         // DrawPrimitive: into view space, the near cut (Sutherland-Hodgman
         // against z > kNearCut, as `raster.cpp`), the single-sided cull with
@@ -902,56 +925,7 @@ public:
                 continue;
             }
             for (int k = 0; k < 3; ++k) colourOf(k);
-            Vtx poly[4];
-            int np = 0;
-            for (int k = 0; k < 3 && np < 4; ++k) {
-                const Vtx& a = in[k];
-                const Vtx& b = in[(k + 1) % 3];
-                const bool ina = a.v[2] > kNearCut, inb = b.v[2] > kNearCut;
-                if (ina) poly[np++] = a;
-                if (ina != inb && np < 4) poly[np++] = lerp(a, b, (kNearCut - a.v[2]) / (b.v[2] - a.v[2]));
-            }
-            if (np < 3) { ++st_.behind; continue; }
-            // the single-sided cull on the near-clipped triangle - the
-            // reference's own test, before anything else is cut away
-            if (cullThis && backFacing(poly[0], poly[1], poly[2])) { ++st_.culled; continue; }
-            // ...then THE SCREEN EDGES, on the CPU too. A wall beside the eye
-            // projects thousands of pixels off-screen once near-clipped, and
-            // Tiger's emulated Radeon rasterised such a triangle unclipped -
-            // its texture coordinates collapsed and the wall drew flat. The
-            // original clipped its transformed triangles itself as well. A
-            // hair of margin keeps the edge pixels covered.
-            Vtx buf[2][8];
-            int nb = np;
-            for (int k = 0; k < np; ++k) buf[0][k] = poly[k];
-            int cur = 0;
-            for (int plane = 0; plane < 4 && nb >= 3; ++plane) {
-                const auto dist = [&](const Vtx& q) {
-                    switch (plane) {
-                    case 0:  return q.v[2] * gx - q.v[0];   // right:  x <= z tanh
-                    case 1:  return q.v[2] * gx + q.v[0];   // left:   x >= -z tanh
-                    case 2:  return q.v[2] * gy - q.v[1];   // top:    y <= z tanv
-                    default: return q.v[2] * gy + q.v[1];   // bottom: y >= -z tanv
-                    }
-                };
-                int no = 0;
-                for (int k = 0; k < nb && no < 8; ++k) {
-                    const Vtx& a = buf[cur][k];
-                    const Vtx& b = buf[cur][(k + 1) % nb];
-                    const float da = dist(a), db = dist(b);
-                    if (da >= 0.0f) buf[cur ^ 1][no++] = a;
-                    if ((da >= 0.0f) != (db >= 0.0f) && no < 8) buf[cur ^ 1][no++] = lerp(a, b, da / (da - db));
-                }
-                nb = no;
-                cur ^= 1;
-            }
-            if (nb < 3) { ++st_.offscreen; continue; }
-            const Vtx* out = buf[cur];
-            ++st_.drawn;
-            for (int k = 1; k + 1 < nb; ++k) {            // a fan: up to 6 triangles after the clips
-                idx_.push_back(emit(out[0])); idx_.push_back(emit(out[k])); idx_.push_back(emit(out[k + 1]));
-            }
-            tieBack_ = false;
+            emitClipped(in, cullThis);
         }
     }
 
@@ -990,6 +964,7 @@ public:
         if (passes_ == 60 || passes_ % 600 == 540) {
             sum_[0] = sum_[1] = sum_[2] = sum_[3] = sum_[4] = 0;
             statCorners_ = statTransformed_ = statSent_ = statSkipped_ = statTieBack_ = statTrusted_ = 0;
+            statShapeDraws_ = statCornerDraws_ = statPatched_ = statRebuilt_ = 0;
             fogPasses_ = 0;
             lockedDraws_ = 0;
             fogChanges_ = 0;
@@ -1002,6 +977,12 @@ public:
                         sum_[0], sum_[1], sum_[3], sum_[2], sum_[4],
                         statCorners_, statTransformed_, statSent_, statSkipped_, statTieBack_,
                         statTrusted_, passes_);
+        if (passes_ == 120 || passes_ % 600 == 0)
+            std::printf("gl1: ...%ld of those draws submitted in the original's shape (vertices transformed "
+                        "once, faces indexing them), %ld corner by corner%s; %ld vertices re-taken from dirty "
+                        "lists, %ld shapes built again\n",
+                        statShapeDraws_, statCornerDraws_, perCorner_ ? " (--gl1-per-corner)" : "",
+                        statPatched_, statRebuilt_);
         if ((passes_ == 120 || passes_ % 600 == 0) && fogPass_)
             std::printf("gl1: ...and %ld fog second passes (no colour sum) in those draw calls\n", fogPasses_);
         if ((passes_ == 120 || passes_ % 600 == 0) && cardFog_)
@@ -1624,6 +1605,7 @@ public:
     void setFullTextures(bool full) { fullTextures_ = full; }
     void setFogUnit(bool unit) { fogUnit_ = unit; }
     void setNoLock(bool off) { noLock_ = off; }
+    void setPerCorner(bool on) { perCorner_ = on || envFlag("OMK_GL1_PER_CORNER"); }
     void setCpuFog(bool cpu) { cardFog_ = !(cpu || envFlag("OMK_GL1_CPU_FOG")); }
     int maxVertexLights() const override { return kPoseLights; }
     const char* name() const override { return "OpenGL 1.x fixed-function"; }
@@ -2440,6 +2422,40 @@ private:
         if (std::memcmp(&g.corners[a], &g.corners[b], sizeof(Corner)) != 0) return false;
         return g.cornerMesh.size() != g.corners.size() || g.cornerMesh[a] == g.cornerMesh[b];
     }
+    // A geometry's corners numbered by VERTEX: equal bytes within one mesh are
+    // one vertex, numbered in order of first use - so a corner whose number is
+    // new is that vertex's first. -> how many vertices. (`indexFor`,
+    // `buildShape`)
+    std::uint32_t vertexIds(const Geometry& g, std::vector<std::uint32_t>& vert) const {
+        const std::size_t n = g.corners.size();
+        vert.assign(n, 0);
+        std::uint32_t nv = 0;
+        const bool meshes = g.cornerMesh.size() == n;
+        std::size_t cap = 64;
+        while (cap < 2 * n) cap <<= 1;
+        std::vector<std::int32_t> table(cap, -1);
+        for (std::size_t k = 0; k < n; ++k) {
+            std::uint32_t w[sizeof(Corner) / 4];
+            std::memcpy(w, &g.corners[k], sizeof w);
+            std::uint32_t h = 2166136261u ^ static_cast<std::uint32_t>(meshes ? g.cornerMesh[k] : 0);
+            for (const std::uint32_t u : w) h = (h ^ u) * 16777619u;
+            std::size_t sl = (h ^ (h >> 15)) & (cap - 1);
+            for (;;) {
+                const std::int32_t e = table[sl];
+                if (e < 0) {
+                    table[sl] = static_cast<std::int32_t>(k);
+                    vert[k] = nv++;
+                    break;
+                }
+                if (sameCorner(g, static_cast<std::size_t>(e), k)) {
+                    vert[k] = vert[static_cast<std::size_t>(e)];
+                    break;
+                }
+                sl = (sl + 1) & (cap - 1);
+            }
+        }
+        return nv;
+    }
     const VIndex* indexFor(const Geometry& g) {
         const std::size_t n = g.corners.size();
         if (n < kIndexMinCorners) return nullptr;
@@ -2466,40 +2482,378 @@ private:
         if (it == vindex_.end() && vindex_.size() >= 256) vindex_.clear();   // bounded: transient geometries
         VIndex& x = vindex_[&g];
         g.resident.mark();
-        x.n = n; x.nv = 0;
-        x.vert.assign(n, 0);
+        x.n = n;
         x.rev = g.revision;
         x.doubt.assign(n, 0);
         x.allDoubt = false;
-        const bool meshes = g.cornerMesh.size() == n;
-        std::size_t cap = 64;
-        while (cap < 2 * n) cap <<= 1;
-        std::vector<std::int32_t> table(cap, -1);
-        for (std::size_t k = 0; k < n; ++k) {
-            std::uint32_t w[sizeof(Corner) / 4];
-            std::memcpy(w, &g.corners[k], sizeof w);
-            std::uint32_t h = 2166136261u ^ static_cast<std::uint32_t>(meshes ? g.cornerMesh[k] : 0);
-            for (const std::uint32_t u : w) h = (h ^ u) * 16777619u;
-            std::size_t sl = (h ^ (h >> 15)) & (cap - 1);
-            for (;;) {
-                const std::int32_t e = table[sl];
-                if (e < 0) {
-                    table[sl] = static_cast<std::int32_t>(k);
-                    x.vert[k] = x.nv++;
-                    break;
-                }
-                if (sameCorner(g, static_cast<std::size_t>(e), k)) {
-                    x.vert[k] = x.vert[static_cast<std::size_t>(e)];
-                    break;
-                }
-                sl = (sl + 1) & (cap - 1);
-            }
-        }
+        x.nv = vertexIds(g, x.vert);
         if (vs_.size() < x.nv) vs_.resize(x.nv, VSlot{});
         if (n >= 20000)
             std::printf("gl1: a geometry of %zu corners indexed - %u vertices\n", n, x.nv);
         return &x;
     }
+    // THE ORIGINAL'S SHAPE OF A GEOMETRY (`submitShape`): its distinct
+    // vertices - the position, the texel and the baked colour as the bytes it
+    // is sent as, 24 bytes, the original's own source vertex being 32
+    // (`docs/ASSETS.md`) - and a vertex number a corner, 16 bits where the
+    // geometry has fewer than 65536 vertices (`vert16`; Anekbah's set has
+    // 63079), 32 otherwise (`vert`). `c[3]` is 255, or 0
+    // for a vertex that SHIMMERS (`kFlicker`), whose colour is computed per
+    // frame from its corner. `own[r]` is the first vertex the run of corners
+    // r introduces (`kClusterCorners` a run), so run r's new vertices are
+    // `own[r]` to `own[r + 1]`. `users`, how many corners a vertex has (255:
+    // that many or more), checks a dirty list (`patchShape`).
+    // Kept per geometry and revision; Anekbah's set (139245 corners, 63079
+    // vertices): 1.8 MB here and 1.5 MB of transient records (`VX`, shared),
+    // against the corner-by-corner submit's 0.7 MB index and 2.0 MB of cache
+    // slots - 0.6 MB more, measured 2026-11-06.
+    struct SVert { float x, y, z, u, v; unsigned char c[4]; };
+    struct Shape {
+        std::size_t n = 0; std::uint64_t rev = 0; std::uint32_t nv = 0;
+        std::vector<SVert> vtx;
+        std::vector<std::uint32_t> vert, own;
+        std::vector<std::uint16_t> vert16;
+        std::vector<std::uint8_t> users;
+        long builtPass = 0;
+        int quick = 0;            // rebuilt within a few passes of the last build, in a row
+        bool perCorner = false;   // it changes every frame without a dirty list: corner by corner
+    };
+    std::map<const Geometry*, Shape> shapes_;
+    // a vertex's TRANSFORMED record, this draw's (`stamp`): view space, the
+    // outcode, and its index in the batch once sent (`sent` the batch's
+    // stamp). One array for every shape - a draw is one geometry.
+    struct VX {
+        float x, y, z;
+        std::uint32_t stamp, sent;
+        std::uint16_t out;
+        std::uint8_t oc, pad;
+    };
+    std::vector<VX> vx_;
+    std::vector<std::pair<std::uint32_t, std::uint32_t>> patchScratch_;   // (vertex, corner)
+    bool perCorner_ = false, abShape_ = false;   // `--gl1-per-corner`; the profiler's A/B
+    long statShapeDraws_ = 0, statCornerDraws_ = 0;
+    long statPatched_ = 0, statRebuilt_ = 0;   // vertices a dirty list re-took; shapes built again
+
+    static SVert shapeVertex(const Corner& c) {
+        SVert s;
+        s.x = c.x; s.y = c.y; s.z = c.z; s.u = c.u; s.v = c.v;
+        // the bytes `emit` makes of an unfogged, unshimmering colour
+        s.c[0] = toByte(c.r); s.c[1] = toByte(c.g); s.c[2] = toByte(c.b);
+        s.c[3] = c.phase < 0.0f ? 255 : 0;
+        return s;
+    }
+    void buildShape(const Geometry& g, Shape& s) {
+        const std::size_t n = g.corners.size();
+        if (s.n != 0) s.quick = passes_ - s.builtPass < 3 ? s.quick + 1 : 0;
+        s.n = n;
+        s.rev = g.revision;
+        s.builtPass = passes_;
+        s.nv = vertexIds(g, s.vert);
+        s.vert16.clear();
+        s.vtx.resize(s.nv);
+        s.users.assign(s.nv, 0);
+        const std::size_t runs = (n + kClusterCorners - 1) / kClusterCorners;
+        s.own.assign(runs + 1, 0);
+        std::uint32_t next = 0;
+        for (std::size_t k = 0; k < n; ++k) {
+            if (k % kClusterCorners == 0) s.own[k / kClusterCorners] = next;
+            const std::uint32_t v = s.vert[k];
+            if (v == next) { s.vtx[v] = shapeVertex(g.corners[k]); ++next; }   // its first use
+            if (s.users[v] < 255) ++s.users[v];
+        }
+        s.own[runs] = next;
+        if (s.nv <= 0x10000u) {
+            s.vert16.assign(s.vert.begin(), s.vert.end());
+            s.vert = std::vector<std::uint32_t>();     // released, not only emptied
+        }
+        if (n >= 20000)
+            std::printf("gl1: a geometry of %zu corners in the original's shape - %u vertices, %zu KB\n", n,
+                        s.nv, (s.vtx.size() * sizeof(SVert) + s.vert.size() * 4 + s.vert16.size() * 2 +
+                               s.own.size() * 4 + s.users.size()) / 1024);
+    }
+    // The corners a dirty list names (`Geometry::dirtyCorners`) into their
+    // vertices' records: only when EVERY corner of such a vertex is listed
+    // and they are still equal - a mesh moved whole, a colour re-floored by
+    // the clock - and the record then takes their bytes. Anything else
+    // (a vertex split by the change) -> false, and the shape is built again.
+    bool patchShape(const Geometry& g, Shape& s) {
+        auto& ks = patchScratch_;
+        ks.clear();
+        for (const std::uint32_t k : g.dirtyCorners)
+            if (k < s.n) ks.emplace_back(s.vert16.empty() ? s.vert[k] : s.vert16[k], k);
+        std::sort(ks.begin(), ks.end());
+        ks.erase(std::unique(ks.begin(), ks.end()), ks.end());   // the list may repeat a corner
+        for (std::size_t i = 0; i < ks.size();) {
+            const std::uint32_t v = ks[i].first;
+            std::size_t j = i;
+            while (j < ks.size() && ks[j].first == v) ++j;
+            if (s.users[v] == 255 || j - i != s.users[v]) return false;
+            const std::size_t k0 = ks[i].second;
+            for (std::size_t m = i + 1; m < j; ++m)
+                if (!sameCorner(g, k0, ks[m].second)) return false;
+            s.vtx[v] = shapeVertex(g.corners[k0]);
+            ++statPatched_;
+            i = j;
+        }
+        return true;
+    }
+    // -> the geometry's shape, made or brought up to its revision; nullptr
+    // for one drawn corner by corner: too small, or changing every frame
+    // without a dirty list (three rebuilds in a row, each within three
+    // passes of the last - a particle cloud), from then on
+    Shape* shapeFor(const Geometry& g) {
+        const std::size_t n = g.corners.size();
+        if (n < kIndexMinCorners) return nullptr;
+        auto it = shapes_.find(&g);
+        if (it == shapes_.end()) {
+            if (shapes_.size() >= 256) shapes_.clear();   // bounded: transient geometries
+            Shape& s = shapes_[&g];
+            g.resident.mark();
+            buildShape(g, s);
+            return &s;
+        }
+        Shape& s = it->second;
+        if (s.perCorner) return nullptr;
+        if (s.n == n && s.rev == g.revision) return &s;
+        if (s.n == n && g.dirtyTo == g.revision && g.dirtyFrom == s.rev && patchShape(g, s)) {
+            s.rev = g.revision;
+            return &s;
+        }
+        if (n >= 20000)
+            std::printf("gl1: a geometry of %zu corners changed beyond its dirty list - its shape built again\n", n);
+        ++statRebuilt_;
+        buildShape(g, s);
+        if (s.quick >= 3) {
+            s = Shape{};
+            s.perCorner = true;
+            return nullptr;
+        }
+        return &s;
+    }
+
+    // A TRIANGLE CROSSING THE NEAR PLANE OR A SCREEN EDGE, cut on the CPU and
+    // sent as a fan - its corners' positions (view space) and colours given.
+    // Shared by the corner-by-corner submit and `submitShape`.
+    void emitClipped(const Vtx (&in)[3], bool cullThis) {
+        const float gx = gx_, gy = gy_;
+        Vtx poly[4];
+        int np = 0;
+        for (int k = 0; k < 3 && np < 4; ++k) {
+            const Vtx& a = in[k];
+            const Vtx& b = in[(k + 1) % 3];
+            const bool ina = a.v[2] > kNearCut, inb = b.v[2] > kNearCut;
+            if (ina) poly[np++] = a;
+            if (ina != inb && np < 4) poly[np++] = lerp(a, b, (kNearCut - a.v[2]) / (b.v[2] - a.v[2]));
+        }
+        if (np < 3) { ++st_.behind; tieBack_ = false; return; }
+        // the single-sided cull on the near-clipped triangle - the
+        // reference's own test, before anything else is cut away
+        if (cullThis && backFacing(poly[0], poly[1], poly[2])) { ++st_.culled; tieBack_ = false; return; }
+        // ...then THE SCREEN EDGES, on the CPU too. A wall beside the eye
+        // projects thousands of pixels off-screen once near-clipped, and
+        // Tiger's emulated Radeon rasterised such a triangle unclipped -
+        // its texture coordinates collapsed and the wall drew flat. The
+        // original clipped its transformed triangles itself as well. A
+        // hair of margin keeps the edge pixels covered.
+        Vtx buf[2][8];
+        int nb = np;
+        for (int k = 0; k < np; ++k) buf[0][k] = poly[k];
+        int cur = 0;
+        for (int plane = 0; plane < 4 && nb >= 3; ++plane) {
+            const auto dist = [&](const Vtx& q) {
+                switch (plane) {
+                case 0:  return q.v[2] * gx - q.v[0];   // right:  x <= z tanh
+                case 1:  return q.v[2] * gx + q.v[0];   // left:   x >= -z tanh
+                case 2:  return q.v[2] * gy - q.v[1];   // top:    y <= z tanv
+                default: return q.v[2] * gy + q.v[1];   // bottom: y >= -z tanv
+                }
+            };
+            int no = 0;
+            for (int k = 0; k < nb && no < 8; ++k) {
+                const Vtx& a = buf[cur][k];
+                const Vtx& b = buf[cur][(k + 1) % nb];
+                const float da = dist(a), db = dist(b);
+                if (da >= 0.0f) buf[cur ^ 1][no++] = a;
+                if ((da >= 0.0f) != (db >= 0.0f) && no < 8) buf[cur ^ 1][no++] = lerp(a, b, da / (da - db));
+            }
+            nb = no;
+            cur ^= 1;
+        }
+        if (nb < 3) { ++st_.offscreen; tieBack_ = false; return; }
+        const Vtx* out = buf[cur];
+        ++st_.drawn;
+        for (int k = 1; k + 1 < nb; ++k) {            // a fan: up to 6 triangles after the clips
+            idx_.push_back(emit(out[0])); idx_.push_back(emit(out[k])); idx_.push_back(emit(out[k + 1]));
+        }
+        tieBack_ = false;
+    }
+
+    // THE SUBMIT IN THE ORIGINAL'S SHAPE (`todo/handoff-classic-mac.md` 3i
+    // item 11, suggestion 2; done 2026-11-06). The original drew a node in two
+    // passes (`docs/ASSETS.md`, "The two vertex records"): `sub_4947F0`
+    // transformed the node's 32-byte source vertices ONCE, IN ORDER, into
+    // the frame's pool, and `Render_SubmitMesh` then walked the faces, which
+    // INDEX that pool, and tested each on the transformed values. The
+    // corner-by-corner submit above reaches the same picture from the flat
+    // corners: each corner's 48 bytes looked up through a hash index, a
+    // cache slot with its stamps, and "doubt" bytes for corners that moved.
+    // Here a geometry is held as `Shape` - its distinct vertices (24 bytes
+    // each, the position, texel and baked colour) and a vertex number a
+    // corner - and a draw goes:
+    //   1. a RUN of `kClusterCorners` corners (4 triangles) not wholly off the
+    //      screen (`sphereOutside`, as before) first TRANSFORMS THE VERTICES
+    //      IT INTRODUCES: numbered in order of first use, a run's new
+    //      vertices are one contiguous block, transformed in a plain loop -
+    //      `sub_4947F0`'s pass, by run where the original went by node,
+    //      because the port's set is one geometry and the runs are what its
+    //      visibility test sees;
+    //   2. its FACES then read three vertex numbers and the transformed
+    //      records - a vertex introduced by an earlier run that this draw
+    //      skipped or did not reach is transformed on first use;
+    //   3. a face sent takes its vertices' records into the batch once each:
+    //      the baked colour straight through as bytes, as the original copied
+    //      its +44 dword - only a shimmering vertex, the greyscale bank or the
+    //      fog on the CPU computes a colour, from the corner's own floats as
+    //      before.
+    // The face tests are the corner-by-corner submit's (`backFacing`'s sign is
+    // the projected area's, without a divide) and the clip is the same
+    // `emitClipped`, so the frame is the corner-by-corner one byte for byte
+    // (`verify.py: engine: gl1 backend`). Not for a body posed here.
+    template <class Ix>
+    void submitShape(const Draw& d, Shape& S, const Ix* vert) {
+        const Geometry& g = *d.geo;
+        const std::size_t nCorner = d.count - d.count % 3;
+        const bool cullOn = g.cornerCull.size() == g.corners.size() && !noCull();
+        ++drawStamp_;
+        if (vx_.size() < S.nv) vx_.resize(S.nv, VX{});
+        const std::vector<std::uint8_t>* tieLose = nullptr;
+        if (const auto bt = tieBaked_.find(&g); bt != tieBaked_.end()) tieLose = &bt->second;
+        static const bool noSkip = omk::envFlag("OMK_GL1_NO_SKIP");
+        const Clusters* cl = noSkip ? nullptr : clustersFor(g);
+        // the colour as stored, straight through: the fog on the card (no
+        // per-vertex fog term) and no greyscale; a shimmering vertex says so
+        // in its own record
+        const bool plain = cardFog_ && !view_.grey;
+        // a vertex's colour the old way - the corner's floats (`colourOf`)
+        const auto cornerColour = [&](std::size_t ci, Vtx& p) {
+            const Corner& c = g.corners[ci];
+            const float sh = shimmerOffset(c.phase, view_.shimmerClock);
+            p.c[0] = c.r + sh; p.c[1] = c.g + sh; p.c[2] = c.b + sh;
+            if (view_.grey) p.c[0] = p.c[1] = p.c[2] = lumaGreyUnit(p.c[0], p.c[1], p.c[2]);
+            p.u = c.u; p.t = c.v;
+        };
+        const auto asVtx = [&](std::uint32_t v, std::size_t ci) {
+            const VX& x = vx_[v];
+            Vtx p;
+            p.v[0] = x.x; p.v[1] = x.y; p.v[2] = x.z;
+            cornerColour(ci, p);
+            return p;
+        };
+        std::size_t run = ~std::size_t{0};
+        for (std::size_t t = 0; t < nCorner; t += 3) {
+            const std::size_t ci0 = d.start + t;
+            const std::size_t r = ci0 / kClusterCorners;
+            if (r != run) {
+                run = r;
+                if (cl && sphereOutside(cl->sph.data() + 4 * r)) {
+                    // to the end of the run (or of the draw), unread
+                    const std::size_t runEnd = (r + 1) * kClusterCorners - d.start;
+                    const std::size_t to = std::min(runEnd, nCorner);
+                    const std::size_t tris = (to - t + 2) / 3;
+                    st_.triangles += static_cast<long>(tris);
+                    st_.offscreen += static_cast<long>(tris);
+                    statSkipped_ += static_cast<long>(3 * tris);
+                    t = to - 3;                 // the loop's += 3 lands on `to`
+                    continue;
+                }
+                transformVertices(S, S.own[r], S.own[r + 1]);      // step 1
+            }
+            ++st_.triangles;
+            statCorners_ += 3;
+            if (pending() >= kBatchMax) flush();        // a bounded pool, as the original's
+            // the vertex numbers two triangles ahead, asked for now (no
+            // hardware prefetch on the G3; a hint, it changes no value)
+            if (ci0 + 6 < S.n) __builtin_prefetch(vert + ci0 + 6);
+            const std::uint32_t v[3] = {vert[ci0], vert[ci0 + 1], vert[ci0 + 2]};
+            for (int k = 0; k < 3; ++k)
+                if (vx_[v[k]].stamp != drawStamp_) transformVertices(S, v[k], v[k] + 1);   // step 2
+            const VX& a = vx_[v[0]];
+            const VX& b = vx_[v[1]];
+            const VX& c = vx_[v[2]];
+            const unsigned outAll = a.oc & b.oc & c.oc;
+            if (outAll) {
+                if (outAll & 1u) ++st_.behind; else ++st_.offscreen;
+                continue;
+            }
+            const bool cullThis = cullOn && g.cornerCull[ci0] != 0;
+            const bool inside = (a.oc | b.oc | c.oc) == 0;
+            if (inside && cullThis) {
+                const Vtx p0{{a.x, a.y, a.z}, {}, 0, 0}, p1{{b.x, b.y, b.z}, {}, 0, 0}, p2{{c.x, c.y, c.z}, {}, 0, 0};
+                if (backFacing(p0, p1, p2)) { ++st_.culled; continue; }
+            }
+            // A TIE LOSER (`bakeDepthTie`) is drawn a hair BACK and sends its
+            // own vertices - a shared one is at the plain depth
+            const bool lose = tieLose && tieLose->size() > ci0 / 3 && (*tieLose)[ci0 / 3];
+            tieBack_ = lose;
+            if (lose) ++statTieBack_;
+            if (inside && lose) {
+                ++st_.drawn;
+                for (int k = 0; k < 3; ++k) idx_.push_back(emit(asVtx(v[k], ci0 + static_cast<std::size_t>(k))));
+                tieBack_ = false;
+                continue;
+            }
+            if (inside) {
+                ++st_.drawn;
+                for (int k = 0; k < 3; ++k) {                                       // step 3
+                    VX& x = vx_[v[k]];
+                    if (x.sent == batchStamp_) { idx_.push_back(x.out); continue; }
+                    const SVert& s = S.vtx[v[k]];
+                    std::uint16_t o;
+                    if (plain && s.c[3] == 255) {
+                        o = static_cast<std::uint16_t>(pending());
+                        ++statSent_;
+                        outN_.push_back(OutN{{x.x, x.y, x.z, 1.0f}, {s.c[0], s.c[1], s.c[2], 255}, {s.u, s.v}});
+                    } else {
+                        o = emit(asVtx(v[k], ci0 + static_cast<std::size_t>(k)));
+                    }
+                    x.out = o;
+                    x.sent = batchStamp_;
+                    idx_.push_back(o);
+                }
+                continue;
+            }
+            const Vtx in[3] = {asVtx(v[0], ci0), asVtx(v[1], ci0 + 1), asVtx(v[2], ci0 + 2)};
+            emitClipped(in, cullThis);
+        }
+    }
+
+    // `sub_4947F0`'s pass over a block of a shape's vertices: into view space
+    // and their outcodes against the five planes (the corner-by-corner
+    // submit's own expressions, so the same bits), stamped as this draw's
+    void transformVertices(const Shape& S, std::uint32_t from, std::uint32_t to) {
+        const float gx = gx_, gy = gy_;
+        const float ex = eye_[0], ey = eye_[1], ez = eye_[2];
+        for (std::uint32_t v = from; v < to; ++v) {
+            if (v + 4 < to) __builtin_prefetch(&S.vtx[v + 4]);
+            const SVert& s = S.vtx[v];
+            VX& x = vx_[v];
+            const float dx = s.x - ex, dy = s.y - ey, dz = s.z - ez;
+            const float vx = dx * bs_[0] + dy * bs_[1] + dz * bs_[2];
+            const float vy = dx * bu_[0] + dy * bu_[1] + dz * bu_[2];
+            const float vz = dx * bf_[0] + dy * bf_[1] + dz * bf_[2];
+            unsigned o = vz > kNearCut ? 0u : 1u;
+            if (vz * gx - vx < 0.0f) o |= 2u;
+            if (vz * gx + vx < 0.0f) o |= 4u;
+            if (vz * gy - vy < 0.0f) o |= 8u;
+            if (vz * gy + vy < 0.0f) o |= 16u;
+            x.x = vx; x.y = vy; x.z = vz;
+            x.oc = static_cast<std::uint8_t>(o);
+            x.stamp = drawStamp_;
+            x.sent = 0;                 // not sent yet
+        }
+        statTransformed_ += static_cast<long>(to - from);
+    }
+
     struct OutV { float p[4]; unsigned char c[4]; float uv[2]; float f[3]; };
     struct OutN { float p[4]; unsigned char c[4]; float uv[2]; };   // a pass without the fog sum
     static constexpr std::size_t kBatchMax = 3 * 16384;
@@ -2524,6 +2878,9 @@ void gl1SetFogUnit(Renderer* r, bool unit) {
     if (r) static_cast<Gl1Renderer*>(r)->setFogUnit(unit);
 }
 
+void gl1SetPerCorner(Renderer* r, bool on) {
+    if (r) static_cast<Gl1Renderer*>(r)->setPerCorner(on);
+}
 void gl1SetCpuFog(Renderer* r, bool cpu) {
     if (r) static_cast<Gl1Renderer*>(r)->setCpuFog(cpu);
 }

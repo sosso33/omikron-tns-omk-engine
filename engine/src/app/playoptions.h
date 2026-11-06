@@ -330,6 +330,10 @@ struct PlayOptions {
     // draw call where EXT_compiled_vertex_array is there - the A/B
     // (`gl1SetNoLock`)
     bool gl1NoLock = false;
+    // ...and `--gl1-per-corner`: the world submitted corner by corner, not in
+    // the original's shape (vertices once, faces indexing them) - the A/B
+    // (`gl1SetPerCorner`)
+    bool gl1PerCorner = false;
     // ...and `--gl1-cpu-fog`: the fog per vertex on the CPU, not OpenGL's
     // linear fog on the card (the default, the original's table fog) - the
     // A/B (`gl1SetCpuFog`)

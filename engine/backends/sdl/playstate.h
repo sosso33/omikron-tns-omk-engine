@@ -194,6 +194,7 @@ struct PlayState {
     bool & gl1Composite = opt.gl1Composite;
     bool & gl1FogUnit = opt.gl1FogUnit;
     bool & gl1NoLock = opt.gl1NoLock;
+    bool & gl1PerCorner = opt.gl1PerCorner;
     bool & gl1CpuFog = opt.gl1CpuFog;
     bool & filmsDirect = opt.filmsDirect;
     bool & showFps = opt.showFps;
