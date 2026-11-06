@@ -8,6 +8,9 @@
 #include "platform/env.h"
 #include "o3de/vecmath.h"
 
+#include <algorithm>
+#include <cstring>
+
 // THE THREE VOLUME ROWS (10..12) - ATTENUATIONS, and one law for all
 // three: `-10000 * a / 100` hundredths of a dB, so `a` dB. Read where the
 // engine reads them (`05_sys.c` ~1037..1062, every frame): the music's is
@@ -36,6 +39,33 @@ float PlayState::dialogueGain() {
 // half already.
 int PlayState::enh(int flag, int fromSettings, int top) {
     return flag >= 0 ? flag : enhanceAll ? top : fromSettings;
+}
+
+void PlayState::PhaseSums::erase(const char* name) {
+    e.erase(std::remove_if(e.begin(), e.end(),
+                           [&](const auto& p) { return std::strcmp(p.first, name) == 0; }),
+            e.end());
+}
+
+std::vector<std::pair<const char*, double>> PlayState::PhaseSums::byName() const {
+    auto out = e;
+    std::sort(out.begin(), out.end(),
+              [](const auto& a, const auto& b) { return std::strcmp(a.first, b.first) < 0; });
+    std::size_t w = 0;
+    for (std::size_t r = 0; r < out.size(); ++r) {
+        if (w > 0 && std::strcmp(out[w - 1].first, out[r].first) == 0) out[w - 1].second += out[r].second;
+        else out[w++] = out[r];
+    }
+    out.resize(w);
+    return out;
+}
+
+const std::vector<std::string>& PlayState::iamText(const char* name) {
+    const std::string_view key(name);
+    auto it = iamTextCache_.find(key);
+    if (it == iamTextCache_.end())
+        it = iamTextCache_.emplace(std::string(key), omk::iamStrings(*fs_, std::string(key))).first;
+    return it->second;
 }
 
 void PlayState::applyTextScale(int w, int h) {

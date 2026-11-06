@@ -24,6 +24,7 @@
 #endif
 
 #include <optional>
+#include <string_view>
 
 // WHAT A SETUP SECTION OR A FRAME PHASE ASKS OF THE LOOP AROUND IT
 // (`PlayState::run`, `PlayState::step`). Any value >= 0 ends the program at
@@ -986,13 +987,34 @@ struct PlayState {
     double stagedSub_[kStagedSubs] = {};   // `worldStagedBody`'s steps before the skin gate, this frame
     double paceNext{};
     double phaseHz{};
+    // A profiler's NAMED SUMS, keyed by the name's POINTER. Every name is a
+    // string literal or an entry of a static table, so it outlives the run.
+    // The per-frame add is a short scan of pointer compares: no string is
+    // built and nothing is allocated once a name has been seen (a
+    // `std::map<std::string, double>` built a key, and on the 32-bit gcc
+    // targets allocated one for every name past 15 characters, ~45 times a
+    // frame with the profiler off). The same text can arrive by two pointers
+    // (one literal per translation unit), so `byName` merges them for the
+    // 60-frame report and orders them by name, as the map printed them.
+    struct PhaseSums {
+        std::vector<std::pair<const char*, double>> e;
+        double& operator[](const char* name) {
+            for (auto& p : e)
+                if (p.first == name) return p.second;
+            e.emplace_back(name, 0.0);
+            return e.back().second;
+        }
+        void erase(const char* name);                               // by TEXT
+        std::vector<std::pair<const char*, double>> byName() const;  // merged, in name order
+        void zero() { for (auto& p : e) p.second = 0.0; }
+    };
     struct PhaseTimes {
         double top{};
         double rb0{};
         double rb1{};
         std::vector<std::pair<const char *, double>> marks{};
-        std::map<std::string, double> span{};
-        std::map<std::string, double> section{};
+        PhaseSums span{};
+        PhaseSums section{};
         double sum[4] = {0, 0, 0, 0};
         long n{};
         long gpu{};   // frames presented from the GPU
@@ -1339,6 +1361,14 @@ struct PlayState {
     float dialogueGain();
     int enh(int flag, int fromSettings, int top);
     void applyTextScale(int w, int h);
+    // An `IAM` string file a screen reads every frame it is open (the shop,
+    // the hints, the terminal family, the lift, the multiplan), read from
+    // the data ONCE a run and kept: the files are the shipped data and never
+    // change under a run, and re-reading them was an open, a read and a
+    // close a frame - costly on the Vita's, the 3DS's and Mac OS 9's file
+    // systems.
+    const std::vector<std::string>& iamText(const char* name);
+    std::map<std::string, std::vector<std::string>, std::less<>> iamTextCache_;
     void sfxLog(const char* what, std::size_t samples, int a, int b,
                             float gain = 1.0f, const float* peakOf = nullptr);
     void takeCamRequest(int phase);

@@ -339,3 +339,38 @@ control`, plus `vita build`. Also run: `engine: release build` is RED on its
 second element, the `OMKSNAP1` marker absent from the DEVELOPMENT binary.
 The binary built at `f5f3266`, before this work, lacks it as well, so the
 red is pre-existing and was not attributed.
+
+## 9. Done 2026-11-06 - three per-frame costs found by reading the code
+
+A read-only review of the per-frame paths (the reader's "fix 4.1, 4.2 and
+4.3"). None moves a pixel; none is measured on a device yet.
+
+1. **The IAM string files were read from the data EVERY FRAME** a screen
+   needing them was open: `iamStrings` for `IAM/Buy` (the shops), `IAM/Save`
+   (the hints), the terminal family's file, `IAM/Lift` and `IAM/Multip`,
+   each an open, a read and a close plus a `std::string` per entry. Now
+   `PlayState::iamText` reads each file once a run and keeps it (the shipped
+   data never changes under a run). The cost it removes is the device file
+   system's, ~30 opens a second: `sceIo` on the Vita, the SD card on the
+   3DS, the File Manager on Mac OS 9.
+2. **The profiler's sums were `std::map<std::string, double>`**, written
+   ~45 times a frame whether or not anything profiles: a key built each
+   time, a heap block for every name past 15 characters on the 32-bit gcc
+   targets. `PlayState::PhaseSums` keys them by the literal's pointer;
+   the 60-frame report merges names that arrive by two pointers and prints
+   them in name order, so the `spans` and `sections` lines are unchanged.
+   The setup's own probe now reads `a named span add 0.00 us` on the M3.
+3. **The subtitle was re-wrapped every frame**: `layOutBlock` over the
+   line and every reply, one vector per row, then each row copied again to
+   be toned, plus a `parseMarkup("Ag")` for the pitch and, for a
+   `media.play` line, a `parseMarkup` of the whole text. `drawSubtitle` now
+   keeps the toned rows of its last two calls, keyed by everything that
+   feeds them (the text, the replies, the selection, the box, the face, the
+   display and the glyph scale), and the media line keeps its parse.
+
+Checks run with `--only`, all green: `subtitle box`, `credit layout`,
+`engine: text scroll`, `engine: dialogue play`, `engine: hint shop`,
+`engine: terminal family`, `engine: dossier reader`, `engine: shop open`,
+`ui shop titles`, `engine: multiplan rows`, `engine: lift` (and its family),
+`engine: profiler` (and `control`, `gpu`, `windows`). `make play play-gles
+vulkan` build clean. No check measures a cost, so none can fail on these.

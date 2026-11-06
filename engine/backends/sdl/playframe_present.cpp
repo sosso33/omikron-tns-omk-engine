@@ -50,18 +50,16 @@ int PlayState::phasePresent() {
                 phases.gpu = 0;
                 phases.kept.clear();
                 std::printf("frame %ld spans (ms, mean of 60):", frameNo);
-                for (auto& [name, sec] : phases.span) {
-                    std::printf(" %s %.1f,", name.c_str(), sec * 1000.0 / 60.0);
-                    sec = 0.0;
-                }
+                for (const auto& [name, sec] : phases.span.byName())
+                    std::printf(" %s %.1f,", name, sec * 1000.0 / 60.0);
+                phases.span.zero();
                 std::printf("\n");
                 {
                     // the sections, largest first; each is the gap ENDING at its mark
                     std::vector<std::pair<double, std::string>> secs;
-                    for (auto& [name, sec] : phases.section) {
+                    for (const auto& [name, sec] : phases.section.byName())
                         if (sec * 1000.0 / 60.0 >= 0.1) secs.emplace_back(sec * 1000.0 / 60.0, name);
-                        sec = 0.0;
-                    }
+                    phases.section.zero();
                     std::sort(secs.begin(), secs.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
                     std::printf("frame %ld sections (ms, mean of 60):", frameNo);
                     for (const auto& [ms, name] : secs) std::printf(" %s %.1f,", name.c_str(), ms);

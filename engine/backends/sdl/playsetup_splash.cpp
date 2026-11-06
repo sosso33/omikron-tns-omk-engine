@@ -85,7 +85,7 @@ int PlayState::setupSplash() {
     {
         // WHAT THE INSTRUMENTS COST on this machine, so a span made of many
         // small timed calls can be read for what it is: one clock read, and
-        // one add into a named span (a string key in a map)
+        // one add into a named span (a name looked up by its pointer)
         constexpr int kN = 2000;
         const double t0 = phaseNow();
         double sink = 0.0;

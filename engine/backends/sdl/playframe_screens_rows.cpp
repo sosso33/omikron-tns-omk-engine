@@ -965,7 +965,7 @@ void PlayState::screensShopRows() {
         static std::string shopMessage;
         static long shopMessageMs = -1000000;
         const long shopNowMs = static_cast<long>(front.ticksMs());
-        const auto buyText = omk::iamStrings(fs, "IAM/Buy");
+        const auto& buyText = iamText("IAM/Buy");
         const auto str = [&](int id) {
             return id >= 0 && id < static_cast<int>(buyText.size())
                 ? buyText[static_cast<std::size_t>(id)] : std::string();
@@ -1170,7 +1170,6 @@ void PlayState::screensShopRows() {
 // Multiplan's rows and header, the Gandhar door's cursor, the hint shop
 void PlayState::screensMultiplanHints() {
     OMK_ZONE("screens: multiplan hints");   // the profiler (todo/debug-tools.md 6)
-    const auto& fs = *fs_;
     auto& comp = *comp_;
     auto& inv = *inv_;
     // ---- MULTIPLAN's ROWS and HEADER (todo/multiplan.md step 2) --------
@@ -1206,7 +1205,7 @@ void PlayState::screensMultiplanHints() {
         sneakRows.clear();
         sneakHidden.clear();
         comp.setExamineText(nullptr);
-        const auto saveText = omk::iamStrings(fs, "IAM/Save");
+        const auto& saveText = iamText("IAM/Save");
         const auto str = [&](int id) {
             return id >= 0 && id < static_cast<int>(saveText.size())
                 ? saveText[static_cast<std::size_t>(id)] : std::string();
@@ -1357,7 +1356,6 @@ void PlayState::screensPuzzles() {
 // The terminal family's display
 void PlayState::screensTerminals() {
     OMK_ZONE("screens: terminals");   // the profiler (todo/debug-tools.md 6)
-    const auto& fs = *fs_;
     // ---- THE TERMINAL FAMILY'S DISPLAY (`todo/missing-ui.md` 3) ------
     //
     // The same gap as the lift's box, over seven screens: panel 0x004E4108's
@@ -1398,7 +1396,7 @@ void PlayState::screensTerminals() {
         for (const auto& f : kFam) {
             if (openScreen != f.screen) continue;
             sneakRows.clear();
-            const auto txt = omk::iamStrings(fs, f.file);
+            const auto& txt = iamText(f.file);
             const bool onMain = walk->panel()->addr == omk::kPanelTerminal;
             const omk::UiList* keypad = nullptr;
             for (const auto& l : walk->panel()->lists)
@@ -1549,7 +1547,7 @@ void PlayState::screensLift() {
     // every one of the seven shipped slots.
     if (walk && openScreen == omk::screen::Lift && walk->panel()) {
         sneakRows.clear();
-        const auto liftText = omk::iamStrings(fs, "IAM/Lift");
+        const auto& liftText = iamText("IAM/Lift");
         const omk::UiPanel* pn = walk->panel();
         int slot = -1;
         for (const auto& l : pn->lists)
@@ -1579,7 +1577,7 @@ void PlayState::screensLift() {
         sneakHidden.clear();
         const int src = walk->multiplanSource();
         if (inv.openedList() != src) inv.openList(src);   // Game_RaiseEvent(25, src)
-        const auto mpText = omk::iamStrings(fs, "IAM/Multip");
+        const auto& mpText = iamText("IAM/Multip");
         // ---- THE TRANSFERS (step 3): `Game_HandleEvent` case 36 ---------
         //
         // The walk recorded the row callback's request (`takeMultiplan`).

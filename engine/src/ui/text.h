@@ -247,6 +247,10 @@ public:
         num_ = num > 0 ? num : 1; den_ = den > 0 ? den : 1; filter_ = filter;
     }
     bool scaled() const { return num_ != den_; }
+    // the glyph scale's ratio - what a caller caching laid-out rows keys on,
+    // since every metric moves with it
+    int glyphScaleNum() const { return num_; }
+    int glyphScaleDen() const { return den_; }
 
 private:
     // a native metric at the glyph scale, rounded to nearest

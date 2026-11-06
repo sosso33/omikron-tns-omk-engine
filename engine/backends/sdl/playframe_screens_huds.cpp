@@ -53,6 +53,34 @@ bool drawPositioned(omk::Surface& fb, const omk::TextLayout& lay,
     return true;
 }
 
+// THE SUBTITLE'S ROWS, KEPT. A spoken line and its replies are the same
+// strings frame after frame, and `layOutBlock` parsed and wrapped every one of
+// them every frame, each row a vector of its own. The rows below are what the
+// wrap, the tone and the line pitch produce from the key, and nothing else
+// feeds them: the tone overwrites every character's colour (so the layout's
+// blink colour never survives), and the glyph scale is in the key because
+// every metric moves with it.
+// Two entries, because a frame can draw two subtitles (the `media.play`
+// line and the dialogue's), each with its own text.
+struct SubtitleRows {
+    const omk::TextLayout* lay = nullptr;
+    int scaleNum = 0, scaleDen = 0;
+    int left = 0, right = 0, dispW = 0, dispH = 0, selected = 0;
+    char face = 0;
+    std::string line;
+    std::vector<std::string> menu;
+    // the key above, the answer below
+    std::vector<std::vector<omk::StyledChar>> rows;   // toned, ready to draw
+    int lineH = 0;
+    bool valid = false;
+    bool matches(const omk::TextLayout& l, int ln, int r, int w, int h, int sel, char fc,
+                 const std::string& text, const std::vector<std::string>& replies) const {
+        return valid && lay == &l && scaleNum == l.glyphScaleNum() &&
+               scaleDen == l.glyphScaleDen() && left == ln && right == r && dispW == w &&
+               dispH == h && selected == sel && face == fc && line == text && menu == replies;
+    }
+};
+
 void drawSubtitle(omk::Surface& fb, const omk::TextLayout& lay,
                   const std::string& line,
                   const std::vector<std::string>& menu, int selected,
@@ -86,40 +114,62 @@ void drawSubtitle(omk::Surface& fb, const omk::TextLayout& lay,
     // row is the line and which are replies, and the tone each takes - because
     // the engine issues a separate `Text_DrawBlock` per string and colours it
     // at the call, so the rows have to come back rather than be drawn.
-    const auto wrapRun = [&](const std::string& text,
-                             std::vector<std::vector<omk::StyledChar>>& out) {
-        omk::TextBlock blk;
-        blk.left = left; blk.right = right;
-        blk.top = 0;     blk.bottom = dispH;
-        blk.font = face;
-        blk.measureOnly = true;         // the caller draws
-        blk.screenW = dispW; blk.screenH = dispH;
-        omk::BlockResult res;
-        lay.layOutBlock(nullptr, text, blk, &res);
-        for (auto& r : res.rows)
-            if (!r.empty()) out.push_back(std::move(r));
-    };
-    std::vector<std::vector<omk::StyledChar>> rows;
-    std::vector<std::uint8_t> tone;
-    if (!line.empty()) {
-        std::vector<std::vector<omk::StyledChar>> tmp;
-        wrapRun(line, tmp);
-        for (auto& r : tmp) { rows.push_back(std::move(r)); tone.push_back(255); }
-    }
-    for (std::size_t k = 0; k < menu.size(); ++k) {
-        std::vector<std::vector<omk::StyledChar>> tmp;
-        wrapRun(menu[k], tmp);
-        for (auto& r : tmp) {
-            rows.push_back(std::move(r));
-            tone.push_back(static_cast<int>(k) == selected ? 255 : 128);
+    static SubtitleRows kept[2];
+    static int keptNext = 0;
+    SubtitleRows* hit = nullptr;
+    for (auto& k : kept)
+        if (k.matches(lay, left, right, dispW, dispH, selected, face, line, menu)) hit = &k;
+    if (!hit) {
+        hit = &kept[keptNext];
+        keptNext ^= 1;
+        SubtitleRows& c = *hit;
+        c.valid = false;
+        c.rows.clear();
+        const auto wrapRun = [&](const std::string& text,
+                                 std::vector<std::vector<omk::StyledChar>>& out) {
+            omk::TextBlock blk;
+            blk.left = left; blk.right = right;
+            blk.top = 0;     blk.bottom = dispH;
+            blk.font = face;
+            blk.measureOnly = true;         // the caller draws
+            blk.screenW = dispW; blk.screenH = dispH;
+            omk::BlockResult res;
+            lay.layOutBlock(nullptr, text, blk, &res);
+            for (auto& r : res.rows)
+                if (!r.empty()) out.push_back(std::move(r));
+        };
+        // each row in its TONE: the line and the selected reply full, the
+        // other replies at half
+        const auto toned = [&](std::vector<std::vector<omk::StyledChar>>& tmp, std::uint8_t tone) {
+            for (auto& r : tmp) {
+                for (auto& sc : r) sc.rgb[0] = sc.rgb[1] = sc.rgb[2] = tone;
+                c.rows.push_back(std::move(r));
+            }
+        };
+        if (!line.empty()) {
+            std::vector<std::vector<omk::StyledChar>> tmp;
+            wrapRun(line, tmp);
+            toned(tmp, 255);
         }
+        for (std::size_t k = 0; k < menu.size(); ++k) {
+            std::vector<std::vector<omk::StyledChar>> tmp;
+            wrapRun(menu[k], tmp);
+            toned(tmp, static_cast<int>(k) == selected ? 255 : 128);
+        }
+        // THE LINE PITCH is the engine's `120 * i16i(font, 6) / 100` - 120% of the
+        // face's own line height - not this file's old `height + 2`.
+        const auto probe = omk::parseMarkup("Ag", face);
+        c.lineH = 120 * lay.height(probe.run) / 100;
+        c.lay = &lay;
+        c.scaleNum = lay.glyphScaleNum(); c.scaleDen = lay.glyphScaleDen();
+        c.left = left; c.right = right; c.dispW = dispW; c.dispH = dispH;
+        c.selected = selected; c.face = face;
+        c.line = line; c.menu = menu;
+        c.valid = true;
     }
+    const auto& rows = hit->rows;
     if (rows.empty()) return;
-
-    // THE LINE PITCH is the engine's `120 * i16i(font, 6) / 100` - 120% of the
-    // face's own line height - not this file's old `height + 2`.
-    const auto probe = omk::parseMarkup("Ag", face);
-    const int lineH = 120 * lay.height(probe.run) / 100;
+    const int lineH = hit->lineH;
     // WHERE THE BLOCK SITS. `Dialog_TickUI` places it with
     //
     //     v3 = height << 6
@@ -240,9 +290,6 @@ void drawSubtitle(omk::Surface& fb, const omk::TextLayout& lay,
         if (scroll < overflow) tri(dispH - 1, dispH - 8);       // more BELOW
     }
     for (std::size_t k = 0; k < rows.size(); ++k) {
-        omk::ParsedText pt;
-        pt.run = rows[k];
-        for (auto& sc : pt.run) sc.rgb[0] = sc.rgb[1] = sc.rgb[2] = tone[k];
         // LEFT-ALIGNED, which is the engine's default and not a choice.
         // `Text_DrawBlock` initialises `style = 2` and the dialogue's params
         // carry only TEXTP_FLAG_A (`v56[0] = 64`), so no TEXTP_ALIGN_* bit is
@@ -259,7 +306,7 @@ void drawSubtitle(omk::Surface& fb, const omk::TextLayout& lay,
         // A ROW IS DRAWN ONLY IF IT FITS WHOLE. `Text_LayOutBlock` stops at
         // the block's bottom; drawing a row that straddles the edge left the
         // last line sliced in half against the screen.
-        if (y >= clipTop && y + lineH <= clipBot) lay.drawRun(fb, left, y, pt.run);
+        if (y >= clipTop && y + lineH <= clipBot) lay.drawRun(fb, left, y, rows[k]);
         y += lineH;
     }
 }
@@ -506,7 +553,15 @@ void PlayState::screensHuds() {
         // line, the one that always comes with a sound, is face 86 = 'V'.
         // A credit block positions itself; anything else is the
         // ordinary bottom-anchored subtitle.
-        const auto ptMedia = omk::parseMarkup(mediaText, 'V');
+        // parsed once per text, not once a frame
+        static std::string ptMediaText;
+        static omk::ParsedText ptMedia;
+        static bool ptMediaParsed = false;
+        if (!ptMediaParsed || ptMediaText != mediaText) {
+            ptMedia = omk::parseMarkup(mediaText, 'V');
+            ptMediaText = mediaText;
+            ptMediaParsed = true;
+        }
         if (!drawPositioned(fb, lay, ptMedia, dispW, dispH))
             drawSubtitle(fb, lay, mediaText, {}, -1, dispW, dispH, 16,
                          SubBox::None, 'V', 0, nullptr, /*mediaLine*/ true,
