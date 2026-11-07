@@ -1028,7 +1028,7 @@ void PlayState::worldCrowdVehicles(const std::vector<omk::Vehicle>& vs, const om
                 if (!a.empty()) doorIn  = omk::clipTracks(a);
                 if (!b.empty()) doorOut = omk::clipTracks(b);
             }
-            const omk::NodeTracks& dt0 = boarding ? doorIn : doorOut;
+            omk::NodeTracks& dt = boarding ? doorIn : doorOut;
             // THE TRACKS ARE KEYED BY NODE ID, NOT MESH INDEX. The
             // clip names its five tracks with the bytes 0,3,1,4,2
             // and `SLI_FN.3DO`'s ids run SlBassin 0, SlPorteZG 1,
@@ -1037,20 +1037,25 @@ void PlayState::worldCrowdVehicles(const std::vector<omk::Vehicle>& vs, const om
             // as indices they land on two SHELLS, and the one
             // moving track fell on the wrong panel. `clipTracks`
             // fills `ids` as indices (right for the scene clips it
-            // was written for); remapped through the model's ids.
-            omk::NodeTracks dt = dt0;
+            // was written for); remapped through the model's ids -
+            // in place, once per model (`doorMappedFor`), not a copy of
+            // the clip every frame.
             // BY NAME (+4 of the track header), not by id or index:
             // the mover is named `SlPorteZG`, the parent copy on the
             // G side; its child `SlPorteG` follows it, so the two
             // coincident copies swing together and nothing stays
             // over the hole. Read by index the swing landed on
             // `SlPorteG` alone; by id on `SlPorteD`, the far door.
-            for (std::size_t ti = 0; ti < dt.ids.size(); ++ti) {
-                int idx = -1;
-                const std::string& nm = ti < dt.names.size() ? dt.names[ti] : std::string();
-                for (std::size_t k = 0; k < sv.mo->meshes.size(); ++k)
-                    if (nm == sv.mo->meshes[k].name) { idx = static_cast<int>(k); break; }
-                dt.ids[ti] = idx;
+            std::string& mappedFor = doorMappedFor[boarding ? 0 : 1];
+            if (mappedFor != v.model) {
+                mappedFor = v.model;
+                for (std::size_t ti = 0; ti < dt.ids.size(); ++ti) {
+                    int idx = -1;
+                    if (ti < dt.names.size())
+                        for (std::size_t k = 0; k < sv.mo->meshes.size(); ++k)
+                            if (dt.names[ti] == sv.mo->meshes[k].name) { idx = static_cast<int>(k); break; }
+                    dt.ids[ti] = idx;
+                }
             }
             static bool doorTold = false;
             if (!doorTold && dt.valid()) {

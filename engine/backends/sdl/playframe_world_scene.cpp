@@ -1025,9 +1025,9 @@ void PlayState::worldProps() {
         for (const WorldSlot& ws2 : worldSlots)
             if (!ws2.lights.empty()) reached += omk::applyLights(propGeo, first, cnt, at, ws2.lights);
         // said once a prop position, from the corners the draw takes
-        static std::set<long> litTold;
+        static ToldOnce<long> litTold;
         const long key = static_cast<long>(at[0]) * 1000003L + static_cast<long>(at[2]);
-        if (cnt && litTold.insert(key).second) {
+        if (cnt && litTold.first(key, session_->areasEntered())) {
             double m[3] = {0, 0, 0};
             for (std::size_t c = first; c < propGeo.corners.size(); ++c) {
                 m[0] += propGeo.corners[c].r; m[1] += propGeo.corners[c].g; m[2] += propGeo.corners[c].b;

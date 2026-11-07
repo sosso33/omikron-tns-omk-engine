@@ -51794,8 +51794,10 @@ def c_licence_headers():
     # door's two copies, `engine: door twin`).
     # 697: + `engine/backends/classic/classic_alloc.cpp` (the classic build's
     # slab allocator under `malloc`, the same handoff's step 3)
+    # 708: + `engine/tools/save_parts.cpp` (the save file read in parts,
+    # `engine: save read in parts`, af6439e)
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (707, [], 10, []), \
+           (708, [], 10, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -54779,6 +54781,15 @@ def main():
     if "--only" in sys.argv:
         i = sys.argv.index("--only")
         pats = [a for a in sys.argv[i + 1:] if not a.startswith("--")]
+        # An EMPTY pattern is in every name, so it selects the whole suite:
+        # a `"$(grep ...)"` that matched nothing once ran ~20 minutes of it
+        # under `--only` (todo/sweep-log.md, 2026-11-07). Refused, as is an
+        # `--only` with no pattern at all.
+        if not pats or any(not p.strip() for p in pats):
+            print("--only: an empty pattern would match every check (%s); "
+                  "name the checks, or run --slow for the full sweep"
+                  % (", ".join(repr(p) for p in pats) or "no pattern given"))
+            return 2
         todo = [c for c in CHECKS + SLOW
                 if any(p.lower() in c[0].lower() for p in pats)]
         if not todo:

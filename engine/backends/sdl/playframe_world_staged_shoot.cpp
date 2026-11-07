@@ -62,8 +62,8 @@ void PlayState::shootApplyAction(Staged& s, omk::ShootRecord& ar, int action, in
         return static_cast<int>(wl[static_cast<std::size_t>(r.route)].len);
     };
     if (o.clipType == 9 && ar.state == 4) {
-        static std::set<int> patrolTold;
-        if (patrolTold.insert(s.actor).second)
+        static ToldOnce<int> patrolTold;
+        if (patrolTold.first(s.actor, session_->areasEntered()))
             std::printf("frame %ld: actor %d %s - PATROLS (Shoot_ActorAction 1): "
                         "operand %d -> route %d on floor %d, point 0 at %.0f %.0f, "
                         "%d points%s\n", frameNo, s.actor, s.model.c_str(), a3,
@@ -750,8 +750,8 @@ void PlayState::worldStagedShootEnterProps(bool astThinks, Staged& s, omk::Shoot
         if (onGrid && gunEntryPending.erase(s.actor))
             shootApplyAction(s, rec, act, session.shootActionArg(s.actor),
                         "his scene action, held until he reached the grid");
-        static std::set<int> floorTold;
-        if (onGrid && floorTold.insert(s.actor).second)
+        static ToldOnce<int> floorTold;
+        if (onGrid && floorTold.first(s.actor, session_->areasEntered()))
             std::printf("frame %ld: actor %d %s - Shoot_Think: floor %d, cell "
                         "(%d,%d)\n", frameNo, s.actor, s.model.c_str(),
                         static_cast<signed char>(rec.node & 0xFF),
@@ -760,9 +760,9 @@ void PlayState::worldStagedShootEnterProps(bool astThinks, Staged& s, omk::Shoot
         // engine's `sub_4368E0` exists to undo: with no
         // floor there is no wall test and no steering, so a
         // walker just keeps going. Said once per actor.
-        static std::set<int> offGridTold;
+        static ToldOnce<int> offGridTold;
         if (static_cast<signed char>(rec.node & 0xFF) < 0 &&
-            floorTold.count(s.actor) && offGridTold.insert(s.actor).second)
+            floorTold.has(s.actor, session_->areasEntered()) && offGridTold.first(s.actor, session_->areasEntered()))
             std::printf("frame %ld: actor %d %s - OFF THE GRID at %.0f %.0f "
                         "%.0f: Shoot_Think finds no floor, so nothing walls "
                         "him in (sub_4368E0 is the engine's recovery and runs "
@@ -919,8 +919,8 @@ void PlayState::worldStagedShootGeneric(omk::ShootRecord& rec, Staged& s, int& a
         const int h = shootField.heading(
             shootMap, static_cast<signed char>(rec.node & 0xFF), rec.destX,
             rec.destZ, crt);
-        static std::set<int> steerTold;
-        if (h >= 0 && steerTold.insert(s.actor).second)
+        static ToldOnce<int> steerTold;
+        if (h >= 0 && steerTold.first(s.actor, session_->areasEntered()))
             std::printf("frame %ld: actor %d %s - STEERS by the path field "
                         "(sub_421CD0 -> sub_435C40): heading %d from his cell "
                         "(%d,%d), facing %.1f\n", frameNo, s.actor, s.model.c_str(), h,
@@ -1012,8 +1012,8 @@ void PlayState::worldStagedShootGeneric(omk::ShootRecord& rec, Staged& s, int& a
                     gunFloor, playerFloor, int(ein.sameNode),
                     int((rec.flags & 0x20u) != 0));
     }
-    static std::set<int> crossTold;
-    if (!ein.sameNode && crossTold.insert(s.actor).second)
+    static ToldOnce<int> crossTold;
+    if (!ein.sameNode && crossTold.first(s.actor, session_->areasEntered()))
         std::printf("frame %ld: actor %d %s - the player is on ANOTHER FLOOR "
                     "(%d against his %d)%s\n", frameNo, s.actor, s.model.c_str(),
                     playerFloor, gunFloor,
@@ -1027,8 +1027,8 @@ void PlayState::worldStagedShootGeneric(omk::ShootRecord& rec, Staged& s, int& a
                 static_cast<std::size_t>(gunFloor)]
                     .links[static_cast<std::size_t>(ein.link)];
             for (int k = 0; k < 3; ++k) ein.linkFrom[k] = L.from[k];
-            static std::set<int> linkTold;
-            if ((rec.flags & 0x20u) && linkTold.insert(s.actor).second)
+            static ToldOnce<int> linkTold;
+            if ((rec.flags & 0x20u) && linkTold.first(s.actor, session_->areasEntered()))
                 std::printf("frame %ld: actor %d %s - takes the STAIR %d of "
                             "floor %d: its near end %.0f %.0f %.0f, its far "
                             "end %.0f %.0f %.0f on floor %u\n", frameNo, s.actor,
@@ -1558,8 +1558,8 @@ void PlayState::worldStagedShootClipAdvance(omk::ShootRecord& rec, Staged& s, in
                 s.walkMove[1] = d01[1];
                 // once per gunman and clip type: the height the
                 // clip's start SETS him at, over his placement
-                static std::set<std::pair<int, int>> d01Told;
-                if (d01Told.insert({s.actor, ac->type}).second)
+                static ToldOnce<std::pair<int, int>> d01Told;
+                if (d01Told.first({s.actor, ac->type}, session_->areasEntered()))
                     std::printf("frame %ld: actor %d %s - clip type %d starts "
                                 "(sub_421A20): frame 0->1 root %.2f %.2f %.2f, "
                                 "%d root keys\n", frameNo, s.actor, s.model.c_str(),

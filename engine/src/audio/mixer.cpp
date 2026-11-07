@@ -56,19 +56,25 @@ WavLoad loadWav(std::span<const std::byte> file) {
     off += 2;
     if (dummy != 0) { r.rewoundDummy = true; off -= 2; }
 
-    // Then 8-byte chunk headers until `data` (0x61746164).
+    // Then 8-byte chunk headers until `data` (0x61746164). The walk is in
+    // 64 bits: a chunk size is a 32-bit field, and `off + 8 + sz` in a 32-bit
+    // size_t (Vita, 3DS, the PowerPC Macs) wraps on a size near 0xFFFFFFFF -
+    // the walk then loops, or the TooShort test passes and the copy reads
+    // past the file. No shipped file comes near; a damaged one could.
+    const std::uint64_t size = file.size();
+    std::uint64_t at = off;
     for (;;) {
-        if (off + 8 > file.size()) { r.reject = WavReject::DataHeader; return r; }
-        const bool isData = tag(file, off, "data");
-        const std::uint32_t sz = u32(file, off + 4);
+        if (at + 8 > size) { r.reject = WavReject::DataHeader; return r; }
+        const bool isData = tag(file, std::size_t(at), "data");
+        const std::uint32_t sz = u32(file, std::size_t(at) + 4);
         if (isData) {
             r.dataBytes  = sz;
-            r.dataOffset = off + 8;
-            if (r.dataOffset + sz > file.size()) { r.reject = WavReject::TooShort; return r; }
+            r.dataOffset = std::size_t(at + 8);
+            if (at + 8 + sz > size) { r.reject = WavReject::TooShort; return r; }
             return r;
         }
         ++r.skippedChunks;
-        off += 8 + sz;
+        at += 8 + std::uint64_t(sz);
     }
 }
 

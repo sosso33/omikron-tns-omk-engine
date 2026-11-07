@@ -639,8 +639,11 @@ void PlayState::worldDrawSetRuns(float clipReach, std::size_t& runsCulled,
                                  &w.geo, b.start, b.count, b.blend, b.cutout});
             continue;
         }
-        // One test per mesh, cached across its runs.
-        std::vector<std::uint8_t> vis(w.meshes.size(), 2);   // 2 = untested
+        // One test per mesh, cached across its runs - in a buffer kept per
+        // slot, refilled each frame rather than allocated
+        static std::vector<std::uint8_t> visKept[2];
+        std::vector<std::uint8_t>& vis = visKept[slot];
+        vis.assign(w.meshes.size(), 2);   // 2 = untested
         // a mesh drawn from its own geometry (`MovingMesh`) is out of
         // the set's draw - never side-culled, so never bridged over
         for (const auto& kv : w.moving)

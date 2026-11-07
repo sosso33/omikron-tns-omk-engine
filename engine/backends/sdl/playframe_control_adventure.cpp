@@ -314,10 +314,10 @@ void PlayState::adventureCrowdPush() {
                             frameNo, double(push[0]), double(push[2]), double(gx), double(gz));
             }
             // once per gunman: his body shoved the player
-            static std::set<int> bodyPushTold;
+            static ToldOnce<int> bodyPushTold;
             for (const int sl : session.spatial().lastTouched()) {
                 const int who = session.actorOfBodySlot(sl);
-                if (who >= 0 && bodyPushTold.insert(who).second)
+                if (who >= 0 && bodyPushTold.first(who, session.areasEntered()))
                     std::printf("frame %ld: the player is pushed out of actor %d's "
                                 "body (SpatialIndex_Query, sub_45E390): %.2f %.2f\n",
                                 frameNo, who, double(push[0]), double(push[2]));

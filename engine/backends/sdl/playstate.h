@@ -34,6 +34,21 @@ constexpr int Continue = -1;   // go on: the next section, phase or frame
 constexpr int EndLoop = -2;    // leave the frame loop; `finish()` writes the dumps and returns
 }
 
+// A LOG LINE SAID ONCE PER KEY - an actor number, a prop's place - and
+// said again in the next area: those keys are the area's own, and the same
+// number there names someone else. `areasEntered` is `Session::areasEntered()`.
+template <class K> struct ToldOnce {
+    std::set<K> told;
+    int area = -1;
+    bool first(const K& k, int areasEntered) {
+        if (area != areasEntered) { told.clear(); area = areasEntered; }
+        return told.insert(k).second;
+    }
+    bool has(const K& k, int areasEntered) const {
+        return area == areasEntered && told.count(k) != 0;
+    }
+};
+
 struct PlayState {
     omk::PlayOptions opt{};
     const std::string & dataRoot = opt.fr;
@@ -215,6 +230,9 @@ struct PlayState {
     omk::NodeTracks doorIn{};
     omk::NodeTracks doorOut{};
     bool doorClipsRead{};
+    // the model each clip's ids were last remapped for (by its tracks'
+    // names): the remap runs once per model, not every frame of the swing
+    std::string doorMappedFor[2]{};
     int journeyTo{};   // the address the journey ends at
     int calledDestination{};
     std::optional<omk::SliderRide> ride{};

@@ -81,6 +81,7 @@ int PlayState::setupOptions(int argc, char** argv) {
     // tracks, one moves - **`SlPorteG` turns 71.4 degrees**, the gull-wing
     // swing - and the other four and the root hold still.
     doorClipsRead = false;
+    doorMappedFor[0].clear(); doorMappedFor[1].clear();
     journeyTo = -1;            // the address the journey ends at
     // `dword_6A17CC` - which destination row the call was made for.
     calledDestination = -1;

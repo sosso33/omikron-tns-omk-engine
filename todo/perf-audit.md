@@ -374,3 +374,31 @@ Checks run with `--only`, all green: `subtitle box`, `credit layout`,
 `ui shop titles`, `engine: multiplan rows`, `engine: lift` (and its family),
 `engine: profiler` (and `control`, `gpu`, `windows`). `make play play-gles
 vulkan` build clean. No check measures a cost, so none can fail on these.
+
+## 10. Done 2026-11-07 - the rest of that review's list
+
+The reader's "finish part 4": items 4 to 6 of the same review. None moves a
+pixel or changes a log line on the shipped data.
+
+4. **The slider's door clip was copied every frame of the swing**
+   (`playframe_world_crowd.cpp`): the whole `NodeTracks` - a quaternion per
+   track per frame - copied, then each track's name compared with every mesh
+   name of the model to remap `ids`. The remap now runs in place, once per
+   model (`PlayState::doorMappedFor`, keyed by the model NAME: a model is
+   one `.3DO` whatever its pointer, and since `f38148a` a released model's
+   pointer can be reused).
+5. **The WAV chunk walk was in `size_t`** (`audio/mixer.cpp`, `parseWav`):
+   `off + 8 + sz` with a 32-bit chunk size wraps a 32-bit `size_t` (Vita,
+   3DS, the PowerPC Macs) on a size near 0xFFFFFFFF - the walk loops, or the
+   `TooShort` test passes and the PCM copy reads past the file. The walk is
+   in 64 bits now. No shipped file comes near; only a damaged one could, and
+   on the 64-bit desktops the old sum could not wrap at all - so no check
+   here can show it.
+6. **A `vis` vector allocated per world slot per frame**
+   (`worldDrawSetRuns`): a buffer kept per slot, refilled. And **the
+   "said once" log sets never emptied** (`static std::set` of actor numbers
+   in the shoot logs, the body push, the prop lighting): those keys are the
+   area's own, so after an area change a line for the same number in the new
+   area was never printed. `ToldOnce` (`playstate.h`) empties itself when
+   `Session::areasEntered()` moves. The members (`propsTold`, `gun.*Told`)
+   are reset with their state and were left alone.
