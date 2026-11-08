@@ -740,6 +740,18 @@ public:
     // (the count comes off the shipped file) and tier 6 for the pacing (no
     // capture times a load). The boot load is mode 0 and takes none.
     bool loading() const { return load_.active; }
+    // THE LOADING LOGO's flag, `dword_4E9740`. `area.goto`'s handler
+    // (0x00402D20, `asmfn.py --op 47`; no `proc` label, so a grep of the
+    // listing files it under `sub_402B70`) does `mov dword_4E9740, 1` when
+    // `Area_Transition` accepts, and `Game_Tick` does `dword_4E9740 &=
+    // sub_408410(1)` every frame (unless `byte_910309`, the INI's
+    // `[Preferences] viewer`, default "0") - `Script_Pump(1)`, which answers 0 only from its
+    // tail, the frame the destination's load completes and is handed on.
+    // While it is set `Game_Tick` blits `IMAGES\TURNCD.BMP` (the "THE NOMAD
+    // SOUL" logo, 98x32) 8 pixels in from the screen's bottom-right corner.
+    // The image has no other write to it: a restart does not clear it, and
+    // a probe's `requestArea` does not set it (no op 47 runs).
+    bool loadingLogo() const { return loadingLogo_; }
     // THE LOAD WAITS FOR THE SET, which is what the engine's does:
     // `Area_TickLoad` case 2 is `if (!sub_41EFA0()) return 0` - "the queued
     // read is not served yet" - and how many frames that is on a real machine
@@ -1834,6 +1846,7 @@ private:
     Transition tr_;                          // dword_6A0600
     int  deferred_ = -1;                     // dword_4C0130
     struct Load { bool active = false; int slot = 0; int slicesLeft = 0; } load_;
+    bool loadingLogo_ = false;                 // dword_4E9740 (`loadingLogo`)
     std::function<bool(int)> loadGate_;
     std::size_t sliceBytes_ = 0x20000;       // Async_SetMode(1)'s ElementSize
     int  asyncMode_ = 0;                     // dword_4E91C0: 0 read now, 1 a slice a frame
@@ -1945,7 +1958,9 @@ private:
     void areaLoad(int area, int slot);
     bool tickLoad(int slot);
     void completeLoad(int slot);
-    void pumpTail();
+    // -> `Script_Pump(1)`'s answer: false when the tail handed a finished load
+    // on (its `return 0`), true otherwise.
+    bool pumpTail();
     // sub_40C090: free the slot's contexts (its blocks' and `sub_406320`'s).
     void evictSlot(int slot);
     // sub_419AF0 / sub_419A90: the decor into state 2 / back to state 1.

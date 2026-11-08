@@ -120,19 +120,24 @@ int main(int argc, char** argv) {
         run(s, 1, log);                              // parks at ui.open 29
         s.answerUi(1);
         int statusDuring = -1;
-        long gotoFrame = -1, resumeFrame = -1;
-        for (int f = 0; f < 800 && resumeFrame < 0; ++f) {
+        long gotoFrame = -1, resumeFrame = -1, logoOn = -1, logoOff = -1;
+        for (int f = 0; f < 800 && (resumeFrame < 0 || logoOff < 0); ++f) {
             run(s, 1, log);
             if (s.dialogOpen()) s.endDialog();
+            // the loading logo (`dword_4E9740`): on by `area.goto`'s accept,
+            // off by the pump's `return 0` - read after each whole frame
+            if (logoOn < 0 && s.loadingLogo()) logoOn = s.frameNo();
+            if (logoOn >= 0 && logoOff < 0 && !s.loadingLogo()) logoOff = s.frameNo();
             if (gotoFrame < 0) gotoFrame = frameOf(log, "AREAS", 222);
             if (gotoFrame >= 0 && s.frameNo() == gotoFrame) statusDuring = s.contextStatus(0);
-            resumeFrame = frameOf(log, "SCENES", 55);
+            if (resumeFrame < 0) resumeFrame = frameOf(log, "SCENES", 55);
         }
         std::printf("staged goto_frame %ld status_after_goto %d slices %d resume_frame %ld "
-                    "delta %ld other_at_resume %d current %d arrive_frame %ld entered %d\n",
+                    "delta %ld other_at_resume %d current %d arrive_frame %ld entered %d "
+                    "logo_on %ld logo_off %ld\n",
                     gotoFrame, statusDuring, s.loadSlicesFor(222), resumeFrame,
                     resumeFrame - gotoFrame, s.otherArea(), s.currentArea(),
-                    frameOf(log, "AREAS", 118), s.areasEntered());
+                    frameOf(log, "AREAS", 118), s.areasEntered(), logoOn, logoOff);
     }
 
     // ---- slices: a big set, requested and timed
@@ -146,10 +151,16 @@ int main(int argc, char** argv) {
         const auto c0 = s.contextsCreated();
         s.requestArea(0);
         int frames = 0;
-        while (s.contextsCreated() == c0 && frames < 200) { s.frame(); ++frames; }
-        std::printf("slices area 0 set %s slices %d frames %d created %zu -> %zu current %d other %d\n",
+        bool logo = false;   // no op 47 ran, so `dword_4E9740` is never set
+        while (s.contextsCreated() == c0 && frames < 200) {
+            s.frame();
+            ++frames;
+            logo = logo || s.loadingLogo();
+        }
+        std::printf("slices area 0 set %s slices %d frames %d created %zu -> %zu current %d other %d "
+                    "logo %d\n",
                     s.residentSlot(1).set.c_str(), slices, frames, c0, s.contextsCreated(),
-                    s.currentArea(), s.otherArea());
+                    s.currentArea(), s.otherArea(), logo ? 1 : 0);
     }
 
     // ---- objects: a zone ENTER script carrying both objects

@@ -488,6 +488,8 @@ struct PlayState {
     std::string mediaText{};
     double mediaTextFrames{};
     omk::Surface mediaBmp{};
+    omk::Surface loadingLogoBmp{};   // IMAGES\TURNCD.BMP, `Game_Init`'s last load (`screensLoadingLogo`)
+    bool loadingLogoRead = false;
     float playerFeet{};
     bool playerFeetKnown{};
     float playerRootRef{};
@@ -1168,6 +1170,7 @@ struct PlayState {
     // which then know whether `fb` carries any; drawn first by `screensHuds`
     void weatherFrame(const omk::View& v);
     void weatherDraw();
+    void screensLoadingLogo();   // TURNCD.BMP while an `area.goto` loads
     void screensFps();   // the fps counter
     void screensFades();   // the screen fades, over everything
     void screensFlicker();   // the flicker catcher

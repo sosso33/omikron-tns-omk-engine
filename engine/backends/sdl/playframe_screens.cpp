@@ -13,7 +13,8 @@ int PlayState::phaseScreens() {
     screensPropertyTail();    // the tail of Actor_SetProperty
     screensHuds();            // the fight HUD, the breath gauge, the shoot HUD
     screensFps();             // the fps counter
-    screensFades();           // the screen fades, over everything
+    screensFades();           // the screen fades, over everything but...
+    screensLoadingLogo();     // ...the loading logo, layer 15 over their 9
     screensFlicker();         // the flicker catcher
     return phase::Continue;
 }

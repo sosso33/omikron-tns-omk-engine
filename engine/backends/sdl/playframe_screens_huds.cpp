@@ -1161,6 +1161,44 @@ void PlayState::screensSubtitle(omk::TextLayout& lay) {
 
 
 // The fps counter
+// ---- THE LOADING LOGO ----------------------------------------------
+//
+// `Game_Init` ends with `dword_4E973C = I2D_LoadBitmap("IMAGES\\TURNCD.BMP")`
+// - the "THE NOMAD SOUL" logo, 98x32 - and `Game_Tick` (0x004200F0) blits it
+// while `dword_4E9740` is set: `area.goto`'s accept sets it, the pump's tail
+// clears it the frame the destination's load is handed on
+// (`Session::loadingLogo`). The rectangle is `I2D_GetBitmapSize`'s, its
+// right and bottom edges at the screen's size less 8, and the blit is
+// `I2D_BlitBitmap(&r, bmp, 1, 15)`: the third argument 1 is DDBLT_KEYSRC
+// against the loader's black key (docs/UI.md "The colour key is 0").
+//
+// The engine places it in SCREEN pixels at 1:1; the port maps it from the
+// 640x480 the interface is authored at, like every other interface bitmap
+// (`screensMediaInset`), so it is where a 640x480 game put it at any size.
+// LAST, OVER THE FADES: the fourth argument of `I2D_BlitBitmap` is the
+// display list's LAYER, the list is drawn sorted by it (docs/UI.md "The
+// cursor is layer 8"), and the fade ticker `sub_451E60` submits both fades'
+// quads at 9 - so the logo at 15 is drawn over a fade to black, never
+// faded with the picture. On the GPU overlay the fade is the present
+// shader's, over every pixel of `fb`, so a frame with both goes to the CPU
+// path (`phaseWorld`'s gates, "loading logo over a fade").
+void PlayState::screensLoadingLogo() {
+    if (!session_ || !session_->loadingLogo() || !fb.valid()) return;
+    if (!loadingLogoRead) {
+        loadingLogoRead = true;
+        loadingLogoBmp = omk::surfaceFromBmp(fs_->read("IMAGES/TURNCD.BMP"));
+        std::printf("loading logo: IMAGES/TURNCD.BMP %dx%d, first drawn at frame %ld\n",
+                    loadingLogoBmp.w, loadingLogoBmp.h, static_cast<long>(frameNo));
+    }
+    if (!loadingLogoBmp.valid()) return;
+    constexpr int kInset = 8;   // `g_ScreenSize - 8`, both axes
+    const int r = 640 - kInset, b = 480 - kInset;
+    const omk::Rect dr{(r - loadingLogoBmp.w) * fb.w / 640, (b - loadingLogoBmp.h) * fb.h / 480,
+                       r * fb.w / 640, b * fb.h / 480};
+    omk::blt(fb, dr, loadingLogoBmp, omk::Rect{0, 0, loadingLogoBmp.w, loadingLogoBmp.h},
+             omk::kBltWait | omk::kBltKeySrc, 0);
+}
+
 void PlayState::screensFps() {
     OMK_ZONE("screens: fps");   // the profiler (todo/debug-tools.md 6)
     // ---- THE FPS COUNTER -------------------------------------------

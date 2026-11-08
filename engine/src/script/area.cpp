@@ -1324,9 +1324,9 @@ int Session::areaTransition(int mode, int ctxIdx, int slot, int area, int f1, in
 //     if (u16(ctx, 22) == 10) Area_Transition(&dword_6A0600, dword_69BC60, ctx, 3, -1, -1, -1);
 //     else                    u16(ctx, 22) = 1;       /* the status-8 preload */
 //     dword_4C0130 = -1;
-void Session::pumpTail() {
+bool Session::pumpTail() {
     const int tickSlot = load_.active ? load_.slot : 1 - active_;
-    if (!tickLoad(tickSlot) || deferred_ == -1) return;
+    if (!tickLoad(tickSlot) || deferred_ == -1) return true;
     if (deferred_ == kNoContext) {
         areaTransition(3, kNoContext, active_, -1, -1, -1);
     } else {
@@ -1335,6 +1335,7 @@ void Session::pumpTail() {
         else if (c) c->status = ctx_status::Running;
     }
     deferred_ = -1;
+    return false;                                  // the pump's `return 0`
 }
 
 // --------------------------------------------------------------- RESTART
@@ -2732,8 +2733,10 @@ void Session::frame() {
     // the walk in a higher slot runs in this same frame; one created in a
     // lower (freed) slot waits for the next.
     for (int i = 0; i < kContextSlots; ++i) runContext(i);
-    // ...and the tail: the staged load, and what it releases.
-    pumpTail();
+    // ...and the tail: the staged load, and what it releases. Its answer
+    // is `Script_Pump(1)`'s, which `Game_Tick` ANDs into the loading logo's
+    // flag (`dword_4E9740 &= sub_408410(1)`, `loadingLogo`).
+    if (!pumpTail()) loadingLogo_ = false;
 
     // One frame of the camera move, after the scripts have had their say -
     // a `camera.set` this frame starts moving next frame, which is what
@@ -3472,6 +3475,8 @@ void Session::execute(int i) {
             if (call.op == op::AreaGoto && call.fields.size() >= 3) {
                 if (!areaTransition(0, i, c->slot, call.fields[0], call.fields[1], call.fields[2]))
                     c->pc = before;                       // `add [esi+0Ch], -7`
+                else
+                    loadingLogo_ = true;                  // `mov dword_4E9740, 1`
             } else if (call.op == op::AreaPreload && !call.fields.empty()) {
                 // handler 0x402AB0: nothing when the ACTIVE slot holds it;
                 // the target is the active slot when that is empty, else

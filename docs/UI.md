@@ -1577,6 +1577,40 @@ sound-bank suspend (the mixer has no suspend API) and the player's ACTOR_STATE
 9 (the state machine models `UiHeld` but `omk-play` never drives it from a
 screen open).
 
+### The loading logo — `IMAGES\TURNCD.BMP` is shown while an `area.goto` loads
+
+`Game_Init` (0x0041FA00) ends with `dword_4E973C =
+I2D_LoadBitmap("IMAGES\\TURNCD.BMP")`, and the name misleads: the file is not
+a "turn the CD" prompt but the **"THE NOMAD SOUL" logo**, 98×32, yellow on the
+black key. `Game_Tick` (0x004200F0) blits it while `dword_4E9740` is set, with
+its right and bottom edges at the screen's size less 8 —
+`I2D_BlitBitmap(&r, bmp, 1, 15)`, keyed, on layer **15**.
+
+The flag has exactly three references in the image:
+
+| where | what |
+|---|---|
+| op 47 `area.goto`'s handler, 0x00402D20 | `mov dword_4E9740, 1` when `Area_Transition` accepts (the handler has no `proc` label: a grep of the listing files it under `sub_402B70`; `asmfn.py --op 47` finds it) |
+| `Game_Tick` | `dword_4E9740 &= sub_408410(1)` unless `byte_910309` (the INI's `[Preferences] viewer`, default "0") |
+| `Game_Tick` | `if (dword_4E9740)` the blit |
+
+`sub_408410(1)` is `Script_Pump(1)`, which returns 0 **only from its tail** —
+the frame `Area_TickLoad` reports the destination loaded and the pending
+context is handed on. So the logo is a **loading indicator**: on from the
+`area.goto` frame, off the frame the load lands. A restart does not clear it
+and nothing else sets it. With the set streamed at 0x20000 bytes a frame it is
+one frame for the intro's AImpasse and for a door into a hall, and 17 for a
+goto into Anekbah (`verify.py: engine: area transition`, the `staged` line:
+on at the goto frame 271, off at 272).
+
+**It is drawn over the fades.** The I2D list is drawn sorted by layer (the
+cursor's 8 above), and the fade ticker `sub_451E60` submits both fades' quads
+at **9** — so a fade to black during a transition leaves the logo lit in the
+corner. `omk-play` draws it after `screensFades`, at the 640×480 position
+mapped to the display like every interface bitmap (the engine's is 1:1 in
+screen pixels), and a frame with the logo and a running fade leaves the GPU
+overlay path, whose fade is the present shader's over every pixel.
+
 ### The slider page's destination is an ADDRESS in another area
 
 A row on the slider page names a place, and the record that names it carries no

@@ -1473,10 +1473,20 @@ void PlayState::worldMirror() {
         // a fade is a gate only while it would CHANGE a pixel: the black
         // one is `running()` for whole scenes with both bands at 255,
         // which held every frame of play off the direct path
+        // the LOADING LOGO over a fade is HARD: the logo is layer 15 and the
+        // fades 9, so the fade must not reach it, and the overlay's fade is
+        // the present shader's over every pixel (`screensLoadingLogo`)
+        else if (session.loadingLogo() &&
+                 ((session.colourFade().running() && session.colourFade().weight() > 0.0f) ||
+                  (session.blackFade().running() &&
+                   (session.blackFade().bandGrey(false) < 255 || session.blackFade().bandGrey(true) < 255))))
+            keep = "loading logo over a fade";
         else if (session.colourFade().running() && session.colourFade().weight() > 0.0f) { keep = "colour fade"; softGate = true; }
         else if (session.blackFade().running() &&
                  (session.blackFade().bandGrey(false) < 255 || session.blackFade().bandGrey(true) < 255)) { keep = "black fade"; softGate = true; }
         else if (mediaBmp.w > 0 && mediaBmp.h > 0) { keep = "media bitmap"; softGate = true; }
+        // the LOADING LOGO (`screensLoadingLogo`): a keyed bitmap, opaque
+        else if (session.loadingLogo()) { keep = "loading logo"; softGate = true; }
         else if (mediaTextFrames > 0) { keep = "media line"; softGate = true; }
         else if (session.dialogOpen()) { keep = "conversation"; softGate = true; }
         // G6 step 3: both gauges are `Hud_DrawBar`, whose only reads of

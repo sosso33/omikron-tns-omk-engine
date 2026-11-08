@@ -5835,9 +5835,13 @@ def c_engine_area_transition():
       of the goto frame, so the pump's tail completes `Area_TickLoad` cases
       2..9 in the next frame and the caller runs in the one after. The area
       left (118) is in the other slot, the shown set is 222, `area.arrive
-      118` runs in the resume frame, one area entered.
+      118` runs in the resume frame, one area entered. THE LOADING LOGO
+      (`dword_4E9740`, `IMAGES\TURNCD.BMP`) is set in the goto frame by the
+      op 47 handler's accept and cleared ONE frame later, the frame the tail
+      returns 0 (`dword_4E9740 &= Script_Pump(1)`).
     * `slices` - Anekbah.3DO is 2099056 bytes: 17 slices, and a request takes
-      17 frames to create its startup context.
+      17 frames to create its startup context; the probe's `requestArea` runs
+      no op 47, so the logo never shows.
     * `objects` - AREA 0 zone 3's ENTER script `area.goto 201, 153, 240`:
       the door `ported43open` starts on the OUTGOING scene (ANEKBAH) the
       frame the load lands, `ported43close` after it, and the caller resumes
@@ -5897,7 +5901,9 @@ def c_engine_area_transition():
     got = (
         g("staged", "status_after_goto", "slices", "delta", "other_at_resume", "current", "entered"),
         st.get("arrive_frame") == st.get("resume_frame"),
-        g("slices", "set", "slices", "frames", "current", "other"),
+        (st.get("logo_on") == st.get("goto_frame"),
+         int(st.get("logo_off", -9)) - int(st.get("goto_frame", 0))),
+        g("slices", "set", "slices", "frames", "current", "other", "logo"),
         g("objects", "dest", "f1", "f2", "f1_name", "f2_name", "shown_scx", "other"),
         (int(ob.get("f1_frame", -9)) <= int(ob.get("f2_frame", -9)) <
          int(ob.get("resume_frame", -9)) < int(ob.get("end_frame", -9))),
@@ -5912,7 +5918,8 @@ def c_engine_area_transition():
     want = (
         ("10", "1", "2", "118", "222", "1"),
         True,
-        ("ANEKBAH", "17", "17", "0", "118"),
+        (True, 1),
+        ("ANEKBAH", "17", "17", "0", "118", "0"),
         ("201", "153", "240", "ported43open", "ported43close", "HALL43", "0"),
         True,
         ("8", "9", "19", "20", "22", "222"),
