@@ -4048,6 +4048,20 @@ carry `screen == -1`, so a callback that branches on the screen — and
 `verify.py: engine: load walk`; the drawing is
 [`GAME_STATE.md`](GAME_STATE.md) §8.
 
+**The confirm dialogs' subject line** (2026-11-08). `Detruire` (0x004CF350)
+and *Ecraser ce fichier ?* (0x004CF3B8) share item 0x004CEE08 at (95, 120),
+450x40, whose only content is its text function `0x0047BC30`: `" %s "` around
+the TYPED NAME when the screen is 29 and the panel 0x004CF3B8, else around
+`sub_47BCB0(screen, dword_4CEBAC)` - the load panel's own row composer (row -1
+`"%s : %s"`, string 12 on screen 29 or 14 on 30, then the profile; row == the
+count, string 15; a row below it, the record's name, day and time; past it,
+one empty byte). The quotes and the spaces inside them are the format's.
+`ScreenComposer::confirmSubjectText`; `verify.py: engine: confirm subject`.
+Screen 29 reaches 0x004CF3B8 only from `Confirmer` (0x0047A2B0) with a
+profile name that already exists - a path the port does not take yet, because
+that dialog's `Oui` deletes the profile's saves
+(`todo/ui-save-confirm-and-quit.md`).
+
 ### The name field — the last refusal
 
 `sub_47A390` is the only list hook besides the LIFT's grid, and it answers a

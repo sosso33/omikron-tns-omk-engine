@@ -558,11 +558,15 @@ rendered at the moments it names and read by eye (not the same as playing):
 
 Re-checked 2026-11-06 against the tree; the list of 2026-09-18 had gone stale.
 
-* **The overwrite dialog does not name the file** -
-  `todo/ui-save-confirm-and-quit.md` §1 (`0x0047BC30`, both confirm panels
-  lose their subject line). Decoded, not transcribed.
+* **A new game under an existing profile name does not ask** - the start
+  menu's `Confirmer` (0x0047A2B0) shows *Ecraser ce fichier ?* there; its
+  `Oui` deletes the profile's saves, so it waits for the reader
+  (`todo/ui-save-confirm-and-quit.md`, top).
 
 No longer open (kept so nobody re-reports them as new):
+
+* ~~The overwrite dialog does not name the file~~ - **done 2026-11-08**
+  (`0x0047BC30`, `engine: confirm subject`).
 
 * ~~Tab strips switch pages on the confirm, not on the move~~ - **done
   2026-11-08** (`todo/ui-child-on-move.md`; `UiWalk::enterOnMove`; the Quit

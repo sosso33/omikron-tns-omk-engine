@@ -202,6 +202,58 @@ void fillQuad(Surface& fb, int x0, int y0, int x1, int y1,
 // what `sub_42ADD0` writes from `Game_HandleEvent(29)`, which is why this is
 // `walk.boundCount(kListSneakRows)` and not the number of widgets drawn. The
 // 18 is a literal in the format string, not a field.
+// `0x0047BC30`, the confirm dialogs' SUBJECT LINE, read off the image whole:
+//
+//     if (screen+0 == 29 && screen+1C == 0x004CF3B8)       // the start menu's
+//         sprintf(out, "\" %s \"", byte_69BDA0);           // overwrite: the name
+//     else {                                               // the player TYPED
+//         sub_47BCB0(screen, dword_4CEBAC, buf);           // the selected row
+//         sprintf(out, "\" %s \"", buf);
+//     }
+//
+// and `sub_47BCB0(screen, row, buf)` is the load panel's own row composer:
+//
+//     row == -1      "%s : %s" - string 12 (screen 29) or 14 (screen 30), then
+//                    `byte_657970`, the listed PROFILE
+//     row == count   string 15 (`dword_657968` is the row count) - the empty
+//                    slot's label
+//     row <  count   the directory record's name, day and time (`rowLabel`)
+//     row >  count   one byte of `byte_657998`: empty
+//
+// The quotes and their inner spaces are the format's own (`" %s "` at
+// 0x004CF5C8 and 0x004CF5D0). Without this both dialogs asked "Ecraser ce
+// fichier ?" or "Detruire" and never said what (todo/ui-save-confirm-and-
+// quit.md 1).
+std::string ScreenComposer::confirmSubjectText(const UiWalk& walk,
+                                               const std::vector<std::string>& text) const {
+    const auto quoted = [](const std::string& s) { return "\" " + s + " \""; };
+    const auto str = [&](int k) {
+        return k >= 0 && k < static_cast<int>(text.size()) ? text[static_cast<std::size_t>(k)]
+                                                            : std::string();
+    };
+    if (walk.screen() == screen::StartMenu && walk.panel() &&
+        walk.panel()->addr == kPanelSaveOverwrite)
+        return quoted(walk.name());
+    std::string buf;
+    if (const LoadPanel* lp = walk.loadPanel()) {
+        const auto rows = lp->rows();
+        const int count = static_cast<int>(rows.size());
+        if (lp->row == -1) {
+            const int sid = walk.screen() == screen::StartMenu ? 12
+                          : walk.screen() == screen::SaveGame ? 14 : -1;
+            const std::string profile =
+                lp->profile >= 0 && lp->profile < static_cast<int>(lp->profiles.size())
+                    ? lp->profiles[static_cast<std::size_t>(lp->profile)] : std::string();
+            buf = str(sid) + " : " + profile;
+        } else if (lp->row == count) {
+            buf = str(15);
+        } else if (lp->row >= 0 && lp->row < count) {
+            buf = lp->rowLabel(rows[static_cast<std::size_t>(lp->row)]);
+        }
+    }
+    return quoted(buf);
+}
+
 std::string ScreenComposer::echoBarText(const UiWalk& walk,
                                         const std::vector<std::string>& text,
                                         int* arm) const {
@@ -1166,12 +1218,20 @@ void ScreenComposer::drawItem(const omk::UiItem& itAuthored, int layer, omk::Sur
         echoText = echoBarText(walk, text, &arm);
         out.echoArm = arm;
     }
-    if (!run_ && !ownString && !isEcho) return;
+    // ...and a FOURTH, the confirm dialogs' subject line (`0x0047BC30`),
+    // which composes its line the same way and takes the same path
+    const bool isSubject = it.textFn == kTextFnConfirmSubject;
+    if (isSubject) {
+        echoText = confirmSubjectText(walk, text);
+        out.confirmSubject = echoText;
+    }
+    const bool composed = isEcho || isSubject;   // a line the callback builds
+    if (!run_ && !ownString && !composed) return;
     const int id = it.label();
-    if (!run_ && !isEcho &&
+    if (!run_ && !composed &&
         (id < 0 || id >= static_cast<int>(text.size()))) return;
     const std::string& s = run_ ? *run_
-                         : isEcho ? echoText
+                         : composed ? echoText
                                   : text[static_cast<std::size_t>(id)];
     if (s.empty()) return;
 

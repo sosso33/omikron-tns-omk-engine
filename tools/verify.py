@@ -5978,6 +5978,50 @@ def c_engine_scx_euler():
         "roll (p6), objects carrying either; and which file and object each is"
 
 
+def c_engine_confirm_subject():
+    r"""The confirm dialogs' SUBJECT LINE - `0x0047BC30` on item 0x004CEE08,
+    shared by `Detruire` (0x004CF350) and `Ecraser ce fichier ?`
+    (0x004CF3B8) (todo/ui-save-confirm-and-quit.md 1; read off the image
+    2026-11-08).
+
+    `" %s "` around the typed name on screen 29's overwrite panel, else
+    around `sub_47BCB0(screen, dword_4CEBAC)`: the load panel's row
+    composer (row -1 the `label : profile` heading, row == count string
+    15, a row below it the record's `name - day - time`, past it empty).
+
+    The start menu with `traces/games-resto.bin` (a copy): DOWN, ENTER -
+    `Charger une partie` - DOWN onto the first row, RIGHT to the buttons,
+    DOWN onto `Detruire`, ENTER. Asserted: the `ui.subject` event's screen,
+    panel and text - the row's own label in the format's quotes (the event
+    writer turns `"` into `'`). Before this the dialog asked "Detruire"
+    and never said what. Shown to fail (2026-11-08): the text function's
+    arm removed (no subject at all).
+    """
+    import shutil, tempfile
+    play = _play_built()
+    if not play:
+        return _PLAY_UNBUILT
+    fx = os.path.join(ROOT, "traces", "games-resto.bin")
+    if not os.path.exists(fx):
+        return ("skipped",), ("skipped",), "traces/games-resto.bin absent"
+    tmp = tempfile.mkdtemp()
+    try:
+        saves = os.path.join(tmp, "games.bin")
+        shutil.copy(fx, saves)
+        out = _play_out(play, "--software", "--res", "640x480", "--nofmv", "--saves", saves,
+                        "--frames", 200, "--hold",
+                        "0*20,k208*2,0*10,k28*2,0*40,k208*2,0*20,k205*2,0*20,k208*2,0*20,k28*2,0*30",
+                        save=None, env={"OMK_EVENTS": "1"}, timeout=600)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    subj = [(e.get("screen"), e.get("panel"), e.get("text")) for n, e in _events(out)
+            if n == "ui.subject"]
+    return tuple(subj), \
+           (("29", str(0x004CF350), "' KAY'L 669 - 12 Nadim 7216 - 14:14:17 '"),), \
+        "each confirm subject the start menu drew: screen, panel (Detruire), and " \
+        "the line - the first row's label inside the format's quotes"
+
+
 def c_engine_area_transition():
     r"""The area transition, the staged load and the context table
     (`transition_probe`).
@@ -54565,6 +54609,7 @@ SLOW = [
     ("engine: area transition", c_engine_area_transition, "SCRIPT_VM; engine/README"),
     ("engine: npc ground", c_engine_npc_ground, "todo/drift-audit.md M6"),
     ("engine: scx euler", c_engine_scx_euler, "todo/drift-audit.md M7"),
+    ("engine: confirm subject", c_engine_confirm_subject, "todo/ui-save-confirm-and-quit.md 1; ui/screendraw.cpp confirmSubjectText"),
     ("engine: music duck", c_engine_music_duck, "script/area.h musicAttenuationDb; Session::tickMusicLevel"),
     ("engine: attract mode", c_engine_attract_mode, "UI \"The attract mode\"; playframe_input_parts.cpp attractTick"),
     ("engine: live zones", c_engine_live_zones, "SCRIPT_VM; engine/README"),

@@ -871,6 +871,7 @@ public:
     // which slot was chosen.
     void attachLoadPanel(LoadPanel* p) { load_ = p; }
     const LoadPanel* loadPanel() const { return load_; }
+    int screen() const { return screen_; }        // the screen `open` took
     // The slot `Charger` asked for, or -1. `takePendingLoad` reads and clears
     // it, the way `sub_408410` does (`dword_4C09B4 = -1` right after the
     // load), so a request cannot be served twice.
@@ -1809,6 +1810,11 @@ inline constexpr std::uint32_t kCbHintBuy  = 0x004AE480u;
 //               else `sprintf("{C}%s %d", Ui_ItemStringDefault(item), price)`.
 inline constexpr std::uint32_t kTextFnHintFoot  = 0x004AE290u;
 inline constexpr std::uint32_t kTextFnHintPrice = 0x004AE340u;
+// `0x0047BC30` - THE CONFIRM DIALOGS' SUBJECT LINE, on item 0x004CEE08 that
+// panels 0x004CF350 (Detruire) and 0x004CF3B8 (Ecraser ce fichier ?) share:
+// `" %s "` around the TYPED NAME on screen 29's overwrite panel, else around
+// `sub_47BCB0(screen, dword_4CEBAC)` - the load panel's own row composer.
+inline constexpr std::uint32_t kTextFnConfirmSubject = 0x0047BC30u;
 inline constexpr std::uint32_t kCbLoadCharger    = 0x0047AC90u;
 inline constexpr std::uint32_t kCbLoadDetruire   = 0x0047AE90u;
 inline constexpr std::uint32_t kPanelLoadConfirm = 0x004CF350u;

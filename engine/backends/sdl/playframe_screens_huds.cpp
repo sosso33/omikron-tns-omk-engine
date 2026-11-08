@@ -822,6 +822,20 @@ void PlayState::screensInterfaceLayer(omk::ScreenComposer& comp, omk::OptionsMen
             comp.setCloudTarget(&cloudPic);
         }
         spanned("screen draw", [&] { sf = comp.draw(fb, openScreen, *walk); });
+        // the confirm dialogs' subject line, said once each time it changes
+        {
+            static std::string subjectSaid;
+            if (sf.confirmSubject != subjectSaid) {
+                subjectSaid = sf.confirmSubject;
+                if (!subjectSaid.empty()) {
+                    std::printf("frame %ld: screen %d confirm subject %s\n", frameNo, openScreen,
+                                subjectSaid.c_str());
+                    omk::event("ui.subject", {{"frame", frameNo}, {"screen", openScreen},
+                                              {"panel", static_cast<long>(walk->panel() ? walk->panel()->addr : 0)},
+                                              {"text", subjectSaid}});
+                }
+            }
+        }
         comp.setCloudTarget(nullptr);
         if (cloudGpuFrame && !sf.cloudDrawn) cloudGpuFrame = false;   // no cloud after all: plain frame
         // screen 35 over the menu while it has the focus - its panel

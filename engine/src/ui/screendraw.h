@@ -117,6 +117,9 @@ struct ScreenFrame {
     //   -1 not drawn   0 transient message   1 seteks   2 anneaux
     //    3 the map reader   4 a verb   5 the examine box   6 the tab label
     int  echoArm = -1;
+    // the confirm dialogs' subject line (`0x0047BC30`) as composed, "" when
+    // no such item was drawn
+    std::string confirmSubject;
     // Extra `Ui_DrawItemFill` quads the row hook `0x0049C090` drew, and the
     // ROW TAGS it marked, in draw order. The count is of the hook's own fills
     // alone; the rows' bank-B `0x10` fills are counted in `fillsDrawn` with
@@ -527,6 +530,9 @@ private:
     std::string echoBarText(const UiWalk& walk,
                             const std::vector<std::string>& text,
                             int* arm) const;
+    // `0x0047BC30` transcribed - the confirm dialogs' subject line.
+    std::string confirmSubjectText(const UiWalk& walk,
+                                   const std::vector<std::string>& text) const;
 
     const MenuCloud* cloud_ = nullptr;
     UiCursor*        cursor_ = nullptr;
