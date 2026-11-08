@@ -437,6 +437,9 @@ void PlayState::inputTick() {
     // The script runs unless a screen is up. That is the engine: a script
     // parked at `ui.open` is waiting on a person, and `Game_HandleEvent`
     // case 5 is the only thing that releases it.
+    //
+    // ...after `Game_Tick`'s head: the start menu's attract mode
+    attractTick();
     harnessScxPlay();
     harnessHideShow();
     harnessOmkSet();
@@ -487,6 +490,58 @@ void PlayState::inputTick() {
     }
 
     mark("game frame");
+}
+
+// THE START MENU'S ATTRACT MODE - `Game_Tick`'s head (0x004200F0):
+//
+//     if (dword_4E9718) dword_4E9748 = 0;            // a control held
+//     else if ((s = UI_FindOpenScreen(29)) && s[7] == &unk_4CF218) {
+//         if (dword_4E9748 > 1800.0) {
+//             (clear and flip, twice)                  // two black frames
+//             dword_4E9748 = 0;
+//             UI_CloseScreen(29);
+//             sub_408410(3);                           // Script_Pump(3)
+//             if (!byte_9103CD)                        // not NOFMV
+//                 Movie_Play("FLIS\\GAME.mpg", ...);  // any control skips
+//             Game_Start("aventure.scx");
+//             sub_408410(2);                           // Script_Pump(2)
+//         }
+//         dword_4E9748 += flt_4C30D8;
+//     }
+//
+// `dword_4E9718` is `Input_Poll`'s word - the control table's bound keys and
+// the joystick, not any key - which is `heldBits` here. The timer counts
+// frame DELTAS on the menu's ROOT panel (`kPanelStartTree`) and stands still
+// on any other (the options, the load panel), and only a held control zeroes
+// it: 1800 units, 60 s at 30 frames a second, and the film starts the frame
+// after. Screen 29 is dropped without its answer - phase 3 frees the context
+// parked on it - and the restart is `requestAttractRestart`, served by the
+// next pump: no white fade, as these direct phases have none. AREA 118's boot
+// script then opens screen 29 again. `Game_Start("aventure.scx")` reloads the
+// global sprite and sound library, which the port keeps resident unchanged.
+void PlayState::attractTick() {
+    auto& session = *session_;
+    if (heldBits != 0) { attractUnits = 0.0; return; }
+    const bool onRoot = walk && !walk->closed() && openScreen == omk::screen::StartMenu &&
+                        walk->panel() && walk->panel()->addr == omk::kPanelStartTree;
+    if (!onRoot) return;
+    if (attractUnits > kAttractUnits) {
+        omk::event("attract", {{"frame", frameNo}, {"units", attractUnits}});
+        std::printf("frame %ld: the start menu idle %.0f units on its root panel - the attract "
+                    "mode: screen 29 dropped, the film, phases 3 and 2\n", frameNo, attractUnits);
+        attractUnits = 0.0;
+        walk.reset();
+        openScreen = -1;
+        session.requestAttractRestart();
+        if (playMovies && !frames) {
+            omk::Surface mv(dispW, dispH, 0);
+            bool skipAll = false, bounded = false;
+            if (!playFilm("FLIS/GAME.mpg", mv, skipAll, bounded)) exitProgram = true;   // the window closed
+            // the world's device again, at the primary's rate (`setupPlay`)
+            front.reopenAudio(kDeviceRate, 2);
+        }
+    }
+    attractUnits += session.frameDelta();
 }
 
 // Scripted object motion - the crates, the doors, the lifts

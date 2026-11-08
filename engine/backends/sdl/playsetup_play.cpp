@@ -7,7 +7,6 @@
 #include "platform/events.h"
 
 int PlayState::setupPlay() {
-    const auto& fs = *fs_;
     // ---- and now they PLAY -------------------------------------------
     //
     // Three MPEG-1 program streams at 320x240, doubled to the framebuffer.
@@ -25,241 +24,12 @@ int PlayState::setupPlay() {
         bool skipAll = false, bounded = false;
         for (const char* name : movies) {
             if (skipAll) break;
-#if defined(__vita__)
-            // THE HARDWARE PATH (`backends/vita/avmovie.h`): the film converted
-            // to H.264 by `scripts/vita-movies.sh` and copied to
-            // ux0:data/omk/movies/<NAME>.mp4 plays on the Vita's decoder -
-            // same skip rules, same audio queue, same present. Without the
-            // file, the software decoder below, as before.
-            {
-                std::string stem = name;
-                if (const auto sl = stem.find_last_of('/'); sl != std::string::npos) stem = stem.substr(sl + 1);
-                if (const auto dt = stem.rfind('.'); dt != std::string::npos) stem = stem.substr(0, dt);
-                for (auto& c : stem) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-                std::string where;
-                const std::string mp4 = omk::vita::avFind(stem, dataRoot, where);
-                if (omk::vita::AvFilm* av = mp4.empty() ? nullptr : omk::vita::avOpen(mp4)) {
-                    std::printf("  %s: hardware decoder, %s\n", name, mp4.c_str());
-                    front.openAudio(44100, 2);
-                    omk::Surface film(320, 240, 0);
-                    std::vector<float> pcm;
-                    int rate = 0;
-                    long shownAv = 0;
-                    // NOT ACTIVE YET is not FINISHED: on a console the player
-                    // buffers after `sceAvPlayerAddSource` and only then
-                    // reports active, so testing `avActive` first ends every
-                    // film at once - "0 frames shown, sound at 0 Hz" for all
-                    // three (a console log). Vita3K is active at once, which
-                    // hides it there. Wait up to 3 s for the
-                    // start; after that, inactive means the end.
-                    const std::uint32_t avStart = front.ticksMs();
-                    bool avStarted = false;
-                    const char* avEnd = "the film ended";
-                    for (;;) {
-                        if (omk::vita::avActive(av)) avStarted = true;
-                        else if (avStarted || front.ticksMs() - avStart > 3000) {
-                            if (!avStarted) avEnd = "the player never became active (3 s)";
-                            break;
-                        }
-                        omk::HostInput h;
-                        if (!front.pump(h)) { skipAll = true; avEnd = "the window closed"; break; }
-                        if (!h.held.empty() || h.pad.buttons != 0) {
-                            if (h.held.count(0x38)) skipAll = true;      // DIK_LMENU
-                            avEnd = h.pad.buttons != 0 ? "skipped by a pad button" : "skipped by a key";
-                            break;
-                        }
-                        // THE SOUND IS THE PLAYER'S CLOCK. SceAvPlayer times
-                        // its pictures by the sound taken from it, so taking
-                        // chunks as fast as they come runs the clock ahead,
-                        // the picture with it, while the sound queued here
-                        // plays at its own speed - the film accelerated over
-                        // normal-speed audio, seen on a console. Taken only
-                        // while less than a quarter second waits in the
-                        // device, it is taken as fast as it plays.
-                        pcm.clear();
-                        if (front.queuedSeconds() < 0.25 &&
-                            omk::vita::avAudio(av, pcm, rate) && !pcm.empty())
-                            front.queueAudio(pcm);
-                        if (omk::vita::avVideo(av, film)) { present(film); ++shownAv; }
-                        else front.delayMs(2);
-                    }
-                    omk::vita::avClose(av);
-                    front.flushAudio();
-                    for (int guard = 0; guard < 300; ++guard) {
-                        omk::HostInput h;
-                        if (!front.pump(h)) break;
-                        if (h.held.empty() && h.pad.buttons == 0) break;
-                        front.delayMs(10);
-                    }
-                    std::printf("  %s: %ld frames shown, sound at %d Hz - %s\n", name, shownAv, rate, avEnd);
-                    continue;
-                }
-                // SAID: a console log that showed only the software path gave
-                // no way to tell a missing copy from a player that refused it
-                // (avOpen names its own failures)
-                if (mp4.empty())
-                    std::printf("  %s: no %s.mp4 found - decoding the MPEG-1 in software "
-                                "(scripts/vita-movies.sh makes one). Looked in:%s\n",
-                                name, stem.c_str(), where.c_str());
-            }
-#endif
-            const auto real = fs.resolve(name);
-            // THE HOST'S PLAYER first (`Frontend::filmOpen`): on the classic
-            // Mac, QuickTime - the picture and the sound decoded by the
-            // system, the software decoder below too slow for a G3 (an
-            // iBook: ~0.5 fps, `GAME.mpg: 82 of 115 frames dropped`). Same skip rules as the decoder's loop.
-            front.setFilmDirect(filmsDirect);
-            if (real && front.filmOpen(*real)) {
-                const std::uint32_t t0 = front.ticksMs();
-                long steps = 0;
-                const char* end = "the film ended";
-                for (;;) {
-                    if (!front.filmStep()) break;
-                    ++steps;
-                    omk::HostInput h;
-                    if (!front.pump(h)) { skipAll = true; end = "the window closed"; break; }
-                    if (!h.held.empty() || h.pad.buttons != 0) {
-                        if (h.held.count(0x38)) skipAll = true;      // DIK_LMENU
-                        end = "skipped by a key";
-                        break;
-                    }
-                }
-                front.filmClose();
-                for (int guard = 0; guard < 300; ++guard) {
-                    omk::HostInput h;
-                    if (!front.pump(h)) break;
-                    if (h.held.empty() && h.pad.buttons == 0) break;
-                    front.delayMs(10);
-                }
-                std::printf("  %s: the host's player, %.1f s, %ld steps - %s\n", name,
-                            (front.ticksMs() - t0) / 1000.0, steps, end);
-                continue;
-            }
-            omk::Movie mov;
-            // THE FILM PACK (`backends/remaster/`): the same film upscaled,
-            // the same sound; the original when the pack has none for it
-            if (real && remasterOpenFilm(*real, mov, name)) {
-            } else if (!real || !mov.open(*real)) {
-                std::printf("  %s: not decodable, skipped\n", name);
-                continue;
-            }
-            std::printf("  %s %dx%d %.2f s\n", name, mov.info().width,
-                        mov.info().height, mov.info().duration);
-            // 44100 stereo, the stream's own rate - NOT the engine's 22050
-            // primary, which these never went through (the world reopens the
-            // device at that rate after them).
-            const bool audioOk =
-                front.openAudio(mov.info().sampleRate ? mov.info().sampleRate : 44100, 2);
-            const double fps = mov.info().framerate > 0 ? mov.info().framerate : 30.0;
-            // THE CLOCK THE PICTURE FOLLOWS: what the audio device has
-            // PLAYED - decoded minus still queued - when there is a device,
-            // and the wall clock when there is none. Without that second
-            // half a run with no audio device measures "heard" as the
-            // DECODER's position (nothing is queued, so nothing is
-            // subtracted), which races ahead of real time, and the
-            // frame-dropping below would discard nearly every frame.
-            const std::uint32_t movieStart = front.ticksMs();
-            const auto heardSeconds = [&] {
-                return audioOk ? mov.audioSeconds() - front.queuedSeconds()
-                               : (front.ticksMs() - movieStart) / 1000.0;
-            };
-            long shown = 0;
-            // THE FILM AT ITS OWN SIZE on a GPU present: the GLES pass fits a
-            // surface to the window itself, so scaling 320x240 up to the
-            // display on the CPU first was pure cost - on a Vita, most of a
-            // frame (`todo/vita-port.md`). The SDL upload path keeps the
-            // display-sized surface: its texture is the window's size.
-            omk::Surface film(mov.info().width, mov.info().height, 0);
-            omk::Surface& target = glRen ? film : mv;
-            // A FRAME THAT IS LATE IS DECODED AND DROPPED. The sound runs at
-            // its own rate on the audio device; a loop that only waits when the
-            // picture is early and never catches up when it is late leaves the
-            // picture crawling behind the sound on a slow CPU.
-            const auto late = [&] {
-                if (frames) return false;
-                return heardSeconds() - (shown + 1) / fps > 1.0 / fps;
-            };
-            long dropped = 0;
-            int droppedInARow = 0;
-            for (;;) {
-                // At most THREE drops in a row. When decoding one frame costs
-                // more than a frame lasts - a Vita, where only the SOUND of the
-                // films came through - "late" never clears, and dropping every
-                // late frame dropped them all. This shows one frame in four at
-                // worst: a slower picture, still in step with the sound.
-                const bool behind = droppedInARow < 3 && late();
-                if (behind ? !mov.skipFrame() : !mov.nextFrame(target)) break;
-                omk::HostInput h;
-                if (!front.pump(h)) { skipAll = true; break; }
-                // `docs/BOOT.md` 2: ANY key ends the movie playing, and left
-                // ALT latches and ends all three. Accepting only ALT and ESC -
-                // which is what this did - means a player pressing space or
-                // return sits through the whole thing.
-                // ...and ANY PAD BUTTON too: a pad's buttons are the game's
-                // joystick, not keys in `held` (only START is), so on a Vita
-                // nothing but START could skip - and a film drawing slowly
-                // polls it seldom.
-                if (!h.held.empty() || h.pad.buttons != 0) {
-                    if (h.held.count(0x38)) skipAll = true;      // DIK_LMENU
-                    break;
-                }
-                // THE SOUND IS DECODED HALF A SECOND AHEAD OF THE PICTURE, not
-                // to the end of the film. pl_mpeg's audio decoder reads on
-                // through the whole stream, so draining `nextAudio` until it
-                // comes back empty decodes all 107 s of `GAME.mpg`'s sound
-                // into the device queue on the FIRST frame, and the demuxer
-                // buffers every video packet it steps over on the way. A
-                // desktop has the memory to hide that; the Vita, on its MPEG-1
-                // fallback (no H.264 copy), asks for 72 MB in one piece and
-                // dies of `bad_alloc` in Vita3K.
-                // `heardSeconds` is decoded minus still queued, so the pacing
-                // reads the same clock either way.
-                constexpr double kAudioAhead = 0.5;
-                while (mov.audioSeconds() < (shown + 1) / fps + kAudioAhead) {
-                    const auto blk = mov.nextAudio();
-                    if (blk.empty()) break;
-                    front.queueAudio(blk);
-                }
-                ++shown;
-                if (behind) { ++dropped; ++droppedInARow; continue; }
-                droppedInARow = 0;
-                present(target);
-
-                // PACE BY THE AUDIO, not by a fixed delay. Sleeping 1000/fps
-                // after each frame adds the DECODE time to every frame, so the
-                // picture falls steadily behind a soundtrack that plays at its
-                // own rate. The audio device is the only clock running at the
-                // rate a person hears: what has been decoded, minus what is
-                // still queued, is the moment being heard now. Wait only while
-                // the picture is ahead of it - and when it is behind, `late`
-                // above drops frames until it is not.
-                if (!frames) {
-                    const double ahead = shown / fps - heardSeconds();
-                    if (ahead > 0.001 && ahead < 1.0)
-                        front.delayMs(static_cast<std::uint32_t>(ahead * 1000.0));
-                }
-                if (frames && mov.framesDecoded() >= frames) {
-                    skipAll = bounded = true; break;
-                }
-            }
-            // Whatever the decoder ran ahead into is still in the device, and
-            // a skipped movie must not go on playing under what follows.
-            front.flushAudio();
-            // the button that skipped this film must come UP before the next
-            // one starts, or one press skips them all
-            for (int guard = 0; guard < 300; ++guard) {
-                omk::HostInput h;
-                if (!front.pump(h)) break;
-                if (h.held.empty() && h.pad.buttons == 0) break;
-                front.delayMs(10);
-            }
-            if (dropped)
-                std::printf("  %s: %ld of %ld frames dropped to keep up with the sound\n",
-                            name, dropped, shown);
+            if (!playFilm(name, mv, skipAll, bounded)) exitProgram = true;   // the window closed
         }
         std::printf("movies %s\n",
                     !skipAll        ? "played (any key skips one, ALT skips all)"
                     : bounded       ? "cut short by --frames"
+                    : exitProgram   ? "stopped: the window closed"
                                     : "skipped (ALT)");
     }
     // THE AUDIO DEVICE IS THE WORLD'S TOO. Opened only by the movie player,
@@ -278,4 +48,255 @@ int PlayState::setupPlay() {
 
 
     return phase::Continue;
+}
+
+// ONE FILM, as the boot chain plays each of its three - and as the start
+// menu's attract mode plays `FLIS\\GAME.mpg` again (`attractTick`). Any key
+// or pad button ends it; left ALT also sets `skipAll`. `bounded` is set when
+// a `--frames` budget cut it short.
+bool PlayState::playFilm(const char* name, omk::Surface& mv, bool& skipAll, bool& bounded) {
+    const auto& fs = *fs_;
+    // THE WINDOW CLOSED during the film: `pump` hands the quit over ONCE, so
+    // a film that swallowed it must hand it on, or the frame loop never sees
+    // it (a SIGTERM went on running the game, the next films ending at once)
+    bool closed = false;
+#if defined(__vita__)
+    // THE HARDWARE PATH (`backends/vita/avmovie.h`): the film converted
+    // to H.264 by `scripts/vita-movies.sh` and copied to
+    // ux0:data/omk/movies/<NAME>.mp4 plays on the Vita's decoder -
+    // same skip rules, same audio queue, same present. Without the
+    // file, the software decoder below, as before.
+    {
+        std::string stem = name;
+        if (const auto sl = stem.find_last_of('/'); sl != std::string::npos) stem = stem.substr(sl + 1);
+        if (const auto dt = stem.rfind('.'); dt != std::string::npos) stem = stem.substr(0, dt);
+        for (auto& c : stem) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        std::string where;
+        const std::string mp4 = omk::vita::avFind(stem, dataRoot, where);
+        if (omk::vita::AvFilm* av = mp4.empty() ? nullptr : omk::vita::avOpen(mp4)) {
+            std::printf("  %s: hardware decoder, %s\n", name, mp4.c_str());
+            front.reopenAudio(44100, 2);
+            omk::Surface film(320, 240, 0);
+            std::vector<float> pcm;
+            int rate = 0;
+            long shownAv = 0;
+            // NOT ACTIVE YET is not FINISHED: on a console the player
+            // buffers after `sceAvPlayerAddSource` and only then
+            // reports active, so testing `avActive` first ends every
+            // film at once - "0 frames shown, sound at 0 Hz" for all
+            // three (a console log). Vita3K is active at once, which
+            // hides it there. Wait up to 3 s for the
+            // start; after that, inactive means the end.
+            const std::uint32_t avStart = front.ticksMs();
+            bool avStarted = false;
+            const char* avEnd = "the film ended";
+            for (;;) {
+                if (omk::vita::avActive(av)) avStarted = true;
+                else if (avStarted || front.ticksMs() - avStart > 3000) {
+                    if (!avStarted) avEnd = "the player never became active (3 s)";
+                    break;
+                }
+                omk::HostInput h;
+                if (!front.pump(h)) { closed = true; skipAll = true; avEnd = "the window closed"; break; }
+                if (!h.held.empty() || h.pad.buttons != 0) {
+                    if (h.held.count(0x38)) skipAll = true;      // DIK_LMENU
+                    avEnd = h.pad.buttons != 0 ? "skipped by a pad button" : "skipped by a key";
+                    break;
+                }
+                // THE SOUND IS THE PLAYER'S CLOCK. SceAvPlayer times
+                // its pictures by the sound taken from it, so taking
+                // chunks as fast as they come runs the clock ahead,
+                // the picture with it, while the sound queued here
+                // plays at its own speed - the film accelerated over
+                // normal-speed audio, seen on a console. Taken only
+                // while less than a quarter second waits in the
+                // device, it is taken as fast as it plays.
+                pcm.clear();
+                if (front.queuedSeconds() < 0.25 &&
+                    omk::vita::avAudio(av, pcm, rate) && !pcm.empty())
+                    front.queueAudio(pcm);
+                if (omk::vita::avVideo(av, film)) { present(film); ++shownAv; }
+                else front.delayMs(2);
+            }
+            omk::vita::avClose(av);
+            front.flushAudio();
+            for (int guard = 0; guard < 300; ++guard) {
+                omk::HostInput h;
+                if (!front.pump(h)) { closed = true; break; }
+                if (h.held.empty() && h.pad.buttons == 0) break;
+                front.delayMs(10);
+            }
+            std::printf("  %s: %ld frames shown, sound at %d Hz - %s\n", name, shownAv, rate, avEnd);
+            return !closed;
+        }
+        // SAID: a console log that showed only the software path gave
+        // no way to tell a missing copy from a player that refused it
+        // (avOpen names its own failures)
+        if (mp4.empty())
+            std::printf("  %s: no %s.mp4 found - decoding the MPEG-1 in software "
+                        "(scripts/vita-movies.sh makes one). Looked in:%s\n",
+                        name, stem.c_str(), where.c_str());
+    }
+#endif
+    const auto real = fs.resolve(name);
+    // THE HOST'S PLAYER first (`Frontend::filmOpen`): on the classic
+    // Mac, QuickTime - the picture and the sound decoded by the
+    // system, the software decoder below too slow for a G3 (an
+    // iBook: ~0.5 fps, `GAME.mpg: 82 of 115 frames dropped`). Same skip rules as the decoder's loop.
+    front.setFilmDirect(filmsDirect);
+    if (real && front.filmOpen(*real)) {
+        const std::uint32_t t0 = front.ticksMs();
+        long steps = 0;
+        const char* end = "the film ended";
+        for (;;) {
+            if (!front.filmStep()) break;
+            ++steps;
+            omk::HostInput h;
+            if (!front.pump(h)) { closed = true; skipAll = true; end = "the window closed"; break; }
+            if (!h.held.empty() || h.pad.buttons != 0) {
+                if (h.held.count(0x38)) skipAll = true;      // DIK_LMENU
+                end = "skipped by a key";
+                break;
+            }
+        }
+        front.filmClose();
+        for (int guard = 0; guard < 300; ++guard) {
+            omk::HostInput h;
+            if (!front.pump(h)) { closed = true; break; }
+            if (h.held.empty() && h.pad.buttons == 0) break;
+            front.delayMs(10);
+        }
+        std::printf("  %s: the host's player, %.1f s, %ld steps - %s\n", name,
+                    (front.ticksMs() - t0) / 1000.0, steps, end);
+        return !closed;
+    }
+    omk::Movie mov;
+    // THE FILM PACK (`backends/remaster/`): the same film upscaled,
+    // the same sound; the original when the pack has none for it
+    if (real && remasterOpenFilm(*real, mov, name)) {
+    } else if (!real || !mov.open(*real)) {
+        std::printf("  %s: not decodable, skipped\n", name);
+        return !closed;
+    }
+    std::printf("  %s %dx%d %.2f s\n", name, mov.info().width,
+                mov.info().height, mov.info().duration);
+    // 44100 stereo, the stream's own rate - NOT the engine's 22050
+    // primary, which these never went through (the world reopens the
+    // device at that rate after them).
+    // REOPENED, not opened: in the attract mode the world's device is
+    // already open at 22050, and `openAudio` keeps an open device as it is
+    // (between the boot's films the rate is the same and this keeps it)
+    const bool audioOk =
+        front.reopenAudio(mov.info().sampleRate ? mov.info().sampleRate : 44100, 2);
+    const double fps = mov.info().framerate > 0 ? mov.info().framerate : 30.0;
+    // THE CLOCK THE PICTURE FOLLOWS: what the audio device has
+    // PLAYED - decoded minus still queued - when there is a device,
+    // and the wall clock when there is none. Without that second
+    // half a run with no audio device measures "heard" as the
+    // DECODER's position (nothing is queued, so nothing is
+    // subtracted), which races ahead of real time, and the
+    // frame-dropping below would discard nearly every frame.
+    const std::uint32_t movieStart = front.ticksMs();
+    const auto heardSeconds = [&] {
+        return audioOk ? mov.audioSeconds() - front.queuedSeconds()
+                       : (front.ticksMs() - movieStart) / 1000.0;
+    };
+    long shown = 0;
+    // THE FILM AT ITS OWN SIZE on a GPU present: the GLES pass fits a
+    // surface to the window itself, so scaling 320x240 up to the
+    // display on the CPU first was pure cost - on a Vita, most of a
+    // frame (`todo/vita-port.md`). The SDL upload path keeps the
+    // display-sized surface: its texture is the window's size.
+    omk::Surface film(mov.info().width, mov.info().height, 0);
+    omk::Surface& target = glRen ? film : mv;
+    // A FRAME THAT IS LATE IS DECODED AND DROPPED. The sound runs at
+    // its own rate on the audio device; a loop that only waits when the
+    // picture is early and never catches up when it is late leaves the
+    // picture crawling behind the sound on a slow CPU.
+    const auto late = [&] {
+        if (frames) return false;
+        return heardSeconds() - (shown + 1) / fps > 1.0 / fps;
+    };
+    long dropped = 0;
+    int droppedInARow = 0;
+    const char* end = "the film ended";   // said below: a film that stops early says why
+    for (;;) {
+        // At most THREE drops in a row. When decoding one frame costs
+        // more than a frame lasts - a Vita, where only the SOUND of the
+        // films came through - "late" never clears, and dropping every
+        // late frame dropped them all. This shows one frame in four at
+        // worst: a slower picture, still in step with the sound.
+        const bool behind = droppedInARow < 3 && late();
+        if (behind ? !mov.skipFrame() : !mov.nextFrame(target)) break;
+        omk::HostInput h;
+        if (!front.pump(h)) { closed = true; skipAll = true; end = "the window closed"; break; }
+        // `docs/BOOT.md` 2: ANY key ends the movie playing, and left
+        // ALT latches and ends all three. Accepting only ALT and ESC -
+        // which is what this did - means a player pressing space or
+        // return sits through the whole thing.
+        // ...and ANY PAD BUTTON too: a pad's buttons are the game's
+        // joystick, not keys in `held` (only START is), so on a Vita
+        // nothing but START could skip - and a film drawing slowly
+        // polls it seldom.
+        if (!h.held.empty() || h.pad.buttons != 0) {
+            if (h.held.count(0x38)) skipAll = true;      // DIK_LMENU
+            end = h.pad.buttons != 0 ? "skipped by a pad button" : "skipped by a key";
+            break;
+        }
+        // THE SOUND IS DECODED HALF A SECOND AHEAD OF THE PICTURE, not
+        // to the end of the film. pl_mpeg's audio decoder reads on
+        // through the whole stream, so draining `nextAudio` until it
+        // comes back empty decodes all 107 s of `GAME.mpg`'s sound
+        // into the device queue on the FIRST frame, and the demuxer
+        // buffers every video packet it steps over on the way. A
+        // desktop has the memory to hide that; the Vita, on its MPEG-1
+        // fallback (no H.264 copy), asks for 72 MB in one piece and
+        // dies of `bad_alloc` in Vita3K.
+        // `heardSeconds` is decoded minus still queued, so the pacing
+        // reads the same clock either way.
+        constexpr double kAudioAhead = 0.5;
+        while (mov.audioSeconds() < (shown + 1) / fps + kAudioAhead) {
+            const auto blk = mov.nextAudio();
+            if (blk.empty()) break;
+            front.queueAudio(blk);
+        }
+        ++shown;
+        if (behind) { ++dropped; ++droppedInARow; continue; }
+        droppedInARow = 0;
+        present(target);
+
+        // PACE BY THE AUDIO, not by a fixed delay. Sleeping 1000/fps
+        // after each frame adds the DECODE time to every frame, so the
+        // picture falls steadily behind a soundtrack that plays at its
+        // own rate. The audio device is the only clock running at the
+        // rate a person hears: what has been decoded, minus what is
+        // still queued, is the moment being heard now. Wait only while
+        // the picture is ahead of it - and when it is behind, `late`
+        // above drops frames until it is not.
+        if (!frames) {
+            const double ahead = shown / fps - heardSeconds();
+            if (ahead > 0.001 && ahead < 1.0)
+                front.delayMs(static_cast<std::uint32_t>(ahead * 1000.0));
+        }
+        if (frames && mov.framesDecoded() >= frames) {
+            skipAll = bounded = true; end = "cut short by --frames"; break;
+        }
+    }
+    // Whatever the decoder ran ahead into is still in the device, and
+    // a skipped movie must not go on playing under what follows.
+    front.flushAudio();
+    // the button that skipped this film must come UP before the next
+    // one starts, or one press skips them all
+    for (int guard = 0; guard < 300; ++guard) {
+        omk::HostInput h;
+        if (!front.pump(h)) { closed = true; break; }
+        if (h.held.empty() && h.pad.buttons == 0) break;
+        front.delayMs(10);
+    }
+    if (dropped)
+        std::printf("  %s: %ld of %ld frames dropped to keep up with the sound\n",
+                    name, dropped, shown);
+    std::printf("  %s: %ld frames in %.1f s - %s\n", name, shown,
+                (front.ticksMs() - movieStart) / 1000.0, end);
+    return !closed;
 }

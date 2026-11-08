@@ -2713,10 +2713,13 @@ void Session::frame() {
     if (restart_) {
         restart_ = false;
         restart();
-        startColourFade(2, 0xFFFFFFu, 15.0f);
+        const bool fromWhite = restartFromWhite_;
+        restartFromWhite_ = true;
+        if (fromWhite) startColourFade(2, 0xFFFFFFu, 15.0f);
         ++restarts_;
-        std::printf("frame %ld: game.restart - Game_NewGame, area %d, from white\n",
-                    frameNo_, currentArea());
+        std::printf("frame %ld: %s - Game_NewGame, area %d%s\n", frameNo_,
+                    fromWhite ? "game.restart" : "the attract mode's phases 3 and 2",
+                    currentArea(), fromWhite ? ", from white" : " (no fade)");
     }
 
     // `Script_Pump(1)` steps 1 and 2: the 16 prompt slots on the states the

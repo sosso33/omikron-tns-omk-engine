@@ -338,7 +338,8 @@ void PlayState::controlBinding() {
     // `Sliders_Tick` and `Slider_TickRide` with NO test for an open
     // screen anywhere in it - the block at its head that looks like
     // one is the start menu's ATTRACT-MODE timeout (screen 29 idle
-    // past 1800 units -> `FLIS\GAME.mpg` -> `Game_Start`).
+    // past 1800 units -> `FLIS\GAME.mpg` -> `Game_Start`; ported as
+    // `attractTick`, docs/UI.md "The attract mode").
     //
     // The only thing that stops the world is the pause flag
     // `dword_4E9728`, and it has exactly TWO writes in the whole

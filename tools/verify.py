@@ -5820,6 +5820,57 @@ def c_engine_session():
         "message 3 setting Braqueur 1 / 15 Dead and opening zone 3931"
 
 
+def c_engine_attract_mode():
+    r"""The start menu's ATTRACT MODE (`Game_Tick`'s head, docs/UI.md "The
+    attract mode"): screen 29 on its root panel (`unk_4CF218`) with no
+    control held counts frame deltas into `dword_4E9748`; past 1800 it drops
+    the screen, runs `Script_Pump(3)`, plays `FLIS\GAME.mpg` (not under
+    NOFMV), `Game_Start("aventure.scx")` and `Script_Pump(2)` - a new game
+    with NO white fade, whose AREA 118 boot script opens screen 29 again.
+
+    Two boots of `omk-play --nofmv`, 1900 frames each, untouched:
+    * idle - one attract, at frame 1802 with 1801 units (the test `> 1800`
+      comes before the add, so the 1802nd frame on the root panel); the
+      restart in the same frame, its colour fade NOT `game.restart`'s white
+      (mode 2, 0xFFFFFF); and screen 29 asking again after it;
+    * a pad DOWN held over frames 1000..1002 - `Input_Poll`'s word non-zero,
+      the timer zeroed - so no attract inside the 1900 frames.
+    Shown to fail (2026-11-08): the restart through `requestRestart` (the
+    white fade, mode 2 0xFFFFFF weight 1); the held control not zeroing the
+    timer (an attract at 1802 in the second run).
+    """
+    play = _play_built()
+    if play is None:
+        return _PLAY_UNBUILT
+    base = ("--nofmv", "--frames", "1900")
+    env = {"OMK_EVENTS": "1"}
+    idle = _events(_play_out(play, *base, save=None, env=env, timeout=600))
+    held = _events(_play_out(play, *base, "--pad", "1000-1002:down", save=None, env=env,
+                             timeout=600))
+    att = [(e["frame"], e["units"]) for n, e in idle if n == "attract"]
+    rst = [e for n, e in idle if n == "restart"]
+    opened = [int(e["frame"]) for n, e in idle if n == "screen.open" and e["screen"] == "29"]
+    got = (
+        tuple(att),
+        tuple((e["frame"], e["area"]) for e in rst),
+        tuple((e["fade_mode"], e["fade_colour"]) == ("2", "16777215") for e in rst),
+        len(opened), bool(att) and any(f >= int(att[0][0]) for f in opened[1:]),
+        sum(1 for n, _ in held if n == "attract"),
+    )
+    want = (
+        (("1802", "1801.000"),),
+        (("1802", "118"),),
+        (False,),
+        2, True,
+        0,
+    )
+    return got, want, \
+        "idle on the start menu's root panel: the attract mode at frame 1802 " \
+        "(1801 units > 1800), the restart in that frame without the white fade, " \
+        "screen 29 asking again; a control held at 1000..1002 zeroes the timer: " \
+        "no attract in 1900 frames"
+
+
 def c_engine_area_transition():
     r"""The area transition, the staged load and the context table
     (`transition_probe`).
@@ -54379,6 +54430,7 @@ SLOW = [
     ("engine: parking ops", c_engine_parking_ops, "script/interp.h; SCRIPT_VM"),
     ("engine: session rules", c_engine_session, "SCRIPT_VM; engine/README"),
     ("engine: area transition", c_engine_area_transition, "SCRIPT_VM; engine/README"),
+    ("engine: attract mode", c_engine_attract_mode, "UI \"The attract mode\"; playframe_input_parts.cpp attractTick"),
     ("engine: live zones", c_engine_live_zones, "SCRIPT_VM; engine/README"),
     ("engine: airlock walk", c_engine_airlock_walk, "SCRIPT_VM; engine/README"),
     ("engine: spawn from tables", c_engine_spawn_from_tables, "SCRIPT_VM; FILE_FORMATS; engine/README"),

@@ -1051,6 +1051,11 @@ struct PlayState {
     // its original point of declaration every turn.
     omk::DeviceState devices;                    // the devices, as the bindings read them
     std::uint32_t bits = 0, heldBits = 0, edgeBits = 0;   // the input word, held, edged
+    // the start menu's attract timer, `dword_4E9748`, and its threshold
+    // (`Game_Tick`'s `> 1800.0`, frame deltas: 60 s at 30) - `attractTick`
+    double attractUnits = 0.0;
+    static constexpr double kAttractUnits = 1800.0;
+    void attractTick();
     bool uiPause = false;                   // the pause screen is the open one
     bool gpuFrame = false;                  // the present pass: the world went to the GPU
     bool overlayFrame = false, softGate = false;   // G6 step 2, the GLES window
@@ -1170,6 +1175,9 @@ struct PlayState {
     // which then know whether `fb` carries any; drawn first by `screensHuds`
     void weatherFrame(const omk::View& v);
     void weatherDraw();
+    // one boot film (`playsetup_play.cpp`), also the attract mode's; false
+    // when the window closed during it (the caller sets `exitProgram`)
+    bool playFilm(const char* name, omk::Surface& mv, bool& skipAll, bool& bounded);
     void screensLoadingLogo();   // TURNCD.BMP while an `area.goto` loads
     void screensFps();   // the fps counter
     void screensFades();   // the screen fades, over everything

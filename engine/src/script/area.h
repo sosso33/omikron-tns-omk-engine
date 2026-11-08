@@ -1284,6 +1284,13 @@ public:
     // block; phase 2 is `Game_NewGame`. VM opcode 152 sets the request; the
     // menu's "new game" is this.
     void requestRestart() { restart_ = true; }
+    // THE START MENU'S ATTRACT MODE (`Game_Tick`'s head, docs/UI.md "The
+    // attract mode"): `sub_408410(3)`, the film, `Game_Start("aventure.scx")`
+    // and `sub_408410(2)` - the same two pump phases as a restart, called
+    // directly rather than through `g_RestartRequest`, so WITHOUT the
+    // request's `Screen_FadeFromColor(0xFFFFFF, 15, 0)`. Served at the next
+    // `frame()` as the request is; the frontend plays the film before it.
+    void requestAttractRestart() { restart_ = true; restartFromWhite_ = false; }
     // op 94 `image.show`'s file, `IMAGES\%06lx.BMP`, for the frontend to show
     // (`Image_Show`); taken once - "" when none is pending
     std::string takeImageShow() { std::string s; s.swap(imageShow_); return s; }
@@ -1852,6 +1859,7 @@ private:
     int  asyncMode_ = 0;                     // dword_4E91C0: 0 read now, 1 a slice a frame
     bool leaveFromZones_ = false;
     bool restart_ = false;                   // g_RestartRequest
+    bool restartFromWhite_ = true;           // false for the attract mode's direct phases 3 and 2
     long restarts_ = 0;
     std::function<void()>    onZonesRegister_;
     std::function<bool(int)> zoneResolves_;

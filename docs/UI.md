@@ -1577,6 +1577,59 @@ sound-bank suspend (the mixer has no suspend API) and the player's ACTOR_STATE
 9 (the state machine models `UiHeld` but `omk-play` never drives it from a
 screen open).
 
+### The attract mode — the start menu left alone plays `GAME.mpg` and starts over
+
+The block at `Game_Tick`'s head (0x004200F0), read whole:
+
+```c
+if (dword_4E9718) dword_4E9748 = 0;              /* a control held */
+else if ((s = UI_FindOpenScreen(29)) && s[7] == &unk_4CF218) {
+    if (dword_4E9748 > 1800.0) {
+        clear + sub_433860(), twice                /* two black frames */
+        dword_4E9748 = 0;
+        UI_CloseScreen(29);
+        sub_408410(3);                             /* Script_Pump(3) */
+        if (!byte_9103CD)                          /* not NOFMV */
+            Movie_Play("FLIS\\GAME.mpg", ..., sub_4209E0);
+        Game_Start("aventure.scx");
+        sub_408410(2);                             /* Script_Pump(2) */
+    }
+    dword_4E9748 += flt_4C30D8;
+}
+```
+
+* **What resets it** is `dword_4E9718`, `Input_Poll`'s word — the bound keys
+  of the control table and the joystick's axes and buttons, **not any key**
+  and not the mouse. Nothing else writes the timer: leaving the root panel
+  (the options, the load panel) only stops it counting.
+* **What it counts** is the frame delta, so 1800 units are 60 s at 30 frames
+  a second. The test comes before the add, so it fires on the 1802nd frame
+  on the root panel.
+* **What it does** is a NEW GAME by the pump's own phases — 3 (the teardown)
+  before the film and 2 (`Game_NewGame`) after it — called directly, so
+  without the `g_RestartRequest` path's `Screen_FadeFromColor(0xFFFFFF, 15,
+  0)`. `Game_Start("aventure.scx")` reloads the global sprite and sound
+  library. AREA 118's boot script then opens screen 29 again: the menu,
+  left alone, plays the film once a minute.
+* The film is skippable as the boot's are: its callback `sub_4209E0` calls
+  `Input_Poll(&w, &any)` and stops the decoder (`sub_43B7D0`) when `any` is
+  set - any of the 256 keys or a joystick button, unlike the timer's word.
+
+`omk-play` (`PlayState::attractTick`, before the session's frame) counts
+`heldBits` the same way, drops screen 29 without answering it (phase 3 frees
+the context parked on it), asks `Session::requestAttractRestart` — the restart
+without the white fade — and plays `GAME.mpg` through the boot's own film
+player (`playFilm`) unless `--nofmv`, reopening the audio device at the film's
+rate and then at the world's 22050. The two black frames before the film
+are not drawn: the film's first picture follows the menu. `verify.py: engine:
+attract mode`.
+
+Found on the way (2026-11-08): `Frontend::pump` hands a quit over ONCE, and the
+film player consumed it - closing the window (or a SIGTERM) during a film,
+boot or attract, ended that film and left the game running, every later film
+ending at once. `playFilm` now answers false and the caller sets
+`exitProgram`.
+
 ### The loading logo — `IMAGES\TURNCD.BMP` is shown while an `area.goto` loads
 
 `Game_Init` (0x0041FA00) ends with `dword_4E973C =

@@ -706,6 +706,8 @@ int PlayState::modesShoot() {
                 std::printf("frame %ld: screen %d %s - arrows move, ENTER confirms, "
                             "TAB closes\n", frameNo, openScreen,
                             fromScript ? "is asking" : "opened by the player");
+                omk::event("screen.open", {{"frame", frameNo}, {"screen", openScreen},
+                                           {"script", fromScript ? 1 : 0}});
                 // The screen's own sounds, by slot. Which slot is which is
                 // `sub_482FE0`'s answer - it dispatches on the INPUT BIT - not
                 // a guess from the file names. Nothing plays when a screen
@@ -2224,6 +2226,13 @@ int PlayState::modesQuitLoad() {
             ++texPool.composition;
             std::printf("frame %ld: restart - the frontend dropped the player, the "
                         "bodies and any mode; area %d boots\n", frameNo, session.currentArea());
+            // the colour fade as the restart left it: `game.restart`'s
+            // `Screen_FadeFromColor(0xFFFFFF, 15, 0)` is mode 2 from white at
+            // full weight; the attract mode's direct phases start none
+            omk::event("restart", {{"frame", frameNo}, {"area", session.currentArea()},
+                                   {"fade_mode", session.colourFade().mode},
+                                   {"fade_colour", static_cast<long>(session.colourFade().colour)},
+                                   {"fade_weight", static_cast<double>(session.colourFade().weight())}});
         }
 
         if (session.areasEntered() != lastArea) {
