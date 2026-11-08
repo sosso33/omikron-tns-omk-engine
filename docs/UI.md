@@ -1371,26 +1371,47 @@ Kay'l that is `H_STAND` - and its tracks are `Sh`-prefixed against his `U`
 meshes, so the bind is by BONE (the engine's `strstr`; the port's
 second-uppercase rule), 19 of 19. `verify.py: engine: sneak character`.
 
-### The sneak's QUIT tab — and a page built out of reach
+### The sneak's tabs switch pages on the MOVE — and the QUIT page is reached that way
 
-The tab column's last icon (0x004DE118, `IAM\Sneak` 32 *Quitter le jeu*)
-carries **both** a callback and a `+44` child page, and `Ui_ConfirmSelection`
-takes the callback when an item has one — so the page **0x004DF0C0 is never
-installed**. Nor by anything else: the value appears exactly once in the whole
-image, as that item's `+44`, and the only two `sub_42A370` sites that install
-an item's `+44` are the load panel's (0x0047B83B, 0x0047BB24). Its Oui/Non
-list 0x004DEBA0 belongs to that page alone, and `Ui_DrawScreen` draws the
-CURRENT panel's lists — so the list the callback shows is drawn by nothing.
-It is the shape the options menu's **page 12** already has: built, and
-unreachable.
+`Ui_MoveSelection` (0x0042A7E0) has a tail, `loc_42A897`, that runs once the
+selection has MOVED: if the item landed on has a `+44` child and its bank A
+carries **0x40**, and that child is not already current, it installs it —
+`screen+24 = child`, the old panel's `+8` leave hook, `screen+20 = old`,
+`screen+1C = child`, then the child's `+4` builder. `Ui_ConfirmSelection`
+(0x0042A750) carries the complement: `and edx, 40h; jnz` refuses such a
+child. In the whole tree **six** items carry it — the sneak's six tab icons
+(list 0x004DE210, bank A `0x20000040`) — so the device's page changes under
+the cursor as the player walks the tab column, with no confirm. The port
+descended only on confirm until 2026-11-08 (`UiWalk::enterOnMove`,
+`tools/sim/ui.py` `_enter_on_move`; `todo/ui-child-on-move.md`).
 
-What the three callbacks do, ported as they are: `0x0049DBF0` shows the list,
-selects *Non* (`word_4DEBA2 = 1`) and writes 1 into whatever panel is current
-(on the inventory page, its own list 1 — the previews); `0x0049DBC0` hides it
-and puts that back to 0; `0x0049DBA0` is `sub_409090` — `dword_4E6C9C = 1`,
-the same quit REQUEST the pause screen's *Oui* sets, served between script
-pumps as a new game rather than an exit — and then the close.
-`verify.py: engine: sneak quit`.
+The new page's current list is its `+0x18` (the "panel+24" of this file),
+statically 0 — the tab column — on all six, and a move can only leave a page
+while the column is current there, so the column stays current. The Options
+page's panel hook 0x0049D960 is `if (!(input & 3)) return 0;
+sub_429B40(35); return 1;`: LEFT/RIGHT focus screen 35, UP/DOWN walk on.
+
+**The Quit icon** (0x004DE118, `IAM\Sneak` 32 *Quitter le jeu*) carries both
+a callback and a child, so its page **0x004DF0C0** is installed by the move.
+This file used to call it "built and unreachable" — it was, but only because
+the port had no move descent. Its builder `sub_49D980` (no `proc` label, read
+off the image) is the inverse of the icon's callback:
+
+| | builder 0x0049D980 | callback 0x0049DBF0 (confirm) | *Non* 0x0049DBC0 |
+|---|---|---|---|
+| Oui/Non | `I2D_SetFlagOnAllRows(0x004DEBA0, 0x40000001, 1)` — hidden | `(.., 0)` — shown | `(.., 1)` — hidden |
+| `panel+0x18` | 0 (`dword_4DF0D8`), the tab column | 1, the pair | 0 |
+| the pair's `+2` | 0, Oui (`word_4DEBA2`) | 1, *Non* | — |
+
+plus the echo bar tinted from the icon and the clock black. **The hide is a
+draw bit on each ITEM** — `I2D_SetFlagOnAllRows` (0x00429140) writes bank B
+of every row, unlike `Ui_SetListFlag` on the list record — which the port
+modelled as the list's not-selectable flag until 2026-11-08, so the pair
+would have been drawn on arrival. The pair runs across (`0x0042A930`, LEFT/
+RIGHT), and *Oui* 0x0049DBA0 is `sub_409090` — `dword_4E6C9C = 1`, the quit
+REQUEST the pause screen's *Oui* sets, served between script pumps as a new
+game rather than an exit — and then the close. `verify.py: engine: sneak
+quit` walks it from the inventory page to the request.
 
 ### The slider page has its OWN list mover
 

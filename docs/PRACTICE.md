@@ -92,7 +92,7 @@ section or trap you need. CLAUDE.md §0 is the reading budget.
 | todo/collision-scenes-transitions.md | ~3k | the collision / scene functions / transitions plan of 2026-09-04 |
 | todo/take-animation.md | ~4k | the take animation's session state (omk-play 69, 2026-09-04) |
 | todo/reader-followups.md, todo/standing-unknowns.md | ~1k, ~3k | the reader's follow-ups and the standing unknowns of 2026-09-05 - history |
-| todo/ui-child-on-move.md, todo/ui-save-confirm-and-quit.md | ~1k each | two small UI gaps filed 2026-09-18, read and not done |
+| todo/ui-child-on-move.md, todo/ui-save-confirm-and-quit.md | ~1k each | two small UI gaps filed 2026-09-18; the first done 2026-11-08 |
 | todo/pending/*.md (E1, E2, T1..T17) | ~2–8k each | a specific past task's deliverable; each starts with an "Integrated" line — read only the one you need |
 | transcript/*.md | large | how a finding was reached, wrong turns included; never for facts (the docs have them) |
 

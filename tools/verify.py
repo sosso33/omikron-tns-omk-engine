@@ -27918,6 +27918,11 @@ def c_engine_sneak_identity():
     the panel, current list, the row's selection and which content is off.
     The walk before this port declined the two hooks, so the row could not be
     walked and both contents stayed on together.
+
+    Since 2026-11-08 each UP INSTALLS its tab's page (the Slider page, then
+    the Identity page and its builder) - `Ui_MoveSelection`'s tail, bank A
+    0x40 (`UiWalk::enterOnMove`, `engine: sneak quit`) - and the ENTER is
+    refused (`Ui_ConfirmSelection`'s `and edx, 40h`), so it changes nothing.
     """
     import subprocess
     eng = os.path.join(ROOT, "engine")
@@ -27935,8 +27940,8 @@ def c_engine_sneak_identity():
     return (len(lines), lines), \
            (10, [
             "RIGHT panel 0x4dee50 list 0x4de210 tab -1 identity on characteristics on",
-            "UP panel 0x4dee50 list 0x4de210 tab -1 identity on characteristics on",
-            "UP panel 0x4dee50 list 0x4de210 tab -1 identity on characteristics on",
+            "UP panel 0x4dede8 list 0x4de210 tab -1 identity on characteristics on",
+            "UP panel 0x4ded80 list 0x4de210 tab 0 identity on characteristics off",
             "ENTER panel 0x4ded80 list 0x4de210 tab 0 identity on characteristics off",
             "RIGHT panel 0x4ded80 list 0x4de900 tab 0 identity on characteristics off",
             "RIGHT panel 0x4ded80 list 0x4de900 tab 1 identity off characteristics on",
@@ -28495,34 +28500,37 @@ def c_engine_sneak_echo_bar():
 
 
 def c_engine_sneak_quit():
-    r"""engine: the sneak's QUIT tab, and a page that is built and unreachable.
+    r"""engine: the sneak's QUIT tab - a page the MOVE installs.
 
-    The tab column's last icon `0x004DE118` (`IAM\Sneak` 32 *Quitter le jeu*)
-    carries BOTH a callback and a `+44` child page - and `Ui_ConfirmSelection`
-    takes the callback when there is one, so the page `0x004DF0C0` is never
-    installed. Nothing else installs it either: the value `0x004DF0C0` appears
-    exactly ONCE in the image, as that item's `+44`, and the only two
-    `sub_42A370` sites that install an item's `+44` are the load panel's
-    (`0x0047B83B`, `0x0047BB24`). Its Oui/Non list `0x004DEBA0` belongs to
-    that page alone and `Ui_DrawScreen` draws the CURRENT panel's lists, so
-    what the callback shows is drawn by nothing. The same shape as the options
-    menu's page 12: built, and out of reach.
+    Every tab icon of the sneak (list 0x004DE210) carries bank A 0x40 and a
+    child page, and `Ui_MoveSelection`'s tail (`loc_42A897`) installs that
+    child as the selection LANDS on the icon - the page changes under the
+    cursor, with no confirm; `Ui_ConfirmSelection` refuses those children
+    (`and edx, 40h; jnz`). todo/ui-child-on-move.md, `UiWalk::enterOnMove`.
+    The Options page's panel hook 0x0049D960 takes LEFT/RIGHT only (screen 35
+    focused) and lets UP/DOWN walk on.
 
-    What the three callbacks do, transcribed as they are:
+    So the last icon `0x004DE118` (*Quitter le jeu*), which carries BOTH a
+    callback and a child, has its page `0x004DF0C0` installed by the move; its
+    builder `sub_49D980` (no `proc` label, read off the image) hides the
+    Oui/Non list `0x004DEBA0`, selects Oui and makes the tab column current.
+    The confirm runs the icon's callback `0x0049DBF0`: the list shown, *Non*
+    selected (`word_4DEBA2 = 1`), `+24 = 1` - now that page's own Oui/Non
+    list. LEFT (the pair's hook `0x0042A930` runs across) takes *Oui*, and its
+    confirm `0x0049DBA0` is `sub_409090` - `dword_4E6C9C = 1`, the quit
+    request - and `screen+8 = 3`, the close.
 
-    * `0x0049DBF0` (the icon): show `0x004DEBA0`, `word_4DEBA2 = 1` (*Non*),
-      and `1` into whatever panel is CURRENT - on the inventory page that is
-      its own list 1, the previews;
-    * `0x0049DBC0` (*Non*): hide it again, `+24` back to 0;
-    * `0x0049DBA0` (*Oui*): `sub_409090` - `dword_4E6C9C = 1`, the quit
-      request the pause screen's *Oui* already sets in this port - and
-      `screen+8 = 3`, the close.
+    Until 2026-11-08 the port had no move descent: the panel stayed the
+    inventory page through every key and this check pinned the page as
+    "built and unreachable", which was the port's doing.
 
-    `sneak_quit` walks screen 9 to the icon and confirms. Asserted per key: the
-    panel (UNCHANGED - the page is not entered), the current list INDEX, the
-    tab's selection, whether the Oui/Non list is hidden, its own selection,
-    whether the walk went approximate (it did before this was modelled), and
-    the quit request.
+    `sneak_quit` walks screen 9: RIGHT onto the tab column, DOWN three times,
+    ENTER, LEFT, ENTER. Asserted per key: the panel, the current list INDEX,
+    the tab's selection, the Oui/Non list's state and selection, whether the
+    walk went approximate, and the quit request. Shown to fail (2026-11-08):
+    without the move descent (the panel stays 0x4dee50 and the walk ends
+    approximate), and without the Quit builder's hide (the list shown on
+    arrival).
     """
     import subprocess
     eng = os.path.join(ROOT, "engine")
@@ -28536,18 +28544,21 @@ def c_engine_sneak_quit():
     tb = os.path.join(ROOT, "tables")
     r = subprocess.run([tool, os.path.join(tb, "ui_widgets.json"), os.path.join(tb, "ui.json")],
                        capture_output=True, text=True)
-    lines = [" ".join(ln.split()) for ln in r.stdout.splitlines() if " panel 0x" in ln]
+    lines = [" ".join(ln.split()) for ln in r.stdout.splitlines() if " panel 0" in ln]
     return (len(lines), lines), \
-           (5, ["RIGHT panel 0x4dee50 list 0 tab 2 quitlist shown sel -1 approx 0 quit 0",
-                "DOWN panel 0x4dee50 list 0 tab 3 quitlist shown sel -1 approx 0 quit 0",
-                "DOWN panel 0x4dee50 list 0 tab 4 quitlist shown sel -1 approx 0 quit 0",
-                "DOWN panel 0x4dee50 list 0 tab 5 quitlist shown sel -1 approx 0 quit 0",
-                "ENTER panel 0x4dee50 list 1 tab 5 quitlist shown sel 1 approx 0 quit 0"]), \
+           (7, ["RIGHT panel 0x4dee50 list 0 tab 2 quitlist shown sel -1 approx 0 quit 0",
+                "DOWN panel 0x4def88 list 0 tab 3 quitlist shown sel -1 approx 0 quit 0",
+                "DOWN panel 0x4df058 list 0 tab 4 quitlist shown sel -1 approx 0 quit 0",
+                "DOWN panel 0x4df0c0 list 0 tab 5 quitlist hidden sel 0 approx 0 quit 0",
+                "ENTER panel 0x4df0c0 list 1 tab 5 quitlist shown sel 1 approx 0 quit 0",
+                "LEFT panel 0x4df0c0 list 1 tab 5 quitlist shown sel 0 approx 0 quit 0",
+                "ENTER panel 0 list 1 tab -1 quitlist shown sel 0 approx 0 quit 1"]), \
            "reports read (a parse that reads none fails AS a parse); then after " \
-           "each key - onto the tab column, down to 'Quitter le jeu', and the " \
-           "confirm - the panel, the current list index, the tab's selection, the " \
-           "Oui/Non list's state and selection, whether the walk went approximate, " \
-           "and the quit request"
+           "each key - onto the tab column, each DOWN a new page (Memory, " \
+           "Options, Quit), the confirm, LEFT onto Oui and its confirm - the " \
+           "panel, the current list index, the tab's selection, the Oui/Non " \
+           "list's state and selection, whether the walk went approximate, and " \
+           "the quit request"
 
 
 def c_engine_options_menu():
@@ -39315,6 +39326,14 @@ def c_sim_ui_coverage():
       panel hook) and `sub_42A930` (`Ui_MoveSelection` on LEFT/RIGHT, the verb
       bar's list hook). Neither is screen-specific, and the first is why
       `_move_lists` had sat here transcribed and never called.
+
+    **VIDEOPHONE (0) left the exact list on 2026-11-08**, and that is the
+    move descent (`Ui_MoveSelection`'s tail, todo/ui-child-on-move.md), not a
+    regression: its panel 0x004DF128 opens on the sneak's tab column, so the
+    walk's first UP lands on the Quit icon and INSTALLS the Quit page, and
+    DOWN installs the Identity page - whose panel hook `0x0049C1D0` is not
+    modelled, so the walk says it is approximate. Before, the move stayed on
+    the column and the confirm descended nowhere the hooks were met.
     """
     sys.path.insert(0, os.path.join(ROOT, "tools"))
     import ui_tables as U2
@@ -39336,9 +39355,9 @@ def c_sim_ui_coverage():
         else:
             exact.append(sc["id"])
     return (len(live), sorted(exact), len(refused), unsound), \
-           (32, [0, 4, 29, 34], 28, []), \
+           (32, [4, 29, 34], 29, []), \
            "live screens; the ones the GENERIC walker drives with no " \
-           "unmodelled hook - VIDEOPHONE, the LIFT, the start menu, and " \
+           "unmodelled hook - the LIFT, the start menu, and " \
            "SHOOT HUMAN, whose panel carries no hooks at all (OPTIONS has " \
            "its own walker and the load panel its own model); how many " \
            "refuse; and the screens that answered anyway through an " \
@@ -39866,10 +39885,15 @@ def c_sneak_chain():
     family = [(sid, screen(sid)["panel"], screen(sid)["current"]) + tabs(sid)
               for sid in (9, 7, 0)]
 
-    # --- and the walk over it, which must reach a page without guessing
+    # --- and the walk over it, which must reach a page without guessing.
+    # The MOVE installs a tab's page (`Ui_MoveSelection`'s tail, bank A 0x40,
+    # 2026-11-08), so RIGHT, UP, UP lands on the Identite page; the CONFIRM
+    # this walk used to need is refused there, and would only meet the
+    # page's panel hook 0x0049C1D0, which the port models and this
+    # reference does not.
     u = Ui(); u.open(9)
     opened = (u.panel, u.cur, u.sel[0x004DE210])
-    for b in (RIGHT, UP, UP, CONFIRM):
+    for b in (RIGHT, UP, UP):
         u.press(b)
     walked = (u.panel, u.approx)
 
@@ -39898,7 +39922,7 @@ def c_sneak_chain():
            "whether it HIDES the tab column and which tab it selects, where " \
            "SNEAK is the only one that shows the column; then the walk - " \
            "screen 9 opens on list 3 with the column on row 2, and RIGHT, " \
-           "UP, UP, CONFIRM reaches the Identite page with nothing " \
+           "UP, UP reaches the Identite page with nothing " \
            "unmodelled on the way"
 
 

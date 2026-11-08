@@ -4,16 +4,19 @@
 //     sneak_quit <tables/ui_widgets.json> <tables/ui.json>
 //
 // The tab column's last icon (0x004DE118, `IAM\Sneak` 32 "Quitter le jeu")
-// carries a callback AND a child page, and `Ui_ConfirmSelection` prefers the
-// callback - so the page `0x004DF0C0` is never installed and its Oui/Non list
-// `0x004DEBA0`, which belongs to that page alone, is drawn by nothing. What
-// the callback `0x0049DBF0` does do is show that list, select "Non"
-// (`word_4DEBA2 = 1`) and write `1` into whatever panel is CURRENT.
+// carries a callback AND a child page. Every tab icon carries bank A 0x40, so
+// the MOVE onto it installs its page (`Ui_MoveSelection`'s tail,
+// `UiWalk::enterOnMove`): each DOWN below changes the page, and the Options
+// page's hook 0x0049D960 lets UP/DOWN through. The Quit page's builder
+// `sub_49D980` hides the Oui/Non list `0x004DEBA0` and selects Oui; the
+// confirm runs the icon's callback `0x0049DBF0`, which shows the list,
+// selects "Non" (`word_4DEBA2 = 1`) and makes it current (`+24 = 1`); LEFT and
+// ENTER on "Oui" are `0x0049DBA0`, the quit request.
 //
 // Walked from screen 9: RIGHT onto the tab column, DOWN three times to the
-// icon, ENTER. Printed after each key: the panel, the current list INDEX, the
-// tab's selection, whether the walk went approximate, and whether the quit
-// request is up.
+// icon, ENTER, LEFT, ENTER. Printed after each key: the panel, the current list
+// INDEX, the tab's selection, the Oui/Non list's state and selection, whether
+// the walk went approximate, and whether the quit request is up.
 #include "ui/widgets.h"
 
 #include <cstdio>
@@ -37,15 +40,19 @@ int main(int argc, char** argv) {
         if (p)
             for (const auto& l : p->lists)
                 if (l.addr == omk::kListSneakTabs) sel = walk.selectionOf(l);
-        // ...and the Oui/Non list's own selection, which the callback writes
-        // (`word_4DEBA2 = 1`, "Non"). It is read through the TREE, not through
-        // the current panel, because the page that carries it is never
-        // installed.
+        // ...and the Oui/Non list's own selection, which the builder and the
+        // callback write (`word_4DEBA2`). Read through the TREE, so it reads
+        // the same before the page is installed.
         int qsel = -2;
-        if (const omk::UiList* ql = w.listAt(omk::kListSneakQuit)) qsel = walk.selectionOf(*ql);
+        bool hidden = false;   // the pair's DRAW bit, on its items (`I2D_SetFlagOnAllRows`)
+        if (const omk::UiList* ql = w.listAt(omk::kListSneakQuit)) {
+            qsel = walk.selectionOf(*ql);
+            for (const auto& it : ql->items)
+                if (walk.itemFlagsOn(it.addr) & 1u) hidden = true;
+        }
         std::printf("%-6s panel %#x list %d tab %d quitlist %s sel %d approx %d quit %d\n", after,
                     p ? p->addr : 0u, walk.currentList(), sel,
-                    walk.listOff(omk::kListSneakQuit) ? "hidden" : "shown", qsel,
+                    hidden ? "hidden" : "shown", qsel,
                     walk.approximate() ? 1 : 0, walk.quitRequested() ? 1 : 0);
     };
     walk.press(omk::kUiRight);   report("RIGHT");    // the rows -> the tab column
@@ -53,5 +60,7 @@ int main(int argc, char** argv) {
     walk.press(omk::kUiDown);    report("DOWN");
     walk.press(omk::kUiDown);    report("DOWN");     // "Quitter le jeu"
     walk.press(omk::kUiConfirm); report("ENTER");    // 0x0049DBF0
+    walk.press(omk::kUiLeft);    report("LEFT");     // "Oui" (the pair's hook 0x0042A930 runs across)
+    walk.press(omk::kUiConfirm); report("ENTER");    // 0x0049DBA0, the request
     return 0;
 }

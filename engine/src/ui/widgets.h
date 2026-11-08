@@ -40,6 +40,7 @@ inline constexpr std::uint32_t kUiLeft = 1, kUiRight = 2, kUiUp = 4, kUiDown = 8
 inline constexpr std::uint32_t kUiConfirm = 0x10, kUiBack = 0x20, kUiClose = 0x2000;
 
 inline constexpr std::uint32_t kItemUnselectable = 4;      // flags A bit 2
+inline constexpr std::uint32_t kItemEntersOnMove = 0x40;   // flags A: the move installs `child` (`UiWalk::enterOnMove`)
 inline constexpr std::uint32_t kListHidden       = 4;      // list flags A bit 2
 inline constexpr std::uint32_t kListNoWrap       = 0x80000;
 
@@ -238,18 +239,19 @@ inline constexpr std::uint32_t kPanelSneakQuit      = 0x004DF0C0u;
 // the row's hook, the panel's hook, and the two content items the builder and
 // both hooks switch with `0x40000001`.
 // THE QUIT TAB (todo/sneak.md §5d). The tab column's last icon carries BOTH a
-// callback and a child page - and `Ui_ConfirmSelection` prefers the callback,
-// so the page `0x004DF0C0` is never installed: its address appears exactly
-// once in the image, as this item's `+44`, and the only two `sub_42A370` sites
-// that install an item's `+44` are the load panel's. The page is BUILT AND
-// UNREACHABLE, the shape options page 12 already has - and its Oui/Non list
-// belongs to it alone, so what the callback shows is drawn by nothing.
+// callback and a child page. The page `0x004DF0C0` is installed by the MOVE
+// onto the icon (`Ui_MoveSelection`'s tail, bank A 0x40 - `UiWalk::
+// enterOnMove`), its builder `sub_49D980` hiding Oui/Non; the confirm then
+// runs the callback, which shows them on that page. (Until 2026-11-08 this
+// said the page was built and unreachable: it was, but only because the port
+// had no move descent - todo/ui-child-on-move.md.)
 inline constexpr std::uint32_t kCbSneakQuitShow          = 0x0049DBF0u;
 inline constexpr std::uint32_t kCbSneakQuitNo            = 0x0049DBC0u;
 inline constexpr std::uint32_t kCbSneakQuitYes           = 0x0049DBA0u;
 inline constexpr std::uint32_t kListSneakQuit            = 0x004DEBA0u;
 inline constexpr std::uint32_t kListSneakIdentity        = 0x004DE900u;
 inline constexpr std::uint32_t kHookSneakIdentityTabs    = 0x0049C160u;
+inline constexpr std::uint32_t kHookSneakOptionsTab      = 0x0049D960u;   // the Options page's panel hook
 inline constexpr std::uint32_t kHookSneakIdentityPanel   = 0x0049C1D0u;
 inline constexpr std::uint32_t kItemSneakIdentityText    = 0x004DE810u;   // draw hook 0x0049C2B0
 inline constexpr std::uint32_t kItemSneakCharacteristics = 0x004DE858u;   // draw hook 0x0049CA30
@@ -1328,6 +1330,11 @@ public:
         if (on) { state_->flagOn[item] |= bits; state_->flagOff[item] &= ~bits; }
         else    { state_->flagOff[item] |= bits; state_->flagOn[item] &= ~bits; }
     }
+    // `I2D_SetFlagOnAllRows(list, 0x40000000 | bits, on)` (0x00429140) - the
+    // same bank-B write on EVERY ITEM of the list, not on the list record
+    // (that is `Ui_SetListFlag`, `setListOff`). With bit 1 it hides or shows
+    // what the items draw: the sneak's Quit page's Oui/Non pair.
+    void setRowsFlagB(std::uint32_t list, std::uint32_t bits, bool on);
 
     // Lists a builder made NOT SELECTABLE - `sub_4290D0(list, 0x20000004, 1)`,
     // which sets the bit on every item of the list at once.
@@ -1412,6 +1419,9 @@ private:
     // passes LEFT/RIGHT.
     bool move(const UiList& l, std::uint32_t bits,
               std::uint32_t back = kUiUp, std::uint32_t on = kUiDown);
+    // ...and its tail: the item landed on installs its child when bank A
+    // carries 0x40 (the sneak's six tabs)
+    void enterOnMove(const UiList& l, const UiItem& it);
     // `sub_42AFF0` - the same move over a WINDOW, which is what the sneak's
     // row list uses. See the definition for the rule.
     bool moveRowWindow(const UiList& l, std::uint32_t bits);

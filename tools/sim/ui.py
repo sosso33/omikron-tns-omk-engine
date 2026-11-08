@@ -34,6 +34,7 @@ CONFIRM, BACK, CLOSE = 0x10, 0x20, 0x2000
 
 UNSELECTABLE = 4          # item flags A (+48) bit 2 - UIF_UNSELECTABLE
 NOWRAP = 0x80000          # list flags A (+16) - pin the selection at the ends
+ENTERS_ON_MOVE = 0x40     # item flags A (+48) - the move installs the +44 child
 
 #: The list input hook that is NOT the default walk. One reference in the
 #: whole image, and it is the LIFT screen's 7-item list (docs/UI.md 3c).
@@ -1119,7 +1120,7 @@ class Ui:
         step = -1 if bits & back else (1 if bits & on else 0)
         if step:
             nowrap = self._u32(lst + 16) & NOWRAP
-            j = self.sel[lst]
+            before = j = self.sel[lst]
             for _ in range(n):                    # skip unselectable items
                 j += step
                 if j < 0:
@@ -1130,10 +1131,32 @@ class Ui:
                     break
             self.sel[lst] = j
             self.log.append(("move", j))
+            if j != before:
+                self._enter_on_move(lst, its[j])
             return True
         if bits & CONFIRM:
             return self._confirm(its[self.sel[lst]])
         return False
+
+    def _enter_on_move(self, lst, item):
+        """`Ui_MoveSelection`'s tail (`loc_42A897`): the item the selection
+        LANDED on installs its `+44` child when its bank A (`+48`) carries
+        0x40 and the child is not already current - the sneak's six tab
+        icons, the only such items in the tree. The new page keeps the moving
+        list current (its `+0x18` is the tab column whenever a move reaches
+        it) and the moving list keeps the selection just made; the engine's
+        `Ui_ConfirmSelection` refuses the same children (`_confirm`).
+        engine/src/ui/widgets.cpp `UiWalk::enterOnMove` has the reading."""
+        child = self._u32(item + 44)
+        if not child or not (self._u32(item + 48) & ENTERS_ON_MOVE) or child == self.panel:
+            return
+        keep = self.sel[lst]
+        self._enter(child)
+        ls = self.lists(child)
+        if lst in ls:
+            self.cur = ls.index(lst)
+            self.sel[lst] = keep
+        self.log.append(("enter on move", hex(child)))
 
     def _to_parent(self):
         """`sub_42A370(screen, panel->parent)` - the pop, from BACK or Annuler."""
@@ -1173,6 +1196,10 @@ class Ui:
                 self.log.append(("unmodelled item callback", hex(cb)))
             return True
         nxt = self._u32(item + 44)
+        if nxt and self._u32(item + 48) & ENTERS_ON_MOVE:
+            # `and edx, 40h; jnz`: the move entered it (`_enter_on_move`)
+            self.log.append(("confirm: entered by the move", hex(nxt)))
+            return False
         if nxt:
             self._enter(nxt)
             self.log.append(("enter", hex(nxt)))

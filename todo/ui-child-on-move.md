@@ -1,8 +1,15 @@
 # A tab strip switches pages on the MOVE, not on the confirm
 
-**Filed 2026-09-18, not yet done.** It is nine lines of code and it changes a
-rule every UI check leans on, so it wants a settled tree and the whole UI check
-family, not a corner of a session with four branches in flight.
+**Filed 2026-09-18. DONE 2026-11-08** - `UiWalk::enterOnMove` and the
+confirm's refusal in `engine/src/ui/widgets.cpp`, `_enter_on_move` in
+`tools/sim/ui.py`; the Options page's hook 0x0049D960 modelled (LEFT/RIGHT
+only); the Quit page's builder `sub_49D980` ported, its Oui/Non hide moved to
+the items' draw bit (`I2D_SetFlagOnAllRows`, `setRowsFlagB`). Re-baselined
+with their reasons: `engine: sneak quit` (rewritten: the walk reaches the
+request), `engine: sneak identity` (each UP installs a page), `sneak chain`
+(RIGHT, UP, UP reaches Identite), `sim: ui coverage` (VIDEOPHONE leaves the
+exact list: its first UP enters the Quit page). docs/UI.md "The sneak's tabs
+switch pages on the MOVE". The reading below is kept as filed.
 
 ## What the engine does
 

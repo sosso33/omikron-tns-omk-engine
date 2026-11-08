@@ -561,11 +561,12 @@ Re-checked 2026-11-06 against the tree; the list of 2026-09-18 had gone stale.
 * **The overwrite dialog does not name the file** -
   `todo/ui-save-confirm-and-quit.md` §1 (`0x0047BC30`, both confirm panels
   lose their subject line). Decoded, not transcribed.
-* **Tab strips switch pages on the confirm, not on the move.**
-  `todo/ui-child-on-move.md` - nine lines, held back because they change the
-  shared walk. Not done.
 
 No longer open (kept so nobody re-reports them as new):
+
+* ~~Tab strips switch pages on the confirm, not on the move~~ - **done
+  2026-11-08** (`todo/ui-child-on-move.md`; `UiWalk::enterOnMove`; the Quit
+  page reached; `engine: sneak quit`).
 
 * ~~The lift arrival is black, the camera inside the lift-car mesh
   `CSPont04`~~ - the engine's answer is the BACK-FACE CULL, ported
