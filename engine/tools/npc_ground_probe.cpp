@@ -21,6 +21,16 @@
 //
 // So `far` is the population M6 is about. Printed: the totals, then each
 // `far` record (area, actor, position, drop), so a reader can look at them.
+//
+// ...and WHAT THE ORIGINAL'S PROBE WOULD SEE, a second line. `Walk_ProbeGround`
+// asks `sub_443560`, which walks EVERY mesh in a box under the point
+// (`o3de_ForEachMeshInBox` -> `sub_443810`) and skips only a mesh flagged
+// 0x41 - no slope filter - so it can stop on a face the walkable soup leaves
+// out (a steep roof, a prop's top). Each record is probed again against the
+// `All` collision soup (an INDICATION: `All` keeps the few 0x41 meshes, and
+// the set's other decor slots are not in either soup): `higher` counts the
+// records where that probe meets a surface above the walkable floor, by
+// class, and each far / none record prints the all-faces drop beside it.
 // SCENE chunks' placements are not counted: their area is the scene's
 // host, resolved at run time.
 #include "formats/iam.h"
@@ -55,6 +65,7 @@ int main(int argc, char** argv) {
     const auto areas = omk::IamArchive::open(areaFile);
     int recs = 0, on = 0, nearC = 0, far = 0, none = 0, areasWith = 0, noSet = 0;
     int nearHist[4] = {0, 0, 0, 0};   // 2..10, 10..30, 30..60, 60..100
+    int hiOn = 0, hiNear = 0, hiFar = 0, hiNone = 0;   // the all-faces probe stops higher
     std::string farList;
     for (std::size_t i = 0; i < areas.size(); ++i) {
         const auto chunk = areas.chunk(i);
@@ -66,22 +77,38 @@ int main(int argc, char** argv) {
                                          : fs.read("MESHES/DECORS/" + set + ".3DO");
         if (setData.empty()) { noSet += static_cast<int>(places.size()); continue; }
         const auto soup = omk::collisionSoup(setData, omk::SoupKind::Walkable);
+        const auto all = omk::collisionSoup(setData, omk::SoupKind::All);
         ++areasWith;
         for (const auto& p : places) {
             ++recs;
             const auto g = omk::floorUnder(soup, p.pos[0], p.pos[1] - 2.0, p.pos[2]);
-            if (!g) { ++none; continue; }
+            const auto ga = omk::floorUnder(all, p.pos[0], p.pos[1] - 2.0, p.pos[2]);
+            // the all-faces probe stops on something above the walkable floor
+            const bool higher = ga && (!g || *ga < *g - 2.0);
+            char allDrop[32] = "none";
+            if (ga) std::snprintf(allDrop, sizeof allDrop, "%.0f", *ga - p.pos[1]);
+            if (!g) {
+                ++none;
+                if (higher) ++hiNone;
+                char buf[160];
+                std::snprintf(buf, sizeof buf, "none area %zu actor %d at %.0f %.0f %.0f all-faces drop %s\n",
+                              i, p.actor, p.pos[0], p.pos[1], p.pos[2], allDrop);
+                farList += buf;
+                continue;
+            }
             const double drop = *g - p.pos[1];              // Y is down
-            if (drop < 2.0) ++on;
+            if (drop < 2.0) { ++on; if (higher) ++hiOn; }
             else if (drop < 100.0) {
                 ++nearC;
+                if (higher) ++hiNear;
                 ++nearHist[drop < 10.0 ? 0 : drop < 30.0 ? 1 : drop < 60.0 ? 2 : 3];
             }
             else {
                 ++far;
-                char buf[128];
-                std::snprintf(buf, sizeof buf, "far area %zu actor %d at %.0f %.0f %.0f drop %.0f\n",
-                              i, p.actor, p.pos[0], p.pos[1], p.pos[2], drop);
+                if (higher) ++hiFar;
+                char buf[160];
+                std::snprintf(buf, sizeof buf, "far area %zu actor %d at %.0f %.0f %.0f drop %.0f all-faces drop %s\n",
+                              i, p.actor, p.pos[0], p.pos[1], p.pos[2], drop, allDrop);
                 farList += buf;
             }
         }
@@ -90,6 +117,7 @@ int main(int argc, char** argv) {
                 areasWith, recs, on, nearC, far, none, noSet);
     std::printf("near 2-10 %d 10-30 %d 30-60 %d 60-100 %d\n", nearHist[0], nearHist[1],
                 nearHist[2], nearHist[3]);
+    std::printf("all faces higher on %d near %d far %d none %d\n", hiOn, hiNear, hiFar, hiNone);
     std::fputs(farList.c_str(), stdout);
     return 0;
 }

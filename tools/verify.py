@@ -5911,8 +5911,10 @@ def c_engine_npc_ground():
     against its own set's walkable soup, probed down from one unit above -
     the probe `PlayState::worldStagedGround` makes. On the floor (< 2),
     near (2..100, which the port seats), FAR (100 and more, which the port
-    keeps at the authored height where the original's `Actor_ApplyMotion`
-    would fall an undriven NPC), and none (no floor below). 21 far of 820,
+    keeps at the authored height), and none (no floor below). CORRECTED
+    2026-11-08: the original does NOT fall an undriven NPC - a placed body
+    sits in ACTOR_STATE 0 (`nullsub_6`), and `Actor_ApplyMotion` runs only
+    for states 1 and 11..14, the player's (todo/drift-audit.md M6). 21 far of 820,
     and those are cutscene areas (CS Archives, CS Lev-3/5, Ix Epilogue, Ix
     Astaroth 2), where a scene program drives the body, and placeholders at
     y -1 (a raw 0) that scripts move - plus Jaunpur Toits' actor 319. So M6
@@ -5921,6 +5923,13 @@ def c_engine_npc_ground():
     height (~42 above the feet), which says the records name the node, not
     the feet (an indication, not read in the spawn). Shown to fail
     (2026-11-08): the class limit 100 -> 50 moves near/far.
+
+    ...and the same records against EVERY collision face (`All`), the set
+    `Walk_ProbeGround`'s `sub_443560` walks (only 0x41 meshes skipped, no
+    slope filter): it stops above the walkable floor for 0 on, 1 near, 0 far
+    and 11 with no walkable floor - so no surface the soup leaves out holds
+    any far body. Shown to fail (2026-11-08): `higher` tested against
+    `g + 2` instead of `g - 2`.
     """
     eng = os.path.join(ROOT, "engine")
     b = subprocess.run(["make", "-s", "build/npc_ground_probe"], cwd=eng, capture_output=True, text=True)
@@ -5935,13 +5944,16 @@ def c_engine_npc_ground():
     far = len(re.findall(r"^far area ", r.stdout, re.M))
     h = re.search(r"^near 2-10 (\d+) 10-30 (\d+) 30-60 (\d+) 60-100 (\d+)$", r.stdout, re.M)
     hist = tuple(int(x) for x in h.groups()) if h else ("no near line",)
-    return tuple(int(x) for x in m.groups()) + (far, hist), \
-           (113, 820, 114, 651, 21, 34, 10, 21, (0, 60, 531, 60)), \
+    a = re.search(r"^all faces higher on (\d+) near (\d+) far (\d+) none (\d+)$", r.stdout, re.M)
+    allh = tuple(int(x) for x in a.groups()) if a else ("no all-faces line",)
+    return tuple(int(x) for x in m.groups()) + (far, hist, allh), \
+           (113, 820, 114, 651, 21, 34, 10, 21, (0, 60, 531, 60), (0, 1, 0, 11)), \
         "areas with placements and a set, character records, then by the drop " \
         "to the walkable floor: on it, near (seated), FAR (kept at the authored " \
         "height), none below; records whose area names no set; far lines listed; " \
         "the near records by drop - 2-10, 10-30, 30-60 (a standing pelvis is ~42 " \
-        "above the feet), 60-100"
+        "above the feet), 60-100; the all-faces probe stopping above the walkable " \
+        "floor, by class"
 
 
 def c_engine_scx_euler():
