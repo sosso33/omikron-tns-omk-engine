@@ -558,10 +558,9 @@ rendered at the moments it names and read by eye (not the same as playing):
 
 Re-checked 2026-11-06 against the tree; the list of 2026-09-18 had gone stale.
 
-* **A new game under an existing profile name does not ask** - the start
-  menu's `Confirmer` (0x0047A2B0) shows *Ecraser ce fichier ?* there; its
-  `Oui` deletes the profile's saves, so it waits for the reader
-  (`todo/ui-save-confirm-and-quit.md`, top).
+* **A new game under an existing profile name now ASKS - to play** (ported
+  2026-11-08, `engine: new game overwrite`): *Ecraser ce fichier ?* with the
+  name; `Oui` deletes that profile's saves and starts. Not yet played.
 
 No longer open (kept so nobody re-reports them as new):
 

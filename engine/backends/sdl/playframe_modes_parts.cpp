@@ -1439,6 +1439,23 @@ void PlayState::modesScreenWalk(omk::Input& in, omk::OptionsMenu& optMenu, omk::
                 std::fprintf(stderr, "detruire: slot %d not cleared\n", slot);
             }
         }
+        // ...and the start menu's OVERWRITE `Oui`: `SaveDir_Delete`
+        // (0x00409100), every slot of the typed profile emptied by its one
+        // name byte, the file written back - before the new game the same
+        // callback answers for starts.
+        if (const std::string prof = walk->takePendingDeleteProfile(); !prof.empty()) {
+            auto file = omk::readSaveFile(savesPath, dataRoot + "/IAM/GAMES");
+            const int n = file.size() >= omk::kSaveFileSize ? omk::deleteProfile(file, prof) : 0;
+            if (n > 0 && omk::writeSaveFile(savesPath, file)) {
+                std::printf("ecraser: profile '%s' deleted - %d slot(s) emptied\n", prof.c_str(), n);
+                omk::event("save.delete_profile", {{"name", prof}, {"slots", n}});
+                const std::string games = omk::saveFileInUse(savesPath, dataRoot + "/IAM/GAMES");
+                loadPanelState = omk::buildLoadPanel(omk::saveDirectory(games, uiWidgets));
+                loadPanelState.path = games;
+            } else {
+                std::fprintf(stderr, "ecraser: profile '%s' not deleted (%d slots)\n", prof.c_str(), n);
+            }
+        }
         // ---- `Acheter`'s PAYMENT, carried out where the channel is ----
         //
         // `Game_HandleEvent(38, {price})` with object list 2 open is not

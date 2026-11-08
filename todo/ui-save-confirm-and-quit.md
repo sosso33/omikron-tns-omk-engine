@@ -8,16 +8,20 @@ subject` (the menu's `Detruire` on the first row, shown to fail). **§2 was
 already in the port** (`kCbStartQuitYes`, `UiWalk::takeExitRequest`, served by
 `playframe_modes_parts.cpp`) - this file was not updated when it landed.
 
-**FOUND ON THE WAY, NOT DONE - it deletes save data, so it waits for the
-reader:** the start menu's `Confirmer` (0x0047A2B0) checks the typed name
+**FOUND ON THE WAY, then DONE 2026-11-08 at the reader's go** (`UiWalk`'s
+`kCbStartConfirmName` arm and the screen-29 arm of `confirmYesSave`, the
+frontend's `takePendingDeleteProfile` -> `omk::deleteProfile`; `verify.py:
+engine: new game overwrite`, an existing name and a new one, shown to fail).
+As found: the start menu's `Confirmer` (0x0047A2B0) checks the typed name
 against the directory (`sub_408CE0(byte_69BDC0, byte_69BDA0)`) and, when a
 profile of that name EXISTS, installs `off_4CF3B8` - *Ecraser ce fichier ?*
 with the typed name as its subject - instead of starting; only a new name goes
 on to `sub_408AA0` and the close. The port answers 1 at once, so a new game
 under an existing profile name never asks. That dialog's `Oui` on screen 29 is
 the delete arm of 0x0047BA30 (`SaveDir_Delete`, every slot of the profile),
-which the walk deliberately leaves unwired. The subject's typed-name arm is
-ported and waits for that panel to be reachable.
+which the walk had left unwired. Both arms are now ported as read:
+`SaveDir_Delete` empties every slot of the profile by its first name byte and
+the new game starts (answer 1); 256 full slots answer nothing.
 
 
 Both found by the 2026-09-18 triage (`todo/pending/ui-remainder-survey.md` §3)

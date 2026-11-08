@@ -2255,6 +2255,33 @@ bool UiWalk::confirm() {
             return true;
         }
         if (bool retVal{}; confirmSneakExamine(it, retVal)) return retVal;
+        // THE START MENU'S `Confirmer` (0x0047A2B0), past its empty-name gate
+        // (below), read whole: the typed name becomes the profile, then
+        //
+        //     if (!SaveDir_Build(dir)) { sub_408E70(); start; }   // no file yet
+        //     else if (SaveDir_CountByName(dir, name))              // strncmp, 32
+        //         sub_42A370(screen, off_4CF3B8);   // `Ecraser ce fichier ?`
+        //     else if (sub_408AA0(dir) != -1) start;      // a free slot
+        //     // else: 256 slots full - nothing at all, the dialog stays
+        //
+        // where "start" is `screen+8 = 3; dword_930750 = 1`. So a new game
+        // under a name that already has saves ASKS first, with the name as
+        // the dialog's subject (`0x0047BC30`).
+        if (it->callback == kCbStartConfirmName && screen_ == screen::StartMenu &&
+            !name_.empty() && load_) {
+            int same = 0;
+            for (const auto& e : load_->dir)
+                if (e.name.substr(0, 32) == name_.substr(0, 32)) ++same;
+            if (same > 0) {
+                log_.push_back("confirmer: '" + name_ + "' has " + std::to_string(same) +
+                               " save(s) - the overwrite confirm");
+                return installPanel(kPanelSaveOverwrite);
+            }
+            if (load_->dir.size() >= 256) {
+                log_.push_back("confirmer: no free slot (sub_408AA0 -1) - nothing");
+                return true;
+            }
+        }
         for (const auto& a : w_->answers())
             if (a.callback == it->callback) {
                 if (a.needsName && name_.empty()) {
@@ -2370,9 +2397,25 @@ bool UiWalk::confirmYesSave(const omk::UiItem*& it, bool& retVal) {
         // panel sent every confirm down the delete arm and `Oui` did
         // nothing. `sub_47BA30` tests `*a1`, the screen the walk was
         // opened with.
+        // THE DELETE ARM, screen 29 - read whole off the image:
+        //
+        //     SaveDir_Delete(byte_69BDC0, byte_69BDA0);   // the typed name
+        //     screen+8 = 3;  dword_930750 = 1;            // close, answer 1
+        //
+        // `SaveDir_Delete` (0x00409100) empties EVERY slot whose 32-byte
+        // profile name is the one typed - one zero byte over each name, the
+        // file rewritten - and the new game then starts under that name. The
+        // frontend does the file half (`takePendingDeleteProfile`).
+        if (screen_ == screen::StartMenu) {
+            pendingDeleteProfile_ = name_;
+            answer_ = 1;
+            log_.push_back("oui: SaveDir_Delete '" + name_ + "', the new game starts");
+            panel_ = nullptr;
+            { retVal = true; return true; }
+        }
         if (screen_ != screen::SaveGame) {
             approx_ = true;
-            log_.push_back("oui: the DELETE arm is not modelled");
+            log_.push_back("oui: neither screen 29 nor 30");
             { retVal = true; return true; }
         }
         const auto rows = load_->rows();

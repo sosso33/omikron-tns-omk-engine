@@ -4057,10 +4057,15 @@ the TYPED NAME when the screen is 29 and the panel 0x004CF3B8, else around
 count, string 15; a row below it, the record's name, day and time; past it,
 one empty byte). The quotes and the spaces inside them are the format's.
 `ScreenComposer::confirmSubjectText`; `verify.py: engine: confirm subject`.
-Screen 29 reaches 0x004CF3B8 only from `Confirmer` (0x0047A2B0) with a
-profile name that already exists - a path the port does not take yet, because
-that dialog's `Oui` deletes the profile's saves
-(`todo/ui-save-confirm-and-quit.md`).
+Screen 29 reaches 0x004CF3B8 only from `Confirmer` (0x0047A2B0), read whole:
+the typed name becomes the profile; with no `IAM\GAMES` the file is made
+(`sub_408E70`) and the game starts; a name `SaveDir_CountByName` finds
+(strncmp over 32) installs the overwrite dialog instead; otherwise the first
+free slot (`sub_408AA0`) starts it, and 256 full slots do nothing at all. The
+dialog's `Oui` (0x0047BA30, screen 29's arm) is `SaveDir_Delete(dir, name)` -
+every slot of that profile emptied by its first name byte, the file written
+back - then the close and answer 1. Ported 2026-11-08 (`verify.py: engine:
+new game overwrite`).
 
 ### The name field — the last refusal
 

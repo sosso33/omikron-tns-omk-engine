@@ -884,6 +884,9 @@ public:
     int  pendingSave() const { return pendingSave_; }
     int  takePendingSave() { const int s = pendingSave_; pendingSave_ = -1; return s; }
     int  takePendingClear() { const int s = pendingClear_; pendingClear_ = -1; return s; }
+    // the PROFILE `SaveDir_Delete` (0x00409100) is to empty - the start menu's
+    // overwrite `Oui` (0x0047BA30 on screen 29); "" when none is asked for
+    std::string takePendingDeleteProfile() { std::string s; s.swap(pendingDeleteProfile_); return s; }
     // `dword_4E6C9C`, the QUIT REQUEST the pause screen's `Oui` sets
     // (0x00409090 is `mov dword_4E6C9C, 1` and nothing else). Like the load
     // it is served between script pumps, not in the callback:
@@ -1537,6 +1540,7 @@ private:
     int         overwriteRow_ = -1;
     // The slot `Detruire`'s `Oui` asked to clear, or -1.
     int         pendingClear_ = -1;
+    std::string pendingDeleteProfile_;
     // `dword_4E6C9C`, set by the pause screen's quit confirm.
     bool        quitRequest_ = false;
     bool        exitRequest_ = false;
@@ -1729,6 +1733,7 @@ inline constexpr std::uint32_t kPanelLoadDestroy   = 0x004CF350u;
 // so one panel is `Detruire`'s confirmation on the load screen and the
 // overwrite confirmation on the save screen.
 inline constexpr std::uint32_t kCbConfirmYes = 0x0047BA30u;
+inline constexpr std::uint32_t kCbStartConfirmName = 0x0047A2B0u;   // the start menu's `Confirmer`
 // `Detruire` (0x0047AE90) and its OWN confirm's `Oui` (0x0047B800), which is
 // a different button from the one above and does a different thing:
 //

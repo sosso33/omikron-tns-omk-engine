@@ -6022,6 +6022,65 @@ def c_engine_confirm_subject():
         "the line - the first row's label inside the format's quotes"
 
 
+def c_engine_new_game_overwrite():
+    r"""A NEW GAME UNDER AN EXISTING PROFILE NAME asks first, and its `Oui`
+    deletes that profile's saves (todo/ui-save-confirm-and-quit.md; read off
+    the image 2026-11-08).
+
+    The start menu's `Confirmer` (0x0047A2B0): the typed name becomes the
+    profile; `SaveDir_CountByName` (strncmp, 32) finding it installs
+    `off_4CF3B8`, *Ecraser ce fichier ?*, with the typed name as its subject
+    (`0x0047BC30`); only a name with no saves goes on to a free slot and the
+    start. That dialog's `Oui` (0x0047BA30, screen 29's arm) is
+    `SaveDir_Delete(dir, name)` - every slot of the profile emptied by its
+    first name byte, the file written - then `screen+8 = 3` and answer 1.
+
+    Two starts from a COPY of `traces/games-resto.bin` (one profile,
+    `hereIsTheProfileName`, three saves): ENTER on Nouvelle partie, the
+    name typed, RETURN, Confirmer, then ENTER on the dialog. Asserted: with
+    the existing name - the subject, the delete (3 slots), answer 1, and no
+    named slot left in the file; with a new name - no subject, no delete,
+    answer 1, and the file byte-identical. Shown to fail (2026-11-08): the
+    name test removed (the existing name starts at once, its saves kept).
+    """
+    import shutil, tempfile, hashlib
+    play = _play_built()
+    if not play:
+        return _PLAY_UNBUILT
+    fx = os.path.join(ROOT, "traces", "games-resto.bin")
+    if not os.path.exists(fx):
+        return ("skipped",), ("skipped",), "traces/games-resto.bin absent"
+    def run(name):
+        tmp = tempfile.mkdtemp()
+        try:
+            saves = os.path.join(tmp, "games.bin")
+            shutil.copy(fx, saves)
+            before = hashlib.md5(open(saves, "rb").read()).hexdigest()
+            out = _play_out(play, "--software", "--res", "640x480", "--nofmv", "--saves", saves,
+                            "--frames", 260, "--hold", "0*20,k28*2,0*240", "--keydelay", 30,
+                            "--type", name, "--keys", "0,0,0,T,c13,28,28",
+                            save=None, env={"OMK_EVENTS": "1"}, timeout=600)
+            d = open(saves, "rb").read()
+            named = sum(1 for i in range(256) if d[3496 + 32808 * i:3496 + 32808 * i + 1] not in (b"", b"\0"))
+            same = hashlib.md5(d).hexdigest() == before
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+        ev = _events(out)
+        subj = [(e.get("screen"), e.get("panel"), e.get("text")) for n, e in ev if n == "ui.subject"]
+        dele = [(e.get("name"), e.get("slots")) for n, e in ev if n == "save.delete_profile"]
+        ans = [e.get("value") for n, e in ev if n == "ui.answer"]
+        return (tuple(subj), tuple(dele), tuple(ans), named, same)
+    got = (run("hereIsTheProfileName"), run("OMK"))
+    want = (((("29", str(0x004CF3B8), "' hereIsTheProfileName '"),),
+             (("hereIsTheProfileName", "3"),), ("1",), 0, False),
+            ((), (), ("1",), 3, True))
+    return got, want, \
+        "per start - the confirm subjects drawn, the profiles deleted (slots), " \
+        "the answers, named slots left in the file, and whether the file is " \
+        "untouched: the existing name asks, deletes its 3 saves and starts; a " \
+        "new name starts at once and leaves the file as it was"
+
+
 def c_engine_area_transition():
     r"""The area transition, the staged load and the context table
     (`transition_probe`).
@@ -54610,6 +54669,7 @@ SLOW = [
     ("engine: npc ground", c_engine_npc_ground, "todo/drift-audit.md M6"),
     ("engine: scx euler", c_engine_scx_euler, "todo/drift-audit.md M7"),
     ("engine: confirm subject", c_engine_confirm_subject, "todo/ui-save-confirm-and-quit.md 1; ui/screendraw.cpp confirmSubjectText"),
+    ("engine: new game overwrite", c_engine_new_game_overwrite, "todo/ui-save-confirm-and-quit.md; ui/widgets.cpp kCbStartConfirmName"),
     ("engine: music duck", c_engine_music_duck, "script/area.h musicAttenuationDb; Session::tickMusicLevel"),
     ("engine: attract mode", c_engine_attract_mode, "UI \"The attract mode\"; playframe_input_parts.cpp attractTick"),
     ("engine: live zones", c_engine_live_zones, "SCRIPT_VM; engine/README"),
