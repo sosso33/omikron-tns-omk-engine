@@ -5916,8 +5916,11 @@ def c_engine_npc_ground():
     and those are cutscene areas (CS Archives, CS Lev-3/5, Ix Epilogue, Ix
     Astaroth 2), where a scene program drives the body, and placeholders at
     y -1 (a raw 0) that scripts move - plus Jaunpur Toits' actor 319. So M6
-    is left as it is, on a number. Shown to fail (2026-11-08): the class
-    limit 100 -> 50 moves near/far.
+    is left as it is, on a number. The near records BY DROP: 0 at 2-10, 60
+    at 10-30, 531 at 30-60, 60 at 60-100 - the bulk at a standing PELVIS's
+    height (~42 above the feet), which says the records name the node, not
+    the feet (an indication, not read in the spawn). Shown to fail
+    (2026-11-08): the class limit 100 -> 50 moves near/far.
     """
     eng = os.path.join(ROOT, "engine")
     b = subprocess.run(["make", "-s", "build/npc_ground_probe"], cwd=eng, capture_output=True, text=True)
@@ -5930,11 +5933,49 @@ def c_engine_npc_ground():
     if not m:
         return ("no totals line",), ("a totals line",), "npc_ground_probe must print its totals"
     far = len(re.findall(r"^far area ", r.stdout, re.M))
-    return tuple(int(x) for x in m.groups()) + (far,), \
-           (113, 820, 114, 651, 21, 34, 10, 21), \
+    h = re.search(r"^near 2-10 (\d+) 10-30 (\d+) 30-60 (\d+) 60-100 (\d+)$", r.stdout, re.M)
+    hist = tuple(int(x) for x in h.groups()) if h else ("no near line",)
+    return tuple(int(x) for x in m.groups()) + (far, hist), \
+           (113, 820, 114, 651, 21, 34, 10, 21, (0, 60, 531, 60)), \
         "areas with placements and a set, character records, then by the drop " \
         "to the walkable floor: on it, near (seated), FAR (kept at the authored " \
-        "height), none below; records whose area names no set; far lines listed"
+        "height), none below; records whose area names no set; far lines listed; " \
+        "the near records by drop - 2-10, 10-30, 30-60 (a standing pelvis is ~42 " \
+        "above the feet), 60-100"
+
+
+def c_engine_scx_euler():
+    r"""The PITCH and ROLL scene programs author on bodies - todo/drift-
+    audit.md M7, counted over the whole corpus (2026-11-08).
+
+    `Script_SelectBodyAnimation` (0x02000004) and `..RelativeBodyAnimation`
+    (0x0200002A) carry an Euler the engine writes to the node every tick
+    (`Actor_SetEuler(node, p4, p5, p6)`); the port applies p5, the yaw, only.
+    `scx_euler_probe` reads every call in all 220 `SCPTDATA/*.SCX`: 2943
+    calls, 6 with a pitch and none with a roll - Hall23's and Hall27's
+    Mendiant01 (-10), Sawaken1's Passant06desk (-5, twice) and Anekbah's
+    Mendiant03/04 (-7). The note this replaces said "three beggars"; it was
+    a memory, not a count. Pinned so a change to that population is seen.
+    Shown to fail (2026-11-08): the pitch read from p5 instead of p4.
+    """
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/scx_euler_probe"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "scx_euler_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "scx_euler_probe must build"
+    r = subprocess.run([binp, omkpaths.data_root()], capture_output=True, text=True)
+    m = re.search(r"^scx euler files (\d+) calls (\d+) pitched (\d+) rolled (\d+) objects (\d+)$",
+                  r.stdout, re.M)
+    if not m:
+        return ("no totals line",), ("a totals line",), "scx_euler_probe must print its totals"
+    who = sorted(set(" ".join(ln.split()[1:3]) for ln in r.stdout.splitlines()
+                     if ln.startswith("euler ")))
+    return tuple(int(x) for x in m.groups()) + (tuple(who),), \
+           (220, 2943, 6, 0, 5, ("Hall23.SCX Mendiant01", "Hall27.SCX Mendiant01",
+                                 "Sawaken1.SCX Passant06desk", "anekbah.SCX Mendiant03",
+                                 "anekbah.SCX Mendiant04")), \
+        "SCX files read, body-animation calls, calls with a pitch (p4), with a " \
+        "roll (p6), objects carrying either; and which file and object each is"
 
 
 def c_engine_area_transition():
@@ -52007,8 +52048,9 @@ def c_licence_headers():
     # `engine: save read in parts`, af6439e)
     # 709: + `engine/tools/inventory_insert_probe.cpp` (`engine: inventory insert`)
     # 710: + `engine/tools/npc_ground_probe.cpp` (`engine: npc ground`)
+    # 711: + `engine/tools/scx_euler_probe.cpp` (`engine: scx euler`)
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (710, [], 10, []), \
+           (711, [], 10, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -54522,6 +54564,7 @@ SLOW = [
     ("engine: session rules", c_engine_session, "SCRIPT_VM; engine/README"),
     ("engine: area transition", c_engine_area_transition, "SCRIPT_VM; engine/README"),
     ("engine: npc ground", c_engine_npc_ground, "todo/drift-audit.md M6"),
+    ("engine: scx euler", c_engine_scx_euler, "todo/drift-audit.md M7"),
     ("engine: music duck", c_engine_music_duck, "script/area.h musicAttenuationDb; Session::tickMusicLevel"),
     ("engine: attract mode", c_engine_attract_mode, "UI \"The attract mode\"; playframe_input_parts.cpp attractTick"),
     ("engine: live zones", c_engine_live_zones, "SCRIPT_VM; engine/README"),

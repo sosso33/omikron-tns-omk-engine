@@ -54,6 +54,7 @@ int main(int argc, char** argv) {
     const auto areaFile = fs.read("IAM/AREA");
     const auto areas = omk::IamArchive::open(areaFile);
     int recs = 0, on = 0, nearC = 0, far = 0, none = 0, areasWith = 0, noSet = 0;
+    int nearHist[4] = {0, 0, 0, 0};   // 2..10, 10..30, 30..60, 60..100
     std::string farList;
     for (std::size_t i = 0; i < areas.size(); ++i) {
         const auto chunk = areas.chunk(i);
@@ -72,7 +73,10 @@ int main(int argc, char** argv) {
             if (!g) { ++none; continue; }
             const double drop = *g - p.pos[1];              // Y is down
             if (drop < 2.0) ++on;
-            else if (drop < 100.0) ++nearC;
+            else if (drop < 100.0) {
+                ++nearC;
+                ++nearHist[drop < 10.0 ? 0 : drop < 30.0 ? 1 : drop < 60.0 ? 2 : 3];
+            }
             else {
                 ++far;
                 char buf[128];
@@ -84,6 +88,8 @@ int main(int argc, char** argv) {
     }
     std::printf("npc ground areas %d records %d on %d near %d far %d none %d noset %d\n",
                 areasWith, recs, on, nearC, far, none, noSet);
+    std::printf("near 2-10 %d 10-30 %d 30-60 %d 60-100 %d\n", nearHist[0], nearHist[1],
+                nearHist[2], nearHist[3]);
     std::fputs(farList.c_str(), stdout);
     return 0;
 }
