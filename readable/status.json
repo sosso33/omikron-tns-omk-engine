@@ -3106,8 +3106,8 @@
  },
  {
   "addr": "0041EA40",
-  "name": "sub_41EA40",
-  "status": "RAW",
+  "name": "Music_TickVolume",
+  "status": "NAMED",
   "lines": 73,
   "callers": 2,
   "file": "05_sys.c",
@@ -10612,8 +10612,8 @@
  },
  {
   "addr": "0045FB80",
-  "name": "sub_45FB80",
-  "status": "RAW",
+  "name": "Gfx_RestoreLostSurfaces",
+  "status": "NAMED",
   "lines": 30,
   "callers": 1,
   "file": "20_ddraw.c",
@@ -12089,7 +12089,7 @@
  {
   "addr": "004739E0",
   "name": "sub_4739E0",
-  "status": "RAW",
+  "status": "READ",
   "lines": 205,
   "callers": 1,
   "file": "24_sys.c",
@@ -12206,7 +12206,7 @@
  {
   "addr": "004756E0",
   "name": "sub_4756E0",
-  "status": "RAW",
+  "status": "READ",
   "lines": 279,
   "callers": 1,
   "file": "24_sys.c",

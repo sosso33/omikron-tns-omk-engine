@@ -5871,6 +5871,38 @@ def c_engine_attract_mode():
         "no attract in 1900 frames"
 
 
+def c_engine_music_duck():
+    r"""The music's CONVERSATION DUCK slides (`sub_41EA40`, `Game_Tick`'s first
+    call): `Actor_EnterDialogueMode` sets `dword_90EF8C = 10`, the leave 0,
+    and each frame `dword_90EF90` moves one point toward it (`-=`/`+=
+    (int64_t)flt_4C30D8`, clamped onto the target) - so the music sinks 10
+    dB over 10 frames into a conversation and rises over 10 after. The port
+    jumped the 10 dB at once until 2026-11-08.
+
+    `transition_probe`'s `duck` line: the intro's first conversation held 12
+    frames, then closed. Shown to fail (2026-11-08): the slide replaced by
+    the old jump (in 10 x 12, out 0 x 12).
+    """
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/transition_probe"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "transition_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "transition_probe must build"
+    r = subprocess.run([binp, omkpaths.data_root(), os.path.join(ROOT, "tables")],
+                       capture_output=True, text=True)
+    d = {}
+    for ln in r.stdout.splitlines():
+        f = ln.split()
+        if f and f[0] == "duck":
+            d = dict(zip(f[1::2], f[2::2]))
+    if not d:
+        return ("no duck line",), ("a duck line",), "transition_probe must print its duck line"
+    return (d.get("at_open"), d.get("in"), d.get("out")), \
+           ("0", "1,2,3,4,5,6,7,8,9,10,10,10", "9,8,7,6,5,4,3,2,1,0,0,0"), \
+        "the duck at the conversation's open, its 12 frames in (one point a " \
+        "frame to 10) and the 12 after the close (one a frame back to 0)"
+
+
 def c_engine_area_transition():
     r"""The area transition, the staged load and the context table
     (`transition_probe`).
@@ -54430,6 +54462,7 @@ SLOW = [
     ("engine: parking ops", c_engine_parking_ops, "script/interp.h; SCRIPT_VM"),
     ("engine: session rules", c_engine_session, "SCRIPT_VM; engine/README"),
     ("engine: area transition", c_engine_area_transition, "SCRIPT_VM; engine/README"),
+    ("engine: music duck", c_engine_music_duck, "script/area.h musicAttenuationDb; Session::tickMusicLevel"),
     ("engine: attract mode", c_engine_attract_mode, "UI \"The attract mode\"; playframe_input_parts.cpp attractTick"),
     ("engine: live zones", c_engine_live_zones, "SCRIPT_VM; engine/README"),
     ("engine: airlock walk", c_engine_airlock_walk, "SCRIPT_VM; engine/README"),

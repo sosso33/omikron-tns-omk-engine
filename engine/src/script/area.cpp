@@ -2614,8 +2614,22 @@ bool Session::actorRecord(int actor, std::vector<std::byte>& chunk,
 // ------------------------------------------------------------- THE FRAME
 
 void Session::tickMusicLevel() {
-    // the engine's update at 05_sys.c ~995, on the frame clock (dt = 1 at 30 Hz)
+    // `sub_41EA40` (0x0041EA40), `Game_Tick`'s first call, on the frame clock
+    // (dt = 1 at 30 Hz). Its gate - skip the `Music_SetVolume` when nothing
+    // moves - changes no level and is not reproduced; `sub_42BBB0` and
+    // `sub_46C1C0` at its tail hand on the effects and voices options when
+    // they change, which the port's mixer reads directly.
     const double dt = frameSeconds_ * 30.0;
+    // THE CONVERSATION DUCK SLIDES: `dword_90EF90 -= (int64_t)flt_4C30D8` (or
+    // `+=`) toward `dword_90EF8C`, clamped onto it - one point a frame at
+    // 30, so 10 frames down into a conversation and 10 back up. The engine
+    // truncates the delta to an integer, which at the 60 fps enhancement
+    // would never move; the port steps by the delta itself, the same at 30.
+    {
+        const double target = dialogState_ == 3 ? 10.0 : 0.0;
+        if (music_.duck >= target) music_.duck = std::max(target, music_.duck - dt);
+        else                       music_.duck = std::min(target, music_.duck + dt);
+    }
     if (music_.fadeIn > 0.0) {
         music_.fadeIn -= 109226.0 / 65536.0 * dt;
         if (music_.fadeIn < 0.0) music_.fadeIn = 0.0;
@@ -2631,7 +2645,7 @@ void Session::tickMusicLevel() {
 }
 
 double Session::musicAttenuationDb() const {
-    const double base = dialogState_ == 3 ? 10.0 : 0.0;     // Actor_Enter/LeaveDialogueMode
+    const double base = music_.duck;                        // dword_90EF90, `tickMusicLevel`
     double v = base + std::floor(music_.ramp) + music_.option + std::floor(music_.fadeIn);
     if (v < 0.0) v = 0.0;
     if (v > 100.0) v = 100.0;                                // Music_SetVolume's clamp

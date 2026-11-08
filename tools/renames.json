@@ -648,5 +648,7 @@
   "sub_4B0C60": "Path_Duration",
   "sub_4B0C70": "Path_Sample",
   "unk_6A05C0": "g_SaveProfileName",
-  "unk_9106A0": "g_Actors"
+  "unk_9106A0": "g_Actors",
+  "sub_41EA40": "Music_TickVolume",
+  "sub_45FB80": "Gfx_RestoreLostSurfaces"
 }

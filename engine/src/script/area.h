@@ -1471,7 +1471,9 @@ public:
     // music). The engine's per-frame music update (05_sys.c ~995) hands
     // `Music_SetVolume` a SUM of attenuations, each 0 full .. 100 silent and
     // converted as `-10000 * v / 100` hundredths of a dB - one point per dB:
-    //     dword_90EF90   the BASE: 10 while `Actor_EnterDialogueMode`, else 0
+    //     dword_90EF90   the BASE, SLID one point a frame toward `dword_90EF8C`,
+    //                    which `Actor_EnterDialogueMode` sets to 10 and
+    //                    `Actor_LeaveDialogueMode` to 0 - a 10-frame duck
     //   + ramp >> 16     `music.volume target, frames` (op 131,
     //                    Music_SetVolumeRamp): walks to `target` in `frames`
     //   + dword_90E19C   the "Volume des musiques" option, default 0
@@ -1483,6 +1485,7 @@ public:
     // conversation and is ducked further by the scripts (36 of 52 sites set
     // 0, i.e. restore); the port played it at 0 dB always.
     double musicAttenuationDb() const;         // 0..100, this frame
+    double musicDuck() const { return music_.duck; }   // dword_90EF90 alone (`tickMusicLevel`)
     // Options row 11, `dword_90E19C` - an ATTENUATION (0 full, 40 at the
     // slider's bottom) that `05_sys.c` adds into `Music_SetVolume` every frame
     void   setMusicOption(int attenuation) { music_.option = attenuation; }
@@ -1829,6 +1832,7 @@ private:
         double ramp = 0.0, rampTarget = 0.0, rampStep = 0.0;   // 16.16 in the engine
         double fadeIn = 0.0;                 // dword_90EFA0, in points
         int    option = 0;                   // dword_90E19C
+        double duck = 0.0;                   // dword_90EF90, slid to dword_90EF8C (10 in a conversation)
     } music_{};
 public:
     // The engine's music update runs whatever is on screen; `frame()` calls

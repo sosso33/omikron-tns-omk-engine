@@ -1,12 +1,12 @@
 # Processed functions
 
-563 of 2177 functions have been worked out, in three states:
+567 of 2177 functions have been worked out, in three states:
 
 | status | meaning | count |
 |---|---|---|
 | `CLEAN` | body rewritten by hand | 64 |
-| `NAMED` | read and named from evidence, body left as generated | 487 |
-| `READ` | read, then deliberately left alone - the banner says why | 12 |
+| `NAMED` | read and named from evidence, body left as generated | 489 |
+| `READ` | read, then deliberately left alone - the banner says why | 14 |
 
 Everything else is `@status RAW`: untouched decompiler output. A RAW function
 may still carry a real name - the automatic recovery pass lifted around 50 out
@@ -23,7 +23,7 @@ with the code.
 Renames are applied as **real renames across the whole tree** by
 `tools/rename.py`, not as `#define` aliases - a function renamed where it is
 defined reads the same at every call site in the other modules, in `decls.h`,
-and in its `@func` banner. `tools/renames.json` is the map (650 entries).
+and in its `@func` banner. `tools/renames.json` is the map (652 entries).
 
 `tools/rename.py` promotes RAW to NAMED automatically for anything in the map,
 so the trace cannot drift out of step with the renames.
@@ -328,6 +328,7 @@ Regenerate this file with `python3 tools/index.py`.
 | `0x0041E730` | `Clock_GetTimeOfDay` | named | 05_sys.c | 1 | name established, body still as generated |
 | `0x0041E740` | `Clock_GetTime` | named | 05_sys.c | 3 | name established, body still as generated |
 | `0x0041E750` | `Clock_SetTime` | named | 05_sys.c | 3 | name established, body still as generated |
+| `0x0041EA40` | `Music_TickVolume` | named | 05_sys.c | 2 | The music level, once a frame (`Game_Tick`'s first call, arg 0) and from `sub_41E110` - op 103 `music.play` - with arg 1. |
 | `0x0041EFF0` | `Music_SetFadeMode` | named | 05_sys.c | 6 | name established, body still as generated |
 | `0x0041F740` | `Game_Frame` | named | 05_sys.c | 1 | name established, body still as generated |
 | `0x0041FA00` | `Game_Init` | named | 05_sys.c | 1 | name established, body still as generated |
@@ -404,7 +405,7 @@ Regenerate this file with `python3 tools/index.py`.
 | `0x0042B820` | `Ui_StartOscillator` | named | 06_sys.c | 7 | name established, body still as generated |
 | `0x0042BE60` | `Music_SetVolume` | named | 07_thread.c | 1 | name established, body still as generated |
 | `0x0042EE70` | `Ambience_Load` | named | 08_wave.c | 1 | name established, body still as generated |
-| `0x0042FF80` | `sub_42FF80` | read | 08_wave.c | 0 | The SECOND bucket walk - entry 1 of the renderer vtable (off_4C4918 = { Render_FlushBuckets, sub_42FF80 }): bank 1, the GREYSCALE bank (`bw.c`),… |
+| `0x0042FF80` | `sub_42FF80` | read | 08_wave.c | 0 | The SECOND bucket walk - entry 1 of the renderer vtable (off_4C4918 = { Render_FlushBuckets, sub_42FF80 }), and it is NEVER INSTALLED in the… |
 | `0x004316C0` | `Zones_Clear` | named | 08_wave.c | 3 | name established, body still as generated |
 | `0x004317C0` | `Zone_Add` | named | 08_wave.c | 2 | name established, body still as generated |
 | `0x004345E0` | `List_PickRandomByType` | read | 09_ddraw.c | 103 | Read, not changed: the engine never asks for an animation by name - this collects every clip whose type (node+0) matches and returns a random one,… |
@@ -491,6 +492,7 @@ Regenerate this file with `python3 tools/index.py`.
 | `0x0045E110` | `SpatialIndex_Update` | named | 19_dsound.c | 9 | name established, body still as generated |
 | `0x0045E190` | `SpatialIndex_Query` | named | 19_dsound.c | 1 | name established, body still as generated |
 | `0x0045F450` | `D3D_AllocTextureSlots` | named | 20_ddraw.c | 2 | name established, body still as generated |
+| `0x0045FB80` | `Gfx_RestoreLostSurfaces` | named | 20_ddraw.c | 1 | `Game_Tick`, every frame: the primary surface's `IsLost` (vtable +96); on DDERR_SURFACELOST (0x887601C2) its `Restore` (+108), then the same for… |
 | `0x00460060` | `Render_FlushBuckets` | named | 20_ddraw.c | 0 | name established, body still as generated |
 | `0x00460B80` | `Raster_DrawTriangles` | named | 20_ddraw.c | 2 | name established, body still as generated |
 | `0x00461DB0` | `DDraw_ErrorString` | named | 21_d3d.c | 58 | name established, body still as generated |
@@ -532,6 +534,8 @@ Regenerate this file with `python3 tools/index.py`.
 | `0x0046CDC0` | `Sound_Play3D` | named | 22_dsound.c | 18 | name established, body still as generated |
 | `0x0046DB80` | `Sfx_TickAmbient` | named | 22_dsound.c | 1 | name established, body still as generated |
 | `0x0046E3A0` | `Sfx_RegisterEmitter` | named | 22_dsound.c | 7 | name established, body still as generated |
+| `0x004739E0` | `sub_4739E0` | read | 24_sys.c | 1 | Read, not ported: a DEBUG overlay. |
+| `0x004756E0` | `sub_4756E0` | read | 24_sys.c | 1 | Read, not ported: the second half of the `debug_graph_info` overlay - see `sub_4739E0`, the call before it in `Game_Tick` behind the same flag. |
 | `0x00475A50` | `Ui_DrawScreen` | named | 24_sys.c | 0 | Draw one interface screen: its panel, then every list on that panel. |
 | `0x00476040` | `Ui_DrawPanelBack` | named | 24_sys.c | 2 | Draw a panel's background, either as one stretched bitmap or as a tile map. |
 | `0x00476290` | `Ui_DrawPanelDim` | named | 24_sys.c | 2 | name established, body still as generated |
@@ -599,7 +603,7 @@ Regenerate this file with `python3 tools/index.py`.
 | `0x00492480` | `Opt_PageKeysFight` | named | 26_ole.c | 0 | name established, body still as generated |
 | `0x004926C0` | `Opt_PageMouse` | named | 26_ole.c | 0 | name established, body still as generated |
 | `0x00492A60` | `Opt_SavePageSelection` | named | 26_ole.c | 0 | name established, body still as generated |
-| `0x00492B50` | `Opt_RebindKey` | named | 26_ole.c | 4 | Read a key or button for a keybinding row, and take it off whatever other row already had it. |
+| `0x00492B50` | `Opt_RebindKey` | named | 26_ole.c | 4 | Read a key or button for a keybinding row, and swap it with whatever other row already had it. |
 | `0x00492DA0` | `Opt_RowInput` | named | 26_ole.c | 0 | The options menu's row input - the live page's `+4` hook. |
 | `0x004951C0` | `Render_SubmitMesh` | named | 26_ole.c | 3 | name established, body still as generated |
 | `0x004969C0` | `Render_SubmitSprites` | named | 26_ole.c | 1 | name established, body still as generated |
@@ -610,7 +614,7 @@ Regenerate this file with `python3 tools/index.py`.
 | `0x0049B1F0` | `Fight_ResolveBoth` | named | 26_ole.c | 1 | name established, body still as generated |
 | `0x0049B220` | `Fight_RecordFrame` | named | 26_ole.c | 2 | name established, body still as generated |
 | `0x0049B400` | `Ui_OpenSneakFamily` | named | 26_ole.c | 0 | name established, body still as generated |
-| `0x0049B610` | `Ui_CloseSneakFamily` | named | 26_ole.c | 0 | The sneak family's close - the one close in the game that can REFUSE. `screen+4` distinguishes the three screens sharing this pair: 0 VIDEOPHONE,… |
+| `0x0049B610` | `Ui_CloseSneakFamily` | named | 26_ole.c | 0 | The sneak family's close - the one close in the game that can REFUSE. `screen+4` distinguishes the three screens sharing this pair: 0 SNEAK, 1… |
 | `0x0049ECE0` | `Cam_PlayEditing` | named | 27_sys.c | 1 | name established, body still as generated |
 | `0x0049EEF0` | `Cam_LoadCameraFile` | named | 27_sys.c | 1 | name established, body still as generated |
 | `0x0049FCA0` | `Path_Read3DP` | named | 27_sys.c | 1 | name established, body still as generated |
@@ -636,12 +640,14 @@ Nothing in the code establishes what these are for, and a wrong name is worse th
 | address | status | file | what it does |
 |---|---|---|---|
 | `0x004272B0` | read | 05_sys.c | Read, not changed: this is the behaviour selector - a 304-line switch that picks an animation for whatever the character is doing next. |
-| `0x0042FF80` | read | 08_wave.c | The SECOND bucket walk - entry 1 of the renderer vtable (off_4C4918 = { Render_FlushBuckets, sub_42FF80 }): bank 1, the GREYSCALE bank (`bw.c`),… |
+| `0x0042FF80` | read | 08_wave.c | The SECOND bucket walk - entry 1 of the renderer vtable (off_4C4918 = { Render_FlushBuckets, sub_42FF80 }), and it is NEVER INSTALLED in the… |
 | `0x00434630` | read | 09_ddraw.c | Read, not changed: a by-id lookup over the same clip list, matching the field at +4 rather than the type at +0. |
 | `0x004372D0` | clean | 10_dsound.c | Translate a compact 11-bit flag word into the engine's 32-bit node flags and either clear them on one node or apply them down a subtree. |
 | `0x00440C80` | clean | 16_o3de.c | Walk a node and its children, applying sub_4942A0 to each. |
 | `0x0044A0F0` | read | 16_o3de.c | Read, not changed: it walks a scene's object array (stride 100 from +12, count at +8), which is what confirmed those two Scene fields while… |
 | `0x00457030` | clean | 19_dsound.c | The actor index used when a caller passes -1 for "whoever is current". |
+| `0x004739E0` | read | 24_sys.c | Read, not ported: a DEBUG overlay. |
+| `0x004756E0` | read | 24_sys.c | Read, not ported: the second half of the `debug_graph_info` overlay - see `sub_4739E0`, the call before it in `Game_Tick` behind the same flag. |
 | `0x00484180` | read | 25_sys.c | One of the six software-rasterizer triangle variants Raster_DrawTriangles (0x00460B80) dispatches to when the renderer runs without 3D hardware… |
 | `0x00485350` | read | 25_sys.c | One of the six software-rasterizer triangle variants Raster_DrawTriangles (0x00460B80) dispatches to when the renderer runs without 3D hardware… |
 | `0x00486570` | read | 25_sys.c | One of the six software-rasterizer triangle variants Raster_DrawTriangles (0x00460B80) dispatches to when the renderer runs without 3D hardware… |

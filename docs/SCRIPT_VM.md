@@ -1004,6 +1004,16 @@ and the idiom is unmistakable — `music.play 18, 1, 1` immediately followed by
 `music.volume 10, 35` to duck it under dialogue, or `music.volume 100, 100`
 swelling it across a cutscene camera move.
 
+**The "audio update" is `Music_TickVolume` (0x0041EA40)**, `Game_Tick`'s
+first call. What it hands `Music_SetVolume` is a sum of four terms in points:
+this ramp (`>> 16`), the music option `dword_90E19C`, `music.play`'s fade-in
+(`dword_90EFA0`, 100 << 16 losing 109226 a frame - 60 frames) and the
+**conversation duck** `dword_90EF90`, which is not set but SLID: it moves one
+point a frame toward `dword_90EF8C`, 10 from `Actor_EnterDialogueMode` and 0
+from the leave, so the engine's own 10 dB duck under every conversation takes
+10 frames each way. The port applied it at once until 2026-11-08
+(`Session::tickMusicLevel`, `verify.py: engine: music duck`).
+
 ### 71 / 72 — `scene.load` and `scene.unload`
 
 **verified.** A **scene is loaded over a resident area**. The engine keeps two

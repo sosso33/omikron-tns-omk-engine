@@ -25,6 +25,7 @@
 //                 listed
 //   camera_unknown `camera.set.wait` on a camera no resident table has does
 //                 not hold; on one it has, it holds for the move
+//   duck          the music's conversation duck sliding 10 points in and out
 //   restart       `requestRestart()`: contexts freed, START reloaded over
 //                 the DB, day 52 / 2000000, the boot script running again in
 //                 the same frame
@@ -138,6 +139,28 @@ int main(int argc, char** argv) {
                     gotoFrame, statusDuring, s.loadSlicesFor(222), resumeFrame,
                     resumeFrame - gotoFrame, s.otherArea(), s.currentArea(),
                     frameOf(log, "AREAS", 118), s.areasEntered(), logoOn, logoOff);
+    }
+
+    // ---- duck: the conversation's music duck, `dword_90EF90` slid one point
+    //      a frame to `dword_90EF8C` (10 in a conversation, 0 out) by
+    //      `sub_41EA40` - the intro's first conversation held 12 frames, then
+    //      closed and 12 more
+    {
+        auto state = omk::GameState::fromFile(iam + "/START");
+        omk::Session s(iam, state, table);
+        s.answerUiFromPerson(true);
+        s.loadArea(118);
+        std::vector<std::pair<long, omk::Announced>> log;
+        run(s, 1, log);
+        s.answerUi(1);
+        for (int f = 0; f < 800 && !s.dialogOpen(); ++f) run(s, 1, log);
+        std::string in, out;
+        const double atOpen = s.musicDuck();
+        for (int f = 0; f < 12; ++f) { run(s, 1, log); in += (in.empty() ? "" : ",") + std::to_string(static_cast<int>(s.musicDuck())); }
+        s.endDialog();
+        for (int f = 0; f < 12; ++f) { run(s, 1, log); out += (out.empty() ? "" : ",") + std::to_string(static_cast<int>(s.musicDuck())); }
+        std::printf("duck open %d at_open %d in %s out %s\n", s.dialogOpen() ? 1 : 0,
+                    static_cast<int>(atOpen), in.c_str(), out.c_str());
     }
 
     // ---- slices: a big set, requested and timed
