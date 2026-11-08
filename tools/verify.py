@@ -5903,6 +5903,40 @@ def c_engine_music_duck():
         "frame to 10) and the 12 after the close (one a frame back to 0)"
 
 
+def c_engine_npc_ground():
+    r"""How far above the walkable floor the shipped characters are PLACED -
+    the measurement todo/drift-audit.md M6 asked for (2026-11-08).
+
+    `npc_ground_probe`: every character placement of every AREA chunk
+    against its own set's walkable soup, probed down from one unit above -
+    the probe `PlayState::worldStagedGround` makes. On the floor (< 2),
+    near (2..100, which the port seats), FAR (100 and more, which the port
+    keeps at the authored height where the original's `Actor_ApplyMotion`
+    would fall an undriven NPC), and none (no floor below). 21 far of 820,
+    and those are cutscene areas (CS Archives, CS Lev-3/5, Ix Epilogue, Ix
+    Astaroth 2), where a scene program drives the body, and placeholders at
+    y -1 (a raw 0) that scripts move - plus Jaunpur Toits' actor 319. So M6
+    is left as it is, on a number. Shown to fail (2026-11-08): the class
+    limit 100 -> 50 moves near/far.
+    """
+    eng = os.path.join(ROOT, "engine")
+    b = subprocess.run(["make", "-s", "build/npc_ground_probe"], cwd=eng, capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "npc_ground_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "npc_ground_probe must build"
+    r = subprocess.run([binp, omkpaths.data_root()], capture_output=True, text=True)
+    m = re.search(r"^npc ground areas (\d+) records (\d+) on (\d+) near (\d+) far (\d+) "
+                  r"none (\d+) noset (\d+)$", r.stdout, re.M)
+    if not m:
+        return ("no totals line",), ("a totals line",), "npc_ground_probe must print its totals"
+    far = len(re.findall(r"^far area ", r.stdout, re.M))
+    return tuple(int(x) for x in m.groups()) + (far,), \
+           (113, 820, 114, 651, 21, 34, 10, 21), \
+        "areas with placements and a set, character records, then by the drop " \
+        "to the walkable floor: on it, near (seated), FAR (kept at the authored " \
+        "height), none below; records whose area names no set; far lines listed"
+
+
 def c_engine_area_transition():
     r"""The area transition, the staged load and the context table
     (`transition_probe`).
@@ -51972,8 +52006,9 @@ def c_licence_headers():
     # 708: + `engine/tools/save_parts.cpp` (the save file read in parts,
     # `engine: save read in parts`, af6439e)
     # 709: + `engine/tools/inventory_insert_probe.cpp` (`engine: inventory insert`)
+    # 710: + `engine/tools/npc_ground_probe.cpp` (`engine: npc ground`)
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (709, [], 10, []), \
+           (710, [], 10, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -54486,6 +54521,7 @@ SLOW = [
     ("engine: parking ops", c_engine_parking_ops, "script/interp.h; SCRIPT_VM"),
     ("engine: session rules", c_engine_session, "SCRIPT_VM; engine/README"),
     ("engine: area transition", c_engine_area_transition, "SCRIPT_VM; engine/README"),
+    ("engine: npc ground", c_engine_npc_ground, "todo/drift-audit.md M6"),
     ("engine: music duck", c_engine_music_duck, "script/area.h musicAttenuationDb; Session::tickMusicLevel"),
     ("engine: attract mode", c_engine_attract_mode, "UI \"The attract mode\"; playframe_input_parts.cpp attractTick"),
     ("engine: live zones", c_engine_live_zones, "SCRIPT_VM; engine/README"),

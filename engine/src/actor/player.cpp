@@ -545,12 +545,18 @@ void PlayerController::nudge(const float d[3]) {
     // nothing, would let it do. LABELLED: the engine sweeps push
     // and the frame's own motion as ONE delta; this sweeps the push first.
     // The push is horizontal (both per-entry tests write y = 0).
-    walker_.step(d[0], d[2], 1.0);
+    // ...and it carries NO TIME: the frame's own `Actor_ApplyMotion` is the
+    // one gravity tick, so the push's sweep passes dt = 0 - with 1.0, a
+    // pushed airborne actor fell one extra frame (todo/drift-audit.md T7).
+    walker_.step(d[0], d[2], 0.0);
     for (int k = 0; k < 3; ++k) pos_[k] = static_cast<float>(walker_.pos()[k]);
 }
 
 bool PlayerController::moveBy(float dx, float dz) {
-    const StepResult r = walker_.step(dx, dz, 1.0);
+    // `Actor_Move` is the collide-and-slide alone - gravity is
+    // `Actor_ApplyMotion`'s - so the walker's step takes no time (dt = 0; it
+    // was 1.0, an extra fall frame when airborne, todo/drift-audit.md T7).
+    const StepResult r = walker_.step(dx, dz, 0.0);
     for (int k = 0; k < 3; ++k) pos_[k] = static_cast<float>(walker_.pos()[k]);
     return r == StepResult::Moved || r == StepResult::Slid;
 }
