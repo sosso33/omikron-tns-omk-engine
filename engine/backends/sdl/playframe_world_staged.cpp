@@ -481,9 +481,20 @@ void PlayState::worldStagedBody(std::unique_ptr<Staged>& up, const omk::SceneRun
     worldStagedDeathRoot(s, rootMove);
     // THE ANCHOR. An authored PATH names the pelvis - the
     // hierarchy root, whose height is authored - so the model
-    // goes there as it is. A placement record and a camera solve
-    // name a spot on the GROUND, so the FEET go there, and the
-    // game's Y points DOWN so the feet are the largest y.
+    // goes there as it is. So does a PLACEMENT RECORD (CORRECTED
+    // 2026-11-08, todo/drift-audit.md M6; this said it names the ground):
+    // `Actor_SetPlacement` puts the node exactly at the record, and
+    // `Actor_LoadModel` leaves him in ACTOR_STATE 0, `nullsub_6`, so no
+    // probe ever moves him. The reader's frames of the original's Z-Tech
+    // room say the same: the T-posed `ZTK_FN`'s rune block on the floor and
+    // its claws sunk under it, where a feet seat stood it on the claws.
+    // `OMK_RECORD_FEET` is the old reading. What still names a spot on the
+    // GROUND, the FEET going there (the game's Y points DOWN, so the
+    // largest y): a camera solve, the player's own position - and,
+    // NOT YET READ, a gunman on his shoot clips, left as he was.
+    static const bool recordFeet = omk::envFlag("OMK_RECORD_FEET");
+    s.nodeSeat = s.pelvis || (!recordFeet && s.recordNode && s.actor != playerId &&
+                              !(shootTracks && shootTracks->valid()));
     float feet = -1e9f;
     if (!s.gpu) for (const auto& c : s.posed.corners) if (c.y > feet) feet = c.y;
     if (!s.seatKnown || s.seatClip != s.sceneClipWas || s.seatSrc != src) {
@@ -505,7 +516,7 @@ void PlayState::worldStagedBody(std::unique_ptr<Staged>& up, const omk::SceneRun
         for (int k = 0; k < 3; ++k)
             pelvis[k] = pose[static_cast<std::size_t>(s.mo->root)].pos[k];
     const float off[3] = {s.at[0] - pelvis[0] + rootMove[0],
-                          (s.pelvis ? s.at[1] - pelvis[1] : ground - feet)
+                          (s.nodeSeat ? s.at[1] - pelvis[1] : ground - feet)
                               + rootMove[1],
                           s.at[2] - pelvis[2] + rootMove[2]};
     // where the pelvis is DRAWN - `pelvis + off` - for next frame's
@@ -527,7 +538,23 @@ void PlayState::worldStagedBody(std::unique_ptr<Staged>& up, const omk::SceneRun
         std::printf("FEET %ld actor %d: lowest drawn %.1f, floor under %.1f, gap %.1f "
                     "(pelvis %.1f, %s)\n", frameNo, s.actor, double(low + off[1]),
                     double(under), double(under - (low + off[1])),
-                    double(pelvis[1] + off[1]), s.pelvis ? "pelvis seat" : "feet seat");
+                    double(pelvis[1] + off[1]), s.nodeSeat ? "pelvis seat" : "feet seat");
+    }
+    // `body.seat`: said once per body a placement record put (todo/drift-
+    // audit.md M6). `delta` is the drawn pelvis less the record, in Y (down):
+    // 0 under the node seat; what a feet seat moves him by otherwise
+    if (s.recordNode && !s.pelvis && !s.seatTold) {
+        s.seatTold = true;
+        const float drawnY = pelvis[1] + off[1];
+        const float nodeY = s.at[1] + rootMove[1];
+        omk::event("body.seat", {{"frame", frameNo}, {"actor", s.actor},
+                                 {"model", s.model},
+                                 {"at", static_cast<double>(s.at[1])},
+                                 {"ground", static_cast<double>(ground)},
+                                 {"drawn", static_cast<double>(drawnY)},
+                                 {"delta", static_cast<double>(drawnY - nodeY)},
+                                 {"seat", s.nodeSeat ? "node" : "feet"},
+                                 {"src", std::string(src)}});
     }
     s.pelvisDrawnKnown = true;
     // ...and WHERE THE FALL LEFT HIM: his pelvis over the floor under
@@ -895,6 +922,8 @@ void PlayState::worldStagedBody(std::unique_ptr<Staged>& up, const omk::SceneRun
     // root motion - not the offset, which carries the model's own
     // authoring origin.
     s.drawAt[0] = s.at[0] + rootMove[0];
+    // (`ground` for a record's node-seated body too: `worldStagedShootEnter`
+    // reads this y as a gunman's FLOOR as he enters. Only what is DRAWN moved.)
     s.drawAt[1] = (s.pelvis ? s.at[1] : ground) + rootMove[1];
     s.drawAt[2] = s.at[2] + rootMove[2];
     s.drawAtKnown = true;

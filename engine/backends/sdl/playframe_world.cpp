@@ -547,6 +547,7 @@ void PlayState::phaseWorldShown(int playerId) {
         // whatever a program or a fight had done (0x403CB0, M1).
         if (sh.fromTable && sh.placeSeq != s->placeSeqSeen) {
             s->placeSeqSeen = sh.placeSeq;
+            s->recordNode = true;
             for (int k = 0; k < 3; ++k) s->at[k] = sh.pos[k];
             s->facing = sh.facing;
             // ...and `sub_41BDF0` writes the NODE's facing, so a held
@@ -602,6 +603,7 @@ void PlayState::phaseWorldShown(int playerId) {
         // him back to the chunk's spot once the fight has ended.
         const bool fightOwns = (fightRun.active && fightRun.body == s) || s->fightPlaced;
         if (sh.fromTable && !s->progRan && !fightOwns) {
+            s->recordNode = true;
             for (int k = 0; k < 3; ++k) s->at[k] = sh.pos[k];
             // ...and NOT the facing once a SHOOT BRAIN owns him: his
             // heading is then the record's `+420`, which the brain and

@@ -12,14 +12,14 @@
 // record falls in one class by the drop to that floor:
 //
 //   on      under 2 units - standing on it
-//   near    2 .. 100 - the port seats him (its own cut-off)
-//   far     100 and more - the port KEEPS the authored height (a ledge "the
-//           walk mesh does not carry"); the original's `Actor_ApplyMotion`
-//           falls an undriven NPC to whatever `Walk_ProbeGround` finds
-//   none    no walkable surface below at all - the original's response puts
-//           him back at his last safe position, i.e. where he is
+//   near    2 .. 100
+//   far     100 and more
+//   none    no walkable surface below at all
 //
-// So `far` is the population M6 is about. Printed: the totals, then each
+// CORRECTED 2026-11-08 (todo/drift-audit.md M6): this was written believing
+// the original falls an undriven NPC. It does not - a placed body sits in
+// ACTOR_STATE 0 with his node at the record, whatever is under him - so
+// these classes describe the data, not a behaviour. Printed: the totals, then each
 // `far` record (area, actor, position, drop), so a reader can look at them.
 //
 // ...and WHAT THE ORIGINAL'S PROBE WOULD SEE, a second line. `Walk_ProbeGround`

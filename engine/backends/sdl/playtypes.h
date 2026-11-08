@@ -242,6 +242,8 @@ struct Staged {
     float facing = 0.0f;
     bool  placed = false;   // something authored says where he stands
     bool  pelvis = false;   // ...and it names his PELVIS, not his feet
+    bool  recordNode = false;   // a placement RECORD put him there, which names his NODE
+    bool  nodeSeat = false;     // this frame: he is DRAWN with the node (the pelvis) on `at`; `drawAt`'s y stays his floor
     bool  seen = false;
     bool  drawn = false;
     int   sceneClipWas = -2;      // the program's clip, cached
@@ -349,6 +351,7 @@ struct Staged {
     const char* seatSrc = "";
     bool  seatKnown = false;
     bool  placeTold = false, groundTold = false;
+    bool  seatTold = false;       // `body.seat` said once (todo/drift-audit.md M6)
     // THE YAW THE BODY WAS DRAWN WITH - the node's world heading, which is
     // what subject kind 2 (`sub_4151E0`) reads back for a camera that
     // hangs off him: `atan2` of the node matrix's forward, +90.

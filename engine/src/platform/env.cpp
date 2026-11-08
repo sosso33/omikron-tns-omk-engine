@@ -115,6 +115,7 @@ constexpr const char* kSwitches[] = {
     "OMK_PRESENT_CHECK",        // GLES: the row-by-row present compared with the whole one
     "OMK_PRESENT_ROWS",         // GLES: the present row by row always - the Vita's path on a desktop
     "OMK_PROGYAW_NEG",          // diagnostic: a scene call's Euler applied with its sign turned
+    "OMK_RECORD_FEET",          // A/B: a placement record's body seated by its FEET on the walkable floor, the old reading (todo/drift-audit.md M6)
     "OMK_REFL_UNLIT",           // Vulkan: the water/floor reflection without its own tiled lights, as before (engine: floors)
     "OMK_ROOTSPIN_NEG",         // diagnostic: a scene clip's root delta turned the other way, the body left alone
     "OMK_SHADOWLOG",            // log: the shadows' light, the player's feet and a walker's shadow, periodically (engine: character shadow)

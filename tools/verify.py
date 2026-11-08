@@ -5908,13 +5908,12 @@ def c_engine_npc_ground():
     the measurement todo/drift-audit.md M6 asked for (2026-11-08).
 
     `npc_ground_probe`: every character placement of every AREA chunk
-    against its own set's walkable soup, probed down from one unit above -
-    the probe `PlayState::worldStagedGround` makes. On the floor (< 2),
-    near (2..100, which the port seats), FAR (100 and more, which the port
-    keeps at the authored height), and none (no floor below). CORRECTED
-    2026-11-08: the original does NOT fall an undriven NPC - a placed body
-    sits in ACTOR_STATE 0 (`nullsub_6`), and `Actor_ApplyMotion` runs only
-    for states 1 and 11..14, the player's (todo/drift-audit.md M6). 21 far of 820,
+    against its own set's walkable soup, probed down from one unit above.
+    On the floor (< 2), near (2..100), FAR (100 and more), and none (no floor
+    below). CORRECTED 2026-11-08: the original does NOT fall an undriven NPC
+    - a placed body sits in ACTOR_STATE 0 (`nullsub_6`) with his node at the
+    record, and `Actor_ApplyMotion` runs only for states 1 and 11..14, the
+    player's (todo/drift-audit.md M6, `engine: record node seat`). 21 far of 820,
     and those are cutscene areas (CS Archives, CS Lev-3/5, Ix Epilogue, Ix
     Astaroth 2), where a scene program drives the body, and placeholders at
     y -1 (a raw 0) that scripts move - plus Jaunpur Toits' actor 319. So M6
@@ -5949,11 +5948,48 @@ def c_engine_npc_ground():
     return tuple(int(x) for x in m.groups()) + (far, hist, allh), \
            (113, 820, 114, 651, 21, 34, 10, 21, (0, 60, 531, 60), (0, 1, 0, 11)), \
         "areas with placements and a set, character records, then by the drop " \
-        "to the walkable floor: on it, near (seated), FAR (kept at the authored " \
-        "height), none below; records whose area names no set; far lines listed; " \
+        "to the walkable floor: on it, near, FAR, none below; records whose area " \
+        "names no set; far lines listed; " \
         "the near records by drop - 2-10, 10-30, 30-60 (a standing pelvis is ~42 " \
         "above the feet), 60-100; the all-faces probe stopping above the walkable " \
         "floor, by class"
+
+
+def c_engine_record_node_seat():
+    r"""A PLACEMENT RECORD names the NODE, not the feet (todo/drift-audit.md
+    M6, 2026-11-08). `Actor_SetPlacement` puts the node exactly at the record
+    and `Actor_LoadModel` leaves the body in ACTOR_STATE 0 (`nullsub_6`), so
+    no probe moves him; the reader's frames of the original's Z-Tech room
+    (STTRA04, AREA 144) show the T-posed `ZTK_FN`'s rune block on the floor
+    and its claws sunk under it, as this draws, where the old feet seat
+    (`OMK_RECORD_FEET`) stood it 10.7 higher on its claws.
+
+    Read from the `body.seat` event: AREA 144's three, node-seated at their
+    record (delta 0) and feet-seated under the A/B; and STTRA03's gunman
+    559, on his shoot clip, still feet-seated - his seat is not read yet, and
+    a change to it must be seen. Shown to fail (2026-11-08): `recordFeet`
+    forced true (the three on their feet), and the shoot guard dropped (559 at
+    his node).
+    """
+    play = _play_built()
+    if not play:
+        return _PLAY_UNBUILT
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    def seats(area, env=None):
+        text = _play_out(play, "--software", "--nofmv", "--save", save, "--area", area,
+                         "--frames", 10, "--res", "320x240",
+                         env=dict(env or {}, OMK_EVENTS="1"), timeout=300)
+        return {int(e["actor"]): (e["seat"], round(float(e["delta"]), 1))
+                for n, e in _events(text) if n == "body.seat"}
+    now, old, gun = seats(144), seats(144, {"OMK_RECORD_FEET": "1"}), seats(80)
+    pick = lambda d: tuple(d.get(a) for a in (400, 401, 402))
+    return (pick(now), pick(old), gun.get(559)), \
+           ((("node", 0.0),) * 3,
+            (("feet", -10.7), ("feet", -10.5), ("feet", -10.7)),
+            ("feet", 5.5)), \
+        "AREA 144's ZTK_FN 400/401/402 as (seat, drawn pelvis less the record): " \
+        "at the node; under OMK_RECORD_FEET, on their feet; and a gunman on his " \
+        "shoot clip (AREA 80's 559), left on his feet"
 
 
 def c_engine_scx_euler():
@@ -54728,6 +54764,7 @@ SLOW = [
     ("engine: session rules", c_engine_session, "SCRIPT_VM; engine/README"),
     ("engine: area transition", c_engine_area_transition, "SCRIPT_VM; engine/README"),
     ("engine: npc ground", c_engine_npc_ground, "todo/drift-audit.md M6"),
+    ("engine: record node seat", c_engine_record_node_seat, "todo/drift-audit.md M6"),
     ("engine: scx euler", c_engine_scx_euler, "todo/drift-audit.md M7"),
     ("engine: scene tilt", c_engine_scene_tilt, "todo/drift-audit.md M7; playframe_world_staged.cpp tiltR"),
     ("engine: confirm subject", c_engine_confirm_subject, "todo/ui-save-confirm-and-quit.md 1; ui/screendraw.cpp confirmSubjectText"),
