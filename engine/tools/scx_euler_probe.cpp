@@ -13,7 +13,8 @@
 // (roll) are reported when either is not zero.
 //
 // Printed: the totals - files, calls, calls with a pitch, with a roll - then
-// one line per such call (file, object, kind, p4 p5 p6).
+// one line per such call (file, object, kind, p4 p5 p6, the clip p1 and
+// the relative call's path file/index p7/p8).
 #include "formats/scx.h"
 #include "platform/datafs.h"
 
@@ -61,8 +62,13 @@ int main(int argc, char** argv) {
                 if (hasP || hasR) {
                     any = true;
                     char buf[200];
-                    std::snprintf(buf, sizeof buf, "euler %s %s %s %.2f %.2f %.2f\n", name.c_str(),
-                                  o.name.c_str(), rel ? "relative" : "absolute", p4, p5, p6);
+                    // ...and where to find him: the clip (p1) and, for the
+                    // relative call, the path file and index (p7, p8)
+                    std::snprintf(buf, sizeof buf, "euler %s %s %s %.2f %.2f %.2f clip %d path %d/%d\n",
+                                  name.c_str(), o.name.c_str(), rel ? "relative" : "absolute", p4, p5,
+                                  p6, f.params.size() > 1 ? f.params[1] : -1,
+                                  rel && f.params.size() > 8 ? f.params[7] : -1,
+                                  rel && f.params.size() > 8 ? f.params[8] : -1);
                     lines += buf;
                 }
             }

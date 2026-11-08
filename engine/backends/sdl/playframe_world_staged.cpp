@@ -3,6 +3,7 @@
 // Parts of `PlayState::phaseWorld`, split out by `todo/play-split.md`;
 // the phase calls them in this order.
 #include "playframe.h"
+#include "platform/events.h"
 #include "platform/env.h"
 #include "o3de/vecmath.h"
 
@@ -567,14 +568,22 @@ void PlayState::worldStagedBody(std::unique_ptr<Staged>& up, const omk::SceneRun
     const bool spin = !s.sceneTracks.valid() &&
                       std::fabs(s.facing) > 0.01f;
     // a program's body turns by the call's Euler y about its pelvis
-    // A DIAGNOSTIC, because a still frame is what decides this:
     // `node+156` (the actor's facing matrix, `Actor_LoadModel` ->
-    // `sub_437140(node, actor+288)`) has exactly three readers in
-    // the binary and all three are the ROOT-MOTION path
-    // (`Anim_RootDelta`, `sub_471460`). Nothing in the draw walk
-    // reads it - `Anim_ApplyNodeFrame` orients every node,
-    // the pelvis included, from the CLIP's own quaternion. So the
-    // call's Euler may well turn the motion and not the body.
+    // `sub_437140(node, actor+288)`) IS READ BY THE DRAW - CORRECTED
+    // 2026-11-08 (todo/drift-audit.md M7). This said it had three
+    // readers, all on the root-motion path (`Anim_RootDelta`,
+    // `sub_471460`), and nothing in the draw walk; that search missed
+    // `sub_4942A0`, the per-node WORLD-TRANSFORM callback `sub_440C80`
+    // hands `sub_48CFE0`'s walk:
+    //
+    //     esi = [node+9Ch]                     // the +288 pointer
+    //     if (esi && [node+A0h] != -1.0f)      // compose it with
+    //         sub_442290(node+38h, esi, tmp)   //   the local rotation
+    //     ... the world matrix at node+5Ch from esi (or from tmp)
+    //
+    // so the call's Euler - all three angles - turns the drawn body, as
+    // the reader's frames of the Kiss couples already said of the yaw.
+    // `OMK_NO_PROGSPIN` stays as the A/B it was.
     static const bool noProgSpin = omk::envFlag("OMK_NO_PROGSPIN");
     const bool progSpin = !noProgSpin && s.sceneTracks.valid() &&
                           s.progYawKnown && std::fabs(s.progYaw) > 0.01f;
@@ -622,8 +631,25 @@ void PlayState::worldStagedBody(std::unique_ptr<Staged>& up, const omk::SceneRun
     // record about the origin.
     float bodyYaw = 0.0f;
     bool aboutPelvis = true;
+    // the PITCH and ROLL beside it - only a scene clip's own Euler carries
+    // them (todo/drift-audit.md M7); every other arm turns by a yaw alone
+    float tiltPitch = 0.0f, tiltRoll = 0.0f;
+    bool heldArm = false;
     if (useLine)                      bodyYaw = s.lineYaw;
-    else if (s.sceneTracks.valid())   bodyYaw = progSpin ? progYawSign * s.progYaw : 0.0f;
+    else if (s.sceneTracks.valid()) {
+        bodyYaw = progSpin ? progYawSign * s.progYaw : 0.0f;
+        if (progSpin) {
+            // the SIGN AS WRITTEN, read (todo/drift-audit.md M7):
+            // `sub_4942A0` makes the root node's world matrix `local . E`
+            // and hangs every child off it, so the Euler turns the posed
+            // body in game space, after the clip's root, about the root
+            // node - the pelvis the path names - which is what `tiltR`
+            // does below. `OMK_TILT_NEG` turns both the other way, an A/B
+            static const float tiltSign = omk::envFlag("OMK_TILT_NEG") ? -1.0f : 1.0f;
+            tiltPitch = tiltSign * s.progPitch;
+            tiltRoll = tiltSign * s.progRoll;
+        }
+    }
     // A GUNMAN WHOSE SHOOT BRAIN RUNS is drawn at ITS heading, the
     // +420 the brain and its turn clips write every tick - not at the
     // rest heading his entrance program left, which would leave the
@@ -646,6 +672,7 @@ void PlayState::worldStagedBody(std::unique_ptr<Staged>& up, const omk::SceneRun
     else if (poseHeld && s.lastYawKnown) {
         bodyYaw = s.lastBodyYaw;      // held whole, with its pose
         aboutPelvis = s.lastAboutPelvis;
+        heldArm = true;               // ...the tilt with it
     }
     else if (s.restYawKnown)          bodyYaw = s.restYaw;
     // A PLACEMENT-ONLY BODY TURNS ABOUT ITS PELVIS, not its model
@@ -672,6 +699,39 @@ void PlayState::worldStagedBody(std::unique_ptr<Staged>& up, const omk::SceneRun
     s.lastAboutPelvis = aboutPelvis;
     s.lastDrawnYaw = s.drawnYaw;
     s.lastYawKnown = true;
+    // THE TILT: `Matrix3x3_FromEulerAngles(p4, yaw, p6)` as the body's
+    // rotation, built once - `rotateEuler` is that matrix applied as the
+    // engine's row vector, so its images of the three axes are the COLUMNS
+    // of the same rotation for a column vector. With pitch and roll at 0 it
+    // is the yaw turn term for term, and the yaw-only path below is kept
+    // for that case so an untilted body is drawn exactly as before.
+    static const bool noTilt = omk::envFlag("OMK_NO_TILT");   // A/B: the yaw alone
+    if (!heldArm) {
+        s.tilted = !noTilt && (std::fabs(tiltPitch) > 0.001f || std::fabs(tiltRoll) > 0.001f);
+        if (s.tilted && !s.tiltTold) {
+            s.tiltTold = true;
+            std::printf("frame %ld: actor %d %s drawn TILTED - pitch %.1f roll %.1f under yaw %.1f "
+                        "(the scene call's Euler, todo/drift-audit.md M7)\n", frameNo, s.actor,
+                        s.model.c_str(), tiltPitch, tiltRoll, bodyYaw);
+            omk::event("body.tilt", {{"frame", frameNo}, {"actor", s.actor},
+                                     {"pitch", static_cast<double>(tiltPitch)},
+                                     {"roll", static_cast<double>(tiltRoll)},
+                                     {"yaw", static_cast<double>(bodyYaw)}});
+        }
+        if (s.tilted) {
+            const float eul[3] = {tiltPitch, bodyYaw, tiltRoll};
+            for (int c = 0; c < 3; ++c) {
+                const float e[3] = {c == 0 ? 1.0f : 0.0f, c == 1 ? 1.0f : 0.0f, c == 2 ? 1.0f : 0.0f};
+                float col[3];
+                omk::rotateEuler(eul, e, col);
+                for (int r = 0; r < 3; ++r) s.tiltR[r * 3 + c] = col[r];
+            }
+        }
+    }
+    const auto tiltRot = [&](const float in[3], float out[3]) {
+        for (int r = 0; r < 3; ++r)
+            out[r] = s.tiltR[r * 3] * in[0] + s.tiltR[r * 3 + 1] * in[1] + s.tiltR[r * 3 + 2] * in[2];
+    };
     if (const int hd = s.mo->headOf();
         hd >= 0 && static_cast<std::size_t>(hd) < pose.size()) {
         const float hp[3] = {pose[static_cast<std::size_t>(hd)].pos[0] - pelvis[0],
@@ -679,7 +739,11 @@ void PlayState::worldStagedBody(std::unique_ptr<Staged>& up, const omk::SceneRun
                              pose[static_cast<std::size_t>(hd)].pos[2] - pelvis[2]};
         float r[3];
         const bool spins = std::fabs(bodyYaw) > 0.01f;
-        if (spins && !aboutPelvis) {
+        if (s.tilted) {
+            // about the pelvis, as every scene-clip body turns
+            tiltRot(hp, r);
+            for (int k = 0; k < 3; ++k) s.headAt[k] = r[k] + pelvis[k] + off[k];
+        } else if (spins && !aboutPelvis) {
             // the corners' transform, `R * pos + off` - see the
             // mesh loop below for what the old order did
             const float head[3] = {hp[0] + pelvis[0], hp[1] + pelvis[1],
@@ -763,7 +827,15 @@ void PlayState::worldStagedBody(std::unique_ptr<Staged>& up, const omk::SceneRun
         // affine: turned about the model's origin, or about the
         // pelvis (t = pelvis - R pelvis), then moved by `off`
         float place[12] = {1, 0, 0, off[0],  0, 1, 0, off[1],  0, 0, 1, off[2]};
-        if (turn) {
+        if (s.tilted) {
+            // the full rotation, about the pelvis
+            float rp[3];
+            tiltRot(pelvis, rp);
+            for (int r = 0; r < 3; ++r) {
+                for (int c = 0; c < 3; ++c) place[r * 4 + c] = s.tiltR[r * 3 + c];
+                place[r * 4 + 3] = pelvis[r] - rp[r] + off[r];
+            }
+        } else if (turn) {
             place[0] = bcs; place[2] = -bsn; place[8] = bsn; place[10] = bcs;
             if (aboutPelvis) {
                 place[3] = pelvis[0] - (bcs * pelvis[0] - bsn * pelvis[2]) + off[0];
@@ -773,7 +845,12 @@ void PlayState::worldStagedBody(std::unique_ptr<Staged>& up, const omk::SceneRun
         omk::meshAffines(s.mo->meshes, pose, place, s.affine);
     }
     if (!s.gpu) for (auto& c : s.posed.corners) {
-        if (turn && !aboutPelvis) {
+        if (s.tilted) {
+            const float in[3] = {c.x - pelvis[0], c.y - pelvis[1], c.z - pelvis[2]};
+            float r[3];
+            tiltRot(in, r);
+            c.x = r[0] + pelvis[0]; c.y = r[1] + pelvis[1]; c.z = r[2] + pelvis[2];
+        } else if (turn && !aboutPelvis) {
             const float in[3] = {c.x, c.y, c.z};
             float r[3];
             omk::rotateYawCS(bcs, bsn, in, r);
@@ -1153,6 +1230,8 @@ void PlayState::worldStagedProgramDrive(const omk::SceneRunner*& run, int& prog,
             omk::envFlag("OMK_STICKY_EULER");   // the old, wrong reading
         if (stt->animReached && (!stickyEuler || stt->relative)) {
             s.progYaw = stt->euler[1];
+            s.progPitch = stt->euler[0];        // p4 -> +416
+            s.progRoll = stt->euler[2];         // p6 -> +424
             s.progYawKnown = true;
         }
     }
@@ -1207,9 +1286,20 @@ void PlayState::worldStagedTurnPose(std::vector<omk::MeshPose>& pose, bool spins
                                     bool& aboutPelvis, float& bcs, float& bsn,
                                     const float (&off)[3], float (&pelvis)[3], float scs,
                                     float ssn, Staged& s) {
+    const auto tiltRot = [&](const float in[3], float out[3]) {
+        for (int r = 0; r < 3; ++r)
+            out[r] = s.tiltR[r * 3] * in[0] + s.tiltR[r * 3 + 1] * in[1] + s.tiltR[r * 3 + 2] * in[2];
+    };
     for (std::size_t mi = 0; mi < pose.size(); ++mi) {
         float r[3];
-        if (spins && !aboutPelvis) {
+        if (s.tilted) {
+            // the full rotation (todo/drift-audit.md M7), about the pelvis
+            const float mp[3] = {pose[mi].pos[0] - pelvis[0],
+                                 pose[mi].pos[1] - pelvis[1],
+                                 pose[mi].pos[2] - pelvis[2]};
+            tiltRot(mp, r);
+            for (int k = 0; k < 3; ++k) r[k] += pelvis[k] + off[k];
+        } else if (spins && !aboutPelvis) {
             // ...ON THE CORNERS' OWN TRANSFORM: a body turned
             // about its MODEL origin is `R * pos + off` (the loop
             // below). Adding `off` first and turning the sum about
@@ -1237,7 +1327,8 @@ void PlayState::worldStagedTurnPose(std::vector<omk::MeshPose>& pose, bool spins
                                 ax == 2 ? 1.0f : 0.0f};
             float qv[3], wv[3];
             omk::qrot(pose[mi].q, e, qv);
-            omk::rotateYawCS(scs, ssn, qv, wv);
+            if (s.tilted) tiltRot(qv, wv);
+            else omk::rotateYawCS(scs, ssn, qv, wv);
             for (int k = 0; k < 3; ++k)
                 s.meshRot[mi * 9 + static_cast<std::size_t>(ax * 3 + k)] = wv[k];
         }
@@ -1733,7 +1824,22 @@ void PlayState::worldStagedRootMotion(float& rootW, Staged& s, int& rootFrame,
         // delta the other way while leaving the body alone.
         static const float rootSpinSign =
             omk::envFlag("OMK_ROOTSPIN_NEG") ? -1.0f : 1.0f;
-        if (!noRootSpin && s.progYawKnown && std::fabs(s.progYaw) > 0.01f) {
+        // ...and that multiply is by the WHOLE `+288`, pitch and roll
+        // included (todo/drift-audit.md M7): a tilted body's root motion
+        // travels along the tilted axes - `rotateEuler` is that row-vector
+        // product. A12C1's 33 units of lift under a -7 pitch move him ~4
+        // units forward as well.
+        static const bool noTiltRoot = omk::envFlag("OMK_NO_TILT");
+        const bool rootTilted = !noTiltRoot &&
+            (std::fabs(s.progPitch) > 0.001f || std::fabs(s.progRoll) > 0.001f);
+        if (!noRootSpin && s.progYawKnown && rootTilted) {
+            static const float tiltSignRoot = omk::envFlag("OMK_TILT_NEG") ? -1.0f : 1.0f;
+            const float eul[3] = {tiltSignRoot * s.progPitch, rootSpinSign * progYawSign * s.progYaw,
+                                  tiltSignRoot * s.progRoll};
+            float r[3];
+            omk::rotateEuler(eul, rootMove, r);
+            for (int k = 0; k < 3; ++k) rootMove[k] = r[k];
+        } else if (!noRootSpin && s.progYawKnown && std::fabs(s.progYaw) > 0.01f) {
             float r[3];
             omk::rotateYaw(rootSpinSign * progYawSign * s.progYaw, rootMove, r);
             for (int k = 0; k < 3; ++k) rootMove[k] = r[k];

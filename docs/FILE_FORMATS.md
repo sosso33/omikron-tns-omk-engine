@@ -1829,6 +1829,7 @@ by:
 |---|---|
 | `Actors_TickAll` | `Matrix3x3_FromEulerAngles(a[104], a[105], a[106], a + 288)` — every actor, every frame, from the Euler `Actor_SetEuler` wrote |
 | `Actor_LoadModel` | `sub_437140(node, actor + 288)` — binds that matrix to **`node+156`** |
+| `sub_4942A0` | the per-node WORLD transform (`sub_440C80` -> `sub_48CFE0`'s walk): `[node+9Ch]` composed with the local rotation (`sub_442290(node+38h, m, tmp)`), or taken whole when `[node+A0h]` is -1.0 — so the body is DRAWN through the Euler too, pitch and roll included (read 2026-11-08; `verify.py: engine: scene tilt`) |
 | `Anim_SetFrame` | `Anim_RootDelta(clip, node+156, prev, cur, out)` |
 | `Anim_RootDelta` tail | `out.x = m0·dx + m3·dy + m6·dz`, `out.y = m1·dx + m4·dy + m7·dz`, `out.z = m2·dx + m5·dy + m8·dz` — the row-vector multiply |
 

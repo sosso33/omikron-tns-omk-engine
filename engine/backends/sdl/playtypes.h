@@ -294,6 +294,17 @@ struct Staged {
     float fightDrop = 0.0f;
     float progYaw = 0.0f;          // the call's Euler y (`Actor_SetEuler(node, p4, p5, p6)` every tick)
     bool  progYawKnown = false;
+    // ...and the same call's PITCH and ROLL (p4, p6), which the engine draws:
+    // `Actors_TickAll` rebuilds `+288` from all three every frame and the
+    // node's matrix POINTS at it (todo/drift-audit.md M7). Six shipped calls
+    // carry a pitch, none a roll (`engine: scx euler`).
+    float progPitch = 0.0f, progRoll = 0.0f;
+    // the body's full rotation when it is tilted - `Matrix3x3_FromEulerAngles`
+    // of (pitch, drawn yaw, roll) as a column-vector 3x3, row-major - else
+    // `tilted` is false and the yaw-only path is taken, bit for bit as before
+    bool  tilted = false;
+    bool  tiltTold = false;       // said once (`body.tilt`)
+    float tiltR[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
     float progBase[3] = {0, 0, 0};
     bool  progPelvis = false;
     const omk::SceneRunner* poolWas = nullptr;   // which pool last drove him

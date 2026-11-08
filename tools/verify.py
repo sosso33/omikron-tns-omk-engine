@@ -6081,6 +6081,55 @@ def c_engine_new_game_overwrite():
         "new name starts at once and leaves the file as it was"
 
 
+def c_engine_scene_tilt():
+    r"""A scene call's PITCH and ROLL turn the drawn body and its root motion
+    (todo/drift-audit.md M7, 2026-11-08).
+
+    `Actor_SetEuler(node, p4, p5, p6)` writes actor +416/+420/+424;
+    `Actors_TickAll` rebuilds `+288` from them every frame; `Actor_LoadModel`
+    points `node+156` at it, and the per-node world transform `sub_4942A0`
+    composes it in - so the body is drawn through all three angles - and
+    `Anim_RootDelta` turns the root motion by the same matrix. The port
+    applied the yaw alone. Six shipped calls carry a pitch (`engine: scx
+    euler`); Anekbah's Mendiant04 (actor 464, A12C1 on PhBassinM4, Euler
+    -7 / 40 / 0) is the one in a street start.
+
+    Two renders from `save-appart.bin` in Anekbah with the eye beside him
+    (`--eye`/`--at`): the port's own, and `OMK_NO_TILT=1` (the yaw alone).
+    Asserted: the `body.tilt` event for actor 464 (pitch -7, roll 0, yaw
+    40) in the first and none in the second, and that the two frames
+    differ. Whether -7 leans him the right WAY is a picture's question, not
+    this check's. Shown to fail (2026-11-08): the tilt gated off (no event,
+    identical frames).
+    """
+    import tempfile, shutil
+    play = _play_built()
+    if not play:
+        return _PLAY_UNBUILT
+    tmp = tempfile.mkdtemp()
+    try:
+        def run(env):
+            out = os.path.join(tmp, "f.bin")
+            text = _play_out(play, "--software", "--nofmv", "--area", 0,
+                             "--stand", "1804,0,-6890,336", "--eye", "4762,-60,-2880",
+                             "--at", "4609,-30,-3009", "--frames", 40, "--res", "640x480",
+                             "--dump", out, env=dict(env, OMK_EVENTS="1"), timeout=600)
+            raw = open(out, "rb").read() if os.path.exists(out) else b""
+            return text, raw
+        t1, f1 = run({})
+        t2, f2 = run({"OMK_NO_TILT": "1"})
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    def tilts(text):
+        return tuple((e.get("actor"), e.get("pitch"), e.get("roll"), e.get("yaw"))
+                     for n, e in _events(text) if n == "body.tilt")
+    differ = bool(f1) and bool(f2) and f1 != f2
+    return (tilts(t1), tilts(t2), differ), \
+           ((("464", "-7.000", "0.000", "40.000"),), (), True), \
+        "the tilted bodies (actor, pitch, roll, yaw) with the tilt and with " \
+        "OMK_NO_TILT, and whether the two frames differ"
+
+
 def c_engine_area_transition():
     r"""The area transition, the staged load and the context table
     (`transition_probe`).
@@ -54668,6 +54717,7 @@ SLOW = [
     ("engine: area transition", c_engine_area_transition, "SCRIPT_VM; engine/README"),
     ("engine: npc ground", c_engine_npc_ground, "todo/drift-audit.md M6"),
     ("engine: scx euler", c_engine_scx_euler, "todo/drift-audit.md M7"),
+    ("engine: scene tilt", c_engine_scene_tilt, "todo/drift-audit.md M7; playframe_world_staged.cpp tiltR"),
     ("engine: confirm subject", c_engine_confirm_subject, "todo/ui-save-confirm-and-quit.md 1; ui/screendraw.cpp confirmSubjectText"),
     ("engine: new game overwrite", c_engine_new_game_overwrite, "todo/ui-save-confirm-and-quit.md; ui/widgets.cpp kCbStartConfirmName"),
     ("engine: music duck", c_engine_music_duck, "script/area.h musicAttenuationDb; Session::tickMusicLevel"),

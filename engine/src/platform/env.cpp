@@ -99,6 +99,7 @@ constexpr const char* kSwitches[] = {
     "OMK_NO_TIE",               // the coincident-face depth tie off (engine: sign tie)
     "OMK_NO_TIE_BAKE",          // A/B: the depth tie per frame instead of baked (engine: gles tie bake)
     "OMK_NO_TILES",             // the tiled point lights off: the nearest 60 instead (engine: emitter light)
+    "OMK_NO_TILT",              // A/B: a scene clip's pitch and roll not applied, the yaw alone - the old drawing (engine: scene tilt)
     "OMK_NO_VEIL",              // =1 the rain's distant veils left out, the rest of the remaster's rain kept (engine: rain 3d)
     "OMK_NO_WET_BODIES",        // =1 the bodies stay dry in the rain (engine: wet floors)
     "OMK_NO_WET_WALLS",         // =1 the rain wets the floors alone, no wall (engine: wet floors)
@@ -130,6 +131,7 @@ constexpr const char* kSwitches[] = {
     "OMK_TIE_LOG",              // log: the depth tie's decisions per upload (engine: gles tie bake)
     "OMK_TIE_STATS",            // log: how each large geometry's revisions were answered, every 30 frames (engine: dirty corners)
     "OMK_TILES_LOOSE",          // the tiled lights binned without their box test or cap (engine: emitter light)
+    "OMK_TILT_NEG",             // A/B: a scene clip's pitch and roll applied with the opposite sign; the sign as written is read (todo/drift-audit.md M7)
     "OMK_TRACE_ACTOR",          // =<actor> log: that body's placement and pose source every frame (program placement)
     "OMK_TRACE_MOTION",         // log: each moving mesh's motion as it is applied
     "OMK_TRANSIENT_MOTIONS",    // A/B: a scene's mesh motions per tick - the old, wrong reading (engine: node rest)
