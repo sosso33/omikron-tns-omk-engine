@@ -55,6 +55,7 @@ constexpr const char* kSwitches[] = {
     "OMK_GPU_PRESENT_STATS",    // log: the GPU present's counts every 30 frames (engine: gpu present)
     "OMK_GPU_TIMES",            // Vulkan: the GPU's time per pass (shadow, reflection, scene, post), every 60 frames
     "OMK_GRADE",                // =<file.cube> run_vulkan: the remaster's grade (engine: bloom and grade)
+    "OMK_GUNMAN_FEET",          // A/B: a gunman on his shoot clips seated by his FEET on the walkable floor, the old reading (todo/drift-audit.md M6)
     "OMK_HIDDEN_WINDOW",        // the GPU window created hidden, the present kept - for profiling (engine: gles overlay)
     "OMK_KOTRACE",              // =1 log: a knocked-out fighter's channel, tick by tick
     "OMK_LBLOG",                // =1 log: which term holds the letterbox bars, when it changes

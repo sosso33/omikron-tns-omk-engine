@@ -488,13 +488,20 @@ void PlayState::worldStagedBody(std::unique_ptr<Staged>& up, const omk::SceneRun
     // probe ever moves him. The reader's frames of the original's Z-Tech
     // room say the same: the T-posed `ZTK_FN`'s rune block on the floor and
     // its claws sunk under it, where a feet seat stood it on the claws.
-    // `OMK_RECORD_FEET` is the old reading. What still names a spot on the
-    // GROUND, the FEET going there (the game's Y points DOWN, so the
-    // largest y): a camera solve, the player's own position - and,
-    // NOT YET READ, a gunman on his shoot clips, left as he was.
+    // `OMK_RECORD_FEET` is the old reading. And a GUNMAN too (read the same
+    // day; `OMK_GUNMAN_FEET` the old reading): `Shoot_ActorEnter` puts the
+    // node at `+60` - `o3de_SetNodePos(node, x, +60, z)`, his floor's edge
+    // less `+64`, the greatest `y + r` of the model's spheres - and
+    // `sub_421770` sets and moves it from there by the clip's root keys, all
+    // of which `at` and `walkMove` already carry. A feet seat threw that
+    // height away for the pose's lowest corner. What still names a spot on
+    // the GROUND, the FEET going there (the game's Y points DOWN, so the
+    // largest y): a camera solve, and the player's own position.
     static const bool recordFeet = omk::envFlag("OMK_RECORD_FEET");
+    static const bool gunmanFeet = omk::envFlag("OMK_GUNMAN_FEET");
+    const bool onShootClip = shootTracks && shootTracks->valid();
     s.nodeSeat = s.pelvis || (!recordFeet && s.recordNode && s.actor != playerId &&
-                              !(shootTracks && shootTracks->valid()));
+                              !(gunmanFeet && onShootClip));
     float feet = -1e9f;
     if (!s.gpu) for (const auto& c : s.posed.corners) if (c.y > feet) feet = c.y;
     if (!s.seatKnown || s.seatClip != s.sceneClipWas || s.seatSrc != src) {

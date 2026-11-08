@@ -5965,11 +5965,12 @@ def c_engine_record_node_seat():
     (`OMK_RECORD_FEET`) stood it 10.7 higher on its claws.
 
     Read from the `body.seat` event: AREA 144's three, node-seated at their
-    record (delta 0) and feet-seated under the A/B; and STTRA03's gunman
-    559, on his shoot clip, still feet-seated - his seat is not read yet, and
-    a change to it must be seen. Shown to fail (2026-11-08): `recordFeet`
-    forced true (the three on their feet), and the shoot guard dropped (559 at
-    his node).
+    record (delta 0) and feet-seated under the A/B. And a GUNMAN, the same
+    day: `Shoot_ActorEnter` puts the node at `+60` (`o3de_SetNodePos`) and
+    `sub_421770` moves it by the clip's root keys, so STTRA03's 559 is drawn
+    node-seated, and 5.5 lower under `OMK_GUNMAN_FEET`. Shown to fail
+    (2026-11-08): `recordFeet` forced true (the three on their feet), and
+    `gunmanFeet` forced true (559 on his).
     """
     play = _play_built()
     if not play:
@@ -5981,15 +5982,16 @@ def c_engine_record_node_seat():
                          env=dict(env or {}, OMK_EVENTS="1"), timeout=300)
         return {int(e["actor"]): (e["seat"], round(float(e["delta"]), 1))
                 for n, e in _events(text) if n == "body.seat"}
-    now, old, gun = seats(144), seats(144, {"OMK_RECORD_FEET": "1"}), seats(80)
+    now, old = seats(144), seats(144, {"OMK_RECORD_FEET": "1"})
+    gun, gunOld = seats(80), seats(80, {"OMK_GUNMAN_FEET": "1"})
     pick = lambda d: tuple(d.get(a) for a in (400, 401, 402))
-    return (pick(now), pick(old), gun.get(559)), \
+    return (pick(now), pick(old), gun.get(559), gunOld.get(559)), \
            ((("node", 0.0),) * 3,
             (("feet", -10.7), ("feet", -10.5), ("feet", -10.7)),
-            ("feet", 5.5)), \
+            ("node", 0.0), ("feet", 5.5)), \
         "AREA 144's ZTK_FN 400/401/402 as (seat, drawn pelvis less the record): " \
-        "at the node; under OMK_RECORD_FEET, on their feet; and a gunman on his " \
-        "shoot clip (AREA 80's 559), left on his feet"
+        "at the node; under OMK_RECORD_FEET, on their feet; a gunman on his " \
+        "shoot clip (AREA 80's 559) at his node, and on his feet under OMK_GUNMAN_FEET"
 
 
 def c_engine_scx_euler():
@@ -44369,12 +44371,15 @@ def c_engine_shoot_hit():
     # RE-PINNED 2026-10-11 with the roots: dying where he now stands, 237's
     # type-5 fall drops the same 35.6 but slides -16.8 / 11.4, 21 of its 39
     # ticks meeting a wall byte, and his pelvis still ends 7.5 above the floor.
+    # RE-PINNED 2026-11-08 (todo/drift-audit.md M6): 10.4 - his NODE is at `+60`
+    # (the floor's edge less his 44.4), where a feet seat put the pose's lowest
+    # corner, 2.9 lower for this pose, on the floor. `OMK_GUNMAN_FEET` gives 7.5.
     # And NO body push on this route: its guard (`adventureCrowdPush`) is the
     # plain overlap test - `crowdPush` answers only when a body's spheres
     # overlap his - and here none does. The element is dropped rather than
     # baselined empty: the body push is held by `engine: actor body`.
     want = want + ([("237", "-16.8", "35.6", "11.4", "39", "21")],
-                   [("237", "7.5")],
+                   [("237", "10.4")],
                    None)
     return got, want, (
         "the three gunmen's roots, 7 units into their walk at the first sweep; "
@@ -45126,7 +45131,10 @@ def c_engine_shoot_gunfire():
             # (and the first bolt's jitter is 0 69 24 again - the CRT triple from
             # before 240's stalled ACTION 0 drew its coin `rand()`; with no brain
             # tick during the hold that draw is gone)
-            ("43", "0.545 -0.308 -0.780", "35.0", "17.9", "the tir node", "58 62 64"),
+            # RE-PINNED 2026-11-08 (drift-audit M6): he is drawn with his NODE at `+60`, so
+            # the tir node, and this first shot's aim, moved with him (`OMK_GUNMAN_FEET`
+            # gives the old values).
+            ("43", "0.549 -0.289 -0.784", "35.0", "16.8", "the tir node", "58 62 64"),
             # 2 on the player in the first 48 frames, where it was 7: the body's
             # BOXES are small (HO1_FN's pelvis box ~14 x 11 x 9 around the hip
             # joint the bolts aim at, inside a 42.5 sphere) and a +-14 jitter
@@ -45150,7 +45158,9 @@ def c_engine_shoot_gunfire():
             # entrance's heading - ends facing 320)
             # (2026-10-05, S13: and ONE on another gunman - 240, alerted at 43,
             # fires too, and his first bolt meets 237 on its way)
-            False, 1, 1, "344",
+            # (2026-11-08, M6: none on another gunman again - 237's body moved with
+            # his node's height, and that bolt threads past its small boxes)
+            False, 0, 1, "344",
             # (from the 336.9 his ENTRANCE PROGRAM left him at - his brain's
             # heading is seeded from how he is drawn, and he is drawn at it)
             ("394", "32", "25", "-7.20", "336.9"), ("418", "164.1"),
@@ -45198,8 +45208,8 @@ def c_engine_shoot_gunfire():
             # -1, and the gallery's bodies reach the grid at frame 32)
             # (2026-10-05, S13: 240 aims at 43 too, and 238's angle at 44 moves
             # with the player shoved by 240's hit)
-            [("43", "237", "-0.156", "0.005"), ("43", "240", "0.200", "-0.011"),
-             ("44", "238", "0.599", "-0.000"), ("441", "77", "0.757", "-0.070")],
+            [("43", "237", "-0.156", "-0.006"), ("43", "240", "0.200", "-0.017"),
+             ("44", "238", "0.599", "-0.003"), ("441", "77", "0.757", "-0.070")],
             [("237", "766", "DBWAVER"), ("238", "769", "DECAGUN"), ("240", "772", "HEXAGUN"),
              ("77", "49", "WAVER")],
             # (and 238's second barrel is 44 degrees off the line: still turning

@@ -3521,7 +3521,7 @@ while a conversation or an interface screen holds the body.
 
 | state | tick | what it is |
 |---|---|---|
-| 0 | `nullsub_6` | inert. `Actor_LoadModel`'s initial value; `Shoot_Leave` and an empty `Actor_StartPendingScx` land here |
+| 0 | `nullsub_6` | inert. `Actor_LoadModel`'s initial value; `Shoot_Leave` and an empty `Actor_StartPendingScx` land here. A placed body sits here with his NODE exactly at the record (`Actor_SetPlacement`) and nothing asks for a floor - `verify.py: engine: record node seat`, `todo/drift-audit.md` M6 |
 | 1 | `Actor_TickNpc` | the ordinary actor: channel, separation push, walk, zone scan |
 | 2 | `Actor_TickPlayerAndOpponent` | melee. **`Fight_Engage` is the only writer**, and it writes both fighters |
 | 3 / 15 | `Actor_TickShoot` | shoot mode; the player also installs `.CTL` group 200 and camera mode 4 |
