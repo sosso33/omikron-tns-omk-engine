@@ -97,6 +97,12 @@ public:
     // then moves the prop's node under him. World positioning, no DB write:
     // output-class. (Field 1 is not an address.)
     virtual void placeObjectAt(int /*character*/, int /*stateIndex*/) {}
+    // Op 50 `inventory.add` -> `Inventory_Insert(rec, list, player)`
+    // (0x004098E0): true when the object takes a row, which the handler then
+    // inserts; false when its effect was applied and it is consumed (money,
+    // rings, a magazine for a carried gun). Without a world every object
+    // takes a row.
+    virtual bool insertObject(int /*list*/, int /*objectId*/) { return true; }
 
     // ---- `sub_423A40` (0x00423A40), the TAIL of `Actor_SetProperty` ------
     // Every property write ends `sub_423A40(index, property, value)` with the

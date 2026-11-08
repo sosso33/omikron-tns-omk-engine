@@ -643,17 +643,21 @@ RunResult Interpreter::resume(std::span<const std::byte> code, std::size_t at) {
             // duplicate; 0 and 1 do not. Then `Archive_ReadChunk("IAM\OBJECT",
             // id, 1304, 2048)` -> `Inventory_Insert(rec, list, playerId)` ->
             // `ObjectList_InsertFront`. The FRONT insert and the full-list
-            // refusal are `listAdd`'s. NOT modelled, and labelled in
-            // gamestate.h: `Inventory_Insert`'s kind gate - seteks (kind 12)
-            // and rings (13) go to Argent/Anneaux through `Object_ApplyEffect`
-            // and take no slot; ammunition (7..11) merges into a carried gun
-            // (kind-5) when there is one; a gun (2..6) already carried takes
-            // no second slot. Every shipped `inventory.add` takes a slot here.
+            // refusal are `listAdd`'s; `Inventory_Insert`'s kind gate is the
+            // world's (`WorldHooks::insertObject`, `Session::insertObject`):
+            // seteks (kind 12) and rings (13) go to Argent/Anneaux through
+            // `Object_ApplyEffect` and take no slot, a magazine (7..11) for a
+            // gun of kind - 5 in the list becomes its rounds, a gun (2..6)
+            // already there takes no second slot and a new one takes in the
+            // list's magazines. The duplicate refusal comes FIRST: lists 2
+            // and 3 never reach `Inventory_Insert` with an id they hold.
             if (op == op::InventoryAdd) {
                 std::size_t q = start + 1;
                 const auto list = fetch16(code, q);
                 const auto id   = fetch16(code, q);
-                state_.listAdd(list, id, GameState::listRefusesDuplicates(list));
+                if (!(GameState::listRefusesDuplicates(list) && state_.listHas(list, id)) &&
+                    (!hooks_ || hooks_->insertObject(list, id)))
+                    state_.listAdd(list, id);
                 recordCall(op, {list, id});
                 continue;
             }

@@ -889,7 +889,8 @@ public:
     // object staying in his hand. Off by default, which is the original.
     void setBankReject(bool on) { bankReject_ = on; }
     bool bankReject() const { return bankReject_; }
-    // What the last bank's `Object_ApplyEffect` did, for the log.
+    // What the last `insertObject`'s `Object_ApplyEffect` calls did, for the
+    // log ("" when none ran; several joined by "; ").
     const std::string& lastObjectEffect() const { return lastObjectEffect_; }
     // Derive it from the hand instead - see area.cpp. The setter above stays
     // for a harness that wants to force the state without a script.
@@ -1230,11 +1231,32 @@ public:
         Full,      // `ObjectList_IsFull` - case 10 returns 0 and it stays HELD
     };
     Banked bankHeldObject(int objectId);
+    // Which arm `insertObject` WILL take, without taking it (no effect, no
+    // list change) - for a caller that must name the arm or refuse first.
     Banked insertArm(int objectId) const;
+    // `Inventory_Insert(rec, list, player)` (0x004098E0), whole - what op 50
+    // `inventory.add`, the take (case 10), the multiplan's withdrawal (case 8)
+    // and the shop's purchase (case 38) all call before
+    // `ObjectList_InsertFront`. True is its `return 1`: the object wants a
+    // ROW, which the caller then inserts. False is `return 0`: the effect was
+    // applied and the object is consumed. The ladder, on rows of `list`:
+    //   12 seteks, 13 rings     -> the effect, consumed
+    //   7..11, a magazine       -> with a gun of kind (kind - 5) in the list,
+    //                              the effect (its rounds), consumed; else a row
+    //   2..6, a gun             -> with a gun of the SAME kind, the effect
+    //                              (a gun's quantity is 0: nothing), consumed;
+    //                              else every magazine of kind (kind + 5) in
+    //                              the list is applied and taken out of it,
+    //                              then a row for the gun
+    //   anything else           -> a row
+    bool insertObject(int list, int objectId);
     // `Object_ApplyEffect` (0x00409780): a VALUABLE record (flags 0x20) adds
     // its +12 quantity to a property picked by KIND - 12 -> 4 (Argent), 13 ->
-    // 5 (Anneaux), 2..6 and 7..11 -> 35 with the sub-index in the high word;
-    // a plain one adds +8 to the property its +6 effect names.
+    // 5 (Anneaux), 2..6 and 7..11 -> 35 (the ammunition, slot kind-2 or
+    // kind-7, read by slot and written with the slot in the high word); a
+    // plain one adds +8 to the property its +6 effect names. The sum stops at
+    // 0xFFFF and is written as its low 16 bits, as `Actor_SetProperty` is
+    // handed it. Appends to `lastObjectEffect`.
     void applyObjectEffect(int objectId);
     bool bankReject_ = false;
     std::string lastObjectEffect_;
@@ -1893,6 +1915,7 @@ private:
         bool propBySlot(int slot, PropRef& out) override;
         bool propById(int id, PropRef& out) override;
         void placeObjectAt(int character, int stateIndex) override;
+        bool insertObject(int list, int objectId) override;
         void shootStatSet(int actor, int property, std::int32_t value) override;
         void hudShowValue(int property, std::int32_t value, std::int32_t vie) override;
     private:

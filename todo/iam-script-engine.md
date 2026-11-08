@@ -261,7 +261,7 @@ edits them by hand — but `interp.cpp` records all four opcodes as stubs and
 carry X" never changes the state it then branches on (49, and 75 - issue
 22). 975 sites between the four; the memo journal (list 2) is fed by
 nothing else.
-**Landed (T12/T15):** `Inventory_Insert`'s kind gate (seteks, ammunition) and list 3 stay unmodelled.
+**Landed (T12/T15):** `Inventory_Insert`'s kind gate (seteks, ammunition) and list 3 stay unmodelled. (The kind gate landed 2026-11-07: `Session::insertObject`, `docs/GAME_STATE.md` §3.)
 
 ### 30. Prop state (the 2-bit array) is never written by the VM — A
 

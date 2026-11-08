@@ -4021,26 +4021,27 @@ bool Session::takeObject(int objectId) {
 //
 // The cache's match is on its `+1` word, which is the record's `+2` - the
 // KIND - so "is there already a row of kind K" is answerable from list 0 and
-// `objectKind`. The only thing that stays unported is `Object_ApplyEffect`
-// itself (NAMED, body as generated), so `Consumed` and `Merged` announce an
-// effect they do not apply, and say so at the moment it happens.
+// `objectKind`. `insertObject` is the function whole, effects included;
+// `insertArm` names the arm it will take without taking it.
 Session::Banked Session::bankHeldObject(int objectId) {
     lastObjectEffect_.clear();
     if (objectId < 0) return Banked::Full;
     if (bankReject_) { lastObjectEffect_ = "DEBUG --bank-reject"; return Banked::Full; }
-    const Banked arm = insertArm(objectId);
-    // The kind-12/13 path of `Inventory_Insert` (01_file.c 3570):
-    // `Object_ApplyEffect(a1, a3); return 0` - applied, then consumed. So the
-    // rings ARE taken in the original: not as a row, as a COUNT.
-    if (arm == Banked::Consumed) applyObjectEffect(objectId);
-    // `ObjectList_InsertFront` - `listAdd` IS that function, shifting the list
-    // up and writing slot 0, refusing when it is full. A refusal is case 10's
-    // `return 0`: nothing is freed and the object stays in the hand.
+    const Banked arm = insertArm(objectId);   // named before the lists move
+    // `Inventory_Insert(rec, 0, player)` FIRST, effects and all - the rings
+    // ARE taken in the original, not as a row but as a COUNT, and a magazine
+    // for a carried gun as its rounds - and only then `ObjectList_IsFull`:
+    // a gun refused by a full list stays in the hand, its magazines already
+    // emptied into it, as case 10 does.
+    const bool row = insertObject(0, objectId);
     // `insertArm` never answers `Full` - that outcome belongs to the list, not
     // to the kind ladder - but guard it rather than fall through into the
     // world half, which is what a mutation of the ladder exposed.
     if (arm == Banked::Full) return Banked::Full;
-    if (arm == Banked::Row && !state_.listAdd(0, objectId)) return Banked::Full;
+    // `ObjectList_InsertFront` - `listAdd` IS that function, shifting the list
+    // up and writing slot 0, refusing when it is full. A refusal is case 10's
+    // `return 0`: nothing is freed and the object stays in the hand.
+    if (row && !state_.listAdd(0, objectId)) return Banked::Full;
     // The world half, which every non-refusing arm reaches:
     // `sub_41C540(player, 1)` frees the slot and unlinks the node...
     hooks_.releaseObject(-1, true);
@@ -4073,29 +4074,80 @@ void Session::applyObjectEffect(int objectId) {
         if (prop == 0) prop = -1;
         amount = rec->amount;                          // i16(rec, 8)
     }
-    if (prop < 0) { lastObjectEffect_ = "no effect"; return; }
-    if (prop == 35) {
-        // `Actor_SetProperty(35)` takes the sub-index in the high word; the
-        // port's writer has no case 35 - announced, not applied, labelled.
-        lastObjectEffect_ = "property 35 sub " + std::to_string(sub) + " += " +
-                            std::to_string(amount) + " (NOT applied: no writer for 35)";
-        return;
+    std::string said;
+    if (prop < 0) said = "no effect";
+    else {
+        // The PLAYER's record is the DB's, at +60 - the interpreter reads it
+        // there too (`Interpreter::getProperty`); the hook is for the world's
+        // actors and answers "unreadable" for -1, so through it the rings
+        // would never count.
+        std::int32_t v = 0;
+        const std::span<const std::byte> prec = state_.raw().subspan(
+            static_cast<std::size_t>(GameState::kPlayerRecord), kActorRecordSize);
+        // `Actor_GetProperty` (0x0040B360): for 35 the request's +8 carries the
+        // SLOT in and the count out (`mov [esp+var_C], edi` before the call)
+        const bool read = prop == 35 ? readAmmoSlot(prec, sub, v)
+                                     : readActorProperty(prec, prop, v);
+        if (!read) said = "player record unreadable";
+        else {
+            // `add eax, ebx ; cmp eax, 0FFFFh ; jle` - a SIGNED test - then
+            // `(sub << 16) | (sum & 0xFFFF)` handed to `Actor_SetProperty`
+            int nv = v + amount;
+            if (nv > 0xFFFF) nv = 0xFFFF;
+            const auto arg = static_cast<std::int32_t>(
+                (static_cast<std::uint32_t>(sub & 0xFFFF) << 16) |
+                (static_cast<std::uint32_t>(nv) & 0xFFFFu));
+            writeActorProperty(state_.rawMutable().subspan(
+                                   static_cast<std::size_t>(GameState::kPlayerRecord),
+                                   kActorRecordSize), prop, arg);
+            said = prop == 4 ? "Argent " : prop == 5 ? "Anneaux "
+                 : prop == 35 ? "ammunition slot " + std::to_string(sub) + " "
+                 : "property " + std::to_string(prop) + " ";
+            said += std::to_string(v) + " -> " + std::to_string(nv);
+        }
     }
-    // The PLAYER's record is the DB's, at +60 - the interpreter reads it
-    // there too (`Interpreter::getProperty`); the hook is for the world's
-    // actors and answers "unreadable" for -1, so through it the rings would
-    // never count.
-    std::int32_t v = 0;
-    const std::span<const std::byte> prec = state_.raw().subspan(
-        static_cast<std::size_t>(GameState::kPlayerRecord), kActorRecordSize);
-    if (!readActorProperty(prec, prop, v)) { lastObjectEffect_ = "player record unreadable"; return; }
-    int nv = v + amount;
-    if (nv > 0xFFFF) nv = 0xFFFF;                      // `if (v6 + v9 > 0xFFFF) v7 = -1`
-    writeActorProperty(state_.rawMutable().subspan(static_cast<std::size_t>(GameState::kPlayerRecord),
-                                                   kActorRecordSize), prop, nv);
-    lastObjectEffect_ = std::string(prop == 4 ? "Argent" : prop == 5 ? "Anneaux" : "property ") +
-                        (prop == 4 || prop == 5 ? "" : std::to_string(prop)) + " " +
-                        std::to_string(v) + " -> " + std::to_string(nv);
+    if (!lastObjectEffect_.empty()) lastObjectEffect_ += "; ";
+    lastObjectEffect_ += said;
+}
+
+// `Inventory_Insert` (0x004098E0), the ladder `insertArm` names, with its
+// effects. The cache it searches (`dword_69BD68[list]`, 56 bytes a row) is in
+// step with the id list, row for row - the removal below shifts both - so
+// "the first row of kind K" is the first id of the list whose record's +2 is K.
+bool Session::insertObject(int list, int objectId) {
+    lastObjectEffect_.clear();
+    const int kind = objectKind(objectId);
+    const auto firstOfKind = [&](int k) {
+        for (int i = 0, n = state_.listCount(list); i < n; ++i) {
+            const int id = state_.listAt(list, i);
+            if (id >= 0 && objectKind(id) == k) return id;
+        }
+        return -1;
+    };
+    if (kind != 12 && kind != 13) {
+        if (kind >= 7 && kind <= 11) {
+            if (firstOfKind(kind - 5) < 0) return true;      // no gun for it: a row
+        } else if (kind >= 2 && kind <= 6) {
+            if (firstOfKind(kind) < 0) {
+                // A NEW GUN takes in every magazine already in the list
+                // (LABEL_13): the first of kind + 5 is applied, removed from
+                // the list and the cache, and the search runs again; none left
+                // is the `return 1` - the gun's row.
+                for (int clip; (clip = firstOfKind(kind + 5)) >= 0;) {
+                    applyObjectEffect(clip);
+                    // the engine finds the id again in the list and would spin
+                    // on a cache row that is not there; this cannot happen with
+                    // the cache derived from the list, but never loop on it
+                    if (!state_.listRemove(list, clip)) break;
+                }
+                return true;
+            }
+        } else {
+            return true;                                      // an ordinary object
+        }
+    }
+    applyObjectEffect(objectId);
+    return false;
 }
 
 // `Inventory_Insert`'s answer, as the ladder above computes it.
@@ -4260,6 +4312,10 @@ void Session::Hooks::shootStatSet(int actor, int property, std::int32_t value) {
 
 // `Hud_ShowValue` keeps nothing for properties 4 and 5 (`Argent`,
 // `Anneaux`); its ACTOR_STATE-3 refusal is the frontend's, which holds it.
+bool Session::Hooks::insertObject(int list, int objectId) {
+    return s_->insertObject(list, objectId);
+}
+
 void Session::Hooks::hudShowValue(int property, std::int32_t value, std::int32_t vie) {
     if (property == 4 || property == 5) return;
     HudShow h{property, value, vie, {}};

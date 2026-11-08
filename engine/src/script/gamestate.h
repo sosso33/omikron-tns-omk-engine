@@ -106,10 +106,10 @@ public:
     // `listRefusesDuplicates(list)` to reproduce that.  Returns whether the
     // list changed.
     //
-    // NOT modelled here: `Inventory_Insert`'s kind arithmetic, which merges
-    // ammunition and money into an existing slot's quantity (kinds 2..6 and
-    // 7..11) instead of taking a slot.  That lives in the 56-byte cache above
-    // and belongs with the inventory channel, not with the stored state.
+    // NOT here: `Inventory_Insert`'s kind ladder, which turns money, rings
+    // and magazines into a property instead of a slot. It needs the object
+    // table, so it is the Session's (`Session::insertObject`), reached by op
+    // 50 through `WorldHooks::insertObject` before this insert.
     static constexpr bool listRefusesDuplicates(int list) {
         return list == 2 || list == 3;
     }

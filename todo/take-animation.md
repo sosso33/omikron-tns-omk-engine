@@ -252,7 +252,10 @@ the next person at the screen. The take's SOUND and the arm particle (the
   main's "consumed" reading and the reader's "taken" are the same fact.
   Ported: `Session::applyObjectEffect`, called on the Consumed arm; the
   MDPUTSNK line prints `effect: Anneaux 0 -> 3`. Property 35 (guns, ammo)
-  is announced, not applied - the port's writer has no case 35.
+  was announced and not applied until 2026-11-07; it is now
+  (`Session::insertObject`, `Inventory_Insert` whole - a magazine for a
+  carried gun is its rounds, a new gun takes in the carried magazines;
+  `docs/GAME_STATE.md` §3, `verify.py: engine: inventory insert`).
 * **`--bank-reject`**, a DEBUG flag: every bank refused as a full list
   refuses it, the object staying in hand. Off = the original.
 

@@ -275,10 +275,32 @@ variable unless that is −1; a negative *n* moves nothing and is stored as it i
 Its 3 sites are all SCENE 7, between lists 0 and 1, variable 270 on both ends.
 
 **Port status (2026-09-02):** 49, 50, 51, 52 and 128 execute in `engine/`
-(`Interpreter`, behind `setWorldWrites`), with `Inventory_Insert`'s kind gate
-still unmodelled: 27 of the 473 `inventory.add` sites add seteks and 14 add
-ammunition, which the engine folds into Argent or a carried gun's count instead of
-a slot.
+(`Interpreter`, behind `setWorldWrites`). **Since 2026-11-07 with
+`Inventory_Insert`'s kind gate** (`Session::insertObject`, reached by op 50
+through `WorldHooks::insertObject`): 27 of the 473 `inventory.add` sites add
+seteks and 14 add ammunition, which the engine folds into Argent or a carried
+gun's count instead of a slot - and until then took a slot in the port.
+
+**`Inventory_Insert` (0x004098E0), read whole.** Op 50, the take
+(`Game_HandleEvent` case 10), the multiplan's withdrawal (case 8) and the
+shop's purchase (case 38) all call `Inventory_Insert(rec, list, player)` and
+insert a row only when it answers 1. On the object's kind (record `+2`), over
+the rows of `list`:
+
+| kind | answer |
+|---|---|
+| 12 seteks, 13 rings | `Object_ApplyEffect`, 0 - a count, no row |
+| 7..11, a magazine | a gun of kind − 5 in the list: the effect (its rounds), 0; none: 1 - a row, kept for a later gun |
+| 2..6, a gun | a gun of the same kind: the effect (a gun's quantity is 0), 0; none: every magazine of kind + 5 in the list applied and removed from it, then 1 |
+| any other | 1 |
+
+`Object_ApplyEffect` (0x00409780) adds a valuable record's `+12` quantity to
+property 4 (12), 5 (13) or **35** - the ammunition, five int16 at record
+`+260`, slot kind − 2 for a gun and kind − 7 for its magazine, read by slot
+(`Actor_GetProperty`'s `+8` carries the slot in, the count out) and written
+`(slot << 16) | (sum & 0xFFFF)`, the sum stopped at 0xFFFF by a signed test.
+The shipped magazines give 50 (Double-Waver), 30 (Octogun), 20 (Decagun), 10
+(Mégazooka) and 2 (Hypra) rounds. `verify.py: engine: inventory insert`.
 
 ## 4. The player's character record
 

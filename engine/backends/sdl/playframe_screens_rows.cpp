@@ -1009,16 +1009,19 @@ void PlayState::screensShopRows() {
                                 "carried %zu) - message %d\n", id, price, money,
                                 carried.size(), price > money ? 9 : 8);
                 } else {
-                    // case 38: `Inventory_Insert` + `ObjectList_InsertFront(0, ...)`,
-                    // then `u16(+172) -= price`. Inventory_Insert's merge of
-                    // ammunition and money into an existing slot is not
-                    // modelled (`GameState::listAdd` says so).
-                    state.listAdd(0, id);
-                    state.setMoney(money - price);
+                    // case 38: `Inventory_Insert` + `ObjectList_InsertFront(0, ...)`
+                    // when it answers 1, then `u16(+172) -= price` - so a
+                    // magazine bought for a carried gun is its rounds, not a
+                    // row, and a gun bought takes in the sneak's magazines
+                    if (session_->insertObject(0, id)) state.listAdd(0, id);
+                    state.setMoney(state.money() - price);
                     post(21);                        // "Objet achete !"
                     playId(16);
                     std::printf("shop: bought %d for %d, money %d -> %d\n",
                                 id, price, money, state.money());
+                    if (!session_->lastObjectEffect().empty())
+                        std::printf("shop: the purchase's effect: %s\n",
+                                    session_->lastObjectEffect().c_str());
                 }
             } else if (kind == 1 && id > 0) {
                 // `Oui` (0x004AEC00): event 36 request 10 - the record's flag
@@ -1647,10 +1650,11 @@ void PlayState::screensLift() {
                 if (static_cast<int>(carried.size()) >= omk::GameState::kListCapacity[0]) {
                     result = 2; arm = "sneak full";
                 } else {
+                    // `if (Inventory_Insert(rec, 0, player)) InsertFront(0)`,
+                    // then the row leaves list 1 whatever it answered
                     const auto a = session.insertArm(id);
-                    if (a == omk::Session::Banked::Row) { state.listAdd(0, id); arm = "row"; }
-                    else { session.applyObjectEffect(id);
-                           arm = a == omk::Session::Banked::Consumed ? "consumed" : "merged"; }
+                    if (session.insertObject(0, id)) { state.listAdd(0, id); arm = "row"; }
+                    else arm = a == omk::Session::Banked::Consumed ? "consumed" : "merged";
                     state.listRemove(1, id);
                     result = 1;
                 }

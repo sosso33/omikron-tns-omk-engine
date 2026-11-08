@@ -27629,6 +27629,67 @@ def c_engine_multiplan_rows():
            "object ids the nine rows were bound to"
 
 
+def c_engine_inventory_insert():
+    r"""engine: `Inventory_Insert` WHOLE - money, rings and AMMUNITION (2026-11-07).
+
+    Every way an object enters a list - op 50, the take (case 10), the
+    multiplan's withdrawal (case 8), the shop's purchase (case 38) - runs
+    `Inventory_Insert` (0x004098E0) and inserts only on its `return 1`; its
+    `Object_ApplyEffect` (0x00409780) puts a magazine's +12 quantity into
+    property 35, the ammunition at record +260, slot kind - 7. Until this
+    date the port announced that write and never made it ("NOT applied: no
+    writer for 35"), and op 50 and the shop skipped the ladder. From slot 0
+    of `traces/save-appart.bin` (every ammunition slot 10, no money):
+
+    * a magazine (193, kind 7, 50 rounds) with no gun is a ROW, no rounds;
+    * with the Double-Waver (189, kind 2) carried it is CONSUMED: slot 0
+      10 -> 60, no row;
+    * a NEW gun takes in every magazine of its kind already carried - 193 and
+      200, 2 x 50 - and removes them, leaving the octogun's (194) alone, then
+      wants its row;
+    * a second gun of a carried kind is consumed and adds nothing (quantity 0);
+    * seteks (164) are consumed into Argent, 0 -> 10;
+    * op 50 through the world's hook does the same as the take, and with no
+      hooks (an interpreter alone) it takes a row as before.
+
+    Shown to fail: with `applyObjectEffect`'s 35 read put back to
+    `readActorProperty` (which refuses 35) every rounds figure stays 10;
+    with `insertObject`'s absorption loop removed the gun keeps 193,200 in
+    the list and slot 0 stays 10.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    data = omkpaths.data()
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    ops = os.path.join(ROOT, "tables", "vm_opcodes.json")
+    if not (os.path.isdir(os.path.join(data, "IAM")) and os.path.exists(save)
+            and os.path.exists(ops)):
+        return ("skipped",), ("skipped",), "gamedata/, the save or the opcode table absent"
+    b = subprocess.run(["make", "-s", "build/inventory_insert_probe"], cwd=eng,
+                       capture_output=True, text=True)
+    binp = os.path.join(eng, "build", "inventory_insert_probe")
+    if b.returncode != 0 or not os.path.exists(binp):
+        return ("build failed",), ("built",), "engine/ must build"
+    r = subprocess.run([binp, data, ops, save], capture_output=True, text=True)
+    keys = ("magazine-alone", "magazine-for-gun", "gun-takes-magazines",
+            "second-gun", "seteks", "op50-world", "op50-bare")
+    got = tuple(ln for ln in r.stdout.splitlines() if ln.split()[:1] and ln.split()[0] in keys)
+    want = (
+        "magazine-alone row 1 ammo0 10 -> 10",
+        "magazine-for-gun row 0 ammo0 10 -> 60 list 189",
+        "gun-takes-magazines row 1 ammo0 10 -> 110 ammo1 10 -> 10 list 194",
+        "second-gun row 0 ammo0 10 -> 10 list 766",
+        "seteks row 0 money 0 -> 10",
+        "op50-world ammo0 10 -> 60 list 189",
+        "op50-bare ammo0 60 list 193,189",
+    )
+    return got, want, \
+        "from save-appart's slot 0: a magazine alone a row; with its gun carried " \
+        "its 50 rounds into slot 0; a new gun taking in both carried magazines of " \
+        "its kind and leaving the octogun's; a second gun of a kind adding nothing; " \
+        "seteks into Argent; op 50 through the world's hook, and bare"
+
+
 def c_engine_multiplan_transfers():
     r"""engine: MULTIPLAN's TRANSFERS - event 36 requests 7 and 8 (todo/multiplan.md 3).
 
@@ -51796,8 +51857,9 @@ def c_licence_headers():
     # slab allocator under `malloc`, the same handoff's step 3)
     # 708: + `engine/tools/save_parts.cpp` (the save file read in parts,
     # `engine: save read in parts`, af6439e)
+    # 709: + `engine/tools/inventory_insert_probe.cpp` (`engine: inventory insert`)
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (708, [], 10, []), \
+           (709, [], 10, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -54566,6 +54628,7 @@ SLOW = [
     ("engine: interference", c_engine_interference, "UI 3d; todo/multiplan.md"),
     ("engine: multiplan rows", c_engine_multiplan_rows, "UI 3d; todo/multiplan.md"),
     ("engine: multiplan transfers", c_engine_multiplan_transfers, "UI 3d; todo/multiplan.md"),
+    ("engine: inventory insert", c_engine_inventory_insert, "todo/take-animation.md; script/area.h insertObject"),
     ("engine: multiplan examine", c_engine_multiplan_examine, "UI 3d; todo/multiplan.md"),
     ("engine: multiplan close", c_engine_multiplan_close, "UI 3d; todo/multiplan.md"),
     ("engine: sneak examine message", c_engine_sneak_examine_message, "UI 3d; todo/multiplan.md"),
