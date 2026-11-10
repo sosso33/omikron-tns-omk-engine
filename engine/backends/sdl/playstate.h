@@ -1515,6 +1515,7 @@ struct PlayState {
     void releaseIdleCrowd();
     void releaseIdleStaged();
     void lazyPlace(int key);       // the moving collision, placed on demand
+    void promoteBothSoups(int sl, int mi);   // a turned mesh's faces into both soups (`WorldSlot::bothSoups`)
     void lazyPlaceAll();
     void lazyRegister();           // the soups' `ensurePlaced` registration
     void lazyForget();             // a world rebuild: nothing is pending

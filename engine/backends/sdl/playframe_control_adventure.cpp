@@ -3024,6 +3024,7 @@ void PlayState::adventureAction() {
             std::printf("frame %ld: event 9 - his feet are on AREA %d's decor; "
                         "the active row follows (zones re-registered: %zu)\n",
                         frameNo, under, session.zones().registered().size());
+            omk::event("player.area", {{"frame", frameNo}, {"area", under}});
         }
     }
 }

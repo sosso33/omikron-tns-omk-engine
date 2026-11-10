@@ -988,6 +988,33 @@ bool clampNormal(unsigned mask, bool high, const double n[3], double out[3]) {
     return true;
 }
 
+bool faceIsWalkable(const float* t) {
+    // `collisionSoup`'s `emit`, on floats: the same cross product, the same test
+    const double ux = double(t[3]) - t[0], uy = double(t[4]) - t[1], uz = double(t[5]) - t[2];
+    const double vx = double(t[6]) - t[0], vy = double(t[7]) - t[1], vz = double(t[8]) - t[2];
+    const double nx = uy * vz - uz * vy;
+    const double ny = uz * vx - ux * vz;
+    const double nz = ux * vy - uy * vx;
+    const double n2 = nx * nx + ny * ny + nz * nz;
+    if (!(n2 > 0.0)) return false;   // no area, no normal: the steep copy, inert either way
+    return std::fabs(ny) / std::sqrt(n2) >= kSlopeCos30;
+}
+
+std::size_t keepLiveClass(TriangleSoup& soup, std::span<const std::uint32_t> tris,
+                          SoupKind layer) {
+    std::size_t collapsed = 0;
+    const bool wantWalkable = layer == SoupKind::Walkable;
+    for (const std::uint32_t t : tris) {
+        const std::size_t i = 9 * static_cast<std::size_t>(t);
+        if (i + 9 > soup.size()) continue;
+        float* f = soup.data() + i;
+        if (faceIsWalkable(f) == wantWalkable) continue;
+        for (int k = 3; k < 9; ++k) f[k] = f[k % 3];   // b = c = a
+        ++collapsed;
+    }
+    return collapsed;
+}
+
 void measurePart(const TriangleSoup& tris, MovingPart& part) {
     double lo[2] = {1e300, 1e300}, hi[2] = {-1e300, -1e300};
     for (const std::uint32_t t : part.ids) {

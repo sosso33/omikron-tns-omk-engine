@@ -9,6 +9,25 @@
 #include "../openxr/xrhost.h"
 #endif
 
+// A turned mesh's placed triangles in one soup kept live by their class
+// (`omk::keepLiveClass`), and the `collision.live` event when the number
+// collapsed changes - the instrument `engine: turned floor` reads: each face
+// live in exactly one soup, so live walkable + live steep is the face count.
+static void keepLiveAndNote(WorldSlot& w, int mi, omk::TriangleSoup& soup,
+                            const std::vector<std::uint32_t>& tris, bool steep) {
+    const auto collapsed = static_cast<long>(omk::keepLiveClass(
+        soup, tris, steep ? omk::SoupKind::Steep : omk::SoupKind::Walkable));
+    auto it = w.liveCollapsed.find(mi);
+    if (it == w.liveCollapsed.end()) it = w.liveCollapsed.emplace(mi, std::array<long, 2>{-1, -1}).first;
+    long& was = it->second[steep ? 1 : 0];
+    if (was == collapsed) return;
+    was = collapsed;
+    omk::event("collision.live", {{"mesh", std::string(w.meshes[static_cast<std::size_t>(mi)].name)},
+                                  {"layer", std::string(steep ? "steep" : "walkable")},
+                                  {"live", static_cast<double>(static_cast<long>(tris.size()) - collapsed)},
+                                  {"collapsed", static_cast<double>(collapsed)}});
+}
+
 const std::array<float, 3> * PlayState::motionAtFind(const std::string& name) {
     for (const auto& kv : motionAt) if (kv.first == name) return &kv.second;
     return nullptr;
@@ -750,6 +769,17 @@ void PlayState::inputMotion() {
                     w.restSoupOfMesh.emplace(mi, takeTris(w.soup, meshSoupTris));
                     w.restSteepOfMesh.emplace(mi, takeTris(w.steep, meshSteepTris));
                 }
+                // A TILT OR AN UNEVEN SCALE can change a face's slope class,
+                // which the engine reads off the live normal: from here on
+                // the mesh is in both soups (`WorldSlot::bothSoups`). A turn
+                // about Y alone, a door on its hinge, changes no slope.
+                {
+                    if (w.bothSoups.size() != w.meshes.size()) w.bothSoups.assign(w.meshes.size(), 0);
+                    const bool tilts = pa.rotated && (pa.q.x != 0.0f || pa.q.z != 0.0f);
+                    const bool uneven = pa.s[0] != pa.s[1] || pa.s[1] != pa.s[2];
+                    if ((tilts || uneven) && !w.bothSoups[static_cast<std::size_t>(mi)])
+                        promoteBothSoups(sl, mi);
+                }
                 const auto restoreCorners = [&] {
                     const std::vector<float>& r = restXyz->second;
                     for (std::size_t k = 0; k < meshCornersIdx.size(); ++k) {
@@ -872,6 +902,9 @@ void PlayState::inputMotion() {
                     }
                     if (!pts.empty())
                         omk::placePoints(pp, soup.data(), 3, soup.data(), 3, pts.data(), pts.size());
+                    // a turned mesh: each face live in the soup of its placed slope
+                    if (static_cast<std::size_t>(mi) < w.bothSoups.size() && w.bothSoups[static_cast<std::size_t>(mi)])
+                        keepLiveAndNote(w, mi, soup, tris, &soup == &w.steep);
                 };
                 const double motionSoups0 = phaseNow();
                 static const bool eagerSoups = omk::envFlag("OMK_EAGER_SOUPS");
@@ -1640,6 +1673,56 @@ std::size_t PlayState::slotSoupOffset(int sl, bool steep) const {
     return off;
 }
 
+// A MESH A MOTION TILTS, into both soups (`WorldSlot::bothSoups`): the rest
+// triangles of each class APPENDED to the other soup, so every face has a copy
+// in each and `omk::keepLiveClass` keeps the one its placed slope belongs to.
+// The steep copies obey `collisionSoup`'s mesh exclusion (0x20000000 | 0x41,
+// never swept). Appending changes the slot's sizes, so the merge that follows
+// is a full one (`inputSoupPatchInPlace`) and the grids are rebuilt by it - the
+// rebuild a mesh starting to move costs anyway. Called after the mesh's rest
+// copies are taken and before it is placed.
+void PlayState::promoteBothSoups(int sl, int mi) {
+    WorldSlot& w = worldSlots[static_cast<std::size_t>(sl)];
+    const auto m = static_cast<std::size_t>(mi);
+    if (m >= w.meshes.size() || m >= w.soupTrisOfMesh.size() || m >= w.steepTrisOfMesh.size()) return;
+    if (w.bothSoups.size() != w.meshes.size()) w.bothSoups.assign(w.meshes.size(), 0);
+    w.bothSoups[m] = 1;
+    auto& restSoup = w.restSoupOfMesh[mi];
+    auto& restSteep = w.restSteepOfMesh[mi];
+    const auto mf = static_cast<std::uint32_t>(w.meshes[m].flags);
+    const bool sweepable = (mf & (0x20000000u | 0x41u)) == 0;
+    const std::vector<float> toWalk = restSteep;
+    const std::vector<float> toSteep = sweepable ? restSoup : std::vector<float>{};
+    const auto append = [&](omk::TriangleSoup& soup, std::vector<int>& meshOf,
+                            std::vector<std::uint32_t>& trisOf, std::vector<float>& rest,
+                            const std::vector<float>& add, omk::SoupKind layer) {
+        std::vector<std::uint32_t> added;
+        for (std::size_t k = 0; k + 9 <= add.size(); k += 9) {
+            added.push_back(static_cast<std::uint32_t>(soup.size() / 9));
+            soup.insert(soup.end(), add.begin() + static_cast<long>(k), add.begin() + static_cast<long>(k) + 9);
+            meshOf.push_back(mi);
+            rest.insert(rest.end(), add.begin() + static_cast<long>(k), add.begin() + static_cast<long>(k) + 9);
+        }
+        trisOf.insert(trisOf.end(), added.begin(), added.end());
+        // at rest every added copy is the other class: inert until placed
+        omk::keepLiveClass(soup, added, layer);
+        return added.size();
+    };
+    const std::size_t nw = append(w.soup, w.soupMesh, w.soupTrisOfMesh[m], restSoup, toWalk,
+                                  omk::SoupKind::Walkable);
+    const std::size_t ns = append(w.steep, w.steepMesh, w.steepTrisOfMesh[m], restSteep, toSteep,
+                                  omk::SoupKind::Steep);
+    mergedValid = false;   // the slot's sizes changed: the next merge is a full one
+    const auto lit = lazy.meshes.find(sl * 1000000 + mi);
+    if (lit != lazy.meshes.end()) lit->second.boxKnown = false;   // its rest boxes grew
+    std::printf("collision: mesh '%s' tilts - in both soups from now on, its faces classed by "
+                "their placed slope (+%zu walkable, +%zu steep copies)\n",
+                w.meshes[m].name, nw, ns);
+    omk::event("collision.both", {{"set", w.stem}, {"mesh", std::string(w.meshes[m].name)},
+                                  {"walkable", static_cast<double>(nw)},
+                                  {"steep", static_cast<double>(ns)}});
+}
+
 void PlayState::lazyPlace(int key) {
     auto it = lazy.meshes.find(key);
     if (it == lazy.meshes.end() || !it->second.pending) return;
@@ -1664,6 +1747,9 @@ void PlayState::lazyPlace(int key) {
             pts.push_back(3 * t); pts.push_back(3 * t + 1); pts.push_back(3 * t + 2);
         }
         omk::placePoints(lm.pp, soup.data(), 3, soup.data(), 3, pts.data(), pts.size());
+        // a turned mesh: each face live in the soup of its placed slope
+        if (mi < w.bothSoups.size() && w.bothSoups[mi])
+            keepLiveAndNote(w, lm.mi, soup, tris, &soup == &w.steep);
         // ...and into the merged soup at the slot's offset, as the merge does
         if (mergedValid)
             for (const std::uint32_t t : tris)

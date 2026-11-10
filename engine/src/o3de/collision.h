@@ -163,6 +163,34 @@ SoupRunBoxes soupRunBoxes(const TriangleSoup& tris, std::span<const std::uint32_
 // not this soup's.
 std::optional<SweepHit> sweepSphere(const TriangleSoup& tris, const SoupRunBoxes& runs,
                                     const double p0[3], const double d[3], double radius);
+// ---- THE SLOPE OF A FACE THAT TURNS --------------------------------------
+//
+// `collisionSoup` sorts a face into the Walkable or the Steep soup ONCE, by
+// its normal AS AUTHORED. The engine sorts nothing: the ground probe's
+// per-mesh test (`sub_443810`, under `sub_443560` through
+// `o3de_ForEachMeshInBox`) turns the hit normal by the mesh's CURRENT
+// matrix (`mesh+56`) and hands it on unfiltered, and `Walk_GroundResponse`
+// (0x00465460) makes its cos(30) test on that. So a face a scene program
+// TURNS past 30 degrees changes class with it: the drawbridge `MAploga03`
+// in Mayerem stands vertical at rest and lies flat once lowered, and the
+// cable car's passengers walk out across it (`todo/scene-gameplay-audit.md`
+// row 20). A turned mesh's faces are carried in BOTH soups (the backend's
+// `bothSoups`) and each copy is kept live only while the face's slope,
+// placed, is its soup's class; the other is collapsed onto its first vertex.
+//
+// A collapsed face is INERT to every reader without a mask: `floorUnder`,
+// `surfaceUnder`, their grid kernels and `soupInBox`'s consumers reject a
+// zero XZ determinant, and `sweepOne` returns on a zero normal before its
+// edge and vertex tests. It stays inside its mesh's extent, so no box grows.
+//
+// The class test is `collisionSoup`'s own (`|ny| / |n| >= kSlopeCos30` is
+// Walkable), on the triangle's floats.
+bool faceIsWalkable(const float* tri9);
+// Each of `tris` (triangle indices into `soup`) whose class is not `layer`
+// (Walkable or Steep) collapsed in place. -> how many were.
+std::size_t keepLiveClass(TriangleSoup& soup, std::span<const std::uint32_t> tris,
+                          SoupKind layer);
+
 // One byte a triangle of a `Shot` soup: 1 where its mesh carries the cutout
 // bit 0x800, which `sub_444460` skips for the sight (`SoupKind::Sight`).
 // `meshOf` is the soup's own (`collisionSoup`'s third argument).

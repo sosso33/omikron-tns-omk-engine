@@ -781,6 +781,20 @@ struct WorldSlot {
     // to re-place some 30 meshes; the original copies nothing (the probe and
     // the sweep read the node's matrix, `Walk_ProbeGround`, `Sweep_MeshTest`).
     std::unordered_map<int, std::vector<float>> restXyzOfMesh, restSoupOfMesh, restSteepOfMesh;
+    // MESHES A MOTION TURNS OFF THE VERTICAL, one byte a mesh: their faces
+    // carried in BOTH soups and kept live by their placed slope
+    // (`omk::keepLiveClass`, o3de/collision.h). Set the first time a patch
+    // tilts the mesh or scales it unevenly - a turn about Y alone changes no
+    // slope - and the other class's rest triangles are APPENDED to `soup` /
+    // `steep` then, so the slot's sizes change and the next merge is a full
+    // one. Nothing at load: the scene that turns a set's mesh is not always
+    // resident when the set loads (walking in, the outgoing one is).
+    std::vector<std::uint8_t> bothSoups;
+    // ...and how many of each such mesh's copies the last placement left
+    // collapsed, walkable and steep (-1 before the first): the
+    // `collision.live` event says when it changes (`verify.py: engine:
+    // turned floor` holds each face live in exactly one soup)
+    std::map<int, std::array<long, 2>> liveCollapsed;
     // A MOVING MESH DRAWN AS THE ENGINE DRAWS IT (todo/optimization.md step
     // 37). `o3de_SetNodePos` (0x004370A0) writes a node's three floats and
     // `sub_494650` builds its matrix; the vertices go through it on the way

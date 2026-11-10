@@ -18221,6 +18221,12 @@ def c_engine_patch_index():
     frame (against ~46000 re-merged). From outside it, 2026-09-13: 20 headless
     frames byte-identical before and after.
 
+    RE-PINNED 2026-11-10, 754 + 1976 -> 2730 + 2730 (`engine: turned floor`):
+    every mesh moving on this street TILTS - the cranes' `Cargo` containers
+    and heads, the miradors, the fans' `Epale` blades, 33 meshes - so each is
+    carried in both soups from its first tilt, its 754 walkable and 1976 steep
+    faces a copy in each, live by their placed slope. 0 mismatched still.
+
     SHOWN TO FAIL: an in-place copy that skips the STEEP triangles leaves
     `playerSteep` behind the slots, and the check goes red with every moving
     frame mismatched - 30 of 30, 60 of 60 - while the re-placed counts do not
@@ -18249,7 +18255,7 @@ def c_engine_patch_index():
         return (len(rows),), (2,), "patch verify lines - the viewer's log changed " \
             "or the street no longer moves"
     return tuple(tuple(int(x) for x in row) for row in rows), \
-        ((30, 0, 754, 1976), (60, 0, 754, 1976)), \
+        ((30, 0, 2730, 2730), (60, 0, 2730, 2730)), \
         "per summary: moving frames compared, frames whose in-place merged soups " \
         "differ from the full merge, and the walkable + steep triangles re-placed"
 
@@ -32051,6 +32057,67 @@ def c_engine_lazy_collision():
         (True, True, True), \
         "the street walk makes under a tenth of the placements it records, and its frame and " \
         "log are those of the eager placement"
+
+
+def c_engine_turned_floor():
+    r"""A FACE A SCENE PROGRAM TURNS CHANGES ITS SLOPE CLASS WITH IT
+    (2026-11-10, `todo/scene-gameplay-audit.md` row 20; `o3de/collision.h`
+    "THE SLOPE OF A FACE THAT TURNS"). The engine's ground probe turns the
+    hit normal by the mesh's CURRENT matrix (`sub_443810` under `sub_443560`)
+    and `Walk_GroundResponse` tests cos(30) on that; the port sorted each face
+    into the walkable or the steep soup once, at rest. Mayerem's drawbridge
+    `MAploga03` stands vertical at rest and is lowered flat by the cable car's
+    arrival (AREA 137 record 19, `scx.play 0x42`), so the cable car's
+    passenger stepped out onto a "wall" and fell through it at x 33401.
+
+    The real path: the cable car's Action (zone 2217) from the apartment
+    save, then up held - the player out of the cabin, across the lowered
+    bridge and onto AREA 150's floor (Soyinka's, `player.area` 150), with
+    the four turned meshes put in both soups (`collision.both`).
+
+    ...and each of the bridge's faces live in exactly one soup at the end:
+    its live walkable and live steep copies (`collision.live`) sum to its
+    face count, the flat top among the walkable ones.
+
+    SHOWN TO FAIL, 2026-11-10: the `promoteBothSoups` call removed - no
+    `collision.both`, and the player falls at x 33401 towards the water
+    (ground 1073.6) and never reaches AREA 150; and `keepLiveClass`
+    collapsing nothing - the walk still passes (a live steep copy of the
+    flat top neither stops nor slides him here), the face count does not.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_EVENTS="1")
+    r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                        "--save", os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "137",
+                        "--stand", "35650,-484,-2405,0", "--zone-enable", "2217",
+                        "--hold", "0*120,k28*3,0*330,k200*250", "--nofmv", "--nodelay",
+                        "--res", "640x480", "--frames", "760"],
+                       capture_output=True, text=True, errors="replace", env=env)
+    ev = _events(r.stdout)
+    both = sorted(e[1].get("mesh") for e in ev if e[0] == "collision.both")
+    areas = [int(e[1]["area"]) for e in ev if e[0] == "player.area"]
+    # EACH FACE LIVE IN EXACTLY ONE SOUP: the bridge's copies added to each
+    # (`collision.both`) sum to its faces, and the last placement's live
+    # copies (`collision.live`, per layer) must sum to the same number
+    faces = sum(int(float(e[1]["walkable"])) + int(float(e[1]["steep"]))
+                for e in ev if e[0] == "collision.both" and e[1].get("mesh") == "MAploga03")
+    live = {}
+    for e in ev:
+        if e[0] == "collision.live" and e[1].get("mesh") == "MAploga03":
+            live[e[1]["layer"]] = int(float(e[1]["live"]))
+    print("        turned into both soups: %s; the player's feet on areas %s; MAploga03's %d faces "
+          "live %s" % (both, areas, faces, live))
+    return ("MAploga03" in both, 150 in areas, faces > 0 and sum(live.values()) == faces,
+            live.get("walkable", 0) > 0), (True, True, True, True), \
+        "the lowered drawbridge is a floor: the cable car's passenger walks out onto AREA 150, " \
+        "each of its faces live in one soup only"
 
 
 def c_engine_vr_strafe():
@@ -55106,6 +55173,7 @@ SLOW = [
     ("engine: raster cost", c_engine_raster_cost, "todo/cpu-vs-original.md tier A; o3de/raster.h"),
     ("engine: particle gate", c_engine_particle_gate, "todo/cpu-vs-original.md tier C; o3de/particles.h"),
     ("engine: lazy collision", c_engine_lazy_collision, "todo/cpu-vs-original.md tier C; o3de/collision.h"),
+    ("engine: turned floor", c_engine_turned_floor, "todo/scene-gameplay-audit.md 20; o3de/collision.h"),
     ("engine: gles overlay", c_engine_gles_overlay, "todo/vita-port.md G6; backends/gles/glesrender.cpp"),
     ("engine: pool past 64", c_engine_pool_past_64, "todo/handoff-quest-port.md; o3de/renderer.h"),
     ("engine: crowd indoors", c_engine_crowd_indoors, "docs/STREET_LIFE.md; todo/handoff-quest-port.md"),
