@@ -1553,7 +1553,14 @@ The reader's "continue" after the wet floors - item 3 of the weather list.
   tree: the record was taken on the M3 (the day's other sessions, the
   reader), this on the M1 - GLES's count is the machine's, Vulkan's is not.
   To settle: the part on the M3; green there, the threshold is one
-  machine's.
+  machine's. **SETTLED 2026-11-10 (M1), the measure was wrong, not a
+  backend:** of the pixels in one set and not the other (1549 Vulkan's,
+  900 GLES's), every one is up 16..31 on the other backend - the "up by
+  more than 24" contour drawn across a soft halo, which the GPU's
+  filtering moves by a ring of pixels. 99.9% of each set is up more than
+  12 on the other, the light added agrees within 3% (GLES 0.971 of
+  Vulkan's), none darker. Part 15 now asks exactly that (over 98% both
+  ways, within 10%); GLES's `kHaloGain` halved fails it three ways.
 * **1, the streaks - TRIED AND TAKEN OUT** (2026-10-28): the reflection's
   bright part (over 0.35) smeared along the screen's vertical, 8 taps each
   way over 8% of the frame, on a wet REFLECTING floor (mode 3). It moved 0

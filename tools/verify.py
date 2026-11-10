@@ -35898,15 +35898,23 @@ def c_engine_rain3d():
          more than 1000 pixels move on Vulkan, and on GLES the same ones
          (overlap above 0.8).
       15. THE HALOS (`View::halo`, the lights' bloom spread wider and
-         brighter by the wet air - `kHaloWiden`, `kHaloGain`): Qalisar's
+         brighter by the wet air - `kHaloRadius`, `kHaloGain`): Qalisar's
          lamp-lit street (part 13's spot, the restored shower) with the
          remaster pack (`omk.conf` pack; skipped without it) and the mist at
          0, against `OMK_NO_HALO=1` - more than 8000 pixels brighter on
          Vulkan (the three channels' sum up by more than 24 in 8-bit steps),
-         and on GLES the same ones (overlap above 0.8). Measured 2026-10-28:
+         and on GLES more than 8000 as well; each backend's pixels lit on the
+         other by more than 12, over 98% both ways; GLES's light added within
+         10% of Vulkan's (summed over both sets). Measured 2026-10-28:
          20597 on Vulkan, 19722 on GLES, none darker, at `kHaloGain` 2; at
-         1.5 (the reader's) 9964 and 9504, overlap 0.842; `View::halo` held at 0
-         (the mutation it is shown to fail with) 0.
+         1.5 (the reader's) 9964 and 9504; `View::halo` held at 0 (the
+         mutation it is shown to fail with) 0. 2026-11-10 (M1): 10324 and
+         9675, lit on the other 0.999 / 0.999, light 0.971; GLES's
+         `kHaloGain` halved fails it. The overlap of the two sets it asked
+         for until then (above 0.8) measured the CONTOUR the threshold draws
+         across a soft ramp, which the GPU's filtering moves: 0.842 on the
+         M3, 0.782 on the M1, every pixel outside the intersection up 16..31
+         on the other backend.
       16. THE DRIPS off the roofs' edges (`o3de/wetfloor.h` DripPoint, the
          rain's draw): Qalisar's start facing the arcade (15516, 0, -10182,
          270), the restored shower, `--wet 1 --rain3d 1` - more than 1000
@@ -36368,9 +36376,23 @@ def c_engine_rain3d():
         hmv = lit_up(hv1, hv0)
         if hg1 and hg0:
             hmg = lit_up(hg1, hg0)
-            hiou = len(hmv & hmg) / max(1, len(hmv | hmg))
-            hgl = (len(hmg) > 8000, hiou > 0.8)
-            print(f"        the halos: Vulkan {len(hmv)}, GLES {len(hmg)} pixels brighter, overlap {hiou:.3f}")
+            # NOT an overlap of the two sets: a halo is a soft ramp and "up by
+            # more than 24" draws a contour across it, which a GPU's filtering
+            # moves by a ring of pixels (IoU 0.842 on the M3, 0.782 on the M1,
+            # every pixel outside the intersection up 16..31 on the other).
+            # Instead: each backend's halo pixels are lit on the other too, by
+            # more than half the threshold, and the light added agrees.
+            hlift = lambda a, b: [((x >> 11) & 31) * 8 + ((x >> 5) & 63) * 4 + (x & 31) * 8
+                                  - ((y >> 11) & 31) * 8 - ((y >> 5) & 63) * 4 - (y & 31) * 8
+                                  for x, y in zip(px(a), px(b))]
+            ldv, ldg = hlift(hv1, hv0), hlift(hg1, hg0)
+            vin = sum(ldg[i] > 12 for i in hmv) / max(1, len(hmv))
+            gin = sum(ldv[i] > 12 for i in hmg) / max(1, len(hmg))
+            hu = hmv | hmg
+            hratio = sum(max(0, ldg[i]) for i in hu) / max(1, sum(max(0, ldv[i]) for i in hu))
+            hgl = (len(hmg) > 8000, vin > 0.98, gin > 0.98, 0.9 < hratio < 1.1)
+            print(f"        the halos: Vulkan {len(hmv)}, GLES {len(hmg)} pixels brighter; lit on the other "
+                  f"{vin:.3f} / {gin:.3f}; GLES's light against Vulkan's {hratio:.3f}")
         else:
             hgl = ("skipped",) if platform.system() != "Darwin" else ("no frame",)
             print(f"        the halos: Vulkan {len(hmv)} pixels brighter")
@@ -36386,7 +36408,7 @@ def c_engine_rain3d():
             (16, 0), ("1", True, "1", True), (True, True, True), (True, True), (True, True), ("1", True, "1", -16),
             (True, _or_skip(dgl, (True, True))), (True, 0), (True, _or_skip(vgl, (True, True))),
             (True, 0, True, _or_skip(sgl, (True, True))),
-            _or_skip(haloes, (True, _or_skip(hgl, (True, True)))),
+            _or_skip(haloes, (True, _or_skip(hgl, (True, True, True, True)))),
             (True, True, True, 0, True, _or_skip(rgl, (True, True))),
             (True, True, True, True, True, _or_skip(bgl, True)),
             (True, True, True, True, _or_skip(ggl, (True, True)))), \
