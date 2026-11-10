@@ -127,6 +127,26 @@ the chosen value back. `sub_41F4C0`'s defaults write the dword as
 `sub_43A7xx` (listing line 92242) zeroes both bytes on a different path,
 not yet attributed. The byte has **one consumer**: `Slider_Init`.
 
+**WHEN IT SHOWS, AND HOW MUCH (the reader's report, 2026-11-07: "changing the
+crowd density seems to change nothing", on every version).** Two things follow
+from that one consumer, and both are the original's:
+
+* **It takes effect only when the CITY is loaded again.** `Slider_Init` runs
+  in `Area_TickLoad` case 8 for the area being loaded; the apply hook only
+  stores the byte. Changing the row in the street changes nothing on screen,
+  and neither does walking into an interior and back out: the city stays
+  resident in its slot (the iMac's log of 2026-11-06 kept ANEKBAH in slot 1
+  through ARESTO and ARESTO14), so its walkers are never spawned again. A
+  slider journey to another city, a save loaded, or a new game is what
+  applies it.
+* **The 200-mover pool flattens the top levels.** Anekbah's circuit at the
+  street start (`--density N --clip 100`, frame 59 of a run): 138 / 172 /
+  200 / 200 / 200 walkers live for levels 0-4, and of those 36 / 47 / 55 /
+  58 / 73 within the 100 m clip (7 / 9 / 12 / 11 / 18 drawn in view). From
+  level 2 up the pool is full and the spawner's ONE accumulator over all the
+  lanes in order only packs the 200 into fewer, earlier lanes - the street
+  you stand in may get more or fewer of them.
+
 ### The circuit — `TRAJECTOIRES\<stem>.OPT`
 
 `Area_TickLoad` case 8 appends `.OPT` to the 9-byte name at AREA `+115` and
