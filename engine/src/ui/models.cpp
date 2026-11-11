@@ -199,6 +199,15 @@ bool UiModels::drawCharacter(Surface& dst, int x, int y, int w, int h, float ang
     return ok;
 }
 
+bool UiModels::drawCharacterAt(Surface& dst, int x, int y, int w, int h, float angleDeg,
+                               float distance) {
+    if (!characterOk_) return false;
+    m_.push_back(character_);
+    const bool ok = draw(dst, static_cast<int>(m_.size()) - 1, x, y, w, h, angleDeg, distance);
+    m_.pop_back();
+    return ok;
+}
+
 bool UiModels::drawWeapon(Surface& dst, int x, int y, int w, int h, float angleDeg,
                           float distance) {
     if (!weaponOk_) return false;

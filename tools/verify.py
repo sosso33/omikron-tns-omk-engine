@@ -32503,10 +32503,17 @@ def c_engine_meca_hud():
     codes = set("".join(e["log"] for e in ev))
     bars = all(int(e["bar"]) == 434 * max(int(e["health"]), 0) // 100 for e in ev)
     low = min([int(e["health"]) for e in ev] or [100])
-    print("        %d HUD states; codes seen %s; bars by the formula %s; health down to %d"
-          % (len(ev), sorted(codes), bars, low))
-    got = (len(ev) > 3, {"1", "2", "3"} <= codes, bars, low < 100)
-    return got, (True, True, True, True), \
+    # ...and its FIGURE (item 0x4C41D8, `0x42E600`: the player's clone under
+    # MECA.CTL, `sub_4778E0`) and the DAMAGE STATIC (`sub_432F20` when the log
+    # takes code 3, `sub_432F40` at the flip: 2000 ms, amplitude 6 + 15 t/1000)
+    fig = [(e["drawn"], e["model"]) for n, e in _events(o) if n == "hud.figure"]
+    stat = [(int(e["elapsed_ms"]), int(e["amp"])) for n, e in _events(o) if n == "hud.static"]
+    print("        %d HUD states; codes seen %s; bars by the formula %s; health down to %d; "
+          "figure %s; static %s" % (len(ev), sorted(codes), bars, low, fig[:1], stat[:3]))
+    got = (len(ev) > 3, {"1", "2", "3"} <= codes, bars, low < 100, fig[:1],
+           bool(stat) and stat[0] == (0, 6) and all(a == 6 + t * 15 // 1000 and t <= 2000
+                                                     for t, a in stat))
+    return got, (True, True, True, True, [("1", "MCG_FN")], True), \
         "screen 33 drawn as its own: its log takes enemy shots, damage and a kill, its bars " \
         "follow 434 x health / 100, and the health drops"
 

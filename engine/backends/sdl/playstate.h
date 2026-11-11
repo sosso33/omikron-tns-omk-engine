@@ -677,6 +677,15 @@ struct PlayState {
     // log screen 33's item 0x4C42B0 keeps of them (`0x42E730`): the ring
     // `dword_4EB808` (zeroed by the screen's open), its index `byte_4EB8C0`
     float shootBob{}, shootBobFrame{};   // the node's head-bob offset (y down) and the frame it was taken at
+    // `sub_432F20` / `sub_432F40`: "Degats recus" taken into screen 33's log
+    // starts 2000 ms of screen static, applied to the finished frame at the
+    // flip (`dword_52B930` on, `dword_52B934` the start)
+    bool damageStaticOn{};
+    long damageStaticStartMs{};
+    std::uint32_t damageStaticSeed{1};
+    void damageStatic(omk::Surface& frame);
+    void poseUiCharacter(const std::string& bank, const char* who);
+    std::string uiCharacterKey{};   // model/bank `uiModels`' character was posed for
     std::uint8_t hudEvent{};
     std::array<std::uint8_t, 11> hudEventRing{};
     int hudEventIdx{};

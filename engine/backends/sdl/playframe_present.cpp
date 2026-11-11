@@ -15,6 +15,9 @@ int PlayState::phasePresent() {
             // a frame nothing drew over goes straight from the world target
             // to the window; anything else, or a backend that refuses, is the
             // composed `fb` as before
+            // `sub_432F40` at the flip: the damage static over the finished
+            // frame (its gate keeps the frame on the CPU while it runs)
+            if (damageStaticOn) damageStatic(fb);
             bool presentedWorld = false;
             gpuPresentVerify(presentedWorld);    // the GLES window's verify
             gpuPresentOverlay(presentedWorld);   // the GLES window's overlay pass

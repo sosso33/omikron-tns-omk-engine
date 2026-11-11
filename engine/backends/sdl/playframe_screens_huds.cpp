@@ -641,6 +641,10 @@ void PlayState::screensShootHud(omk::ScreenComposer& comp) {
             // PORTED), then the eleven lines oldest first, each IAM\Meca
             // string by its code, under "{I255255255}"
             if (hudEvent) {
+                if (hudEvent == 3) {          // `sub_432F20`
+                    damageStaticOn = true;
+                    damageStaticStartMs = uiClockMs();
+                }
                 hudEventRing[static_cast<std::size_t>(hudEventIdx)] = hudEvent;
                 hudEvent = 0;
                 hudEventIdx = (hudEventIdx + 1) % 11;
@@ -706,6 +710,22 @@ void PlayState::screensShootHud(omk::ScreenComposer& comp) {
         // weapon (0x4C4460 at 48,380, 25.0), both turned by oscillator 4
         // (`sub_478EC0`), the sneak previews' turntable.
         bool ringDrawn = false, weaponDrawn = false;
+        // SHOOT MECA's FIGURE (item 0x4C41D8 at 65,375 50x50, `0x42E600`):
+        // the player's clone posed by MECA.CTL (`poseUiCharacter`), at
+        // `sub_478DE0(node, 393.7)`, turned by oscillator 4 (`sub_478EC0`)
+        bool figureDrawn = false;
+        if (meca) {
+            const int fx = comp.scaleX(65), fy = comp.scaleY(375);
+            figureDrawn = uiModels.drawCharacterAt(
+                fb, fx, fy, comp.scaleX(65 + 50) - fx, comp.scaleY(375 + 50) - fy,
+                omk::UiModels::spinDegrees(uiClockMs()), 393.7f);
+            static int figureTold = -1;
+            if (figureTold != int(figureDrawn)) {
+                figureTold = int(figureDrawn);
+                omk::event("hud.figure", {{"frame", frameNo}, {"drawn", int(figureDrawn)},
+                                          {"model", uiModels.characterName()}});
+            }
+        }
         if (!meca) {
             const float spin = omk::UiModels::spinDegrees(uiClockMs());
             const auto box = [&](int x, int y, int bw, int bh, int out[4]) {

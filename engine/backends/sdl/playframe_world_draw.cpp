@@ -1464,6 +1464,9 @@ void PlayState::worldMirror() {
         else if (mst.active && !mst.native) keep = "cpu mirror";
         else if (!flickerDir.empty() || !snapsDir.empty() || omk::envFlag("OMK_CLIPLOG")) keep = "instrument";
         else if (lastDumped) keep = "dump";
+        // the DAMAGE STATIC shifts the finished picture's own pixels
+        // (`sub_432F40`) - a hard gate: the frame must be on the CPU
+        else if (damageStaticOn) keep = "damage static";
         // THE SOFT GATES, last: what these three draw goes OVER the
         // picture without reading it (a full-screen bitmap, the text's
         // opaque ramp) or reads it by one of two fixed laws (the

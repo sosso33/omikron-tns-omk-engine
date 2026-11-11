@@ -144,6 +144,10 @@ public:
     void setCharacter(Geometry posed, std::vector<Texture> tex, const std::string& name);
     const std::string& characterName() const { return character_.name; }
     bool drawCharacter(Surface& dst, int x, int y, int w, int h, float angleDeg);
+    // ...at another distance: SHOOT MECA's figure, `0x42E600`'s
+    // `sub_478DE0(node, 393.7)`
+    bool drawCharacterAt(Surface& dst, int x, int y, int w, int h, float angleDeg,
+                         float distance);
 
     // `sub_42B5E0(4)` - oscillator 4, period 5000, and this is its angle in
     // degrees. The oscillator's own ramp is `sub_42B700`'s triangle over

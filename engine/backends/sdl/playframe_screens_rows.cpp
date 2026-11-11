@@ -603,76 +603,8 @@ void PlayState::screensSneakIdentity(const omk::UiPanel*& pn,
         // `Anim_RootDelta`'s 0 -> 1 step moves the node, which the
         // camera does not follow (it targets the model's centre), so
         // it is not applied here.
-        static std::string characterBuiltFor;
-        if (characterBuiltFor != playerModel) {
-            characterBuiltFor = playerModel;
-            CharModel* cm = charModelFor(playerModel);
-            const std::string characterBank = "F1AVNT";   // 0x004DF5EC, literal
-            CharBank* cb = charBankFor(characterBank);
-            int entry = -1, clip = -1;
-            int clipFrames = 0;
-            std::string firstTrack;
-            if (cb && cb->ready)
-                for (const auto& g : cb->ctl.groupList)
-                    if (g.flags & 1u) { entry = g.defaultEntry; break; }
-            if (cb && entry >= 0 && entry < static_cast<int>(cb->ctl.states.size()))
-                clip = cb->ctl.states[static_cast<std::size_t>(entry)].clip;
-            int bound = 0;
-            if (cm && cm->ready && clip >= 0 &&
-                clip < static_cast<int>(cb->ctl.clips.size())) {
-                omk::NodeTracks t;
-                const auto d = omk::animDescriptor(
-                    cb->data, cb->ctl.clips[static_cast<std::size_t>(clip)].offset);
-                if (d && d->frames > 0 && !d->tracks.empty()) {
-                    clipFrames = d->frames;
-                    firstTrack = d->tracks.front().name;
-                    t.count = static_cast<int>(d->tracks.size());
-                    t.frames = 1;
-                    t.rootTrack = -1;
-                    // BY THE TRACK'S KEY (`omk::meshOfTrack`), as
-                    // `Anim_BindNodeTrack` binds. F1AVNT's tracks are
-                    // `Sh`-prefixed (`ShBassin`) and Kay'l's meshes
-                    // `U`-prefixed (`UBassin`), so an exact name binds 0
-                    // of 19 - the T-pose this drew first - and the bone
-                    // suffix that replaced it only coincided with the key
-                    // (19/19 the same on the identity page).
-                    for (const auto& tr : d->tracks) {
-                        const std::int32_t mi = omk::meshOfTrack(tr, cm->meshes);
-                        if (mi >= 0) ++bound;
-                        t.ids.push_back(mi);
-                    }
-                    t.quats.assign(1, {});
-                    t.trans.assign(1, {0.0f, 0.0f, 0.0f});
-                    t.quats[0].resize(d->tracks.size());
-                    for (std::size_t i = 0; i < d->tracks.size(); ++i) {
-                        const omk::AnimTrack& tr = d->tracks[i];
-                        if (!tr.rotOffset || tr.rotKeys <= 0) continue;
-                        const int key = tr.rotKeys > 2 ? 2 : tr.rotKeys - 1;   // frame 1
-                        const std::size_t o = tr.rotOffset + 16u * static_cast<std::size_t>(key);
-                        if (o + 16 > cb->data.size()) continue;
-                        // little-endian floats (PORTING A9), not a memcpy
-                        const std::byte* src = cb->data.data() + o;
-                        t.quats[0][i] = {omk::loadLE<float>(src), omk::loadLE<float>(src + 4),
-                                         omk::loadLE<float>(src + 8), omk::loadLE<float>(src + 12)};
-                    }
-                    const auto pose = omk::composePose(cm->meshes, t, 0, false);
-                    omk::Geometry posed = cm->rest;
-                    omk::applyPose(posed, cm->rest, cm->meshes, pose);
-                    uiModels.setCharacter(std::move(posed), cm->tex, playerModel);
-                }
-            }
-            // The bank from the variable it was loaded under, and the
-            // clip's own length and first track: H1AVNT also opens on
-            // entry 0 'H_STAND', clip 0, and binds 19 by exact name, so
-            // only these tell the literal F1AVNT from the player's bank.
-            std::printf("sneak: identity character '%s' - bank %s, default entry %d "
-                        "'%s', clip %d (%d frames, first track '%s'), %d tracks bound, "
-                        "frame 1\n", playerModel.c_str(), characterBank.c_str(),
-                        entry,
-                        cb && entry >= 0 && entry < static_cast<int>(cb->ctl.states.size())
-                            ? cb->ctl.states[static_cast<std::size_t>(entry)].name.c_str() : "",
-                        clip, clipFrames, firstTrack.c_str(), bound);
-        }
+        if (uiCharacterKey != playerModel + "/F1AVNT")
+            poseUiCharacter("F1AVNT", "sneak: identity");   // 0x004DF5EC, literal
         static std::string identityTold;
         std::string said;
         for (int p : {6, 8, 0, 13, 9, 10, 12, 11, 15, 14})
@@ -1818,4 +1750,80 @@ void PlayState::screensPropertyTail() {
         omk::event("hud.show", {{"property", h.property}, {"value", static_cast<long>(h.value)},
                                 {"vie", static_cast<long>(h.vie)}, {"mode", hudFlash.mode}});
     }
+}
+
+
+// `sub_4778E0` (0x004778E0): a clone of the PLAYER's model under `ANIMS\<bank>`
+// (`LoadBankList`), `Cef_DefaultGroup` -> its flag-0x20 entry's clip, frame 1
+// - one still pose, into `uiModels`' character. The sneak's identity page asks
+// with the literal "F1AVNT.CTL"; SHOOT MECA's open (0x0042E3A0) with "MECA.CTL"
+// for its turning figure (item 0x4C41D8, `0x42E600`).
+void PlayState::poseUiCharacter(const std::string& bank, const char* who) {
+    uiCharacterKey = playerModel + "/" + bank;
+    CharModel* cm = charModelFor(playerModel);
+    const std::string& characterBank = bank;
+    CharBank* cb = charBankFor(characterBank);
+    int entry = -1, clip = -1;
+    int clipFrames = 0;
+    std::string firstTrack;
+    if (cb && cb->ready)
+        for (const auto& g : cb->ctl.groupList)
+            if (g.flags & 1u) { entry = g.defaultEntry; break; }
+    if (cb && entry >= 0 && entry < static_cast<int>(cb->ctl.states.size()))
+        clip = cb->ctl.states[static_cast<std::size_t>(entry)].clip;
+    int bound = 0;
+    if (cm && cm->ready && clip >= 0 &&
+        clip < static_cast<int>(cb->ctl.clips.size())) {
+        omk::NodeTracks t;
+        const auto d = omk::animDescriptor(
+            cb->data, cb->ctl.clips[static_cast<std::size_t>(clip)].offset);
+        if (d && d->frames > 0 && !d->tracks.empty()) {
+            clipFrames = d->frames;
+            firstTrack = d->tracks.front().name;
+            t.count = static_cast<int>(d->tracks.size());
+            t.frames = 1;
+            t.rootTrack = -1;
+            // BY THE TRACK'S KEY (`omk::meshOfTrack`), as
+            // `Anim_BindNodeTrack` binds. F1AVNT's tracks are
+            // `Sh`-prefixed (`ShBassin`) and Kay'l's meshes
+            // `U`-prefixed (`UBassin`), so an exact name binds 0
+            // of 19 - the T-pose this drew first - and the bone
+            // suffix that replaced it only coincided with the key
+            // (19/19 the same on the identity page).
+            for (const auto& tr : d->tracks) {
+                const std::int32_t mi = omk::meshOfTrack(tr, cm->meshes);
+                if (mi >= 0) ++bound;
+                t.ids.push_back(mi);
+            }
+            t.quats.assign(1, {});
+            t.trans.assign(1, {0.0f, 0.0f, 0.0f});
+            t.quats[0].resize(d->tracks.size());
+            for (std::size_t i = 0; i < d->tracks.size(); ++i) {
+                const omk::AnimTrack& tr = d->tracks[i];
+                if (!tr.rotOffset || tr.rotKeys <= 0) continue;
+                const int key = tr.rotKeys > 2 ? 2 : tr.rotKeys - 1;   // frame 1
+                const std::size_t o = tr.rotOffset + 16u * static_cast<std::size_t>(key);
+                if (o + 16 > cb->data.size()) continue;
+                // little-endian floats (PORTING A9), not a memcpy
+                const std::byte* src = cb->data.data() + o;
+                t.quats[0][i] = {omk::loadLE<float>(src), omk::loadLE<float>(src + 4),
+                                 omk::loadLE<float>(src + 8), omk::loadLE<float>(src + 12)};
+            }
+            const auto pose = omk::composePose(cm->meshes, t, 0, false);
+            omk::Geometry posed = cm->rest;
+            omk::applyPose(posed, cm->rest, cm->meshes, pose);
+            uiModels.setCharacter(std::move(posed), cm->tex, playerModel);
+        }
+    }
+    // The bank from the variable it was loaded under, and the
+    // clip's own length and first track: H1AVNT also opens on
+    // entry 0 'H_STAND', clip 0, and binds 19 by exact name, so
+    // only these tell the literal F1AVNT from the player's bank.
+    std::printf("%s: character '%s' - bank %s, default entry %d "
+                "'%s', clip %d (%d frames, first track '%s'), %d tracks bound, "
+                "frame 1\n", who, playerModel.c_str(), characterBank.c_str(),
+                entry,
+                cb && entry >= 0 && entry < static_cast<int>(cb->ctl.states.size())
+                    ? cb->ctl.states[static_cast<std::size_t>(entry)].name.c_str() : "",
+                clip, clipFrames, firstTrack.c_str(), bound);
 }

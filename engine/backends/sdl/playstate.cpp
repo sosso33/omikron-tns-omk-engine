@@ -719,6 +719,58 @@ void PlayState::shootFreezeSync(long frame) {
                 fz ? "freeze_all" : "unfreeze_all", fz ? "set" : "cleared", shootBrains.size());
 }
 
+// `sub_432F40` (0x00432F40), the DAMAGE STATIC, run at the flip while
+// `dword_52B930` is up - set by `sub_432F20` when screen 33's log takes code 3
+// ("Degats recus"), read 2026-11-11. For 2000 ms (`Sys_GetTimeMs`, here the
+// UI clock), on the LOCKED surface (W x H 16-bit pixels, pitch in bytes):
+//
+//     a = 6 + elapsed * 15 / 1000            // 6 .. 36, growing
+//     for (row = base; row < base + 2*W*H; row += 2 * pitch * (rand() % a) + 2)
+//         for (p = row; p < row + 2 * pitch; p += 2 * (rand() % (2 * a)))
+//             *(uint32_t*)p <<= 1;           // a pixel PAIR shifted left a bit
+//
+// - a do-while each (the first write before the first `rand()`), so every
+// visited stretch spans two rows and its words are doubled, the low pixel's
+// top bit carried into the high pixel's. `rand()` is the CRT's LCG, here a
+// stream of its own; the engine's shares the game's one stream.
+void PlayState::damageStatic(omk::Surface& frame) {
+    const long now = uiClockMs();
+    if (now > damageStaticStartMs + 2000) { damageStaticOn = false; return; }
+    if (!frame.valid() || frame.w <= 1 || frame.h <= 0) return;
+    const auto rnd = [this]() {
+        damageStaticSeed = damageStaticSeed * 214013u + 2531011u;
+        return static_cast<int>((damageStaticSeed >> 16) & 0x7FFFu);
+    };
+    const long elapsed = now - damageStaticStartMs;
+    const int a = static_cast<int>(elapsed * 15 / 1000) + 6;
+    const std::size_t pitch = static_cast<std::size_t>(frame.w) * 2;          // bytes
+    const std::size_t total = pitch * static_cast<std::size_t>(frame.h);
+    auto* px = frame.px.data();
+    const auto shiftPair = [&](std::size_t byteOff) {
+        const std::size_t i = byteOff / 2;
+        if (i + 1 >= frame.px.size()) return;
+        const std::uint32_t v = static_cast<std::uint32_t>(px[i]) |
+                                (static_cast<std::uint32_t>(px[i + 1]) << 16);
+        const std::uint32_t s = v << 1;
+        px[i] = static_cast<std::uint16_t>(s & 0xFFFFu);
+        px[i + 1] = static_cast<std::uint16_t>(s >> 16);
+    };
+    for (std::size_t row = 0; row < total;) {
+        std::size_t p = row;
+        const std::size_t rowEnd = row + 2 * pitch;
+        do {
+            shiftPair(p);
+            p += 2 * static_cast<std::size_t>(rnd() % (2 * a));
+        } while (p < rowEnd);
+        row += 2 * pitch * static_cast<std::size_t>(rnd() % a) + 2;
+    }
+    static long told = -1;
+    if (told < 0 || now - told >= 500) {
+        told = now;
+        omk::event("hud.static", {{"frame", frameNo}, {"elapsed_ms", elapsed}, {"amp", a}});
+    }
+}
+
 bool PlayState::playerHasHand() const {
     for (const auto& m : playerBody.meshes)
         if (std::strstr(m.name, "Maing")) return true;

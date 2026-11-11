@@ -949,6 +949,10 @@ void PlayState::modesShootEnterLeave(omk::Input& in) {
                     radar.openMeca();
                     // 0x42E3A0 also zeroes the log's ring - not its index
                     hudEventRing.fill(0);
+                    // ...and `sub_4778E0("MECA.CTL")`: the figure item
+                    // 0x4C41D8 turns (`0x42E600`)
+                    if (uiCharacterKey != playerModel + "/MECA")
+                        poseUiCharacter("MECA", "shoot hud 33");
                 } else {
                     radar.openHuman();
                 }
