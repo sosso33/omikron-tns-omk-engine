@@ -32229,6 +32229,12 @@ def c_engine_sham_pen():
     the transfer asks the FOLLOW camera (`sub_41DDB0(new)`, op 54's
     function; the `camera.follow` event as the camera takes it, after the
     transfer) - AREA 1, 22 and 30's reincarnations set no camera after it.
+    And he is HELD WHOLE (2026-11-11, the reader's frame of the vats: the
+    body lies left of Fodo, along the screen): the frame the transfer stops
+    his J_SUICSD and he falls to "the last pose it was given", his yaw is
+    the one he was drawn with (`body.held`, a turn of 0). SHOWN TO FAIL: that
+    branch not setting `poseHeld` - the yaw fell to `restYaw`, the clip's
+    root heading over a pose that already carries it, a turn of -134.
     And he is COLOURED by the lit path's shimmer (`sub_494180`, 2026-11-11,
     from the reader's frames of the original - the old bodies glow pale
     green): his corners' mean from the authored white through the wave,
@@ -32298,6 +32304,11 @@ def c_engine_sham_pen():
     left = {int(e["was"]): int(e["frame"]) for n, e in ev if n == "player.become"}
     ghosts = sorted({(int(e["actor"]), int(e["frame"]) >= left.get(int(e["actor"]), 1 << 30))
                      for n, e in ev if n == "body.ghost"})
+    # ...and HELD WHOLE as the transfer stops his J_SUICSD: the frame he
+    # falls to his last pose turns him by nothing (`body.held`)
+    turn49 = [abs(float(e["turn"])) < 1.0 for n, e in ev
+              if n == "body.held" and int(e["actor"]) == 49]
+    turn49 = bool(turn49) and all(turn49)
     # 3. the controller's body: a become while he walks
     r = subprocess.run(base + ["--var", "117=1", "--zone-run", "2232",
                                "--stand", "33300,1044,-4700,200", "--hold", "0*60,k200*80,0*200",
@@ -32331,9 +32342,10 @@ def c_engine_sham_pen():
     print("        exit cast %s; pen Actions %s, transfers %s, Kay'l's body %s, drawn as old "
           "bodies %s; the walker's become: Kay'l %s, old bodies %s; the slot freed %s"
           % (cast, zones, becomes, kayl, ghosts, walked, ghost3, evicted))
-    return (cast, zones, becomes, body, ghosts, walked, ghost3, solid3, follow3, tint3, evicted), \
+    return (cast, zones, becomes, body, ghosts, turn49, walked, ghost3, solid3, follow3, tint3,
+            evicted), \
         ([293, 421, 424], [2235, 2236, 2235, 2237, 2235, 2238, 2239], [406, 434],
-         [("HO1_FN", True, True)], [(49, True), (406, True)], [(True, True)], [49], False,
+         [("HO1_FN", True, True)], [(49, True), (406, True)], True, [(True, True)], [49], False,
          True, [(True, True)], ([49], [49], True, False)), \
         "record 34's cast on the way out of Soyinka's; Fodo, the vats, Fodo, the flank, Fodo, " \
         "the drink, the mount; young Fodo then the Sham; Kay'l's body left where he drank, " \

@@ -420,6 +420,7 @@ struct Staged {
     // again (`sub_4372D0(node, 268, 8)`).
     bool ghost = false;
     bool ghostColourTold = false;   // `body.ghost.colour` said once
+    bool heldWas = false;           // last frame held his last pose (`body.held`)
     omk::Geometry ghostRest;
     const omk::Geometry* ghostFrom = nullptr;
     // POSED BY THE RENDERER (todo/gpu-skinning.md step 4), as a walker is:

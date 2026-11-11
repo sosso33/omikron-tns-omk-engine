@@ -7,6 +7,7 @@
 #include "platform/env.h"
 #include "o3de/vecmath.h"
 #include "o3de/shimmer.h"
+#include <cstring>
 
 // THE MORPH ROOT TURNED BY A WORLD YAW, the engine's own composition.
 // `08_wave.c` 963-965: `sub_442B50(v40, 0, X, 0)` builds the yaw and
@@ -762,6 +763,17 @@ void PlayState::worldStagedBody(std::unique_ptr<Staged>& up, const omk::SceneRun
                : s.sceneTracks.valid() ? bodyYaw + rootYawNow
                : aboutPelvis ? bodyYaw : s.facing;
     s.drawnYawKnown = true;
+    // ...said as the body FALLS to its last pose: how far that frame turned
+    // him against the last one - 0, since the node keeps its transform
+    // (`body.held`; it was the clip's root heading again, Kay'l's -134)
+    {
+        const bool heldNow = src && std::strncmp(src, "the last pose", 13) == 0;
+        if (heldNow && !s.heldWas && s.lastYawKnown)
+            omk::event("body.held", {{"frame", frameNo}, {"actor", s.actor},
+                                     {"turn", static_cast<double>((bodyYaw - s.lastBodyYaw) *
+                                                                  omk::kRadToDegF)}});
+        s.heldWas = heldNow;
+    }
     // ...and remember it, so the next held frame can hold it.
     s.lastBodyYaw = bodyYaw;
     s.lastAboutPelvis = aboutPelvis;
@@ -1773,7 +1785,16 @@ void PlayState::worldStagedLinePose(const omk::SceneRunner*& run, bool useLine, 
         pose = s.idlePose;   // a copy: the head look below bends `pose`
         src = "the bank's default entry, frame 0";
     } else if (!s.lastPose.empty()) {
+        // HELD WHOLE - the pose AND the yaw it was drawn with, as the
+        // mid-flight branch above: the node keeps its last world
+        // transform. Not held, the yaw fell to `restYaw`, the clip's root
+        // heading, over a pose that already carries that root rotation -
+        // Kay'l's body left at the vats turned a further -134 degrees the
+        // frame `player.become` stopped his J_SUICSD (2026-11-11, against
+        // the reader's frame of the original), and every body whose
+        // program ends with the same double turn.
         pose = s.lastPose;
+        poseHeld = true;
         src = "the last pose it was given (nothing drives it now)";
     } else {
         omk::composePose(s.mo->meshes, omk::NodeTracks{}, 0, false, pose);
