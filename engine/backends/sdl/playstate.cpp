@@ -1913,9 +1913,9 @@ bool PlayState::beginMelee(int opponentId, int level) {
         std::vector<std::array<double, 3>> centres;
         for (const auto& c : sph) {
             r = std::max(r, c.radius);
-            centres.push_back({double(c.pos[0]),
-                               double(c.pos[1]) - double(fightRun.foeLift),
-                               double(c.pos[2])});
+            // on the node's vertical: `Actor_Move` reads a sphere's y and
+            // radius only (actor/player.cpp "THE SWEPT BODY")
+            centres.push_back({0.0, double(c.pos[1]) - double(fightRun.foeLift), 0.0});
         }
         w->setBlockers(&playerSteep, r > 0.0f ? r : 12.0f, std::move(centres));
         w->setBlockerGrid(&playerSteepGrid);

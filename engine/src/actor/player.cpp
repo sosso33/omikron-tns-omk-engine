@@ -701,15 +701,21 @@ PlayerController::PlayerController(const Setup& s)
     // THE SWEPT BODY: the model's sphere list sits about the PELVIS (the
     // actor's node), and the walker's origin is the feet, `camLift_` below it
     // (y grows down: pelvis.y = feet.y - camLift_). Each centre becomes an
-    // offset from the feet; the x/z offsets are a unit or two and are not
-    // turned with the facing, which `Actor_Move` does not do either - its
-    // capsule is a vertical segment through the node.
+    // offset from the feet ON THE NODE'S VERTICAL: `Actor_Move` (0x00469580)
+    // walks the list reading the y (`+252 + 16k`) and the radius (`+260 +
+    // 16k`) and NOTHING ELSE - the lowest `y - r`, the highest `y + r`, the
+    // largest `r` - so its capsule is a vertical segment through the node and
+    // a sphere's x and z are never read. They were kept here, unturned, which
+    // HO1_FN's -0.3 / -1.9 hid; the Sham's (SHU_FN) three lie along its body
+    // at z -7.5, -37.2 and -75.3, and the rider was swept 75 units off in a
+    // fixed world direction - jammed in the pen's gap whatever his facing
+    // (`todo/scene-gameplay-audit.md` row 4).
     if (!s.sweepSpheres.empty() && s.sweepRadius > 0.0f) {
         std::vector<std::array<double, 3>> centres;
         for (const auto& c : s.sweepSpheres)
-            centres.push_back({static_cast<double>(c.pos[0]),
+            centres.push_back({0.0,
                                static_cast<double>(c.pos[1]) - static_cast<double>(camLift_),
-                               static_cast<double>(c.pos[2])});
+                               0.0});
         walker_.setBlockers(s.blockers, s.sweepRadius, std::move(centres));
     }
     {

@@ -15221,6 +15221,10 @@ def c_engine_fight_collision():
     is not known: a brawl has no path-finding, so it is the expected reading,
     not a verified one. What is asserted is that the sweep engages.
 
+    RE-PINNED 2026-11-10, 1510 -> 1500 (furthest z 1507): his four sweep
+    spheres are hung on the node's vertical now, as `Actor_Move` reads them
+    (y and radius only - `engine: sham ride`), not at their x/z offsets, so he
+    meets the box a few units sooner.
     SHOWN TO FAIL: pass radius 0 to the opponent walker's `setBlockers` (the
     walker's own "sweep off") and the first run walks through as the second does.
     """
@@ -15260,7 +15264,7 @@ def c_engine_fight_collision():
                "both runs must take the harness and print their bodies lines"
     kBox = 1554.0
     return (int(max(z1) // 10) * 10, b1 > 0, max(z2) > kBox, b2), \
-           (1510, True, True, 0), \
+           (1500, True, True, 0), \
            ("the opponent's approach stops against SMbox45 (z 1554) with the walker "
             "blocking, and walks straight through it with --no-foe-collision")
 
@@ -32118,6 +32122,58 @@ def c_engine_turned_floor():
             live.get("walkable", 0) > 0), (True, True, True, True), \
         "the lowered drawbridge is a floor: the cable car's passenger walks out onto AREA 150, " \
         "each of its faces live in one soup only"
+
+
+def c_engine_sham_ride():
+    r"""THE SHAM RIDE TO THE STONE (2026-11-10, `todo/scene-gameplay-audit.md`
+    row 4; `actor/player.cpp` "THE SWEPT BODY"). `Actor_Move` (0x00469580)
+    builds its swept capsule from the model's sphere list reading each
+    record's y (`+252`) and radius (`+260`) only - a vertical segment through
+    the node. The port also took each sphere's x and z, unturned: HO1_FN's
+    are -0.3 / -1.9, but the Sham's (SHU_FN) three lie along its body at z
+    -7.5, -37.2 and -75.3, so the mounted player was swept 75 units off in a
+    fixed world direction and could not leave the pen's corner past the
+    great trunk, whatever his facing.
+
+    The ride, driven: the apartment save at AREA 137 by the pen, the mount
+    zones enabled and the Sham shown (`--character-show 424:0x7d`), Enter to
+    mount (`player.become 434`), then a route the walker can take with the
+    Sham's capsule (BFS over the set's collision, a 33.8 radius, a capsule
+    from 11.8 to 67.6 above the feet): south-east along the trunk, east,
+    north-east, east along z -4268, north-east into zone 2245 'Pousser
+    Pierre'; Enter there runs record 47 - the stone pushed, AREA 151 asked,
+    Fodo (406) dismounts.
+
+    SHOWN TO FAIL, 2026-11-10: the spheres' x and z put back - the Sham
+    stops at 33660 -4550 and never reaches zone 2245.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    route = ("0*120,k28*3,0*120,k205*36,0*15,k200*190,0*15,k203*17,0*15,k200*120,0*15,k205*19,"
+             "0*10,k200*510,0*15,k203*17,0*10,k200*110,0*15,k28*3")
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_EVENTS="1")
+    r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                        "--save", os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "137",
+                        "--stand", "33183,1044,-4412,90", "--zone-enable", "2239",
+                        "--zone-enable", "2242", "--character-show", "424:0x7d",
+                        "--hold", route, "--nofmv", "--nodelay", "--res", "640x480",
+                        "--frames", "1720"],
+                       capture_output=True, text=True, errors="replace", env=env)
+    ev = _events(r.stdout)
+    seq = [("become", int(e[1]["actor"])) if e[0] == "player.become" else ("zone", int(e[1]["zone"]))
+           for e in ev if e[0] in ("player.become", "zone.activate")]
+    print("        the ride's steps: %s" % seq)
+    zones = [v for k, v in seq if k == "zone"]
+    becomes = [v for k, v in seq if k == "become"]
+    return (434 in becomes, 2245 in zones, becomes[-1:] == [406]), (True, True, True), \
+        "mounted (434), Action in zone 2245 'Pousser Pierre' reached on the Sham, and Fodo (406) " \
+        "dismounts at the end of record 47"
 
 
 def c_engine_vr_strafe():
@@ -55174,6 +55230,7 @@ SLOW = [
     ("engine: particle gate", c_engine_particle_gate, "todo/cpu-vs-original.md tier C; o3de/particles.h"),
     ("engine: lazy collision", c_engine_lazy_collision, "todo/cpu-vs-original.md tier C; o3de/collision.h"),
     ("engine: turned floor", c_engine_turned_floor, "todo/scene-gameplay-audit.md 20; o3de/collision.h"),
+    ("engine: sham ride", c_engine_sham_ride, "todo/scene-gameplay-audit.md 4; actor/player.cpp"),
     ("engine: gles overlay", c_engine_gles_overlay, "todo/vita-port.md G6; backends/gles/glesrender.cpp"),
     ("engine: pool past 64", c_engine_pool_past_64, "todo/handoff-quest-port.md; o3de/renderer.h"),
     ("engine: crowd indoors", c_engine_crowd_indoors, "docs/STREET_LIFE.md; todo/handoff-quest-port.md"),

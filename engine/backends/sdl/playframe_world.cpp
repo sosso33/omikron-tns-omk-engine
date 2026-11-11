@@ -688,6 +688,7 @@ void PlayState::phaseWorldPlayerBecome(int playerId, int& lastPlayerActor) {
     if (player) {
         std::printf("frame %ld: player.become - the player is actor %d now, was %d; "
                     "the controller is rebuilt for the new body\n", frameNo, playerId, lastPlayerActor);
+        omk::event("player.become", {{"frame", frameNo}, {"actor", playerId}, {"was", lastPlayerActor}});
         // ...WHERE THE NEW BODY STANDS. Op 56 (0x402F60) reads
         // the NEW body's own node - `Actor_GetPosAndFacing(new)`,
         // actor +244..+252 and +420 - and `Actor_SetPlacement`s

@@ -2948,13 +2948,14 @@ void PlayState::adventureAction() {
         // costs the press - which is also why holding the button
         // in the open street does not keep re-running a script.
         actionSpent = true;
-        if (did)
+        if (did) {
             std::printf("action: zone %d activated (%d slot%s armed) at %.0f %.0f %.0f"
                         " - hand slot %d, object %d\n",
                         z, armed, armed == 1 ? "" : "s",
                         pp ? pp[0] : 0.0f, pp ? pp[1] : 0.0f, pp ? pp[2] : 0.0f,
                         hs, hs >= 0 ? session.objectSlotId(hs) : -1);
-        else
+            omk::event("zone.activate", {{"frame", frameNo}, {"zone", z}});
+        } else
             std::printf("action: pressed at %.0f %.0f %.0f - %d slots armed, "
                         "nothing interactable in reach\n",
                         pp ? pp[0] : 0.0f, pp ? pp[1] : 0.0f, pp ? pp[2] : 0.0f,
