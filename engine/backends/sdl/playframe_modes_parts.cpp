@@ -442,6 +442,27 @@ int PlayState::modesShoot() {
         // still unwired for the generic arm (`todo/standing-unknowns.md` 2) -
         // so what this draws is the MODE, not a gunfight.
         modesShootEnterLeave(in);
+        // THE GRID FOLLOWS THE AREA. `Map2D_Load` runs in `Area_TickLoad`
+        // with the area's own +106 name, so an `area.goto` made while a phase
+        // goes on - suspended and resumed, never left: the Mecagarde's
+        // archives, 63 'ARCHIV03' -> 66 (none) -> 67 'ARCHIV05' -> 69 (none)
+        // -> 180 'CSLEV-3' - puts the NEW area's grid (and radar) in, or none.
+        // The port loaded it at `Shoot_Enter` only, and AREA 67's and 180's
+        // gunmen walked AREA 63's floors.
+        if (shootMode && session.mapName() != shootMapLoaded) {
+            const std::string& mp = session.mapName();
+            shootMapLoaded = mp;
+            shootMap = omk::Map2d{};
+            shootField = omk::ShootField{};
+            radar.load(*fs_, mp.empty() ? std::string() : mp + ".MPT");
+            const bool ok = !mp.empty() && shootMap.load(fs_->read("MAP2D/" + mp + ".MPT"));
+            std::printf("frame %ld: MAP2D %s - the area's own grid on its load (%s)\n", frameNo,
+                        mp.empty() ? "(none)" : (mp + ".MPT").c_str(),
+                        ok ? (std::to_string(shootMap.floors().size()) + " floors").c_str()
+                           : "no grid");
+            omk::event("shoot.map", {{"frame", frameNo}, {"map", mp.empty() ? "-" : mp},
+                                     {"floors", ok ? int(shootMap.floors().size()) : 0}});
+        }
 
         // ---- THE PLAYER'S SUSPEND AND RESUME (todo/drift-audit.md S7) ----
         //
@@ -930,6 +951,7 @@ void PlayState::modesShootEnterLeave(omk::Input& in) {
                 // whose floors the NOISE reads (`sub_4246E0`)
                 shootMap = omk::Map2d{};
                 shootField = omk::ShootField{};   // its field belongs to the old grid
+                shootMapLoaded = mp;
                 if (!mp.empty() && shootMap.load(fs.read("MAP2D/" + mp + ".MPT")))
                     std::printf("frame %ld: MAP2D %s.MPT - %zu floors, cell %u\n", frameNo,
                                 mp.c_str(), shootMap.floors().size(), static_cast<unsigned>(shootMap.scale()));

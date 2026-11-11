@@ -281,6 +281,10 @@ struct PlayOptions {
     // the cave's meeting first, then beside Gandhar)
     long  playerAt2Frame = -1;
     float playerAt2[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    // ...and a THIRD and later: each at its own frame (a level's switch boxes
+    // in turn, `todo/scene-gameplay-audit.md` 5)
+    struct PlayerAtMore { long frame; float at[4]; };
+    std::vector<PlayerAtMore> playerAtMore;
     // --astaroth-souls F: HARNESS, all six souls struck down at frame F
     long  astarothSoulsAt = -1;
     // --astaroth-health N: HARNESS, his record +92 at the setup

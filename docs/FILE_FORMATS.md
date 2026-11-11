@@ -2398,7 +2398,7 @@ each loaded in its own phase with a compiled-in extension:
 |---|---|---|
 | +88 | `.3DO` | the set model (`Area_LoadSet`) |
 | +97 | `.SCX` | the scene scripts (`Area_LoadScx`), plus the `.sfx` sibling — see [CUTSCENES](CUTSCENES.md) |
-| +106 | `.MPT` | the 2D map (`Map2D_Load`); named by 16 areas, `ARCHIV04` cut |
+| +106 | `.MPT` | the 2D map (`Map2D_Load`, `Area_TickLoad` case 3 - on EVERY area load, so a shoot phase carried across `area.goto`s gets each area's own grid, or none; the Mecagarde's archives: 63 `ARCHIV03`, 66 none, 67 `ARCHIV05`, 69 none, 180 `CSLEV-3`); named by 16 areas, `ARCHIV04` cut |
 | +115 | `.OPT` | the area's **slider circuit**, `TRAJECTOIRES\<stem>.OPT` (`Area_LoadSliderTrack` → `Slider_Init`). Only 5 areas name one and all five ship — Anekbah, Jaunpur (`SOUK`), Lahoreh, Qalisar (`QCHAUD`), Anekbah CS Puits; `BIBLIO.OPT` ships unnamed |
 | +124 | — | an `.ani` animation library (`Anim_Load`) |
 | +133 | `.3DO` | a `MESHES\MISC` backdrop model (`Area_LoadMiscModel`) |

@@ -890,7 +890,12 @@ int PlayOptions::parse(int argc, char** argv) {
         else if (a == "--shoot-health" && i + 1 < argc) shootHealth = std::atoi(argv[++i]);
         else if (a == "--player-at" && i + 1 < argc) {
             // a second `--player-at` is a second, later placement
-            if (playerAtFrame >= 0) {
+            if (playerAtFrame >= 0 && playerAt2Frame >= 0) {
+                PlayerAtMore m{};
+                if (std::sscanf(argv[++i], "%ld:%f,%f,%f,%f", &m.frame, &m.at[0], &m.at[1],
+                                &m.at[2], &m.at[3]) == 5)
+                    playerAtMore.push_back(m);
+            } else if (playerAtFrame >= 0) {
                 if (std::sscanf(argv[++i], "%ld:%f,%f,%f,%f", &playerAt2Frame, &playerAt2[0],
                                 &playerAt2[1], &playerAt2[2], &playerAt2[3]) != 5)
                     playerAt2Frame = -1;

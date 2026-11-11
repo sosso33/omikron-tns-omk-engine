@@ -32393,6 +32393,68 @@ def c_engine_archives_exit():
         "resume leaves him without a weapon row"
 
 
+def c_engine_meca_archives():
+    r"""`engine/`: THE MECAGARDE'S ARCHIVES, TO THE END (`todo/scene-gameplay-
+    audit.md` 5, step 5). On from AREA 67 'Archives 05' (the archives exit's
+    route): its three switch boxes by ACTION - 1348 (doors 18/19 and tubes 1
+    and 2, guards 206/207), 1359 (door 22), 1358 (the level's end sas) - then
+    zone 1344, `area.goto 69`; the sas walks him in (zone 1386, `player.move
+    107`) to 1385, `area.goto 180` 'Lev-3', where record 6 resumes the phase
+    at 'Start Shoot' against Meca 191 (action 3, health 30). His death clip
+    posts message 3, whose handler ends the shoot, `area.goto 181`, `player.
+    become 49` - Kay'l put back at '1-A-CS Lev-4 Console' (address 568).
+
+    `--player-at` (an instrument) places him at each box and at the exit;
+    forty presses of Tir in AREA 180, with `--shoot-health 1000`.
+
+    Asserted, SHOWN TO FAIL: the MAP2D each area loads - 66 and 69 none,
+    67 'ARCHIV05', 180 'CSLEV-3' (`Map2D_Load` in `Area_TickLoad`): kept from
+    `Shoot_Enter` only, AREA 180's grid was AREA 63's, Meca 191 stood on no
+    floor and walked 6000 units off through the set, and the phase never
+    ended; the three boxes; areas 69 and 180 reached; Kay'l back, by the
+    address, at the console's height.
+    """
+    import subprocess, tempfile
+    eng = os.path.join(ROOT, "engine")
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_EVENTS="1")
+    hold = ("0*60,k28*3,0*90,k28*3,0*80,"
+            "k205*20,0*10,k200*200,0*20,k203*10,0*10,k200*110,0*30,k205*5,0*10,k200*60,0*20,"
+            "k28*3,0*750,0*100,k28*3,0*200,k200*170,"
+            "0*243,k28*3,0*247,k28*3,0*147,k28*3,0*282,k200*150,0*150,"
+            + ",".join(["k54*3,0*27"] * 40))
+    at = ["1300:10474,466,-10802,178", "1800:9366,466,-9341,232", "2200:6932,466,-9130,359",
+          "2450:7718,466,-9134,76", "2600:5645,466,-7874,269", "2850:6302,466,-10265,0"]
+    args = [play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+            "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+            "--area", "181", "--scene-load", "181,51", "--var", "563=1,11=1",
+            "--zone-enable", "3156", "--zone-disable", "3137",
+            "--stand", "6080,570,-12226,46", "--hold", hold, "--shoot-health", "1000"]
+    for a in at:
+        args += ["--player-at", a]
+    args += ["--nofmv", "--nodelay", "--res", "640x480", "--saves", tempfile.mkdtemp(),
+             "--frames", "3700"]
+    o = subprocess.run(args, capture_output=True, text=True, errors="replace", env=env).stdout
+    ev = _events(o)
+    maps = [e["map"] for n, e in ev if n == "shoot.map"]
+    zones = [int(e["zone"]) for n, e in ev if n == "zone.activate"]
+    areas = [int(e["area"]) for n, e in ev if n == "player.area"]
+    back = [(e["actor"], e["how"], round(float(e["y"]))) for n, e in ev
+            if n == "player.become.place"]
+    print("        maps %s; boxes %s; areas %s; becomes %s" % (maps, sorted(set(zones)), areas, back))
+    got = (maps, all(z in zones for z in (1348, 1359, 1358)), 69 in areas and 180 in areas,
+           back[-1:])
+    return got, (["-", "ARCHIV05", "-", "CSLEV-3"], True, True, [("49", "address", 606)]), \
+        "each area's own MAP2D as it loads (66 none, 67 ARCHIV05, 69 none, 180 CSLEV-3); AREA " \
+        "67's three boxes; areas 69 and 180 reached; Meca 191 killed and Kay'l put back at the " \
+        "Lev-4 console by the address"
+
+
 def c_engine_vr_strafe():
     r"""IN A HEADSET'S SHOOT MODE THE STICK'S SIDEWAYS PUSH STRAFES
     (`vrShootAim`, backends/vr; the reader, 2026-10-07: "the stick should also
@@ -55470,6 +55532,7 @@ SLOW = [
     ("engine: meca transfer", c_engine_meca_transfer, "todo/scene-gameplay-audit.md 5; script/area.h"),
     ("engine: built-in weapon", c_engine_builtin_weapon, "todo/scene-gameplay-audit.md 5; todo/released-spectres.md; backends/sdl/playstate.cpp addFireSlots"),
     ("engine: archives exit", c_engine_archives_exit, "todo/scene-gameplay-audit.md 5; backends/sdl/playsetup_adventure.cpp"),
+    ("engine: meca archives", c_engine_meca_archives, "todo/scene-gameplay-audit.md 5; backends/sdl/playframe_modes_parts.cpp"),
     ("engine: gles overlay", c_engine_gles_overlay, "todo/vita-port.md G6; backends/gles/glesrender.cpp"),
     ("engine: pool past 64", c_engine_pool_past_64, "todo/handoff-quest-port.md; o3de/renderer.h"),
     ("engine: crowd indoors", c_engine_crowd_indoors, "docs/STREET_LIFE.md; todo/handoff-quest-port.md"),

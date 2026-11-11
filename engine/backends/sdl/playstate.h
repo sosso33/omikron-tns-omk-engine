@@ -688,6 +688,7 @@ struct PlayState {
     omk::HudBar hudBar{};   // `Hud_DrawBar` mode 0, the health gauge
     omk::Radar radar{};   // 0x42F000, screen 34's minimap
     omk::Map2d shootMap{};   // MAP2D\<+106>.MPT - the noise's floors
+    std::string shootMapLoaded{};   // the MAP2D name `shootMap` holds - reloaded when the area's changes
     omk::ShootField shootField{};   // `sub_436260`'s distance field toward the player
     std::set<int> gunCellSeeded{};
     std::set<int> gunEntryPending{};   // his entry action, waiting for a floor         // gunmen whose +136/+140 came off the grid
