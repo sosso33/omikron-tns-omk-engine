@@ -83,8 +83,8 @@ int PlayState::finish() {
                         up->drawAt[0], up->drawAt[1], up->drawAt[2], up->facing,
                         up->src, up->drawn ? "" : "  [not drawn]");
             // ...and as an event, for a check: who is still on screen and
-            // what poses him (a dead body left by `player.become` keeps its
-            // program, `engine: sham pen`)
+            // what poses him (the body `player.become` leaves has its program
+            // stopped and holds its last pose, `engine: sham pen`)
             omk::event("staged.end", {{"actor", up->actor}, {"model", up->model},
                                       {"src", std::string(up->src)},
                                       {"x", double(up->drawAt[0])}, {"y", double(up->drawAt[1])},

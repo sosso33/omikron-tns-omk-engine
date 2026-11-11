@@ -205,6 +205,10 @@ public:
         // back at `pos`/`facing`; otherwise a re-shown body stands where it
         // was left, as `Actor_Attach` leaves its node (todo/drift-audit M1)
         int         placeSeq = 0;
+        // An OLD PLAYER BODY's area slot: he holds the new body's object
+        // record there (op 56), so he goes when that slot is evicted. -1
+        // for every other side-shown body.
+        int         areaSlot = -1;
     };
     // IS THIS ACTOR STILL IN A SLOT? `character.hide` is `Actor_Detach`
     // (0x0041CDD0): the node is unlinked and parked (slot state 1), its
@@ -426,6 +430,12 @@ public:
     // +1298 = -1; }` - a hidden actor's body leaves the index. No-op for an
     // actor that has none.
     void dropActorBody(int actor);
+    // AN OLD PLAYER BODY HAS NO COLLIDER. `Player_SetActor` dropped his NPC
+    // body (+1298) when he became the player and frees his player querier
+    // (+1296) when he stops being it, and nothing re-registers him until
+    // `Actor_Attach` (a `character.show`) does. True from his `player.become`
+    // until then.
+    bool bodyless(int actor) const { return bodyless_.count(actor) != 0; }
     // A HARNESS: zone `id`'s ENTER script run as the zone's own ARM runs it -
     // `Script_NewContext(slot, s[0], s[1], s[2])` with the zone id in +42,
     // then `Script_QueueAction(ctx, 1)` - without the player walking in. For
@@ -2096,6 +2106,7 @@ private:
     // itself is derived: `rebuildShown` puts the slots' attached characters
     // in front of these.
     std::vector<Shown> scriptShown_;
+    std::set<int> bodyless_;          // `bodyless`
     // `word_69BC80`: 100 int16, -1 free, holding the ACTOR ID of whoever took
     // the entry. `Actors_SpawnFromTables` takes the first free one per record
     // and writes its index back to record +0; -1 when the table is full.

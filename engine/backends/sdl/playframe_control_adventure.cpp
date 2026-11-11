@@ -26,6 +26,8 @@ void PlayState::adventureAim() {
         player->setCameraOffsets(eye, at, 75.0f);
         std::printf("frame %ld: follow camera (camera.follow_player) - preset 0, eye "
                     "offset 0 0 %.0f, fov 75\n", frameNo, double(omk::kFollowEyeBack));
+        // ...as the camera TAKES it (op 54, or op 56's `sub_41DDB0(new)`)
+        omk::event("camera.follow", {{"frame", frameNo}});
     }
     if (session.posSyncs() != posSyncsSeen) {
         posSyncsSeen = session.posSyncs();

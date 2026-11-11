@@ -346,6 +346,17 @@ void SceneRunner::firePieces(int a1, int objectId) {
     fired_ = pieces_.shows();
 }
 
+int SceneRunner::resetActor(int actor, int playerActor) {
+    int n = 0;
+    if (actor < 0) return 0;
+    for (std::size_t j = 0; j < started_.size() && j < programs_.size(); ++j)
+        if (drivenActor(started_[j], playerActor) == actor && programs_[j]->running()) {
+            programs_[j]->reset();
+            ++n;
+        }
+    return n;
+}
+
 int SceneRunner::handle(const std::vector<Call>& calls, int playerActor) {
     int waitOn = -1;
     for (const auto& c : calls) {

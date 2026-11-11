@@ -278,11 +278,11 @@ public:
         // The CHARACTERS id it drives: for "actor" the one 59/60 name, for
         // "player" the one `Actor_Player()` was when 46/90 started it (-1 if
         // the caller did not say). The engine binds both to an ACTOR RECORD,
-        // so a player program keeps posing the body it started on after a
-        // `player.become` hands the soul on - AREA 137 record 40 starts
-        // Kay'l's collapse `J_SUICSD` (obj 0x006e, no wait) and then makes
-        // young Fodo (406) the player: the collapse is Kay'l's, and Fodo is
-        // at the keys. See `drivesPlayer`.
+        // so a player program never moves to the next body at a
+        // `player.become` - AREA 137 record 40 starts Kay'l's collapse
+        // `J_SUICSD` (obj 0x006e, no wait) and then makes young Fodo (406)
+        // the player: the collapse is Kay'l's (and the transfer STOPS it,
+        // `resetActor`), and Fodo is at the keys. See `drivesPlayer`.
         int         actor = -1;
         // Which clip of the scene's animation array the object's body
         // animation selects - `Script_SelectBodyAnimation` param 1, and by
@@ -417,6 +417,11 @@ public:
     const std::vector<int>&     missed()  const { return missed_; }
     std::size_t programCount() const { return programs_.size(); }
     int programsRunning() const;
+    // `Scene_ResetObjectState(actor +172)`: the program bound to `actor`
+    // stopped where it stands - what `Player_SetActor` (0x00419E10) does to
+    // the OLD player and to the NEW one at a `player.become`. `playerActor`
+    // resolves an unbound 46/90 start. -> how many it stopped.
+    int resetActor(int actor, int playerActor);
 
     // ---- THE CAMERA EDITINGS (camera mode 13)
     //

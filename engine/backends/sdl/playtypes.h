@@ -412,6 +412,15 @@ struct Staged {
     // all), so his node keeps the last pose the fight gave it: on the
     // floor in his knock-out loop, not back in the bank's idle.
     bool inertAfterFight = false;
+    // AN OLD PLAYER BODY (`Player_SetActor(-1)`, 0x00419E10): mesh flags
+    // 0x08000000 | 0x2000 | 0x1000 on his whole hierarchy - drawn
+    // TRANSLUCENT and ADDITIVE (bucket 0x2100, ONE/ONE, no depth write) with
+    // the SHIMMER on every vertex. `ghostRest` is the rest he is drawn from,
+    // `ghostFrom` the rest it was copied from. Cleared when he is the player
+    // again (`sub_4372D0(node, 268, 8)`).
+    bool ghost = false;
+    omk::Geometry ghostRest;
+    const omk::Geometry* ghostFrom = nullptr;
     // POSED BY THE RENDERER (todo/gpu-skinning.md step 4), as a walker is:
     // `restGeo` and one affine a mesh, `posed` untouched
     bool gpu = false;

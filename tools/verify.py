@@ -32207,9 +32207,28 @@ def c_engine_sham_pen():
       actor record 46 started it on (`SceneRunner::drivesPlayer`), Kay'l's
       `J_SUICSD`, still running, took young Fodo's body and the player
       stood frozen - the mount never came;
-    * Kay'l's body left where he drank, posed by his program: op 56 hands
-      the new body's object record to the old one and detaches nothing
-      (`Session::becomePlayer` "THE OLD BODY STAYS"). Without it - none.
+    * Kay'l's body left where he drank: op 56 hands the new body's object
+      record to the old one and detaches nothing (`Session::becomePlayer`
+      "THE OLD BODY STAYS"). Without it - none. `Player_SetActor` stops
+      the program his actor record ran (`Scene_ResetObjectState(+172)`) and
+      frees his bank list, so he HOLDS his last pose - with the program left
+      running, his source stays "a scene program's clip";
+    * and he is drawn as an OLD PLAYER BODY - additive, shimmering
+      (`sub_437220(node, 268, 8)`, `Staged::ghost`; the reader: the body
+      stays "avec un effet de transparence"): the `body.ghost` event for 49
+      from the drink on and for 406 from the mount on (record 41 then hides
+      him), never before the transfer that leaves each. Without the flag -
+      none.
+
+    A THIRD RUN, the controller's body: Kay'l walking in the pen when a
+    harness `player.become 293` (`--op-at 120:56:293`) takes the soul - no
+    program poses him, so his staged body is made at the become, where the
+    walker had him and in the walker's pose. Without that - not on screen.
+    And it is not SOLID (no `body.collider` for 49): without the
+    `Session::bodyless` gate the walker would bump into his own corpse. And
+    the transfer asks the FOLLOW camera (`sub_41DDB0(new)`, op 54's
+    function; the `camera.follow` event as the camera takes it, after the
+    transfer) - AREA 1, 22 and 30's reincarnations set no camera after it.
     """
     import subprocess, tempfile
     eng = os.path.join(ROOT, "engine")
@@ -32256,15 +32275,40 @@ def c_engine_sham_pen():
     becomes = [int(e["actor"]) for n, e in ev if n == "player.become"]
     kayl = [(e["model"], e["src"], round(float(e["x"])), round(float(e["z"])))
             for n, e in ev if n == "staged.end" and int(e["actor"]) == 49]
-    body = [(m, s, abs(x - 33627) < 60 and abs(z + 4502) < 60) for m, s, x, z in kayl]
-    print("        exit cast %s; pen Actions %s, transfers %s, Kay'l's body %s"
-          % (cast, zones, becomes, kayl))
-    return (cast, zones, becomes, body), \
+    held = "the last pose it was given (nothing drives it now)"
+    body = [(m, s == held, abs(x - 33627) < 60 and abs(z + 4502) < 60) for m, s, x, z in kayl]
+    # each body drawn as an old one from the transfer that LEFT it: 49 at
+    # 406's, 406 at the Sham's (record 41 then hides him)
+    left = {int(e["was"]): int(e["frame"]) for n, e in ev if n == "player.become"}
+    ghosts = sorted({(int(e["actor"]), int(e["frame"]) >= left.get(int(e["actor"]), 1 << 30))
+                     for n, e in ev if n == "body.ghost"})
+    # 3. the controller's body: a become while he walks
+    r = subprocess.run(base + ["--var", "117=1", "--zone-run", "2232",
+                               "--stand", "33300,1044,-4700,200", "--hold", "0*60,k200*80,0*200",
+                               "--op-at", "120:56:293", "--frames", "200"],
+                       capture_output=True, text=True, errors="replace", env=env)
+    ev3 = _events(r.stdout)
+    walked = [(e["src"] == held, abs(float(e["x"]) - 33249) < 40 and abs(float(e["z"]) + 4557) < 40)
+              for n, e in ev3 if n == "staged.end" and int(e["actor"]) == 49]
+    ghost3 = sorted({int(e["actor"]) for n, e in ev3 if n == "body.ghost"})
+    # ...and he is not SOLID: `Player_SetActor` freed his querier and nothing
+    # registers his NPC body until an `Actor_Attach` (`Session::bodyless`)
+    solid3 = 49 in {int(e["actor"]) for n, e in ev3 if n == "body.collider"}
+    # ...and the view goes back to the follow camera (`sub_41DDB0(new)`)
+    become3 = [int(e["frame"]) for n, e in ev3 if n == "player.become"]
+    follow3 = bool(become3) and any(int(e["frame"]) >= become3[0]
+                                    for n, e in ev3 if n == "camera.follow")
+    print("        exit cast %s; pen Actions %s, transfers %s, Kay'l's body %s, drawn as old "
+          "bodies %s; the walker's become: Kay'l %s, old bodies %s"
+          % (cast, zones, becomes, kayl, ghosts, walked, ghost3))
+    return (cast, zones, becomes, body, ghosts, walked, ghost3, solid3, follow3), \
         ([293, 421, 424], [2235, 2236, 2235, 2237, 2235, 2238, 2239], [406, 434],
-         [("HO1_FN", "a scene program's clip", True)]), \
+         [("HO1_FN", True, True)], [(49, True), (406, True)], [(True, True)], [49], False,
+         True), \
         "record 34's cast on the way out of Soyinka's; Fodo, the vats, Fodo, the flank, Fodo, " \
         "the drink, the mount; young Fodo then the Sham; Kay'l's body left where he drank, " \
-        "posed by his own program"
+        "holding his pose, each body drawn as an old player body from the transfer that leaves it; and a walking Kay'l's body " \
+        "kept where the walker had him"
 
 
 def c_engine_meca_transfer():

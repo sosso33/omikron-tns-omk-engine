@@ -745,6 +745,53 @@ void PlayState::phaseWorldPlayerBecome(int playerId, int& lastPlayerActor) {
                     {"x", double(session.playerPos()[0])},
                     {"y", double(session.playerPos()[1])},
                     {"z", double(session.playerPos()[2])}});
+        // ---- THE OLD BODY STAYS, AS HE WAS (`Player_SetActor(-1)`) -------
+        //
+        // Op 56 detaches nothing (`Session::becomePlayer`): the old body is
+        // still on screen where it stood, its bank list freed so no channel
+        // ever poses it again - it HOLDS the pose it had - and its mesh flags
+        // make it translucent, additive and shimmering (`Staged::ghost`). A
+        // program was posing him: his staged body is already there, and the
+        // program has just been stopped where it stood. Otherwise the
+        // CONTROLLER was drawing him: his body is staged here, at the
+        // controller's place and facing, holding the controller's pose.
+        if (lastPlayerActor >= 0 && lastPlayerActor != playerId) {
+            Staged* ob = nullptr;
+            for (auto& up : staged) if (up->actor == lastPlayerActor) { ob = up.get(); break; }
+            if (!ob && !playerModel.empty()) {
+                staged.push_back(std::make_unique<Staged>());
+                ob = staged.back().get();
+                ob->actor = lastPlayerActor;
+                ob->model = playerModel;
+                ob->bank  = playerCtlName;
+                ob->mo = charModelFor(playerModel);
+                ob->bk = charBankFor(playerCtlName);
+                ++stagedEver;
+                stagedIds.push_back(lastPlayerActor);
+                // where the walker has him: a point on the GROUND, as the
+                // program hand-over stages him (`phaseWorldPlayerProgram`)
+                for (int k = 0; k < 3; ++k) ob->at[k] = player->pos()[k];
+                ob->at[1] -= playerFeetKnown ? playerFeet : 0.0f;
+                ob->facing = player->facing();
+                ob->placed = true;
+                ob->pelvis = false;
+                if (const omk::NodeTracks* pt = player->poseTracks())
+                    ob->lastPose = playerPoseNow(&*player, false, *pt, player->poseFrameF());
+                std::printf("frame %ld: the OLD body, actor %d %s, stays where the controller "
+                            "had him (%.0f %.0f %.0f facing %.0f), holding his pose (%zu meshes)\n",
+                            frameNo, lastPlayerActor, playerModel.c_str(), ob->at[0], ob->at[1],
+                            ob->at[2], ob->facing, ob->lastPose.size());
+            }
+            if (ob) {
+                ob->ghost = true;
+                ob->ghostFrom = nullptr;
+                ob->inertAfterFight = false;
+                ob->seen = true;
+            }
+        }
+        // ...and the NEW one is drawn plain again (`sub_4372D0(node, 268, 8)`)
+        for (auto& up : staged) if (up->actor == playerId) { up->ghost = false; up->ghostFrom = nullptr; }
+        for (auto& up : parked) if (up->actor == playerId) { up->ghost = false; up->ghostFrom = nullptr; }
         // the facing is the body's, not the last player clip's
         handoverFacingKnown = false;
         player.reset();

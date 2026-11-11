@@ -411,9 +411,33 @@ void PlayState::worldStagedBody(std::unique_ptr<Staged>& up, const omk::SceneRun
     const omk::NodeTracks& posingTracks = useLine ? s.lineTracks
                                          : s.sceneTracks.valid() ? s.sceneTracks : s.idle;
     const int skel = skeletonRootOf(*s.mo, posingTracks);
-    const omk::Geometry& restUsed = skel == s.mo->root && s.mo->root >= 0 &&
+    const omk::Geometry& restModel = skel == s.mo->root && s.mo->root >= 0 &&
                                      !hasSeveralSkeletons(*s.mo)
                                      ? s.mo->rest : lodRestFor(s.model, *s.mo, skel);
+    // AN OLD PLAYER BODY is drawn from his own copy of the rest: every batch
+    // ADDITIVE (mesh 0x1000|0x2000 -> bucket 0x2100, which wins over a
+    // multiply sub-mode in `Raster_DrawTriangles`) and every corner
+    // SHIMMERING (0x08000000, phased by its vertex as `buildGeometry` phases
+    // a flagged set mesh) - `Player_SetActor(-1)`'s `sub_437220(node, 268, 8)`
+    if (s.ghost && s.ghostFrom != &restModel) {
+        s.ghostRest = restModel;
+        for (auto& b : s.ghostRest.batches) b.blend = omk::Blend::Add;
+        for (std::size_t i = 0; i < s.ghostRest.corners.size(); ++i)
+            s.ghostRest.corners[i].phase =
+                i < s.ghostRest.cornerVertex.size() && s.ghostRest.cornerVertex[i] >= 0
+                    ? static_cast<float>((2u * static_cast<std::uint32_t>(
+                          s.ghostRest.cornerVertex[i])) % 32u)
+                    : 0.0f;
+        s.ghostRest.revision = ++worldGeoRev;
+        s.ghostFrom = &restModel;
+        std::printf("frame %ld: actor %d %s drawn as an OLD PLAYER BODY - %zu batches "
+                    "additive, %zu corners shimmering (Player_SetActor's 0x08000000|0x2000|"
+                    "0x1000)\n", frameNo, s.actor, s.model.c_str(), s.ghostRest.batches.size(),
+                    s.ghostRest.corners.size());
+        omk::event("body.ghost", {{"frame", frameNo}, {"actor", s.actor}, {"batches", static_cast<long>(s.ghostRest.batches.size())},
+                                  {"corners", static_cast<long>(s.ghostRest.corners.size())}});
+    }
+    const omk::Geometry& restUsed = s.ghost ? s.ghostRest : restModel;
     s.shadowRoot = skel;
     // A BODY BEYOND THE CLIP DISTANCE IS NOT SKINNED.
     // The engine's visible set is the clip distance (row 3) around
@@ -962,7 +986,9 @@ void PlayState::worldStagedBody(std::unique_ptr<Staged>& up, const omk::SceneRun
     // his ROOT mesh's radius, the sweep's and the model's `+88`
     // (docs/STREET_LIFE.md 3) - not `meshes.front()`, which for
     // VIR_FN is a 7-unit mesh and shut the box at 14 units.
-    if (s.actor != session.playerActor()) {
+    // ...but not an OLD PLAYER BODY: `Player_SetActor` left him with no
+    // collider until something attaches him again (`Session::bodyless`)
+    if (s.actor != session.playerActor() && !session.bodyless(s.actor)) {
         const float bodyAt[3] = {s.drawAt[0], off[1] + feet, s.drawAt[2]};
         // (since B5 his list is the model's own, already hung from
         // the feet by `Session::modelSpheres` - node-relative in x/z,

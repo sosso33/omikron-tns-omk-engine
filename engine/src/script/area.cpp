@@ -482,6 +482,11 @@ void Session::evictSlot(int slot) {
     // slots handed back (`Scene_UnloadProps`).
     freeActorSlots(slot & 1, true, true);
     unloadProps(slot & 1, true, true);
+    // ...and an old player body holding one of its records (op 56's swap)
+    for (std::size_t k = 0; k < scriptShown_.size();)
+        if (scriptShown_[k].areaSlot == (slot & 1))
+            scriptShown_.erase(scriptShown_.begin() + static_cast<long>(k));
+        else ++k;
     s = ResidentSlot{};
     rebuildShown();
 }
@@ -2057,20 +2062,61 @@ void Session::becomePlayer(int actor) {
     // the OLD one - `mov [edi+2], ax` (the old body's CHARACTERS id),
     // `mov [edi], bp` (its actor slot) - and calls no detach: the old body
     // inherits the new one's record, its shown bit included, and stays in
-    // the scene where it stood, with whatever program its actor record runs.
+    // the scene where it stood (its program stopped - below).
     // The scripts say so too: every site that wants the old body gone hides
     // it after the transfer (AREA 137 record 41 `player.become 434` then
     // `character.hide 406`, record 47 `player.become 406` then
     // `character.hide 434`, SCENE 51 record 7 `player.become 216` then
     // `character.hide 49`), and record 40's does not - Kay'l's body stays
-    // where he drank, under `J_SUICSD`, while young Fodo walks off. The port
-    // dropped it at every transfer.
+    // where he drank, frozen in his collapse, while young Fodo walks off. The
+    // port dropped it at every transfer.
     //
     // MODELLED, not transcribed: the new body's record keeps its id here
     // (the frontends read it for the new body's place) and the old body joins
     // the side list at the player's place. A later `character.hide` of either
     // id detaches what the engine's would.
+    //
+    // `Player_SetActor` (0x00419E10), run on the old body (`sub_419E10(-1)`)
+    // and then on the new (`sub_40D590` -> `Player_SetActor(new)`), read
+    // 2026-11-11 for what else the transfer does to the two bodies:
+    //   * `Scene_ResetObjectState(actor +172)` on BOTH: whatever program
+    //     each actor record runs is STOPPED, and its node keeps the pose it
+    //     was in (SCENE 10's `scx.play.player obj 0x16, -1` loops on Kay'l
+    //     until the transfer to 138 freezes it);
+    //   * the old body's bank list (+396, `sub_45A970`) is freed - no
+    //     channel, so nothing moves him again: he holds his last pose;
+    //   * his player querier (+1296) freed, and his NPC body (+1298) was
+    //     dropped when he became the player - no collider (`bodyless`) until
+    //     an `Actor_Attach` re-registers him;
+    //   * `sub_437220(node, 268, 8)` - mesh flags 0x08000000 | 0x2000 |
+    //     0x1000 on his whole hierarchy (256, the shimmer alone, on a device
+    //     with no ONE/ONE blend, `dword_53ADF4`): the old body is drawn
+    //     TRANSLUCENT, ADDITIVE and SHIMMERING. The new one has them
+    //     cleared (`sub_4372D0(node, 268, 8)`). That is the frontend's
+    //     (`Staged::ghost`). The reader: "le corps reste ou il est, avec un
+    //     effet de transparence, comme a chaque fois que le joueur change de
+    //     corps".
+    //   * his shadow clone (+80) linked back under the scene and enabled -
+    //     the NPC blob; the new player's unlinked.
     const int was = playerActor();
+    if (was >= 0 && was != actor) {
+        int stopped = scene_.resetActor(was, was) + sceneOut_.resetActor(was, was);
+        stopped += scene_.resetActor(actor, was) + sceneOut_.resetActor(actor, was);
+        if (stopped)
+            std::printf("player.become %d: %d program%s stopped on the two bodies "
+                        "(Player_SetActor's Scene_ResetObjectState)\n", actor, stopped,
+                        stopped == 1 ? "" : "s");
+        bodyless_.insert(was);
+        dropActorBody(was);
+    }
+    bodyless_.erase(actor);
+    // ...and the handler's last call, `sub_41DDB0(new)` - op 54's own
+    // function: both camera actors on the new body and `Camera_Request(0)`,
+    // the FOLLOW camera, whatever shot the script had up. AREA 1, 22 and 30's
+    // reincarnations end on their 'incarn' shot and set no camera after the
+    // transfer - this is what hands the view back to the player.
+    followRequested_ = true;
+    ++followRequests_;
     if (was >= 0 && was != actor) {
         bool have = false;
         for (const auto& sh : scriptShown_) if (sh.actor == was) have = true;
@@ -2097,6 +2143,13 @@ void Session::becomePlayer(int actor) {
             if (sh.bank.empty())  sh.bank  = bankOfActor(was);
             for (int k = 0; k < 3; ++k) sh.pos[k] = playerPos_[k];
             sh.facing = playerYaw_;
+            // the slot of the record he takes over - the new body's
+            // (`sub_40D6A0` on the context's slot), the active one when no
+            // table places the new body
+            sh.areaSlot = activeSlot();
+            for (int k = 0; k < 2; ++k)
+                for (const auto& c : slots_[k].characters)
+                    if (c.actor == actor) sh.areaSlot = k;
             if (!sh.model.empty()) scriptShown_.push_back(sh);
         }
     }
@@ -2452,6 +2505,8 @@ void Session::rebuildShown() {
 // 801 of the 1256 shipped shows pass 0. `place` is that field.
 void Session::showCharacter(int actor, bool place) {
     if (actor == -1) return;
+    // `Actor_Attach` registers the body again - an old player body too
+    bodyless_.erase(actor);
     for (auto& sl : slots_)
         for (auto& c : sl.characters)
             if (c.actor == actor) {
@@ -4726,6 +4781,9 @@ int Session::actorBody(int actor, const std::string& model, const float origin[3
         const int slot = spatial_.add(actor, 0, reach, &held);
         if (slot < 0) return -1;
         it = actorBodySlots_.emplace(actor, slot).first;
+        // registered in the spatial index - the event a check reads to see who
+        // is solid (an old player body is not, `bodyless`)
+        omk::event("body.collider", {{"actor", actor}});
     }
     spatial_.update(it->second, origin, facing);    // `SpatialIndex_Update`
     return it->second;

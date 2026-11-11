@@ -1529,8 +1529,7 @@ stood in AREA 181, which the `area.arrive` hides, and could not take a step.
 body's 20-byte object record (`sub_40D6A0`) and gives it to the OLD body -
 `mov [edi+2], ax` writes the old body's CHARACTERS id, `mov [edi], bp` its
 actor slot - and detaches nothing, so the old body keeps the new one's record
-and shown bit and stays where it stood, running whatever program its actor
-record runs. The scripts agree: each site that wants the old body gone hides
+and shown bit and stays where it stood. The scripts agree: each site that wants the old body gone hides
 it AFTER the transfer (AREA 137 record 41 `player.become 434` then
 `character.hide 406`, record 47 `player.become 406` then `character.hide
 434`, SCENE 51 record 7 `player.become 216` then `character.hide 49`), and
@@ -1542,8 +1541,41 @@ swap itself). `verify.py: engine: sham pen`.
 THE READER, 2026-11-11: *"le corps reste où il est, avec un effet de
 transparence, comme à chaque fois que le joueur change de corps tout au long
 du jeu"* - the old body stays, and is drawn TRANSLUCENT, at every transfer.
-The translucency is not read yet and not ported (the port draws it opaque):
-`todo/scene-gameplay-audit.md` row 26.
+
+**What the transfer does to the two bodies** (read 2026-11-11, at the
+reader's "vérifie le code concernant la réincarnation"). The handler calls
+`Player_SetActor(-1)` (0x00419E10) on the old body, then `sub_40D590(new, 0)`
+loads the new body's bank list (the record's `+72` name) and calls
+`Player_SetActor(new)`. Field by field (`g_Actors` = 0x9106A0, 1312 bytes an
+actor):
+
+| | the OLD body (`Player_SetActor(-1)`) | the NEW body |
+|---|---|---|
+| mesh flags, whole hierarchy | `sub_437220(node, 268, 8)`: **0x08000000 \| 0x2000 \| 0x1000** set - the SHIMMER and the ADDITIVE transparent bucket (ONE/ONE, no depth write). 256 - the shimmer alone - on a device with no ONE/ONE blend (`dword_53ADF4`) | `sub_4372D0(node, 268, 8)`: the same cleared |
+| `+172`, the actor's script object | `Scene_ResetObjectState`: his program STOPS, the node keeps its pose | the same |
+| `+396`, the bank list | freed (`sub_45A970`): no channel ever poses him again - he HOLDS his last pose | `SetPersoBankList` |
+| `+1296`, the player querier | freed (`sub_45E170`) | registered (`sub_45E140`) |
+| `+1298`, the NPC body in the spatial index | (dropped when he became the player; nothing re-registers it until an `Actor_Attach`) - **not solid** | dropped (`sub_45E090`) |
+| `+1300`, the player's world-collision record (`sub_497BC0` on `dword_530910`) | freed | registered |
+| `+80`, the blob-shadow clone | linked back under the scene and enabled | unlinked, disabled |
+| `+404` | 0 | 1 |
+
+and the handler ends with `sub_41DDB0(new)` - op 54's own function: both
+camera actors on the new body and `Camera_Request(0)`, the FOLLOW camera
+(AREA 1, 22 and 30's reincarnations set no camera after the transfer; this is
+what hands the view back). `Player_SetActor(new)` refuses (returns 0, the
+player left at -1) for an id of 100 or more, an absent actor (`+1307`), one
+with no model (`+180`) or the melee opponent - no shipped site names one.
+
+The port, since 2026-11-11: `Session::becomePlayer` stops both bodies'
+programs (`SceneRunner::resetActor`), marks the old body `bodyless` until a
+`character.show` attaches it, keeps it on screen bound to the area slot of the
+record it took over (evicted with that slot), and asks the follow camera; the
+viewer stages the old body where the controller had him, holding the
+controller's pose when no program was posing him, and draws it from a rest
+copy with every batch additive and every corner shimmering (`Staged::ghost`).
+The model's own blob shadow under it is the staged bodies' usual one. `verify.py:
+engine: sham pen` (three runs).
 
 And the listing states it outright — from `AREA 22`:
 
@@ -1628,10 +1660,12 @@ in Kay'l's flat.
 
 **And the binding is to the actor record `Actor_Player()` names WHEN THE
 PROGRAM STARTS** (2026-11-11). Nothing re-binds it at a `player.become`, so a
-player program still running when the soul moves on keeps posing the OLD body.
+player program still running when the soul moves on belongs to the OLD body -
+and the transfer stops it there (`Player_SetActor`'s
+`Scene_ResetObjectState`, above in 56).
 AREA 137 record 40, Kay'l drinking Fodo's mixture, is the case: `scx.play.player
 obj 0x006e` (Kay'l's collapse, `J_SUICSD`, no wait) and then `player.become
-406` - the collapse stays Kay'l's and young Fodo is at the keys. The port bound
+406` - the collapse is Kay'l's and young Fodo is at the keys. The port bound
 the program to the ROLE, and the collapse took Fodo's body: he stood frozen
 and the Sham was never mounted. `SceneRunner::Started::actor` now holds the
 bound actor for 46/90 too, `SceneRunner::drivesPlayer` asks it, and one actor
