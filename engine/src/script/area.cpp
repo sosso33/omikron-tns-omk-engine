@@ -2057,6 +2057,7 @@ void Session::becomePlayer(int actor) {
     // joins the script-shown list, which is what this did for everyone
     // before the spawn landed.
     showCharacter(actor);
+    becomeSeq_ = placementSeq_;                    // `placedSinceBecome`
     // `sub_41C270(esi, &pos)` / `sub_41BDF0(esi, &pos)`: the new body's own
     // place. Only a body a placement record put here has one the Session
     // knows, and only a player already placed has a position to move.

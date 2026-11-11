@@ -1129,7 +1129,19 @@ void PlayState::adventureShootMoverTick() {
             shootMover, player->facing(),
             static_cast<float>(frameSec * 30.0),
             &player->eulerPitch(), &player->eulerRoll(),
-            player->walker().airborne());
+            player->walker().airborne(), player->clipFrame());
+        // THE FOOTSTEP (`actor/shootmove.h`): resolved in the resident
+        // library and played flat, as the hurt sound is
+        if (st.sound >= 0) {
+            const int w = shootRt ? shootRt->wavBydId(st.sound) : -1;
+            omk::event("shoot.step", {{"frame", frameNo}, {"sound", st.sound},
+                                      {"found", w >= 0 ? 1 : 0},
+                                      {"clip_frame", double(player->clipFrame())}});
+            if (w >= 0) {
+                const SfxSample& sm = sfxPcm(shootRt->wavData(w));
+                if (sm.pcm->size) front.playSound(sm.pcm, false, fxGain());
+            }
+        }
         if (shoveWas[0] != player->eulerPitch() ||
             shoveWas[1] != player->eulerRoll())
             std::printf("frame %ld: THE SHOVE (sub_47D1F0) - %.2f left, "

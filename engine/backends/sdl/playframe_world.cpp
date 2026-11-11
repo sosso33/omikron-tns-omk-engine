@@ -709,7 +709,20 @@ void PlayState::phaseWorldPlayerBecome(int playerId, int& lastPlayerActor) {
         for (const auto& sh : session.shown()) if (sh.actor == playerId) { nsh = &sh; break; }
         const bool pendingPlace = nsh && nsh->fromTable && nb &&
                                   nsh->placeSeq != nb->placeSeqSeen;
-        if (nb && nb->drawAtKnown && !pendingPlace) {
+        // ...UNLESS THE SCRIPT MOVED HIM SINCE. Op 56 places the new body
+        // and the script runs on in the same pump: SCENE 51 record 7 goes
+        // `player.become 216`, `character.hide 49`, `actor.goto_address
+        // 580` - and in the engine that teleport moves `Actor_Player()`,
+        // the Mecagarde, onto the pad in AREA 183. The Session already
+        // holds that address; the body's own node would put him back in
+        // AREA 181, a set the `area.arrive` hides under his feet.
+        if (session.placedSinceBecome()) {
+            std::printf("frame %ld: player.become - a later actor.goto_address %d "
+                        "put the new body at %.0f %.0f %.0f facing %.0f (the "
+                        "script's order)\n", frameNo, session.playerAddress(),
+                        session.playerPos()[0], session.playerPos()[1],
+                        session.playerPos()[2], session.playerYaw());
+        } else if (nb && nb->drawAtKnown && !pendingPlace) {
             const float yaw = nb->progYawKnown ? nb->progYaw : nb->facing;
             session.setPlayerPosition(nb->drawAt, yaw);
             std::printf("frame %ld: player.become - the new body's own place, "
@@ -724,6 +737,14 @@ void PlayState::phaseWorldPlayerBecome(int playerId, int& lastPlayerActor) {
             std::printf("frame %ld: player.become - no place known for the new "
                         "body: the old body's, LABELLED\n", frameNo);
         }
+        omk::event("player.become.place",
+                   {{"frame", frameNo}, {"actor", playerId},
+                    {"how", session.placedSinceBecome() ? "address"
+                            : (nb && nb->drawAtKnown && !pendingPlace) ? "node"
+                            : (nsh && nsh->fromTable) ? "record" : "none"},
+                    {"x", double(session.playerPos()[0])},
+                    {"y", double(session.playerPos()[1])},
+                    {"z", double(session.playerPos()[2])}});
         // the facing is the body's, not the last player clip's
         handoverFacingKnown = false;
         player.reset();

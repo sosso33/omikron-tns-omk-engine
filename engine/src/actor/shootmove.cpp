@@ -3,6 +3,7 @@
 #include "o3de/vecmath.h"
 
 #include <cmath>
+#include <cstring>
 
 namespace omk {
 
@@ -108,7 +109,8 @@ bool shootJump(ShootMover& m, bool falling) {
 }
 
 ShootMoveStep shootMoveTick(ShootMover& m, float facingDeg, float dt,
-                            float* eulerPitch, float* eulerRoll, bool falling) {
+                            float* eulerPitch, float* eulerRoll, bool falling,
+                            float clipFrame) {
     ShootMoveStep s;
     if (!m.active) return s;
     std::uint32_t f = m.flags;                        // the engine's `v2`, and the
@@ -183,7 +185,18 @@ ShootMoveStep shootMoveTick(ShootMover& m, float facingDeg, float dt,
     s.dx = static_cast<float>((c * m.side - sn * m.fwd) * dt);
     s.dz = static_cast<float>((c * m.fwd + sn * m.side) * dt);
     s.dy = static_cast<float>(static_cast<double>(m.vertical) * dt);
-    // (the head bob and the footsteps are here in the engine - not modelled)
+    // WHETHER HE STEPS (`edi`, 0x0047D8B5..): under MDTR the z step's raw
+    // bits (`mov edi, [ebp+var_10]` - a -0.0 counts), else both velocities
+    // read AFTER this frame's update, and flag 0x10 as the frame began
+    bool stepping;
+    if (f & kShootMoveTr) {
+        std::uint32_t bits;
+        std::memcpy(&bits, &s.dz, sizeof bits);
+        stepping = bits != 0;
+    } else {
+        stepping = !((m.side == 0.0f && m.fwd == 0.0f) || (f & kShootMoveHold));
+    }
+    // (the head bob is here in the engine - not modelled, see the header)
     // THE JUMP'S HOLD AND COOL-DOWN (0x0047D95C..): flag 0x10 comes down
     // once 0x800 is gone and the fall byte is clear; without it the
     // cool-down runs down by the delta to 0
@@ -192,6 +205,18 @@ ShootMoveStep shootMoveTick(ShootMover& m, float facingDeg, float dt,
     } else {
         m.jumpCool -= dt;
         if (m.jumpCool < 0.0f) m.jumpCool = 0.0f;
+    }
+    // THE FOOTSTEPS (0x0047DA41..0x0047DB43, the header has the table)
+    if (stepping) {
+        const float q = m.period * 0.25f;                       // flt_4BCB6C
+        const float ph = clipFrame;                             // +188
+        bool left = false, right = false;
+        if (ph < q)                  left  = !(f & kShootMoveStepL);
+        else if (ph < q + q)         right = !(f & kShootMoveStepR);
+        else if (ph < q * 3.0f)      left  = !(f & kShootMoveStepL);   // flt_4BCB2C
+        else if (ph < q * 4.0f)      right = !(f & kShootMoveStepR);   // flt_4BCB4C
+        if (left)  { f = (f & ~kShootMoveStepR) | kShootMoveStepL; s.sound = m.stepLeft; }
+        if (right) { f = (f & ~kShootMoveStepL) | kShootMoveStepR; s.sound = m.stepRight; }
     }
     m.flags = f & 0x17F0u;
     return s;

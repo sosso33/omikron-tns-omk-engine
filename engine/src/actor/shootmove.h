@@ -109,6 +109,8 @@ enum : std::uint32_t {
     kShootMoveHold   = 0x10,    // the velocities frozen - MDJP sets it
     kShootMoveCrouch = 0x20,    // MDDO; halves the top speed
     kShootMoveTr     = 0x40,    // MDTR (0x0047CF30)
+    kShootMoveStepL  = 0x80,    // the last footstep was the LEFT one (`word_657A16`)
+    kShootMoveStepR  = 0x100,   // ...the RIGHT one (`word_657A18`)
     kShootMoveHead   = 0x200,   // MDHEAD01: the move keys pitch the look
     kShootMoveShove  = 0x400,   // `sub_47D1F0`'s knockback
     kShootMoveBlock  = 0x800,   // refuses the intents - MDJP, for one tick
@@ -143,8 +145,8 @@ struct ShootMover {
     // IMPACT03.WAV and STPL/STPR.WAV. Flag 0x1000 goes up for the Mecagarde -
     // `BYTE1 |= 0x10` is bit TWELVE, which is the pitch lock below.
     int hurtSound = 191;            // `word_657A14`  - IMPACT03.WAV
-    int stepLeft  = 161;            // `word_657A16`  - STPL.WAV, NOT MODELLED
-    int stepRight = 162;            // `word_657A18`  - STPR.WAV, NOT MODELLED
+    int stepLeft  = 161;            // `word_657A16`  - STPL.WAV
+    int stepRight = 162;            // `word_657A18`  - STPR.WAV
 };
 
 // The walk over the table: `for (i = &unk_4CF7D0; speed > *i; i += 3)`.
@@ -224,14 +226,41 @@ float shootPitchStep(float pitchDeg, int dy, int sensitivity, bool inverted, flo
 
 // One frame of `sub_47D4D0`'s motion: the world step it hands
 // `o3de_MoveNodeBy` in x and z, and the `+248` fall of `flt_6579C0`.
-struct ShootMoveStep { float dx = 0.0f, dz = 0.0f, dy = 0.0f; };
+//
+// THE FOOTSTEPS (0x0047DA41..0x0047DB43), the tail of the same tick. When he
+// moves - either velocity non-zero and flag 0x10 down; under MDTR (0x40) the
+// raw bits of the z step instead - the actor's clip frame (`+188`, the frame
+// shown LAST tick: the mover runs before the channel) is placed against
+// quarters of `dword_6579C8`, the period `sub_47CC70` took off group 200's
+// default clip (constants 0.25, 3.0 and 4.0 at 0x4BCB6C/2C/4C):
+//
+//     f < P/4         left,  unless flag 0x80 is up     (0x80 up, 0x100 down)
+//     P/4 <= f < P/2  right, unless flag 0x100 is up    (0x100 up, 0x80 down)
+//     P/2 <= f < 3P/4 left,  unless 0x80
+//     3P/4 <= f < P   right, unless 0x100
+//
+// so four footfalls a clip, alternating, each played ONCE by its latch. The
+// id is resolved in the resident library (`Scene_FindSoundIndex(&stru_930780)`,
+// shoot2.scx in shoot mode, as the hurt sound) and played FLAT -
+// `Sound_Play3D(i, 0, 0, &dword_6579B0)`, the hurt's own call. `sound` is that
+// id, or -1. NOT PORTED, labelled: standing still the engine also writes
+// `+188 = +192 = 1.0` into the actor, and the port's clip clock is the
+// channel's, which this does not rewind - so where in the stance clip the
+// first step of a walk falls is the channel's phase, not frame 1. Whether the
+// engine's write reaches the clip clock is unread.
+//
+// (The head bob is here too, `3 cos(720 +192 / P) - 3 cos(720 +188 / P)` into
+// the node's y - NOT MODELLED: `addShootMotion`'s y is the walker's lift, which
+// would take him off the floor.)
+struct ShootMoveStep { float dx = 0.0f, dz = 0.0f, dy = 0.0f; int sound = -1; };
 // `eulerPitch` / `eulerRoll` are the actor's +416 and +424, which the SHOVE
 // arm spends and then zeroes. Pass neither and the arm is skipped - which is
 // what every probe that only wants the step does.
 // `falling` is the actor's fall byte (+1304) - the walker's airborne flag here,
 // as for the movers - which keeps flag 0x10 up until he lands.
+// `clipFrame` is the actor's `+188` for the footsteps.
 ShootMoveStep shootMoveTick(ShootMover& m, float facingDeg, float dt,
                             float* eulerPitch = nullptr, float* eulerRoll = nullptr,
-                            bool falling = false);
+                            bool falling = false, float clipFrame = 1.0f);
 
 }  // namespace omk

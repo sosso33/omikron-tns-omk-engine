@@ -32176,6 +32176,58 @@ def c_engine_sham_ride():
         "dismounts at the end of record 47"
 
 
+def c_engine_meca_transfer():
+    r"""`engine/`: THE MECAGARDE TAKES THE SOUL AND STANDS ON HIS PAD
+    (`todo/scene-gameplay-audit.md` 5). SCENE 51 (loaded over AREA 181,
+    'Anekbah CS Lev-4', by SCENE 57) record 7 is the surveillance console,
+    zone 3156: with the fuse back (variable 563) and the Meca control kit
+    (11) it opens screen 17 `SURV KIT`, whose terminal cell answers 1 by
+    itself, and then runs `area.goto 183`, `player.become 216`,
+    `character.hide 49`, `actor.goto_address 580` ('Pad Meca', in AREA 183 at
+    y 2803) and `area.arrive 181`.
+
+    The harness: `--scene-load 181,51`, the two variables, zone 3156
+    enabled and 3137 ('Console Meca Occupee', the operator's) disabled, Kay'l
+    stood in the console's quad facing into its arc; Action, then 270 frames
+    of forward once the Mecagarde is the player.
+
+    Asserted: the transfer to 216, the new body placed by the ADDRESS (the
+    teleport the script runs after op 56 moves `Actor_Player()`, which is
+    the Mecagarde by then), at a y on AREA 183's level, and that he then
+    walks over 100 units. Shown to fail: with the viewer's re-seat at the
+    body's own node restored, `how` is `node`, he stands at 5507 606 -12832
+    in AREA 181 - which `area.arrive` hides - and walks 0.
+    """
+    import subprocess, tempfile
+    eng = os.path.join(ROOT, "engine")
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_EVENTS="1")
+    r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                        "--save", os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "181",
+                        "--scene-load", "181,51", "--var", "563=1,11=1",
+                        "--zone-enable", "3156", "--zone-disable", "3137",
+                        "--stand", "6080,570,-12226,46",
+                        "--hold", "0*60,k28*3,0*90,k28*3,0*100,k200*270",
+                        "--nofmv", "--nodelay", "--res", "640x480",
+                        "--saves", tempfile.mkdtemp(), "--frames", "530"],
+                       capture_output=True, text=True, errors="replace", env=env)
+    ev = _events(r.stdout)
+    becomes = [int(e["actor"]) for n, e in ev if n == "player.become"]
+    place = [(e["how"], round(float(e["y"]))) for n, e in ev if n == "player.become.place"]
+    walked = re.findall(r"^player: MCG_FN/MECA at .*walked (\S+) over", r.stdout, re.M)
+    got = (becomes, [h for h, _ in place], [2700 < y < 2900 for _, y in place],
+           bool(walked) and float(walked[-1]) > 100.0)
+    print("        placed %s, walked %s" % (place, walked[-1:] or "-"))
+    return got, ([216], ["address"], [True], True), \
+        "player.become 216 at the console; the new body put on 'Pad Meca' (address 580, " \
+        "AREA 183's level) by the teleport after op 56; and the Mecagarde walks from it"
+
+
 def c_engine_vr_strafe():
     r"""IN A HEADSET'S SHOOT MODE THE STICK'S SIDEWAYS PUSH STRAFES
     (`vrShootAim`, backends/vr; the reader, 2026-10-07: "the stick should also
@@ -44564,9 +44616,16 @@ def c_engine_shoot_move():
     of the three gunmen. Going LEFT from the second leg's end is not, and is
     not used - gunman 237 stands in it and the bodies' push stops him.
 
-    What it cannot see, and says so: the head bob and footsteps, the shove,
-    and the jump in shoot mode are not modelled; the fall byte that refuses
-    the intents is the walker's airborne flag.
+    THE FOOTSTEPS (2026-11-11, `actor/shootmove.h`): the mover's tail places
+    the clip frame (+188) against quarters of the period (59, group 200's
+    stance clip), so a step falls every ~15 frames while he moves, LEFT 161
+    (STPL) and RIGHT 162 (STPR) in turn, each latched once, both found in
+    shoot2.scx. The list is each `shoot.step` as (sound, clip frame). Shown to
+    fail: with the latch test dropped the left fires on every frame of its
+    quarter.
+
+    What it cannot see, and says so: the head bob is not modelled; the fall
+    byte that refuses the intents is the walker's airborne flag.
     """
     import subprocess, re
     fr = omkpaths.data_root()
@@ -44586,8 +44645,10 @@ def c_engine_shoot_move():
          "--frames", "230", "--nodelay",
          "--hold", "k200*40,0*20,k205*30,0*20,k75*9,0*10,k200*20,0*30"],
         capture_output=True, text=True,
-        env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+        env=dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_EVENTS="1"))
     o = play.stdout
+    steps = [(int(e["sound"]), int(e["found"]), round(float(e["clip_frame"])))
+             for n, e in _events(o) if n == "shoot.step"]
     init = re.search(r"SHOOT MOVER \(sub_47CC70\) - (.*?), period", o)
     starts = re.findall(r"^frame \d+: SHOOT MOVE starts at \S+ \S+ \S+, facing (\S+)$", o, re.M)
     legs = re.findall(r"^frame \d+: SHOOT MOVE stops after (\d+) frames - asked (\S+), "
@@ -44630,11 +44691,16 @@ def c_engine_shoot_move():
              # so nobody walks into the player on this leg and it runs
              # straight, the 92.82 asked all along -X)
              (23, "92.82", ("-92.82", "0.00", "0.00"))])
+    got += (steps,)
+    want += ([(161, 1, 2), (162, 1, 15), (161, 1, 30), (162, 1, 45),
+              (161, 1, 3), (162, 1, 15), (161, 1, 30),
+              (162, 1, 15), (161, 1, 30)],)
     return got, want, (
         "the mover's speeds from Speed 70 (row 4: 10.4, 0.39, 2.08); forward 40 "
         "frames = 303.29 along +Z, strafe right 30 = 256.10 along +X, nine MDRG "
         "turning 180 to 270, forward 20 = 92.82 along -X - each asked distance "
-        "gone in full")
+        "gone in full; and the footsteps (sound, found, clip frame), a quarter "
+        "of the 59-frame period apart")
 
 
 def c_engine_shoot_entrance():
@@ -45425,7 +45491,12 @@ def c_engine_shoot_landing():
     stat = re.findall(r"^frame (\d+): SHOOT STAT \(sub_423A40\) - the player's health -> (-?\d+)",
                       o, re.M)
     got = (lands, stat[:1])
-    want = ([("191", "199.3", "5.06", "11", "to its handler")], [("192", "155")])
+    # (RE-PINNED 2026-11-11, 191/192 -> 192/193: the swept capsule hangs on
+    # the node's vertical since `4797348` - `Actor_Move` reads a sphere's y
+    # and radius only - and HO1_FN's spheres sat 1.9 off on z, so he reaches
+    # the drop's edge one frame later. Shown: those offsets restored give
+    # 191/192 back. The fall, the message and the 45 are unchanged)
+    want = ([("192", "199.3", "5.06", "11", "to its handler")], [("193", "155")])
     return got, want, ("the catacombs' drop onto floor 3: the landing's fall and the message it "
                        "posts (11 at 5 m and over, 10 from 3 m), the area's handler running, "
                        "and the 45 it takes from the health property the next frame")
@@ -55231,6 +55302,7 @@ SLOW = [
     ("engine: lazy collision", c_engine_lazy_collision, "todo/cpu-vs-original.md tier C; o3de/collision.h"),
     ("engine: turned floor", c_engine_turned_floor, "todo/scene-gameplay-audit.md 20; o3de/collision.h"),
     ("engine: sham ride", c_engine_sham_ride, "todo/scene-gameplay-audit.md 4; actor/player.cpp"),
+    ("engine: meca transfer", c_engine_meca_transfer, "todo/scene-gameplay-audit.md 5; script/area.h"),
     ("engine: gles overlay", c_engine_gles_overlay, "todo/vita-port.md G6; backends/gles/glesrender.cpp"),
     ("engine: pool past 64", c_engine_pool_past_64, "todo/handoff-quest-port.md; o3de/renderer.h"),
     ("engine: crowd indoors", c_engine_crowd_indoors, "docs/STREET_LIFE.md; todo/handoff-quest-port.md"),

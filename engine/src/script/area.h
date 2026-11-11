@@ -1380,6 +1380,13 @@ public:
     // save carries it and `IAM\START`'s -1 is what a new game starts with.
     void becomePlayer(int actor);
     int  playerActor() const;
+    // Whether a TELEPORT (`placeActorAt`) has landed since the last
+    // `becomePlayer`. The script runs on after op 56 in the same pump, and
+    // SCENE 51 record 7 - the Mecagarde - follows `player.become 216` with
+    // `actor.goto_address 580`, which in the engine moves the NEW player
+    // (`Actor_Player()` is 216 by then) onto the pad. Whoever re-seats the
+    // new body after the pump keeps that place rather than the body's own.
+    bool placedSinceBecome() const { return placementSeq_ != becomeSeq_; }
     // The bit `character.show`/`hide` write: the resident chunk's 20-byte
     // character record for this id (AREA +40 / count +72, then SCENE +8 /
     // +40, id at +2) carries the `ObjectShown` bit index at +18. -1 when no
@@ -1890,6 +1897,7 @@ private:
     } head_{};
     bool playerWalks_ = false;               // something outside feeds his position
     int  placementSeq_ = 0;                  // landings of placeActorAt
+    int  becomeSeq_ = 0;                     // placementSeq_ at the last becomePlayer
     bool playerAnimHeld_ = false;            // Actor_HoldAnimation's 0x81 on the player
     // Script_Pump(1) step 1 (the slot loop) and step 2 (the unconsumed press).
     void pumpZoneSlots();

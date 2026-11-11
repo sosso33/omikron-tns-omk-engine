@@ -1514,6 +1514,17 @@ where they were. The port rebuilt its controller at the OLD body's spot
 until then; in the Sham ride (AREA 137, `player.become 434`) that was 29
 units off the Sham. `verify.py: engine: become place`.
 
+**And the script runs on after it, in the same pump** (2026-11-11). From op
+56 on, `Actor_Player()` is the new body, so a teleport later in the same
+script moves THAT body. SCENE 51 record 7, the security centre's console, is
+the case: `area.goto 183`, `player.become 216`, `character.hide 49`,
+`actor.goto_address 580` ('Pad Meca'), `area.arrive 181` - the Mecagarde
+lands on his pad in AREA 183. The port applies the transfer after the pump,
+and re-seating the new body at its own node there undid the teleport: he
+stood in AREA 181, which the `area.arrive` hides, and could not take a step.
+`Session::placedSinceBecome` now tells the viewer a teleport followed.
+`verify.py: engine: meca transfer`.
+
 And the listing states it outright — from `AREA 22`:
 
 ```
