@@ -551,6 +551,9 @@ struct PlayState {
     bool shootMode{};   // ops 80/81, `actor/shootmode.h`
     bool shootFrozenApplied{};   // the records' 0x8000, as last made equal to dword_4E9760
     long shootSuspendsSeen{}, shootResumesSeen{};   // ShootMode::suspends()/resumes() answered
+    // the suspend's bank-group reset already applied, at op time, by a later
+    // `player.move` in the same pump (the script's order: suspend, then move)
+    bool shootSuspendBankDone{};
     std::map<std::string, CharModel> charModels{};
     std::map<std::string, PropModel> propModels{};
     omk::Geometry propGeo{};   // the shown props, in world space
@@ -1450,6 +1453,9 @@ struct PlayState {
     void astarothFire(Staged& s, omk::ShootRecord& rec, int slot, const float target[3]);
     bool recordFire(Staged& s, omk::ShootRecord& rec, int slot, const float target[3],
                     const char* who, float slot1Wait);
+    // the player's model has a `Maing` (actor +44): what `Shoot_Enter`'s
+    // weapon gate and `Shoot_InitWeapon`'s +164 come down to for him
+    bool playerHasHand() const;
     // `Actor_TickProjectiles`' slot walk (its own debug string: `add_Fire`),
     // the branch an actor with nothing in his hand takes - his `Tire` markers.
     // `actor` -1 is the player (his record the DB's). -> the engine's return:
@@ -1461,7 +1467,8 @@ struct PlayState {
     // effect, the noise) - `w` the `Tire` mesh, `owner` -1 for the player
     bool slotBolt(int owner, const char* model, const std::vector<omk::Mesh>& meshes, int w,
                   const float muzzle[3], const float target[3], float speed, int damage,
-                  const char* who, const char* how, int slot, float slot1Wait, int ammoWas);
+                  const char* who, const char* how, int slot, float slot1Wait, int ammoWas,
+                  const float* markerRot = nullptr, const float* markerDir = nullptr);
     void astarothStamp(omk::ShootRecord& rec);
     // `sub_4725B0`'s pose: four keys of the grid clip, two k/256 slerps
     std::vector<omk::MeshPose> astarothPoseNow(const CharModel* mo, const omk::NodeTracks& pt,

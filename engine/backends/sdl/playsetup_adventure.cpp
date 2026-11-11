@@ -39,6 +39,17 @@ int PlayState::setupAdventure() {
     moveWaitCtx = -1, moveWaitGroup = -1;
     session.setMoveHook([&](int groupId, int ctx) -> bool {
         if (!player) return false;
+        // A `shoot.player.suspend` earlier in this pump (op 116 RUNS
+        // `SetPersoBankGroup(default)` where it stands) must reach the
+        // channel BEFORE this move - the frontend applies the suspend after
+        // the pump, and there it would put the bank back over the group just
+        // entered (AREA 66's 'freeze shoot from level 3': suspend, then
+        // `player.move 107`, the Mecagarde's walk-in)
+        if (shootMode && !shootSuspendBankDone &&
+            session.shootMode().suspends() != shootSuspendsSeen) {
+            player->suspendShootMode();
+            shootSuspendBankDone = true;
+        }
         if (!player->goToMove(groupId)) {
             std::printf("frame %ld: player.move%s %d - no group %d in the player's bank, "
                         "the script runs on\n", session.frameNo(),

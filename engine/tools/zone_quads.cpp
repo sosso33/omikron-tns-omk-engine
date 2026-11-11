@@ -15,7 +15,7 @@
 #include <cstdlib>
 #include <string>
 int main(int argc, char** argv) {
-    const bool scene = argc > 3 && std::string(argv[3]) == "scene";
+    const bool scene = argc > 3 && std::string(argv[3]) == "scene";  // argv[4] "corners": each quad too
     const int chunkId = argc > 2 ? std::atoi(argv[2]) : 0;
     const auto f = omk::DataFs::readPath(std::string(argv[1]) + "/IAM/"
                                          + (scene ? "SCENE" : "AREA"));
@@ -32,6 +32,10 @@ int main(int argc, char** argv) {
         for (int k = 0; k < 4; ++k) { cx += zs[i].quad[k][0]; cy += zs[i].quad[k][1]; cz += zs[i].quad[k][2]; }
         std::printf("zone %2zu id %4d  centre %7.0f %6.0f %7.0f  arc %d+-%d\n",
                     i, zs[i].id, cx/4, cy/4, cz/4, zs[i].arcMid, zs[i].arcWide);
+        if (argc > 4 && std::string(argv[4]) == "corners")
+            for (int k = 0; k < 4; ++k)
+                std::printf("      corner %d  %7.0f %6.0f %7.0f\n", k, double(zs[i].quad[k][0]),
+                            double(zs[i].quad[k][1]), double(zs[i].quad[k][2]));
     }
     return 0;
 }

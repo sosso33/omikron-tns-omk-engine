@@ -32327,6 +32327,72 @@ def c_engine_builtin_weapon():
         "by sub_44CDF0 and hurts the player; no other actor fires in the catacombs run"
 
 
+def c_engine_archives_exit():
+    r"""`engine/`: THE MECAGARDE LEAVES THE ARCHIVES' FIRST SHOOT
+    (`todo/scene-gameplay-audit.md` 5, step 4). AREA 63 'Anekbah CS Archives
+    03': the exit door (zone 1261, record 0 `area.goto 66, 28, 30`) is shut
+    until the switch box's ACTION (zone 1269, record 8: suspend, cameras 1493
+    and 1502 over the door's scene program 0x000b, resume, zone 1272 'VO
+    Porte Verrouillee' disabled). Through it, AREA 66's sas: zone 1342
+    'freeze shoot from level 3' suspends and runs `player.move 107`, his walk
+    in (`MC_SD-WK`), which carries him into zone 1341, `area.goto 67`; there
+    `player.move.wait 108`, 'Depart Shoot 05', and `shoot.player.resume`.
+
+    Two runs on the meca transfer's route (`--shoot-health 1000`, and
+    `--player-at`, an instrument, for the cross-level legs): A walks at the
+    shut door from the VO zone; B presses Action at the box, then walks the
+    same line.
+
+    Asserted, each SHOWN TO FAIL:
+    * shut, the door holds him (under 100 of the 1981 asked) and the VO plays;
+    * the box's Action; then areas 66 and 67 reached - the suspend's bank
+      reset applied after the pump put MC_STAND back over `player.move 107`
+      and he never walked in;
+    * every resume leaves him WITHOUT a weapon row (`Shoot_InitWeapon`
+      returns at an empty +164 - he has no `Maing`): the Waver, re-armed.
+    """
+    import subprocess, tempfile
+    eng = os.path.join(ROOT, "engine")
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_EVENTS="1")
+    route = ("0*60,k28*3,0*90,k28*3,0*80,"
+             "k205*20,0*10,k200*200,0*20,k203*10,0*10,k200*110,0*30,k205*5,0*10,k200*60,0*20,"
+             "k28*3,0*750,")
+    def run(hold, extra, frames):
+        return subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                               "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+                               "--area", "181", "--scene-load", "181,51", "--var", "563=1,11=1",
+                               "--zone-enable", "3156", "--zone-disable", "3137",
+                               "--stand", "6080,570,-12226,46", "--hold", route + hold,
+                               "--shoot-health", "1000"] + extra +
+                              ["--nofmv", "--nodelay", "--res", "640x480",
+                               "--saves", tempfile.mkdtemp(), "--frames", str(frames)],
+                              capture_output=True, text=True, errors="replace", env=env).stdout
+    a = run("0*20,k200*200,0*50", ["--player-at", "1500:9366,466,-9341,232"], 1780)
+    b = run("0*100,k28*3,0*200,k200*170,0*200",
+            ["--player-at", "1300:10474,466,-10802,178",
+             "--player-at", "1800:9366,466,-9341,232"], 2200)
+    went = re.findall(r"SHOOT MOVE stops after \d+ frames - asked \S+, went (\S+) ", a)
+    vo = "media.play 765 " in a
+    eb = _events(b)
+    zones = [int(e["zone"]) for n, e in eb if n == "zone.activate"]
+    areas = [int(e["area"]) for n, e in eb if n == "player.area"]
+    rows = [int(e["row"]) for n, e in eb if n == "shoot.resume"]
+    print("        shut: went %s, VO %s; open: zones %s, areas %s, resumes' rows %s"
+          % (went[-1:], vo, zones, areas, rows))
+    got = (bool(went) and abs(float(went[-1])) < 100.0, vo, 1269 in zones,
+           66 in areas and bool(areas) and areas[-1] == 67, len(rows) >= 2 and set(rows) == {0})
+    return got, (True, True, True, True, True), \
+        "shut, the exit door holds him and 'Porte verrouillee' plays; the box's Action opens it, " \
+        "he walks through into AREA 66's sas, walks in on group 107 and reaches AREA 67; every " \
+        "resume leaves him without a weapon row"
+
+
 def c_engine_vr_strafe():
     r"""IN A HEADSET'S SHOOT MODE THE STICK'S SIDEWAYS PUSH STRAFES
     (`vrShootAim`, backends/vr; the reader, 2026-10-07: "the stick should also
@@ -55403,6 +55469,7 @@ SLOW = [
     ("engine: sham ride", c_engine_sham_ride, "todo/scene-gameplay-audit.md 4; actor/player.cpp"),
     ("engine: meca transfer", c_engine_meca_transfer, "todo/scene-gameplay-audit.md 5; script/area.h"),
     ("engine: built-in weapon", c_engine_builtin_weapon, "todo/scene-gameplay-audit.md 5; todo/released-spectres.md; backends/sdl/playstate.cpp addFireSlots"),
+    ("engine: archives exit", c_engine_archives_exit, "todo/scene-gameplay-audit.md 5; backends/sdl/playsetup_adventure.cpp"),
     ("engine: gles overlay", c_engine_gles_overlay, "todo/vita-port.md G6; backends/gles/glesrender.cpp"),
     ("engine: pool past 64", c_engine_pool_past_64, "todo/handoff-quest-port.md; o3de/renderer.h"),
     ("engine: crowd indoors", c_engine_crowd_indoors, "docs/STREET_LIFE.md; todo/handoff-quest-port.md"),

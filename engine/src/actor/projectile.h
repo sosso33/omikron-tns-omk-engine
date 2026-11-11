@@ -182,6 +182,15 @@ struct RecordShot {
     float windUp = 0.0f, grow = 0.0f;
     float growStep[3] = {0, 0, 0};
     int   impactEffect = 0;  // the row's +8, carried to the impact
+    // `add_Fire`'s SLOT path instead of the aimed matrix: `sub_44D7F0` is
+    // handed the `Tire` marker's WORLD matrix (node +92, `sub_4942A0`'s
+    // `local x parent world`) and the rest-pose Vise->Tire vector, so the
+    // node keeps that matrix - the heading the flight reads back, and how the
+    // bolt is drawn - and the velocity is the vector through it. Row-major,
+    // the engine's layout (row k = the marker's axis k in the world).
+    bool  markerMatrix = false;
+    float rot[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+    float dir[3] = {0, 0, 0};          // already through `rot`, unit
 };
 struct RecordShotOut {
     int  entry = -1;         // -1: the pool was full and nothing was spent

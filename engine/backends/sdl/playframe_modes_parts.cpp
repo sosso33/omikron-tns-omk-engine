@@ -475,10 +475,12 @@ int PlayState::modesShoot() {
         // flag only and does nothing to the player.
         if (session.shootMode().suspends() != shootSuspendsSeen) {
             shootSuspendsSeen = session.shootMode().suspends();
+            const bool bankDone = shootSuspendBankDone;
+            shootSuspendBankDone = false;
             if (shootMode && player) {
                 const int bolts = projectiles.live();
                 projectiles.clear();
-                player->suspendShootMode();
+                if (!bankDone) player->suspendShootMode();
                 omk::shootMoveLeave(shootMover);
                 hudWalk.reset();
                 shootCameraLive = false;              // his body drawn again
@@ -1034,9 +1036,7 @@ void PlayState::modesShootEnterLeave(omk::Input& in) {
             // from list 0 at all: his record keeps no row, the trigger goes
             // straight to the request (`Meca.CTL` group 200's +12 is 0), and
             // `add_Fire` fires his `Tire` marker (`addFireSlots`).
-            bool hasHand = false;
-            for (const auto& m : playerBody.meshes)
-                if (std::strstr(m.name, "Maing")) hasHand = true;
+            const bool hasHand = playerHasHand();
             int obj = -1, kind = -1, type = 0;
             if (hasHand) {
                 session.changeWeapon();
@@ -1156,6 +1156,8 @@ void PlayState::modesShootResume(omk::Input& in) {
                         "gunmen's brains ON\n", frameNo, static_cast<int>(player->state()),
                         session.shootMode().hudScreen(), omk::ShootMode::kCameraMode, type,
                         playerShootRec.weapon ? "a row" : "NO ROW", in.group());
+            omk::event("shoot.resume", {{"frame", frameNo}, {"type", type},
+                                        {"row", playerShootRec.weapon ? 1 : 0}});
         }
     }
 }

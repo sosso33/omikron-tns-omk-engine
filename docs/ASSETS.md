@@ -4358,10 +4358,37 @@ spectre released from tomb 1 (410, action 3) fires both slots at 78 for 5 and
 hurts the player, and no patrolling spectre fires - **the released spectres'
 attack, parked since 2026-09-13 (`todo/released-spectres.md`), was this.**
 
-NOT ported, labelled: a bit-clear gunman who HOLDS an object (the record
-path from the bit-clear arm; the port says so once if one is met); the bolt's
-drawn orientation (the port turns the direction into a yaw and a pitch, not
-the marker's matrix); `+190`'s increment and `byte_90E0B0`.
+The three points left over, explored the same day:
+
+* **A bit-clear gunman holding an object - no shipped case.** Every
+  `object.hold.actor` (op 67) in AREA and SCENE gives its gun to a type-3
+  character (and one nurse, type 0, and one incarnable, type 9, outside any
+  shoot), and every one of their areas loads `BRAQUEUR` or `DOCK`, whose
+  group 3 has the bit SET. The port still says so once if one is ever met.
+* **The bolt's matrix - ported.** `sub_4942A0` makes a node's `+92` its WORLD
+  matrix (`local +56 x parent +92`), and `sub_44D7F0` copies the marker's
+  `+92` into the clone's `+56`: the slot bolt keeps the marker's world matrix
+  - the heading the flight lays its one-unit hit segment along, and the
+  bolt's drawn orientation - and flies down the Vise->Tire vector turned by
+  it (`RecordShot::markerMatrix`). Not measured by a check: it moves no
+  number the checks hold.
+* **`+190` is the generic brain's ATTACK COUNTER** (the table brain's hit band
+  shares the field, as `+100` is shared): +1 per gate shot, per `add_Fire`,
+  per strike. At `LABEL_359`, with `+160 & 0x2000000` (behaviour bit 0x08)
+  and `+190 >= property 18 > 0`, `+16 = List_PickRandomByType(group, 35)`
+  and `+190 = 0`; a non-null `+16` is then started (`sub_421A20(.., 2)`, flag
+  8). Type-35 clips exist only in `braqueur.ani`'s and `dock.ani`'s group 3,
+  three, all named `NULL`: after so many attacks such a gunman PAUSES on an
+  empty clip. NOT ported - it changes the gunfire cadence the supermarket's
+  and the gallery's checks hold.
+* **`byte_90E0B0` is the HUD's EVENT TICKER.** Each writer sets it only if
+  it is still 0 this frame: 1 a bit-clear gunman's shot, 2 and 3 hits
+  (`sub_4240E0`'s arms), 4 message 2 (`sub_423EF0`). Its one reader, a UI
+  callback with no `proc` label just after the `{C}{M}{I255255255}%d`
+  formatters (~0x0042E720), pushes it (3 also calling `sub_432F20`) into an
+  11-byte ring `dword_4EB808` indexed by `byte_4EB8C0` and builds the line
+  from it, one glyph per code 0..4 (`sub_4767E0`). NOT ported; which screen
+  draws it is not yet read.
 
 ### `.3DA` — scene animations, standalone and embedded in the SCX — **solved**
 

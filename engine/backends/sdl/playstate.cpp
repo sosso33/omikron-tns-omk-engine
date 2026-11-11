@@ -719,8 +719,22 @@ void PlayState::shootFreezeSync(long frame) {
                 fz ? "freeze_all" : "unfreeze_all", fz ? "set" : "cleared", shootBrains.size());
 }
 
+bool PlayState::playerHasHand() const {
+    for (const auto& m : playerBody.meshes)
+        if (std::strstr(m.name, "Maing")) return true;
+    return false;
+}
+
 void PlayState::shootInitWeapon(int& obj, int& kind, int& type) {
     auto& session = *session_;
+    // `if (!u32(a1, 164)) return 0;` - BEFORE `+180 = 0`: nothing in the hand
+    // leaves the record's row as it was. A body with no `Maing` (actor +44,
+    // the Mecagarde's MCG_FN) never has `sub_41C490` link anything there, so
+    // `shoot.player.resume` re-arms him with nothing (`addFireSlots`).
+    if (!playerHasHand()) {
+        obj = -1; kind = -1; type = 0;
+        return;
+    }
     obj = session.shootMode().weaponObject();
     const auto& objs = voiceLib.objects();
     const bool known = obj >= 0 && static_cast<std::size_t>(obj) < objs.size();
@@ -1280,7 +1294,8 @@ bool PlayState::recordFire(Staged& s, omk::ShootRecord& rec, int slot, const flo
 bool PlayState::slotBolt(int owner, const char* model, const std::vector<omk::Mesh>& meshes,
                          int w, const float muzzle[3], const float target[3], float speed,
                          int damage, const char* who, const char* how, int slot,
-                         float slot1Wait, int ammoWas) {
+                         float slot1Wait, int ammoWas, const float* markerRot,
+                         const float* markerDir) {
     omk::ShootWeaponRow row;
     row.speed = speed;
     row.damage = damage;
@@ -1291,6 +1306,11 @@ bool PlayState::slotBolt(int owner, const char* model, const std::vector<omk::Me
     const omk::GunmanAim aim = omk::shootGunmanAim(target, rs.muzzle, 0.0f, k0);
     rs.yawDeg = aim.yawDeg;
     rs.pitchDeg = aim.pitchDeg;
+    if (markerRot && markerDir) {
+        rs.markerMatrix = true;
+        for (int k = 0; k < 9; ++k) rs.rot[k] = markerRot[k];
+        for (int k = 0; k < 3; ++k) rs.dir[k] = markerDir[k];
+    }
     // the sprite row by the marker's PARENT bone (`sub_44EEB0(w->parent->desc
     // + 16)`, four bytes): AstMaing -> AstMain, AstBuste -> AstBust
     const omk::Mesh& wm = meshes[static_cast<std::size_t>(w)];
@@ -1348,8 +1368,10 @@ bool PlayState::slotBolt(int owner, const char* model, const std::vector<omk::Me
 //       down the arm as the clip poses it; `sub_4246E0` the noise.
 //     }
 //   }
-// The bolt's drawn orientation is this port's (`slotBolt` turns the
-// direction into a yaw and a pitch), not the marker's matrix.
+// The bolt keeps the marker's world matrix (`RecordShot::markerMatrix`):
+// `sub_4942A0` makes node +92 the WORLD matrix (`local +56 x parent +92`),
+// and `sub_437160` copies it into the clone's +56, the matrix the flight
+// reads its heading from and draws the bolt in.
 bool PlayState::addFireSlots(int actor, const char* model, const std::vector<omk::Mesh>& meshes,
                              const std::vector<float>& meshAt, const std::vector<float>& meshRot,
                              std::array<float, 4>& timers, const char* who) {
@@ -1424,7 +1446,8 @@ bool PlayState::addFireSlots(int actor, const char* model, const std::vector<omk
                                  muzzle[2] + dir[2] * 1000.0f};
         slotBolt(actor, model, meshes, w, muzzle, target,
                  static_cast<float>(static_cast<std::int16_t>(speedHi) * 3.9000001),
-                 static_cast<std::int16_t>(damage), who, "add_Fire", k, -1.0f, count);
+                 static_cast<std::int16_t>(damage), who, "add_Fire", k, -1.0f, count,
+                 &meshRot[wi * 9], dir);
     }
     return true;
 }

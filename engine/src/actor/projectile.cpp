@@ -93,10 +93,15 @@ RecordShotOut ProjectilePool::fireFromRecord(int actor, const ShootWeaponRow& ro
     p.travelled = 0.0f;                  // `a1[3] = 0` in `sub_44D7F0`
     for (int k = 0; k < 3; ++k) p.pos[k] = in.muzzle[k];
     // the node's matrix, and `(-1, 0, 0)` through it times the speed
-    shootShotMatrix(in.yawDeg, in.pitchDeg, p.rot);
-    const float mx[3] = {-1.0f, 0.0f, 0.0f};
     float dir[3];
-    shootRotateRow(mx, p.rot, dir);
+    if (in.markerMatrix) {
+        for (int k = 0; k < 9; ++k) p.rot[k] = in.rot[k];
+        for (int k = 0; k < 3; ++k) dir[k] = in.dir[k];
+    } else {
+        shootShotMatrix(in.yawDeg, in.pitchDeg, p.rot);
+        const float mx[3] = {-1.0f, 0.0f, 0.0f};
+        shootRotateRow(mx, p.rot, dir);
+    }
     for (int k = 0; k < 3; ++k) p.vel[k] = dir[k] * p.speed;
     p.scale[0] = p.scale[1] = p.scale[2] = 1.0f;
     p.sprite = in.sprite ? 1 : 0;
