@@ -1587,7 +1587,8 @@ void Session::trackPlayer() {
     // does to the node it is handed.
     int which = -1;
     for (std::size_t i = 0; i < started.size(); ++i)
-        if (started[i].how == "player" && scene_.programRunning(static_cast<int>(i)))
+        if (SceneRunner::drivesPlayer(started[i], playerActor()) &&
+            scene_.programRunning(static_cast<int>(i)))
             which = static_cast<int>(i);
     if (which < 0) return;
     // ACTOR_STATE 4/5: `Actor_TickScxDriven` / `Actor_StartPendingScx`, which
@@ -2051,6 +2052,54 @@ void Session::becomePlayer(int actor) {
     std::size_t off = 0;
     if (!actorRecord(actor, chunk, off)) return;   // Actor_FindById -> 0: the
                                                    // engine would fault here
+    // THE OLD BODY STAYS (read 2026-11-11 off 0x402F60). The handler finds
+    // the NEW body's 20-byte object record (`sub_40D6A0`) and hands it to
+    // the OLD one - `mov [edi+2], ax` (the old body's CHARACTERS id),
+    // `mov [edi], bp` (its actor slot) - and calls no detach: the old body
+    // inherits the new one's record, its shown bit included, and stays in
+    // the scene where it stood, with whatever program its actor record runs.
+    // The scripts say so too: every site that wants the old body gone hides
+    // it after the transfer (AREA 137 record 41 `player.become 434` then
+    // `character.hide 406`, record 47 `player.become 406` then
+    // `character.hide 434`, SCENE 51 record 7 `player.become 216` then
+    // `character.hide 49`), and record 40's does not - Kay'l's body stays
+    // where he drank, under `J_SUICSD`, while young Fodo walks off. The port
+    // dropped it at every transfer.
+    //
+    // MODELLED, not transcribed: the new body's record keeps its id here
+    // (the frontends read it for the new body's place) and the old body joins
+    // the side list at the player's place. A later `character.hide` of either
+    // id detaches what the engine's would.
+    const int was = playerActor();
+    if (was >= 0 && was != actor) {
+        bool have = false;
+        for (const auto& sh : scriptShown_) if (sh.actor == was) have = true;
+        if (!have) {
+            Shown sh;
+            sh.actor = was;
+            // ...wearing what the DB player record says he wears (+144 the
+            // model, +72 the `.CTL`): the old body's actor record need not
+            // be resident (Kay'l's is not in AREA 137), the copy is
+            auto dbName = [this](std::size_t at) {
+                std::string out;
+                const auto raw = state_.raw();
+                for (std::size_t k = 0; k < 20 && at + k < raw.size(); ++k) {
+                    const char ch = static_cast<char>(raw[at + k]);
+                    if (!ch) break;
+                    out.push_back(ch);
+                }
+                return out;
+            };
+            const auto rec = static_cast<std::size_t>(GameState::kPlayerRecord);
+            sh.model = dbName(rec + 144);
+            sh.bank  = dbName(rec + 72);
+            if (sh.model.empty()) sh.model = modelOfActor(was);
+            if (sh.bank.empty())  sh.bank  = bankOfActor(was);
+            for (int k = 0; k < 3; ++k) sh.pos[k] = playerPos_[k];
+            sh.facing = playerYaw_;
+            if (!sh.model.empty()) scriptShown_.push_back(sh);
+        }
+    }
     // `sub_41CCA0(esi)`: shown, like character.show - and no State_SetBit,
     // which this handler does not call. When a placement record spawned the
     // body it is that record's `attached` that turns on; otherwise the body
@@ -3487,7 +3536,7 @@ void Session::execute(int i) {
         // pool (`poolForSlot`); a WAITING variant parks this context on the
         // program it started, and remembers which pool that was
         bool inOut = false;
-        const int waitOn = poolForSlot(c->slot, inOut).handle(r.calls);
+        const int waitOn = poolForSlot(c->slot, inOut).handle(r.calls, playerActor());
         // the three transition opcodes, after their handler's announcement
         for (const auto& call : r.calls) {
             if (call.op == op::AreaGoto && call.fields.size() >= 3) {

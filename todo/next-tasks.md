@@ -17,10 +17,11 @@ usually a better predictor of cost than the size of the feature.
 Every feature item on the list has since been built; the headings below now
 say so, each with the file that records it. What is still open is the BUGS
 whose reports were never reproduced or never re-confirmed - of this list, only 6:
+(6 since closed by the reader, 2026-11-11 - nothing on this list is open)
 
 | # | state | where |
 |---|---|---|
-| 6 | the mechanism CLOSED 2026-10-05 (`953e6e0`); the street report itself unreproduced - open until a reader says it is gone | §6 below, `todo/drift-audit.md` M1 |
+| 6 | **CLOSED 2026-11-11 by the reader**: the mechanism closed 2026-10-05 (`953e6e0`), and the reader has not seen the street fault since ("difficile à confirmer formellement, mais je n'ai plus vu le problème depuis") | §6 below, `todo/drift-audit.md` M1 |
 | 7 | closed by 2026-09-09 ("The order as of 2026-09-09" lists it among the closed; the heading below still says REOPENED) | §7 below |
 | 9 | **DONE**: OPTIONS (screen 35 hosted by the menu) and QUIT (`kCbStartQuitYes`), 2026-10-01 | `todo/start-menu.md` 3b, 3c |
 | 10 | **DONE**: identity, characteristics and the character view CONFIRMED IN PLAY 2026-09-16; Options 2026-10-01; Quit 2026-09-16 | `todo/sneak.md` 5e |
@@ -349,7 +350,7 @@ shown to fail); the readings are in `docs/CUTSCENES.md` §2 and the entry is
 is gone** — which is the confirmation this needed, since the post-fix headless
 evidence is the repro and not the path the report came from.
 
-### 6. Street NPCs stop walking and T-pose — M, good evidence
+### 6. Street NPCs stop walking and T-pose — M, good evidence — **CLOSED 2026-11-11** (the reader has not seen it since the 2026-10-05 fix)
 
 The reader's guess (end of their script) matches what 2026-09-05 found in the
 same area: a scene actor is not placed before his first animation step runs,

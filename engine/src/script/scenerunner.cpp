@@ -346,7 +346,7 @@ void SceneRunner::firePieces(int a1, int objectId) {
     fired_ = pieces_.shows();
 }
 
-int SceneRunner::handle(const std::vector<Call>& calls) {
+int SceneRunner::handle(const std::vector<Call>& calls, int playerActor) {
     int waitOn = -1;
     for (const auto& c : calls) {
         // 57/58 name a SCENE object, 59/60 an ACTOR - and those two put the
@@ -402,10 +402,17 @@ int SceneRunner::handle(const std::vector<Call>& calls) {
         // 57/58 are `ScriptObject_Start`, NOT `...OnActor`, and bind to no
         // actor - they reset nothing.
         if (how[0] != 's') {                       // "actor" or "player"
-            const int onActor = actorFirst ? c.fields[0] : -1;   // -1: the player's
+            // ONE actor record either way: 46/90's is `Actor_Player()`'s, so
+            // a player start and a 59/60 naming the same CHARACTERS id clear
+            // each other, and a player start after a `player.become` does
+            // NOT clear the old body's (Kay'l's collapse runs on beside
+            // young Fodo). An unknown player (-1) keeps the old rule: player
+            // starts clear player starts.
+            const int onActor = actorFirst ? c.fields[0] : playerActor;
             for (std::size_t j = 0; j < started_.size(); ++j) {
-                if (started_[j].actor != onActor) continue;
-                if ((started_[j].how == "player") != (onActor == -1)) continue;
+                if (onActor < 0) {
+                    if (started_[j].how != "player" || started_[j].actor >= 0) continue;
+                } else if (drivenActor(started_[j], playerActor) != onActor) continue;
                 if (j < programs_.size() && programs_[j]->running()) programs_[j]->reset();
             }
         }
@@ -414,6 +421,8 @@ int SceneRunner::handle(const std::vector<Call>& calls) {
         // this program drives is field 0 - which is how a frontend knows whose
         // pose it is.
         if (idx >= 0 && actorFirst) started_[static_cast<std::size_t>(idx)].actor = c.fields[0];
+        // ...and 46/90 the player's actor record as it is NOW
+        if (idx >= 0 && how[0] == 'p') started_[static_cast<std::size_t>(idx)].actor = playerActor;
         // ...and `Script_ModifyObject1` writes him into the pinned slot of
         // the object's node cache: 59/60 the named actor, 46/90 the player.
         if (idx >= 0 && how[0] != 's') {

@@ -289,7 +289,7 @@ public:
     bool parkedOnPlayerProgram() const {
         for (const auto& c : ctxs_)
             if (c && c->status == ctx_status::WaitObject &&
-                waitPool(*c).programDrivesPlayer(c->waitingForProgram))
+                waitPool(*c).programDrivesPlayer(c->waitingForProgram, playerActor()))
                 return true;
         return false;
     }

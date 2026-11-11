@@ -36,7 +36,8 @@ void PlayState::controlBinding() {
         const auto& started = sc.started();
         for (std::size_t k = 0; k < started.size(); ++k) {
             const auto& stt = started[k];
-            if (stt.how != "player" || !sc.programRunning(static_cast<int>(k)))
+            if (!omk::SceneRunner::drivesPlayer(stt, session.playerActor()) ||
+                !sc.programRunning(static_cast<int>(k)))
                 continue;
             playerDriven = true;
             if (stt.clip < 0) continue;   // no body step to read a facing off
@@ -96,7 +97,7 @@ void PlayState::controlBinding() {
     if (!playerProgram && session.sceneOut().loaded()) {
         const auto& so = session.sceneOut();
         for (std::size_t k = 0; k < so.started().size(); ++k)
-            if (so.started()[k].how == "player" &&
+            if (omk::SceneRunner::drivesPlayer(so.started()[k], session.playerActor()) &&
                 so.programRunning(static_cast<int>(k)))
                 playerProgram = true;
     }

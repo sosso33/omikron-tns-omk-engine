@@ -1525,6 +1525,26 @@ stood in AREA 181, which the `area.arrive` hides, and could not take a step.
 `Session::placedSinceBecome` now tells the viewer a teleport followed.
 `verify.py: engine: meca transfer`.
 
+**And the old body stays** (read 2026-11-11). The handler finds the NEW
+body's 20-byte object record (`sub_40D6A0`) and gives it to the OLD body -
+`mov [edi+2], ax` writes the old body's CHARACTERS id, `mov [edi], bp` its
+actor slot - and detaches nothing, so the old body keeps the new one's record
+and shown bit and stays where it stood, running whatever program its actor
+record runs. The scripts agree: each site that wants the old body gone hides
+it AFTER the transfer (AREA 137 record 41 `player.become 434` then
+`character.hide 406`, record 47 `player.become 406` then `character.hide
+434`, SCENE 51 record 7 `player.become 216` then `character.hide 49`), and
+record 40's `player.become 406` hides nobody - Kay'l's body lies where he
+drank while young Fodo walks off. The port dropped the old body at every
+transfer; `Session::becomePlayer` now keeps it on screen at the player's
+place, in what the DB player record says he wears (a model, not the record
+swap itself). `verify.py: engine: sham pen`.
+THE READER, 2026-11-11: *"le corps reste où il est, avec un effet de
+transparence, comme à chaque fois que le joueur change de corps tout au long
+du jeu"* - the old body stays, and is drawn TRANSLUCENT, at every transfer.
+The translucency is not read yet and not ported (the port draws it opaque):
+`todo/scene-gameplay-audit.md` row 26.
+
 And the listing states it outright — from `AREA 22`:
 
 ```
@@ -1605,6 +1625,18 @@ that draws the player only while its own adventure controller is active will
 therefore lose him for the length of every such program — which is what
 `engine: player program` now measures, on the sixty frames of `HOCINE07.3DA`
 in Kay'l's flat.
+
+**And the binding is to the actor record `Actor_Player()` names WHEN THE
+PROGRAM STARTS** (2026-11-11). Nothing re-binds it at a `player.become`, so a
+player program still running when the soul moves on keeps posing the OLD body.
+AREA 137 record 40, Kay'l drinking Fodo's mixture, is the case: `scx.play.player
+obj 0x006e` (Kay'l's collapse, `J_SUICSD`, no wait) and then `player.become
+406` - the collapse stays Kay'l's and young Fodo is at the keys. The port bound
+the program to the ROLE, and the collapse took Fodo's body: he stood frozen
+and the Sham was never mounted. `SceneRunner::Started::actor` now holds the
+bound actor for 46/90 too, `SceneRunner::drivesPlayer` asks it, and one actor
+record means a 46/90 start and a 59/60 naming the same id clear each other.
+`verify.py: engine: sham pen`.
 
 ### 87 / 88 — `address.enable` / `address.disable`
 

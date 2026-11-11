@@ -28,12 +28,11 @@ static void turnRootBy(omk::NodeTracks& t, float yawDeg, int from) {
 }
 
 // Whether program start `t` drives actor `actorId`: an actor start its own
-// actor, a player start the player
+// actor, a player start the actor record it was bound to (the player's, unless
+// a `player.become` has since moved the soul on)
 static bool drivenBy(const omk::SceneRunner::Started& t, int actorId, int playerId) {
     if (t.clip < 0) return false;
-    if (t.how == "actor")  return t.actor == actorId;
-    if (t.how == "player") return actorId == playerId;
-    return false;
+    return omk::SceneRunner::drivenActor(t, playerId) == actorId;
 }
 
 // The staged body whose model has a mesh named `name`, by its actor id
@@ -1481,7 +1480,7 @@ void PlayState::worldStagedSceneClipChange(const omk::SceneRunner*& run, int& sc
             // 654, under the alley, before his jump); for anyone
             // else, the placement record.
             s.progPlaced = false;
-            if (stt->how == "player") {
+            if (omk::SceneRunner::drivesPlayer(*stt, session_->playerActor()) && s.actor == session_->playerActor()) {
                 const float* pp = session.playerPos();
                 for (int k = 0; k < 3; ++k) s.at[k] = pp[k];
                 s.placed = true;

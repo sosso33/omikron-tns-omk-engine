@@ -32176,6 +32176,97 @@ def c_engine_sham_ride():
         "dismounts at the end of record 47"
 
 
+def c_engine_sham_pen():
+    r"""THE WAY TO THE SHAM, PLAYED (2026-11-11, `todo/scene-gameplay-audit.md`
+    rows 20 and 4). Two runs.
+
+    THE WAY OUT OF SOYINKA'S: the cable car (zone 2217's Action, record 19)
+    sets the player down in AREA 150's cabin, he walks to Soyinka and talks
+    to her - AREA 150 record 1, `Soyinka/Presentation`, which ends with
+    `set.var2 117` - turns round and walks back into zone 2232 'Sortie
+    Soyinka', whose ENTER script (AREA 137 record 34) now finds var 117 at 1
+    and stages Mayerem's cast: Azkeel 421 and 30, old Fodo 293, the Shams 155
+    and 424, the Nomad 540.
+
+    THE PEN: record 34 run as the zone runs it (`--var 117=1 --zone-run
+    2232`), then Fodo (zone 2235, record 37: `Azkeel/Fodo 1`), the vats
+    (2236, record 38 sets 'Mixture'), Fodo again (`Fodo 1/Bidons`), the
+    Sham's flank (2237, record 39: it rears, 'Cabrage'), Fodo again (`Fodo
+    2`, which with both 'Dial' variables set enables 2238), the drink (2238,
+    record 40: Kay'l's `J_SUICID` then `J_SUICSD` - started WITHOUT a wait -
+    old Fodo hidden, young Fodo 406's reincarnation, `player.become 406`),
+    and the mount (2239, record 41: `player.become 434`). The legs are
+    joined by `--player-at`, the walks between them being the walker's
+    (`engine: sham ride`).
+
+    Asserted, each SHOWN TO FAIL:
+    * the exit's cast: 421, 293, 424 staged at the end of the first run
+      (the walk back cut short - none of them);
+    * the pen's Actions in their order and the two transfers (406, 434):
+      with a `scx.play.player` program bound to the ROLE rather than the
+      actor record 46 started it on (`SceneRunner::drivesPlayer`), Kay'l's
+      `J_SUICSD`, still running, took young Fodo's body and the player
+      stood frozen - the mount never came;
+    * Kay'l's body left where he drank, posed by his program: op 56 hands
+      the new body's object record to the old one and detaches nothing
+      (`Session::becomePlayer` "THE OLD BODY STAYS"). Without it - none.
+    """
+    import subprocess, tempfile
+    eng = os.path.join(ROOT, "engine")
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_EVENTS="1")
+    base = [play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+            "--save", os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "137",
+            "--nofmv", "--nodelay", "--res", "640x480", "--saves", tempfile.mkdtemp()]
+    # 1. the cable car, Soyinka, and back east into 'Sortie Soyinka'
+    talk = ",k28*3,0*57" * 23
+    r = subprocess.run(base + ["--stand", "35650,-484,-2405,0", "--zone-enable", "2217",
+                               "--hold", "0*120,k28*3,0*330,k200*250,0*300" + talk +
+                               ",0*200,k205*42,0*30,k200*200,0*60", "--frames", "3100"],
+                       capture_output=True, text=True, errors="replace", env=env)
+    cast = sorted({int(e["actor"]) for n, e in _events(r.stdout) if n == "staged.end"}
+                  & {421, 293, 424})
+    # 2. the pen
+    fodo = "33171,1044,-4975,272"
+    legs = [(None, fodo, 90, 9), (800, "33673,1044,-4416,0", 830, 1), (1000, fodo, 1030, 9),
+            (1700, "33182,1044,-4411,87", 1730, 1), (2100, fodo, 2130, 9),
+            (2800, "33690,1044,-4433,0", 2830, 1), (3650, "33183,1044,-4412,90", 3900, 3)]
+    at, presses = [], []
+    for tp, place, first, n in legs:
+        if tp is not None:
+            at += ["--player-at", "%d:%s" % (tp, place)]
+        presses += [first + 60 * k for k in range(n)]
+    seq, f = [], 0
+    for p in presses:
+        seq += ["0*%d" % (p - f), "k28*3"]
+        f = p + 3
+    r = subprocess.run(base + ["--var", "117=1", "--zone-run", "2232", "--stand", fodo,
+                               "--hold", ",".join(seq + ["0*400"]), "--frames", "4600"] + at,
+                       capture_output=True, text=True, errors="replace", env=env)
+    ev = _events(r.stdout)
+    zones = []
+    for n, e in ev:
+        if n == "zone.activate" and (not zones or zones[-1] != int(e["zone"])):
+            zones.append(int(e["zone"]))
+    becomes = [int(e["actor"]) for n, e in ev if n == "player.become"]
+    kayl = [(e["model"], e["src"], round(float(e["x"])), round(float(e["z"])))
+            for n, e in ev if n == "staged.end" and int(e["actor"]) == 49]
+    body = [(m, s, abs(x - 33627) < 60 and abs(z + 4502) < 60) for m, s, x, z in kayl]
+    print("        exit cast %s; pen Actions %s, transfers %s, Kay'l's body %s"
+          % (cast, zones, becomes, kayl))
+    return (cast, zones, becomes, body), \
+        ([293, 421, 424], [2235, 2236, 2235, 2237, 2235, 2238, 2239], [406, 434],
+         [("HO1_FN", "a scene program's clip", True)]), \
+        "record 34's cast on the way out of Soyinka's; Fodo, the vats, Fodo, the flank, Fodo, " \
+        "the drink, the mount; young Fodo then the Sham; Kay'l's body left where he drank, " \
+        "posed by his own program"
+
+
 def c_engine_meca_transfer():
     r"""`engine/`: THE MECAGARDE TAKES THE SOUL, RIDES TO THE ARCHIVES AND
     WALKS INTO THEIR SHOOT (`todo/scene-gameplay-audit.md` 5). SCENE 51
@@ -55616,6 +55707,7 @@ SLOW = [
     ("engine: lazy collision", c_engine_lazy_collision, "todo/cpu-vs-original.md tier C; o3de/collision.h"),
     ("engine: turned floor", c_engine_turned_floor, "todo/scene-gameplay-audit.md 20; o3de/collision.h"),
     ("engine: sham ride", c_engine_sham_ride, "todo/scene-gameplay-audit.md 4; actor/player.cpp"),
+    ("engine: sham pen", c_engine_sham_pen, "todo/scene-gameplay-audit.md 4, 20; script/scenerunner.h drivesPlayer; script/area.cpp becomePlayer"),
     ("engine: meca transfer", c_engine_meca_transfer, "todo/scene-gameplay-audit.md 5; script/area.h"),
     ("engine: built-in weapon", c_engine_builtin_weapon, "todo/scene-gameplay-audit.md 5; todo/released-spectres.md; backends/sdl/playstate.cpp addFireSlots"),
     ("engine: archives exit", c_engine_archives_exit, "todo/scene-gameplay-audit.md 5; backends/sdl/playsetup_adventure.cpp"),

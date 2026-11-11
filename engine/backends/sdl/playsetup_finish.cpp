@@ -76,12 +76,20 @@ int PlayState::finish() {
                     "%zu models and %zu banks resident\n",
                     stagedEver, ids.empty() ? "none" : ids.c_str(),
                     staged.size(), charModels.size(), charBanks.size());
-        for (const auto& up : staged)
+        for (const auto& up : staged) {
             std::printf("  actor %d %s (bank %s) at %.0f %.0f %.0f facing %.0f - %s%s\n",
                         up->actor, up->model.c_str(),
                         up->bank.empty() ? "none" : up->bank.c_str(),
                         up->drawAt[0], up->drawAt[1], up->drawAt[2], up->facing,
                         up->src, up->drawn ? "" : "  [not drawn]");
+            // ...and as an event, for a check: who is still on screen and
+            // what poses him (a dead body left by `player.become` keeps its
+            // program, `engine: sham pen`)
+            omk::event("staged.end", {{"actor", up->actor}, {"model", up->model},
+                                      {"src", std::string(up->src)},
+                                      {"x", double(up->drawAt[0])}, {"y", double(up->drawAt[1])},
+                                      {"z", double(up->drawAt[2])}});
+        }
     }
     if (player)
         std::printf("player: %s/%s at %.1f %.1f %.1f facing %.1f, ACTOR_STATE %d, "

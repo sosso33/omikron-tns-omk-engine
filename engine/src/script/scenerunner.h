@@ -135,7 +135,13 @@ public:
     // scene, and a script must NOT park on that - the engine has nothing to
     // release it either, but a replica with no scene loaded would otherwise
     // stop dead where the game runs on.
-    int handle(const std::vector<Call>& calls);
+    //
+    // `playerActor` is the CHARACTERS id `Actor_Player()` names when the
+    // calls run: ops 46/90 bind their object to THAT actor record
+    // (`ScriptObject_StartOnActor(Actor_Player(), ...)`), and the binding
+    // outlives a later `player.become` - see `Started::actor`. -1 when the
+    // caller does not know (a harness start of a scene or actor object).
+    int handle(const std::vector<Call>& calls, int playerActor = -1);
 
     // Whether the program at `idx` is still running. Out of range is false,
     // so a caller that parked on a program the runner has since replaced is
@@ -269,7 +275,15 @@ public:
         std::string name;
         std::string how;        // "scene" | "actor" | "player"
         bool        waiting = false;
-        int         actor = -1;  // for "actor", the CHARACTERS id it drives
+        // The CHARACTERS id it drives: for "actor" the one 59/60 name, for
+        // "player" the one `Actor_Player()` was when 46/90 started it (-1 if
+        // the caller did not say). The engine binds both to an ACTOR RECORD,
+        // so a player program keeps posing the body it started on after a
+        // `player.become` hands the soul on - AREA 137 record 40 starts
+        // Kay'l's collapse `J_SUICSD` (obj 0x006e, no wait) and then makes
+        // young Fodo (406) the player: the collapse is Kay'l's, and Fodo is
+        // at the keys. See `drivesPlayer`.
+        int         actor = -1;
         // Which clip of the scene's animation array the object's body
         // animation selects - `Script_SelectBodyAnimation` param 1, and by
         // POSITION rather than by id, which is what `omkdata.scene_idle`
@@ -382,9 +396,23 @@ public:
     // record (`ScriptObject_StartOnActor(Actor_Player(), ...)`, which puts him
     // in ACTOR_STATE 4); 59/60 bind it to a NAMED actor - in a shoot phase,
     // an enemy's entrance.
-    bool programDrivesPlayer(int idx) const {
+    // ...and the binding is to the actor record `Actor_Player()` named when
+    // the program STARTED: after a `player.become` it is the old body's.
+    bool programDrivesPlayer(int idx, int playerActor) const {
         return idx >= 0 && idx < static_cast<int>(started_.size()) &&
-               started_[static_cast<std::size_t>(idx)].how == "player";
+               drivesPlayer(started_[static_cast<std::size_t>(idx)], playerActor);
+    }
+    // Whether start `t` drives the player who is `playerActor` NOW: a 46/90
+    // start bound to him (or bound before the player was known).
+    static bool drivesPlayer(const Started& t, int playerActor) {
+        return t.how == "player" && (t.actor < 0 || t.actor == playerActor);
+    }
+    // The actor a body-driving start poses: 59/60's named one, 46/90's bound
+    // one (the current player when it was started unbound).
+    static int drivenActor(const Started& t, int playerActor) {
+        if (t.how == "actor") return t.actor;
+        if (t.how == "player") return t.actor >= 0 ? t.actor : playerActor;
+        return -1;
     }
     const std::vector<int>&     missed()  const { return missed_; }
     std::size_t programCount() const { return programs_.size(); }
