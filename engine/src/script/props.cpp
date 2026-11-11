@@ -183,6 +183,16 @@ bool readAmmoSlot(std::span<const std::byte> record, int slot, std::int32_t& out
     return true;
 }
 
+bool readWeaponSlot(std::span<const std::byte> record, int slot, std::int32_t& reload,
+                    std::int32_t& speedHi, std::int32_t& damage) {
+    if (record.size() < kActorRecordSize || slot < 0 || slot > 3) return false;
+    const std::size_t s2 = 2 * static_cast<std::size_t>(slot);
+    reload = i16(record, 202 + s2);
+    speedHi = i16(record, 210 + s2);
+    damage = i16(record, 218 + s2);
+    return true;
+}
+
 bool readProperty36Slot(std::span<const std::byte> record, int slot, std::int32_t& out) {
     if (record.size() < kActorRecordSize || slot < 0) return false;
     const std::size_t off = 252 + 2 * static_cast<std::size_t>(slot);

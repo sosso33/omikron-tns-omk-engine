@@ -1760,11 +1760,48 @@ void PlayState::worldStagedShootFireGate(bool fullArm, omk::ShootRecord& rec,
             }
         }
         if (!fireTest && gun.told.insert(s.actor).second)
-            std::printf("frame %ld: actor %d %s - the fire test is clear "
-                        "(sub_4348B0: ANIMS\\%s.ANI group %d, +8 %s) - he aims "
-                        "and never shoots\n", frameNo, s.actor, s.model.c_str(),
+            std::printf("frame %ld: actor %d %s - the weapon test is clear "
+                        "(sub_4348B0: ANIMS\\%s.ANI group %d, +8 %s) - his BUILT-IN "
+                        "weapon: %s\n", frameNo, s.actor, s.model.c_str(),
                         crowd.aniName.c_str(), grpT,
-                        w8 ? std::to_string(*w8).c_str() : "absent");
+                        w8 ? std::to_string(*w8).c_str() : "absent",
+                        rec.type == 12u ? "slots 0 and 1 at the target (sub_44CDF0)"
+                                        : "his Tire markers (add_Fire)");
+        // ---- THE BIT-CLEAR ARM's SHOT (05_sys.c 6082, read 2026-11-11) ----
+        // `+164 -= dt` above; at or under 0: a SPECTRE (`+80`, the type, 12)
+        // fires slots 0 and 1 at his target (`Actor_GetPosAndFacing(v177)`);
+        // anyone else `Actor_TickProjectiles(him)`, and when it returns
+        // nonzero `+160 |= 0x80` and `+164 = sub_434890(group)` (its `+190`
+        // increment and `byte_90E0B0 = 1` are not carried: the port's `+190`
+        // is the hit band). Then `sub_434C30`, the pose, as before.
+        if (fullArm && !fireTest && rec.clipLen <= 0.0f && player) {
+            float tgt[3] = {player->pos()[0], player->pos()[1], player->pos()[2]};
+            for (std::size_t i = 0; i < playerBody.meshes.size(); ++i)
+                if (playerBody.meshes[i].parent < 0) {
+                    if (playerMeshAtKnown && playerMeshAt.size() >= i * 3 + 3)
+                        for (int k = 0; k < 3; ++k)
+                            tgt[k] = playerMeshAt[i * 3 + static_cast<std::size_t>(k)];
+                    break;
+                }
+            if (rec.type == 12u) {
+                recordFire(s, rec, 0, tgt, "SPECTRE", -1.0f);
+                recordFire(s, rec, 1, tgt, "SPECTRE", -1.0f);
+            } else if (session.heldSlotOf(s.actor) >= 0) {
+                // `+164` holds an object: `Actor_TickProjectiles`' RECORD path,
+                // which the bit-SET arm already ports - not wired for a
+                // bit-clear holder (no shipped case met yet)
+                if (gun.holderTold.insert(s.actor).second)
+                    std::printf("frame %ld: actor %d %s - bit clear but an object in his "
+                                "hand: the record path, NOT PORTED for this arm\n",
+                                frameNo, s.actor, s.model.c_str());
+            } else if (s.mo &&
+                       addFireSlots(s.actor, s.model.c_str(), s.mo->meshes, s.meshAt,
+                                    s.meshRot, actorSlotTimer[s.actor], "GUNMAN")) {
+                rec.flags |= 0x80u;
+                rec.clipLen = static_cast<float>(
+                    omk::animGroupRate16(crowd.ani, grpT).value_or(0));
+            }
+        }
         omk::FireGate gate = omk::FireGate::Released;
         if (fireTest) {
             // both arms reload an empty countdown (case 0's

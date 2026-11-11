@@ -4305,6 +4305,64 @@ animation picker (663 clips total, up from 265).
 
     python3 tools/anim_ctl.py                    # every .CTL, with its clips
 
+#### The built-in weapon — a body with no hand fires from its `Tire` markers (read 2026-11-11)
+
+Read after the reader's testimony that the archives' Mecagardes shoot, that
+they can be destroyed, and that the Mecagarde has his OWN weapon (*"une sorte
+de lanceur de missile"*). It corrects a reading this tree held since
+2026-09-11: **`sub_4348B0`'s bit does not decide WHETHER a gunman fires, it
+decides WITH WHAT.**
+
+* **The weapon test.** `sub_4348B0` is `group+8 & 1` of his `.ani` group
+  (`sub_434530(type)`, a file word `Anim_Load` never writes). Set (type 3 in
+  `braqueur`/`dock`/`ztech` only): the generic brain's outcome 1 fires the
+  object in his HAND through the gate `sub_47C2A0`. **Clear** (05_sys.c
+  6082): the record's `+164` counts down by the frame, and at or under 0 a
+  SPECTRE (`+80`, the type, 12) fires slots 0 and 1 at his target through
+  `sub_44CDF0`; anyone else calls `Actor_TickProjectiles(him)` - and when it
+  returns nonzero `+160 |= 0x80` and `+164 = sub_434890(group)`, the group's
+  int16 `+16` (40 on type 3, 0 on the Mecagarde's and the spectre's). Then
+  `sub_434C30`, which only poses the clip - the half the old reading took for
+  the whole.
+* **`Actor_TickProjectiles` is `add_Fire`** (its own trace: "cant move object
+  dans add_Fire"). With an object at `+164` that has a node, the record path
+  (the weapon row). With NONE, the walk over his `Tire` markers -
+  `Actor_LoadModel`'s `sub_436DD0(.., actor+84, "Tire")`, up to four,
+  pre-order, each with the unit vector from its `Vise` twin (`name[0] = 'V',
+  name[2] = 's'`) in the rest pose at `actor + 100 + 12k`. Per slot k,
+  stopping at the first absent one (`return 1`): if its timer `actor+148+4k`
+  is spent and property 35 (slot k) is above 0, property 35 is written back
+  less one (the slot is the value's HIGH word: SLOT 0's), property 34 is read
+  for slot 0, the pool scanned (full: `return 0`), the timer set to the
+  reload, and the bolt made: speed `hi * 3.9`, damage `lo`, at the marker's
+  world position, `sub_44D7F0` giving it the marker's WORLD matrix and turning
+  the rest-pose direction by it - down the arm as the clip poses it.
+* **Who has markers.** `MCG_FN` (the Mecagarde): `Tire000000`/`Vise000000`
+  on his `MBrasGun`, and no `Maing`. `SPV_FNM` (the catacombs' spectre): two,
+  on `SvTete` and `SvBassin`. The other spectres (`SPW`, `SPF`, `SPG`), the
+  zombies and the dogs have none.
+* **The PLAYER.** `Shoot_Enter` raises event 48 and `Shoot_InitWeapon` only
+  `if (u32(player, 44))` - his `Maing` node. Become the Mecagarde (op 56
+  keeps list 0, so Kay'l's guns are still carried) and he arms none of them.
+  His `.CTL`, `Meca.CTL`, has group 200's entries' `+12` at 0 where `H1Avnt`'s
+  are -1, so `sub_45C680` case 3 does not take the gate: the latch IS the
+  request, and the frame loop's `Actor_TickProjectiles(player)` walks his
+  marker. His record (the DB's, op 56's copy of 216's) gives the rounds and
+  the reload; the guards' MCG_FN shots measure speed 27.3 and damage 10,
+  every 45 frames.
+
+Measured in the port (`verify.py: engine: built-in weapon`): in the archives
+he fires `add_Fire` slot 0, the three guards fire and hurt him for 10, three
+of his hits (5 each) kill guard 168 (health 15); in the catacombs the
+spectre released from tomb 1 (410, action 3) fires both slots at 78 for 5 and
+hurts the player, and no patrolling spectre fires - **the released spectres'
+attack, parked since 2026-09-13 (`todo/released-spectres.md`), was this.**
+
+NOT ported, labelled: a bit-clear gunman who HOLDS an object (the record
+path from the bit-clear arm; the port says so once if one is met); the bolt's
+drawn orientation (the port turns the direction into a yaw and a pitch, not
+the marker's matrix); `+190`'s increment and `byte_90E0B0`.
+
 ### `.3DA` — scene animations, standalone and embedded in the SCX — **solved**
 
 The third member of the clip family, read by `sub_46E880` (0x0046E880) both

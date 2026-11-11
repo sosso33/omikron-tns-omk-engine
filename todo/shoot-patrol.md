@@ -496,6 +496,11 @@ arm, which is its own task and wants a reader in front of it.
 
 ### And the answer to "nobody hits me"
 
+**CORRECTED 2026-11-11** (`docs/ASSETS.md` "The built-in weapon"): the bit
+clear does NOT mean "never shoots" - outcome 1 then fires the BUILT-IN
+weapon (`add_Fire` on the model's `Tire` markers; a spectre's two slots by
+`sub_44CDF0`). The section below is kept as the record of the wrong reading.
+
 **It is the engine's own rule for these enemies, and the port says so in its
 log.** The fire epilogue gates on `sub_4348B0(+20)`, which is the animation
 group's `+8 & 1`, and SPECTRE's group carries 0 - so a spectre takes the aim

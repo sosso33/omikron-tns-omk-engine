@@ -1266,25 +1266,36 @@ bool PlayState::recordFire(Staged& s, omk::ShootRecord& rec, int slot, const flo
     if (ammo < 0) return false;                          // -1 refuses; 0 still fires
     session.setActorProperty(s.actor, 35, ammo - 1);     // the HIGH word 0: slot 0's
     timer = static_cast<float>(static_cast<std::int16_t>(reload));
-    omk::ShootWeaponRow row;
-    row.speed = static_cast<float>(static_cast<std::int16_t>(speedHi) * 39 / 10);
-    row.damage = static_cast<std::int16_t>(damage);
-    row.ammoIndex = 0;                                   // spent above, as the engine does
-    omk::RecordShot rs;
+    float muzzle[3];
     if (s.meshAt.size() >= static_cast<std::size_t>(w) * 3 + 3)
         for (int k = 0; k < 3; ++k)
-            rs.muzzle[k] = s.meshAt[static_cast<std::size_t>(w) * 3 + static_cast<std::size_t>(k)];
+            muzzle[k] = s.meshAt[static_cast<std::size_t>(w) * 3 + static_cast<std::size_t>(k)];
     else
-        for (int k = 0; k < 3; ++k) rs.muzzle[k] = s.drawAt[k];
+        for (int k = 0; k < 3; ++k) muzzle[k] = s.drawAt[k];
+    return slotBolt(s.actor, s.model.c_str(), s.mo->meshes, w, muzzle, target,
+                    static_cast<float>(static_cast<std::int16_t>(speedHi) * 39 / 10),
+                    static_cast<std::int16_t>(damage), who, "sub_44CDF0", slot, slot1Wait, ammo);
+}
+
+bool PlayState::slotBolt(int owner, const char* model, const std::vector<omk::Mesh>& meshes,
+                         int w, const float muzzle[3], const float target[3], float speed,
+                         int damage, const char* who, const char* how, int slot,
+                         float slot1Wait, int ammoWas) {
+    omk::ShootWeaponRow row;
+    row.speed = speed;
+    row.damage = damage;
+    row.ammoIndex = 0;                                   // spent by the caller, as the engine does
+    omk::RecordShot rs;
+    for (int k = 0; k < 3; ++k) rs.muzzle[k] = muzzle[k];
     const int k0[3] = {0, 0, 0};
     const omk::GunmanAim aim = omk::shootGunmanAim(target, rs.muzzle, 0.0f, k0);
     rs.yawDeg = aim.yawDeg;
     rs.pitchDeg = aim.pitchDeg;
     // the sprite row by the marker's PARENT bone (`sub_44EEB0(w->parent->desc
     // + 16)`, four bytes): AstMaing -> AstMain, AstBuste -> AstBust
-    const omk::Mesh& wm = s.mo->meshes[static_cast<std::size_t>(w)];
+    const omk::Mesh& wm = meshes[static_cast<std::size_t>(w)];
     std::string parentName;
-    for (const auto& m : s.mo->meshes)
+    for (const auto& m : meshes)
         if (m.id == wm.parent) { parentName = m.name; break; }
     int muzzleFx = 0;
     std::string rowName = "none";
@@ -1293,22 +1304,129 @@ bool PlayState::recordFire(Staged& s, omk::ShootRecord& rec, int slot, const flo
         muzzleFx = sp->muzzleEffect;
         rs.impactEffect = sp->impactEffect;
         rs.sprite = true;
-        // slot 1's WAIT is the one his tick rewrites (`dword_657AF0`)
+        // slot 1's WAIT is the one Astaroth's tick rewrites (`dword_657AF0`)
         rs.windUp = (slot == 1 && slot1Wait >= 0.0f) ? slot1Wait : sp->windUp;
         rs.grow = sp->grow;
         for (int k = 0; k < 3; ++k) rs.growStep[k] = sp->growStep[k];
     }
-    const omk::RecordShotOut out = projectiles.fireFromRecord(s.actor, row, rs);
-    std::printf("frame %ld: actor %d %s - %s FIRES slot %d (sub_44CDF0): %s from %.0f %.0f "
+    const omk::RecordShotOut out = projectiles.fireFromRecord(owner, row, rs);
+    std::printf("frame %ld: actor %d %s - %s FIRES slot %d (%s): %s from %.0f %.0f "
                 "%.0f, speed %.1f, damage %d, wait %.1f, row '%s' -> '%s', ammo %d -> %d, entry %d\n",
-                frameNo, s.actor, s.model.c_str(), who, slot, wm.name, double(rs.muzzle[0]),
+                frameNo, owner, model, who, slot, how, wm.name, double(rs.muzzle[0]),
                 double(rs.muzzle[1]), double(rs.muzzle[2]), double(row.speed), row.damage,
-                double(rs.windUp), parentName.c_str(), rowName.c_str(), ammo, ammo - 1, out.entry);
+                double(rs.windUp), parentName.c_str(), rowName.c_str(), ammoWas, ammoWas - 1,
+                out.entry);
+    omk::event("shoot.slotfire", {{"frame", frameNo}, {"actor", owner}, {"slot", slot},
+                                  {"how", how}, {"speed", double(row.speed)},
+                                  {"damage", row.damage}, {"entry", out.entry}});
     if (out.entry >= 0) {
         shotSound(frameNo, muzzleFx, rs.muzzle, player ? player->pos() : nullptr, who);
-        shootNoise(frameNo, s.actor, rs.muzzle, who);
+        shootNoise(frameNo, owner, rs.muzzle, who);
     }
     return out.entry >= 0;
+}
+
+// `Actor_TickProjectiles` (0x0044D110 - "cant move object dans add_Fire" is
+// its own trace), the branch taken when actor `+164` holds nothing with a
+// node: the walk over his `Tire` markers (`Actor_LoadModel`'s
+// `sub_436DD0(.., actor+84, "Tire")`, at most four, pre-order), read
+// 2026-11-11 (`docs/ASSETS.md` "The built-in weapon"). Per slot k, stopping
+// at the first absent one with `return 1`:
+//   if (timer[k] <= 0) {                      // actor+148+4k
+//     count = property 35 (slot k);           // event 44
+//     if (count > 0) {
+//       property 35 = count - 1;              // event 45 - the slot is the
+//                                             // value's HIGH word: SLOT 0's
+//       params = property 34 (slot 0);        // the input index is 0
+//       free = the pool's scan; if (free < 0) return 0;
+//       timer[k] = params' reload;
+//       entry: speed hi * 3.9, damage lo; the node a clone of the marker at
+//       its world position; `sub_44D7F0` gives it the marker's WORLD MATRIX
+//       and turns `actor + 100 + 12k` by it - the unit vector from the
+//       `Vise` marker to the `Tire` one in the model's rest pose
+//       (`Actor_LoadModel`: name[0] = 'V', name[2] = 's'), so the bolt flies
+//       down the arm as the clip poses it; `sub_4246E0` the noise.
+//     }
+//   }
+// The bolt's drawn orientation is this port's (`slotBolt` turns the
+// direction into a yaw and a pitch), not the marker's matrix.
+bool PlayState::addFireSlots(int actor, const char* model, const std::vector<omk::Mesh>& meshes,
+                             const std::vector<float>& meshAt, const std::vector<float>& meshRot,
+                             std::array<float, 4>& timers, const char* who) {
+    auto& session = *session_;
+    int slots[4];
+    omk::astarothTireSlots(meshes, slots);
+    const std::size_t recAt = static_cast<std::size_t>(omk::GameState::kPlayerRecord);
+    const std::size_t recLen = static_cast<std::size_t>(omk::GameState::kPlayerRecordSize);
+    for (int k = 0; k < 4; ++k) {
+        const int w = slots[k];
+        if (w < 0) return true;                          // `if (!v34) return 1`
+        if (timers[static_cast<std::size_t>(k)] > 0.0f) continue;
+        std::int32_t count = 0;
+        int reload = 0, speedHi = 0, damage = 0, ammoK = 0;
+        if (actor < 0) {
+            if (!omk::readAmmoSlot(state.raw().subspan(recAt, recLen), k, count)) return true;
+        } else {
+            if (!session.actorWeaponSlot(actor, k, reload, speedHi, damage, ammoK)) return true;
+            count = ammoK;
+        }
+        if (count <= 0) continue;
+        if (actor < 0)
+            omk::writeActorProperty(state.rawMutable().subspan(recAt, recLen), 0x23,
+                                    (count - 1) & 0xFFFF);
+        else
+            session.setActorProperty(actor, 35, count - 1);
+        if (actor < 0) {
+            std::int32_t r = 0, sp = 0, dm = 0;
+            omk::readWeaponSlot(state.raw().subspan(recAt, recLen), 0, r, sp, dm);
+            reload = r; speedHi = sp; damage = dm;
+        } else {
+            int a0 = 0;
+            session.actorWeaponSlot(actor, 0, reload, speedHi, damage, a0);
+        }
+        if (projectiles.freeSlot() < 0) return false;    // `if (v38 < 0) return 0`
+        timers[static_cast<std::size_t>(k)] =
+            static_cast<float>(static_cast<std::int16_t>(reload));
+        // the marker as DRAWN, and its rest-pose direction from the Vise
+        const std::size_t wi = static_cast<std::size_t>(w);
+        float muzzle[3] = {0, 0, 0}, dir[3] = {0, 0, 0};
+        if (meshAt.size() < wi * 3 + 3 || meshRot.size() < wi * 9 + 9) {
+            std::printf("frame %ld: actor %d %s - add_Fire slot %d: the marker was not "
+                        "drawn - no shot\n", frameNo, actor, model, k);
+            continue;
+        }
+        for (int c = 0; c < 3; ++c) muzzle[c] = meshAt[wi * 3 + static_cast<std::size_t>(c)];
+        char vise[sizeof(meshes[wi].name)];
+        std::memcpy(vise, meshes[wi].name, sizeof(vise));
+        vise[0] = 'V';
+        vise[2] = 's';
+        int v = -1;
+        for (std::size_t i = 0; i < meshes.size(); ++i)
+            if (std::strncmp(meshes[i].name, vise, sizeof(vise)) == 0) { v = static_cast<int>(i); break; }
+        if (v < 0) {
+            std::printf("frame %ld: actor %d %s - add_Fire slot %d: no '%s' marker - no shot\n",
+                        frameNo, actor, model, k, vise);
+            continue;
+        }
+        float rest[3];
+        double len = 0.0;
+        for (int c = 0; c < 3; ++c) {
+            rest[c] = meshes[wi].pos[c] - meshes[static_cast<std::size_t>(v)].pos[c];
+            len += double(rest[c]) * rest[c];
+        }
+        len = std::sqrt(len);
+        if (len > 0.0)
+            for (float& c : rest) c = static_cast<float>(c / len);
+        for (int c = 0; c < 3; ++c)
+            for (int ax = 0; ax < 3; ++ax)
+                dir[c] += meshRot[wi * 9 + static_cast<std::size_t>(ax * 3 + c)] * rest[ax];
+        const float target[3] = {muzzle[0] + dir[0] * 1000.0f, muzzle[1] + dir[1] * 1000.0f,
+                                 muzzle[2] + dir[2] * 1000.0f};
+        slotBolt(actor, model, meshes, w, muzzle, target,
+                 static_cast<float>(static_cast<std::int16_t>(speedHi) * 3.9000001),
+                 static_cast<std::int16_t>(damage), who, "add_Fire", k, -1.0f, count);
+    }
+    return true;
 }
 
 void PlayState::astarothFire(Staged& s, omk::ShootRecord& rec, int slot, const float target[3]) {
@@ -2387,6 +2505,9 @@ long PlayState::uiClockMs() {
 void PlayState::applyPlayerDamage(long n, int owner, const char* what, int dmgIn,
                                        int shield, const omk::HitOut& ho) {
     auto& session = *session_;
+    omk::event("shoot.playerhit", {{"frame", n}, {"owner", owner}, {"what", what},
+                                   {"damage", ho.damage}, {"health", ho.health},
+                                   {"killed", ho.killed ? 1 : 0}});
                     const std::size_t recAt = static_cast<std::size_t>(omk::GameState::kPlayerRecord);
                     const std::size_t recLen = static_cast<std::size_t>(omk::GameState::kPlayerRecordSize);
                     if (ho.killed) {

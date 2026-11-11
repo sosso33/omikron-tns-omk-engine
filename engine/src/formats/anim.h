@@ -83,11 +83,23 @@ std::vector<AnimClip> animClips(std::span<const std::byte> d);
 // when no group carries it (`sub_434530` then traces "Perso %d non existant
 // dans le .ani" and returns 0). `Anim_Load` relocates only `+4`, so the word
 // is the file's own. Its one read here is `sub_4348B0` (0x004348B0), `+8 &
-// 1`, the shoot brain's FIRE TEST (`sub_424DE0`'s outcomes 0 and 1): a
-// character whose group has the bit clear aims and never shoots. Measured over
-// the 11 shipped libraries it is set on ONE group, index 3, in braqueur.ani,
-// dock.ani and ztech.ani; five more groups hold 2, and every other is 0.
+// 1`, the shoot brain's WEAPON TEST (`sub_424DE0`'s outcomes 0 and 1). SET:
+// he fires the object in his HAND through the gate (`sub_47C2A0`). CLEAR -
+// read wrong here until 2026-11-11 as "aims and never shoots" - outcome 1
+// fires his BUILT-IN weapon: a spectre (type 12) his two `Tire` slots at the
+// target (`sub_44CDF0`), anyone else `Actor_TickProjectiles` (`add_Fire`,
+// his `Tire` markers), on the countdown `+164` that `animGroupRate16`
+// reloads. Measured over the 11 shipped libraries the bit is set on ONE
+// group, index 3, in braqueur.ani, dock.ani and ztech.ani; five more groups
+// hold 2, and every other is 0.
 std::optional<std::uint32_t> animGroupWord8(std::span<const std::byte> d, int index);
+
+// ...and the same record's `+16`, an int16 - `sub_434890` (0x00434890),
+// what the bit-clear arm reloads the shoot record's `+164` with after an
+// `add_Fire`. 40 on type 3 in braqueur/dock/ztech, 5/10/40 on a few others,
+// 0 on the Mecagarde's and the spectre's groups (their slots' own reloads,
+// property 34, are the rate then).
+std::optional<std::int16_t> animGroupRate16(std::span<const std::byte> d, int index);
 
 // -> the descriptor at `off`, or nothing when it does not read as one.
 std::optional<AnimDescriptor> animDescriptor(std::span<const std::byte> d,

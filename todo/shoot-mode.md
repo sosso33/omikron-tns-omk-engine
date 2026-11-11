@@ -1423,7 +1423,9 @@ forget to plan it."* The session's own log agrees with the gate: 245 latches
    `Shoot_InitWeapon` on the object in HIS hand through the others' table
    0x4C36F8, reloads an empty `+172` with f0 and pulls the gate with a
    target; outcome 0 pulls it released (a pending pull still fires). Both sit
-   behind the **FIRE TEST** `sub_4348B0` - bit 0 of his `.ani` group record's
+   behind the **FIRE TEST** `sub_4348B0` (**CORRECTED 2026-11-11**: it picks
+   the weapon - the bit clear fires the body's `Tire` markers through
+   `add_Fire`, `docs/ASSETS.md` "The built-in weapon") - bit 0 of his `.ani` group record's
    `+8`, a word the port's reader had never decoded (`formats/anim.h`
    `animGroupWord8`): over the 11 libraries it is set on ONE group, index 3,
    in braqueur.ani, dock.ani and ztech.ani. **CORRECTION to the plan above**:

@@ -237,6 +237,7 @@ struct PlayOptions {
     std::vector<int> zoneDisable;  // `--zone-disable`, its mirror
     std::vector<int> characterShow;   // `--character-show`, opcode 78 by hand
     std::vector<int> zoneRun;         // `--zone-run`, a zone's enter script by hand
+    std::vector<std::pair<long, int>> zoneActivate;   // `--zone-activate F:N`, its activate script at frame F
     std::vector<std::pair<int, int>> characterProg;   // ...`N:h`, then opcode 59
     std::vector<std::pair<int, int>> sceneLoads;   // `--scene-load A,S`, the opcode
     bool noCrowd = false;

@@ -2015,6 +2015,18 @@ void PlayState::adventureShot() {
             omk::shootAimSlew(shootAim, 0.0f, shootPitch * 0.017453279f,
                               static_cast<float>(frameSec * 30.0));
         const omk::ShootWeaponRow* row = playerShootRec.weapon;
+        // `Actors_TickAll` takes the frame off every actor's four slot
+        // timers (`actor+148..+160`), the player's among them
+        for (float& t : playerSlotTimer) t -= static_cast<float>(frameSec * 30.0);
+        // NO ROW - a body with no hand (the Mecagarde): the request is
+        // `Actor_TickProjectiles(player)` all the same, and with nothing at
+        // `+164` it walks his `Tire` markers (`addFireSlots`)
+        if (shotLatch.request && !row) {
+            shotLatch.request = false;          // dword_4E9744 = 0
+            if (playerMeshAtKnown)
+                addFireSlots(-1, "player", playerBody.meshes, playerMeshAt, playerMeshRot,
+                             playerSlotTimer, "PLAYER");
+        }
         adventureShotRequest(row);
     }
     for (const auto& mv : (playerTicked ? player->specialMoves() : kNoMoves)) {

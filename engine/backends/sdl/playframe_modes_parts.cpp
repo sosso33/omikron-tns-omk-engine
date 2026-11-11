@@ -1027,9 +1027,32 @@ void PlayState::modesShootEnterLeave(omk::Input& in) {
             // LOAD, so it hands back the slot the operand named and ARMS
             // the cycle - without it the first `MDGUN` would only arm
             // (`ShootMode::changeWeapon`)
-            session.changeWeapon();
+            //
+            // ...and ALL of it behind `if (u32(player, 44))` (05_sys.c 3474):
+            // actor +44 is his `Maing` node (`Actor_LoadModel`), and a body
+            // with no left hand - the Mecagarde's MCG_FN - takes no weapon
+            // from list 0 at all: his record keeps no row, the trigger goes
+            // straight to the request (`Meca.CTL` group 200's +12 is 0), and
+            // `add_Fire` fires his `Tire` marker (`addFireSlots`).
+            bool hasHand = false;
+            for (const auto& m : playerBody.meshes)
+                if (std::strstr(m.name, "Maing")) hasHand = true;
             int obj = -1, kind = -1, type = 0;
-            shootInitWeapon(obj, kind, type);
+            if (hasHand) {
+                session.changeWeapon();
+                shootInitWeapon(obj, kind, type);
+            } else {
+                playerShootRec.weapon = nullptr;
+                hudAmmo = -1;
+                int tire[4];
+                omk::astarothTireSlots(playerBody.meshes, tire);
+                std::printf("frame %ld: Shoot_Enter - NO HAND (actor +44 'Maing' absent): no "
+                            "event 48, no weapon row; his built-in weapon is %d Tire "
+                            "marker(s)\n", frameNo,
+                            int(tire[0] >= 0) + int(tire[1] >= 0) + int(tire[2] >= 0) +
+                                int(tire[3] >= 0));
+                playerSlotTimer = {0.0f, 0.0f, 0.0f, 0.0f};
+            }
             const auto& objs = voiceLib.objects();
             const bool known = obj >= 0 && static_cast<std::size_t>(obj) < objs.size();
             // `Shoot_Enter` loads `scptdata\shoot2.sfx` and hands it to

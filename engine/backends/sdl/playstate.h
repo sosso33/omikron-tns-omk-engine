@@ -168,6 +168,7 @@ struct PlayState {
     std::vector<int> & zoneDisable = opt.zoneDisable;
     std::vector<int> & characterShow = opt.characterShow;
     std::vector<int> & zoneRun = opt.zoneRun;
+    std::vector<std::pair<long, int>> & zoneActivate = opt.zoneActivate;
     std::vector<std::pair<int, int>> & characterProg = opt.characterProg;
     std::vector<std::pair<int, int>> & sceneLoads = opt.sceneLoads;
     bool & noCrowd = opt.noCrowd;
@@ -640,6 +641,7 @@ struct PlayState {
         std::set<int> looped{};   // who has said his clip looped
         std::map<int, GunAim> aims{};
         std::set<int> aimTold{};   // who has said his first aim
+        std::set<int> holderTold{};   // a bit-clear holder, said once
         std::set<int> drawnTold{};   // whose gun has been said drawn
         std::set<int> barrelTold{};   // whose barrel direction has been said
         std::uint32_t randSeed{};
@@ -665,6 +667,7 @@ struct PlayState {
     int astarothSoulSlot[omk::kAstarothSouls] = {-1, -1, -1, -1, -1, -1};   // the worldSlots each soul is in
     std::map<int, omk::AstarothActor> astarothActors{};   // his actor-side fields, by actor id
     std::map<int, std::array<float, 4>> actorSlotTimer{};   // actor+148+4*slot, any actor that fires (`sub_44CDF0`)
+    std::array<float, 4> playerSlotTimer{};   // ...and the PLAYER's, for a body that fires from `Tire` markers
     omk::AcquireOut astarothAcquire{};    // what `sub_420C70` left for `sub_420EB0`
     float astarothSlot1Wait = -1.0f;      // slot 1's sprite-row WAIT, rewritten each tick
     // `Hud_DrawBar(+92, 200, 1, 0)` this frame, -1 none: the BOSS bar, which
@@ -1447,6 +1450,18 @@ struct PlayState {
     void astarothFire(Staged& s, omk::ShootRecord& rec, int slot, const float target[3]);
     bool recordFire(Staged& s, omk::ShootRecord& rec, int slot, const float target[3],
                     const char* who, float slot1Wait);
+    // `Actor_TickProjectiles`' slot walk (its own debug string: `add_Fire`),
+    // the branch an actor with nothing in his hand takes - his `Tire` markers.
+    // `actor` -1 is the player (his record the DB's). -> the engine's return:
+    // false only when the pool was full after a round was spent.
+    bool addFireSlots(int actor, const char* model, const std::vector<omk::Mesh>& meshes,
+                      const std::vector<float>& meshAt, const std::vector<float>& meshRot,
+                      std::array<float, 4>& timers, const char* who);
+    // the bolt both slot paths end in (`sub_44D7F0`'s sprite, the muzzle
+    // effect, the noise) - `w` the `Tire` mesh, `owner` -1 for the player
+    bool slotBolt(int owner, const char* model, const std::vector<omk::Mesh>& meshes, int w,
+                  const float muzzle[3], const float target[3], float speed, int damage,
+                  const char* who, const char* how, int slot, float slot1Wait, int ammoWas);
     void astarothStamp(omk::ShootRecord& rec);
     // `sub_4725B0`'s pose: four keys of the grid clip, two k/256 slerps
     std::vector<omk::MeshPose> astarothPoseNow(const CharModel* mo, const omk::NodeTracks& pt,

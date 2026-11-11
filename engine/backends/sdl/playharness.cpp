@@ -561,6 +561,16 @@ void PlayState::harnessGameRestart() {
     if (gameRestartAt >= 0 && frameNo == gameRestartAt) runOp(152, "--game-restart");
     for (const auto& [f, op] : opAt)
         if (frameNo == f) runOp(op, "--op-at");
+    // `--zone-activate F:N`: zone N's ACTIVATE script at frame F, as the
+    // Action key's arm queues it (`Script_QueueAction(ctx, 2)`) - for a
+    // zone whose quad a headless run cannot easily stand in
+    for (const auto& [f, z] : zoneActivate)
+        if (frameNo == f) {
+            const int ctx = session.runZoneActivate(z);
+            std::printf("--zone-activate: frame %ld  ZONE %d's activate script %s\n", frameNo,
+                        z, ctx >= 0 ? "queued (Script_NewContext + action 2)"
+                                    : "NOT run - the zone does not resolve or has none");
+        }
 }
 
 // the frame's facts for the flicker catcher

@@ -434,6 +434,8 @@ public:
     // record is found as `Zone_FindScriptsById` finds it, disabled or not.
     // -> the context, -1 when the zone does not resolve or has no enter.
     int runZoneEnter(int zoneId);
+    // ...and its ACTIVATE script (action 2, the Action key's) - an instrument
+    int runZoneActivate(int zoneId);
     // `character.look_at_player` (138) / `character.look_away` (139): the
     // actor's look-at slot (+400, slot 100) set to the player / cleared.
     // `Actors_TickAll` aims his head at it every frame (`aimHead`, pose.h);

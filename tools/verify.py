@@ -32248,6 +32248,85 @@ def c_engine_meca_transfer():
         "through the 110.2 doorway out of the start"
 
 
+def c_engine_builtin_weapon():
+    r"""`engine/`: THE BUILT-IN WEAPON - a body with no hand fires from its
+    `Tire` markers (`todo/scene-gameplay-audit.md` 5, step 3; `docs/ASSETS.md`
+    "The built-in weapon"). Read 2026-11-11 after the reader's testimony that
+    the archives' Mecagardes DO shoot and that the Mecagarde has his OWN
+    weapon: `sub_4348B0`'s bit (the `.ani` group's `+8 & 1`) chooses the
+    weapon, not whether he fires. Clear, the generic brain's outcome 1 fires
+    `Actor_TickProjectiles` (`add_Fire`) - his `Tire` markers, each from the
+    marker as posed, down the rest-pose Vise->Tire direction turned by it,
+    with property 34's reload/speed/damage and property 35's rounds - or, for
+    a SPECTRE (type 12), his slots 0 and 1 at the target (`sub_44CDF0`).
+    And the PLAYER: `Shoot_Enter` arms a list-0 weapon only `if (actor +44)`,
+    his `Maing` - MCG_FN has none - and `Meca.CTL` group 200's +12 is 0, so
+    his trigger is the request itself, `add_Fire` on his own marker.
+
+    Two runs: the archives (the meca transfer's route, then twelve presses
+    of Tir) and the catacombs (the shoot started by zone 2295's script, tomb
+    1 opened by `--zone-activate`, an instrument: spectre 410 released).
+
+    Asserted, each SHOWN TO FAIL:
+    * his shots are `add_Fire`'s, slot 0 (the Maing gate removed: the Waver,
+      none);
+    * the three guards fire `add_Fire` (speed 27.3, damage 10) and their
+      bolts hurt him (the bit-clear arm removed: no shot, no hit);
+    * the released spectre fires slots 0 and 1 by `sub_44CDF0` and hurts the
+      player, and no patrolling spectre fires (the type-12 arm removed).
+    """
+    import subprocess, tempfile
+    eng = os.path.join(ROOT, "engine")
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_EVENTS="1")
+    save = os.path.join(ROOT, "traces", "save-appart.bin")
+    route = ("0*60,k28*3,0*90,k28*3,0*80,"
+             "k205*20,0*10,k200*200,0*20,k203*10,0*10,k200*110,0*30,k205*5,0*10,k200*60,0*20,"
+             "k28*3,0*750,k200*80,0*30," + ",".join(["k54*3,0*27"] * 12) + ",0*600")
+    a = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                        "--save", save, "--area", "181", "--scene-load", "181,51",
+                        "--var", "563=1,11=1", "--zone-enable", "3156", "--zone-disable", "3137",
+                        "--stand", "6080,570,-12226,46", "--hold", route,
+                        "--nofmv", "--nodelay", "--res", "640x480",
+                        "--saves", tempfile.mkdtemp(), "--frames", "2400"],
+                       capture_output=True, text=True, errors="replace", env=env).stdout
+    b = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                        "--save", save, "--area", "141", "--zone-run", "2295",
+                        "--var", "471=1", "--stand", "40928,1163,-4100,180",
+                        "--zone-activate", "120:2283", "--shoot-health", "1000",
+                        "--nofmv", "--nodelay", "--res", "640x480",
+                        "--saves", tempfile.mkdtemp(), "--frames", "400"],
+                       capture_output=True, text=True, errors="replace", env=env).stdout
+    ea, eb = _events(a), _events(b)
+    guards = {"163", "168", "194"}
+    mine = [(e["how"], e["slot"]) for n, e in ea if n == "shoot.slotfire" and e["actor"] == "-1"]
+    theirs = [(e["how"], e["speed"], e["damage"]) for n, e in ea
+              if n == "shoot.slotfire" and e["actor"] in guards]
+    hurt = [e["damage"] for n, e in ea
+            if n == "shoot.playerhit" and e["owner"] in guards and e["what"] == "bolt"]
+    spec = sorted({(e["how"], e["slot"]) for n, e in eb
+                   if n == "shoot.slotfire" and e["actor"] == "410"})
+    others = sorted({e["actor"] for n, e in eb if n == "shoot.slotfire" and e["actor"] != "410"})
+    shit = [e["damage"] for n, e in eb if n == "shoot.playerhit" and e["owner"] == "410"]
+    print("        his %d shots %s; the guards' %d %s, %d hits on him; spectre 410 %s, "
+          "%d hits; others firing %s" % (len(mine), sorted(set(mine)), len(theirs),
+                                        sorted(set(theirs)), len(hurt), spec, len(shit), others))
+    got = (len(mine) >= 3 and set(mine) == {("add_Fire", "0")},
+           len(theirs) >= 3 and set(theirs) == {("add_Fire", "27.300", "10")},
+           len(hurt) >= 1 and set(hurt) == {"10"},
+           spec, len(shit) >= 1, others)
+    return got, (True, True, True,
+                 [("sub_44CDF0", "0"), ("sub_44CDF0", "1")], True, []), \
+        "the Mecagarde fires his own marker through add_Fire, slot 0; the archives' guards fire " \
+        "add_Fire at 27.3 for 10 and hurt him for 10; released spectre 410 fires slots 0 and 1 " \
+        "by sub_44CDF0 and hurts the player; no other actor fires in the catacombs run"
+
+
 def c_engine_vr_strafe():
     r"""IN A HEADSET'S SHOOT MODE THE STICK'S SIDEWAYS PUSH STRAFES
     (`vrShootAim`, backends/vr; the reader, 2026-10-07: "the stick should also
@@ -55323,6 +55402,7 @@ SLOW = [
     ("engine: turned floor", c_engine_turned_floor, "todo/scene-gameplay-audit.md 20; o3de/collision.h"),
     ("engine: sham ride", c_engine_sham_ride, "todo/scene-gameplay-audit.md 4; actor/player.cpp"),
     ("engine: meca transfer", c_engine_meca_transfer, "todo/scene-gameplay-audit.md 5; script/area.h"),
+    ("engine: built-in weapon", c_engine_builtin_weapon, "todo/scene-gameplay-audit.md 5; todo/released-spectres.md; backends/sdl/playstate.cpp addFireSlots"),
     ("engine: gles overlay", c_engine_gles_overlay, "todo/vita-port.md G6; backends/gles/glesrender.cpp"),
     ("engine: pool past 64", c_engine_pool_past_64, "todo/handoff-quest-port.md; o3de/renderer.h"),
     ("engine: crowd indoors", c_engine_crowd_indoors, "docs/STREET_LIFE.md; todo/handoff-quest-port.md"),

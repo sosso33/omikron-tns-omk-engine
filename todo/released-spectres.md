@@ -11,7 +11,18 @@ of the `.ani` group word `+8` for the character type (property 7, record
 `+176`), and group 12 carries 0 in all 11 shipped `.ani` files - the bit is set
 for type 3 alone. So the mechanism is somewhere not yet read.
 
-**STATUS 2026-09-13: UNRESOLVED and PARKED** on the reader's word - every
+**STATUS 2026-11-11: RESOLVED.** The fire test was read wrong: `sub_4348B0`'s
+bit chooses the WEAPON, not whether he fires. Clear, the generic brain's
+outcome 1 has a SPECTRE (type 12) fire his two `Tire` slots at the target
+through `sub_44CDF0` (05_sys.c 6082) - and `SPV_FNM` carries two markers, on
+`SvTete` and `SvBassin`. Ported (`docs/ASSETS.md` "The built-in weapon"): the
+spectre released from tomb 1 (410, action 3) fires both at 78 for 5 and hurts
+the player, while the patrolling ones never reach outcome 1 and stay silent,
+as the reader saw. `verify.py: engine: built-in weapon`. Found on the reader's
+hint while porting the Mecagarde's own weapon (`todo/scene-gameplay-audit.md`
+5, step 3).
+
+**STATUS 2026-09-13 (superseded): UNRESOLVED and PARKED** on the reader's word - every
 data-side lead is closed (steps 1-4 and the `.CTL`) and none lets a spectre
 hurt the player; the question waits on what the attack looks like in the
 original. Steps 5 and 6 port what was found on the way.

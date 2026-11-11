@@ -143,6 +143,16 @@ bool writeActorProperty(std::span<std::byte> record, int property,
 // when the slot runs off the record.
 bool readAmmoSlot(std::span<const std::byte> record, int slot, std::int32_t& out);
 
+// Property 34 READ BY SLOT - `Actor_GetProperty` case 0x22, three int16s per
+// weapon slot: the RELOAD in frames at `+202 + 2*slot` (what `actor+148+4*slot`
+// is set to), the speed's word at `+210` (the shot flies at `hi * 3.9` on
+// `Actor_TickProjectiles`' slot path) and the DAMAGE at `+218`. The same
+// reads `Session::actorWeaponSlot` makes on an area's record, here on any
+// 276-byte record - the DB's player record included, which op 56 fills.
+// -> false when the slot is not 0..3 or the record is short.
+bool readWeaponSlot(std::span<const std::byte> record, int slot, std::int32_t& reload,
+                    std::int32_t& speedHi, std::int32_t& damage);
+
 // Property 36 READ BY SLOT - `Actor_GetProperty` case 0x24, `u32(a1, 8) =
 // i16(v2 + 2 * u32(a1, 8), 252)`: four int16s at `+252`, the slot in and the
 // value out, as 35's. Two readers known, both `sub_47CC70` (the shoot mover's

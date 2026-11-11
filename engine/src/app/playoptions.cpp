@@ -579,6 +579,10 @@ int PlayOptions::parse(int argc, char** argv) {
         else if (a == "--scene-chunk" && i + 1 < argc) sceneChunk = std::atoi(argv[++i]);
         else if (a == "--zone-enable" && i + 1 < argc) zoneEnable.push_back(std::atoi(argv[++i]));
         else if (a == "--zone-run" && i + 1 < argc) zoneRun.push_back(std::atoi(argv[++i]));
+        else if (a == "--zone-activate" && i + 1 < argc) {
+            long f = 0; int z = 0;
+            if (std::sscanf(argv[++i], "%ld:%d", &f, &z) == 2) zoneActivate.emplace_back(f, z);
+        }
         else if (a == "--character-show" && i + 1 < argc) {
             const std::string v = argv[++i];
             characterShow.push_back(std::atoi(v.c_str()));
