@@ -670,7 +670,18 @@ struct PlayState {
     int astarothSoulSlot[omk::kAstarothSouls] = {-1, -1, -1, -1, -1, -1};   // the worldSlots each soul is in
     std::map<int, omk::AstarothActor> astarothActors{};   // his actor-side fields, by actor id
     std::map<int, std::array<float, 4>> actorSlotTimer{};   // actor+148+4*slot, any actor that fires (`sub_44CDF0`)
-    std::array<float, 4> playerSlotTimer{};   // ...and the PLAYER's, for a body that fires from `Tire` markers
+    std::array<float, 4> playerSlotTimer{};
+    // `byte_90E0B0`, the shoot HUD's EVENT CODE, set only while still 0 this
+    // frame (1 a bit-clear gunman's shot, 3 the player hit and alive, 4 a
+    // gunman hit and alive) - 2, a kill, unconditionally - and the 11-line
+    // log screen 33's item 0x4C42B0 keeps of them (`0x42E730`): the ring
+    // `dword_4EB808` (zeroed by the screen's open), its index `byte_4EB8C0`
+    float shootBob{}, shootBobFrame{};   // the node's head-bob offset (y down) and the frame it was taken at
+    std::uint8_t hudEvent{};
+    std::array<std::uint8_t, 11> hudEventRing{};
+    int hudEventIdx{};
+    void hudEventOnce(std::uint8_t code) { if (!hudEvent) hudEvent = code; }
+    std::map<std::uint32_t, std::pair<int, int>> hudMoved{}, hudResized{};   // ...and the PLAYER's, for a body that fires from `Tire` markers
     omk::AcquireOut astarothAcquire{};    // what `sub_420C70` left for `sub_420EB0`
     float astarothSlot1Wait = -1.0f;      // slot 1's sprite-row WAIT, rewritten each tick
     // `Hud_DrawBar(+92, 200, 1, 0)` this frame, -1 none: the BOSS bar, which

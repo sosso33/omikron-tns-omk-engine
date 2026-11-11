@@ -4373,22 +4373,24 @@ The three points left over, explored the same day:
   it (`RecordShot::markerMatrix`). Not measured by a check: it moves no
   number the checks hold.
 * **`+190` is the generic brain's ATTACK COUNTER** (the table brain's hit band
-  shares the field, as `+100` is shared): +1 per gate shot, per `add_Fire`,
-  per strike. At `LABEL_359`, with `+160 & 0x2000000` (behaviour bit 0x08)
-  and `+190 >= property 18 > 0`, `+16 = List_PickRandomByType(group, 35)`
-  and `+190 = 0`; a non-null `+16` is then started (`sub_421A20(.., 2)`, flag
-  8). Type-35 clips exist only in `braqueur.ani`'s and `dock.ani`'s group 3,
-  three, all named `NULL`: after so many attacks such a gunman PAUSES on an
-  empty clip. NOT ported - it changes the gunfire cadence the supermarket's
-  and the gallery's checks hold.
-* **`byte_90E0B0` is the HUD's EVENT TICKER.** Each writer sets it only if
-  it is still 0 this frame: 1 a bit-clear gunman's shot, 2 and 3 hits
-  (`sub_4240E0`'s arms), 4 message 2 (`sub_423EF0`). Its one reader, a UI
-  callback with no `proc` label just after the `{C}{M}{I255255255}%d`
-  formatters (~0x0042E720), pushes it (3 also calling `sub_432F20`) into an
-  11-byte ring `dword_4EB808` indexed by `byte_4EB8C0` and builds the line
-  from it, one glyph per code 0..4 (`sub_4767E0`). NOT ported; which screen
-  draws it is not yet read.
+  shares the field, as `+100` is shared): +1 per case-1 gate shot, per
+  `add_Fire` (not the spectre arm), per strike; zeroed by `sub_422540`. At
+  `LABEL_359` - every tick the brain passes its prologue - with `+160 &
+  0x2000000` (property 37, record `+250`, bit 0x08) and `+190 >= property 18
+  (record +164) > 0`: `+184 = 0`, `+16 = List_PickRandomByType(group, 35)`,
+  `+190 = 0`; a non-null `+16` starts (`sub_421A20(.., 2)`, the current clip
+  saved to `+12`) with flag 8 up, and flag 8 SUSPENDS the whole brain (the
+  prologue runs `sub_421770` and returns) until the clip's frames run out,
+  when the parked action or the saved clip comes back. Type-35 clips exist
+  only in `braqueur.ani`/`dock.ani` group 3: three of 34 frames, named `NULL`
+  but real motions - a ~1.1 s PAUSE. **Unreachable in the shipped data**:
+  over all 1032 character records no type-3 gunman carries bit 0x08 (the
+  supermarket's 39/80/81 carry 0x02; the one carrier, AREA 30's 419, is type
+  9 with no type-35 clip). Not ported, on that reading.
+* **`byte_90E0B0` is the Mecagarde's EVENT LOG** - PORTED 2026-11-11: the
+  text callback `0x42E730` of SHOOT MECA's item 0x4C42B0, eleven lines from
+  `IAM\Meca` (`docs/UI.md` "SHOOT MECA"): 1 a bit-clear gunman's shot, 2 a
+  kill (always), 3 the player hit, 4 a gunman hit, each once a frame.
 
 ### `.3DA` — scene animations, standalone and embedded in the SCX — **solved**
 

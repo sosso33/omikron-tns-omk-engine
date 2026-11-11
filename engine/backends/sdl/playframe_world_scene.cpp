@@ -494,7 +494,9 @@ void PlayState::worldCameraFollow() {
         //
         // Written as `-lift` this would put the eye 29.8 BELOW the
         // pelvis, which is 6.6 above the feet: ankle height.
-        const float lift = shootEyeSet ? shootEyeLift : player->headLift();
+        // ...minus the HEAD BOB the node carries (`ShootMoveStep::bob`): the
+        // node moves +bob (y down), and a positive offset raises the eye
+        const float lift = (shootEyeSet ? shootEyeLift : player->shootEyeLift()) - shootBob;
         const float eye[3] = {0.0f, lift, 0.0f};
         const float at[3]  = {0.0f, lift + 787.4016f * std::sin(rad),
                               787.4016f * std::cos(rad)};

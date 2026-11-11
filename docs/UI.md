@@ -1572,6 +1572,27 @@ must show what is happening: **PAUSE GAME (31), SHOOT MECA (33), SHOOT HUMAN
 (34)**. Every other screen — the sneak among them — hides the world while it is
 up. `verify.py: engine: screen world`.
 
+**SHOOT MECA (33), the Mecagarde's HUD — read 2026-11-11.** Its open callback
+0x0042E3A0 installs panel **0x4C4578** (the widget lift once ran its 320-byte
+scan into screen 34's open and named both panels; it is bounded at the next
+callback now, `tools/sim/ui.py` `panel_of`), loads `MECA.CTL` onto a clone of
+the player's model (`sub_4778E0`), switches the radar on and zeroes the event
+log's ring. Its eight items, none of SHOOT HUMAN's but the radar:
+
+| item | box (640x480) | what |
+|---|---|---|
+| 0x4C4190 | 576,384 64x64 | a sprite tile (the lens) |
+| 0x4C4220 | 451,429 98x22 | `0x42E6C0`: `(int)(x * z) % 100000`, x/z the player's `+244`/`+252`, as `{C}{M}{I255255255}%d` |
+| 0x4C4268 | 451,451 98x22 | the same callback: `(int)(x - z * -100.0) % 100000` |
+| 0x4C42B0 | 42,118 150x182 | `0x42E730`, the **EVENT LOG**: `byte_90E0B0` (set once a frame - 1 a bit-clear gunman's shot, 3 the player hit and alive, 4 a gunman hit and alive; 2, a kill, always) pushed into an 11-slot ring (`dword_4EB808`, index `byte_4EB8C0`), drawn oldest first under `{I255255255}`, one `IAM\Meca` string a line: 0 `Etat OK`, 1 `Tir ennemi ! !`, 2 `Ennemi détruit ! !`, 3 `Dégâts reçus ! !`, 4 `Ennemi touché ! !`. Code 3 also calls `sub_432F20`: two seconds of growing screen static (`sub_432F40` on the flip, the surface locked and pixel pairs shifted) - **not ported** |
+| 0x4C41D8 | 65,375 50x50 | `0x42E600`: the clone, posed by `MECA.CTL`, turned by oscillator 4 at 393.7 - **not ported** |
+| 0x4C42F8 / 0x4C4340 | 12,20 12x434 / 16,20 4x434 | `0x42E670`, the **HEALTH BARS**: `v = max(dword_90E100, 0)`, `h = 434 v / 100`, both moved to `y = 454 - h`, height `h` |
+| 0x4C4388 | 450,8 180x180 | the radar, `0x42F000` (shared with 34) |
+
+So screen 33 has no crosshair, no ring or weapon model and no `Hud_DrawBar`:
+those are SHOOT HUMAN's items (0x4C44F0's `0x42E870`, 0x4C43D0, 0x4C4460),
+which the port drew over the Mecagarde until then. `verify.py: engine: meca hud`.
+
 Note how that squares with the pause screen's sound, which was the same
 reader's other report. Screen 31 *keeps* the world, so `sub_466B30` never runs
 for it and the sound suspend cannot come from there — it comes from screen 31's

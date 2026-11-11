@@ -332,11 +332,18 @@ class Ui:
         screen+0x1C is UISCR_PANEL - so the address is recoverable without
         running anything. 28 of the 32 live screens give exactly one; the
         sneak family gives three, one per arm of its `+4` branch, and those
-        are resolved through `SNEAK_PANEL` above. SHOOT MECA names both shoot
-        panels and is still not modelled here.
+        are resolved through `SNEAK_PANEL` above. SHOOT MECA's scan once ran
+        into screen 34's open callback and named both shoot panels; it is
+        bounded at the next callback now (2026-11-11).
         """
         s = self.screens[screen_id]
-        d = self.e.read(s["cb"][0], 320)
+        # Bounded at the next screen callback in the image: 320 bytes from
+        # SHOOT MECA's open (0x42E3A0) ran past its own close (0x42E480) into
+        # screen 34's open (0x42E4A0) and picked up 34's panel too - which
+        # left screen 33 unresolved and the Mecagarde with no HUD drawn.
+        start = s["cb"][0]
+        later = [c for sc in self.screens.values() for c in sc["cb"] if c and c > start]
+        d = self.e.read(start, min(320, (min(later) - start) if later else 320))
         hits = []
         for i in range(len(d) - 7):
             if d[i] == 0xC7 and 0x40 <= d[i + 1] <= 0x47 and d[i + 2] == 0x1C:

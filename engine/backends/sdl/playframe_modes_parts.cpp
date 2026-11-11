@@ -842,9 +842,12 @@ void PlayState::modesShootEnterLeave(omk::Input& in) {
             std::printf("frame %ld: shoot camera - mode %d, eye %.1f above the "
                         "pelvis (%s), aim 20 m ahead\n", frameNo,
                         omk::ShootMode::kCameraMode,
-                        double(shootEyeSet ? shootEyeLift : player->headLift()),
+                        double(shootEyeSet ? shootEyeLift : player->shootEyeLift()),
                         shootEyeSet ? "--shoot-eye"
-                                    : "sub_414520 case 4: 0.7 * the model's extent");
+                                    : "sub_414520 case 4: 0.7 * the model's extent, if a Tete node");
+            omk::event("shoot.camera", {{"frame", frameNo},
+                                        {"lift", double(shootEyeSet ? shootEyeLift
+                                                                    : player->shootEyeLift())}});
         }
         if (!shootMode) {
             shootCameraLive = false;
@@ -944,6 +947,8 @@ void PlayState::modesShootEnterLeave(omk::Input& in) {
                 if (session.shootMode().hudScreen() == 33) {
                     session.setRadarOn(true);
                     radar.openMeca();
+                    // 0x42E3A0 also zeroes the log's ring - not its index
+                    hudEventRing.fill(0);
                 } else {
                     radar.openHuman();
                 }
@@ -1028,6 +1033,7 @@ void PlayState::modesShootEnterLeave(omk::Input& in) {
                         static_cast<std::size_t>(omk::GameState::kPlayerRecord),
                         static_cast<std::size_t>(omk::GameState::kPlayerRecordSize)),
                     3, jump3);
+                shootBob = 0.0f;   // group 200 entered by a plain cut: the node re-seated
                 omk::shootMoveInit(shootMover, playerSpeed, period,
                                    session.shootMode().playerType(), jump3);
                 shootMoveFrames = 0;
@@ -1165,6 +1171,7 @@ void PlayState::modesShootResume(omk::Input& in) {
                         static_cast<std::size_t>(omk::GameState::kPlayerRecord),
                         static_cast<std::size_t>(omk::GameState::kPlayerRecordSize)),
                     3, jump3);
+                shootBob = 0.0f;   // group 200 entered by a plain cut: the node re-seated
                 omk::shootMoveInit(shootMover, playerSpeed, period,
                                    session.shootMode().playerType(), jump3);
                 shootMoveFrames = 0;

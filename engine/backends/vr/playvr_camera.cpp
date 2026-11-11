@@ -220,7 +220,7 @@ void PlayState::vrAfterWorldCamera() {
         // shoot branch): the pelvis lifted by `headLift`, yaw only. In shoot
         // mode too: there the CONTROLLER turns his body (`vrAdventureInput`),
         // so the view cannot ride his facing, or it would turn twice
-        const float lift = player->headLift();
+        const float lift = player->shootEyeLift();
         const float eyeOff[3] = {0.0f, lift, 0.0f}, atOff[3] = {0.0f, lift, 100.0f};
         const omk::FollowCamera fc = player->resolveOffsetsYaw(eyeOff, atOff, authored.hfovDeg);
         if (!vr.fpInit || kindChanged) {

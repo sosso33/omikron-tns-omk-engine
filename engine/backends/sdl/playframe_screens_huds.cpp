@@ -620,33 +620,93 @@ void PlayState::screensShootHud(omk::ScreenComposer& comp) {
     const auto& fs = *fs_;
     if (shootMode && hudWalk && !walk && !omk::envFlag("OMK_NOUI")) {
         hudRows.clear();
+        // SCREEN 33, SHOOT MECA (the Mecagarde's, panel 0x4C4578): eight
+        // items of its own, none of 34's but the radar - no ring, no ammo,
+        // no weapon, no crosshair, no `Hud_DrawBar`. Its text and bars are
+        // filled below; 34's arms are skipped for it.
+        const bool meca = session.shootMode().hudScreen() == 33;
+        hudMoved.clear();
+        hudResized.clear();
+        if (meca && player) {
+            // 0x42E6C0, the two counters, by item: `(int)(x * z) % 100000`
+            // and `(int)(x - z * -100.0) % 100000` - x, z the player's
+            // `+244`/`+252` - as "{C}{M}{I255255255}%d"
+            const double px = player->pos()[0], pz = player->pos()[2];
+            hudRows[0x4C4220u] = "{C}{M}{I255255255}" +
+                std::to_string(static_cast<long long>(px * pz) % 100000);
+            hudRows[0x4C4268u] = "{C}{M}{I255255255}" +
+                std::to_string(static_cast<long long>(px - pz * -100.0) % 100000);
+            // 0x42E730, the LOG: the frame's event code into the ring (code
+            // 3 also starts `sub_432F20`'s 2 s of screen static - NOT
+            // PORTED), then the eleven lines oldest first, each IAM\Meca
+            // string by its code, under "{I255255255}"
+            if (hudEvent) {
+                hudEventRing[static_cast<std::size_t>(hudEventIdx)] = hudEvent;
+                hudEvent = 0;
+                hudEventIdx = (hudEventIdx + 1) % 11;
+            }
+            const auto& meText = iamText("IAM/Meca");
+            std::string log = "{I255255255}";
+            for (int k = 0; k < 11; ++k) {
+                const int c = hudEventRing[static_cast<std::size_t>((hudEventIdx + k) % 11)];
+                if (c >= 0 && c < static_cast<int>(meText.size()) && c <= 4)
+                    log += meText[static_cast<std::size_t>(c)];
+                log += "\n";
+            }
+            hudRows[0x4C42B0u] = log;
+            {
+                std::string codes;
+                for (int k = 0; k < 11; ++k)
+                    codes += static_cast<char>('0' + hudEventRing[static_cast<std::size_t>((hudEventIdx + k) % 11)]);
+                static std::string mecaTold;
+                const std::string key = codes + "/" + std::to_string(hudHealth);
+                if (key != mecaTold) {
+                    mecaTold = key;
+                    omk::event("hud.meca", {{"frame", frameNo}, {"log", codes},
+                                            {"health", hudHealth},
+                                            {"bar", 434 * (hudHealth < 0 ? 0 : hudHealth) / 100}});
+                }
+            }
+            // 0x42E670, the HEALTH BARS: `dword_90E100` (negative -> 0, written
+            // back), `h = 434 * v / 100`, both bars to `y = 454 - h`, height h
+            if (hudHealth < 0) hudHealth = 0;
+            const int hb = 434 * hudHealth / 100;
+            hudMoved[0x4C42F8u] = {12, 454 - hb};
+            hudResized[0x4C42F8u] = {12, hb};
+            hudMoved[0x4C4340u] = {16, 454 - hb};
+            hudResized[0x4C4340u] = {4, hb};
+        }
         std::int32_t rings = 0;
         omk::readActorProperty(state.raw().subspan(
                                    static_cast<std::size_t>(omk::GameState::kPlayerRecord),
                                    static_cast<std::size_t>(omk::GameState::kPlayerRecordSize)),
                                5, rings);
-        hudRows[0x4C4418u] = "{C}" + std::to_string(rings);
-        if (hudAmmo != -1) hudRows[0x4C44A8u] = std::to_string(hudAmmo);
+        if (!meca) hudRows[0x4C4418u] = "{C}" + std::to_string(rings);
+        if (!meca && hudAmmo != -1) hudRows[0x4C44A8u] = std::to_string(hudAmmo);
         std::string weaponName;
         {
             const int obj = session.shootMode().weaponObject();
             const auto& objs = voiceLib.objects();
             if (obj >= 0 && static_cast<std::size_t>(obj) < objs.size())
                 weaponName = objs[static_cast<std::size_t>(obj)].name;
-            if (!weaponName.empty()) hudRows[0x4C4460u] = weaponName;
+            if (!meca && !weaponName.empty()) hudRows[0x4C4460u] = weaponName;
         }
         comp.attachCursor(nullptr);
         comp.attachModels(nullptr);
         comp.attachCloud(nullptr);
         comp.setRowText(&hudRows);
+        comp.setItemMove(meca ? &hudMoved : nullptr);
+        comp.setItemResize(meca ? &hudResized : nullptr);
         comp.setHidden(nullptr);
         const omk::ScreenFrame hf = comp.draw(fb, session.shootMode().hudScreen(), *hudWalk);
+        comp.setItemMove(nullptr);
+        comp.setItemResize(nullptr);
         // THE TWO TURNING MODELS, into their items' boxes: the ring
         // (item 0x4C43D0 at 48,0, `sub_478DE0(node, 10.0)`) and the held
         // weapon (0x4C4460 at 48,380, 25.0), both turned by oscillator 4
         // (`sub_478EC0`), the sneak previews' turntable.
         bool ringDrawn = false, weaponDrawn = false;
-        {
+        if (!meca) {
             const float spin = omk::UiModels::spinDegrees(uiClockMs());
             const auto box = [&](int x, int y, int bw, int bh, int out[4]) {
                 out[0] = comp.scaleX(x); out[1] = comp.scaleY(y);
@@ -671,6 +731,7 @@ void PlayState::screensShootHud(omk::ScreenComposer& comp) {
         const int cx = fb.w / 2, cy = fb.h / 2;
         static const int kCross[4][4] = {{-1, 4, 1, 12}, {4, -1, 12, 1},
                                          {-12, -1, -4, 1}, {-1, -12, 1, -4}};
+        if (!meca)                       // 34's item 0x4C44F0 (0x42E870)
         for (const auto& q : kCross)
             for (int y = cy + q[1]; y < cy + q[3]; ++y)
                 for (int x = cx + q[0]; x < cx + q[2]; ++x)
@@ -683,7 +744,8 @@ void PlayState::screensShootHud(omk::ScreenComposer& comp) {
         if (!hudBar.loaded()) hudBar.load(fs);
         // (`dword_90E100`, `hudHealth` - not +92 itself, which a killing
         // hit takes below 0 while the gauge keeps its last value)
-        const omk::HudBarFrame bar = hudBar.draw(fb, hudHealth, 200, 0, 0);
+        const omk::HudBarFrame bar = meca ? omk::HudBarFrame{}
+                                          : hudBar.draw(fb, hudHealth, 200, 0, 0);
         // ...and ASTAROTH's, which his own tick draws every frame it runs:
         // `Hud_DrawBar(+92, 200, 1, 0)` (0x480147) - side 1, the gauge melee
         // gives the opponent (`todo/astaroth.md` 3)

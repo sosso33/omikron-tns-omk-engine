@@ -696,12 +696,16 @@ PlayerController::PlayerController(const Setup& s)
         // bone span alone.
         //
         // (`case 4` falls into `case 5`, which recomputes the same value; and
-        // the whole thing is gated on the actor's `+16`, which this port does
-        // not model - so the lift is unconditional here.)
+        // the whole thing is gated on the actor's `+16`, his `Tete` node -
+        // `hasTete_`, read 2026-11-11: the gate is `shootEyeLift()`'s, and
+        // `headLift_` stays the crown estimate the rest of this file uses.)
         // ...and `camLift_` IS that number: it is already "the root above the
         // model's lowest extent", 41.9 for HO1_FNM against the sphere table's
         // own 41.81. So the lift needs no new data.
         headLift_ = 0.7f * camLift_;
+        hasTete_ = false;
+        for (const auto& m : *meshes_)
+            if (std::strstr(m.name, "Tete")) hasTete_ = true;
 
         // WHERE THAT PUTS THE EYE, and it is the check that the constant is
         // understood rather than merely copied: HO1_FN's four body spheres

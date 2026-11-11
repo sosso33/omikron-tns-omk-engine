@@ -660,6 +660,13 @@ public:
     // ever a guess dressed as a measurement. The reader's instruction was the
     // right one: look at the original code.
     float headLift() const { return headLift_; }
+    // ...and what the SHOOT camera (`sub_414520` case 4, the follow camera's
+    // `sub_414080` too) actually lifts the eye by: `actor+16 ? 0.7 * +276 :
+    // 0.0` (flt_4BC0F0 / flt_4BC0E0) - `+16` is `Actor_LoadModel`'s
+    // `o3de_FindMeshByName(model, "Tete")`, a case-sensitive `strstr` over the
+    // node names. A body with no `Tete` - the Mecagarde's MCG_FN - looks from
+    // his origin, the pelvis (73.8 above his feet), not 0.7 R higher.
+    float shootEyeLift() const { return hasTete_ ? headLift_ : 0.0f; }
     // the ROOT mesh's own bounding radius (`.3DO` mesh +88) - the half-size
     // `Actor_ScanZones` gives the zone index (todo/drift-audit.md S10)
     float rootRadius() const {
@@ -823,6 +830,7 @@ private:
     } look_{};
     float camLift_ = 0.0f;             // pelvis above the feet - see cameraLift()
     float headLift_ = 0.0f;            // 0.7 * the model's extent - see headLift()
+    bool  hasTete_ = false;            // a node whose name holds "Tete" (actor+16)
     struct CameraCollision {
         // `sub_417070`'s state. `+328` is the distance it keeps between frames -
         // the camera snaps IN to a blocking hit and eases back OUT over `+320`

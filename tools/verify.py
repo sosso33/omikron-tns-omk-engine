@@ -32237,12 +32237,18 @@ def c_engine_meca_transfer():
     steps = [(int(e["sound"]), int(e["found"])) for n, e in ev if n == "shoot.step"]
     went = re.findall(r"SHOOT MOVE stops after \d+ frames - asked (\S+), went (\S+) ", o)
     print("        placed %s, zones %s, %d steps, went %s" % (place, zones, len(steps), went[:1]))
+    # THE EYE (2026-11-11): `sub_414520` case 4 lifts it 0.7 * +276 only for
+    # a body with a `Tete` node (actor +16); MCG_FN has none - 0.0, the eye
+    # at his pelvis (the port lifted it 51.6, over his own crown)
+    lift = [round(float(e["lift"]), 1) for n, e in ev if n == "shoot.camera"]
+    got0 = lift[:1]
     got = (becomes, [h for h, _ in place], [2700 < y < 2900 for _, y in place],
            3193 in zones, mover[:1],
            len(steps) >= 6 and all(x in ((69, 1), (70, 1)) for x in steps),
            bool(went) and float(went[0][1]) < -700.0)
+    got += (got0,)
     return got, ([216], ["address"], [True], True, ["type 5 -> hurt sound 68, steps 69/70"],
-                 True, True), \
+                 True, True, [0.0]), \
         "become 216 at the console, put on 'Pad Meca' by the teleport after op 56; the transfer " \
         "(3193) to the archives; his shoot mover (type 5) and its metal steps; and the walk " \
         "through the 110.2 doorway out of the start"
@@ -32453,6 +32459,56 @@ def c_engine_meca_archives():
         "each area's own MAP2D as it loads (66 none, 67 ARCHIV05, 69 none, 180 CSLEV-3); AREA " \
         "67's three boxes; areas 69 and 180 reached; Meca 191 killed and Kay'l put back at the " \
         "Lev-4 console by the address"
+
+
+def c_engine_meca_hud():
+    r"""`engine/`: THE MECAGARDE'S HUD, SCREEN 33 'SHOOT MECA' (2026-11-11).
+    `tools/sim/ui.py`'s panel scan ran 320 bytes from its open callback
+    0x42E3A0, past its close (0x42E480) into screen 34's open, named both
+    shoot panels, and left 33 unresolved: the Mecagarde had no HUD at all,
+    and the port drew screen 34's crosshair, ring, weapon and gauge over him.
+    Bounded at the next callback, 33 is panel 0x4C4578, eight items:
+    the event LOG 0x4C42B0 (`0x42E730`: `byte_90E0B0` - 1 a bit-clear
+    gunman's shot, 2 a kill, 3 the player hit, 4 a gunman hit - into an
+    11-slot ring, drawn oldest first from `IAM\Meca`'s five strings), the two
+    counters (`0x42E6C0`), the HEALTH BARS (`0x42E670`: `h = 434 v / 100`,
+    `y = 454 - h`) and the radar.
+
+    The meca transfer's route, then twelve presses of Tir in AREA 63.
+    Asserted, SHOWN TO FAIL (33 drawn as 34): the log fills with enemy
+    shots (1), damage taken (3) and a kill (2); every bar height is
+    `434 * health / 100`; the health drops below 100.
+    """
+    import subprocess, tempfile
+    eng = os.path.join(ROOT, "engine")
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0:
+        return ("build failed",), ("built",), "engine/ must build"
+    if not os.path.exists(play):
+        return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_EVENTS="1")
+    route = ("0*60,k28*3,0*90,k28*3,0*80,"
+             "k205*20,0*10,k200*200,0*20,k203*10,0*10,k200*110,0*30,k205*5,0*10,k200*60,0*20,"
+             "k28*3,0*750,k200*80,0*30," + ",".join(["k54*3,0*27"] * 12) + ",0*300")
+    o = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                        "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+                        "--area", "181", "--scene-load", "181,51", "--var", "563=1,11=1",
+                        "--zone-enable", "3156", "--zone-disable", "3137",
+                        "--stand", "6080,570,-12226,46", "--hold", route,
+                        "--nofmv", "--nodelay", "--res", "640x480",
+                        "--saves", tempfile.mkdtemp(), "--frames", "2200"],
+                       capture_output=True, text=True, errors="replace", env=env).stdout
+    ev = [e for n, e in _events(o) if n == "hud.meca"]
+    codes = set("".join(e["log"] for e in ev))
+    bars = all(int(e["bar"]) == 434 * max(int(e["health"]), 0) // 100 for e in ev)
+    low = min([int(e["health"]) for e in ev] or [100])
+    print("        %d HUD states; codes seen %s; bars by the formula %s; health down to %d"
+          % (len(ev), sorted(codes), bars, low))
+    got = (len(ev) > 3, {"1", "2", "3"} <= codes, bars, low < 100)
+    return got, (True, True, True, True), \
+        "screen 33 drawn as its own: its log takes enemy shots, damage and a kill, its bars " \
+        "follow 434 x health / 100, and the health drops"
 
 
 def c_engine_vr_strafe():
@@ -40035,6 +40091,13 @@ def c_sim_ui_coverage():
     DOWN installs the Identity page - whose panel hook `0x0049C1D0` is not
     modelled, so the walk says it is approximate. Before, the move stayed on
     the column and the confirm descended nowhere the hooks were met.
+    
+    **SHOOT MECA (33) joined the exact list on 2026-11-11.** `panel_of`
+    scanned 320 bytes from its open callback 0x42E3A0 and ran past its close
+    (0x42E480) into screen 34's open, so it named both shoot panels and the
+    screen was refused as undecidable. Bounded at the next callback it is
+    panel 0x4C4578, whose eight items carry no hooks - it walks exactly, as
+    SHOOT HUMAN does - and the refused count drops by one.
     """
     sys.path.insert(0, os.path.join(ROOT, "tools"))
     import ui_tables as U2
@@ -40056,7 +40119,7 @@ def c_sim_ui_coverage():
         else:
             exact.append(sc["id"])
     return (len(live), sorted(exact), len(refused), unsound), \
-           (32, [4, 29, 34], 29, []), \
+           (32, [4, 29, 33, 34], 28, []), \
            "live screens; the ones the GENERIC walker drives with no " \
            "unmodelled hook - the LIFT, the start menu, and " \
            "SHOOT HUMAN, whose panel carries no hooks at all (OPTIONS has " \
@@ -40266,12 +40329,15 @@ def c_ui_sprites():
         if s["name"] in ("MULTIPLAN", "BANK", "GANDHAR DOOR"):
             bright[s["name"]] = sum(1 for L, N, w, h in pairs
                                     if mean(rgb, W, *L, w, h) > mean(rgb, W, *N, w, h))
+    # 183 since 2026-11-11: SHOOT MECA (33) resolved (`panel_of` bounded at
+    # the next callback) brings its 64x64 tile item 0x4C4190 in
     return (total, restores,
             sorted({y for x, y in mult}), sorted(x for x, y in mult),
             bright), \
-           (182, 164, [192], [64, 128, 192, 256],
+           (183, 164, [192], [64, 128, 192, 256],
             {"MULTIPLAN": 4, "BANK": 4, "GANDHAR DOOR": 5}), \
-           "sprite items - 18 more since the sneak family joined the tree, " \
+           "sprite items - 18 more since the sneak family joined the tree, one " \
+           "more with SHOOT MECA's tile, " \
            "all of them the device's own tab icons and page buttons - and " \
            "how many take their UNLIT source from their own " \
            "destination (the background restores itself); MULTIPLAN's four " \
@@ -44922,6 +44988,20 @@ def c_engine_shoot_move():
     want += ([(161, 1, 2), (162, 1, 15), (161, 1, 30), (162, 1, 45),
               (161, 1, 3), (162, 1, 15), (161, 1, 30),
               (162, 1, 15), (161, 1, 30)],)
+    # THE HEAD BOB (2026-11-11, `ShootMoveStep::bob`): the node's offset,
+    # `3 cos(720 f/59) - 3 cos(720 f'/59)` summed while he steps and wiped at
+    # the stance clip's loop (`Actor_PlayClip` re-seats the node). Walking
+    # from a loop it rises to 5.93 (y down: -5.93) at the quarter frames; a
+    # stop and a start before the next loop carry the frozen part over, so
+    # it can sit below rest too - as the engine's own sum does.
+    bobs = [(float(e["offset"]), float(e["clip_frame"])) for n, e in _events(o)
+            if n == "shoot.bob"]
+    bob = [b for b, _ in bobs]
+    reset = any(f <= 3.0 and abs(b) < 0.6 for b, f in bobs)
+    print("        head bob: %d frames, from %.2f to %.2f, re-seated at a loop %s"
+          % (len(bob), min(bob or [0]), max(bob or [0]), reset))
+    got += (len(bob) > 60, round(min(bob or [0]), 1), reset)
+    want += (True, -5.9, True)
     return got, want, (
         "the mover's speeds from Speed 70 (row 4: 10.4, 0.39, 2.08); forward 40 "
         "frames = 303.29 along +Z, strafe right 30 = 256.10 along +X, nine MDRG "
@@ -55533,6 +55613,7 @@ SLOW = [
     ("engine: built-in weapon", c_engine_builtin_weapon, "todo/scene-gameplay-audit.md 5; todo/released-spectres.md; backends/sdl/playstate.cpp addFireSlots"),
     ("engine: archives exit", c_engine_archives_exit, "todo/scene-gameplay-audit.md 5; backends/sdl/playsetup_adventure.cpp"),
     ("engine: meca archives", c_engine_meca_archives, "todo/scene-gameplay-audit.md 5; backends/sdl/playframe_modes_parts.cpp"),
+    ("engine: meca hud", c_engine_meca_hud, "docs/UI.md; backends/sdl/playframe_screens_huds.cpp"),
     ("engine: gles overlay", c_engine_gles_overlay, "todo/vita-port.md G6; backends/gles/glesrender.cpp"),
     ("engine: pool past 64", c_engine_pool_past_64, "todo/handoff-quest-port.md; o3de/renderer.h"),
     ("engine: crowd indoors", c_engine_crowd_indoors, "docs/STREET_LIFE.md; todo/handoff-quest-port.md"),

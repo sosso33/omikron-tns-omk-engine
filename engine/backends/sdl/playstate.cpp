@@ -2528,6 +2528,7 @@ long PlayState::uiClockMs() {
 void PlayState::applyPlayerDamage(long n, int owner, const char* what, int dmgIn,
                                        int shield, const omk::HitOut& ho) {
     auto& session = *session_;
+    if (!ho.killed) hudEventOnce(3);   // `byte_90E0B0 = 3` if still 0: "Degats recus"
     omk::event("shoot.playerhit", {{"frame", n}, {"owner", owner}, {"what", what},
                                    {"damage", ho.damage}, {"health", ho.health},
                                    {"killed", ho.killed ? 1 : 0}});

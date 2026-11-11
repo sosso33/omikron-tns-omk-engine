@@ -1800,6 +1800,7 @@ void PlayState::worldStagedShootFireGate(bool fullArm, omk::ShootRecord& rec,
                 rec.flags |= 0x80u;
                 rec.clipLen = static_cast<float>(
                     omk::animGroupRate16(crowd.ani, grpT).value_or(0));
+                hudEventOnce(1);          // `if (!byte_90E0B0) byte_90E0B0 = 1`
             }
         }
         omk::FireGate gate = omk::FireGate::Released;

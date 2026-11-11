@@ -196,7 +196,17 @@ ShootMoveStep shootMoveTick(ShootMover& m, float facingDeg, float dt,
     } else {
         stepping = !((m.side == 0.0f && m.fwd == 0.0f) || (f & kShootMoveHold));
     }
-    // (the head bob is here in the engine - not modelled, see the header)
+    // THE HEAD BOB (0x0047D955..0x0047D9A9): `3 cos(720 +188 / P) - 3 cos(720
+    // +192 / P)` (flt_4BCB2C, flt_4BCB68, dbl_4BCB60), only when he steps and
+    // not under MDTR, whose arm moves y by the fall alone (0x0047D90A)
+    if (stepping && !(f & kShootMoveTr) && m.period > 0.0f && m.prevFrame >= 0.0f) {
+        // degrees stored as floats (`fstp [ebp+var_8]`), then x pi/180
+        const float a = clipFrame * 720.0f / m.period;
+        const float b = m.prevFrame * 720.0f / m.period;
+        s.bob = static_cast<float>(std::cos(double(a) * 0.0174532925199433) * 3.0 -
+                                   std::cos(double(b) * 0.0174532925199433) * 3.0);
+    }
+    m.prevFrame = clipFrame;
     // THE JUMP'S HOLD AND COOL-DOWN (0x0047D95C..): flag 0x10 comes down
     // once 0x800 is gone and the fall byte is clear; without it the
     // cool-down runs down by the delta to 0

@@ -356,6 +356,10 @@ public:
     // in the widget TREE carries only its authored place - so a screen whose
     // own hook moves a widget needs the mover to say where it went.
     void setItemMove(const std::map<std::uint32_t, std::pair<int, int>>* m) { moved_ = m; }
+    // ...and items whose hook RESIZES them: screen 33's health bars, which
+    // `0x42E670` rewrites to `y = 454 - h`, height `h` every frame (x/y here
+    // through `setItemMove`, the width and height through this).
+    void setItemResize(const std::map<std::uint32_t, std::pair<int, int>>* m) { resized_ = m; }
     // ...and items whose SOURCE the screen's hook scrolls. Den's locker spins
     // its four wheels by writing the unlit source's y (`digit * 46`), which
     // cuts a different digit out of the artwork's strip.
@@ -547,6 +551,7 @@ private:
     const std::string* echoMsg_ = nullptr;
     const std::set<std::uint32_t>* hidden_ = nullptr;
     const std::map<std::uint32_t, std::pair<int, int>>* moved_ = nullptr;
+    const std::map<std::uint32_t, std::pair<int, int>>* resized_ = nullptr;
     const std::map<std::uint32_t, std::pair<int, int>>* srcMoved_ = nullptr;
     const std::map<std::uint32_t, std::pair<int, int>>* litMoved_ = nullptr;
     const std::map<std::uint32_t, int>* section_ = nullptr;

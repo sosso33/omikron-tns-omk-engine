@@ -1130,6 +1130,15 @@ void PlayState::adventureShootMoverTick() {
             static_cast<float>(frameSec * 30.0),
             &player->eulerPitch(), &player->eulerRoll(),
             player->walker().airborne(), player->clipFrame());
+        // THE HEAD BOB, carried on the node as an offset (`ShootMoveStep::bob`)
+        // and wiped when the stance clip loops - `Actor_PlayClip`'s
+        // `o3de_SetNodePos(node, +244, +248, +252)` on the restart's plain cut
+        if (player->clipFrame() < shootBobFrame) shootBob = 0.0f;
+        shootBobFrame = player->clipFrame();
+        shootBob += st.bob;
+        if (st.bob != 0.0f)
+            omk::event("shoot.bob", {{"frame", frameNo}, {"offset", double(shootBob)},
+                                     {"clip_frame", double(player->clipFrame())}});
         // THE FOOTSTEP (`actor/shootmove.h`): resolved in the resident
         // library and played flat, as the hurt sound is
         if (st.sound >= 0) {

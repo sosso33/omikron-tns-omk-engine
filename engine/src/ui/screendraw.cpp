@@ -759,6 +759,13 @@ void ScreenComposer::drawItem(const omk::UiItem& itAuthored, int layer, omk::Sur
         const auto mv = moved_->find(itAuthored.addr);
         if (mv != moved_->end()) { itMoved.x = mv->second.first; itMoved.y = mv->second.second; }
     }
+    if (resized_) {
+        const auto rs = resized_->find(itAuthored.addr);
+        if (rs != resized_->end()) {
+            itMoved.w = static_cast<decltype(itMoved.w)>(rs->second.first);
+            itMoved.h = static_cast<decltype(itMoved.h)>(rs->second.second);
+        }
+    }
     const UiItem& it = itMoved;
     // THE IDENTITY PAGE'S CHARACTER: `0x004779C0` - `sub_478DE0` at
     // 118.11, the node turned by oscillator 4, `I2D_Submit3DView` into

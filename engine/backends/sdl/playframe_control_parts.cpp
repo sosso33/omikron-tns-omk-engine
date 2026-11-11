@@ -812,8 +812,9 @@ void PlayState::controlFlight() {
             // `Message_RunHandlers` maps to his CHARACTERS id, as the handlers
             // compare it (AREA 144: sender 403, the X-Tech sentinel, retires
             // zone 2349 'ztech sentinelle attaque'). A KILLED gunman posts
-            // nothing (todo/drift-audit.md S8). `byte_90E0B0 = 4`, the same
-            // tail's other write, has no reader found and is not modelled.
+            // nothing (todo/drift-audit.md S8). `byte_90E0B0 = 4` if still 0,
+            // the same tail's other write: screen 33's log (`hudEvent`).
+            if (!ho.killed) hudEventOnce(4);
             if (!ho.killed) {
                 const bool ran = session.postMessage(2, ev.victim);
                 std::printf("  message 2 (sub_423EF0) - actor %d hit and alive: %s\n",
@@ -829,6 +830,7 @@ void PlayState::controlFlight() {
                 vs->deathType = ho.deathType;
                 vs->deathStart = gameClock;
                 vs->walkMove[1] = 0.0f;   // `sub_421A20` sets the height
+                hudEvent = 2;             // `byte_90E0B0 = 2`, unconditional
                 std::printf("  KILLED - death clip type %d%s\n", ho.deathType,
                             ho.enemyCountDrop ? ", the enemy count drops" : "");
             }

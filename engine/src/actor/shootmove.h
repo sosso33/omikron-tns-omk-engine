@@ -129,6 +129,7 @@ struct ShootMover {
     float jumpCool   = 0.0f;        // `flt_6579F8`, 1.0 at a jump, spent once he stands
     float fwd        = 0.0f;        // `dword_6579C4`, the forward velocity
     float period     = 0.0f;        // `dword_6579C8`, the stance clip's frames
+    float prevFrame  = -1.0f;       // the clip frame last tick: the actor's `+192`
     float top        = 0.0f;        // `flt_6579D0`
     float accel      = 0.0f;        // `flt_6579D8`
     float brake      = 0.0f;        // `flt_6579E4`
@@ -249,10 +250,16 @@ float shootPitchStep(float pitchDeg, int dy, int sensitivity, bool inverted, flo
 // first step of a walk falls is the channel's phase, not frame 1. Whether the
 // engine's write reaches the clip clock is unread.
 //
-// (The head bob is here too, `3 cos(720 +192 / P) - 3 cos(720 +188 / P)` into
-// the node's y - NOT MODELLED: `addShootMotion`'s y is the walker's lift, which
-// would take him off the floor.)
-struct ShootMoveStep { float dx = 0.0f, dz = 0.0f, dy = 0.0f; int sound = -1; };
+// (The head bob is here too - `ShootMoveStep::bob`, the caller's to carry on
+// the node as an offset: the walker's y is the feet's, which it must not move.)
+// `bob` is this tick's HEAD BOB into the node's y (read 2026-11-11): when he
+// steps and MDTR (0x40) is down, `3 cos(720 f/P deg) - 3 cos(720 f'/P deg)`
+// with f the clip frame (+188) and f' the previous tick's (+192, which the
+// channel tick sets to +188 before advancing it) - added to the node, NOT to
+// +244..+252, so it builds up as an offset the camera (modes 4/5 read the
+// node) rides, until `Actor_PlayClip` re-seats the node at the stance clip's
+// loop. Two cycles a stance clip, from rest up to ~6 inches.
+struct ShootMoveStep { float dx = 0.0f, dz = 0.0f, dy = 0.0f; int sound = -1; float bob = 0.0f; };
 // `eulerPitch` / `eulerRoll` are the actor's +416 and +424, which the SHOVE
 // arm spends and then zeroes. Pass neither and the arm is skipped - which is
 // what every probe that only wants the step does.
