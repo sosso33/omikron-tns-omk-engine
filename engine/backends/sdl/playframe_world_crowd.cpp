@@ -5,6 +5,7 @@
 #include "playframe.h"
 #include "platform/env.h"
 #include "o3de/vecmath.h"
+#include "o3de/shimmer.h"
 
 // The pedestrians, the vehicles, the player
 void PlayState::worldCrowd() {
@@ -470,7 +471,8 @@ void PlayState::worldCrowdPlayer() {
             static const bool cpuPlayer = omk::envFlag("OMK_CPU_PLAYER");   // A/B only
             playerGpu = cornersUnread && !playerOffView && drawPlayer && !cpuBodiesFlag &&
                         !cpuPlayer && world.posesBodies() &&
-                        playerBody.rest.cornerMesh.size() == playerBody.rest.corners.size();
+                        playerBody.rest.cornerMesh.size() == playerBody.rest.corners.size() &&
+                        !underwater;   // his colours are the lit shimmer's, per corner (below)
         }
         if (!playerOffView && !playerGpu) {
             omk::applyPose(playerBody.posed, playerBody.rest, playerBody.meshes, pose);
@@ -779,6 +781,11 @@ void PlayState::worldCrowdPlayer() {
                 if (!ws2.lights.empty())
                     omk::applyLights(playerBody.posed, 0, playerBody.posed.corners.size(), playerLitAt, ws2.lights);
         }
+        // UNDERWATER his hierarchy carries 0x8000000 (`sub_4187B0`), and on a
+        // lit body that is `sub_494180`, last: the authored colour through the
+        // wave, over whatever the lights wrote (`omk::shimmerLit`)
+        if (underwater && !playerGpu && !playerOffView)
+            omk::shimmerLitBody(playerBody.posed, playerBody.rest, shimmerClock);
         if (!playerOffView && !playerGpu) playerBody.posed.revision = ++worldGeoRev;
         for (int k = 0; k < 3; ++k) actorAt[k] = pp[k];
         actorAt[1] -= playerFeet;

@@ -6,6 +6,7 @@
 #include "platform/events.h"
 #include "platform/env.h"
 #include "o3de/vecmath.h"
+#include "o3de/shimmer.h"
 
 // THE MORPH ROOT TURNED BY A WORLD YAW, the engine's own composition.
 // `08_wave.c` 963-965: `sub_442B50(v40, 0, X, 0)` builds the yaw and
@@ -416,24 +417,32 @@ void PlayState::worldStagedBody(std::unique_ptr<Staged>& up, const omk::SceneRun
                                      ? s.mo->rest : lodRestFor(s.model, *s.mo, skel);
     // AN OLD PLAYER BODY is drawn from his own copy of the rest: every batch
     // ADDITIVE (mesh 0x1000|0x2000 -> bucket 0x2100, which wins over a
-    // multiply sub-mode in `Raster_DrawTriangles`) and every corner
-    // SHIMMERING (0x08000000, phased by its vertex as `buildGeometry` phases
-    // a flagged set mesh) - `Player_SetActor(-1)`'s `sub_437220(node, 268, 8)`
+    // multiply sub-mode in `Raster_DrawTriangles`) and SHIMMERING
+    // (0x08000000) - `Player_SetActor(-1)`'s `sub_437220(node, 268, 8)`. A
+    // character is LIT, so the shimmer is the lit path's, `sub_494180`: his
+    // colour is overwritten from the authored white into a pulsing pale
+    // green, the set's lights lost (`omk::shimmerLit`; the reader's frames
+    // of the original, 2026-11-11: the old bodies glow green-white). That is
+    // done per frame on the posed corners (below), so the rest's own corners
+    // carry no SET shimmer (`phase` -1) for a backend to add on top.
     if (s.ghost && s.ghostFrom != &restModel) {
         s.ghostRest = restModel;
         for (auto& b : s.ghostRest.batches) b.blend = omk::Blend::Add;
-        for (std::size_t i = 0; i < s.ghostRest.corners.size(); ++i)
-            s.ghostRest.corners[i].phase =
-                i < s.ghostRest.cornerVertex.size() && s.ghostRest.cornerVertex[i] >= 0
-                    ? static_cast<float>((2u * static_cast<std::uint32_t>(
-                          s.ghostRest.cornerVertex[i])) % 32u)
-                    : 0.0f;
+        double mean[3] = {0, 0, 0};
+        for (auto& c : s.ghostRest.corners) {
+            c.phase = -1.0f;
+            mean[0] += c.r; mean[1] += c.g; mean[2] += c.b;
+        }
+        const double k = s.ghostRest.corners.empty()
+            ? 0.0 : 255.0 / static_cast<double>(s.ghostRest.corners.size());
         s.ghostRest.revision = ++worldGeoRev;
         s.ghostFrom = &restModel;
         std::printf("frame %ld: actor %d %s drawn as an OLD PLAYER BODY - %zu batches "
-                    "additive, %zu corners shimmering (Player_SetActor's 0x08000000|0x2000|"
-                    "0x1000)\n", frameNo, s.actor, s.model.c_str(), s.ghostRest.batches.size(),
-                    s.ghostRest.corners.size());
+                    "additive, %zu corners shimmering from the authored colour (mean %.0f "
+                    "%.0f %.0f) by the lit path's sub_494180 (Player_SetActor's "
+                    "0x08000000|0x2000|0x1000)\n", frameNo, s.actor, s.model.c_str(),
+                    s.ghostRest.batches.size(), s.ghostRest.corners.size(),
+                    mean[0] * k, mean[1] * k, mean[2] * k);
         omk::event("body.ghost", {{"frame", frameNo}, {"actor", s.actor}, {"batches", static_cast<long>(s.ghostRest.batches.size())},
                                   {"corners", static_cast<long>(s.ghostRest.corners.size())}});
     }
@@ -470,8 +479,10 @@ void PlayState::worldStagedBody(std::unique_ptr<Staged>& up, const omk::SceneRun
         const bool latchHeld = s.seatKnown && s.seatClip == s.sceneClipWas &&
                                s.seatSrc == src;
         static const bool cornerLogs = omk::envFlag("OMK_BODYLOG") || stagedProbe;
+        // ...and not an old player body: his colours are the lit
+        // shimmer's, written per corner below (`sub_494180`)
         s.gpu = !cpuBodiesFlag && world.posesBodies() && latchHeld && fv.empty() &&
-                !cornerLogs;
+                !cornerLogs && !s.ghost;
         s.restGeo = &restUsed;
     }
     if (!s.gpu)
@@ -946,6 +957,20 @@ void PlayState::worldStagedBody(std::unique_ptr<Staged>& up, const omk::SceneRun
             std::printf("frame %ld: actor %d %s LIT by the set (sub_440CA0) - base %d, "
                         "%d lights reach, corners' mean %.0f %.0f %.0f\n", frameNo, s.actor,
                         s.model.c_str(), baseGrey, reached, m[0] * k, m[1] * k, m[2] * k);
+        }
+    }
+    // AN OLD PLAYER BODY: `sub_494180` last, over whatever the lights
+    // wrote - his colour from the authored one and the wave alone
+    if (s.ghost && !s.gpu) {
+        omk::shimmerLitBody(s.posed, restUsed, shimmerClock);
+        // ...said once, from the corners the draw takes
+        if (!s.ghostColourTold && !s.posed.corners.empty()) {
+            s.ghostColourTold = true;
+            double m[3] = {0, 0, 0};
+            for (const auto& c : s.posed.corners) { m[0] += c.r; m[1] += c.g; m[2] += c.b; }
+            const double k = 255.0 / static_cast<double>(s.posed.corners.size());
+            omk::event("body.ghost.colour", {{"frame", frameNo}, {"actor", s.actor},
+                                             {"r", m[0] * k}, {"g", m[1] * k}, {"b", m[2] * k}});
         }
     }
     // Where he ENDED UP, which is the placement plus the clip's

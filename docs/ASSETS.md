@@ -2245,7 +2245,26 @@ Two mesh flags animate the colour after it is read, and they are **not** the
   The **lit** path's variant, `sub_494180`, offsets through
   `byte_6A2C60`/`byte_6A2C80` instead and so darkens as well as pulses — but
   that path is for objects registered with the dynamic light manager, which no
-  set mesh is (§4c), so it is the actor variant and is not implemented.
+  set mesh is (§4c), so it is the actor variant. **READ AND PORTED
+  2026-11-11**: it is the last call of `sub_440CA0`'s lit arm, after the
+  ambient start and the lights, and it OVERWRITES the lit colour (the runtime
+  vertex's dword at +44) from the source vertex's authored +28 B / +29 G /
+  +30 R. The two tables are the clamp table (`sub_494240`: 256 zeros at
+  0x6A2BE0, the identity at 0x6A2CE0, 256 x 255 at 0x6A2DE0) read at shifted
+  bases, so `byte_6A2C60[x]` = clamp(x − 128) and `byte_6A2C80[x]` =
+  clamp(x − 96):
+
+      R = clamp(R0 + 3w − 128)   G = clamp(G0 + 2w − 96)   B = clamp(B0 + 2w − 128)
+
+  The lights are lost, and every character authors (255,255,255) (HO1_FN's
+  281 vertices), so a flagged body glows a pulsing pale GREEN about
+  (127,159,127). The engine flags two bodies so: the old body
+  `player.become` leaves (`Player_SetActor(-1)`) and the player underwater
+  (`sub_4187B0`). The reader's frames of the original agree - an old body
+  brighter than the floor beside it and green-tinted, (69,93,62) over
+  (30,30,15) at AREA 137's vats. `omk::shimmerLit`/`shimmerLitBody`, applied
+  on the CPU to those two bodies' posed corners (they leave the GPU-posed
+  path); `verify.py: engine: sham pen` (`body.ghost.colour`).
 
   **233 set meshes carry it, 0 characters**, and the names put it on distant
   scenery rather than on lights: `berg*` (91), `fond*` (background, 52),

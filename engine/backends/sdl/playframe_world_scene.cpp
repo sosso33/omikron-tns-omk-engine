@@ -376,14 +376,12 @@ void PlayState::worldCamera() {
             else if (underwater && view.cam.eye[1] < waterLine) underwater = false;
         }
         if (underwater != was) {
-            // the shimmer on (phase from the vertex, as `buildGeometry` gives
-            // a flagged set mesh) or off, on the rest every pose copies from
-            for (std::size_t i = 0; i < playerBody.rest.corners.size(); ++i)
-                playerBody.rest.corners[i].phase =
-                    underwater && i < playerBody.rest.cornerVertex.size() && playerBody.rest.cornerVertex[i] >= 0
-                        ? static_cast<float>((2u * static_cast<std::uint32_t>(playerBody.rest.cornerVertex[i])) % 32u)
-                        : -1.0f;
-            playerBody.rest.revision = ++worldGeoRev;
+            // the shimmer on or off: a LIT body's, `sub_494180`, which the
+            // player's corners take per frame on the CPU (`omk::shimmerLitBody`
+            // in `worldPlayerBody`'s skin) - not the set's, so the rest keeps
+            // no `phase` for a backend to add (2026-11-11: the set's wave on a
+            // lit body left him lit and barely moving; the engine's turns him
+            // a pulsing pale green)
             std::printf("frame %ld: UNDERWATER %s (dword_93082C) - the eye at y %.1f, the water "
                         "line %.1f\n", frameNo, underwater ? "ON" : "OFF", double(view.cam.eye[1]),
                         double(waterLine));

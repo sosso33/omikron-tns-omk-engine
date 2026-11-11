@@ -259,9 +259,12 @@ struct PlayOptions {
     // --op-at F:OP[,F:OP...]: a NO-OPERAND opcode run as a context at frame
     // F - one of 106, 107, 116, 117, 152, whose handlers take no bytes
     std::vector<std::pair<long, int>> opAt;
-    // --op-at F:56:ID: `player.become ID` run as a context at frame F - the one
-    // operand form, for a soul transfer with no site a headless run reaches
-    std::vector<std::pair<long, int>> becomeAt;
+    // --op-at F:OP:ARG: a ONE-operand opcode run as a context at frame F -
+    // 56 `player.become ARG` (a soul transfer with no site a headless run
+    // reaches), 47 `area.goto ARG` with no doors and 48 `area.arrive ARG`
+    // (an area change - which frees the slot two changes back)
+    struct OperandAt { long frame; int op; int arg; };
+    std::vector<OperandAt> operandAt;
     // `--sneak` opens the device as soon as the player is on his feet,
     // through the SAME path TAB takes - `MDSNEAK0`'s handler, event 25 and
     // screen 9 - rather than a second way in. A testing convenience for a

@@ -32229,6 +32229,22 @@ def c_engine_sham_pen():
     the transfer asks the FOLLOW camera (`sub_41DDB0(new)`, op 54's
     function; the `camera.follow` event as the camera takes it, after the
     transfer) - AREA 1, 22 and 30's reincarnations set no camera after it.
+    And he is COLOURED by the lit path's shimmer (`sub_494180`, 2026-11-11,
+    from the reader's frames of the original - the old bodies glow pale
+    green): his corners' mean from the authored white through the wave,
+    green above red and blue (`body.ghost.colour`). SHOWN TO FAIL: without
+    `shimmerLitBody` the set's lights colour him, (116,159,159) at the vats -
+    green no more than blue.
+
+    A FOURTH RUN, the old body's slot freed (2026-11-11): the cable car to
+    AREA 150 (`engine: turned floor`'s walk), `player.become 293` there,
+    the player put back on AREA 150's floor (`--player-at`, so the active
+    row is slot 1) and `area.arrive 150` / `area.goto 136` from the harness
+    - which loads AREA 136 into slot 0 and so frees AREA 137, whose record
+    293 the old body took over (op 56's swap; `sub_40D4A0(slot)` frees that
+    slot's actors). Kay'l's body is drawn as an old body at the become and
+    gone at the end. SHOWN TO FAIL, 2026-11-11: `Session::evictSlot` not
+    erasing the old body's `scriptShown_` entry - he stays to the end.
     """
     import subprocess, tempfile
     eng = os.path.join(ROOT, "engine")
@@ -32295,20 +32311,34 @@ def c_engine_sham_pen():
     # registers his NPC body until an `Actor_Attach` (`Session::bodyless`)
     solid3 = 49 in {int(e["actor"]) for n, e in ev3 if n == "body.collider"}
     # ...and the view goes back to the follow camera (`sub_41DDB0(new)`)
+    tint3 = [(float(e["g"]) - float(e["r"]) > 10, float(e["g"]) - float(e["b"]) > 10)
+             for n, e in ev3 if n == "body.ghost.colour" and int(e["actor"]) == 49]
     become3 = [int(e["frame"]) for n, e in ev3 if n == "player.become"]
     follow3 = bool(become3) and any(int(e["frame"]) >= become3[0]
                                     for n, e in ev3 if n == "camera.follow")
+    # 4. the old body's slot freed: AREA 137 out of slot 0 takes him with it
+    r = subprocess.run(base + ["--stand", "35650,-484,-2405,0", "--zone-enable", "2217",
+                               "--hold", "0*120,k28*3,0*330,k200*250,0*200",
+                               "--var", "117=1", "--zone-run", "2232",
+                               "--op-at", "760:56:293,780:48:150,820:47:136",
+                               "--player-at", "770:32800,-31,-2411,271", "--frames", "900"],
+                       capture_output=True, text=True, errors="replace", env=env)
+    ev4 = _events(r.stdout)
+    evicted = ([int(e["was"]) for n, e in ev4 if n == "player.become"],
+               sorted({int(e["actor"]) for n, e in ev4 if n == "body.ghost"}),
+               "SHOW area 136 in slot 0" in r.stdout,
+               49 in {int(e["actor"]) for n, e in ev4 if n == "staged.end"})
     print("        exit cast %s; pen Actions %s, transfers %s, Kay'l's body %s, drawn as old "
-          "bodies %s; the walker's become: Kay'l %s, old bodies %s"
-          % (cast, zones, becomes, kayl, ghosts, walked, ghost3))
-    return (cast, zones, becomes, body, ghosts, walked, ghost3, solid3, follow3), \
+          "bodies %s; the walker's become: Kay'l %s, old bodies %s; the slot freed %s"
+          % (cast, zones, becomes, kayl, ghosts, walked, ghost3, evicted))
+    return (cast, zones, becomes, body, ghosts, walked, ghost3, solid3, follow3, tint3, evicted), \
         ([293, 421, 424], [2235, 2236, 2235, 2237, 2235, 2238, 2239], [406, 434],
          [("HO1_FN", True, True)], [(49, True), (406, True)], [(True, True)], [49], False,
-         True), \
+         True, [(True, True)], ([49], [49], True, False)), \
         "record 34's cast on the way out of Soyinka's; Fodo, the vats, Fodo, the flank, Fodo, " \
         "the drink, the mount; young Fodo then the Sham; Kay'l's body left where he drank, " \
         "holding his pose, each body drawn as an old player body from the transfer that leaves it; and a walking Kay'l's body " \
-        "kept where the walker had him"
+        "kept where the walker had him, and gone with the slot of the record he took over"
 
 
 def c_engine_meca_transfer():

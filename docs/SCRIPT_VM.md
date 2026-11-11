@@ -1573,9 +1573,17 @@ programs (`SceneRunner::resetActor`), marks the old body `bodyless` until a
 record it took over (evicted with that slot), and asks the follow camera; the
 viewer stages the old body where the controller had him, holding the
 controller's pose when no program was posing him, and draws it from a rest
-copy with every batch additive and every corner shimmering (`Staged::ghost`).
-The model's own blob shadow under it is the staged bodies' usual one. `verify.py:
-engine: sham pen` (three runs).
+copy with every batch additive (`Staged::ghost`), its colour the LIT path's
+shimmer - `sub_494180` overwrites the lit colour from the authored white, a
+pulsing pale green, the lights lost (`docs/ASSETS.md` 4c; the reader's frames
+of the original, 2026-11-11).
+The model's own blob shadow under it is the staged bodies' usual one - and it
+draws OVER him: `Render_FlushBuckets` walks the keys ascending, the additive
+body's 0x2100 before the blob's multiply 0x2200, so where his shadow falls the
+ghost is darkened, in the engine as in the port (the software, Vulkan and GLES
+frames of AREA 137's vats agree, 2026-11-11). `verify.py:
+engine: sham pen` (four runs - the fourth frees the slot and the old body
+with it).
 
 And the listing states it outright — from `AREA 22`:
 

@@ -569,20 +569,26 @@ void PlayState::harnessGameRestart() {
     if (gameRestartAt >= 0 && frameNo == gameRestartAt) runOp(152, "--game-restart");
     for (const auto& [f, op] : opAt)
         if (frameNo == f) runOp(op, "--op-at");
-    // ...and `player.become ID` (op 56, one int16 operand, low byte first as
-    // the handler fetches it)
-    for (const auto& [f, id] : becomeAt)
+    // ...and the one-operand forms: `player.become ID` (op 56, one int16,
+    // low byte first as the handler fetches it), `area.arrive AREA` (op 48,
+    // the same) and `area.goto AREA` (op 47, three int16s - the area and two
+    // door ids, -1 for none)
+    for (const auto& [f, opn, id] : operandAt)
         if (frameNo == f) {
-            const std::vector<std::byte> code = {
-                std::byte{3}, static_cast<std::byte>(omk::op::PlayerBecome),
-                static_cast<std::byte>(id & 0xFF), static_cast<std::byte>((id >> 8) & 0xFF),
-                std::byte{3}};
+            const auto lo = [](int v) { return static_cast<std::byte>(v & 0xFF); };
+            const auto hi = [](int v) { return static_cast<std::byte>((v >> 8) & 0xFF); };
+            std::vector<std::byte> code = {std::byte{3}, static_cast<std::byte>(opn), lo(id), hi(id)};
+            if (opn == omk::op::AreaGoto)
+                for (int k = 0; k < 2; ++k) { code.push_back(lo(-1)); code.push_back(hi(-1)); }
+            code.push_back(std::byte{3});
             const std::int32_t scripts[3] = {1, 0, 0};
             const int idx = session.newContext(session.activeSlot(), code, scripts, -1,
                                                session.currentArea());
             if (idx >= 0) session.queueAction(idx, 1);
-            std::printf("--op-at: frame %ld  player.become %d queued as context %d (a harness "
-                        "call)\n", frameNo, id, idx);
+            std::printf("--op-at: frame %ld  %s %d queued as context %d (a harness "
+                        "call)\n", frameNo, opn == omk::op::AreaGoto ? "area.goto"
+                        : opn == omk::op::AreaArrive ? "area.arrive" : "player.become",
+                        id, idx);
         }
     // `--zone-activate F:N`: zone N's ACTIVATE script at frame F, as the
     // Action key's arm queues it (`Script_QueueAction(ctx, 2)`) - for a

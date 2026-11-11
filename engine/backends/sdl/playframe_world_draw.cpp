@@ -315,11 +315,13 @@ void PlayState::worldDrawLists() {
             }
             continue;
         }
+        // (an old player body's colour is final - the lit shimmer's, which
+        // no light is added to)
         for (const auto& b : up->posed.batches)
             draws.push_back({keyOf(b.blend, b.cutout,
                                    static_cast<std::uint32_t>(b.material + base)),
                              &up->posed, b.start, b.count, b.blend, b.cutout,
-                             litBody, castShadows});
+                             up->ghost ? 0 : litBody, castShadows});
     }
     for (const auto& up : crowd.staged) {
         if (!up->drawn || !up->mo) continue;
@@ -404,7 +406,7 @@ void PlayState::worldDrawLists() {
             draws.push_back({keyOf(b.blend, b.cutout, static_cast<std::uint32_t>(
                                        b.material + static_cast<int>(playerTexBase))),
                              &playerBody.posed, b.start, b.count, b.blend, b.cutout,
-                             litBody, castShadows});
+                             underwater ? 0 : litBody, castShadows});   // the lit shimmer's colour is final
     // FIRST PERSON: only the meshes the hide spared - flag 0x200000,
     // the left arm - cut out of the posed body batch by batch.
     static omk::Geometry playerArm;

@@ -194,7 +194,8 @@ int PlayOptions::parse(int argc, char** argv) {
 "                   (todo/drift-audit.md S3)\n"
 "  --op-at F:OP     HARNESS: one opcode (106, 107, 116, 117, 150, 151 or 152) run as a\n"
 "                   context at frame F; repeatable as a comma list; F:56:ID runs\n"
-"                   `player.become ID` the same way\n"
+"                   `player.become ID` the same way, F:47:AREA `area.goto AREA`\n"
+"                   with no doors, F:48:AREA `area.arrive AREA`\n"
 "  --shoot-end N    shoot.end 1 at frame N - the harness's way OUT of the mode\n"
 "  --pad A-B:F,...  hold a pad over frames A..B, with no controller: buttons south east\n"
 "                   west north lshoulder rshoulder ltrigger rtrigger start back up down\n"
@@ -832,8 +833,8 @@ int PlayOptions::parse(int argc, char** argv) {
                 if (c != ',') { cur.push_back(c); continue; }
                 long f = -1; int op = -1, id = -1;
                 if (std::sscanf(cur.c_str(), "%ld:%d:%d", &f, &op, &id) == 3 &&
-                    op == op::PlayerBecome && id >= 0)
-                    becomeAt.emplace_back(f, id);
+                    (op == op::PlayerBecome || op == op::AreaGoto || op == op::AreaArrive) && id >= 0)
+                    operandAt.push_back({f, op, id});
                 else if (std::sscanf(cur.c_str(), "%ld:%d", &f, &op) == 2 &&
                     (op == op::ShootFreezeAll || op == op::ShootUnfreezeAll || op == op::ShootPlayerSuspend || op == op::ShootPlayerResume || op == op::RenderGreyOn ||
                      op == op::RenderGreyOff || op == op::GameRestart))

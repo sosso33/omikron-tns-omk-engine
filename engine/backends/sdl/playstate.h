@@ -178,7 +178,7 @@ struct PlayState {
     std::vector<omk::PlayOptions::OmkSet> & omkSets = opt.omkSets;
     long & gameRestartAt = opt.gameRestartAt;
     std::vector<std::pair<long, int>> & opAt = opt.opAt;
-    std::vector<std::pair<long, int>> & becomeAt = opt.becomeAt;
+    std::vector<omk::PlayOptions::OperandAt> & operandAt = opt.operandAt;
     bool & openSneak = opt.openSneak;
     bool & startShoot = opt.startShoot;
     int & shootHealth = opt.shootHealth;
