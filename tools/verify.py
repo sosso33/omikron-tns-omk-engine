@@ -32177,26 +32177,34 @@ def c_engine_sham_ride():
 
 
 def c_engine_meca_transfer():
-    r"""`engine/`: THE MECAGARDE TAKES THE SOUL AND STANDS ON HIS PAD
-    (`todo/scene-gameplay-audit.md` 5). SCENE 51 (loaded over AREA 181,
-    'Anekbah CS Lev-4', by SCENE 57) record 7 is the surveillance console,
-    zone 3156: with the fuse back (variable 563) and the Meca control kit
-    (11) it opens screen 17 `SURV KIT`, whose terminal cell answers 1 by
-    itself, and then runs `area.goto 183`, `player.become 216`,
-    `character.hide 49`, `actor.goto_address 580` ('Pad Meca', in AREA 183 at
-    y 2803) and `area.arrive 181`.
+    r"""`engine/`: THE MECAGARDE TAKES THE SOUL, RIDES TO THE ARCHIVES AND
+    WALKS INTO THEIR SHOOT (`todo/scene-gameplay-audit.md` 5). SCENE 51
+    (loaded over AREA 181, 'Anekbah CS Lev-4', by SCENE 57) record 7 is the
+    surveillance console, zone 3156: with the fuse back (variable 563) and
+    the Meca control kit (11) it opens screen 17 `SURV KIT`, whose terminal
+    cell answers 1 by itself, and then runs `area.goto 183`, `player.become
+    216`, `character.hide 49`, `actor.goto_address 580` ('Pad Meca', in AREA
+    183 at y 2803) and `area.arrive 181`. From the pad he walks to AREA 183
+    record 21's zone 3193 ('Transfert Archives'), whose Action takes him to
+    AREA 63 at 'Depart Shoot 03'; zone 1262 there runs the archives tutorial
+    and `shoot.begin`, and he walks forward 80 frames.
 
     The harness: `--scene-load 181,51`, the two variables, zone 3156
     enabled and 3137 ('Console Meca Occupee', the operator's) disabled, Kay'l
-    stood in the console's quad facing into its arc; Action, then 270 frames
-    of forward once the Mecagarde is the player.
+    stood in the console's quad facing into its arc.
 
-    Asserted: the transfer to 216, the new body placed by the ADDRESS (the
-    teleport the script runs after op 56 moves `Actor_Player()`, which is
-    the Mecagarde by then), at a y on AREA 183's level, and that he then
-    walks over 100 units. Shown to fail: with the viewer's re-seat at the
-    body's own node restored, `how` is `node`, he stands at 5507 606 -12832
-    in AREA 181 - which `area.arrive` hides - and walks 0.
+    Asserted, each SHOWN TO FAIL:
+    * the transfer to 216 and the new body placed by the ADDRESS - the
+      teleport the script runs after op 56 moves `Actor_Player()`, the
+      Mecagarde by then (the viewer's old re-seat at the body's own node: he
+      stands in AREA 181, hidden, and never reaches 3193);
+    * Action in 3193, and the shoot mover's type 5 - hurt 68, steps 69/70;
+    * the METAL steps: every `shoot.step` is 69 or 70 and found in shoot2.scx
+      (the latch dropped: one every frame);
+    * the walk out of the start: over 700 of the 733.2 asked. The doorway is
+      110.2 high and his band 104.5; his crown sphere (r 13.4) swept at the
+      list's 25.1 stood 116.1 and he stopped after 42
+      (`sweptBodyCentres`, actor/player.cpp "AND THE TOP IS THE BAND'S").
     """
     import subprocess, tempfile
     eng = os.path.join(ROOT, "engine")
@@ -32206,26 +32214,38 @@ def c_engine_meca_transfer():
         return ("build failed",), ("built",), "engine/ must build"
     if not os.path.exists(play):
         return ("skipped",), ("skipped",), "no SDL - the frontend is optional (PORTING A8)"
+    route = ("0*60,k28*3,0*90,k28*3,0*80,"
+             # the pad to zone 3193: south-west, then west along the lifts
+             "k205*20,0*10,k200*200,0*20,k203*10,0*10,k200*110,0*30,k205*5,0*10,k200*60,0*20,"
+             # Action, the transfer and the tutorial, then forward in the shoot
+             "k28*3,0*750,k200*80,0*30")
     env = dict(os.environ, SDL_VIDEODRIVER="dummy", OMK_EVENTS="1")
     r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
                         "--save", os.path.join(ROOT, "traces", "save-appart.bin"), "--area", "181",
                         "--scene-load", "181,51", "--var", "563=1,11=1",
                         "--zone-enable", "3156", "--zone-disable", "3137",
-                        "--stand", "6080,570,-12226,46",
-                        "--hold", "0*60,k28*3,0*90,k28*3,0*100,k200*270",
+                        "--stand", "6080,570,-12226,46", "--hold", route,
                         "--nofmv", "--nodelay", "--res", "640x480",
-                        "--saves", tempfile.mkdtemp(), "--frames", "530"],
+                        "--saves", tempfile.mkdtemp(), "--frames", "1590"],
                        capture_output=True, text=True, errors="replace", env=env)
-    ev = _events(r.stdout)
+    o = r.stdout
+    ev = _events(o)
     becomes = [int(e["actor"]) for n, e in ev if n == "player.become"]
     place = [(e["how"], round(float(e["y"]))) for n, e in ev if n == "player.become.place"]
-    walked = re.findall(r"^player: MCG_FN/MECA at .*walked (\S+) over", r.stdout, re.M)
+    zones = [int(e["zone"]) for n, e in ev if n == "zone.activate"]
+    mover = re.findall(r"SHOOT MOVER \(sub_47CC70\) - .*?(type \d+ -> hurt sound \d+, steps \d+/\d+)", o)
+    steps = [(int(e["sound"]), int(e["found"])) for n, e in ev if n == "shoot.step"]
+    went = re.findall(r"SHOOT MOVE stops after \d+ frames - asked (\S+), went (\S+) ", o)
+    print("        placed %s, zones %s, %d steps, went %s" % (place, zones, len(steps), went[:1]))
     got = (becomes, [h for h, _ in place], [2700 < y < 2900 for _, y in place],
-           bool(walked) and float(walked[-1]) > 100.0)
-    print("        placed %s, walked %s" % (place, walked[-1:] or "-"))
-    return got, ([216], ["address"], [True], True), \
-        "player.become 216 at the console; the new body put on 'Pad Meca' (address 580, " \
-        "AREA 183's level) by the teleport after op 56; and the Mecagarde walks from it"
+           3193 in zones, mover[:1],
+           len(steps) >= 6 and all(x in ((69, 1), (70, 1)) for x in steps),
+           bool(went) and float(went[0][1]) < -700.0)
+    return got, ([216], ["address"], [True], True, ["type 5 -> hurt sound 68, steps 69/70"],
+                 True, True), \
+        "become 216 at the console, put on 'Pad Meca' by the teleport after op 56; the transfer " \
+        "(3193) to the archives; his shoot mover (type 5) and its metal steps; and the walk " \
+        "through the 110.2 doorway out of the start"
 
 
 def c_engine_vr_strafe():

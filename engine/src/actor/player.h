@@ -165,6 +165,14 @@ struct FollowCamera {
     float fov = kFollowFov;
 };
 
+// THE SWEPT BODY's centres, offsets from the FEET (y down) on the node's
+// vertical, for a walker of radius `radius` (the list's largest) whose node
+// stands `lift` above the feet: each sphere's own y, held no higher than the
+// band's top plus the radius (player.cpp "AND THE TOP IS THE BAND'S"). The
+// player and the fight opponent build theirs here.
+std::vector<std::array<double, 3>> sweptBodyCentres(const std::vector<CollisionSphere>& sph,
+                                                    double radius, double lift);
+
 class PlayerController {
 public:
     struct Setup {

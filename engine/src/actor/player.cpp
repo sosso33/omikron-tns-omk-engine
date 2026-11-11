@@ -132,6 +132,20 @@ static double seatOnFloor(const TriangleSoup& soup, const float p[3]) {
     return p[1];
 }
 
+std::vector<std::array<double, 3>> sweptBodyCentres(const std::vector<CollisionSphere>& sph,
+                                                    double radius, double lift) {
+    double top = 0.0;
+    for (std::size_t k = 0; k < sph.size(); ++k) {
+        const double t = static_cast<double>(sph[k].pos[1]) - static_cast<double>(sph[k].radius);
+        if (k == 0 || t < top) top = t;
+    }
+    const double highest = top + radius;         // y down: no centre above this
+    std::vector<std::array<double, 3>> centres;
+    for (const auto& c : sph)
+        centres.push_back({0.0, std::max(static_cast<double>(c.pos[1]), highest) - lift, 0.0});
+    return centres;
+}
+
 void PlayerController::placeAt(const float pos[3], float facing) {
     walker_.moveTo(pos[0], seatOnFloor(walker_.soup(), pos), pos[2]);
     for (int k = 0; k < 3; ++k) pos_[k] = static_cast<float>(walker_.pos()[k]);
@@ -710,12 +724,20 @@ PlayerController::PlayerController(const Setup& s)
     // at z -7.5, -37.2 and -75.3, and the rider was swept 75 units off in a
     // fixed world direction - jammed in the pen's gap whatever his facing
     // (`todo/scene-gameplay-audit.md` row 4).
+    //
+    // AND THE TOP IS THE BAND'S. `Actor_Move` folds the list into the least
+    // `y - r` and one radius, the largest, so a small sphere at the crown
+    // swept with that radius would put the head ABOVE the model's own top.
+    // HO1_FN's and SHU_FN's radii are all equal, which hid it; MCG_FN's are
+    // 25.1, 19.2, 13.4 and 20.7, and its crown sphere (y -17.2, r 13.4) swept
+    // at 25.1 stood 116.1 above his feet - against the 110.2 of the only
+    // doorway out of AREA 63's shoot start ('Depart Shoot 03'), which the
+    // Mecagarde must take. RECONSTRUCTION, labelled: `Sweep_PolygonKernel` is
+    // not transcribed (collision.h), and a capsule `[top, bottom] +- R` would
+    // stand 129.6 tall - ruled out by the same doorway; the band's own 104.5
+    // is what the data leaves. So a centre sits no higher than `top + R`.
     if (!s.sweepSpheres.empty() && s.sweepRadius > 0.0f) {
-        std::vector<std::array<double, 3>> centres;
-        for (const auto& c : s.sweepSpheres)
-            centres.push_back({0.0,
-                               static_cast<double>(c.pos[1]) - static_cast<double>(camLift_),
-                               0.0});
+        auto centres = sweptBodyCentres(s.sweepSpheres, s.sweepRadius, camLift_);
         walker_.setBlockers(s.blockers, s.sweepRadius, std::move(centres));
     }
     {

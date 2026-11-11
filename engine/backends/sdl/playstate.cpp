@@ -1910,13 +1910,10 @@ bool PlayState::beginMelee(int opponentId, int level) {
             sph = omk::modelSweepSpheres(md);
         }
         float r = 0.0f;
-        std::vector<std::array<double, 3>> centres;
-        for (const auto& c : sph) {
-            r = std::max(r, c.radius);
-            // on the node's vertical: `Actor_Move` reads a sphere's y and
-            // radius only (actor/player.cpp "THE SWEPT BODY")
-            centres.push_back({0.0, double(c.pos[1]) - double(fightRun.foeLift), 0.0});
-        }
+        for (const auto& c : sph) r = std::max(r, c.radius);
+        // on the node's vertical, the top the band's: `Actor_Move` reads a
+        // sphere's y and radius only (actor/player.cpp "THE SWEPT BODY")
+        auto centres = omk::sweptBodyCentres(sph, r, fightRun.foeLift);
         w->setBlockers(&playerSteep, r > 0.0f ? r : 12.0f, std::move(centres));
         w->setBlockerGrid(&playerSteepGrid);
         std::printf("fight: the opponent's walker - feet %.0f (pelvis %.0f, lift %.1f), "

@@ -232,11 +232,25 @@ void PlayState::controlBinding() {
                     for (const auto& c : sph) r = std::max(r, c.radius);
                     su.sweepRadius = r > 0.0f ? r : 12.0f;
                     su.sweepSpheres = sph;
+                    // ...and the band `Actor_Move` folds them into, about
+                    // the node (y down): the top at the least y - r, the
+                    // bottom at the greatest y + r
+                    float top = 0.0f, bot = 0.0f;
+                    for (std::size_t k = 0; k < sph.size(); ++k) {
+                        const float t = sph[k].pos[1] - sph[k].radius;
+                        const float b = sph[k].pos[1] + sph[k].radius;
+                        if (k == 0 || t < top) top = t;
+                        if (k == 0 || b > bot) bot = b;
+                    }
                     std::printf("adventure: the walker sweeps a sphere of radius %.1f "
-                                "(the model's %zu sweep spheres%s) against %zu wall faces\n",
+                                "(the model's %zu sweep spheres%s, y %.1f..%.1f about "
+                                "the node) against %zu wall faces\n",
                                 su.sweepRadius, sph.size(),
                                 sph.empty() ? " - none, the sim's 12 stands in" : "",
-                                playerSteep.size() / 9);
+                                double(top), double(bot), playerSteep.size() / 9);
+                    for (const auto& c : sph)
+                        std::printf("  sweep sphere y %.1f r %.1f\n",
+                                    double(c.pos[1]), double(c.radius));
                 }
                 for (int k = 0; k < 3; ++k) su.pos[k] = session.playerPos()[k];
                 su.facing = handoverFacingKnown ? handoverFacing : session.playerYaw();

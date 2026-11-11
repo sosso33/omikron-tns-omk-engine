@@ -118,7 +118,8 @@ struct GroundHit {
 // ported (step 1b) in actor/walk.cpp: the swept
 // body is the model's own sphere list (descriptor +244/+248: HO1_FN's four of
 // radius 10.9 from the feet to the head), swept sphere by sphere for the
-// earliest hit; the move stops ONE unit short of the contact; a contact
+// earliest hit, each at the list's largest radius and no higher than the
+// band's top allows (`sweptBodyCentres` - the Mecagarde's unequal radii); the move stops ONE unit short of the contact; a contact
 // already inside (d < 1) is pushed out along the clamped normal by 1 - d,
 // re-swept, growing 1.1x until clear; the walking player's clamp mask is
 // 0xC000C, the normal made horizontal. Still this port's and not the
