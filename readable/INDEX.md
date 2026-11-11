@@ -1,11 +1,11 @@
 # Processed functions
 
-567 of 2177 functions have been worked out, in three states:
+574 of 2177 functions have been worked out, in three states:
 
 | status | meaning | count |
 |---|---|---|
 | `CLEAN` | body rewritten by hand | 64 |
-| `NAMED` | read and named from evidence, body left as generated | 489 |
+| `NAMED` | read and named from evidence, body left as generated | 496 |
 | `READ` | read, then deliberately left alone - the banner says why | 14 |
 
 Everything else is `@status RAW`: untouched decompiler output. A RAW function
@@ -23,7 +23,7 @@ with the code.
 Renames are applied as **real renames across the whole tree** by
 `tools/rename.py`, not as `#define` aliases - a function renamed where it is
 defined reads the same at every call site in the other modules, in `decls.h`,
-and in its `@func` banner. `tools/renames.json` is the map (652 entries).
+and in its `@func` banner. `tools/renames.json` is the map (659 entries).
 
 `tools/rename.py` promotes RAW to NAMED automatically for anything in the map,
 so the trace cannot drift out of step with the renames.
@@ -328,7 +328,7 @@ Regenerate this file with `python3 tools/index.py`.
 | `0x0041E730` | `Clock_GetTimeOfDay` | named | 05_sys.c | 1 | name established, body still as generated |
 | `0x0041E740` | `Clock_GetTime` | named | 05_sys.c | 3 | name established, body still as generated |
 | `0x0041E750` | `Clock_SetTime` | named | 05_sys.c | 3 | name established, body still as generated |
-| `0x0041EA40` | `Music_TickVolume` | named | 05_sys.c | 2 | The music level, once a frame (`Game_Tick`'s first call, arg 0) and from `sub_41E110` - op 103 `music.play` - with arg 1. |
+| `0x0041EA40` | `Music_TickVolume` | named | 05_sys.c | 2 | The music level, once a frame (`Game_Tick`'s first call, arg 0) and from `Music_PlayTrack` - op 103 `music.play` - with arg 1. |
 | `0x0041EFF0` | `Music_SetFadeMode` | named | 05_sys.c | 6 | name established, body still as generated |
 | `0x0041F740` | `Game_Frame` | named | 05_sys.c | 1 | name established, body still as generated |
 | `0x0041FA00` | `Game_Init` | named | 05_sys.c | 1 | name established, body still as generated |
@@ -625,8 +625,15 @@ Regenerate this file with `python3 tools/index.py`.
 | `0x004A8160` | `Cef_TickChannel` | named | 29_win32.c | 5 | name established, body still as generated |
 | `0x004A8AD0` | `Cef_InputMatches` | named | 29_win32.c | 3 | name established, body still as generated |
 | `0x004A8BD0` | `Cef_FindTransition` |  | 29_win32.c | 6 | Find the transition out of state `from` that the input `code` triggers. |
+| `0x004A98B0` | `Sweep_RayVsUprightCylinder` | named | 29_win32.c | 5 | A ray (a1 + t*a2) against the UPRIGHT infinite cylinder of radius a5 around the axis a3->a4: the ray's horizontal part only (y of the normal is… |
 | `0x004A9AB0` | `Sweep_MeshFaces` | named | 29_win32.c | 1 | The broad phase INSIDE one mesh: which of its faces the swept sphere could possibly touch. |
-| `0x004A9D30` | `Sweep_PolygonKernel` | named | 29_win32.c | 3 | The swept-sphere-against-polygon test itself - the earliest hit fraction into +136 and the surface normal into +260, which is what Sweep_ActorMove… |
+| `0x004A9D30` | `Sweep_PolygonKernel` | named | 29_win32.c | 3 | The swept-body-against-polygon test itself - the earliest hit fraction into +136 and the surface normal into +260, which is what Sweep_ActorMove… |
+| `0x004AB710` | `Sweep_CylinderGenerator` | named | 29_win32.c | 2 | The swept cylinder's GENERATOR nearest a direction: a1 with its component along the axis a2->a3 removed, normalised, times a4 (the radius), added… |
+| `0x004AB890` | `Sweep_PointInCylinder` | named | 29_win32.c | 9 | Is a point inside the FINITE cylinder - axis a2->a3, radius a4? Its parameter along the axis (into a5) must be in [0, 1] and its squared distance… |
+| `0x004AB9A0` | `Line_ClosestApproach` | named | 29_win32.c | 8 | Closest approach of two lines a1 + s*a2 and a3 + u*a4: the point on the first into a5, s into a6, u into a7. |
+| `0x004ABB60` | `Plane_IntersectPlanes` | named | 29_win32.c | 2 | The line where two planes (n, d) meet: unit direction into a3, a point on it into a4 (the coordinate of the cross product's largest axis set to 0). |
+| `0x004ABD30` | `Sweep_EdgesVsCylinder` | named | 29_win32.c | 1 | Sweep_PolygonKernel's last resort, when neither the face nor its edges against the cylinder's side gave a hit: every edge against the swept cylinder. |
+| `0x004AD2B0` | `Sweep_AxisSide` | named | 29_win32.c | 6 | Which side of the axis segment a2->a3 a point projects to: -1 before a2, 0 within, 1 past a3 (0 too for a null axis). |
 | `0x004AD360` | `Sweep_ActorMove` | named | 29_win32.c | 1 | name established, body still as generated |
 | `0x004AD460` | `Sweep_MeshTest` | named | 29_win32.c | 0 | name established, body still as generated |
 | `0x004B00D0` | `UI_GridMenuInput` | named | 29_win32.c | 0 | The 7-slot menu widget: move a selection, and on confirm hand back an answer. |

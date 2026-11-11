@@ -98,7 +98,9 @@ RADIUS      = 12.0
 #
 # `Walk_ClampNormal` below is a transcription. The sweep is NOT: the 930-line
 # kernel is x87 geometry with no corpus fact to prove a transcription against,
-# so what is implemented here is the same algorithm SHAPE - earliest hit of a
+# (read since, 2026-11-11: it sweeps an upright CYLINDER from the band's top
+# to its bottom - engine/src/o3de/collision.h), so what is implemented here is
+# the same algorithm SHAPE - earliest hit of a
 # swept sphere, clamp, slide, three passes - over the same collision faces.
 # It is enough to stop the actor crossing a wall, which is stage 5's stated
 # debt, and it is not the engine's arithmetic. See RECONSTRUCTION phase 6.

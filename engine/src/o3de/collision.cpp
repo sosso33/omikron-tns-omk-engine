@@ -762,7 +762,8 @@ inline void sweepOne(const float* a, const float* b, const float* c, const doubl
     // ---- ...and its EDGES and CORNERS ----------------------------------
     //
     // RECONSTRUCTION, labelled: `Sweep_PolygonKernel` (0x004A9D30, 930 lines
-    // of x87) is not transcribed, and this sweep never was the engine's. It
+    // of x87) is not transcribed, and this sweep never was the engine's (read
+    // since, 2026-11-11: it sweeps an upright CYLINDER, collision.h). It
     // tested the face INTERIOR only - the point where the sphere meets the
     // triangle's plane had to lie inside the triangle - so a sphere meeting a
     // triangle's EDGE or CORNER passed straight through it. On a wide wall

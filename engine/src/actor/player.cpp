@@ -732,10 +732,13 @@ PlayerController::PlayerController(const Setup& s)
     // 25.1, 19.2, 13.4 and 20.7, and its crown sphere (y -17.2, r 13.4) swept
     // at 25.1 stood 116.1 above his feet - against the 110.2 of the only
     // doorway out of AREA 63's shoot start ('Depart Shoot 03'), which the
-    // Mecagarde must take. RECONSTRUCTION, labelled: `Sweep_PolygonKernel` is
-    // not transcribed (collision.h), and a capsule `[top, bottom] +- R` would
-    // stand 129.6 tall - ruled out by the same doorway; the band's own 104.5
-    // is what the data leaves. So a centre sits no higher than `top + R`.
+    // Mecagarde must take. READ (2026-11-11): `Sweep_PolygonKernel` sweeps a
+    // finite upright cylinder whose axis ends AT the band's top and bottom -
+    // the leading cap a flat disc, every side and edge hit clipped to the
+    // axis ends (`Sweep_AxisSide`, `Sweep_PointInCylinder`, the edge case's
+    // `+376..+380` test) - so nothing of the body stands above `top`: 104.5,
+    // not a capsule's 129.6 nor the old 116.1. So a centre sits no higher than
+    // `top + R`. The spheres are still this port's (collision.h).
     if (!s.sweepSpheres.empty() && s.sweepRadius > 0.0f) {
         auto centres = sweptBodyCentres(s.sweepSpheres, s.sweepRadius, camLift_);
         walker_.setBlockers(s.blockers, s.sweepRadius, std::move(centres));

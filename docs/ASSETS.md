@@ -3454,6 +3454,46 @@ entered from and not what the file says. Two entries of `Sham.CTL`
 (flags `0xC0084813`, reached from `SH_STAND`) ship with **no** authored GoTo at
 all and are only reachable *because* of it. `verify.py: engine actor states`.
 
+#### What `Sweep_PolygonKernel` sweeps — an upright CYLINDER (READ 2026-11-11)
+
+Read whole with its helpers (banners in `readable/src/29_win32.c`): the body
+`Actor_Move` sweeps is a **finite upright cylinder**, not a sphere or a
+capsule. Its axis runs from A = start + up·(+376) to B = start + up·(+380) -
+the band `Actor_Move` folds the model's sphere list into: +376 the least
+`y - r`, +380 the greatest `y + r` (less `dword_910340` = 11.811 with the step
+bit) - and its radius is +192, the largest `r` (times `dword_910358`, 1.0).
+`Sweep_MeshFaces`' outcode box spans exactly [+376, +380] in y, without the
+radius. For a face whose plane the move enters:
+
+1. **the leading cap**, only when the move has a vertical part (+432, the sign
+   of up·dir: B going down, A going up; masks +356 / +360) - a flat horizontal
+   **disc** of radius R: its deepest point toward the plane
+   (`Plane_IntersectPlanes` with the horizontal plane through the end, the
+   closest point clamped to R) reaching the plane inside the polygon, else the
+   polygon's edges against the disc (`Line_ClosestApproach`);
+2. **the side**, always (mask +352): the generator R off the axis toward the
+   face (`Sweep_CylinderGenerator`), its two ends cast along the move into the
+   face and kept inside the polygon, then the edges against the generator; a
+   contact at t < 0 counts only from inside the cylinder
+   (`Sweep_PointInCylinder`, parameter in [0, 1] and distance <= R);
+3. nothing yet - `Sweep_EdgesVsCylinder`: each edge against the cylinder,
+   where its line crosses inside [+376, +380] an elliptic section, outside it
+   the edge's ends through `Sweep_RayVsUprightCylinder`, kept only between A
+   and B (`Sweep_AxisSide`).
+
+Every hit is clipped to the axis ends, so **nothing of the body stands above
+the band's top**. The Mecagarde's (MCG_FN: r 25.1, 19.2, 13.4, 20.7) is 104.5
+from top to bottom: a capsule `[top, bottom] ± R` (129.6) and the port's old
+sphere-at-the-largest-radius (116.1) are both excluded by the code, not only
+by the 110.2 doorway out of AREA 63's shoot start. The masks gate a face out
+when its world normal, with the masked signed components zeroed, is shorter
+than 0.01.
+
+OMK still sweeps the model's spheres at R (`collision.h`), held to the same
+top by `sweptBodyCentres`: under a lintel it passes or blocks alike; the
+union's waist between centres and its rounded ends are the port's, so where
+an EDGE stops the body differs (by up to R less the waist).
+
 #### The body sweep meets EDGES and CORNERS — a RECONSTRUCTION (2026-09-18)
 
 `Actor_Move`'s narrow phase is `Sweep_ActorMove` (0x004AD360) over

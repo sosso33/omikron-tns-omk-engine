@@ -107,10 +107,13 @@ struct GroundHit {
 // by vertex outcode, and `Sweep_PolygonKernel` (0x004A9D30, 930 lines of x87)
 // writes the earliest hit fraction to +136 and the surface normal to +260.
 //
-// The kernel is READ and deliberately not transcribed, for the reason its
-// banner in readable/ gives: this tree holds no shipped fact a transcription
-// could be proved against. What is here is the same algorithm SHAPE that
-// tools/sim/actor.py implements - the face case continuous (the fraction at
+// WHAT THE KERNEL SWEEPS (read 2026-11-11, its banner in readable/ and
+// helpers 0x4A98B0, 0x4AB710..0x4ABD30, 0x4AD2B0): a FINITE UPRIGHT CYLINDER,
+// axis from the band's top (+376, the least y - r) to its bottom (+380), radius
+// the largest r, flat caps - the leading cap as a disc when the move has a
+// vertical part, the side always, every hit clipped to the axis ends. Not
+// transcribed: this port still sweeps spheres. What is here is the same
+// algorithm SHAPE that tools/sim/actor.py implements - the face case continuous (the fraction at
 // which the sphere's surface reaches the plane, contact point inside the
 // triangle), edges and vertices by the static test at t = 0 - so the two can
 // be held to the same number (`verify.py: engine: narrow phase` against
@@ -119,7 +122,9 @@ struct GroundHit {
 // body is the model's own sphere list (descriptor +244/+248: HO1_FN's four of
 // radius 10.9 from the feet to the head), swept sphere by sphere for the
 // earliest hit, each at the list's largest radius and no higher than the
-// band's top allows (`sweptBodyCentres` - the Mecagarde's unequal radii); the move stops ONE unit short of the contact; a contact
+// band's top allows (`sweptBodyCentres` - the Mecagarde's unequal radii: the
+// cylinder's top, READ; the union's waist between centres and its rounded
+// ends are this port's, so where an edge stops the body differs); the move stops ONE unit short of the contact; a contact
 // already inside (d < 1) is pushed out along the clamped normal by 1 - d,
 // re-swept, growing 1.1x until clear; the walking player's clamp mask is
 // 0xC000C, the normal made horizontal. Still this port's and not the
