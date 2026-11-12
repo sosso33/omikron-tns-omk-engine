@@ -1111,13 +1111,16 @@ def c_ui_widgets(rows, e):
     # branch (`sim/ui.py: SNEAK_ARM`) adds all three - and with them the
     # sneak DEVICE, whose tab column descends into five sibling pages, so
     # most of the counts below move by more than three.
-    return [("screens with a panel", len(tops), 31),
-            ("screens without one", len(rows["unresolved"]), 6),
+    # 31/6 -> 32/5, 16 -> 17 distinct, 179/744 -> 180/752 on 2026-11-12:
+    # 2440fb2 (2026-11-11) bounded `sim/ui.py`'s panel scan at the next callback, so screen 33 (SHOOT MECA) resolved to its own panel 0x4C4578
+    # (one list, eight items) - the sweep found these counts left behind.
+    return [("screens with a panel", len(tops), 32),
+            ("screens without one", len(rows["unresolved"]), 5),
             # 31 screens share only 16 distinct top panels, so a record per
             # screen is not a record per address - and de-duplicating by
             # address would leave 15 screens unable to look themselves up.
             ("distinct top panel addresses",
-             len(set(p["panel"] for p in tops)), 16),
+             len(set(p["panel"] for p in tops)), 17),
             # 7 -> 13: the sneak device's tab column names five pages the
             # family's three screens do not open on (Identite, Memoire,
             # Options, Quitter, and the videophone's own), and one of them
@@ -1160,8 +1163,8 @@ def c_ui_widgets(rows, e):
             # the same three lists as that panel (11 + 3 + 2 = 16 items).
             # Like the memo reader it adds no DISTINCT record.
             ("child panels", len(kids), 30),
-            ("lists", len(lists), 179),
-            ("items", len(items), 744),
+            ("lists", len(lists), 180),
+            ("items", len(items), 752),
             ("item records inside the image",
              sum(1 for i in items if mapped(i["addr"])), len(items)),
             # 75 across the whole tree but only 16 distinct item RECORDS
@@ -1228,7 +1231,8 @@ def c_ui_widgets(rows, e):
             # list `0x004E2638 + 2`, so its page comes up on `Non`. Without
             # it a confirm settles on the first selectable row, `Oui`.
             ("panels whose open callback or builder sets the current list",
-             sum(1 for p in ps if p.get("current", -1) >= 0), 16),
+             # 16 -> 17 on 2026-11-12: screen 33's panel 0x4C4578 (2440fb2)
+             sum(1 for p in ps if p.get("current", -1) >= 0), 17),
             ("lists whose open callback or builder sets the selection",
              sum(1 for l in lists if l.get("select", -1) >= 0), 34),
             ("...distinct list records among them",
@@ -1296,7 +1300,9 @@ def c_ui_widgets(rows, e):
              # MERGED 2026-09-18: both landed, so 8 + 2 = 10.
              # tiles 28 -> 29 on 2026-10-12: the dossier reader's `+20` is
              # the terminal family's tile array 0x004E3B90, as its parent's.
-             [21, 1, 29, 10]),
+             # tiles 29 -> 30 on 2026-11-12: screen 33's panel 0x4C4578,
+             # resolved by 2440fb2 (SHOOT MECA's HUD).
+             [21, 1, 30, 10]),
             ("the one panel that blits its sheet whole",
              [p["screen"] for p in ps
               if not p["flagsB"] & 0x2000 and p["flagsB"] & 0x4000], [36]),
@@ -1310,7 +1316,8 @@ def c_ui_widgets(rows, e):
              # 108 -> 112 on 2026-09-18: four of the hint confirm's five
              # lists carry no `+4` - only its button list does.
              # 113 -> 114 on 2026-10-12: the dossier reader's footer list.
-             sum(1 for l in lists if not l["hook"]), 114),
+             # 114 -> 115 on 2026-11-12: screen 33's one list (2440fb2).
+             sum(1 for l in lists if not l["hook"]), 115),
             ("the LIFT grid hook is present", rows["gridHook"] in hooks, True),
             # It is here only because the walk follows `+44`: the name field
             # is in the start menu's confirm dialog, a CHILD panel. A lift

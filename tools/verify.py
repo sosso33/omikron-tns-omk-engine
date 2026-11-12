@@ -2309,10 +2309,12 @@ def c_engine_i2d():
              # every constant still resolves and every round trip is correct,
              # which are the two relations asserted beside this. 2026-10-12:
              # 136/639/367 -> 138/654/369, the dossier reader 0x004E4170's
-             # copies of the terminal family's flag words
+             # copies of the terminal family's flag words. 2026-11-12:
+             # 138/654 -> 139/661, screen 33's panel 0x4C4578 resolved by
+             # `2440fb2` (SHOOT MECA's HUD)
              136, 136, 28, 106, 2,
              70, 70,
-             138, 654, 369), True, True), \
+             139, 661, 369), True, True), \
            "the seven pools' total capacity, how many are live, how many are " \
            "UNREFERENCED, and whether the total equals the display list's own " \
            "node cap of 4862 - which is what makes that number derived rather " \
@@ -25769,8 +25771,13 @@ def c_engine_ui():
     # 0x004E4170 (todo/scene-gameplay-audit.md 25) - 60 -> 61 panels, 176 ->
     # 179 lists, 728 -> 744 items, 651 -> 665 selectable, 63 -> 65 hooked
     # lists, 113 -> 114 default-walk lists: its three lists are 0x004E4108's.
+    # 2026-11-12: screen 33 (SHOOT MECA) resolved to its own panel 0x4C4578
+    # by `2440fb2`, which re-pinned `sim: ui coverage` and left this behind -
+    # 61 -> 62 panels, 179 -> 180 lists, 744 -> 752 items, 665 -> 672
+    # selectable, 114 -> 115 default-walk lists, 31 -> 32 screens walked;
+    # `disagree` still 0.
     return (head, len(ref), disagree, known), \
-           ((61, 179, 744, 665, 65, 114, 61, 0), 31, 0,
+           ((62, 180, 752, 672, 65, 115, 62, 0), 32, 0,
             ((5, 10, 0), (7, 0, 3), (9, 0, 4), (11, 10, 0), (15, 10, 0),
              (16, 10, 0), (17, 10, 0), (18, 10, 0), (19, 10, 0))), \
            "panels (31 screens + 15 children - 13 reached through an item +44 and TWO named only from CODE, the verb panel 0x004DEEB8 and the examine page 0x004DEF20, which `sub_42A370` installs from a callback so nothing in the tree points at them), " \
@@ -27557,9 +27564,11 @@ def c_ui_geometry():
     # CODE_NAMED - one panel, the sixteen widgets of 0x004E4108 again, all
     # inside 640x480, one of them (as on its parent) with no size; its tile
     # map is the family's, so the map count moves by one too.
+    # 2026-11-12: screen 33's panel 0x4C4578 (`2440fb2`, SHOOT MECA's HUD) -
+    # one panel with a tile map, eight items, all inside 640x480 and sized.
     return (len(items), inb, sized, len(r["panels"]), len(maps), lens, clean,
             menuMap, xy), \
-           (744, 744, 743, 61, 42, [80], 42,
+           (752, 752, 751, 62, 43, [80], 43,
             False,
             [(278, 194), (321, 194), (370, 194),
              (284, 241), (325, 242), (371, 242), (325, 288)]), \
