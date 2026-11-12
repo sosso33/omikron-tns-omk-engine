@@ -1260,6 +1260,19 @@ void PlayState::inputSoupPatchInPlace(bool inPlace, std::vector<std::uint32_t> (
     } else {
         lazyPlaceAll();       // the slots' soups are copied whole: every mesh placed first
         walkSoup.soup.clear(); playerSteep.clear();
+        // reserved EXACTLY: `rebuildWorld` shrank both to fit, and an insert
+        // past that capacity doubles it (a tilted mesh's copies are what grow
+        // them here - `promoteBothSoups`)
+        {
+            std::size_t ns = 0, nt = 0;
+            for (int sl = 0; sl < 2; ++sl) {
+                const WorldSlot& w = worldSlots[static_cast<std::size_t>(sl)];
+                if (w.stem.empty()) continue;
+                ns += w.soup.size(); nt += w.steep.size();
+            }
+            OMK_MEM_TAG("collision");   // the merged soups are collision too
+            walkSoup.soup.reserve(ns); playerSteep.reserve(nt);
+        }
         for (int sl = 0; sl < 2; ++sl) {
             const WorldSlot& w = worldSlots[static_cast<std::size_t>(sl)];
             if (w.stem.empty()) continue;
@@ -1696,7 +1709,22 @@ void PlayState::promoteBothSoups(int sl, int mi) {
     const auto append = [&](omk::TriangleSoup& soup, std::vector<int>& meshOf,
                             std::vector<std::uint32_t>& trisOf, std::vector<float>& rest,
                             const std::vector<float>& add, omk::SoupKind layer) {
+        // RESERVED EXACTLY first: appended a triangle at a time, each vector
+        // would double past its load-time size (the slot's soups were shrunk
+        // to fit) - 5 MB of slack standing in Anekbah's street, where 33
+        // meshes tilt (`engine: street memory`)
+        const std::size_t tris = add.size() / 9;
+        {
+            // the soups are COLLISION, as `collision.cpp` tags them where it
+            // builds them; only the rest copies are the motion patch's
+            OMK_MEM_TAG("collision");
+            soup.reserve(soup.size() + 9 * tris);
+            meshOf.reserve(meshOf.size() + tris);
+            trisOf.reserve(trisOf.size() + tris);
+        }
+        rest.reserve(rest.size() + 9 * tris);
         std::vector<std::uint32_t> added;
+        added.reserve(tris);
         for (std::size_t k = 0; k + 9 <= add.size(); k += 9) {
             added.push_back(static_cast<std::uint32_t>(soup.size() / 9));
             soup.insert(soup.end(), add.begin() + static_cast<long>(k), add.begin() + static_cast<long>(k) + 9);

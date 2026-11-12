@@ -8884,6 +8884,8 @@ def c_engine_spawn_from_tables():
       and FOUR attached - but `212,218,219,49`, because the intro's scripts
       have hidden the Demon (b804 0) and shown Kay'l (b806 1) by then. Spawn
       skipped: slot222_spawned 0 and shown 1.
+      Shown is FIVE since `player.become` keeps the old body: the boot
+      player 136 (KUM_FN) is still shown in 118's resident slot.
 
     Both mutations were built, run and restored (md5-checked); the binary and
     the object were deleted before each rebuild (B4's trap).
@@ -8935,8 +8937,13 @@ def c_engine_spawn_from_tables():
         ("3", "0", "3", "PA1_FN,PA1_FN,PA1_FN", "4", "1", "4",
          "PA1_FN,PA1_FN,PA1_FN,DE1_FN"),
         ("1", "7", "5", "1", "HO1_FN", "H1AVNT", "212,218,219,57,49"),
+        # shown 4 -> 5 on 2026-11-12, `450cd58`: the old body stays
+        # (`Session::becomePlayer`, 0x402F60 calls no detach). The boot
+        # player is 136 (KUM_FN, AREA 118's startup script), the intro's
+        # `player.become 49` hides nothing after it, and 118 stays resident -
+        # so his body is still shown at the hand-over.
         ("6", "222", "55", "118", "7", "4", "212,218,219,49", "9", "0", "1",
-         "4", "PA1_FN,PA1_FN,PA1_FN,HO1_FN"),
+         "5", "PA1_FN,PA1_FN,PA1_FN,HO1_FN,KUM_FN"),
     )
     return got, want, \
         "the shipped ObjectShown bitmap's 628 of 1032 bits; AREA 118's two " \
@@ -32919,6 +32926,10 @@ def c_engine_street_memory():
       * `input: motion` - the moving set meshes' REST copies - under 3 MB
         (1.40; the whole set's corners and soups made it 9.17) and over
         0.5, so the motion patch really ran;
+        (2026-11-12: 8.36 after `13c09ad` - a TILTED mesh's copies appended
+        to both soups a triangle at a time doubled every vector past its
+        shrunk size, and the soups regrown in the motion zone took its tag;
+        reserved exactly and tagged `collision`, 1.56 and collision 5.23)
       * `geometry` under 8.8 MB (8.24; 11.99 with the corners' growth slack
         and the decor's `cornerVertex` / `cornerDeclared`, which alone are
         1.1 of it - a bound of 9.5 let that half back in unseen);
@@ -51161,9 +51172,13 @@ def c_engine_prop_place():
         drawn = (round(float(d.group(1))), round(float(d.group(3))),
                  abs(float(d.group(2)) - (float(m.group(5)) if m else 1e9)) < 2.0,
                  round(float(d.group(4))), round(float(d.group(6))))
+    # 15198.8/1762.0 -> 15199.1/1759.2 on 2026-11-12: `4797348` centred the
+    # fight opponent's swept spheres on his node (`Actor_Move` reads only y and
+    # the radius), so the beaten 48 ends a little elsewhere - where op 98 puts
+    # the prop. That commit re-pinned `fight collision` for it and not this.
     return (won, placed, drawn), \
-           (True, (163, 606, 48, "15198.8", "7.7", "1762.0", "42.84", "2.17", True),
-            (15199, 1762, True, 15069, 1398)), \
+           (True, (163, 606, 48, "15199.1", "7.7", "1759.2", "42.84", "2.17", True),
+            (15199, 1759, True, 15069, 1398)), \
            "the fight won; op 98's placement: prop, state, character, where, +276, the " \
            "box bottom, y = origin + 276 - box; the prop DRAWN there (x, z, y near), " \
            "from its authored spot (x, z)"
@@ -52474,7 +52489,7 @@ def c_engine_head_camera():
     travelling over 40 frames into a close-up. Asserted, from the viewer's
     own lines:
 
-    * the close-up's HEAD line: camera 13, kinds 1/1, the head 20.1 above the
+    * the close-up's HEAD line: camera 13, kinds 1/1, the head 20.4 above the
       kind-0 (pelvis) point, the eye 22 units in front of it and the aim 6
       behind it along his facing (90: +x), both level with it;
     * the travel at frame 61, half way: the drawn eye 3 below the head - the
@@ -52525,8 +52540,12 @@ def c_engine_head_camera():
                "OMK_CAMLOG must report the travel's frames"
     mid = round(eyes[61][1] - head[1])
     step = max(sum((eyes[f][k] - eyes[f - 1][k]) ** 2 for k in range(3)) ** 0.5 for f in span)
+    # 20.1 -> 20.4 on 2026-11-12: `b53fb43` applies the suspend's bank reset
+    # (op 116, `SetPersoBankGroup(default)`) inside the pump, where the
+    # script runs it, so the close-up meets his stance a frame sooner -
+    # bisected, and the old 20.1 back with that block switched off
     return line + (mid, int(step)), \
-           ("1", "1", "sub_415050", "20.1", (22.0, 0.0, 0.0), (-6.0, 0.0, 0.0), 3, 0), \
+           ("1", "1", "sub_415050", "20.4", (22.0, 0.0, 0.0), (-6.0, 0.0, 0.0), 3, 0), \
            "camera 13: its kinds, the resolver, the head's rise over the pelvis point, the " \
            "eye and the aim from the head; the travel's half-way eye below the head; the " \
            "largest per-frame move of the drawn eye over the travel"

@@ -408,7 +408,10 @@ int main(int argc, char** argv) {
             if (!toTop && m.fwd <= -m.top) toTop = f;
         }
         const float held = m.fwd;
-        const unsigned flagsAfter = m.flags;
+        // the INTENTS (side 0x2, forward 0x4), which each tick clears - not the
+        // whole word: since the footsteps (`f2b6e67`) the left step's latch
+        // 0x80 stays up after a walk, as `m.flags = f & 0x17F0` keeps it
+        const unsigned flagsAfter = m.flags & (omk::kShootMoveSide | omk::kShootMoveFwd);
         int stop = 0;
         for (int f = 1; f <= 20 && !stop; ++f) {
             omk::shootMoveTick(m, 0.0f, 1.0f);

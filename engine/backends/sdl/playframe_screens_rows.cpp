@@ -1819,7 +1819,9 @@ void PlayState::poseUiCharacter(const std::string& bank, const char* who) {
     // clip's own length and first track: H1AVNT also opens on
     // entry 0 'H_STAND', clip 0, and binds 19 by exact name, so
     // only these tell the literal F1AVNT from the player's bank.
-    std::printf("%s: character '%s' - bank %s, default entry %d "
+    // "<who> character" - the sneak's line as it read before the loader was
+    // shared (`engine: sneak character` matches "sneak: identity character")
+    std::printf("%s character '%s' - bank %s, default entry %d "
                 "'%s', clip %d (%d frames, first track '%s'), %d tracks bound, "
                 "frame 1\n", who, playerModel.c_str(), characterBank.c_str(),
                 entry,
