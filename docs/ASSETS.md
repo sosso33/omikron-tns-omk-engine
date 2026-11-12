@@ -2262,7 +2262,13 @@ Two mesh flags animate the colour after it is read, and they are **not** the
   `player.become` leaves (`Player_SetActor(-1)`) and the player underwater
   (`sub_4187B0`). The reader's frames of the original agree - an old body
   brighter than the floor beside it and green-tinted, (69,93,62) over
-  (30,30,15) at AREA 137's vats. `omk::shimmerLit`/`shimmerLitBody`, applied
+  (30,30,15) at AREA 137's vats. The underwater player is OPAQUE, so the same colours
+  DARKEN him rather than make him glow: the canal walk-in of `engine:
+  underwater` at frame 200, A/B with the call removed, moves his 16283
+  pixels from a mean (34,38,34) to (19,28,25) - darker and greener, limb by
+  limb as the phases differ; the reader's frame of the original (a longplay,
+  a swimmer seen from behind in a green shaft, 2026-11-12) agrees - a dark
+  body, no glow, a leg brighter red than the torso. `omk::shimmerLit`/`shimmerLitBody`, applied
   on the CPU to those two bodies' posed corners (they leave the GPU-posed
   path); `verify.py: engine: sham pen` (`body.ghost.colour`).
 
