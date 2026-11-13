@@ -35,6 +35,11 @@ std::int32_t globalHintPriceVar(std::span<const std::byte> d) {
     return i16(d, 72);
 }
 
+std::int32_t globalEventObject(std::span<const std::byte> d, int n) {
+    const std::size_t o = 66u + 2u * static_cast<std::size_t>(n);
+    return o + 2 <= d.size() ? i16(d, o) : -1;
+}
+
 std::vector<Destination> globalDestinations(std::span<const std::byte> d) {
     std::vector<Destination> out;
     const auto base = u32(d, 16);

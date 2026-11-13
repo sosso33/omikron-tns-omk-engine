@@ -755,6 +755,7 @@ void Session::resetWorld() {
     mirror_.wasLive = false;
     activatesPending_ = 0;
     actionPressed_ = false;
+    putAway_ = justInHand_ = false;
     objectSlotIds_.fill(-1);
     // `word_69BC80` alongside it: 100 int16 of -1, the actor runtime slots
     // `Actors_SpawnFromTables` hands out.
@@ -3648,11 +3649,9 @@ void Session::execute(int i) {
             //         u32(ctx, 32) = 0;             // the activate dedupe released
             //     }
             //
-            // The held-object tail (`dword_4E6C8C`, set by the inventory
-            // channel when an object is loaded into the hand; `sub_41C770`,
-            // the put-away through `.CTL` group 150 and event 47) is NOT
-            // modelled - there is no held object in the Session's 3D -
-            // and is labelled here rather than pretended.
+            // The held-object tail (`dword_4E6C8C`, `justInHand_`, set by
+            // `useObject`; `sub_41C770`, the put-away) is at the activate's
+            // end below (`takePutAway`).
             message0Ctx_ = -1;
             c->status = ctx_status::Idle;
             if (c->flags40 & 8) {
@@ -3669,6 +3668,15 @@ void Session::execute(int i) {
                 if (bootCtx_ != -1) bootCtx_ = -1;
             } else if (c->current == 2) {
                 --activatesPending_;
+                // `if (dword_4E6C8C) { if (held && state != 3/15 &&
+                // !dword_4E6B20) { dword_91068C = -1; sub_41C770(); }
+                // dword_4E6C8C = 0; }` - an object `Utiliser` put in the hand
+                // that the zone's script did not take is put away (the
+                // state test is the frontend's, `takePutAway`)
+                if (justInHand_) {
+                    if (heldObject_ && activatesPending_ == 0) putAway_ = true;
+                    justInHand_ = false;
+                }
                 c->current = 0;
             }
             return;
@@ -3842,7 +3850,13 @@ bool Session::pressAction(bool talkFirst) {
 // release raises event 6 directly, never the `.CTL` action's pedestrian talk.
 bool Session::releaseFromScreen() {
     if (!heldObject_) return false;                // `if (a1[41])`
-    return pressAction(false);                     // `Game_RaiseEvent(6, 4)`
+    const bool raised = pressAction(false);        // `Game_RaiseEvent(6, 4)`
+    // ...refused (no prompt slot taken): `sub_466B60` sets `dword_91068C =
+    // -1` for the player when his state is not 3, and `Game_Tick`'s
+    // `if (dword_91068C) { if (dword_930744 == -1) sub_41C770(); }` puts the
+    // object away (`takePutAway` - the frontend tests the state)
+    if (!raised) putAway_ = true;
+    return raised;
 }
 
 // `Script_Pump(1)`, steps 1 and 2 (0x00407DC0; readable/src/01_file.c:2072).
@@ -3967,9 +3981,9 @@ void Session::pumpZoneSlots() {
                 std::fprintf(stderr, "[zone] frame %ld  unconsumed press -> message 26 (%s)\n",
                              frameNo_, handled ? "handled" : "no handler");
         } else {
-            // **RECONSTRUCTION, labelled**: `sub_41C770()` - the held
-            // object put away through `.CTL` group 150 - unless the player
-            // is in state 3/15. No held object exists in this Session's 3D.
+            // `dword_91068C = -1; sub_41C770()` - the held object put away
+            // (`takePutAway`: the frontend tests the state and plays it)
+            putAway_ = true;
         }
     }
     actionPressed_ = false;                        // dword_4E6C90 = 0
@@ -4302,6 +4316,7 @@ int Session::useObject(int objectId) {
     state_.listRemove(0, objectId);                // ObjectList_RemoveAt(0, v66)
     hooks_.holdObject(-1, k);                      // sub_41C490's player[+0xA4]
     refreshHeldObject();
+    justInHand_ = true;                            // dword_4E6C8C = 1
     return k;
 }
 

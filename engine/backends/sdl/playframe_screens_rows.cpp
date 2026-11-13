@@ -387,16 +387,16 @@ void PlayState::screensSneakVerbs(bool& useClosedSneak) {
             // case 35's arm: allocate a `word_4E6CA0` slot for the
             // id, drop the item from list 0, and hold that slot -
             // which is exactly what `var.set.used_object` (75) reads
-            // back. The MODEL attach (`sub_437400`/`sub_4374E0`
-            // inside `sub_41C490`) is the renderer's half and is
-            // still not done, so nothing appears in his hand.
+            // back. The MODEL rides `Maing` from here (`heldInHand`,
+            // drawn as a taken prop is).
             const int slot = session.useObject(objIdx);
+            if (slot >= 0) heldInHand = objIdx;
             std::printf("sneak: '%s' -> IN HAND, slot %d (case 35 "
                         "result 1, sub_41C490 sets player+0xA4). A "
                         "zone whose activate script reaches opcode 75 "
-                        "will now see object %d; the model attach is "
-                        "not ported, so it is invisible\n",
+                        "will now see object %d\n",
                         rec->name.c_str(), slot, objIdx);
+            omk::event("hand.use", {{"frame", frameNo}, {"object", objIdx}, {"slot", slot}});
             // `sub_42B470` returns 1 on this arm alone; `sub_49BEA0`
             // turns that into `[slot+8] = 3`.
             useClosedSneak = true;

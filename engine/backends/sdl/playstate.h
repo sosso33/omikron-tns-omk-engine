@@ -1447,7 +1447,8 @@ struct PlayState {
     void present(const omk::Surface& pic);
     void blip(const std::vector<float>& v);
     const std::vector<float>& uiSoundPcm(int id);   // an interface sound, decoded once
-    bool uiPlayId(int id);   // `sub_482D90`: by id, only when the open screen's slots cached it
+    bool uiPlayId(int id);
+    void adventurePutAway();   // `sub_41C770`: the held object back to the sneak   // `sub_482D90`: by id, only when the open screen's slots cached it
     int skeletonRootWalk(const CharModel& mo, const omk::NodeTracks& t);
     int skeletonRootOf(const CharModel& mo, const omk::NodeTracks& t);
     bool hasSeveralSkeletons(const CharModel& mo);

@@ -61,6 +61,11 @@ std::int32_t globalSpellItem(std::span<const std::byte> d);
 // sides that could disagree and do not: **a hint costs three anneaux,
 // everywhere in the shipped game.**
 std::int32_t globalHintPriceVar(std::span<const std::byte> d);
+// GLOBAL +66 + 2n (int16) - the OBJECT `Game_HandleEvent` case 47 shows for
+// its argument n: `ObjectRecord_Read(i16(g_GlobalFile + 2 * n, 66))`, its
+// +280 description as a `{I255000000}` subtitle and `JINGOFF2.ADP`. The
+// held object's put-away (`sub_41C770`) raises it with n = 2.
+std::int32_t globalEventObject(std::span<const std::byte> d, int n);
 
 // THE SLIDER'S DESTINATIONS - `GLOBAL +16`, count `+28`, 36 bytes each.
 //

@@ -3,6 +3,7 @@
 // Parts of `PlayState::phaseWorld`, split out by `todo/play-split.md`;
 // the phase calls them in this order.
 #include "playframe.h"
+#include <algorithm>
 #include "platform/events.h"
 #include "platform/env.h"
 #include "o3de/vecmath.h"
@@ -1093,7 +1094,17 @@ void PlayState::worldProps() {
         }
     }
     {
-        const auto shown = session.props();
+        auto shown = session.props();
+        // AN OBJECT `Utiliser` PUT IN HIS HAND is no prop of the set: case
+        // 35's `loc_407314` loads it from its stem into a fresh object slot
+        // (`ObjectSlot_Alloc`, `Object_Load`) and `sub_41C490` links that
+        // node to `Maing` like a taken prop's - so it is drawn the same way
+        if (heldInHand >= 0 && std::none_of(shown.begin(), shown.end(),
+                [&](const omk::Session::PropInstance& p) { return p.id == heldInHand; })) {
+            omk::Session::PropInstance h;
+            h.id = heldInHand;
+            shown.push_back(h);
+        }
         for (const auto& pr : shown) {
             // THE OBJECT IN HIS HAND (omk-play 69). `sub_41C490`, the
             // MDGETOBJ hand-over, unlinks the prop's node from the

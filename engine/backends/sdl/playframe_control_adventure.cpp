@@ -1991,12 +1991,63 @@ void PlayState::adventureTake() {
     // state persists while the button is held), which is also why
     // the engine can raise from here without the six-presses-per
     // -press problem the raw LEVEL had.
+    adventurePutAway();
     actionFromMove = false;
     // ...AND WHETHER MDACTION'S OWN OBJECT ARM CONSUMED THE PRESS.
     // See the gate on `session.pressAction()` below: the press
     // only reaches the zone system on the arm where the scan
     // found NOTHING.
     actionTookObject = false;
+}
+
+// THE PUT-AWAY, `sub_41C770` (0x0041C770), as the Session asks for it
+// (`Session::takePutAway`): an object in the hand that no zone took. Refused
+// in ACTOR_STATE 3; otherwise the player's bank goes to `.CTL` group 150 -
+// `H_SNKON`, the sneak out, whose move `MDSNEAK0` finds the hand full and
+// banks the object (event 10, `adventureActionMove`) instead of opening the
+// sneak, then `H_SNKOFF` - and event 47 with 2: GLOBAL's object 2, its
+// description as a `{I255000000}` subtitle over `JINGOFF2.ADP`. LABELLED:
+// the engine runs it inside the pump; here it is the next frame's.
+void PlayState::adventurePutAway() {
+    auto& session = *session_;
+    const auto& fs = *fs_;
+    // the hand as the Session holds it: a zone script that TOOK the object
+    // (ops 68/69, `Actor_ReleaseObject`) empties it, and nothing is drawn
+    if (heldInHand >= 0 && session.heldObjectId() < 0) {
+        std::printf("hand: object %d no longer held (a script took or dropped it)\n", heldInHand);
+        heldInHand = -1;
+    }
+    if (!player || !session.takePutAway()) return;
+    const int held = session.heldObjectId();
+    if (held < 0 || player->state() == omk::ActorState::Shoot) return;
+    const bool went = player->enterGroupById(150);
+    const int doc = omk::globalEventObject(globalFile, 2);
+    const auto& objs = voiceLib.objects();
+    const std::string text = doc >= 0 && static_cast<std::size_t>(doc) < objs.size()
+        ? objs[static_cast<std::size_t>(doc)].description : std::string();
+    if (!text.empty()) {
+        // `sprintf(buf, "{I255000000}%s", rec + 280); Subtitle_Show(buf)` -
+        // held as long as a voice-over's line is (`modesMedia`), labelled
+        mediaText = "{I255000000}" + text;
+        const long ms = std::max<long>(2000L, 80L * static_cast<long>(text.size()));
+        mediaTextFrames = static_cast<double>((ms * 30 + 999) / 1000);
+    }
+    // `sub_41B200("JINGOFF2.ADP")` - the voice-over player, which cuts
+    // whatever it was playing
+    omk::VoiceOver jv;
+    jv.file = "JINGOFF2.ADP";
+    jv.path = "VOICEOFF/JINGOFF2.ADP";
+    jv.shipped = fs.resolve(jv.path).has_value();
+    const auto pcm = voiceLib.decode(fs, adpcmTables, jv);
+    front.stopSound(voiceOverShot);
+    voiceOverShot = pcm.empty() ? -1
+        : front.openSound(1, omk::kAdpcmRate, pcm.size(), dialogueGain());
+    front.feedSound(voiceOverShot, pcm);
+    std::printf("hand: object %d PUT AWAY (sub_41C770) - group 150 %s, event 47: object %d "
+                "'%s', JINGOFF2 %.2f s\n", held, went ? "entered" : "MISSING", doc, text.c_str(),
+                static_cast<double>(pcm.size()) / omk::kAdpcmRate);
+    omk::event("hand.putaway", {{"frame", frameNo}, {"object", held}, {"group150", went ? 1 : 0},
+                                {"text", doc}, {"jingle", pcm.empty() ? 0 : 1}});
 }
 
 // The shot
@@ -2605,15 +2656,27 @@ bool PlayState::adventureActionMove(const std::string& mv, omk::Inventory& inv) 
         // the actor carries a pending target at `+164` it
         // raises event 10 for that object and does NOT open
         // the sneak - which is the SAME `+164` MDGETOBJ links
-        // an object to just above. Not modelled, so the sneak
-        // always opens; with nothing held that is what the
-        // engine does, and holding something is the case to
-        // come back to.
+        // an object to just above (the arm below).
         //
         // What IS reproduced is the pair around it: event 25
         // opening object list 0 on the way in, and event 26
         // if the open fails or when the close comes.
         if (walk || playerScreen >= 0) return true;   // already up
+        // `Sneak_Start`'s first test: `Actor_HeldObjectSlot(player) != -1`
+        // -> `sub_41C720` - event 10 with the slot, +164 cleared when it
+        // answers - and the sneak is NOT opened. The put-away's group 150
+        // and TAB with something in hand both come through here.
+        if (const int held = session.heldObjectId(); held >= 0) {
+            const auto arm = session.bankHeldObject(held);
+            const bool banked = arm != omk::Session::Banked::Full;
+            if (banked) heldInHand = -1;
+            std::printf("MDSNEAK0: object %d in hand -> event 10, %s\n", held,
+                        banked ? "back in the sneak" : "REFUSED (list 0 full), still held");
+            omk::event("hand.bank", {{"frame", frameNo}, {"object", held}, {"banked", banked ? 1 : 0},
+                                     {"carried", static_cast<long>(omk::objectList(
+                                         state, omk::ObjectList::Carried).size())}});
+            return false;
+        }
         inv.openList(0);          // Game_RaiseEvent(25, 0)
         playerScreen = omk::screen::Sneak;
         std::printf("MDSNEAK0: event %d opens object list 0, "

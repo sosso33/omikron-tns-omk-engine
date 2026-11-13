@@ -16022,6 +16022,45 @@ def c_engine_ui_sounds():
            "none until the BACK that leaves it, on that frame (0, slot 1)"
 
 
+def c_engine_hand_put_away():
+    r"""AN OBJECT `Utiliser` PUT IN THE HAND, drawn there and PUT AWAY when no
+    zone takes it (`docs/UI.md`, "...and the release of the hold IS the
+    action press").
+
+    Case 35's `loc_407314` loads the object into a fresh slot and
+    `sub_41C490` links it to `Maing`; the sneak closes and `sub_466B60`
+    raises event 6 - refused where no prompt slot is taken, which sets
+    `dword_91068C = -1`, and `Game_Tick` calls `sub_41C770`: the bank goes to
+    `.CTL` group 150 (`H_SNKON`) and event 47 with 2 shows GLOBAL's object
+    447, "Ca ne marche pas.", over `JINGOFF2.ADP`. Group 150's `MDSNEAK0` is
+    `Sneak_Start`, whose first test finds the hand full: `sub_41C720`, event
+    10, the object back at the front of list 0 - and no sneak.
+
+    The street, the Notice MK400 (171), `Utiliser` on it: in hand at 99, the
+    put-away at 100 (group 150 entered, object 447, the jingle decoded), the
+    bank at 119 with one object carried again, the held draw logged between.
+    The port used to keep it in an invisible hand, out of the inventory, for
+    good. SHOWN TO FAIL: the refused release asking no put-away (no
+    put-away, no bank).
+    """
+    play = _play_built()
+    if not play:
+        return _PLAY_UNBUILT
+    out = _play_out(play, "--nofmv", "--nodelay", "--no-crowd", "--software", "--area", "0",
+                    "--stand", "1804,0,-6890,336", "--frames", "200", "--hold",
+                    "0*40,k15*3,0*30,k28*4,0*20,k28*4,0*120", env={"OMK_EVENTS": "1"})
+    ev = _events(out)
+    pick = lambda name, *keys: [tuple(f.get(k) for k in keys) for n, f in ev if n == name]
+    drawn = any(ln.startswith("held 171:") for ln in out.splitlines())
+    return (pick("hand.use", "object", "slot"),
+            pick("hand.putaway", "object", "group150", "text", "jingle"),
+            pick("hand.bank", "object", "banked", "carried"), drawn), \
+           ([("171", "1")], [("171", "1", "447", "1")], [("171", "1", "1")], True), \
+           "Utiliser on the notice: in hand (object, slot); the put-away (object, group 150, " \
+           "GLOBAL's object for event 47, the jingle); MDSNEAK0 banking it (object, banked, " \
+           "carried after); and the object drawn on the hand meanwhile"
+
+
 def c_engine_den_locker():
     r"""`omk-play`: DEN'S LOCKER - four wheels, 7 2 1 3, and the cache opens.
 
@@ -55700,6 +55739,7 @@ SLOW = [
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),
     ("engine: xachen", c_engine_xachen, "todo/missing-ui 5d"),
     ("engine: ui sounds", c_engine_ui_sounds, "docs/UI.md 3"),
+    ("engine: hand put away", c_engine_hand_put_away, "docs/UI.md 3e; todo/sneak.md 2g"),
     ("engine: high score", c_engine_high_score, "todo/missing-ui 5e"),
     ("engine: hint shop", c_engine_hint_shop, "todo/pending/ui-remainder-survey 2a"),
     ("engine: terminal family", c_engine_terminal_family, "todo/missing-ui 3"),

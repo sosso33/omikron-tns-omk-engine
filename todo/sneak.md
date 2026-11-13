@@ -442,7 +442,7 @@ Not ported. The composer draws a **labelled reconstruction** — greedy word
 wrap, clipped at the box height. Invisible on every earlier screen and obvious
 on the sneak's 50-pixel captions. `play.cpp:180` carries the note.
 
-### 2g. The object in the hand is invisible
+### 2g. The object in the hand is invisible - **DONE 2026-11-13** (§4 row 5)
 
 `sub_41C490` writes `player[+0xA4]` and ALSO attaches the model
 (`sub_437400` / `sub_4374E0`). The port does the first and not the second, so
@@ -479,7 +479,7 @@ Each ends in a commit and a `verify.py` check SHOWN to fail first.
 | 2 | `Utiliser sur`: read `sub_42B520`, port the combine mode, the two slots and the second selection onto the already-ported `Inventory::combine`. Until then, refuse it rather than run `Utiliser`'s arm | **done 2026-09-04** — the mode, the two slots, the disabled verb list and the second row confirm; the slots hold ROW INDICES (`item+0x3C`), which the caller resolves. `verify.py: engine combine` asserts the gate histogram (5 at 0, 6 at 8, **0 at 1**), a real recipe through the mode (18 + 7 -> 33) and the spell arm answering -1; shown to fail with the gate ignored |
 | 3 | which list the bio / statistics / memo pages ask for, and fill them | **done 2026-09-04 — NOTHING TO FILL.** Only slider/inventory/memory carry the row list; identity and options carry none. And the memory page's count `dword_4DE708` has seven reads and ZERO writes in the image, so that page is built and permanently empty — the port is already right. `verify.py: sneak memory page`, with a positive control so the zero means something |
 | 4 | `Text_LayOutBlock` — the real wrap, against a caption that today wraps wrong | **done** — `todo/text-layout.md` (all three steps) |
-| 5 | the hand attach, so a used object is visible for the frames it is held | |
+| 5 | the hand attach, so a used object is visible for the frames it is held | **done 2026-11-13** - drawn on `Maing` as a taken prop is, and PUT AWAY when no zone takes it (`sub_41C770`, group 150, event 47, `MDSNEAK0`'s event 10); `docs/UI.md` 3e, `verify.py: engine: hand put away` |
 | 6 | `Object_ApplyEffect` and its context gate | |
 | 7 | the identity page: the two-tab switch (small - `sub_42A930` plus a flag swap, both already ported in pieces), then the character view, then the per-character TEXT, whose source is not yet found | |
 | 8 | the other four page builders, each bounded before it is shipped | |

@@ -898,16 +898,16 @@ public:
     // finds object 6. Without it the key sat in the hand until the player
     // pressed action himself.
     //
-    // NOT modelled, labelled: the refused arm's `dword_91068C = -1` (when
-    // state != 3), which `Game_Tick` turns into `sub_41C770`'s put-away
-    // through `.CTL` group 150 - the same put-away `pumpZoneSlots` labels.
+    // ...and the refused arm's `dword_91068C = -1` (when state != 3), which
+    // `Game_Tick` turns into `sub_41C770`'s put-away (`takePutAway`).
     // -> what event 6 returned; false with empty hands, as `a1[41] == 0`.
     bool releaseFromScreen();
     // `Actor_HeldObjectSlot(Actor_Player()) != -1`: the player has something
     // in his hands, which sends pump case 2 down `Script_RunToOpcode75` and
-    // the unconsumed press to `sub_41C770`. Neither is modelled (labelled in
-    // `pumpZoneSlots`); the registry refuses the activate rather than guess.
+    // the unconsumed press to `sub_41C770` (`takePutAway`).
     void setHeldObject(bool on) { heldObject_ = on; zones_.setHeldObject(on); }
+    // `Actor_HeldObjectSlot(Actor_Player())`'s OBJECT id, -1 empty-handed
+    int heldObjectId() const { return objectSlotId(heldSlotOf(-1)); }
     // A DEBUG switch, not the engine (`--bank-reject`): every bank is REFUSED
     // the way a full list refuses it - `Inventory_Insert`'s `return 0`, the
     // object staying in his hand. Off by default, which is the original.
@@ -1287,6 +1287,18 @@ public:
     // `MDLETOBJ` -> `sub_41C540(player, 0)`: released with remove=0, so the
     // prop is re-parented at its stored placement - put back where it was.
     void putHeldObjectBack();
+    // THE PUT-AWAY, `sub_41C770` (0x0041C770): asked by the pump's
+    // unconsumed press with an object in hand, and by the end of an activate
+    // script when `Utiliser` had just put one there and the script did not
+    // take it (`dword_4E6C8C`). The engine refuses it in ACTOR_STATE 3 and
+    // otherwise sets the player's bank to `.CTL` group 150 - `H_SNKON`, whose
+    // move `MDSNEAK0` (`Sneak_Start`) finds the hand full and raises event
+    // 10 instead of opening the sneak: the object back in the inventory
+    // (`bankHeldObject`) - and raises event 47 with 2, GLOBAL's object 2 as
+    // the subtitle and `JINGOFF2.ADP`. True once per request.
+    bool takePutAway() { const bool r = putAway_; putAway_ = false; return r; }
+    bool putAway_ = false;
+    bool justInHand_ = false;                     // dword_4E6C8C
 
     // ------------------------------------------------------- RESTART
     //
