@@ -1372,6 +1372,17 @@ void VulkanRenderer::flushUploads() {
 // - which is why this is split out rather than done inside `init`.
 void* VulkanRenderer::createInstanceOnly() {
     if (inst_ != VK_NULL_HANDLE) return inst_;
+#if defined(__APPLE__)
+    // MOLTENVK'S SUBMITS OFF THIS THREAD (`todo/perf-audit.md` 11): MoltenVK
+    // encodes a command buffer into Metal at `vkQueueSubmit`, on the caller's
+    // thread unless told otherwise - ~27% of the main thread in Qalisar's
+    // rain at the reader's own settings. Asynchronous, it encodes on its own
+    // dispatch queue and the frame went 12.1 -> 9.75 ms there (two in flight;
+    // 14.2 -> 11.7 at one). Nothing in Vulkan's contract moves: fences and
+    // semaphores still say when the work is done. Read by MoltenVK when the
+    // instance is made, so set before it - and never over the user's own.
+    setenv("MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS", "0", /*overwrite*/ 0);
+#endif
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
     app.pApplicationName = "omk";
     app.apiVersion = VK_API_VERSION_1_1;

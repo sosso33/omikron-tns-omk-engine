@@ -565,3 +565,22 @@ from every earlier write and read of them. `engine: vulkan sync` runs at
 both depths (shown to fail with it taken off the scene pass); the pixel
 checks (`gpu present`, `gpu cloud`, `fight gpu present`, `save screen
 present`, `vulkan pose`, `floors`, `floor levels`) pass at both.
+
+**The reader's play at two in flight, 2026-11-13 - and MoltenVK's submits.**
+Their own settings (640x480 drawn at 427x320 by FSR 1.5, the window
+1680x928, 60 Hz, v-sync), Qalisar in full rain: "below 50 fps" -
+`world begin..end` stepping from ~13 to ~20 ms with the view, F9 at
+`--area 101 --stand 11842,-163,-8993,59`. Standing there it did NOT
+reproduce (60 held at both depths with v-sync; 12 ms uncapped): F9 gives the
+player, not the camera, and the cost followed the camera. What `sample`
+showed there is the CPU, the GPU ~4 ms: `vkQueueSubmit` ~27% of the main
+thread (MoltenVK encodes the command buffer into Metal at the submit, on the
+caller's thread), the recording ~20%, `vkResetCommandBuffer` ~11%. With
+`MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=0` the encoding goes to MoltenVK's own
+queue: 12.1 -> 9.75 ms at two in flight, 14.2 -> 11.7 at one - now set by
+`createInstanceOnly` on Apple unless the user set it. A second session with
+it (7 min 45 s, Qalisar, the tunnel, a bar): 60 fps held, median and 90%
+16.61 / 16.62 ms, the world at most ~15 ms; the two long frames (613, 357 ms)
+in SDL's event pump, not the renderer. The first session's drop is open: the
+reader will report it if it comes back. Next on this host, if it does:
+`vkResetCommandBuffer` (a pool per slot, reset whole) and the draw count.
