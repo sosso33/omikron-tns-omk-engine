@@ -73,6 +73,7 @@
 #include "ui/overlay.h"
 #include "platform/events.h"
 #include "platform/env.h"
+#include "platform/threads.h"
 
 #include <algorithm>
 #include <chrono>
@@ -2519,6 +2520,10 @@ void VulkanRenderer::readPresStamps() {
 // what a direct-presented frame otherwise avoids entirely - so the mirror
 // frame is the slow one, and a GPU composite (a stencil pass) is the named
 // next step rather than something quietly pretended away.
+// the fewest pixels a chunk of the expansion below is given: a quarter of a
+// 640x480 frame, so a small window's stays on the caller's thread
+constexpr std::size_t kExpandGrain = 640u * 480u / 4u;
+
 bool VulkanRenderer::presentSurface(const omk::Surface& s) {
     if (swap_ == VK_NULL_HANDLE) return false;
     const VkDeviceSize bytes = static_cast<VkDeviceSize>(w_) * h_ * 4;
@@ -2531,11 +2536,19 @@ bool VulkanRenderer::presentSurface(const omk::Surface& s) {
     auto* dst = static_cast<unsigned char*>(p);
     const int n = std::min<int>(w_ * h_, static_cast<int>(s.px.size()));
     // 565 -> replicated RGBA8 through the 65536-entry table, the same bytes
-    // the per-channel shifts gave (todo/optimization.md step 4).
+    // the per-channel shifts gave (todo/optimization.md step 4) - SPLIT OVER
+    // THE POOL, each chunk its own pixels: at 4K this was 8.3 million table
+    // reads on one core, ~3 ms of every screen's frame (`todo/perf-audit.md`
+    // 11). Not done on the GPU from a 565 texture: a UNORM read widens a
+    // channel as round(c * 255 / 31), which is not the replication for 4 of
+    // the 32 five-bit values and 10 of the 64 six-bit ones.
     const unsigned char* lut = omk::expand565Rgba();
-    for (int i = 0; i < n; ++i)
-        std::memcpy(dst + 4 * static_cast<std::size_t>(i),
-                    lut + 4 * static_cast<std::size_t>(s.px[static_cast<std::size_t>(i)]), 4);
+    const std::uint16_t* src = s.px.data();
+    omk::Threads::shared().parallelFor(0, static_cast<std::size_t>(std::max(n, 0)), kExpandGrain,
+                                       [&](std::size_t from, std::size_t to) {
+        for (std::size_t i = from; i < to; ++i)
+            std::memcpy(dst + 4 * i, lut + 4 * static_cast<std::size_t>(src[i]), 4);
+    });
     vkUnmapMemory(dev_, upMem_);
 
     // UPSCALED, `colour_` is smaller than the picture: it goes into the

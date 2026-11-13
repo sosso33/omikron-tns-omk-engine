@@ -478,7 +478,17 @@ at 800x600, 1920x1080 and 3840x2160, both filters):
    blends. Four tables are kept now, and a big fill with no overlay planes is
    split over the pool.
 
-What a screen costs at 4K now is mostly `present` - 6.7 ms, the 565 frame
-expanded to RGBA on the CPU and uploaded (`vulkanPresentSurface`). That, and
-not a 640x480 compose, is the next lever for the screens: upload the 565
-frame as it is and expand it on the GPU.
+What a screen costs at 4K after that is mostly `present` - 6.7 ms, the 565
+frame expanded to RGBA on the CPU (one core, 8.3 million table reads) and
+uploaded (`vulkanPresentSurface`). **The expansion is split over the pool
+now: `present` 6.7 -> 4.9 ms, the open sneak 10.2 -> 8.7 ms uncapped**, the
+same bytes (each chunk its own pixels; `engine: screen`, `gpu present`,
+`gpu cloud`, `save screen present` green). Not expanded on the GPU from a
+565 texture: a UNORM read widens a channel as round(c * 255 / 31), which
+differs from the replication for 4 of the 32 five-bit values and 10 of the
+64 six-bit ones - a shader would have to read the words as integers and
+replicate (as `under.frag` does). What is left of `present` (`sample`):
+~2.5 ms of expansion, bound by writing 33 MB a frame into host-visible
+memory, and ~1.5 ms in `oneShotEnd`'s `vkQueueWaitIdle` - C11. GLES already
+uploads the 565 words as they are (`GL_UNSIGNED_SHORT_5_6_5`); GL1's targets
+have one core.
