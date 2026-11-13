@@ -611,3 +611,12 @@ final 1.59 ms; EASU 3.07, RCAS and the present pass 1.59.
   "no faster" had not been measured; `easu.frag` now says what was.
 
 The post-pass: ~3.9 -> ~2.7 ms.
+
+**EASU and RCAS fused, measured as an upper bound and NOT built
+(2026-11-13).** A compute pass would save the intermediate's round trip.
+With RCAS's reads of it replaced by a constant (its arithmetic kept), the
+present pass went 1.59 -> 1.44 ms: the read is ~0.15 ms. A tiled compute
+EASU must also redo its one-pixel border for RCAS - ~27% more EASU on
+16x16 tiles, ~+0.8 ms of 3.07 - and would carry a second copy of
+`present.frag`'s dither, placement and raw readback. No net gain, more to
+keep: left.
