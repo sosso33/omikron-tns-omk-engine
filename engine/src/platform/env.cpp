@@ -35,6 +35,7 @@ constexpr const char* kSwitches[] = {
     "OMK_FADELOG",              // =1 log: the screen fade's terms when they change (engine: fight letterbox)
     "OMK_FEETLOG",              // =<actor> log: that body's lowest drawn corner against the floor, every 30 frames (engine: astaroth floor)
     "OMK_FIGHT_REFUSE",         // the frontend refuses every fight, so a script's wait for event 2 shows (engine: fight park)
+    "OMK_FRAMES_IN_FLIGHT",     // =2 Vulkan: the next frame recorded while the GPU runs this one; 1 the default (engine: vulkan sync)
     "OMK_GL1",                  // =0: the GL1 build draws with the software reference (engine: gl1 backend)
     "OMK_GL1_COMPOSITE",        // GL1: the interface composed on the CPU instead of drawn as an overlay
     "OMK_GL1_CPU_FOG",          // GL1: the fog per vertex on the CPU, not OpenGL's linear fog on the card (--gl1-cpu-fog)

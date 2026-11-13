@@ -329,7 +329,7 @@ public:
     bool drawTwoReflections(const omk::View& v, const omk::View& refl, std::span<const omk::Draw> scene,
                             std::span<const omk::Draw> above, float strength, float planeY,
                             const omk::View& refl2, std::span<const omk::Draw> above2, float planeY2) override;
-    int secondLevelSeen() override { settle(); return levelSeen_; }
+    int secondLevelSeen() override { return levelSeen_; }   // read when its slot retires
     bool drawMirrorScene(const omk::View& v, const omk::View& refl,
                          std::span<const omk::Draw> scene,
                          std::span<const omk::Draw> sceneClipped,
@@ -446,20 +446,50 @@ private:
     VkCommandBuffer oneShotBegin();
     void oneShotEnd(VkCommandBuffer cb);      // submitted and WAITED for
     void oneShotSubmit(VkCommandBuffer cb);   // submitted; freed once the queue is known done
-    // THE FRAME'S ONE WAIT (`todo/perf-audit.md` C11, step 1). The scene's
-    // submit (`end`), the present pass's and an uploaded screen's are not
-    // waited for one by one: the queue runs them in order, their barriers
-    // order them, and the present's fence - whose wait covers every earlier
-    // submission - is the frame's wait. `settle` waits for anything still
-    // out and reads what the scene left (its stamps, the level queries);
-    // `settleIdle` does the reading when the queue is already known idle.
-    // Everything that writes memory the GPU may still read, or reuses what
-    // it may still run, settles first.
+    // THE FRAMES IN FLIGHT (`todo/perf-audit.md` C11). A frame's submits -
+    // the scene's (`end`), the present pass's, an uploaded screen's, the
+    // blit to the swapchain - are not waited for: the queue runs them in
+    // order and their barriers order them. A frame works in a SLOT, and
+    // what the CPU writes for the GPU each frame is the slot's own (the
+    // command buffers and fences, the query pools, the light and shadow
+    // uniforms, the point lights and tiles, the pose buffer, the screen's
+    // upload buffers, and the descriptor sets that name them), so the slot
+    // is waited for only when a frame takes it again (`acquireSlot`): with
+    // one slot (the default) that is the frame before, as it always was;
+    // with two, frame N+1 is recorded while the GPU still runs frame N.
+    // `settle` waits for everything and retires every slot (a readback);
+    // `settleIdle` retires them when the queue is already known idle.
     void settle();
     void settleIdle();
     void readSceneResults();
-    bool sceneInFlight_ = false;
-    std::vector<VkCommandBuffer> pendingCbs_;
+    void acquireSlot();
+    void retireSlot(int k, bool wait);
+    void saveSlot(int k);
+    void loadSlot(int k);
+    bool makeFrameBuffers();
+    // A PASS OVER TARGETS THE LAST FRAME USED: its attachments' first use
+    // ordered after every earlier write to them and every read of them - the
+    // frame before's passes, the present's sampling and blit. Waiting for the
+    // frame on the host hid it; with frames in flight the queue must say it
+    // (the synchronization validation's WRITE_AFTER_WRITE on the depth, C11).
+    static VkSubpassDependency lastFrameDependency() {
+        VkSubpassDependency d{};
+        d.srcSubpass = VK_SUBPASS_EXTERNAL; d.dstSubpass = 0;
+        d.srcStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT |
+                         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                         VK_PIPELINE_STAGE_TRANSFER_BIT;
+        d.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                          VK_ACCESS_TRANSFER_WRITE_BIT;
+        d.dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT |
+                         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        d.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+                          VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        return d;
+    }
+    void makePoseBuffer();
+    // a vertex buffer the GPU may still read: written through a second one
+    // (copy-on-write), never in place (`uploadGeometry`, `resolveTies`)
+    void vboWritable(const omk::Geometry* g, VkDeviceSize preserve);
     // THE BATCHED UPLOAD (the remaster audit's performance item 2): a pool's
     // texture copies recorded into ONE command buffer (`uploadCb`), submitted
     // and waited on once (`flushUploads`), their bytes staged in one
@@ -795,6 +825,45 @@ private:
     // VUID-vkQueueSubmit-pSignalSemaphores-00067, seen once the frame
     // stopped idling the queue between presents, C11 step 1)
     std::vector<VkSemaphore> drawn_;
+    // ---- THE SLOTS (`acquireSlot`) ----------------------------------------
+    static constexpr int kMaxInFlight = 2;
+    int inFlight_ = 1;                 // `OMK_FRAMES_IN_FLIGHT`, 1 or 2
+    int slot_ = 0;
+    bool slotReady_ = false;           // this frame has its slot
+    bool advance_ = false;             // a present ended the frame: the next takes the next slot
+    bool sceneEnded_ = false;          // `end` ran this frame
+    long frameSerial_ = 0, retiredSerial_ = 0;
+    VkCommandBuffer cbs_[kMaxInFlight] = {};
+    VkFence fences_[kMaxInFlight] = {};
+    VkCommandBuffer pcbs_[kMaxInFlight] = {};
+    VkFence pfences_[kMaxInFlight] = {};
+    VkSemaphore acqs_[kMaxInFlight] = {};
+    VkQueryPool tsPools_[kMaxInFlight] = {}, tsPresPools_[kMaxInFlight] = {}, levelPools_[kMaxInFlight] = {};
+    struct SlotState {
+        long serial = 0;
+        bool sceneBusy = false, presBusy = false, results = false, lateShots = false;
+        std::vector<VkCommandBuffer> oneShots;
+        std::vector<std::pair<VkBuffer, VkDeviceMemory>> dead;
+        // the members `saveSlot` / `loadSlot` swap
+        VkBuffer shUbo = VK_NULL_HANDLE, litUbo = VK_NULL_HANDLE, pointsBuf = VK_NULL_HANDLE,
+                 tilesBuf = VK_NULL_HANDLE, poseBuf = VK_NULL_HANDLE, upBuf = VK_NULL_HANDLE,
+                 undBuf = VK_NULL_HANDLE;
+        VkDeviceMemory shUboMem = VK_NULL_HANDLE, litUboMem = VK_NULL_HANDLE, pointsMem = VK_NULL_HANDLE,
+                       tilesMem = VK_NULL_HANDLE, poseMem = VK_NULL_HANDLE, upMem = VK_NULL_HANDLE,
+                       undBufMem = VK_NULL_HANDLE;
+        void *shUboPtr = nullptr, *litUboPtr = nullptr, *pointsPtr = nullptr, *tilesPtr = nullptr,
+             *posePtr = nullptr;
+        VkDescriptorSet poseDs = VK_NULL_HANDLE, ds1 = VK_NULL_HANDLE, ds1Refl = VK_NULL_HANDLE,
+                        ds1Refl2 = VK_NULL_HANDLE;
+        uint32_t tsCount = 0, levelIssued = 0;
+        const char* tsLabel[kStamps] = {};
+        bool levelOver = false, tsPresOpen = false, tsPresUp = false, tsPresScreen = false;
+    };
+    SlotState slots_[kMaxInFlight];
+    // the vertex buffers' second halves (`vboWritable`) and the frame each was last bound in
+    std::map<const omk::Geometry*, std::pair<VkBuffer, VkDeviceMemory>> vboAlt_;
+    std::map<const omk::Geometry*, std::size_t> vboAltCap_;
+    std::map<const omk::Geometry*, long> vboBound_;
     VkBuffer       upBuf_ = VK_NULL_HANDLE; VkDeviceMemory upMem_ = VK_NULL_HANDLE;
     VkCommandBuffer pcb_ = VK_NULL_HANDLE;
     VkFence        pfence_ = VK_NULL_HANDLE;
@@ -1107,24 +1176,136 @@ void VulkanRenderer::oneShotSubmit(VkCommandBuffer cb) {
     VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
     si.commandBufferCount = 1; si.pCommandBuffers = &cb;
     vkQueueSubmit(queue_, 1, &si, VK_NULL_HANDLE);
-    pendingCbs_.push_back(cb);
+    SlotState& st = slots_[slot_];
+    st.oneShots.push_back(cb);
+    if (st.presBusy) st.lateShots = true;   // after the slot's present: its fence does not cover it
 }
 
 void VulkanRenderer::settle() {
-    if (sceneInFlight_) vkWaitForFences(dev_, 1, &fence_, VK_TRUE, UINT64_MAX);
-    if (!pendingCbs_.empty()) vkQueueWaitIdle(queue_);
+    vkQueueWaitIdle(queue_);
     settleIdle();
 }
 
 void VulkanRenderer::settleIdle() {
-    if (!pendingCbs_.empty()) {
-        vkFreeCommandBuffers(dev_, pool_, static_cast<uint32_t>(pendingCbs_.size()), pendingCbs_.data());
-        pendingCbs_.clear();
+    saveSlot(slot_);
+    for (int k = 0; k < inFlight_; ++k) {
+        loadSlot(k);
+        retireSlot(k, false);
+        saveSlot(k);
     }
-    if (sceneInFlight_) {
-        sceneInFlight_ = false;
-        readSceneResults();
+    loadSlot(slot_);
+}
+
+// The SWAPPED members, to the slot's record and back. The slot's sync
+// objects and query pools are arrays; the names the code uses are theirs.
+void VulkanRenderer::saveSlot(int k) {
+    SlotState& t = slots_[k];
+    t.shUbo = shUbo_; t.shUboMem = shUboMem_; t.shUboPtr = shUboPtr_;
+    t.litUbo = litUbo_; t.litUboMem = litUboMem_; t.litUboPtr = litUboPtr_;
+    t.pointsBuf = pointsBuf_; t.pointsMem = pointsMem_; t.pointsPtr = pointsPtr_;
+    t.tilesBuf = tilesBuf_; t.tilesMem = tilesMem_; t.tilesPtr = tilesPtr_;
+    t.poseBuf = poseBuf_; t.poseMem = poseMem_; t.posePtr = posePtr_; t.poseDs = poseDs_;
+    t.ds1 = ds1_; t.ds1Refl = ds1Refl_; t.ds1Refl2 = ds1Refl2_;
+    t.upBuf = upBuf_; t.upMem = upMem_; t.undBuf = undBuf_; t.undBufMem = undBufMem_;
+    t.tsCount = tsCount_; std::copy(std::begin(tsLabel_), std::end(tsLabel_), std::begin(t.tsLabel));
+    t.levelIssued = levelIssued_; t.levelOver = levelOver_;
+    t.tsPresOpen = tsPresOpen_; t.tsPresUp = tsPresUp_; t.tsPresScreen = tsPresScreen_;
+}
+
+void VulkanRenderer::loadSlot(int k) {
+    const SlotState& t = slots_[k];
+    shUbo_ = t.shUbo; shUboMem_ = t.shUboMem; shUboPtr_ = t.shUboPtr;
+    litUbo_ = t.litUbo; litUboMem_ = t.litUboMem; litUboPtr_ = t.litUboPtr;
+    pointsBuf_ = t.pointsBuf; pointsMem_ = t.pointsMem; pointsPtr_ = t.pointsPtr;
+    tilesBuf_ = t.tilesBuf; tilesMem_ = t.tilesMem; tilesPtr_ = t.tilesPtr;
+    poseBuf_ = t.poseBuf; poseMem_ = t.poseMem; posePtr_ = t.posePtr; poseDs_ = t.poseDs;
+    ds1_ = t.ds1; ds1Refl_ = t.ds1Refl; ds1Refl2_ = t.ds1Refl2;
+    upBuf_ = t.upBuf; upMem_ = t.upMem; undBuf_ = t.undBuf; undBufMem_ = t.undBufMem;
+    tsCount_ = t.tsCount; std::copy(std::begin(t.tsLabel), std::end(t.tsLabel), std::begin(tsLabel_));
+    levelIssued_ = t.levelIssued; levelOver_ = t.levelOver;
+    tsPresOpen_ = t.tsPresOpen; tsPresUp_ = t.tsPresUp; tsPresScreen_ = t.tsPresScreen;
+    cb_ = cbs_[k]; fence_ = fences_[k];
+    pcb_ = pcbs_[k]; pfence_ = pfences_[k]; acquired_ = acqs_[k];
+    tsPool_ = tsPools_[k]; tsPresPool_ = tsPresPools_[k]; levelPool_ = levelPools_[k];
+}
+
+// Slot k LOADED: its last frame waited for (when `wait`), its one-shots
+// freed, the buffers retired in it destroyed, and what it left read.
+void VulkanRenderer::retireSlot(int k, bool wait) {
+    SlotState& t = slots_[k];
+    if (wait) {
+        if (t.presBusy) vkWaitForFences(dev_, 1, &pfences_[k], VK_TRUE, UINT64_MAX);
+        if (t.sceneBusy) vkWaitForFences(dev_, 1, &fences_[k], VK_TRUE, UINT64_MAX);
+        // one-shots no fence of the slot covers (no present, or after it)
+        if (!t.oneShots.empty() && (!t.presBusy || t.lateShots)) vkQueueWaitIdle(queue_);
     }
+    t.presBusy = t.sceneBusy = t.lateShots = false;
+    if (!t.oneShots.empty()) {
+        vkFreeCommandBuffers(dev_, pool_, static_cast<uint32_t>(t.oneShots.size()), t.oneShots.data());
+        t.oneShots.clear();
+    }
+    for (auto& bm : t.dead) {
+        vkDestroyBuffer(dev_, bm.first, nullptr);
+        freeDeviceMemory(bm.second);
+    }
+    t.dead.clear();
+    if (t.results) { t.results = false; readSceneResults(); }
+    if (tsPresOpen_) readPresStamps();
+    retiredSerial_ = std::max(retiredSerial_, t.serial);
+}
+
+// The frame's slot, once a frame: the next one when a present ended the
+// last frame, else the same one again - its last use waited for and retired.
+void VulkanRenderer::acquireSlot() {
+    if (slotReady_) return;
+    saveSlot(slot_);
+    if (advance_) { slot_ = (slot_ + 1) % inFlight_; advance_ = false; }
+    loadSlot(slot_);
+    retireSlot(slot_, true);
+    slots_[slot_].serial = ++frameSerial_;
+    slotReady_ = true;
+}
+
+// Before `g`'s vertex buffer is written: if a frame the GPU may still be
+// running bound it, the writes go to its second buffer instead - made when
+// first needed, `preserve` bytes of the current one copied in first (a
+// partial write keeps the rest) - and the two swap. A frame binding it now
+// (this one) is not in flight: its draws are not submitted yet.
+void VulkanRenderer::vboWritable(const omk::Geometry* g, VkDeviceSize preserve) {
+    const auto b = vboBound_.find(g);
+    if (b == vboBound_.end() || b->second <= retiredSerial_ || (slotReady_ && b->second == frameSerial_)) return;
+    auto cur = vbo_.find(g);
+    if (cur == vbo_.end()) return;
+    const std::size_t cap = vboCap_.count(g) ? vboCap_[g] : (vboN_.count(g) ? vboN_[g] : 0);
+    auto alt = vboAlt_.find(g);
+    if (alt != vboAlt_.end() && vboAltCap_[g] < cap) {
+        slots_[slot_].dead.push_back(alt->second);
+        vboAlt_.erase(alt);
+        alt = vboAlt_.end();
+    }
+    if (alt == vboAlt_.end()) {
+        VkBuffer nb; VkDeviceMemory nm;
+        if (!makeBuffer(cap * sizeof(GpuVert), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, nb, nm)) {
+            settle();   // no room for a second: wait, and write in place
+            return;
+        }
+        alt = vboAlt_.emplace(g, std::make_pair(nb, nm)).first;
+        vboAltCap_[g] = cap;
+    }
+    if (preserve > 0) {
+        void* from = nullptr; void* to = nullptr;
+        if (vkMapMemory(dev_, cur->second.second, 0, preserve, 0, &from) == VK_SUCCESS) {
+            if (vkMapMemory(dev_, alt->second.second, 0, preserve, 0, &to) == VK_SUCCESS) {
+                std::memcpy(to, from, static_cast<std::size_t>(preserve));
+                vkUnmapMemory(dev_, alt->second.second);
+            }
+            vkUnmapMemory(dev_, cur->second.second);
+        }
+    }
+    std::swap(cur->second, alt->second);
+    std::swap(vboCap_[g], vboAltCap_[g]);
+    vboBound_.erase(g);   // the buffer now current was bound by no frame in flight
 }
 
 VkCommandBuffer VulkanRenderer::uploadCb() {
@@ -1349,6 +1530,27 @@ bool VulkanRenderer::pickDevice() {
     }
     VkFenceCreateInfo fi{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
     VKCHECK(vkCreateFence(dev_, &fi, nullptr, &fence_), "vkCreateFence");
+    // THE SLOTS' own (`acquireSlot`): slot 0's are the ones just made
+    inFlight_ = static_cast<int>(std::clamp(omk::envInt("OMK_FRAMES_IN_FLIGHT", 1), 1L,
+                                            static_cast<long>(kMaxInFlight)));
+    cbs_[0] = cb_; fences_[0] = fence_;
+    tsPools_[0] = tsPool_; tsPresPools_[0] = tsPresPool_; levelPools_[0] = levelPool_;
+    for (int k = 1; k < inFlight_; ++k) {
+        VKCHECK(vkAllocateCommandBuffers(dev_, &cai, &cbs_[k]), "vkAllocateCommandBuffers");
+        VKCHECK(vkCreateFence(dev_, &fi, nullptr, &fences_[k]), "vkCreateFence");
+        const auto pool = [&](VkQueryPool like, VkQueryType type, uint32_t n, VkQueryPool& out) {
+            if (!like) return;
+            VkQueryPoolCreateInfo q{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
+            q.queryType = type; q.queryCount = n;
+            if (vkCreateQueryPool(dev_, &q, nullptr, &out) != VK_SUCCESS) out = VK_NULL_HANDLE;
+        };
+        pool(tsPool_, VK_QUERY_TYPE_TIMESTAMP, kStamps, tsPools_[k]);
+        pool(tsPresPool_, VK_QUERY_TYPE_TIMESTAMP, kPresStamps, tsPresPools_[k]);
+        pool(levelPool_, VK_QUERY_TYPE_OCCLUSION, kLevelQueries, levelPools_[k]);
+    }
+    if (inFlight_ > 1)
+        std::printf("vulkan: %d frames in flight - the next recorded while the GPU runs this one\n", inFlight_);
+    omk::event("vulkan.inflight", {{"frames", inFlight_}});
     return true;
 }
 
@@ -1477,6 +1679,8 @@ bool VulkanRenderer::makeTarget() {
     VkRenderPassCreateInfo rpi{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
     rpi.attachmentCount = msaa ? 3 : 2; rpi.pAttachments = att;
     rpi.subpassCount = 1; rpi.pSubpasses = &sub;
+    const VkSubpassDependency ext = lastFrameDependency();
+    rpi.dependencyCount = 1; rpi.pDependencies = &ext;
     VKCHECK(vkCreateRenderPass(dev_, &rpi, nullptr, &pass_), "vkCreateRenderPass");
     // ...and with the AO, the WATER REFLECTION's own: the same but for the
     // depth's store - nothing reads the reflection's depth, and storing it is
@@ -1603,36 +1807,7 @@ bool VulkanRenderer::makeTarget() {
             si.maxLod = 0.0f;
             vkCreateSampler(dev_, &si, nullptr, &shSampler_);
 
-            makeBuffer(sizeof(ShadowUbo), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                       shUbo_, shUboMem_);
-            vkMapMemory(dev_, shUboMem_, 0, sizeof(ShadowUbo), 0, &shUboPtr_);
-            if (shUboPtr_) std::memset(shUboPtr_, 0, sizeof(ShadowUbo));
-            makeBuffer(sizeof(LightUbo), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                       litUbo_, litUboMem_);
-            vkMapMemory(dev_, litUboMem_, 0, sizeof(LightUbo), 0, &litUboPtr_);
-            if (litUboPtr_) std::memset(litUboPtr_, 0, sizeof(LightUbo));
-            // the tiled point lights' buffers, only for a frame that sends
-            // the emitters' lights: without them no tiled pipeline is bound,
-            // and the 32 MB stayed mapped for nothing (`verify.py: engine:
-            // gpu readback on demand`, 2026-10-21)
-            if (emitters_) {
-                makeBuffer(kPointsBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                           pointsBuf_, pointsMem_);
-                vkMapMemory(dev_, pointsMem_, 0, kPointsBytes, 0, &pointsPtr_);
-                // TWO HALVES: the frame's camera's tiles, then the water
-                // reflection's - binned for ITS camera (`ds1Refl_`)
-                makeBuffer(kTileWordsMax * 4 * 2, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                           tilesBuf_, tilesMem_);
-                vkMapMemory(dev_, tilesMem_, 0, kTileWordsMax * 4 * 2, 0, &tilesPtr_);
-                if (tilesPtr_) {
-                    std::memset(tilesPtr_, 0, 16);
-                    std::memset(static_cast<char*>(tilesPtr_) + kTileWordsMax * 4, 0, 16);
-                }
-            }
+            makeFrameBuffers();
         }
     }
     // NO SHADOW MAP, NO RENDERER: set 1 is made with it - the shadow map, the
@@ -1646,6 +1821,43 @@ bool VulkanRenderer::makeTarget() {
         return false;
     }
     return true;
+}
+
+// THE FRAME'S UNIFORMS AND LIGHTS, a slot's own (`acquireSlot`): the
+// shadow's and the lights' uniforms and, for a frame that sends the
+// emitters' lights, the point lights and their tiles
+bool VulkanRenderer::makeFrameBuffers() {
+    makeBuffer(sizeof(ShadowUbo), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+               shUbo_, shUboMem_);
+    vkMapMemory(dev_, shUboMem_, 0, sizeof(ShadowUbo), 0, &shUboPtr_);
+    if (shUboPtr_) std::memset(shUboPtr_, 0, sizeof(ShadowUbo));
+    makeBuffer(sizeof(LightUbo), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+               litUbo_, litUboMem_);
+    vkMapMemory(dev_, litUboMem_, 0, sizeof(LightUbo), 0, &litUboPtr_);
+    if (litUboPtr_) std::memset(litUboPtr_, 0, sizeof(LightUbo));
+    // the tiled point lights' buffers, only for a frame that sends
+    // the emitters' lights: without them no tiled pipeline is bound,
+    // and the 32 MB stayed mapped for nothing (`verify.py: engine:
+    // gpu readback on demand`, 2026-10-21)
+    if (emitters_) {
+        makeBuffer(kPointsBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                   pointsBuf_, pointsMem_);
+        vkMapMemory(dev_, pointsMem_, 0, kPointsBytes, 0, &pointsPtr_);
+        // TWO HALVES: the frame's camera's tiles, then the water
+        // reflection's - binned for ITS camera (`ds1Refl_`)
+        makeBuffer(kTileWordsMax * 4 * 2, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                   tilesBuf_, tilesMem_);
+        vkMapMemory(dev_, tilesMem_, 0, kTileWordsMax * 4 * 2, 0, &tilesPtr_);
+        if (tilesPtr_) {
+            std::memset(tilesPtr_, 0, 16);
+            std::memset(static_cast<char*>(tilesPtr_) + kTileWordsMax * 4, 0, 16);
+        }
+    }
+    return shUboPtr_ != nullptr && litUboPtr_ != nullptr;
 }
 
 // THE TEXTURES' SAMPLER, by `filter_` and `anisoOn_` - made at the
@@ -1931,6 +2143,8 @@ bool VulkanRenderer::makePipelines() {
         VkRenderPassCreateInfo rp1{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
         rp1.attachmentCount = 2; rp1.pAttachments = a1;
         rp1.subpassCount = 1; rp1.pSubpasses = &sub1;
+        const VkSubpassDependency ext1 = lastFrameDependency();
+        rp1.dependencyCount = 1; rp1.pDependencies = &ext1;
         if (vkCreateRenderPass(dev_, &rp1, nullptr, &reflPass1_) != VK_SUCCESS) reflPass1_ = VK_NULL_HANDLE;
         // ...and the second level's, its colour kept (`reflPassKeep_`'s rule)
         a1[0].initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -2077,13 +2291,15 @@ bool VulkanRenderer::makePipelines() {
     // 64 sets: the engine's texture pool is 58 slots, plus the white fallback.
     // Plus set 1, the per-frame shadow set, and its one uniform buffer.
     // two samplers a texture's set since the light map (binding 1)
-    VkDescriptorPoolSize ps[4] = {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 531},   // four a texture's set
-                                  {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 8},
-                                  {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1},
-                                  {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 6}};   // set 1's tiled lights
+    // ...and the per-frame sets once a SLOT (`acquireSlot`): set 1 and its
+    // two reflection twins, and the pose set
+    VkDescriptorPoolSize ps[4] = {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 531 + 3 * kMaxInFlight},
+                                  {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 8 * kMaxInFlight},
+                                  {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1 * kMaxInFlight},
+                                  {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 6 * kMaxInFlight}};   // set 1's tiled lights
     VkDescriptorPoolCreateInfo dpi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     // (+2: the reflections' own sets 1, `ds1Refl_` and `ds1Refl2_`)
-    dpi.maxSets = 133; dpi.poolSizeCount = 4; dpi.pPoolSizes = ps;
+    dpi.maxSets = 129 + 4 * kMaxInFlight; dpi.poolSizeCount = 4; dpi.pPoolSizes = ps;
     // a texture's set is freed on its own when it leaves the pool (`setTextures`)
     dpi.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
     VKCHECK(vkCreateDescriptorPool(dev_, &dpi, nullptr, &dpool_), "descriptorPool");
@@ -2091,26 +2307,9 @@ bool VulkanRenderer::makePipelines() {
     // ---- the POSE BUFFER and its set (set 2) ------------------------------
     // Without it every body is posed on the CPU (`posesBodies` no).
     poseAlign_ = std::max<VkDeviceSize>(16, props_.limits.minStorageBufferOffsetAlignment);
-    if (makeBuffer(kPoseBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                   poseBuf_, poseMem_) &&
-        vkMapMemory(dev_, poseMem_, 0, kPoseBytes, 0, &posePtr_) == VK_SUCCESS) {
-        VkDescriptorSetAllocateInfo sai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-        sai.descriptorPool = dpool_; sai.descriptorSetCount = 1; sai.pSetLayouts = &dsl2_;
-        if (vkAllocateDescriptorSets(dev_, &sai, &poseDs_) == VK_SUCCESS) {
-            VkDescriptorBufferInfo bufi{poseBuf_, 0, kPoseRange};
-            VkWriteDescriptorSet wr{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-            wr.dstSet = poseDs_; wr.dstBinding = 0; wr.descriptorCount = 1;
-            wr.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
-            wr.pBufferInfo = &bufi;
-            vkUpdateDescriptorSets(dev_, 1, &wr, 0, nullptr);
-        } else {
-            poseDs_ = VK_NULL_HANDLE;
-        }
-    }
+    makePoseBuffer();
     if (poseDs_ == VK_NULL_HANDLE)
         std::fprintf(stderr, "vulkan: no pose buffer - every body posed on the CPU\n");
-
     // ---- the SHADOW pipeline and its one descriptor set -------------------
     if (shFbuf_ != VK_NULL_HANDLE) {
         makeShadowSet();
@@ -2179,6 +2378,28 @@ bool VulkanRenderer::makePipelines() {
         vkDestroyShaderModule(dev_, svs, nullptr);
     }
     return true;
+}
+
+// THE POSE BUFFER and its set (set 2), a slot's own (`acquireSlot`).
+// Without it every body is posed on the CPU (`posesBodies` no).
+void VulkanRenderer::makePoseBuffer() {
+    if (makeBuffer(kPoseBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                   poseBuf_, poseMem_) &&
+        vkMapMemory(dev_, poseMem_, 0, kPoseBytes, 0, &posePtr_) == VK_SUCCESS) {
+        VkDescriptorSetAllocateInfo sai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+        sai.descriptorPool = dpool_; sai.descriptorSetCount = 1; sai.pSetLayouts = &dsl2_;
+        if (vkAllocateDescriptorSets(dev_, &sai, &poseDs_) == VK_SUCCESS) {
+            VkDescriptorBufferInfo bufi{poseBuf_, 0, kPoseRange};
+            VkWriteDescriptorSet wr{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            wr.dstSet = poseDs_; wr.dstBinding = 0; wr.descriptorCount = 1;
+            wr.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
+            wr.pBufferInfo = &bufi;
+            vkUpdateDescriptorSets(dev_, 1, &wr, 0, nullptr);
+        } else {
+            poseDs_ = VK_NULL_HANDLE;
+        }
+    }
 }
 
 // SET 1, made once by `makePipelines` and kept as long as the pool: a
@@ -2319,15 +2540,20 @@ bool VulkanRenderer::makeSwapchain(int w, int h) {
     vkGetSwapchainImagesKHR(dev_, swap_, &ni, swapImgs_.data());
 
     VkSemaphoreCreateInfo si{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-    VKCHECK(vkCreateSemaphore(dev_, &si, nullptr, &acquired_), "semaphore");
+    for (int k = 0; k < inFlight_; ++k)
+        VKCHECK(vkCreateSemaphore(dev_, &si, nullptr, &acqs_[k]), "semaphore");
     drawn_.assign(ni, VK_NULL_HANDLE);
     for (auto& d : drawn_) VKCHECK(vkCreateSemaphore(dev_, &si, nullptr, &d), "semaphore");
     VkCommandBufferAllocateInfo cai{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
     cai.commandPool = pool_; cai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     cai.commandBufferCount = 1;
-    VKCHECK(vkAllocateCommandBuffers(dev_, &cai, &pcb_), "present cb");
     VkFenceCreateInfo fi{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
-    VKCHECK(vkCreateFence(dev_, &fi, nullptr, &pfence_), "present fence");
+    for (int k = 0; k < inFlight_; ++k) {
+        VKCHECK(vkAllocateCommandBuffers(dev_, &cai, &pcbs_[k]), "present cb");
+        VKCHECK(vkCreateFence(dev_, &fi, nullptr, &pfences_[k]), "present fence");
+        slots_[k].presBusy = false;
+    }
+    pcb_ = pcbs_[slot_]; pfence_ = pfences_[slot_]; acquired_ = acqs_[slot_];
     std::printf("vulkan: swapchain %ux%u, %u images, format %d\n",
                 swapExt_.width, swapExt_.height, ni, static_cast<int>(swapFmt_));
     return true;
@@ -2335,9 +2561,14 @@ bool VulkanRenderer::makeSwapchain(int w, int h) {
 
 void VulkanRenderer::killSwapchain() {
     if (!dev_) return;
-    if (pcb_) { vkFreeCommandBuffers(dev_, pool_, 1, &pcb_); pcb_ = VK_NULL_HANDLE; }
-    if (pfence_) { vkDestroyFence(dev_, pfence_, nullptr); pfence_ = VK_NULL_HANDLE; }
-    if (acquired_) { vkDestroySemaphore(dev_, acquired_, nullptr); acquired_ = VK_NULL_HANDLE; }
+    for (int k = 0; k < kMaxInFlight; ++k) {
+        if (pcbs_[k]) vkFreeCommandBuffers(dev_, pool_, 1, &pcbs_[k]);
+        if (pfences_[k]) vkDestroyFence(dev_, pfences_[k], nullptr);
+        if (acqs_[k]) vkDestroySemaphore(dev_, acqs_[k], nullptr);
+        pcbs_[k] = VK_NULL_HANDLE; pfences_[k] = VK_NULL_HANDLE; acqs_[k] = VK_NULL_HANDLE;
+        slots_[k].presBusy = false;
+    }
+    pcb_ = VK_NULL_HANDLE; pfence_ = VK_NULL_HANDLE; acquired_ = VK_NULL_HANDLE;
     for (auto& d : drawn_) if (d) vkDestroySemaphore(dev_, d, nullptr);
     drawn_.clear();
     if (swap_) { vkDestroySwapchainKHR(dev_, swap_, nullptr); swap_ = VK_NULL_HANDLE; }
@@ -2375,6 +2606,8 @@ bool VulkanRenderer::resize(int w, int h) {
     img(depthView_, depth_, depthMem_);
     buf(readBuf_, readMem_);
     buf(upBuf_, upMem_);
+    for (int k = 0; k < kMaxInFlight; ++k)   // every slot's: sized by the window
+        if (k != slot_) buf(slots_[k].upBuf, slots_[k].upMem);
     killUpscale();   // before the present's pool and layout, which it borrows
     killUnder();     // it draws into the present pass's image
     // the present pass reads `colourView_`, so all of it goes; its guard is
@@ -2535,9 +2768,12 @@ bool VulkanRenderer::presentImage(VkImage src, int sw, int sh) {
     pi.swapchainCount = 1; pi.pSwapchains = &swap_;
     pi.pImageIndices = &idx;
     vkQueuePresentKHR(queue_, &pi);
-    vkWaitForFences(dev_, 1, &pfence_, VK_TRUE, UINT64_MAX);
-    settleIdle();   // this fence covers the scene's and the passes' submits before it
-    readPresStamps();
+    // NOT WAITED: the slot's present fence - which covers the scene's and the
+    // passes' submits before it - is waited when a frame takes the slot again
+    slots_[slot_].presBusy = true;
+    slotReady_ = false;
+    advance_ = true;
+    sceneEnded_ = false;
     return true;
 }
 
@@ -2583,7 +2819,7 @@ constexpr std::size_t kExpandGrain = 640u * 480u / 4u;
 
 bool VulkanRenderer::presentSurface(const omk::Surface& s) {
     if (swap_ == VK_NULL_HANDLE) return false;
-    settle();   // `upBuf_` is written below
+    acquireSlot();   // the slot's `upBuf_` is written below
     const VkDeviceSize bytes = static_cast<VkDeviceSize>(w_) * h_ * 4;
     if (upBuf_ == VK_NULL_HANDLE &&
         !makeBuffer(bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
@@ -2661,11 +2897,26 @@ void VulkanRenderer::killUnder() {
     if (undBuf_) vkDestroyBuffer(dev_, undBuf_, nullptr);
     if (undBufMem_) freeDeviceMemory(undBufMem_);
     undBuf_ = VK_NULL_HANDLE; undBufMem_ = VK_NULL_HANDLE;
+    for (int k = 0; k < kMaxInFlight; ++k) {   // the other slots' too: sized by the same cloud
+        if (k == slot_) continue;
+        if (slots_[k].undBuf) vkDestroyBuffer(dev_, slots_[k].undBuf, nullptr);
+        if (slots_[k].undBufMem) freeDeviceMemory(slots_[k].undBufMem);
+        slots_[k].undBuf = VK_NULL_HANDLE; slots_[k].undBufMem = VK_NULL_HANDLE;
+    }
     undW_ = undH_ = 0;
 }
 
 bool VulkanRenderer::makeUnder(int uw, int uh) {
-    if (undPipe_ != VK_NULL_HANDLE && undW_ == uw && undH_ == uh) return true;
+    if (undPipe_ != VK_NULL_HANDLE && undW_ == uw && undH_ == uh) {
+        // the slot's own cloud buffer, made when the slot first draws one
+        if (undBuf_ == VK_NULL_HANDLE &&
+            !makeBuffer(static_cast<VkDeviceSize>(uw) * uh * 2, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                        undBuf_, undBufMem_))
+            return false;
+        return true;
+    }
+    if (undPipe_ != VK_NULL_HANDLE) settle();   // a frame in flight may still draw through it
     killUnder();
     if (!makePresentPass()) return false;
     const auto image = [&](int w, int h, VkFormat fmt, const char* what, VkImage& i, VkDeviceMemory& m,
@@ -2786,7 +3037,7 @@ bool VulkanRenderer::makeUnder(int uw, int uh) {
 bool VulkanRenderer::presentUnder(const omk::Surface& s, const unsigned char* mask, const unsigned char* maskRow,
                                   const omk::Surface& under, int filter, std::vector<unsigned char>* readback) {
     if (swap_ == VK_NULL_HANDLE || s.w != w_ || s.h != h_ || !under.valid()) return false;
-    settle();   // `upBuf_` and `undBuf_` are written below
+    acquireSlot();   // the slot's `upBuf_` and `undBuf_` are written below
     if (!makeUnder(under.w, under.h)) return false;
     const VkDeviceSize bytes = static_cast<VkDeviceSize>(w_) * h_ * 4;
     if (upBuf_ == VK_NULL_HANDLE &&
@@ -3120,6 +3371,7 @@ bool VulkanRenderer::worldPicture(int vy, int vh, std::vector<unsigned char>& rg
 // Load `colour_` with a `w_ x h_` RGBA8 picture - the probe's way of asking the
 // pass about colours no scene is guaranteed to contain.
 bool VulkanRenderer::probeUpload(const unsigned char* rgba) {
+    acquireSlot();   // the slot's `upBuf_` is written below
     const VkDeviceSize bytes = static_cast<VkDeviceSize>(w_) * h_ * 4;
     if (upBuf_ == VK_NULL_HANDLE &&
         !makeBuffer(bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
@@ -3171,6 +3423,17 @@ bool VulkanRenderer::init(int w, int h) {
     if (!pickDevice()) return false;
     if (!makeTarget()) return false;
     if (!makePipelines()) return false;
+    // the other slots' uniforms, lights, tiles, pose buffer and sets - made
+    // by the same code as slot 0's, into the swapped names
+    saveSlot(0);
+    for (int k = 1; k < inFlight_; ++k) {
+        slots_[k] = SlotState{};
+        loadSlot(k);
+        if (shFbuf_ != VK_NULL_HANDLE) { makeFrameBuffers(); makeShadowSet(); }
+        makePoseBuffer();
+        saveSlot(k);
+    }
+    loadSlot(0);
     // The window is 640x480 while the 3D target is the letterboxed 640x352.
     if (surface_ != VK_NULL_HANDLE && !makeSwapchain(w, 480)) return false;
     return true;
@@ -3608,6 +3871,7 @@ bool VulkanRenderer::uploadGeometry(const omk::Geometry* g) {
                                  it->second == g->corners.size();
             void* p = nullptr;
             const VkDeviceSize bytes = g->corners.size() * sizeof(GpuVert);
+            vboWritable(g, partial ? bytes : 0);   // a partial write keeps the rest
             if (vkMapMemory(dev_, vbo_[g].second, 0, bytes, 0, &p) == VK_SUCCESS) {
                 auto* dst = static_cast<GpuVert*>(p);
                 const auto* lose = bakedOf(g);
@@ -3626,8 +3890,10 @@ bool VulkanRenderer::uploadGeometry(const omk::Geometry* g) {
                 return true;
             }
         }
-        vkDestroyBuffer(dev_, vbo_[g].first, nullptr);
-        freeDeviceMemory(vbo_[g].second);
+        // retired, not destroyed: a frame in flight may still draw it
+        deadBufs_.push_back(vbo_[g]);
+        if (const auto a = vboAlt_.find(g); a != vboAlt_.end()) { deadBufs_.push_back(a->second); vboAlt_.erase(a); }
+        vboAltCap_.erase(g); vboBound_.erase(g);
         vbo_.erase(g); vboN_.erase(g); vboRev_.erase(g);
         grow = true;                   // it has changed size once: give it room
     }
@@ -3694,11 +3960,13 @@ void VulkanRenderer::resolveTies(const omk::Draw& d) {
                         tri, 3 * tri < g->cornerMesh.size() ? g->cornerMesh[3 * tri] : -1,
                         g->corners[3 * tri].x, g->corners[3 * tri].y, g->corners[3 * tri].z,
                         d.start, d.count);
-    const auto vb = vbo_.find(g);
+    auto vb = vbo_.find(g);
     const auto vn = vboN_.find(g);
     if (vb == vbo_.end() || vn == vboN_.end()) return;
     void* p = nullptr;
     const VkDeviceSize bytes = vn->second * sizeof(GpuVert);
+    vboWritable(g, vn->second * sizeof(GpuVert));   // a few corners rewritten: the rest kept
+    vb = vbo_.find(g);
     if (vkMapMemory(dev_, vb->second.second, 0, bytes, 0, &p) != VK_SUCCESS) return;
     auto* v = static_cast<GpuVert*>(p);
     // first the triangles degenerated earlier that are losers no more - a
@@ -3874,6 +4142,7 @@ void VulkanRenderer::shadowPass(const omk::View& v, std::span<const omk::Draw> c
         if (it == vbo_.end()) continue;
         VkDeviceSize off = 0;
         vkCmdBindVertexBuffers(cb_, 0, 1, &it->second.first, &off);
+        vboBound_[d.geo] = frameSerial_;
         vkCmdDraw(cb_, static_cast<uint32_t>(d.count), 1,
                   static_cast<uint32_t>(d.start), 0);
     }
@@ -3895,17 +4164,13 @@ void VulkanRenderer::shadowPass(const omk::View& v, std::span<const omk::Draw> c
 }
 
 void VulkanRenderer::begin(const omk::View& view) {
-    settle();   // the last frame's GPU work, before its buffers are reused
+    // a frame the last `end` closed with no present: the same slot again
+    if (sceneEnded_) { slotReady_ = false; sceneEnded_ = false; }
+    acquireSlot();   // the slot's last frame done, before its buffers are written
     st_ = omk::RasterStats{};
     // the pose buffer from its start: the frame that wrote it was waited for
     poseUsed_ = 0;
     poseCache_.clear();
-    // the previous frame's fence has been waited on (the present ends with it)
-    for (auto& bm : deadBufs_) {
-        vkDestroyBuffer(dev_, bm.first, nullptr);
-        freeDeviceMemory(bm.second);
-    }
-    deadBufs_.clear();
     fog_ = view.fog;
     fogStart_ = view.fogStart;
     mistOn_ = view.mist > 0.0f || view.dust > 0.0f || view.veil > 0.0f;   // the dust and veils take the marked batches
@@ -4254,6 +4519,7 @@ void VulkanRenderer::submitOne(const omk::Draw& d, bool posed, uint32_t poseOff)
     const auto it = vbo_.find(d.geo);
     VkDeviceSize off = 0;
     vkCmdBindVertexBuffers(cb_, 0, 1, &it->second.first, &off);
+    vboBound_[d.geo] = frameSerial_;
     // THE BACK-FACE CULL, one push per run of `cornerCull` (`geom3do.h`): a
     // batch groups by material, so single- and two-sided faces can share one.
     // `kCullSign` is this pipeline's sense of "front" for the software
@@ -4386,8 +4652,15 @@ void VulkanRenderer::end() {
     si.commandBufferCount = 1; si.pCommandBuffers = &cb_;
     vkResetFences(dev_, 1, &fence_);
     vkQueueSubmit(queue_, 1, &si, fence_);
-    // NOT WAITED HERE: the present's fence is the frame's wait (`settle`)
-    sceneInFlight_ = true;
+    // NOT WAITED: the slot is, when a frame takes it again (`acquireSlot`)
+    SlotState& st = slots_[slot_];
+    st.sceneBusy = true;
+    st.results = true;
+    // ...and the buffers retired since go when THIS slot is retired: by
+    // then the frames before it are done as well
+    st.dead.insert(st.dead.end(), deadBufs_.begin(), deadBufs_.end());
+    deadBufs_.clear();
+    sceneEnded_ = true;
     recording_ = false;
     cbStarted_ = false;
     shadowLive_ = false;
@@ -4507,10 +4780,16 @@ void VulkanRenderer::geometryGone(void* self, const omk::Geometry* g) {
             std::printf("vulkan: a geometry of %zu corners gone - its vertex buffer released\n", nIt->second);
         r->deadBufs_.push_back(it->second);
         r->vbo_.erase(it);
+        if (const auto a = r->vboAlt_.find(g); a != r->vboAlt_.end()) {
+            r->deadBufs_.push_back(a->second);
+            r->vboAlt_.erase(a);
+        }
         had = true;
     }
     r->vboN_.erase(g);
     r->vboCap_.erase(g);
+    r->vboAltCap_.erase(g);
+    r->vboBound_.erase(g);
     r->vboRev_.erase(g);
     had |= r->tie_.erase(g) > 0;
     had |= r->baked_.erase(g) > 0;
@@ -4521,6 +4800,28 @@ VulkanRenderer::~VulkanRenderer() {
     omk::removeGeometryListener(&VulkanRenderer::geometryGone, this);
     if (!dev_) return;
     vkDeviceWaitIdle(dev_); settleIdle();
+    // THE OTHER SLOTS' own (`acquireSlot`); the current one's go below by name
+    for (int k = 0; k < kMaxInFlight; ++k) {
+        if (k == slot_) continue;
+        SlotState& t = slots_[k];
+        const auto buf = [&](VkBuffer b, VkDeviceMemory m) {
+            if (b) vkDestroyBuffer(dev_, b, nullptr);
+            if (m) freeDeviceMemory(m);
+        };
+        buf(t.shUbo, t.shUboMem); buf(t.litUbo, t.litUboMem); buf(t.pointsBuf, t.pointsMem);
+        buf(t.tilesBuf, t.tilesMem); buf(t.poseBuf, t.poseMem); buf(t.upBuf, t.upMem);
+        buf(t.undBuf, t.undBufMem);
+        t = SlotState{};
+        if (fences_[k]) vkDestroyFence(dev_, fences_[k], nullptr);
+        if (tsPools_[k]) vkDestroyQueryPool(dev_, tsPools_[k], nullptr);
+        if (tsPresPools_[k]) vkDestroyQueryPool(dev_, tsPresPools_[k], nullptr);
+        if (levelPools_[k]) vkDestroyQueryPool(dev_, levelPools_[k], nullptr);
+    }
+    for (auto& [g, bm] : vboAlt_) {
+        vkDestroyBuffer(dev_, bm.first, nullptr);
+        freeDeviceMemory(bm.second);
+    }
+    vboAlt_.clear();
     killPost();
     killLut();
     killReflection();
@@ -4628,8 +4929,10 @@ VulkanRenderer::~VulkanRenderer() {
     if (shUboMem_) freeDeviceMemory(shUboMem_);   // unmapped by the free
     if (litUbo_) vkDestroyBuffer(dev_, litUbo_, nullptr);
     if (litUboMem_) freeDeviceMemory(litUboMem_);
-    if (pfence_) vkDestroyFence(dev_, pfence_, nullptr);
-    if (acquired_) vkDestroySemaphore(dev_, acquired_, nullptr);
+    for (int k = 0; k < kMaxInFlight; ++k) {   // every slot's present objects
+        if (pfences_[k]) vkDestroyFence(dev_, pfences_[k], nullptr);
+        if (acqs_[k]) vkDestroySemaphore(dev_, acqs_[k], nullptr);
+    }
     for (auto& d : drawn_) if (d) vkDestroySemaphore(dev_, d, nullptr);
     if (swap_) vkDestroySwapchainKHR(dev_, swap_, nullptr);
     if (fence_) vkDestroyFence(dev_, fence_, nullptr);

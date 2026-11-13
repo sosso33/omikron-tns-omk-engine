@@ -265,8 +265,9 @@ given at each.
     Android phone, a Steam Deck in power-save) it is the difference between
     serial and parallel frames. The seven one-shot `vkQueueWaitIdle`s need
     auditing first.
-    **Step 1 DONE 2026-11-13 (§11): one wait a frame.** Step 2, frames in
-    flight, is what the 6.5 ms of §11 needs - see there for its list.
+    **DONE 2026-11-13 (§11), steps 1 and 2: one wait a frame, then the
+    frame's slot waited only when a frame takes it again, one or two frames
+    in flight (`OMK_FRAMES_IN_FLIGHT`).**
 12. **Area loads spread over frames** - `Async_LoadDuringFrame`, one 128 KB
     chunk a frame from `Game_Tick` (`optimization.md` step 28 row f). The
     Vita's arrival frame was 2480 ms. Step 35's load gate hides the WAIT;
@@ -521,15 +522,46 @@ letterbox clear and the blit - both fixed. Still reported, NOT fixed:
 sampled as SHADER_READ_ONLY while its known layout is COLOR_ATTACHMENT (20
 in a 300-frame run; harmless on MoltenVK, which has no layouts).
 
-**C11 step 2, the 6.5 ms: frames in flight.** The CPU's ~5 ms is the
-RECORDING (between `begin` and `end`), so it overlaps the GPU only if frame
-N+1 is recorded while frame N runs - which needs everything the CPU writes
-in a frame doubled: the scene's command buffer and fence, the vertex ring
-(`ringPtr_`), the shadow and light UBOs, the point lights and the light
-tiles, the pose buffer (and the descriptor sets that name them), the
-timestamp and level query pools, the dirty-corner VBO replays (written in
-place today, "the buffer is waited on"), and `deadBufs_` freed a frame later
-still. The level query is read a frame later again (its one consumer, the
-remaster's second level, already takes it a frame late). One more frame of
-latency, as the original's flip chain had. Multi-step; `engine: vulkan
-sync` is the net under it.
+**C11 step 2, DONE 2026-11-13: the frame's slot.** The CPU's ~5 ms is the
+RECORDING, so it overlaps the GPU only if a frame is recorded while the one
+before still runs. A frame now works in a SLOT (`VulkanRenderer::
+acquireSlot`), and everything the CPU writes for the GPU in a frame is the
+slot's own: the scene's command buffer and fence, the present's command
+buffer, fence and acquire semaphore, the timestamp and level query pools,
+the shadow and light uniforms, the point lights and tiles, the pose buffer,
+the screen's and the cloud's upload buffers, and the descriptor sets that
+name them (`saveSlot` / `loadSlot` swap the names the code already used, so
+the drawing code is unchanged). A slot is waited for when a frame takes it
+again, and what it left is read then (stamps, level queries; the level is a
+frame later again, which its one consumer already allows). A vertex buffer
+a frame in flight may still read is never written in place: the write goes
+to its second buffer, the current one copied in first for a partial write,
+and the two swap (`vboWritable`; ~7 small full rewrites a frame in the
+street). Retired buffers go when the slot that retired them does.
+
+`OMK_FRAMES_IN_FLIGHT` 1 (the default) or 2:
+* **1**: the frame waits for the one before at its first GPU use, not at
+  the end of the present - the CPU's work before the recording (sim, crowd,
+  culling, the draw lists) now overlaps the last frame's GPU time. Same
+  latency as before.
+* **2**: frame N+1 recorded while the GPU runs frame N. One more frame of
+  latency, in frames; in milliseconds about the same, the frames being
+  shorter.
+
+Measured on the M1 at 4K, FSR 1.5, Qalisar in full rain (ms a frame):
+
+| | standing | walking | the sneak open |
+|---|---|---|---|
+| before C11 (yesterday's HEAD) | 23.2 | 20.15 | 32.6 (this morning) |
+| step 1 | 22.1 | - | 8.7 |
+| step 2, one in flight | **18.0** | **16.9** | 7.9 |
+| step 2, two in flight | **15.3** | **14.4** | 7.6 |
+
+The synchronization validation found what the host waits had hidden once
+two frames overlapped: the scene's and the reflections' passes had no
+dependency on the frame before's use of their attachments (WRITE_AFTER_WRITE
+on the depth) - now `lastFrameDependency`, an external subpass dependency
+from every earlier write and read of them. `engine: vulkan sync` runs at
+both depths (shown to fail with it taken off the scene pass); the pixel
+checks (`gpu present`, `gpu cloud`, `fight gpu present`, `save screen
+present`, `vulkan pose`, `floors`, `floor levels`) pass at both.

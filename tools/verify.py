@@ -34107,6 +34107,13 @@ def c_engine_vulkan_sync():
     `SYNC-HAZARD` is a failure, as is a present semaphore signalled again
     before its image is re-acquired. Skipped without the layer.
 
+    C11 STEP 2 (2026-11-13): run twice, at one frame in flight and at two
+    (`OMK_FRAMES_IN_FLIGHT=2`, the slots of `VulkanRenderer::acquireSlot`).
+    At two it found the scene's and the reflections' passes with no
+    dependency on the frame before's use of their attachments - a
+    WRITE_AFTER_WRITE on the depth, 10 (the layer's cap) - now
+    `lastFrameDependency`; shown to fail by taking it off `pass_`.
+
     SHOWN TO FAIL (2026-11-13), three ways, each found by this run before it
     was a check: one present semaphore for all images -
     `VUID-vkQueueSubmit-pSignalSemaphores-00067` twice in the run (HEAD's
@@ -34141,26 +34148,34 @@ def c_engine_vulkan_sync():
                VK_LAYER_ENABLES="VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT",
                DYLD_FALLBACK_LIBRARY_PATH=os.path.join(prefix, "lib"))
     frames = 300
-    r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
-                        "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
-                        "--area", "101", "--stand", "15300,0,-10050,270", "--nofmv",
-                        "--upscale", "1.5", "--frames", str(frames),
-                        "--hold", "0*90,k200*60,0*30,k15*3,0*60,k15*3,0*40"],
-                       cwd=eng, capture_output=True, text=True, errors="replace", timeout=600, env=env)
-    out = r.stdout + r.stderr
-    if "VULKAN" not in out:
-        return ("skipped",), ("skipped",), "the viewer did not take Vulkan"
-    inserted = 'Insert instance layer "VK_LAYER_KHRONOS_validation"' in out
-    hazards = len(re.findall(r"SYNC-HAZARD-[A-Z_-]+", out))
-    reused = out.count("VUID-vkQueueSubmit-pSignalSemaphores-00067")
-    presented = re.search(r"(\d+) frames presented", out)
-    presented = int(presented.group(1)) if presented else -1
-    sneak = "screen 9 opened" in out
-    print(f"        layer inserted {inserted}; {presented} frames presented; sneak opened {sneak}; "
-          f"sync hazards {hazards}; present semaphores reused {reused}")
-    return (inserted, presented, sneak, hazards, reused), (True, frames, True, 0, 0), \
-        "the validation layer inserted, the street walked and the sneak opened in 300 presented " \
-        "frames, and no synchronization hazard nor present semaphore reused before its image's acquire"
+    got = []
+    for inflight in (1, 2):
+        r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                            "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+                            "--area", "101", "--stand", "15300,0,-10050,270", "--nofmv",
+                            "--upscale", "1.5", "--frames", str(frames),
+                            "--hold", "0*90,k200*60,0*30,k15*3,0*60,k15*3,0*40"],
+                           cwd=eng, capture_output=True, text=True, errors="replace", timeout=600,
+                           env=dict(env, OMK_FRAMES_IN_FLIGHT=str(inflight), OMK_EVENTS="1"))
+        out = r.stdout + r.stderr
+        if "VULKAN" not in out:
+            return ("skipped",), ("skipped",), "the viewer did not take Vulkan"
+        inserted = 'Insert instance layer "VK_LAYER_KHRONOS_validation"' in out
+        slots = re.search(r"@evt vulkan\.inflight frames=(\d+)", out)
+        slots = int(slots.group(1)) if slots else -1
+        # (the layer reports each message ten times at most: zero is what counts)
+        hazards = len(re.findall(r"SYNC-HAZARD-[A-Z_-]+", out))
+        reused = out.count("VUID-vkQueueSubmit-pSignalSemaphores-00067")
+        presented = re.search(r"(\d+) frames presented", out)
+        presented = int(presented.group(1)) if presented else -1
+        sneak = "screen 9 opened" in out
+        print(f"        {slots} in flight: layer inserted {inserted}; {presented} frames presented; sneak opened "
+              f"{sneak}; sync hazards {hazards}; present semaphores reused {reused}")
+        got.append((slots, inserted, presented, sneak, hazards, reused))
+    return tuple(got), ((1, True, frames, True, 0, 0), (2, True, frames, True, 0, 0)), \
+        "at one frame in flight and at two (`OMK_FRAMES_IN_FLIGHT`): the validation layer inserted, the " \
+        "street walked and the sneak opened in 300 presented frames, and no synchronization hazard nor " \
+        "present semaphore reused before its image's acquire"
 
 
 def c_engine_classic_build():
