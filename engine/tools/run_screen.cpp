@@ -2,6 +2,13 @@
 // COMPOSE A SCREEN, HEADLESS - the same frame the window shows, with no window.
 //
 //     run_screen <gamedata> <ui_widgets.json> <ui.json> <out.bin> [frame] [WxH] [uiscaling]
+//                [textscaling] [again]
+//
+// `again` composes the LIFT (4) and the SNEAK (9) as 4, 9, 4, 9 on ONE
+// composer, and each once on a fresh one, and prints the six hashes and
+// nothing else: a screen's scaled background is kept between frames
+// (`ScreenComposer::background`), and a stale one shows only on the screen
+// AFTER another (`verify.py: engine: screen background kept`).
 //
 // This is the reference half of `PORTING` A1's pair: the frontend is handed an
 // already-composed framebuffer, so everything that decides what a frame LOOKS
@@ -74,6 +81,28 @@ int main(int argc, char** argv) {
         const int filt = argc > 7 ? std::atoi(argv[7]) : 0;
         if (dw * 480 <= dh * 640) lay.setGlyphScale(dw, 640, filt);
         else                      lay.setGlyphScale(dh, 480, filt);
+    }
+
+    if (argc > 9 && std::string(argv[9]) == "again") {
+        const auto hashOf = [&](omk::ScreenComposer& c, int sid) {
+            omk::UiWalk walk(w);
+            walk.open(sid);
+            omk::Surface fb(dw, dh, 0);
+            return c.draw(fb, sid, walk).hash;
+        };
+        omk::ScreenComposer fresh4(fs, w, lay), fresh9(fs, w, lay);
+        for (omk::ScreenComposer* c : {&fresh4, &fresh9}) {
+            c->setDisplay(dw, dh);
+            c->setReportHash(true);
+            if (argc > 7) c->setScaling(std::atoi(argv[7]));
+        }
+        std::printf("again: shared 4 %08X\n", hashOf(comp, 4));
+        std::printf("again: shared 9 %08X\n", hashOf(comp, 9));
+        std::printf("again: shared 4 %08X\n", hashOf(comp, 4));
+        std::printf("again: shared 9 %08X\n", hashOf(comp, 9));
+        std::printf("again: fresh 4 %08X\n", hashOf(fresh4, 4));
+        std::printf("again: fresh 9 %08X\n", hashOf(fresh9, 9));
+        return 0;
     }
 
     std::vector<std::int32_t> out;

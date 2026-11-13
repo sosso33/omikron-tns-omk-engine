@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "ui/screendraw.h"
 #include "ui/overlay.h"
+#include "platform/threads.h"
 
 #include "script/savefile.h"
 
@@ -10,6 +11,7 @@
 #include "o3de/vecmath.h"
 
 #include <algorithm>
+#include <array>
 #include <vector>
 #include <cstdio>
 #include <cmath>
@@ -115,11 +117,16 @@ std::string itemStringDefault(const UiItem& it,
 // that is black there. This predicts (17.3, 26.3, 25.5); a player's
 // screenshot of the running game measures **(15, 25, 25)**: the rule
 // checked against the game rather than against this repo.
+// a fill from which the rows are worth splitting over the pool: a quarter
+// of a 640x480 frame, as for a blit (`surface.cpp`)
+constexpr long kBigFillPixels = 640L * 480L / 4L;
+
 void fillQuad(Surface& fb, int x0, int y0, int x1, int y1,
               int r, int g, int b, int alpha) {
     if (!fb.valid()) return;
     x0 = std::max(0, x0); y0 = std::max(0, y0);
     x1 = std::min(fb.w, x1); y1 = std::min(fb.h, y1);
+    if (x1 <= x0 || y1 <= y0) return;    // nothing to fill (and no negative area)
     const int keep = alpha;              // dst weight
     const int add  = 255 - alpha;        // src weight
     const auto blend = [&](std::uint16_t d) {
@@ -134,19 +141,43 @@ void fillQuad(Surface& fb, int x0, int y0, int x1, int y1,
     // A BIG fill (the full-screen dim: 8.3 million pixels at 4K, ten integer
     // divisions each) takes the blend from a TABLE of all 65536 colours, made
     // by the same arithmetic - the same pixels, byte for byte - and kept while
-    // the colour and the alpha are the same (they are, frame after frame)
-    thread_local std::vector<std::uint16_t> lut;
-    thread_local int lutKey = -1;
-    const bool useLut = static_cast<long>(x1 - x0) * (y1 - y0) >= 65536;
-    if (useLut) {
+    // the colour and the alpha are the same (they are, frame after frame).
+    // FOUR are kept, not one: the sneak draws its row bars at alpha 200 and
+    // its cursor at 233 in the same frame, and at 4K each bar is ~250k pixels -
+    // with one table, every switch rebuilt it (65536 blends), several times a
+    // frame (`todo/perf-audit.md` 11).
+    struct BlendLut { int key = -1; long used = 0; std::vector<std::uint16_t> px; };
+    thread_local std::array<BlendLut, 4> luts;
+    thread_local long lutTick = 0;
+    const long area = static_cast<long>(x1 - x0) * (y1 - y0);
+    const std::uint16_t* lut = nullptr;
+    if (area >= 65536) {
         const int key = ((r & 255) << 24) | ((g & 255) << 16) | ((b & 255) << 8) | (alpha & 255);
-        if (key != lutKey || lut.size() != 65536) {
-            lut.resize(65536);
-            for (int c = 0; c < 65536; ++c) lut[static_cast<std::size_t>(c)] = blend(static_cast<std::uint16_t>(c));
-            lutKey = key;
+        BlendLut* hit = nullptr;
+        for (auto& t : luts) if (t.key == key && t.px.size() == 65536) { hit = &t; break; }
+        if (!hit) {
+            hit = &*std::min_element(luts.begin(), luts.end(),
+                                     [](const BlendLut& l, const BlendLut& q) { return l.used < q.used; });
+            hit->px.resize(65536);
+            for (int c = 0; c < 65536; ++c) hit->px[static_cast<std::size_t>(c)] = blend(static_cast<std::uint16_t>(c));
+            hit->key = key;
         }
+        hit->used = ++lutTick;
+        lut = hit->px.data();
     }
     OverlayPlanes& ov = overlayPlanes();
+    // ...and with no overlay planes (whose row cursor is one per frame) a big
+    // fill is a table lookup per pixel, each row its own: split over the pool
+    if (lut && !ov.on && area >= kBigFillPixels) {
+        Threads::shared().parallelFor(static_cast<std::size_t>(y0), static_cast<std::size_t>(y1), 16,
+                                      [&](std::size_t from, std::size_t to) {
+            for (std::size_t y = from; y < to; ++y) {
+                std::uint16_t* d = &fb.px[y * static_cast<std::size_t>(fb.w)];
+                for (int x = x0; x < x1; ++x) d[x] = lut[d[x]];
+            }
+        });
+        return;
+    }
     for (int y = y0; y < y1; ++y) {
         for (int x = x0; x < x1; ++x) {
             // on an overlay frame's KEY pixel the blend runs on the side
@@ -158,7 +189,7 @@ void fillQuad(Surface& fb, int x0, int y0, int x1, int y1,
                 ov.m[ovI] = static_cast<std::uint8_t>(ov.m[ovI] * keep / 255);
             }
             std::uint16_t& d = ovKey ? ov.c[ovI] : fb.px[ovI];
-            d = useLut ? lut[d] : blend(d);
+            d = lut ? lut[d] : blend(d);
         }
     }
 }
@@ -319,6 +350,32 @@ std::string ScreenComposer::echoBarText(const UiWalk& walk,
 
 int ScreenComposer::background(Surface& fb, const UiPanel& p,
                               const Surface& sheet) const {
+    // THE SCALED BACKGROUND IS KEPT AS WHAT IT WRITES (`WrittenLayer`). At
+    // 640x480 every cell below is a row copy; at any other size each is a
+    // keyed, scaled blit - and at 4K the sneak's 80 cells (each 384x288,
+    // read out of the interface pack's 2560x1920 sheet) cost 25 ms a frame,
+    // its fps halved (`todo/perf-audit.md` 11). Nothing in them changes
+    // while the screen is up, so they are drawn once over two fills and the
+    // runs copied after: byte-identical, at the cost of a copy. Anything the
+    // picture depends on - the panel, its cells, its arm, the sheet, the
+    // display, the filter - draws it afresh.
+    if (p.backNone() || (!p.backSheet() && p.tiles.empty())) return 0;
+    if ((fb.w == 640 && fb.h == 480) || &sheet != &artCache_)
+        return backgroundDrawn(fb, p, sheet);
+    if (!(backLayer_.valid() && backLayer_.w() == fb.w && backLayer_.h() == fb.h &&
+          backPanel_ == &p && backArtGen_ == artGen_ && backDw_ == dw_ && backDh_ == dh_ &&
+          backFilter_ == filter_ && backSheet_ == p.backSheet() && backTiles_ == p.tiles)) {
+        int drawn = 0;
+        backLayer_.capture(fb.w, fb.h, [&](Surface& fill) { drawn = backgroundDrawn(fill, p, sheet); });
+        backPanel_ = &p; backArtGen_ = artGen_; backDw_ = dw_; backDh_ = dh_;
+        backFilter_ = filter_; backSheet_ = p.backSheet(); backTiles_ = p.tiles; backDrawn_ = drawn;
+    }
+    backLayer_.apply(fb);
+    return backDrawn_;
+}
+
+int ScreenComposer::backgroundDrawn(Surface& fb, const UiPanel& p,
+                                    const Surface& sheet) const {
     // WHICH ARM RUNS IS THE PANEL'S BANK-B FLAG, not whether it has tiles.
     //
     // `Ui_DrawPanelBack` (0x00476040) reads three bits of `panel+76` and
@@ -474,6 +531,7 @@ ScreenFrame ScreenComposer::draw(Surface& fb, int screenId,
         artName_ = artName;
         artCache_ = artName.empty() ? Surface{}
                                     : surfaceFromBmp(fs_->read("I2D/bitmaps/" + artName));
+        ++artGen_;
     }
     const Surface& art = artCache_;
     const bool sheetOk = art.valid();

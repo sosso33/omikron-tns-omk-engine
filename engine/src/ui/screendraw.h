@@ -527,6 +527,7 @@ private:
     // row 7 is drawn at HALF height from source y 448..480 - which is what
     // makes 10x64 = 640 and 7x64 + 32 = 480 come out exactly.
     int background(Surface& fb, const UiPanel& p, const Surface& sheet) const;
+    int backgroundDrawn(Surface& fb, const UiPanel& p, const Surface& sheet) const;
 
     // `sub_0049DC20` transcribed - the sneak's echo bar. `arm` reports which
     // of its seven branches answered (see `ScreenFrame::echoArm`); the return
@@ -583,6 +584,15 @@ private:
     // each, keyed by name: a screen change reloads, nothing else does.
     mutable std::string artName_, textName_;
     mutable Surface artCache_;
+    mutable long artGen_ = 0;   // bumped at every reload of artCache_
+    // THE SCALED BACKGROUND, kept as what it writes (`background`): what it
+    // was drawn from, so anything that changes it draws it afresh
+    mutable WrittenLayer backLayer_;
+    mutable const UiPanel* backPanel_ = nullptr;
+    mutable std::vector<int> backTiles_;
+    mutable long backArtGen_ = -1;
+    mutable int backDw_ = 0, backDh_ = 0, backFilter_ = -1, backDrawn_ = 0;
+    mutable bool backSheet_ = false;
     mutable std::vector<std::string> textCache_;
 
     const DataFs*    fs_;

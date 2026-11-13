@@ -159,6 +159,47 @@ bool blt(Surface& dst, Rect dr, const Surface& src, Rect sr,
          std::uint32_t flags, std::uint16_t srcKey = 0, std::uint16_t dstKey = 0,
          int filter = 0);
 
+// A DRAWING KEPT AS WHAT IT WRITES - per destination row, the runs of pixels
+// it draws and their values. A keyed drawing that does not read its
+// destination (every `blt` without DDBLT_KEYDEST) writes some pixels and
+// leaves the rest; drawn once over black and once over white, a pixel it
+// writes comes out the same in both and one it leaves is each fill. Applying
+// the runs is then byte-identical to drawing it again, at the cost of a copy.
+//
+// For a picture that is the same every frame and costly to scale: the
+// stretched-sprite cache's big keyed sprites, and a screen's background
+// (`ScreenComposer::background`), whose 80 scaled tiles at 4K cost the sneak
+// 25 ms a frame (`todo/perf-audit.md` 11). While a capture draws, the blits
+// it makes skip the stretched-sprite cache (they are being cached whole).
+class WrittenLayer {
+public:
+    template <class Draw>
+    void capture(int w, int h, Draw&& draw) {
+        Surface overBlack(w, h, 0x0000), overWhite(w, h, 0xFFFF);
+        const bool was = beginCapture();
+        draw(overBlack);
+        draw(overWhite);
+        endCapture(was);
+        keep(overBlack, overWhite);
+    }
+    // the runs onto `dst` at (x, y); the layer must fit
+    void apply(Surface& dst, int x = 0, int y = 0) const;
+    int  w() const { return w_; }
+    int  h() const { return h_; }
+    bool valid() const { return w_ > 0 && h_ > 0; }
+    std::size_t bytes() const { return px_.size() * 2 + runs_.size() * sizeof(Run); }
+
+private:
+    struct Run { int x, n; std::size_t at; };
+    static bool beginCapture();
+    static void endCapture(bool was);
+    void keep(const Surface& overBlack, const Surface& overWhite);
+    int w_ = 0, h_ = 0;
+    std::vector<std::size_t> rowAt_;   // h_ + 1 entries: row y's runs are [rowAt_[y], rowAt_[y+1])
+    std::vector<Run> runs_;
+    std::vector<std::uint16_t> px_;
+};
+
 // ------------------------------------------------- the software rasterizer
 //
 // **Which back end this is.** The I2D primitives other than the blits do not

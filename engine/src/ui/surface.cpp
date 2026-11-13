@@ -107,16 +107,13 @@ namespace {
 // per destination row, the runs of pixels it draws and their values. A later
 // blit of the same source pixels (a hash of the source rectangle), the same
 // rectangles' sizes, key and filter copies the runs. The pixels a keyed blit
-// draws are found by drawing it twice, over two different fills: a pixel it
-// writes is the same in both (with no dest key nothing it computes reads the
-// destination), one it leaves is each fill. Byte-identical to drawing it.
-struct SpriteRun { int x, n; std::size_t at; };
+// draws are found by drawing it twice, over two different fills
+// (`WrittenLayer`, surface.h). Byte-identical to drawing it.
 struct SpriteCache {
     std::uint64_t hash = 0;
     int sw = 0, sh = 0, dw = 0, dh = 0, filter = 0;
     std::uint16_t key = 0;
-    std::vector<std::vector<SpriteRun>> rows;
-    std::vector<std::uint16_t> px;
+    WrittenLayer layer;
     long used = 0;
 };
 #if OMK_THREADS
@@ -152,11 +149,6 @@ std::uint64_t rectHash(const Surface& s, Rect r) {
 // is worth splitting over the thread pool, and worth caching
 constexpr long kBigBlitPixels = 640L * 480L / 4L;
 
-// the two backgrounds a keyed sprite is drawn over once, to see which
-// pixels it writes: black and white, as different as two words can be
-constexpr std::uint16_t kFillBlack = 0x0000;
-constexpr std::uint16_t kFillWhite = 0xFFFF;
-
 // A blit's rows, split over the shared pool when it is big (a quarter of a
 // 640x480 frame and up), whole on the caller's thread otherwise
 void rows(int dw, int dh, const std::function<void(std::size_t, std::size_t)>& body) {
@@ -165,6 +157,41 @@ void rows(int dw, int dh, const std::function<void(std::size_t, std::size_t)>& b
 }
 
 }  // namespace
+
+bool WrittenLayer::beginCapture() { const bool was = t_spriteFilling; t_spriteFilling = true; return was; }
+void WrittenLayer::endCapture(bool was) { t_spriteFilling = was; }
+
+void WrittenLayer::keep(const Surface& overBlack, const Surface& overWhite) {
+    w_ = overBlack.w; h_ = overBlack.h;
+    rowAt_.assign(1, 0);
+    runs_.clear(); px_.clear();
+    for (int y = 0; y < h_; ++y) {
+        const std::size_t o = static_cast<std::size_t>(y) * w_;
+        // a pixel the drawing writes came out the same over both fills
+        const auto written = [&](int x) { return overBlack.px[o + x] == overWhite.px[o + x]; };
+        for (int x = 0; x < w_;) {
+            if (!written(x)) { ++x; continue; }
+            const int runStart = x;
+            while (x < w_ && written(x)) ++x;
+            runs_.push_back({runStart, x - runStart, px_.size()});
+            px_.insert(px_.end(), overBlack.px.begin() + static_cast<long>(o + runStart),
+                       overBlack.px.begin() + static_cast<long>(o + x));
+        }
+        rowAt_.push_back(runs_.size());
+    }
+}
+
+void WrittenLayer::apply(Surface& dst, int x, int y) const {
+    if (!valid() || x < 0 || y < 0 || x + w_ > dst.w || y + h_ > dst.h) return;
+    // split like a blit: a big layer's rows over the pool, each row its own
+    rows(w_, h_, [&](std::size_t from, std::size_t to) {
+        for (std::size_t r = from; r < to; ++r) {
+            std::uint16_t* out = &dst.px[(static_cast<std::size_t>(y) + r) * dst.w + x];
+            for (std::size_t i = rowAt_[r]; i < rowAt_[r + 1]; ++i)
+                std::memcpy(out + runs_[i].x, &px_[runs_[i].at], static_cast<std::size_t>(runs_[i].n) * 2);
+        }
+    });
+}
 
 bool blt(Surface& dst, Rect dr, const Surface& src, Rect sr,
          std::uint32_t flags, std::uint16_t srcKey, std::uint16_t dstKey,
@@ -205,27 +232,11 @@ bool blt(Surface& dst, Rect dr, const Surface& src, Rect sr,
             if (c.hash == srcHash && c.sw == sw && c.sh == sh && c.dw == dw && c.dh == dh && c.key == srcKey &&
                 c.filter == filter) { hit = &c; break; }
         if (!hit) {
-            Surface overBlack(dw, dh, kFillBlack), overWhite(dw, dh, kFillWhite);
-            t_spriteFilling = true;
-            blt(overBlack, {0, 0, dw, dh}, src, sr, flags, srcKey, dstKey, filter);
-            blt(overWhite, {0, 0, dw, dh}, src, sr, flags, srcKey, dstKey, filter);
-            t_spriteFilling = false;
             SpriteCache c;
             c.hash = srcHash; c.sw = sw; c.sh = sh; c.dw = dw; c.dh = dh; c.key = srcKey; c.filter = filter;
-            c.rows.resize(static_cast<std::size_t>(dh));
-            for (int y = 0; y < dh; ++y) {
-                const std::size_t o = static_cast<std::size_t>(y) * dw;
-                // a pixel the sprite writes came out the same over both fills
-                const auto written = [&](int x) { return overBlack.px[o + x] == overWhite.px[o + x]; };
-                for (int x = 0; x < dw;) {
-                    if (!written(x)) { ++x; continue; }
-                    const int runStart = x;
-                    while (x < dw && written(x)) ++x;
-                    c.rows[static_cast<std::size_t>(y)].push_back({runStart, x - runStart, c.px.size()});
-                    c.px.insert(c.px.end(), overBlack.px.begin() + static_cast<long>(o + runStart),
-                                overBlack.px.begin() + static_cast<long>(o + x));
-                }
-            }
+            c.layer.capture(dw, dh, [&](Surface& fill) {
+                blt(fill, {0, 0, dw, dh}, src, sr, flags, srcKey, dstKey, filter);
+            });
             // at most eight: the least recently used goes
             if (g_sprites.size() >= 8)
                 g_sprites.erase(std::min_element(g_sprites.begin(), g_sprites.end(),
@@ -236,11 +247,7 @@ bool blt(Surface& dst, Rect dr, const Surface& src, Rect sr,
             hit = &g_sprites.back();
         }
         hit->used = g_spriteTick;
-        for (int y = 0; y < dh; ++y) {
-            std::uint16_t* out = &dst.px[static_cast<std::size_t>(dr.top + y) * dst.w + dr.left];
-            for (const SpriteRun& r : hit->rows[static_cast<std::size_t>(y)])
-                std::memcpy(out + r.x, &hit->px[r.at], static_cast<std::size_t>(r.n) * 2);
-        }
+        hit->layer.apply(dst, dr.left, dr.top);
         return true;
     }
 

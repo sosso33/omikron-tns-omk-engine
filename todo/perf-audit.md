@@ -226,6 +226,20 @@ given at each.
    and display-res stays an enhancement option (`enhancements.md` rule:
    enhancements off by default). Saves CPU on every target and RAM that
    grows with the screen.
+
+   **CORRECTED 2026-11-13: "the original's way" holds for the menu's cloud
+   only.** `sub_4B19C0` makes the CLOUD's surface 640x480; the screens
+   themselves are composed at the display's size - `Ui_DrawPanelBack`
+   (0x00476040) places its cells at `col * I2D_ScaleX(64)` and every widget
+   goes through `I2D_ScaleX/Y` (`engine: screen scale`). So a 640x480
+   compose is NOT the faithful default at another size: text, fills and
+   lines would be drawn at 640x480 and enlarged, where the game draws them
+   at the display's resolution. It stays a possible option for the targets
+   whose CPU or RAM cannot afford the display-size frame, not a default.
+
+   **What was actually slow at 4K, DONE 2026-11-13 (§11):** not the size of
+   the frame but work repeated on it every frame - the background's 80
+   scaled cells, and the fills' blend table rebuilt at every alpha switch.
 8. **Indexed set geometry on GLES and Vulkan.** This is the original's
    transform-each-vertex-once (`Render_SubmitMesh` 0x004951C0) and what the
    3DS (`VertexIndex`) and GL1 already do. Anekbah: 139245 corners -> 63079
@@ -439,3 +453,32 @@ ended in the same street.
 
 Order from here: C7 (the screens), then the submits pipelined (C11), then
 the passes themselves (EASU 3.2, post 3.6).
+
+**The sneak at 4K, DONE 2026-11-13: 32.6 -> 16.6 ms at 60 Hz (60 fps held),
+10.2 ms uncapped; `screen draw` 25.8 -> 3.3 ms.** `sample` on the open
+sneak named two things, both work redone every frame on an unchanging
+picture, and both now byte-identical to before (a 4K remaster dump of the
+open sneak `cmp`-equal to HEAD's; `run_screen`'s LIFT and menu hashes equal
+at 800x600, 1920x1080 and 3840x2160, both filters):
+
+1. **The background's 80 cells thrashed the stretched-sprite cache.** At
+   4K each cell is 384x288 - over the "big blit" line - so each went to the
+   cache (8 entries) and missed: a hash of its 256x256 source in the
+   interface pack, then the cell drawn TWICE over the two fills, then its
+   runs built, 80 times a frame. `ScreenComposer::background` now keeps the
+   whole scaled background as what it writes (`WrittenLayer`, `ui/surface.h`
+   - the sprite cache's mechanism, lifted out and shared) and copies its
+   runs; at 640x480 it is not used (each cell is a row copy). Keyed on the
+   panel, its cells, its arm, the sheet's load, the display and the filter:
+   `engine: screen background kept` composes LIFT, SNEAK, LIFT, SNEAK on one
+   composer against fresh ones (shown to fail with the key cut to the size).
+2. **The fills' blend table had one entry.** The sneak's row bars (alpha
+   200) and cursor (233) alternate within a frame, and at 4K each bar is
+   ~250k pixels - over the table's line - so every switch rebuilt all 65536
+   blends. Four tables are kept now, and a big fill with no overlay planes is
+   split over the pool.
+
+What a screen costs at 4K now is mostly `present` - 6.7 ms, the 565 frame
+expanded to RGBA on the CPU and uploaded (`vulkanPresentSurface`). That, and
+not a 640x480 compose, is the next lever for the screens: upload the 565
+frame as it is and expand it on the GPU.

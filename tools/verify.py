@@ -30347,6 +30347,59 @@ def c_engine_screen_scale():
            "which is why every check in this file missed it"
 
 
+def c_engine_screen_background_kept():
+    r"""A screen's SCALED background is kept between frames - and never shown stale.
+
+    At any size but 640x480 every one of `Ui_DrawPanelBack`'s 80 cells is a
+    keyed, scaled blit, and at 4K the SNEAK's (384x288 each, out of the
+    interface pack's 2560x1920 sheet) cost 25 ms a frame and halved its fps
+    (`todo/perf-audit.md` 11). `ScreenComposer::background` therefore draws
+    it once over two fills and keeps what it WRITES (`WrittenLayer`,
+    `ui/surface.h`), copying the runs after - byte-identical to drawing it.
+
+    What that can get wrong is the KEY: a layer kept for one screen and
+    copied onto the next. A screen composed once cannot show it - every
+    other check here composes each screen once - so this composes the LIFT
+    and the SNEAK at 3840x2160 as 4, 9, 4, 9 on ONE composer (`run_screen
+    ... again`) and each on a fresh composer, and asserts the four shared
+    hashes are the fresh ones.
+
+    Shown to fail: with the key cut down to the layer's size (panel, sheet
+    and cells ignored) the SNEAK drawn after the LIFT came back as
+    `2BBE46D2` against the fresh `ED7A099E` - the LIFT's background with the
+    sneak's items over it - while both LIFT hashes still matched.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    mk = subprocess.run(["make", "-s", "build/run_screen"], cwd=eng,
+                        capture_output=True, text=True)
+    tool = os.path.join(eng, "build", "run_screen")
+    if mk.returncode != 0 or not os.path.exists(tool):
+        return ("skipped",), ("skipped",), "run_screen did not build"
+    tb = os.path.join(ROOT, "tables")
+    out = os.path.join(ROOT, ".verify-kept.bin")
+    r = subprocess.run([tool, omkpaths.data_root(),
+                        os.path.join(tb, "ui_widgets.json"),
+                        os.path.join(tb, "ui.json"), out, "0", "3840x2160",
+                        "0", "0", "again"],
+                       capture_output=True, text=True,
+                       env=dict(os.environ, OMK_NOCLOUD="1"))
+    rows = re.findall(r"^again: (shared|fresh) (\d+) ([0-9A-F]{8})$", r.stdout, re.M)
+    if r.returncode != 0 or len(rows) != 6:
+        return ("ran",), ("did not run: %d rows" % len(rows),), \
+               "run_screen ... again must print six hashes"
+    fresh = {sid: h for kind, sid, h in rows if kind == "fresh"}
+    shared = [(sid, h == fresh.get(sid)) for kind, sid, h in rows if kind == "shared"]
+    return (shared, fresh["4"] != fresh["9"]), \
+           ([("4", True), ("9", True), ("4", True), ("9", True)], True), \
+           "the LIFT then the SNEAK then both again, at 3840x2160 on one " \
+           "composer, each the same frame a fresh composer draws - the " \
+           "scaled background kept between frames is never the previous " \
+           "screen's - and the two screens' frames differ"
+
+
 def c_engine_movies():
     r"""`engine/` DECODES the three intro movies - the first thing a player sees.
 
@@ -55889,6 +55942,7 @@ SLOW = [
     ("ui geometry",        c_ui_geometry,       "UI 3b"),
     ("engine: screen",     c_engine_screen,     "PORTING A1"),
     ("engine: screen scale", c_engine_screen_scale, "PORTING A1; UI 3b"),
+    ("engine: screen background kept", c_engine_screen_background_kept, "perf-audit 11"),
     ("engine: name field", c_engine_name_field, "UI 3b; PORTING A1"),
     ("engine: lift doors", c_lift_doors,       "todo/next-tasks 7"),
     ("engine: node rest",  c_engine_node_rest, "todo/missing-ui 6d"),
