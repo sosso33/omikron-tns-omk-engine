@@ -170,6 +170,16 @@ public:
         return it == actorArgs_.end() ? 0 : it->second;
     }
     const std::map<int, int>& actors() const { return actors_; }
+    // an actor KEY renamed (`Session::actorKey`, todo/drift-audit.md M4): a
+    // second copy of an id becomes the id's own once the lower slot is freed
+    void forget(int key) { actors_.erase(key); serial_.erase(key); actorArgs_.erase(key); }
+    void rekey(int from, int to) {
+        for (auto* m : {&actors_, &serial_, &actorArgs_})
+            if (auto it = m->find(from); it != m->end()) {
+                (*m)[to] = it->second;
+                m->erase(from);
+            }
+    }
     const std::map<int, int>& actorArgs() const { return actorArgs_; }
     // `Shoot_Leave` walks the 100 records and puts every actor in state 3
     // back; the cell each had claimed is released by the grid's owner.

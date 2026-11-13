@@ -2305,8 +2305,8 @@ int PlayState::modesQuitLoad() {
             playerReady = false; adventure = false; forceAdventure = false;
             // every body leaves the spatial index with its staging, as
             // `Actor_Detach` would take it out
-            for (const auto& up : staged) session.dropActorBody(up->actor);
-            for (const auto& up : parked) session.dropActorBody(up->actor);
+            for (const auto& up : staged) session.dropActorBody(up->key);
+            for (const auto& up : parked) session.dropActorBody(up->key);
             staged.clear();
             parked.clear();
             moveWaitCtx = -1; moveWaitGroup = -1;

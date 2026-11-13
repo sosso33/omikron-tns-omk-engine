@@ -643,6 +643,7 @@ void Session::showSet(int area) {
     if (s < 0) return;
     slots_[s].shown = true;
     curSlot_ = s;
+    rebuildShown();
     std::printf("[slot] frame %ld  SHOW area %d in slot %d   (active slot %d = area %d, activeArea %d; "
                 "slot0 area %d %s, slot1 area %d %s)\n", frameNo_, area, s, active_,
                 slots_[active_].area, activeArea_, slots_[0].area, slots_[0].shown ? "shown" : "hidden",
@@ -657,6 +658,7 @@ void Session::hideSet(int area) {
     if (s < 0) return;
     slots_[s].shown = false;
     if (curSlot_ == s && slots_[1 - s].area != -1) curSlot_ = 1 - s;
+    rebuildShown();
     std::printf("[slot] frame %ld  HIDE area %d in slot %d   (active slot %d = area %d, activeArea %d; "
                 "slot0 area %d %s, slot1 area %d %s)%s\n", frameNo_, area, s, active_,
                 slots_[active_].area, activeArea_, slots_[0].area, slots_[0].shown ? "shown" : "hidden",
@@ -2456,11 +2458,25 @@ void Session::spawnFromTables(int slot, bool area, bool scene) {
 // would name (labelled in todo/pending/T19.md).
 void Session::freeActorSlots(int slot, bool area, bool scene) {
     ResidentSlot& s = slots_[slot & 1];
+    std::set<int> freed;
     for (const auto& c : s.characters) {
         if (c.fromScene ? !scene : !area) continue;
         if (c.slot >= 0 && c.slot < 100 &&
-            actorSlots_[static_cast<std::size_t>(c.slot)] == c.actor)
+            actorSlots_[static_cast<std::size_t>(c.slot)] == c.actor) {
             actorSlots_[static_cast<std::size_t>(c.slot)] = -1;
+            freed.insert(c.actor);
+            // a second copy's state goes with his slot (none if he was the id's)
+            shoot_.forget(kActorKeyBase + c.slot);
+            dropActorBody(kActorKeyBase + c.slot);
+        }
+    }
+    // THE OTHER COPY TAKES THE ID'S KEY (M4): an id still held, now lowest in
+    // a slot that was a second copy's, keys his state by the id from here on
+    for (const int a : freed) {
+        const int low = actorSlotOf(a);
+        if (low < 0) continue;
+        shoot_.rekey(kActorKeyBase + low, a);
+        dropActorBody(kActorKeyBase + low);
     }
 }
 
@@ -2473,6 +2489,15 @@ void Session::rebuildShown() {
     for (int k = 0; k < 2; ++k)
         for (const auto& c : slots_[k].characters) {
             if (!c.attached) continue;
+            // A HIDDEN SET'S ACTORS ARE NOT DRAWN (todo/drift-audit.md M4,
+            // read 2026-11-08): `Actor_Attach` links the body under its
+            // decor slot's node, and hiding the slot (`sub_419A90` ->
+            // `sub_441200`) unlinks that whole scene from the render chain -
+            // they are ticked, not drawn, until the slot is shown again. The
+            // port listed them whatever the slot's state; with a body per
+            // record, the other area's copy stayed drawn in a set no longer
+            // there. `showSet` / `hideSet` rebuild this.
+            if (!slots_[k].shown) continue;
             Shown sh;
             sh.actor = c.actor;
             sh.model = c.model;
@@ -3203,7 +3228,10 @@ void Session::onCall(int i, const Call& call) {
         // pose a body that has no `.CTL` at all, which is every one of these
         // characters. LABELLED as that, not as the shoot AI running.
         if (call.fields.empty()) break;
-        const int who = call.fields[0];
+        // the RECORD of the context's area (`Scene_FindObjectIndexById`, M4),
+        // keyed as the port keys it: the id for his lowest slot
+        const int who = actorKey(call.fields[0],
+                                 resolveActorSlot(call.fields[0], c ? slots_[c->slot & 1].area : -1));
         if (call.op == op::ShootActorEnter) shoot_.actorEnter(who);     // no action (`kEnteredOnly`)
         // op 84 is SIX bytes, three int16 operands: the actor, the action and
         // `a3` - which for the patrol names the route (`todo/shoot-patrol.md`).
@@ -3445,8 +3473,15 @@ void Session::onCall(int i, const Call& call) {
         // look-at slot (+400) written with the player's index / -1. The head
         // aim itself is `Actors_TickAll`'s, per frame, in the frontend.
         if (call.fields.empty()) break;
-        if (call.op == op::CharacterLookAtPlayer) lookAtPlayer_.insert(call.fields[0]);
-        else lookAtPlayer_.erase(call.fields[0]);
+        const int who = call.fields[0];
+        const int rt = resolveActorSlot(who, c ? slots_[c->slot & 1].area : -1);
+        if (call.op == op::CharacterLookAtPlayer) {
+            lookAtPlayer_.insert({who, rt});
+        } else {
+            for (auto it = lookAtPlayer_.begin(); it != lookAtPlayer_.end();)
+                it = it->first == who && (rt < 0 || it->second < 0 || it->second == rt) ? lookAtPlayer_.erase(it)
+                                                                                     : std::next(it);
+        }
         break;
     }
     case op::CharacterShow: {
@@ -3636,7 +3671,9 @@ void Session::execute(int i) {
         // pool (`poolForSlot`); a WAITING variant parks this context on the
         // program it started, and remembers which pool that was
         bool inOut = false;
-        const int waitOn = poolForSlot(c->slot, inOut).handle(r.calls, playerActor());
+        const int ctxArea = slots_[c->slot & 1].area;
+        const int waitOn = poolForSlot(c->slot, inOut).handle(
+            r.calls, playerActor(), [this, ctxArea](int actor) { return resolveActorSlot(actor, ctxArea); });
         // the three transition opcodes, after their handler's announcement
         for (const auto& call : r.calls) {
             if (call.op == op::AreaGoto && call.fields.size() >= 3) {
@@ -3806,6 +3843,7 @@ void Session::execute(int i) {
             // all - a headless tool, where nothing could ever raise event 2 -
             // it still runs on, as the `ObjectWait` rule does.
             if (!fightHook_) break;
+            fightOpponentRt_ = resolveActorSlot(r.fightOpponent, slots_[c->slot & 1].area);
             if (!beginFight(r.fightOpponent, r.fightLevel)) {
                 std::printf("fight.begin %d: the frontend could not start it - the script "
                             "waits for event 2 all the same, as op 62 does\n", r.fightOpponent);
@@ -4872,6 +4910,27 @@ void Session::dropActorBody(int actor) {
     spatial_.remove(it->second);
     actorBodySlots_.erase(it);
     actorBodySpheres_.erase(actor);
+}
+
+int Session::actorSlotOf(int actor) const {
+    if (actor == -1) return -1;
+    for (int k = 0; k < 100; ++k)
+        if (actorSlots_[static_cast<std::size_t>(k)] == actor) return k;
+    return -1;
+}
+
+int Session::resolveActorSlot(int actor, int area) const {
+    if (actor == -1) return -1;
+    if (area != -1)
+        for (const auto& sl : slots_) {
+            if (sl.area != area) continue;
+            // the AREA's records first, then the SCENE's - the spawn's order,
+            // which `Scene_FindObjectIndexById` walks
+            for (const bool scene : {false, true})
+                for (const auto& c : sl.characters)
+                    if (c.fromScene == scene && c.actor == actor) return c.slot;
+        }
+    return actorSlotOf(actor);
 }
 
 int Session::actorOfBodySlot(int slot) const {

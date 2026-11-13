@@ -563,6 +563,25 @@ struct PlayState {
     std::set<int> propsTold{};   // one line per prop, not per frame
     std::map<std::string, CharBank> charBanks{};
     std::vector<std::unique_ptr<Staged>> staged{};
+    // THE BODY AN ID ANSWERS (todo/drift-audit.md M4): of the staged bodies
+    // wearing it - one per placement record - the one in the runtime slot
+    // `sub_40AF00` finds, the LOWEST; failing that the first. `bodyAt`: the
+    // body of THAT runtime slot (a VM op's resolved record), else `bodyOf`.
+    Staged* bodyOf(int actor);
+    Staged* bodyAt(int actor, int rt);
+    // is this body's record still spawned (`Session::actorSlotHolds`), or -
+    // for a body with no record - is his id still held anywhere
+    bool stagedHeld(const Staged& s) const;
+    // every body's `key` refreshed; the shoot state moved where one changed
+    void refreshBodyKeys();
+    void shootRekey(int from, int to);
+    Staged* bodyOfKey(int key);
+    bool drivesBody(const omk::SceneRunner::Started& t, const Staged& s, int playerId);
+    // THE CONVERSATION'S SPEAKER'S BODY (M4): `Dialog_Load` resolves word 0
+    // with `Scene_FindObjectIndexById(id, dword_69BC48[4 * dword_69BC60])` -
+    // the ACTIVE slot's area's record, else the lowest slot
+    Staged* speakerBody(int speaker);
+    const Staged* speakerBody_ = nullptr;   // this frame's, for `worldStagedBody`
     // HIDDEN, NOT GONE (todo/drift-audit.md M1): a body `character.hide`
     // detached while its actor still holds a slot (`Session::actorHeld`),
     // kept whole - position, facing, the pose it was left in - and moved

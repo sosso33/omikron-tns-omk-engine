@@ -102,7 +102,7 @@ int PlayState::phaseWorld() {
                 // the crowd model as the speaker, move him to the solve and
                 // give him the lines.
                 Staged* s = nullptr;
-                for (auto& up : staged) if (up->actor == sp) { s = up.get(); break; }
+                s = speakerBody(sp);
                 if (!s) {
                     staged.push_back(std::make_unique<Staged>());
                     s = staged.back().get();
@@ -133,15 +133,15 @@ int PlayState::phaseWorld() {
             const int progPid = session.playerActor();
             phaseWorldPlayerProgram(progPid);
             playerProgramWas = playerProgram;
+            refreshBodyKeys();   // M4: each body's per-actor key, before anything keyed by it
             for (std::size_t k = 0; k < staged.size(); ) {
                 if (staged[k]->seen) { ++k; continue; }
                 // hidden while his actor keeps its slot: PARKED, not dropped
-                if (staged[k]->actor != session.playerActor() &&
-                    session.actorHeld(staged[k]->actor)) {
+                if (staged[k]->actor != session.playerActor() && stagedHeld(*staged[k])) {
                     std::printf("frame %ld: hid actor %d %s - kept where it stands "
                                 "(Actor_Detach)\n", frameNo,
                                 staged[k]->actor, staged[k]->model.c_str());
-                    session.dropActorBody(staged[k]->actor);    // `Actor_Detach`'s `sub_45E090`
+                    session.dropActorBody(staged[k]->key);      // `Actor_Detach`'s `sub_45E090`
                     parked.push_back(std::move(staged[k]));
                     staged.erase(staged.begin() + static_cast<long>(k));
                     ++texPool.composition;
@@ -149,13 +149,13 @@ int PlayState::phaseWorld() {
                 }
                 std::printf("frame %ld: dropped actor %d %s\n", frameNo,
                             staged[k]->actor, staged[k]->model.c_str());
-                session.dropActorBody(staged[k]->actor);
+                session.dropActorBody(staged[k]->key);
                 staged.erase(staged.begin() + static_cast<long>(k));
                 ++texPool.composition;
             }
             // ...and a parked body goes for good once its slot is freed
             for (std::size_t k = 0; k < parked.size(); ) {
-                if (session.actorHeld(parked[k]->actor)) { ++k; continue; }
+                if (stagedHeld(*parked[k])) { ++k; continue; }
                 std::printf("frame %ld: dropped actor %d %s (hidden, and its slot freed)\n",
                             frameNo, parked[k]->actor, parked[k]->model.c_str());
                 parked.erase(parked.begin() + static_cast<long>(k));
@@ -489,20 +489,94 @@ int PlayState::phaseWorld() {
 }
 
 // EVERY SHOWN ACTOR staged: his model, his bank, his placement (from `phaseWorld`)
+Staged* PlayState::bodyOf(int actor) {
+    if (actor == -1) return nullptr;
+    const int lowest = session_->actorSlotOf(actor);
+    Staged* first = nullptr;
+    for (auto& up : staged) {
+        if (up->actor != actor) continue;
+        if (up->rt == lowest) return up.get();
+        if (!first) first = up.get();
+    }
+    return first;
+}
+
+Staged* PlayState::bodyAt(int actor, int rt) {
+    if (rt >= 0)
+        for (auto& up : staged)
+            if (up->actor == actor && up->rt == rt) return up.get();
+    return bodyOf(actor);
+}
+
+Staged* PlayState::speakerBody(int speaker) {
+    if (speaker < 0) return nullptr;
+    const auto& se = *session_;
+    return bodyAt(speaker, se.resolveActorSlot(speaker, se.residentSlot(se.activeSlot()).area));
+}
+
+Staged* PlayState::bodyOfKey(int key) {
+    for (auto& up : staged) if (up && up->key == key) return up.get();
+    return nullptr;
+}
+
+void PlayState::shootRekey(int from, int to) {
+    if (from == to) return;
+    const auto moveMap = [&](auto& m) {
+        if (auto it = m.find(from); it != m.end()) {
+            auto v = std::move(it->second);
+            m.erase(it);
+            m[to] = std::move(v);
+        }
+    };
+    const auto moveSet = [&](std::set<int>& m) {
+        if (m.erase(from)) m.insert(to);
+    };
+    moveMap(shootBrains); moveMap(astarothActors); moveMap(gandharActors); moveMap(actorSlotTimer);
+    moveMap(gun.shots); moveMap(gun.clips); moveMap(gun.anims); moveMap(gun.curType);
+    moveMap(gun.curSlot); moveMap(gun.actSerialSeen); moveMap(gun.aims);
+    for (auto* st : {&gun.told, &gun.standDown, &gun.looped, &gun.aimTold, &gun.holderTold, &gun.drawnTold,
+                     &gun.barrelTold, &gunCellSeeded, &gunEntryPending})
+        moveSet(*st);
+    session_->dropActorBody(from);
+    std::printf("frame %ld: actor key %d -> %d - his lower copy's slot freed, this one is the id's now "
+                "(todo/drift-audit.md M4)\n", frameNo, from, to);
+}
+
+void PlayState::refreshBodyKeys() {
+    for (auto* list : {&staged, &parked})
+        for (auto& up : *list) {
+            if (!up) continue;
+            const int k = session_->actorKey(up->actor, up->rt);
+            if (up->key != -1 && up->key != k) shootRekey(up->key, k);
+            up->key = k;
+        }
+}
+
+bool PlayState::stagedHeld(const Staged& s) const {
+    return s.rt >= 0 ? session_->actorSlotHolds(s.rt, s.actor) : session_->actorHeld(s.actor);
+}
+
 void PlayState::phaseWorldShown(int playerId) {
     auto& session = *session_;
     for (const auto& sh : session.shown()) {
         // In adventure mode the CONTROLLER owns the player's body; a
         // second one here would draw him twice.
         if ((adventure || session.dialogOpen()) && player && sh.actor == playerId) continue;
+        // HIS RECORD'S body (M4): the id AND the runtime slot - a body with no
+        // record yet (staged for a conversation, or a script's side show)
+        // takes the first record of his id that comes
+        const auto mine = [&](const Staged& b) {
+            return b.actor == sh.actor && (b.rt == sh.slot || b.rt < 0);
+        };
         Staged* s = nullptr;
-        for (auto& up : staged) if (up->actor == sh.actor) { s = up.get(); break; }
+        for (auto& up : staged) if (up->actor == sh.actor && up->rt == sh.slot) { s = up.get(); break; }
+        if (!s) for (auto& up : staged) if (mine(*up) && !up->seen) { s = up.get(); break; }
         // RE-SHOWN: `Actor_Attach` re-links the node `Actor_Detach`
         // parked - same place, same pose. Its cached pointers are
         // re-resolved, since the model pool may have let them go.
         if (!s)
             for (std::size_t k = 0; k < parked.size(); ++k)
-                if (parked[k]->actor == sh.actor) {
+                if (mine(*parked[k])) {
                     staged.push_back(std::move(parked[k]));
                     parked.erase(parked.begin() + static_cast<long>(k));
                     s = staged.back().get();
@@ -523,6 +597,7 @@ void PlayState::phaseWorldShown(int playerId) {
             staged.push_back(std::make_unique<Staged>());
             s = staged.back().get();
             s->actor = sh.actor;
+            s->rt = sh.slot;
             s->model = sh.model;
             s->bank  = sh.bank;
             s->placeSeqSeen = sh.placeSeq;
@@ -542,6 +617,7 @@ void PlayState::phaseWorldShown(int playerId) {
                                      : "shown by a script, no placement of his own");
         }
         s->seen = true;
+        if (sh.slot >= 0) s->rt = sh.slot;
         // `character.show` with a NON-ZERO second field: `sub_41BDF0`
         // puts the node at the record's position and facing, over
         // whatever a program or a fight had done (0x403CB0, M1).
@@ -612,7 +688,7 @@ void PlayState::phaseWorldShown(int playerId) {
             // reader's robber 519 restarted a turn clip every 14 frames
             // at 68.0 for the rest of the phase, and 521 turned 7.2 of
             // his 180. (77 escaped it: a program had moved him.)
-            if (!shootBrains.count(sh.actor)) s->facing = sh.facing;
+            if (!shootBrains.count(session.actorKey(s->actor, s->rt))) s->facing = sh.facing;
             if (!s->placed) { s->placed = true; s->pelvis = false; }
         }
     }
@@ -932,7 +1008,7 @@ void PlayState::phaseWorldDialogCamera(const omk::DialogCamera*& ca, const omk::
             if (code == 0xFFFF) return false;               // absolute: no anchor
             const auto speakerBody = [&]() -> const Staged* {
                 const int sp = session.dialogue().conversation().speaker;
-                for (const auto& up : staged) if (up->actor == sp) return up.get();
+                if (Staged* b = this->speakerBody(sp)) return b;
                 return nullptr;
             };
             // THE CODE IS THE RESOLVER KIND, not merely which actor.

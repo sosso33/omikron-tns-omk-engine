@@ -1062,10 +1062,12 @@ void PlayState::worldProps() {
         for (; propEventsSeen < ev.size(); ++propEventsSeen) {
             const auto& e = ev[propEventsSeen];
             if (std::strcmp(e.what, "place") != 0) continue;
+            // `sub_40AF00` - the LOWEST runtime slot holding his id (M4)
             const Staged* body = nullptr;
+            const int lowest = session.actorSlotOf(e.actor);
             for (const auto* list : {&staged, &parked})
                 for (const auto& s : *list)
-                    if (s && s->actor == e.actor && s->mo) { body = s.get(); break; }
+                    if (s && s->actor == e.actor && s->mo && (!body || s->rt == lowest)) body = s.get();
             int propId = -1;
             for (const auto& pr : session.props())
                 if (pr.stateIndex == e.slot) { propId = pr.id; break; }

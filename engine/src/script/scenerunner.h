@@ -141,7 +141,11 @@ public:
     // (`ScriptObject_StartOnActor(Actor_Player(), ...)`), and the binding
     // outlives a later `player.become` - see `Started::actor`. -1 when the
     // caller does not know (a harness start of a scene or actor object).
-    int handle(const std::vector<Call>& calls, int playerActor = -1);
+    // `rtOf`: the runtime actor slot a 59/60's CHARACTERS id resolves to -
+    // `Scene_FindObjectIndexById(id, the context's area)` (todo/drift-audit.md
+    // M4); null, or -1 answered, leaves `Started::rt` unknown
+    int handle(const std::vector<Call>& calls, int playerActor = -1,
+               const std::function<int(int)>& rtOf = nullptr);
 
     // Whether the program at `idx` is still running. Out of range is false,
     // so a caller that parked on a program the runner has since replaced is
@@ -284,6 +288,12 @@ public:
         // the player: the collapse is Kay'l's (and the transfer STOPS it,
         // `resetActor`), and Fodo is at the keys. See `drivesPlayer`.
         int         actor = -1;
+        // ...and the RUNTIME SLOT (`word_69BC80`'s index) that id resolved to
+        // when 59/60 started it, through the running context's area: the
+        // engine binds a program to one actor RECORD, and two resident areas
+        // may place one id twice (todo/drift-audit.md M4). -1 unknown - the
+        // body `sub_40AF00` answers, the lowest.
+        int         rt = -1;
         // Which clip of the scene's animation array the object's body
         // animation selects - `Script_SelectBodyAnimation` param 1, and by
         // POSITION rather than by id, which is what `omkdata.scene_idle`

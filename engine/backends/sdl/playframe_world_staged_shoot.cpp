@@ -79,9 +79,9 @@ void PlayState::shootApplyAction(Staged& s, omk::ShootRecord& ar, int action, in
         ar.timer = static_cast<float>(30 * v);
     }
     if (o.clipType >= 0) {
-        gun.curType[s.actor] = o.clipType;
-        gun.curSlot.erase(s.actor);
-        gun.anims[s.actor].clip = nullptr;   // `sub_421A20`: from 1.0, the same clip too
+        gun.curType[s.key] = o.clipType;
+        gun.curSlot.erase(s.key);
+        gun.anims[s.key].clip = nullptr;   // `sub_421A20`: from 1.0, the same clip too
     }
     // logged when the action, the clip or the state CHANGES - a
     // request repeated every tick says nothing new
@@ -100,11 +100,11 @@ void PlayState::shootApplyAction(Staged& s, omk::ShootRecord& ar, int action, in
 void PlayState::worldStagedShoot(Staged& s, const omk::NodeTracks*& shootTracks, int& shootFrame,
                                  const omk::AstarothActor*& astGrid) {
     auto& session = *session_;
-    const int act = session.shootAction(s.actor);
+    const int act = session.shootAction(s.key);
     // IN SHOOT MODE, whatever his action - an enter with none yet is
     // `kEnteredOnly` (-2), which `act >= 0` would read as "not in"
     // (todo/drift-audit.md S13)
-    const bool inShoot = session.shootIn(s.actor);
+    const bool inShoot = session.shootIn(s.key);
     // ---- THE GENERIC BRAIN, ticked (todo/shoot-mode.md 7d)
     //
     // `Shoot_TickNpc` calls the arm `Shoot_ActorEnter` chose;
@@ -133,9 +133,9 @@ void PlayState::worldStagedShoot(Staged& s, const omk::NodeTracks*& shootTracks,
     // the loop at 0x468221) takes the frame delta off all four for
     // every actor it ticks, every frame (without it, harmless for
     // Astaroth, whose reload reads 0)
-    if (auto st = actorSlotTimer.find(s.actor); st != actorSlotTimer.end())
+    if (auto st = actorSlotTimer.find(s.key); st != actorSlotTimer.end())
         for (float& t : st->second) t -= static_cast<float>(frameSec * 30.0);
-    const auto deadIt = shootBrains.find(s.actor);
+    const auto deadIt = shootBrains.find(s.key);
     const bool astarothRec = deadIt != shootBrains.end() &&
         deadIt->second.type == static_cast<std::uint32_t>(omk::kAstarothType);
     // GANDHAR's brain is his own too (`sub_47F6F0`, `todo/gandhar.md`):
@@ -168,18 +168,18 @@ void PlayState::worldStagedShoot(Staged& s, const omk::NodeTracks*& shootTracks,
     // script), every hit reaction and every noise alert. Not Astaroth's: his record is
     // driven by his own tick, and nothing shipped asks him for one.
     if (deadIt != shootBrains.end() && !astarothRec && !gandharRec && inShoot && act >= 0) {
-        const int ser = session.shootActionSerial(s.actor);
-        auto seen = gun.actSerialSeen.find(s.actor);
+        const int ser = session.shootActionSerial(s.key);
+        auto seen = gun.actSerialSeen.find(s.key);
         if (seen != gun.actSerialSeen.end() && seen->second != ser) {
             seen->second = ser;
-            shootApplyAction(s, deadIt->second, act, session.shootActionArg(s.actor),
+            shootApplyAction(s, deadIt->second, act, session.shootActionArg(s.key),
                         "a request after his entry (op 84, a hit or a noise)");
         }
     }
     // THE STAND-DOWN (`sub_423FC0`, the player's death): action 0 -
     // or, on script step 8, his 0x20 latch cleared - told in the
     // hit and applied here, on his own tick
-    if (deadIt != shootBrains.end() && gun.standDown.erase(s.actor)) {
+    if (deadIt != shootBrains.end() && gun.standDown.erase(s.key)) {
         omk::ShootRecord& sr = deadIt->second;
         if (sr.scriptStep == 8) sr.flags &= ~0x20u;
         else if (!(sr.flags & 0x4000u))
@@ -195,7 +195,7 @@ void PlayState::worldStagedShoot(Staged& s, const omk::NodeTracks*& shootTracks,
     // previous clip back. Not ported: the clip's root motion and
     // the `+460` interrupt arm.
     // no aim layer unless the fire gate runs him this tick
-    if (auto gaL = gun.aims.find(s.actor); gaL != gun.aims.end()) gaL->second.live = false;
+    if (auto gaL = gun.aims.find(s.key); gaL != gun.aims.end()) gaL->second.live = false;
     bool clipHolds = false;
     // `Shoot_TickNpc` calls a gunman's brain callback - whose
     // prologue this clip tick is, whose body is the block below and
@@ -213,7 +213,7 @@ void PlayState::worldStagedShoot(Staged& s, const omk::NodeTracks*& shootTracks,
     // (the draw seats his pelvis at `at + walkMove`; `at[1]` is +60)
     if (astTicks) {
         omk::ShootRecord& ar = deadIt->second;
-        omk::AstarothActor& aa = astarothActors[s.actor];
+        omk::AstarothActor& aa = astarothActors[s.key];
         // `rec+168 -= flt_4C30D8`; `Hud_DrawBar(+92, 200, 1, 0)`; the
         // yaw wrap (`< 0` and `> 359`); `actor+248` re-read from the node
         ar.timer -= astDt;
@@ -225,7 +225,7 @@ void PlayState::worldStagedShoot(Staged& s, const omk::NodeTracks*& shootTracks,
     }
     worldStagedShootClipTick(inShoot, shotDead, brainsOff, deadIt, s, astarothRec, astBand, clipHolds, astDt, gandharRec);
     if (inShoot && shootMode && !shotDead && !clipHolds && !brainsOff) {
-        auto it = shootBrains.find(s.actor);
+        auto it = shootBrains.find(s.key);
         worldStagedShootEnter(it, s, act);
         omk::ShootRecord& rec = it->second;
         // ---- THE BRAIN'S PROLOGUE, `sub_424DE0` 5456 -------
@@ -271,7 +271,7 @@ void PlayState::worldStagedShoot(Staged& s, const omk::NodeTracks*& shootTracks,
         // keeps +136/+140 itself (`sub_435770` after every move) -
         // so once his stand grid has begun it is not run for him)
         const bool astThinks = !(rec.type == static_cast<std::uint32_t>(omk::kAstarothType) &&
-                                 astarothActors[s.actor].started);
+                                 astarothActors[s.key].started);
         worldStagedShootEnterProps(astThinks, s, rec, act);
         // ---- ASTAROTH's tick is his own (`sub_4800C0`, step 3 of
         // `todo/astaroth.md`), not `sub_424DE0`: the generic brain
@@ -290,7 +290,7 @@ void PlayState::worldStagedShoot(Staged& s, const omk::NodeTracks*& shootTracks,
     // cell `Shoot_Think` has just found, which is the half of
     // the cycle that makes a moving gunman's occupancy follow
     // him instead of staying where he started)
-    if (auto sb = shootBrains.find(s.actor);
+    if (auto sb = shootBrains.find(s.key);
         shootMode && !shotDead && !brainsOff && sb != shootBrains.end() && shootMap.valid() &&
         sb->second.state != 2 && !sb->second.cellStamped && !astarothRec) {
         omk::ShootRecord& sr = sb->second;
@@ -305,7 +305,7 @@ void PlayState::worldStagedShoot(Staged& s, const omk::NodeTracks*& shootTracks,
     if (inShoot) {
         const int grp = static_cast<int>(session.typeOfActor(s.actor));
         // the clip his last ACTION started, as the clock above uses
-        const auto ctP = gun.curType.find(s.actor);
+        const auto ctP = gun.curType.find(s.key);
         const omk::PedClip* c = (grp >= 0 && grp < 64)
             ? (ctP != gun.curType.end() ? shootClipExact(grp, ctP->second)
                                        : shootClipFor(grp, act))
@@ -318,7 +318,7 @@ void PlayState::worldStagedShoot(Staged& s, const omk::NodeTracks*& shootTracks,
                 s.deathClip = dc;
             }
         // ON A TURN CLIP: the picked clip, at his frame `+188`
-        const auto gcIt = gun.clips.find(s.actor);
+        const auto gcIt = gun.clips.find(s.key);
         const bool onTurn = gcIt != gun.clips.end() && gcIt->second.type >= 0 &&
                             s.deathType < 0 && grp >= 0 && grp < 64;
         if (onTurn)
@@ -329,7 +329,7 @@ void PlayState::worldStagedShoot(Staged& s, const omk::NodeTracks*& shootTracks,
         // at KEY `(int)+188` (the grids' `sub_4725B0` and the plain
         // clips' `Anim_SetFrame` both index the key array with the
         // truncated frame; this tree's tracks hold key k at k - 1)
-        const auto astIt = grp == omk::kAstarothType ? astarothActors.find(s.actor)
+        const auto astIt = grp == omk::kAstarothType ? astarothActors.find(s.key)
                                                      : astarothActors.end();
         const bool astOwn = astIt != astarothActors.end() && astIt->second.started &&
                             !onTurn && s.deathType < 0;
@@ -338,7 +338,7 @@ void PlayState::worldStagedShoot(Staged& s, const omk::NodeTracks*& shootTracks,
         // ...and GANDHAR's (`GandharActor`, `todo/gandhar.md`) the same
         // way: his action's clip by slot at key `(int)+188`. An action
         // with no clip of its own (16, 17, 18) holds the last one.
-        const auto gdIt = grp == omk::kGandharType ? gandharActors.find(s.actor)
+        const auto gdIt = grp == omk::kGandharType ? gandharActors.find(s.key)
                                                    : gandharActors.end();
         const bool gaOwn = gdIt != gandharActors.end() && gdIt->second.started &&
                            gdIt->second.clip >= 0 && !onTurn && s.deathType < 0;
@@ -359,7 +359,7 @@ void PlayState::worldStagedShoot(Staged& s, const omk::NodeTracks*& shootTracks,
         // ...and otherwise his CURRENT clip at the frame
         // `sub_421370` has advanced it to (above) - the same clip
         // `shootClipFor` just gave `c`, since both ask it alike
-        const auto gaIt = gun.anims.find(s.actor);
+        const auto gaIt = gun.anims.find(s.key);
         if (!astOwn && !gaOwn && !onTurn && s.deathType < 0 && gaIt != gun.anims.end() &&
             gaIt->second.clip == c && shootTracks && shootTracks->frames > 0)
             shootFrame = std::min(static_cast<int>(gaIt->second.frame),
@@ -555,7 +555,7 @@ void PlayState::worldStagedShootEnter(std::map<int, omk::ShootRecord>::iterator&
             // `sub_4B2E90` - the STAND grid - waits for his first
             // tick on the grid, which is when this port knows his
             // `+60` (the generic entry's action waits the same way)
-            astarothActors[s.actor] = omk::AstarothActor{};
+            astarothActors[s.key] = omk::AstarothActor{};
             // HIS NODE IS HIS PELVIS (the root mesh's world point),
             // as Gandhar's is (`todo/gandhar.md` 3b): drawn
             // pelvis-on-node, not seated by his lowest posed corner
@@ -567,7 +567,7 @@ void PlayState::worldStagedShootEnter(std::map<int, omk::ShootRecord>::iterator&
                 std::printf("frame %ld: ASTAROTH HEALTH - the test harness "
                             "--astaroth-health writes +92 = %d\n", frameNo, astarothHealth);
             }
-            actorSlotTimer[s.actor] = {0.0f, 0.0f, 0.0f, 0.0f};
+            actorSlotTimer[s.key] = {0.0f, 0.0f, 0.0f, 0.0f};
             if (s.mo) {
                 int tire[4];
                 omk::astarothTireSlots(s.mo->meshes, tire);
@@ -596,7 +596,7 @@ void PlayState::worldStagedShootEnter(std::map<int, omk::ShootRecord>::iterator&
             onGridAtEntry = omk::shootThink(fresh, shootMap, at,
                                             static_cast<int>(fresh.type), -1);
         }
-        it = shootBrains.emplace(s.actor, fresh).first;
+        it = shootBrains.emplace(s.key, fresh).first;
         // ---- GANDHAR: `sub_47DFD0`'s type-10 arm (`todo/gandhar.md`)
         // - his node to y -147, +68 = 39 * property 3 / 30, and
         // action 23 entered at once; no scene action, no default arm.
@@ -609,7 +609,7 @@ void PlayState::worldStagedShootEnter(std::map<int, omk::ShootRecord>::iterator&
                     std::printf("frame %ld: GANDHAR - tables/shoot_ai.json did not "
                                 "load: his scripts are empty\n", frameNo);
             }
-            omk::GandharActor& ga = gandharActors[s.actor];
+            omk::GandharActor& ga = gandharActors[s.key];
             ga = omk::GandharActor{};
             // (the TEST HARNESS `--gandhar-health N`, an instrument)
             if (gandharHealth >= 0) {
@@ -639,7 +639,7 @@ void PlayState::worldStagedShootEnter(std::map<int, omk::ShootRecord>::iterator&
             std::printf("frame %ld: actor %d %s - GANDHAR ENTERS (sub_47DFD0): node y "
                         "%.0f (+60 %.0f, +64 %.1f), speed %.1f (property 3 = %d), "
                         "state %d, clip %d, health %d, scripts %zu/%zu/%zu\n", frameNo,
-                        s.actor, s.model.c_str(), double(ga.node[1]),
+                        s.key, s.model.c_str(), double(ga.node[1]),
                         double(it->second.groundY), double(it->second.height),
                         double(ga.speed),
                         int(p3), it->second.state, ga.clip, it->second.health,
@@ -656,7 +656,7 @@ void PlayState::worldStagedShootEnter(std::map<int, omk::ShootRecord>::iterator&
         // the alternative is a patrol with a null route.
         if (!onGridAtEntry && shootMap.valid() && !bossHere &&
             act != omk::ShootMode::kEnteredOnly) {
-            gunEntryPending.insert(s.actor);
+            gunEntryPending.insert(s.key);
             std::printf("frame %ld: actor %d %s - entry action %d HELD: he is "
                         "not on the grid yet (Shoot_ActorEnter thinks first)\n",
                         frameNo, s.actor, s.model.c_str(), act);
@@ -667,7 +667,7 @@ void PlayState::worldStagedShootEnter(std::map<int, omk::ShootRecord>::iterator&
         // (LABELLED: `Shoot_ActorEnter`'s own call is not re-read;
         // this passes the action with a3 = 0)
         // the requests made so far are what the entry applies
-        gun.actSerialSeen[s.actor] = session.shootActionSerial(s.actor);
+        gun.actSerialSeen[s.key] = session.shootActionSerial(s.key);
         if (act == omk::ShootMode::kEnteredOnly && !bossHere) {
             // `sub_47DFD0`'s DEFAULT ARM: `List_PickRandomByType(+20,
             // 11)` into `+8` and `sub_421A20` - his type-11 clip -
@@ -676,15 +676,15 @@ void PlayState::worldStagedShootEnter(std::map<int, omk::ShootRecord>::iterator&
             // that clip until a request moves him (the fixed pick,
             // as every gunman's here)
             it->second.state = 0;
-            gun.curType[s.actor] = 11;
-            gun.curSlot.erase(s.actor);
-            gun.anims[s.actor].clip = nullptr;
-            gunEntryPending.erase(s.actor);
+            gun.curType[s.key] = 11;
+            gun.curSlot.erase(s.key);
+            gun.anims[s.key].clip = nullptr;
+            gunEntryPending.erase(s.key);
             std::printf("frame %ld: actor %d %s - ENTERED WITH NO ACTION "
                         "(sub_47DFD0's default arm): clip type 11, state 0\n",
                         frameNo, s.actor, s.model.c_str());
         } else if ((onGridAtEntry || !shootMap.valid()) && !bossHere)
-            shootApplyAction(s, it->second, act, session.shootActionArg(s.actor),
+            shootApplyAction(s, it->second, act, session.shootActionArg(s.key),
                         "his scene action, at entry");
         std::printf("frame %ld: actor %d %s - shoot brain: "
                     "acquire %.0f engage %.0f disengage %.0f "
@@ -709,7 +709,7 @@ void PlayState::worldStagedShootEnterProps(bool astThinks, Staged& s, omk::Shoot
         const bool onGrid =
             omk::shootThink(rec, shootMap, at,
                             static_cast<int>(rec.type), -1);
-        if (onGrid) gunCellSeeded.insert(s.actor);
+        if (onGrid) gunCellSeeded.insert(s.key);
         // ---- `Shoot_ActorEnter`'s +64 and +60 ------------
         // `+64` is how far his lowest collision sphere hangs
         // below his origin (`Session::modelFeetDrop`); `+60`
@@ -747,8 +747,8 @@ void PlayState::worldStagedShootEnterProps(bool astThinks, Staged& s, omk::Shoot
                             static_cast<std::size_t>(fl0)].bound[3]),
                         double(rec.height));
         }
-        if (onGrid && gunEntryPending.erase(s.actor))
-            shootApplyAction(s, rec, act, session.shootActionArg(s.actor),
+        if (onGrid && gunEntryPending.erase(s.key))
+            shootApplyAction(s, rec, act, session.shootActionArg(s.key),
                         "his scene action, held until he reached the grid");
         static ToldOnce<int> floorTold;
         if (onGrid && floorTold.first(s.actor, session_->areasEntered()))
@@ -780,7 +780,7 @@ void PlayState::worldStagedShootBrain(omk::ShootRecord& rec, Staged& s, float as
     if (rec.type == static_cast<std::uint32_t>(omk::kAstarothType)) {
         worldStagedShootAstaroth(s, rec, astDt, astBand);
     } else if (rec.type == static_cast<std::uint32_t>(omk::kGandharType) &&
-               gandharActors.count(s.actor)) {
+               gandharActors.count(s.key)) {
         worldStagedShootGandhar(s, rec, astDt);
     } else {
     worldStagedShootGeneric(rec, s, act);
@@ -790,7 +790,7 @@ void PlayState::worldStagedShootBrain(omk::ShootRecord& rec, Staged& s, float as
 // ASTAROTH's tick is his own (`sub_4800C0`): his start, then his grid and his two weapons (from `worldStagedShootBrain`)
 void PlayState::worldStagedShootAstaroth(Staged& s, omk::ShootRecord& rec, float& astDt,
                                          omk::AstarothBand& astBand) {
-    omk::AstarothActor& aa = astarothActors[s.actor];
+    omk::AstarothActor& aa = astarothActors[s.key];
     const omk::AstarothWorld aw = astarothWorld(s, rec, astDt);
     if (!aa.started) {
         if (rec.groundY != 0.0f) {
@@ -820,7 +820,7 @@ void PlayState::worldStagedShootAstaroth(Staged& s, omk::ShootRecord& rec, float
             const omk::PedClip* qc = aa.queued >= 0
                 ? shootClipBySlot(grpQ, aa.queued)
                 : shootClipExact(grpQ, aa.queuedTurnType);
-            GunClip& gc = gun.clips[s.actor];
+            GunClip& gc = gun.clips[s.key];
             gc = GunClip{};
             if (qc) {
                 gc.type = qc->type;
@@ -862,7 +862,7 @@ void PlayState::worldStagedShootGandhar(Staged& s, omk::ShootRecord& rec, float&
     // when it is done, the next action of his script. The
     // floor cell either side is the generic arm's, as the
     // engine's `sub_420C10` / `sub_420B80` are.
-    omk::GandharActor& ga = gandharActors[s.actor];
+    omk::GandharActor& ga = gandharActors[s.key];
     astarothBar = rec.health;
     const omk::GandharWorld gw = gandharWorld(s, rec, astDt);
     const int stateWas = rec.state;
@@ -915,7 +915,7 @@ void PlayState::worldStagedShootGeneric(omk::ShootRecord& rec, Staged& s, int& a
         // above - he has no cell to read the field from, and
         // the port gives no heading; the engine's is written at
         // `Shoot_ActorEnter` and always there)
-        if (!gunCellSeeded.count(s.actor)) return -1;
+        if (!gunCellSeeded.count(s.key)) return -1;
         const int h = shootField.heading(
             shootMap, static_cast<signed char>(rec.node & 0xFF), rec.destX,
             rec.destZ, crt);
@@ -1126,7 +1126,7 @@ void PlayState::worldStagedShootGeneric(omk::ShootRecord& rec, Staged& s, int& a
                 std::printf("    the set stops it %.2f of the way\n", hitT);
         }
     }
-    ein.coinHeads = ((s.actor * 2654435761u) >> 16) & 1;
+    ein.coinHeads = ((s.key * 2654435761u) >> 16) & 1;
     // `sub_424DE0` calls `sub_426E00` from states 3, 4, 6, 8,
     // 11, 13, 14 and 28 only (05_sys.c 5747..6664). This
     // viewer calls it every tick in every state - a
@@ -1219,7 +1219,7 @@ void PlayState::worldStagedShootGeneric(omk::ShootRecord& rec, Staged& s, int& a
     // hands 10 to 11; 11 goes back to 10 past five frames). Without
     // it state 10 reads 0 of 0 as a clip already spent.
     if (rec.state == 5 || rec.state == 10 || rec.state == 11) {
-        if (const auto ga = gun.anims.find(s.actor);
+        if (const auto ga = gun.anims.find(s.key);
             ga != gun.anims.end() && ga->second.clip) {
             fin.clipFrame = ga->second.frame;
             fin.clipFrames = static_cast<float>(ga->second.clip->frames);
@@ -1241,7 +1241,7 @@ void PlayState::worldStagedShootGeneric(omk::ShootRecord& rec, Staged& s, int& a
     // a second before acting instead of one frame. The step is
     // empty for him - and `ShootStep::outcome` defaults to
     // FireIfReady, so the fire arm below tests this too.
-    const bool entryPending = gunEntryPending.count(s.actor) != 0;
+    const bool entryPending = gunEntryPending.count(s.key) != 0;
     const auto st = entryPending ? omk::ShootStep{}
                   : pairEntered ? [] {
                                       omk::ShootStep k;
@@ -1277,11 +1277,11 @@ void PlayState::worldStagedShootGeneric(omk::ShootRecord& rec, Staged& s, int& a
         // (once he stands somewhere: his entry ACTION changes his
         // state on the tick he is born, before he is first drawn,
         // and a distance from the world origin says nothing)
-        if (!s.brainTold && gunCellSeeded.count(s.actor)) {
+        if (!s.brainTold && gunCellSeeded.count(s.key)) {
             s.brainTold = true;
             std::printf("frame %ld: actor %d %s - brain %d -> %d, "
                         "outcome %d, %.0f units away\n", frameNo,
-                        s.actor, s.model.c_str(), before,
+                        s.key, s.model.c_str(), before,
                         rec.state, int(st.outcome), ao.dist3d);
         }
     }
@@ -1478,8 +1478,8 @@ void PlayState::worldStagedShootStateClip(bool entryPending, omk::ShootRecord& r
             const omk::PedClip* atk = shootClipBySlot(grpS, rec.attackSlot);
             static std::map<int, int> atkTold;
             if (atk) {
-                gun.curSlot[s.actor] = atk->slot;
-                gun.anims[s.actor].clip = nullptr;
+                gun.curSlot[s.key] = atk->slot;
+                gun.anims[s.key].clip = nullptr;
                 if (atkTold[s.actor]++ < 3)
                     std::printf("frame %ld: actor %d %s - ATTACK CLIP (sub_4272B0 case 9): "
                                 "slot %d '%s', %d frames\n", frameNo, s.actor, s.model.c_str(),
@@ -1491,9 +1491,9 @@ void PlayState::worldStagedShootStateClip(bool entryPending, omk::ShootRecord& r
             }
         } else if (rec.state == 11 && grpS >= 0 && grpS < 64) {
             const int t = shootClipExact(grpS, 23) ? 23 : 11;
-            gun.curType[s.actor] = t;
-            gun.curSlot.erase(s.actor);
-            gun.anims[s.actor].clip = nullptr;
+            gun.curType[s.key] = t;
+            gun.curSlot.erase(s.key);
+            gun.anims[s.key].clip = nullptr;
         }
     }
 }
@@ -1536,14 +1536,14 @@ void PlayState::worldStagedShootClipAdvance(omk::ShootRecord& rec, Staged& s, in
         const int grpA = static_cast<int>(session.typeOfActor(s.actor));
         // his clip is the TYPE his last action started
         // (`Shoot_ActorAction`), the scene action's until one has
-        const auto ctA = gun.curType.find(s.actor);
-        const auto csA = gun.curSlot.find(s.actor);
+        const auto ctA = gun.curType.find(s.key);
+        const auto csA = gun.curSlot.find(s.key);
         const omk::PedClip* ac = (grpA >= 0 && grpA < 64)
             ? (csA != gun.curSlot.end() ? shootClipBySlot(grpA, csA->second)
                : ctA != gun.curType.end() ? shootClipExact(grpA, ctA->second)
                                          : shootClipFor(grpA, act))
             : nullptr;
-        GunAnim& ga = gun.anims[s.actor];
+        GunAnim& ga = gun.anims[s.key];
         // `if (u32(rec, 156) != 13) flags &= ~0x100`
         if (rec.state != 13) rec.flags &= ~0x100u;
         if (ac != ga.clip) {
@@ -1579,7 +1579,7 @@ void PlayState::worldStagedShootClipAdvance(omk::ShootRecord& rec, Staged& s, in
             if (wrapped) {
                 ga.frame = fin.dt + 1.0f;
                 // once per robber: his clip has run and looped
-                if (gun.looped.insert(s.actor).second)
+                if (gun.looped.insert(s.key).second)
                     std::printf("frame %ld: actor %d %s - current clip "
                                 "(sub_421370): type %d slot %d, %d frames, "
                                 "looped to %.1f\n", frameNo, s.actor,
@@ -1635,7 +1635,7 @@ void PlayState::worldStagedShootClipAdvance(omk::ShootRecord& rec, Staged& s, in
                         std::printf("frame %ld: actor %d %s - walks (sub_421370): "
                                     "clip type %d, root delta %.2f %.2f %.2f "
                                     "at facing %.1f from %.0f %.0f\n", frameNo,
-                                    s.actor, s.model.c_str(), ac->type,
+                                    s.key, s.model.c_str(), ac->type,
                                     double(dx), double(dy), double(dz),
                                     double(s.facing), double(x0), double(z0));
                     }
@@ -1644,7 +1644,7 @@ void PlayState::worldStagedShootClipAdvance(omk::ShootRecord& rec, Staged& s, in
                         std::printf("frame %ld: actor %d %s - the wall test "
                                     "(sub_421140) stops his walk at %.0f %.0f: "
                                     "%s, facing %.1f, now %.0f %.0f\n", frameNo,
-                                    s.actor, s.model.c_str(), double(x0),
+                                    s.key, s.model.c_str(), double(x0),
                                     double(z0), how, double(s.facing),
                                     double(s.at[0] + s.walkMove[0]),
                                     double(s.at[2] + s.walkMove[2]));
@@ -1747,7 +1747,7 @@ void PlayState::worldStagedShootFireGate(bool fullArm, omk::ShootRecord& rec,
             const int type = omk::shootWeaponType(
                 kind, known ? "MESHES\\OBJETS\\" + stem + ".3DO" : std::string());
             rec.weapon = shootWeapons.find(type, false);
-            if (gun.told.insert(s.actor).second) {
+            if (gun.told.insert(s.key).second) {
                 std::printf("frame %ld: actor %d %s - Shoot_InitWeapon: held slot %d, "
                             "object %d '%s' kind %d -> type %d, ", frameNo, s.actor,
                             s.model.c_str(), hs, obj, stem.c_str(), kind, type);
@@ -1759,7 +1759,7 @@ void PlayState::worldStagedShootFireGate(bool fullArm, omk::ShootRecord& rec,
                     std::printf("NO ROW - he cannot fire\n");
             }
         }
-        if (!fireTest && gun.told.insert(s.actor).second)
+        if (!fireTest && gun.told.insert(s.key).second)
             std::printf("frame %ld: actor %d %s - the weapon test is clear "
                         "(sub_4348B0: ANIMS\\%s.ANI group %d, +8 %s) - his BUILT-IN "
                         "weapon: %s\n", frameNo, s.actor, s.model.c_str(),
@@ -1790,13 +1790,13 @@ void PlayState::worldStagedShootFireGate(bool fullArm, omk::ShootRecord& rec,
                 // `+164` holds an object: `Actor_TickProjectiles`' RECORD path,
                 // which the bit-SET arm already ports - not wired for a
                 // bit-clear holder (no shipped case met yet)
-                if (gun.holderTold.insert(s.actor).second)
+                if (gun.holderTold.insert(s.key).second)
                     std::printf("frame %ld: actor %d %s - bit clear but an object in his "
                                 "hand: the record path, NOT PORTED for this arm\n",
                                 frameNo, s.actor, s.model.c_str());
             } else if (s.mo &&
-                       addFireSlots(s.actor, s.model.c_str(), s.mo->meshes, s.meshAt,
-                                    s.meshRot, actorSlotTimer[s.actor], "GUNMAN")) {
+                       addFireSlots(s.key, s.model.c_str(), s.mo->meshes, s.meshAt,
+                                    s.meshRot, actorSlotTimer[s.key], "GUNMAN")) {
                 rec.flags |= 0x80u;
                 rec.clipLen = static_cast<float>(
                     omk::animGroupRate16(crowd.ani, grpT).value_or(0));
@@ -1828,7 +1828,7 @@ void PlayState::worldStagedShootFireGate(bool fullArm, omk::ShootRecord& rec,
         // clear fire test takes LABEL_315, whose `sub_434C30`
         // has no angles: no layer either way.
         {
-            GunAim& gm = gun.aims[s.actor];
+            GunAim& gm = gun.aims[s.key];
             gm.live = fireTest && rec.weapon;
             gm.yaw = gm.pitch = 0.0f;
             if (gm.live && gate != omk::FireGate::Released && player &&
@@ -1875,7 +1875,7 @@ void PlayState::worldStagedShootFireGate(bool fullArm, omk::ShootRecord& rec,
                 }
             }
             if (gm.live && gate != omk::FireGate::Released &&
-                gun.aimTold.insert(s.actor).second)
+                gun.aimTold.insert(s.key).second)
                 std::printf("frame %ld: actor %d %s - AIM LAYER (sub_434C30): yaw "
                             "%.3f pitch %.3f rad, lowered %.2f\n", frameNo, s.actor,
                             s.model.c_str(), double(gm.yaw), double(gm.pitch),
@@ -1955,7 +1955,7 @@ void PlayState::worldStagedShootFireGate(bool fullArm, omk::ShootRecord& rec,
             // same gate call, before `Actor_TickProjectiles`. A
             // one-frame lag of this port's, labelled.
             if (hand >= 0 && s.meshAt.size() == nm * 3 &&
-                gun.shots[s.actor] >= 1 && gun.barrelTold.insert(s.actor).second) {
+                gun.shots[s.key] >= 1 && gun.barrelTold.insert(s.key).second) {
                 const std::size_t hh = static_cast<std::size_t>(hand);
                 const double bx = rs.muzzle[0] - s.meshAt[hh * 3],
                              bz = rs.muzzle[2] - s.meshAt[hh * 3 + 2];
@@ -1984,9 +1984,9 @@ void PlayState::worldStagedShootFireGate(bool fullArm, omk::ShootRecord& rec,
             // no magazine pointer: an npc's count never gates
             // the round (only the player's asks for event 48),
             // and the write-back of HIS property 35 is not kept
-            const omk::RecordShotOut out = projectiles.fireFromRecord(s.actor, *rec.weapon, rs);
+            const omk::RecordShotOut out = projectiles.fireFromRecord(s.key, *rec.weapon, rs);
             if (out.entry >= 0) {
-                const long k = ++gun.shots[s.actor];
+                const long k = ++gun.shots[s.key];
                 shotSound(frameNo, muzzleFx, rs.muzzle, player->pos(), "a gunman's fire");
                 // `sub_4246E0(him, the muzzle)` as the entry is made
                 shootNoise(frameNo, s.actor, rs.muzzle, "a gunman's shot");
@@ -1997,7 +1997,7 @@ void PlayState::worldStagedShootFireGate(bool fullArm, omk::ShootRecord& rec,
                             "Actor_TickProjectiles: entry %d, speed %.1f, damage %d, "
                             "dir %.3f %.3f %.3f (yaw %.1f pitch %.1f), from %s "
                             "%.1f %.1f %.1f, at the player's %s %.0f away, jitter %d %d %d "
-                            "of r %.1f, %d live\n", frameNo, k, s.actor, s.model.c_str(),
+                            "of r %.1f, %d live\n", frameNo, k, s.key, s.model.c_str(),
                             out.entry, double(e.speed), e.kind,
                             double(e.vel[0] / spd), double(e.vel[1] / spd),
                             double(e.vel[2] / spd), double(rs.yawDeg),
@@ -2023,7 +2023,7 @@ void PlayState::worldStagedShootTurnClip(const omk::ShootStep& st, Staged& s,
         const omk::PedClip* tc = (grpT >= 0 && grpT < 64)
                                ? shootClipExact(grpT, st.turnClip) : nullptr;
         if (tc && tc->frames > 0) {
-            GunClip& gc = gun.clips[s.actor];
+            GunClip& gc = gun.clips[s.key];
             gc.type = st.turnClip;
             s.walkMove[1] = 0.0f;   // `sub_421A20` sets the height
             gc.frames = tc->frames;
@@ -2053,7 +2053,7 @@ void PlayState::worldStagedShootClipTick(bool inShoot, bool shotDead, bool brain
     auto& session = *session_;
     if (inShoot && shootMode && !shotDead && !brainsOff && deadIt != shootBrains.end() &&
         (deadIt->second.flags & 8u)) {
-        GunClip& gc = gun.clips[s.actor];
+        GunClip& gc = gun.clips[s.key];
         // THE FRAME DELTA, `flt_4C30D8` - which the pause screen
         // forces to 0.0 (screen 31's open callback, `dword_4E9728`).
         // A literal 1.0 would keep a turn clip playing and turning
@@ -2074,7 +2074,7 @@ void PlayState::worldStagedShootClipTick(bool inShoot, bool shotDead, bool brain
             // stamps his cell - the generic port leaves both out
             if (astarothRec) {
                 omk::ShootRecord& ar = deadIt->second;
-                omk::AstarothActor& aa = astarothActors[s.actor];
+                omk::AstarothActor& aa = astarothActors[s.key];
                 const int grpP = static_cast<int>(ar.type);
                 const omk::PedClip* pc = gc.slot >= 0 ? shootClipBySlot(grpP, gc.slot)
                                                       : shootClipExact(grpP, gc.type);
@@ -2117,7 +2117,7 @@ void PlayState::worldStagedShootClipTick(bool inShoot, bool shotDead, bool brain
                 // ...his state's own clip back (`astarothResume`) and
                 // on into the body the same tick
                 gc = GunClip{};
-                omk::AstarothActor& aa = astarothActors[s.actor];
+                omk::AstarothActor& aa = astarothActors[s.key];
                 if (aa.started) {
                     const omk::AstarothWorld aw = astarothWorld(s, ar, astDt);
                     omk::astarothResume(aa, ar, s.facing, aw);
@@ -2127,14 +2127,14 @@ void PlayState::worldStagedShootClipTick(bool inShoot, bool shotDead, bool brain
                             "state %d resumes with clip %d, health %d\n", frameNo, s.actor,
                             s.model.c_str(), ar.state, aa.clip, ar.health);
             }
-        } else if (gandharRec && gandharActors.count(s.actor)) {
+        } else if (gandharRec && gandharActors.count(s.key)) {
             // `sub_47F6F0`'s prologue, the picked clip played out:
             // `sub_421A20(+12, 0)` - his action's clip again from 1.0 -
             // and `o3de_SetNodePos(+244, +60, +252)`; the brain goes on
             // the same tick
             deadIt->second.flags &= ~8u;
             gc = GunClip{};
-            omk::GandharActor& ga = gandharActors[s.actor];
+            omk::GandharActor& ga = gandharActors[s.key];
             ga.frame = 1.0f;
             ga.prev = 0.0f;
             ga.node[0] = ga.pos[0];
@@ -2159,7 +2159,7 @@ void PlayState::worldStagedShootClipTick(bool inShoot, bool shotDead, bool brain
                 shootApplyAction(s, deadIt->second, deadIt->second.pendingAction,
                             deadIt->second.pendingArg, "parked, the picked clip over");
             } else {
-                gun.anims[s.actor].frame = 1.0f;
+                gun.anims[s.key].frame = 1.0f;
             }
             s.walkMove[1] = 0.0f;
         }

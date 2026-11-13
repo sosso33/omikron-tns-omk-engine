@@ -866,7 +866,7 @@ void PlayState::screensShootRadar(bool radarShown) {
             omk::RadarActor a;
             a.id = sp->actor;
             for (int k = 0; k < 3; ++k) a.pos[k] = sp->drawAt[k];
-            const auto br = shootBrains.find(sp->actor);
+            const auto br = shootBrains.find(sp->key);
             a.state = br == shootBrains.end() ? 1 : (br->second.health > 0 ? 3 : 0);
             ra.push_back(a);
         }

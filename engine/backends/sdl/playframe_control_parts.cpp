@@ -662,9 +662,8 @@ void PlayState::controlFlight() {
             }
             // ---- `sub_4240E0`, the damage, on his shoot record ----
             shootWake(frameNo, "a bolt's hit (sub_4240E0)");
-            Staged* vs = nullptr;
-            for (auto& up : staged)
-                if (up && up->actor == ev.victim) { vs = up.get(); break; }
+            // the victim is a body KEY - the hit body's (M4)
+            Staged* vs = bodyOfKey(ev.victim);
             const auto bit = shootBrains.find(ev.victim);
             if (!vs || bit == shootBrains.end()) {
                 std::printf("  (no shoot record for actor %d: nothing to damage)\n",

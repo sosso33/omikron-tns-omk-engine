@@ -217,6 +217,38 @@ public:
     // placed and gave a runtime slot, attached or not - what a frontend
     // needs to know to KEEP a hidden body's state rather than drop it.
     bool actorHeld(int actor) const;
+    // ...and the same for ONE runtime slot: does `word_69BC80[slot]` still
+    // hold this actor (todo/drift-audit.md M4 - a body per placement record)
+    bool actorSlotHolds(int slot, int actor) const {
+        return slot >= 0 && slot < 100 && actorSlots_[static_cast<std::size_t>(slot)] == actor;
+    }
+    // THE RUNTIME SLOT AN ID ANSWERS (todo/drift-audit.md M4). Two areas
+    // resident at once may both place one id, each record its own slot.
+    // `sub_40AF00` (0x0040AF00) - the first entry of `word_69BC80` holding
+    // the id, the LOWEST; -1 when none does.
+    int actorSlotOf(int actor) const;
+    // `Scene_FindObjectIndexById(id, area)` (0x0040D760): the record of that
+    // AREA's table, then of the scene loaded over it - its +0 - and failing
+    // both `sub_40AF00`. Every VM op that addresses a character hands it the
+    // running context's area (`dword_69BC48[ctx+1F * 16]`), the conversation
+    // the SHOWN slot's.
+    int resolveActorSlot(int actor, int area) const;
+    // THE ACTOR KEY (M4): what the port's per-actor state is keyed by. The
+    // copy in the id's LOWEST runtime slot - the one `sub_40AF00` answers,
+    // and the only one in every case but two resident areas placing one id -
+    // is keyed by the id itself, so nothing else changes; another copy by
+    // `kActorKeyBase + its runtime slot`. `actorOfKey` the id back.
+    static constexpr int kActorKeyBase = 1 << 20;
+    int actorKey(int actor, int rt) const {
+        return rt < 0 || actor < 0 || actorSlotOf(actor) == rt ? actor : kActorKeyBase + rt;
+    }
+    int actorOfKey(int key) const {
+        return key >= kActorKeyBase && key < kActorKeyBase + 100
+                   ? actorSlots_[static_cast<std::size_t>(key - kActorKeyBase)] : key;
+    }
+    // THE FIGHT'S OPPONENT RECORD: 62 resolves him through the context's area
+    // (`Scene_FindObjectIndexById`), set just before the fight hook is called
+    int fightOpponentSlot() const { return fightOpponentRt_; }
     // Slot 0's attached characters, then slot 1's, then anything a script
     // showed that no table places. Rebuilt whenever attachment changes.
     const std::vector<Shown>& shown() const { return shown_; }
@@ -450,7 +482,14 @@ public:
     // actor's look-at slot (+400, slot 100) set to the player / cleared.
     // `Actors_TickAll` aims his head at it every frame (`aimHead`, pose.h);
     // the Session only keeps who is looking.
-    bool looksAtPlayer(int actor) const { return lookAtPlayer_.count(actor) != 0; }
+    // ...of ONE record (M4): 138/139 resolve the id through the context's area
+    // (`Scene_FindObjectIndexById`) and write that record's +400. `rt` -1 (a
+    // body with no record) asks for the id.
+    bool looksAtPlayer(int actor, int rt = -1) const {
+        for (const auto& [a, r] : lookAtPlayer_)
+            if (a == actor && (rt < 0 || r < 0 || r == rt)) return true;
+        return false;
+    }
     // The RADAR's switch, `dword_4EB8C8` (`ui/radar.h`): ops 146/147 set and
     // clear it, an area that names a map clears it on load (0x42EE70), and
     // the robot HUD's open callback 0x42E3A0 sets it - the frontend's call.
@@ -1832,7 +1871,7 @@ private:
     std::map<std::string, float> modelFeetDrop_;
     std::vector<int> pedSlots_;              // mover (walker or vehicle) -> its index slot, -1 none
     std::vector<std::string> pedSlotModel_;  // ...and the model its spheres were taken from
-    std::set<int> lookAtPlayer_;             // actors whose slot 100 is the player
+    std::set<std::pair<int, int>> lookAtPlayer_;   // (id, runtime slot) whose +400 is the player
     bool radarOn_ = false;                   // dword_4EB8C8, the radar's switch
     // Shoot mode: the opcodes' decisions and the actor->action map.
     ShootMode shoot_;
@@ -2080,6 +2119,7 @@ private:
     std::map<int, std::vector<std::array<float, 3>>> rootMotion_;
     std::function<bool(int, int)> moveHook_;
     std::function<bool(int, int)> fightHook_;
+    int fightOpponentRt_ = -1;
     int          fightCamTravel_ = 0;      // `dword_930818` for mode 14, recorded
     bool startPlayerMove(int groupId, int ctx);
     bool beginFight(int opponentId, int level);

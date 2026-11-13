@@ -36,6 +36,15 @@ static bool drivenBy(const omk::SceneRunner::Started& t, int actorId, int player
     if (t.clip < 0) return false;
     return omk::SceneRunner::drivenActor(t, playerId) == actorId;
 }
+// ...and whether it drives THIS BODY (todo/drift-audit.md M4): of the bodies
+// wearing the id, the one of the runtime slot the start resolved - or, the
+// slot unknown, the one the id answers (`bodyOf`, the lowest)
+bool PlayState::drivesBody(const omk::SceneRunner::Started& t, const Staged& s, int playerId) {
+    if (!drivenBy(t, s.actor, playerId)) return false;
+    if (t.how != "actor") return true;
+    if (t.rt >= 0 && s.rt >= 0) return t.rt == s.rt;
+    return bodyOf(s.actor) == &s;
+}
 
 // The staged body whose model has a mesh named `name`, by its actor id
 int PlayState::nodeOwner(const std::string& name) const {
@@ -90,7 +99,7 @@ void PlayState::worldStaged() {
         if (t.clip < 0 || (t.how != "actor" && t.how != "player")) continue;
         if (!sc.programRunning(static_cast<int>(k))) continue;
         bool owned = false;
-        for (const auto& up : staged) if (drivenBy(t, up->actor, playerId)) owned = true;
+        for (const auto& up : staged) if (drivesBody(t, *up, playerId)) owned = true;
         if (owned) continue;
         loneProg = static_cast<int>(k);
         ++loneProgs;
@@ -135,6 +144,7 @@ void PlayState::worldStaged() {
             sideFr = omk::frustumFromCamera(view.cam.eye, view.cam.at, proj, proj, 1, 1, 1000.0f);
         }
     }
+    speakerBody_ = speakerBody(convSpeaker);
     for (auto& up : staged) {
         worldStagedBody(up, sc, playerId, loneProgs, loneProg, convSpeaker, stagedFar, stagedOff,
                         firstBody);
@@ -231,7 +241,7 @@ void PlayState::worldStagedBody(std::unique_ptr<Staged>& up, const omk::SceneRun
         if (!cand->loaded()) continue;
         for (std::size_t k = 0; k < cand->started().size(); ++k) {
             const auto& t = cand->started()[k];
-            if (!drivenBy(t, s.actor, playerId)) continue;
+            if (!drivesBody(t, s, playerId)) continue;
             if (!cand->programRunning(static_cast<int>(k))) continue;
             prog = static_cast<int>(k);
             run = cand;
@@ -309,7 +319,7 @@ void PlayState::worldStagedBody(std::unique_ptr<Staged>& up, const omk::SceneRun
     // on the street's stand-in, which nothing draws
     // (`todo/drift-audit.md` M3).
     const bool isSpeaker = session.dialogOpen() && speaker.ready &&
-        s.actor == convSpeaker && convSpeaker >= 0;
+        s.actor == convSpeaker && convSpeaker >= 0 && speakerBody_ == &s;
     const float lineT = (isSpeaker && speaker.tracks.valid())
         ? static_cast<float>(session.dialogue().elapsed() * 30.0) : -1.0f;
     const bool useLine = lineT >= 0.0f &&
@@ -734,7 +744,7 @@ void PlayState::worldStagedBody(std::unique_ptr<Staged>& up, const omk::SceneRun
         bodyYaw = s.facing;
         aboutPelvis = true;
     }
-    else if (shootTracks && shootTracks->valid() && shootBrains.count(s.actor)) {
+    else if (shootTracks && shootTracks->valid() && shootBrains.count(s.key)) {
         bodyYaw = s.facing;
         aboutPelvis = true;
     }
@@ -1037,14 +1047,14 @@ void PlayState::worldStagedBody(std::unique_ptr<Staged>& up, const omk::SceneRun
         // by the yaw it is DRAWN with. At the node with `facing`
         // they sat behind the drawn Sham and the player walked
         // through its flank.
-        const bool gunman = shootMode && shootBrains.count(s.actor);
+        const bool gunman = shootMode && shootBrains.count(s.key);
         const float bodyBase[3] = {gunman ? 0.0f : pelvis[0], 0.0f,
                                    gunman ? 0.0f : pelvis[2]};
         const float bodyYawNow = gunman ? s.facing : s.drawnYaw;
         const float bodyReach =
             (s.mo->root >= 0 && static_cast<std::size_t>(s.mo->root) < s.mo->meshes.size())
                 ? s.mo->meshes[static_cast<std::size_t>(s.mo->root)].radius : 0.0f;
-        session.actorBody(s.actor, s.model, bodyAt, bodyYawNow, bodyBase, bodyReach);
+        session.actorBody(s.key, s.model, bodyAt, bodyYawNow, bodyBase, bodyReach);
     }
     s.posed.revision = ++worldGeoRev;
     s.drawn = true;
@@ -1176,6 +1186,16 @@ void PlayState::worldStagedFindProgram(const omk::SceneRunner*& run, int& prog,
                     }
                     if (who == omk::SceneRunner::kNodePlayer) who = playerId;
                     if (who != s.actor) continue;
+                    // ...and of two bodies wearing his id (M4), the one
+                    // `o3de_FindNodeByName` meets: the earliest attached
+                    {
+                        bool earlier = false;
+                        for (const auto& up : staged) {
+                            if (up.get() == &s) break;
+                            if (up->actor == s.actor) earlier = true;
+                        }
+                        if (earlier) continue;
+                    }
                     if (who == playerId) {
                         static bool said = false;
                         if (!said) std::printf("frame %ld: node '%s' of object '%s' names the "
@@ -1342,7 +1362,7 @@ void PlayState::worldStagedDeathRoot(Staged& s, float (&rootMove)[3]) {
         s.deathClip->frames > 1) {
         const long el = std::max<long>(static_cast<long>(gameClock - s.deathStart), 0);
         const long upto = std::min<long>(el, static_cast<long>(s.deathClip->frames) - 1);
-        const auto bi = shootBrains.find(s.actor);
+        const auto bi = shootBrains.find(s.key);
         while (s.deathEl < upto) {
             const float ta = 1.0f + static_cast<float>(s.deathEl);
             float d[3] = {0.0f, 0.0f, 0.0f};
@@ -1726,7 +1746,7 @@ void PlayState::worldStagedLinePose(const omk::SceneRunner*& run, bool useLine, 
     } else if (shootTracks && shootTracks->valid()) {
         // ...bent by his aim layer while the gate runs him
         pose = astGrid ? astarothPoseNow(s.mo, *shootTracks, *astGrid)
-                       : gunmanPoseNow(s.actor, s.deathType, s.mo, *shootTracks, shootFrame);
+                       : gunmanPoseNow(s.key, s.deathType, s.mo, *shootTracks, shootFrame);
         src = "shoot mode: the area's .ani, by character type";
     } else if (!s.lastPose.empty() && session.parkedOnProgram()) {
         // BETWEEN TWO BEATS OF ONE CUTSCENE the body holds the
@@ -1805,7 +1825,7 @@ void PlayState::worldStagedLinePose(const omk::SceneRunner*& run, bool useLine, 
 void PlayState::worldStagedHeadLook(bool lookAll, Staged& s, std::vector<omk::MeshPose>& pose,
                                     bool useLine) {
     auto& session = *session_;
-    if ((lookAll || session.looksAtPlayer(s.actor)) && s.placed && s.mo->root >= 0) {
+    if ((lookAll || session.looksAtPlayer(s.actor, s.rt)) && s.placed && s.mo->root >= 0) {
         const int head = s.mo->headOf();
         if (head >= 0) {
             const float* pp = (adventure && player) ? player->pos() : session.playerPos();

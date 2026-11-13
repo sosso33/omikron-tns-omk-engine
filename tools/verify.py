@@ -52744,6 +52744,63 @@ def c_engine_show_context_record():
         "area's record alone - its body's spot and its own ObjectShown bit"
 
 
+def c_engine_record_bodies():
+    r"""A BODY PER PLACEMENT RECORD (`todo/drift-audit.md` M4, step B): two
+    resident areas placing one id draw TWO bodies, each at its own record,
+    and a hidden set's are not drawn.
+
+    `Actors_SpawnFromTables` gives every placement record its own runtime
+    slot (`word_69BC80`) and node, so while both areas are shown both copies
+    of a shared id are drawn; hiding a slot (`sub_419A90`) unlinks its scene,
+    its actors with it - ticked, not drawn. The viewer had one body per ACTOR
+    ID (the later record's spot winning each frame) and listed a hidden
+    set's actors.
+
+    Anekbah's street (AREA 0) and its restaurant (46) both place actors 59
+    and 62 - 59 at (3589, -1966) in the street, (6716, 419) inside - and
+    START has all four shown bits set. The restaurant's door (zone 10, `--zone-run`)
+    loads 46 into the other slot and shows it, then hides it again at frame
+    82 (the harness's goto does not hand over): two bodies for each id while
+    both are shown, the restaurant's parked (`Actor_Detach`'s keep) when its
+    set is hidden, the street's untouched.
+
+    And the per-actor state goes by RECORD: `Scene_FindObjectIndexById(id,
+    the context's area)` for 59/60 (a program), 62 (the opponent), 82/84 (the
+    shoot actor), 138/139 (the look), the ACTIVE slot's area for a
+    conversation's speaker; `sub_40AF00` (the LOWEST slot) for every bare id
+    lookup. The census (`m4_pairs --census`): 95 ids placed by more than one
+    AREA table, named by 215 program starts, 27 fights, 77 shoot ops, 339
+    looks, 24 holds and releases.
+
+    SHOWN TO FAIL (2026-11-13) with the viewer matching bodies by id alone
+    (one body, moved to the restaurant's record), and with the hidden set's
+    actors listed (no park at frame 82).
+    """
+    import subprocess, tempfile
+    eng = os.path.join(ROOT, "engine")
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("built",), ("not built",), (mk.stdout + mk.stderr)[-300:]
+    r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                        "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+                        "--area", "0", "--stand", "6300,0,300,90", "--nofmv", "--zone-run", "10",
+                        "--hold", "0*200", "--frames", "200"],
+                       cwd=eng, capture_output=True, text=True, errors="replace", timeout=600,
+                       env=dict(os.environ, SDL_VIDEODRIVER="dummy"))
+    out = r.stdout
+    staged = {}
+    for m in re.finditer(r"staged actor (59|62) \S+ .*? at (-?\d+) (-?\d+) (-?\d+) facing", out):
+        staged.setdefault(int(m.group(1)), []).append((int(m.group(2)), int(m.group(4))))
+    hidden = re.search(r"HIDE area 46 in slot", out) is not None
+    parked = sorted(int(a) for a in re.findall(r"hid actor (59|62) ", out))
+    got = (staged.get(59, []), staged.get(62, []), hidden, parked)
+    print(f"        bodies {got}")
+    return got, ([(3589, -1966), (6716, 419)], [(3578, -1982), (6740, 416)], True, [59, 62]), \
+        "actor 59's two bodies (the street's record, then the restaurant's) and 62's, while both " \
+        "sets are shown; the restaurant hidden; each id's restaurant body parked, the street's kept"
+
+
 def c_character_shows_resolve():
     r"""EVERY `character.show` NAMES A BODY A TABLE PLACES (`todo/drift-audit.md`
     T4, checked 2026-10-06).
@@ -55947,6 +56004,7 @@ SLOW = [
     ("engine: undriven rest pose", c_engine_undriven_rest_pose, "todo/drift-audit.md M2; backends/sdl/playframe_world_staged.cpp"),
     ("character shows resolve", c_character_shows_resolve, "todo/drift-audit.md T4; script/area.cpp"),
     ("engine: show context record", c_engine_show_context_record, "todo/drift-audit.md M4; script/area.cpp recordIn"),
+    ("engine: record bodies", c_engine_record_bodies, "todo/drift-audit.md M4; backends/sdl/playframe_world.cpp bodyOf"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),

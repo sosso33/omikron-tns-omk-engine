@@ -1018,7 +1018,7 @@ bool PlayState::hitBodyOf(const Staged& s, omk::HitBody& hb, bool drawnNow) cons
     const std::size_t nm = s.mo->meshes.size();
     if (s.meshAt.size() != nm * 3 || s.meshRot.size() != nm * 9) return false;
     hb = omk::HitBody{};
-    hb.actor = s.actor;
+    hb.actor = s.key;   // the body's KEY: a bolt's victim names the body (M4)
     hb.root = s.mo->root;
     hb.meshes.resize(nm);
     for (std::size_t mi = 0; mi < nm; ++mi) {
@@ -1441,7 +1441,7 @@ bool PlayState::addFireSlots(int actor, const char* model, const std::vector<omk
         if (actor < 0) {
             if (!omk::readAmmoSlot(state.raw().subspan(recAt, recLen), k, count)) return true;
         } else {
-            if (!session.actorWeaponSlot(actor, k, reload, speedHi, damage, ammoK)) return true;
+            if (!session.actorWeaponSlot(session.actorOfKey(actor), k, reload, speedHi, damage, ammoK)) return true;
             count = ammoK;
         }
         if (count <= 0) continue;
@@ -1449,14 +1449,14 @@ bool PlayState::addFireSlots(int actor, const char* model, const std::vector<omk
             omk::writeActorProperty(state.rawMutable().subspan(recAt, recLen), 0x23,
                                     (count - 1) & 0xFFFF);
         else
-            session.setActorProperty(actor, 35, count - 1);
+            session.setActorProperty(session.actorOfKey(actor), 35, count - 1);
         if (actor < 0) {
             std::int32_t r = 0, sp = 0, dm = 0;
             omk::readWeaponSlot(state.raw().subspan(recAt, recLen), 0, r, sp, dm);
             reload = r; speedHi = sp; damage = dm;
         } else {
             int a0 = 0;
-            session.actorWeaponSlot(actor, 0, reload, speedHi, damage, a0);
+            session.actorWeaponSlot(session.actorOfKey(actor), 0, reload, speedHi, damage, a0);
         }
         if (projectiles.freeSlot() < 0) return false;    // `if (v38 < 0) return 0`
         timers[static_cast<std::size_t>(k)] =
@@ -1536,9 +1536,7 @@ void PlayState::shootNoise(long frame, int from, const float at[3], const char* 
         if ((rec.flags & 8u) && rec.health <= 0) { ++dead; continue; }
         if (!(rec.flags & 0x40u)) { ++unentered; continue; }
         if (rec.flags & 0x20u) { ++alertedAlready; continue; }
-        const Staged* sp = nullptr;
-        for (const auto& up : staged)
-            if (up && up->actor == actor) { sp = up.get(); break; }
+        const Staged* sp = bodyOfKey(actor);   // the brain's key is the body's (M4)
         if (!sp) continue;
         std::int32_t cells = 0;
         session.actorProperty(actor, 28, cells);
@@ -1631,13 +1629,15 @@ std::vector<omk::MeshPose> PlayState::playerPoseNow(omk::PlayerController* pl, b
 std::vector<omk::MeshPose> PlayState::gunmanPoseNow(int actor, int deathType, const CharModel* mo,
                                    const omk::NodeTracks& pt, float frame) {
     auto& session = *session_;
+    // `actor` is the body's KEY (M4): his shoot state by it, his type by the id
     const auto aimIt = gun.aims.find(actor);
     const auto recIt = shootBrains.find(actor);
+    const int id = session.actorOfKey(actor);
     if (!mo || !pt.valid() || deathType >= 0 || aimIt == gun.aims.end() ||
         !aimIt->second.live || recIt == shootBrains.end() ||
-        session.typeOfActor(actor) == 13u)      // 0x4C37E8, not lifted
+        session.typeOfActor(id) == 13u)      // 0x4C37E8, not lifted
         return omk::composePose(mo->meshes, pt, frame, false);
-    const int grp = static_cast<int>(session.typeOfActor(actor));
+    const int grp = static_cast<int>(session.typeOfActor(id));
     const omk::PedClip* c18 = (grp >= 0 && grp < 64) ? shootClipExact(grp, 18) : nullptr;
     const omk::PedClip* c17 = (grp >= 0 && grp < 64) ? shootClipExact(grp, 17) : nullptr;
     const omk::NodeTracks* aim = c18 ? pedTracksFor(grp, *c18, mo->meshes) : nullptr;
@@ -1925,7 +1925,8 @@ bool PlayState::beginMelee(int opponentId, int level) {
         return false;
     }
     Staged* s = nullptr;
-    for (auto& up : staged) if (up->actor == opponentId) { s = up.get(); break; }
+    // HIS RECORD'S body (M4): 62 resolved him through the script's area
+    s = bodyAt(opponentId, session_->fightOpponentSlot());
     // NOT SHOWN YET: `Fight_Engage` ATTACHES him (`Actor_Attach`), so the
     // fight's own start puts him on screen - attached without his
     // `ObjectShown` bit, as the engine does - and he is staged here, now,

@@ -234,6 +234,17 @@ struct PropModel {
 
 struct Staged {
     int actor = -1;
+    // THE RUNTIME SLOT his placement record took (`word_69BC80`'s index,
+    // `Session::Shown::slot`): a body per RECORD, not per id - two resident
+    // areas may place one id at two spots, and the engine draws both
+    // (todo/drift-audit.md M4). -1: no record (a script's side show, a
+    // conversation's speaker staged by the camera solve).
+    int rt = -1;
+    // ...and the KEY his per-actor state is held under (`Session::actorKey`):
+    // the id for the copy in the id's lowest slot - every body, in every case
+    // but two resident areas placing one id - another copy's slot otherwise.
+    // Refreshed each frame (`refreshBodyKeys`), the state moved when it changes.
+    int key = -1;
     std::string model, bank;
     CharModel* mo = nullptr;
     CharBank*  bk = nullptr;
