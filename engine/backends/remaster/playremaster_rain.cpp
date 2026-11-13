@@ -780,7 +780,11 @@ void PlayState::remasterRainDraws(std::vector<omk::Draw>& list, const omk::View&
         dr.blend = omk::Blend::Add;
         list.push_back(dr);
     };
-    add(snow ? snowTexSlot : sand ? sandTexSlot : rainTexSlot, 0, rainCorners);
+    // `OMK_NO_RAIN_STRIPS=1`, an INSTRUMENT: the drops' strips left out of
+    // the draw (built and counted all the same), the splashes kept - what
+    // the strips alone cost the GPU
+    static const bool noStrips = omk::envFlag("OMK_NO_RAIN_STRIPS");
+    if (!noStrips) add(snow ? snowTexSlot : sand ? sandTexSlot : rainTexSlot, 0, rainCorners);
     add(splashTexSlot, rainCorners, rainGeo.corners.size() - rainCorners);
 }
 

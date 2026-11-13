@@ -402,3 +402,40 @@ pixel or changes a log line on the shipped data.
    area was never printed. `ToldOnce` (`playstate.h`) empties itself when
    `Session::areasEntered()` moves. The members (`propsTold`, `gun.*Told`)
    are reset with their state and were left alone.
+
+## 11. Measured 2026-11-13 - the remaster at 4K on the M1, where 60 fps is lost
+
+The reader: *"le mode remaster en 4K ne tient generalement pas les 60 fps sur
+cette machine"*. M1 (MacBookPro17,1), Vulkan, `--res 3840x2160 --remaster
+~/omk-pack --framerate 60`, the window SHOWN (the reader's ask), the reader's
+own `upscale = 1.5` (FSR quality - their `omk.ini`; a run with a private
+`--saves` has none, which the first runs here missed). The street walk of
+section 1 at Qalisar (`--area 101 --stand 15300,0,-10050,270`); the rain at
+full by `OMK_WEATHER_SKIP_MS=900000`, its ramp (~1000 frames) left out of
+every figure. `--hold` counts PRESENTED frames, so a walk at another frame
+rate is another route, and a pedestrian can push it into a wall (one run did):
+every run here logs its end (`player: ends at`), and the eight compared
+ended in the same street.
+
+* **Dry, FSR 1.5: 60 held** (Anekbah 16.57 / Qalisar 16.60 ms median, ~3 ms
+  idle). Without FSR Qalisar is ~55 fps.
+* **Full rain, FSR 1.5: ~47-50 fps.** Unpaced (`OMK_PRESENT_IMMEDIATE=1`,
+  `--framerate 240`) 20.15 ms; the rain's passes off one at a time: bloom
+  -1.7, AO -1.25, halos -1.1, veils -0.7, wet floors -0.7, the floors'
+  reflection 0; `--rain3d 0` -4.4 - but it takes ALL the remaster's rain
+  with it (`weatherRain` is only fed through the 3D rain: no wetness at all).
+  The drops' strips, the splashes, the drips cost nothing measurable
+  (`OMK_NO_RAIN_STRIPS`, new).
+* **The GPU's own times** (`OMK_GPU_TIMES=1`, now with the PRESENT path -
+  the upscale, the present pass, the blit): reflection 0.65, scene 4.4,
+  post 3.6, FSR EASU 3.2, the present pass (RCAS) 1.5, blit 0.16 - **13.5
+  ms of GPU in a 20 ms frame**. The rest is the three submits a frame
+  (scene; upscale + present pass; blit + present), each waited for whole
+  (`vkWaitForFences`, `oneShotEnd`'s `vkQueueWaitIdle`) - the GPU idle while
+  the CPU waits and records the next. That is C11 (§7), now the world's
+  first lever.
+* **A screen open (the sneak): 30 fps** - 32.6 ms, `screen draw` 25 ms of
+  CPU, the GPU 1.7 ms. The interface composed at the display's size, C7.
+
+Order from here: C7 (the screens), then the submits pipelined (C11), then
+the passes themselves (EASU 3.2, post 3.6).

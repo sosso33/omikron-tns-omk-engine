@@ -90,6 +90,7 @@ constexpr const char* kSwitches[] = {
     "OMK_NO_PED_LOD",           // A/B: every walker on its largest skeleton
     "OMK_NO_PROGSPIN",          // diagnostic: a scene call's Euler not applied to the body
     "OMK_NO_PUDDLES",           // =1 the wet floors an even film, no puddles (engine: wet floors)
+    "OMK_NO_RAIN_STRIPS",       // =1 the 3D rain's drop strips left out of the draw, the rest kept (measuring their GPU cost)
     "OMK_NO_ROOTSPIN",          // diagnostic: a scene clip's root motion not turned by the call's Euler (engine: scene facing)
     "OMK_NO_SET_TWIN",          // the later of two coincident door faces drawn too - the flicker it removes (engine: door twin)
     "OMK_NO_SIDECULL",          // A/B: the staged-body side cull off (engine: unlimited clip)
@@ -114,6 +115,7 @@ constexpr const char* kSwitches[] = {
     "OMK_PRELOAD_DELAY_MS",     // =<n> each preload's job sleeps n ms first, so a walk releases one while it prepares (engine: preload)
     "OMK_PRELOAD_HELD",         // =<n> the preload radius holds at most n sets, not 6 (2 on software) - its cap within a short walk (engine: preload)
     "OMK_PRESENT_CHECK",        // GLES: the row-by-row present compared with the whole one
+    "OMK_PRESENT_IMMEDIATE",    // Vulkan: present without v-sync where IMMEDIATE is offered (measuring a frame's GPU cost)
     "OMK_PRESENT_ROWS",         // GLES: the present row by row always - the Vita's path on a desktop
     "OMK_PROGYAW_NEG",          // diagnostic: a scene call's Euler applied with its sign turned
     "OMK_RECORD_FEET",          // A/B: a placement record's body seated by its FEET on the walkable floor, the old reading (todo/drift-audit.md M6)

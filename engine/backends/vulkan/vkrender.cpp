@@ -614,6 +614,29 @@ private:
         tsLabel_[tsCount_++] = label;
     }
     void readStamps();
+    // ...and THE PRESENT PATH's, which the frame's one command buffer does not
+    // hold: the upscale and the present pass (`runPresentPass`), a screen's
+    // upload (`presentSurface`) are one-shot buffers, and the blit to the
+    // swapchain (`presentImage`) another. Queries: 0 the path's start, 1 its
+    // passes done, 2 the blit's start, 3 its end, 4 the upscale done (when
+    // there is one); read after the present's own fence
+    static constexpr uint32_t kPresStamps = 5;
+    VkQueryPool     tsPresPool_ = VK_NULL_HANDLE;
+    bool            tsPresOpen_ = false, tsPresUp_ = false, tsPresScreen_ = false;
+    double          tsPresSum_[4] = {};        // upscale, the rest of the passes, blit, all (ms)
+    int             tsPresFrames_ = 0, tsPresScreens_ = 0;
+    void presStampStart(VkCommandBuffer cb, bool screen) {
+        if (!tsPresPool_) return;
+        vkCmdResetQueryPool(cb, tsPresPool_, 0, kPresStamps);
+        vkCmdWriteTimestamp(cb, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, tsPresPool_, 0);
+        tsPresOpen_ = true; tsPresUp_ = false; tsPresScreen_ = screen;
+    }
+    void presStamp(VkCommandBuffer cb, uint32_t q) {
+        if (!tsPresPool_ || !tsPresOpen_) return;
+        vkCmdWriteTimestamp(cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, tsPresPool_, q);
+        if (q == 4) tsPresUp_ = true;
+    }
+    void readPresStamps();
     bool            shadowLive_ = false;   // a depth pass was recorded this frame
     int             litCount_ = 0;         // lights uploaded for this frame
     float           shimmerClock_ = 0.0f;  // the View's, held for the uniform
@@ -1270,6 +1293,8 @@ bool VulkanRenderer::pickDevice() {
             VkQueryPoolCreateInfo qpi{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
             qpi.queryType = VK_QUERY_TYPE_TIMESTAMP; qpi.queryCount = kStamps;
             if (vkCreateQueryPool(dev_, &qpi, nullptr, &tsPool_) != VK_SUCCESS) tsPool_ = VK_NULL_HANDLE;
+            qpi.queryCount = kPresStamps;
+            if (vkCreateQueryPool(dev_, &qpi, nullptr, &tsPresPool_) != VK_SUCCESS) tsPresPool_ = VK_NULL_HANDLE;
         }
         std::printf("vulkan: the GPU's time per pass %s\n", tsPool_ ? "- every 60 frames (OMK_GPU_TIMES)"
                                                                  : "refused: the device has no timestamps");
@@ -2223,6 +2248,20 @@ bool VulkanRenderer::makeSwapchain(int w, int h) {
     // FIFO is the one mode every implementation must support, and it is
     // v-synced, which is what a 30 Hz game wants anyway.
     sc.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+    // `OMK_PRESENT_IMMEDIATE=1`, an INSTRUMENT: no v-sync where the surface
+    // offers IMMEDIATE, so an unpaced run's frame time is the frame's own
+    // cost and not a multiple of the display's refresh (measuring the GPU)
+    if (omk::envFlag("OMK_PRESENT_IMMEDIATE")) {
+        uint32_t nm = 0;
+        vkGetPhysicalDeviceSurfacePresentModesKHR(phys_, surface_, &nm, nullptr);
+        std::vector<VkPresentModeKHR> modes(nm);
+        vkGetPhysicalDeviceSurfacePresentModesKHR(phys_, surface_, &nm, modes.data());
+        for (const auto m : modes)
+            if (m == VK_PRESENT_MODE_IMMEDIATE_KHR) sc.presentMode = m;
+        std::printf("vulkan: OMK_PRESENT_IMMEDIATE - present mode %s\n",
+                    sc.presentMode == VK_PRESENT_MODE_IMMEDIATE_KHR ? "IMMEDIATE (no v-sync)"
+                                                                     : "FIFO (IMMEDIATE not offered)");
+    }
     sc.clipped = VK_TRUE;
     VKCHECK(vkCreateSwapchainKHR(dev_, &sc, nullptr, &swap_), "vkCreateSwapchainKHR");
 
@@ -2368,6 +2407,9 @@ bool VulkanRenderer::presentImage(VkImage src, int sw, int sh) {
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkResetCommandBuffer(pcb_, 0);
     vkBeginCommandBuffer(pcb_, &bi);
+    // a present with no pass of its own before it: the path starts here
+    if (tsPresPool_ && !tsPresOpen_) { presStampStart(pcb_, false); presStamp(pcb_, 1); }
+    presStamp(pcb_, 2);
 
     auto barrier = [&](VkImage img, VkImageLayout from, VkImageLayout to,
                        VkAccessFlags srcA, VkAccessFlags dstA,
@@ -2415,6 +2457,7 @@ bool VulkanRenderer::presentImage(VkImage src, int sw, int sh) {
                    // LINEAR only when there is something to average: at ss 1
                    // this must stay NEAREST or every existing frame changes.
                    1, &blit, ss_ > 1 || up_ > 1.0f ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
+    presStamp(pcb_, 3);
 
     barrier(swapImgs_[idx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
             VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_TRANSFER_WRITE_BIT, 0,
@@ -2436,7 +2479,35 @@ bool VulkanRenderer::presentImage(VkImage src, int sw, int sh) {
     pi.pImageIndices = &idx;
     vkQueuePresentKHR(queue_, &pi);
     vkWaitForFences(dev_, 1, &pfence_, VK_TRUE, UINT64_MAX);
+    readPresStamps();
     return true;
+}
+
+// the present path's stamps, read after its fence (`tsPresPool_`)
+void VulkanRenderer::readPresStamps() {
+    if (!tsPresPool_ || !tsPresOpen_) return;
+    tsPresOpen_ = false;
+    uint64_t t[kPresStamps] = {};
+    const uint32_t n = tsPresUp_ ? kPresStamps : 4;
+    if (vkGetQueryPoolResults(dev_, tsPresPool_, 0, n, sizeof t, t, sizeof(uint64_t),
+                              VK_QUERY_RESULT_64_BIT) != VK_SUCCESS) return;
+    const double k = props_.limits.timestampPeriod / 1e6;
+    const double up = tsPresUp_ ? static_cast<double>(t[4] - t[0]) * k : 0.0;
+    tsPresSum_[0] += up;
+    tsPresSum_[1] += static_cast<double>(t[1] - t[0]) * k - up;
+    tsPresSum_[2] += static_cast<double>(t[3] - t[2]) * k;
+    tsPresSum_[3] += static_cast<double>(t[3] - t[0]) * k;
+    tsPresScreens_ += tsPresScreen_ ? 1 : 0;
+    if (++tsPresFrames_ < 60) return;
+    std::printf("vulkan: GPU ms a frame, the present path (mean of 60, %d of them a screen's) - upscale "
+                "%.2f, the rest of its passes %.2f, the blit %.2f; from its start to the blit's end %.2f\n",
+                tsPresScreens_, tsPresSum_[0] / 60.0, tsPresSum_[1] / 60.0, tsPresSum_[2] / 60.0,
+                tsPresSum_[3] / 60.0);
+    omk::event("gpu.present", {{"upscale", tsPresSum_[0] / 60.0}, {"passes", tsPresSum_[1] / 60.0},
+                               {"blit", tsPresSum_[2] / 60.0}, {"span", tsPresSum_[3] / 60.0},
+                               {"screens", tsPresScreens_}});
+    for (auto& v : tsPresSum_) v = 0.0;
+    tsPresFrames_ = tsPresScreens_ = 0;
 }
 
 // Present a CPU-composited frame - the mirror pass's output.
@@ -2472,6 +2543,7 @@ bool VulkanRenderer::presentSurface(const omk::Surface& s) {
     const bool up = up_ > 1.0f;
     if (up && !makePresentPass()) return false;
     VkCommandBuffer cb = oneShotBegin();
+    presStampStart(cb, true);
     VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
     b.oldLayout = up ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     b.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -2492,6 +2564,7 @@ bool VulkanRenderer::presentSurface(const omk::Surface& s) {
     b.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
     vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT,
                          VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &b);
+    presStamp(cb, 1);
     oneShotEnd(cb);
     return up ? presentImage(presImg_, w_, h_) : presentDirect();
 }
@@ -2882,6 +2955,7 @@ bool VulkanRenderer::runPresentPass(int vy, int vh, bool raw) {
     if (up && !makeUpscale()) return false;
     vh = std::clamp(vh, 1, h_);
     VkCommandBuffer cb = oneShotBegin();
+    presStampStart(cb, false);
     // Real scopes both ways (the audit's item 8): the top of the pipe and no
     // access ordered nothing, and only the host's wait on the frame's fence
     // kept it right
@@ -2918,6 +2992,7 @@ bool VulkanRenderer::runPresentPass(int vy, int vh, bool raw) {
         vkCmdPushConstants(cb, easuPlo_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof con, con);
         vkCmdDraw(cb, 3, 1, 0, 0);
         vkCmdEndRenderPass(cb);   // `easuImg_` left SHADER_READ_ONLY for the pass below
+        presStamp(cb, 4);
     }
     VkRenderPassBeginInfo rp{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
     rp.renderPass = presPass_; rp.framebuffer = presFbuf_;
@@ -2936,6 +3011,7 @@ bool VulkanRenderer::runPresentPass(int vy, int vh, bool raw) {
     layout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
            0, VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
            VK_PIPELINE_STAGE_TRANSFER_BIT);
+    presStamp(cb, 1);
     oneShotEnd(cb);
     return true;
 }
@@ -4398,6 +4474,7 @@ VulkanRenderer::~VulkanRenderer() {
     for (VkSampler old : retiredSamplers_) vkDestroySampler(dev_, old, nullptr);
     if (dpool_) vkDestroyDescriptorPool(dev_, dpool_, nullptr);
     if (tsPool_) vkDestroyQueryPool(dev_, tsPool_, nullptr);
+    if (tsPresPool_) vkDestroyQueryPool(dev_, tsPresPool_, nullptr);
     if (levelPool_) vkDestroyQueryPool(dev_, levelPool_, nullptr);
     for (auto& p : pipe_) if (p) vkDestroyPipeline(dev_, p, nullptr);
     for (auto& p : pipeTiled_) if (p) vkDestroyPipeline(dev_, p, nullptr);
