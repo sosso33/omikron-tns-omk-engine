@@ -16036,12 +16036,15 @@ def c_engine_hand_put_away():
     `Sneak_Start`, whose first test finds the hand full: `sub_41C720`, event
     10, the object back at the front of list 0 - and no sneak.
 
+    The subtitle is RED: `{I255000000}` recolours what follows the call's
+    colour - which `drawSubtitle` used to paint over every glyph, white.
+
     The street, the Notice MK400 (171), `Utiliser` on it: in hand at 99, the
     put-away at 100 (group 150 entered, object 447, the jingle decoded), the
     bank at 119 with one object carried again, the held draw logged between.
     The port used to keep it in an invisible hand, out of the inventory, for
     good. SHOWN TO FAIL: the refused release asking no put-away (no
-    put-away, no bank).
+    put-away, no bank); the tone painted over the glyphs again (white).
     """
     play = _play_built()
     if not play:
@@ -16052,13 +16055,34 @@ def c_engine_hand_put_away():
     ev = _events(out)
     pick = lambda name, *keys: [tuple(f.get(k) for k in keys) for n, f in ev if n == name]
     drawn = any(ln.startswith("held 171:") for ln in out.splitlines())
+    # ...and the subtitle IN RED: "{I255000000}" is three decimal components
+    # the call's colour gives way to (frame 108, the bottom 60 rows of 600)
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        dump = os.path.join(tmp, "f.bin")
+        _play_out(play, "--nofmv", "--nodelay", "--no-crowd", "--software", "--res", "800x600",
+                  "--area", "0", "--stand", "1804,0,-6890,336", "--frames", "108", "--hold",
+                  "0*40,k15*3,0*30,k28*4,0*20,k28*4,0*120", "--dump", dump)
+        px = open(dump, "rb").read() if os.path.exists(dump) else b""
+    red = white = 0
+    for y in range(540, 600):
+        for x in range(0, 400):
+            o = 2 * (y * 800 + x)
+            if o + 1 >= len(px):
+                continue
+            v = px[o] | px[o + 1] << 8
+            r, g, bl = (v >> 11) * 255 // 31, ((v >> 5) & 63) * 255 // 63, (v & 31) * 255 // 31
+            red += r > 200 and g < 60 and bl < 60
+            white += r > 200 and g > 200 and bl > 200
     return (pick("hand.use", "object", "slot"),
             pick("hand.putaway", "object", "group150", "text", "jingle"),
-            pick("hand.bank", "object", "banked", "carried"), drawn), \
-           ([("171", "1")], [("171", "1", "447", "1")], [("171", "1", "1")], True), \
+            pick("hand.bank", "object", "banked", "carried"), drawn,
+            red > 100, white < 20), \
+           ([("171", "1")], [("171", "1", "447", "1")], [("171", "1", "1")], True, True, True), \
            "Utiliser on the notice: in hand (object, slot); the put-away (object, group 150, " \
            "GLOBAL's object for event 47, the jingle); MDSNEAK0 banking it (object, banked, " \
-           "carried after); and the object drawn on the hand meanwhile"
+           "carried after); the object drawn on the hand meanwhile; and event 47's line RED " \
+           "(over 100 red subtitle pixels, under 20 white)"
 
 
 def c_engine_den_locker():

@@ -889,7 +889,10 @@ is armed event 6 refuses, and the refused arm's `dword_91068C = -1` (state ≠
 3) hands the object to `Game_Tick`'s `sub_41C770` put-away: the bank set to
 `.CTL` group 150 (`H_SNKON`, the sneak out) and event 47 with 2 - GLOBAL's
 object at +70, 447, *"Ça ne marche pas."*, as a `{I255000000}` subtitle over
-`JINGOFF2.ADP`. Group 150's move is `MDSNEAK0`, `Sneak_Start`, whose first
+`JINGOFF2.ADP`. The line is RED: `{I rrrgggbbb}` is three decimal components
+that recolour what follows the call's own colour (`9079FE..FC`) - the port's
+`drawSubtitle` painted its tone over every parsed glyph and drew it white until
+2026-11-13 (`engine: hand put away` counts the red). Group 150's move is `MDSNEAK0`, `Sneak_Start`, whose first
 test finds the hand full and calls `sub_41C720` - event 10, the object back at
 the front of list 0, the hand emptied - INSTEAD of opening the sneak (TAB with
 something in hand does the same). `dword_4C2BCC` (1 in the image) makes one

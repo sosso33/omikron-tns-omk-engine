@@ -125,9 +125,15 @@ void drawSubtitle(omk::Surface& fb, const omk::TextLayout& lay,
         SubtitleRows& c = *hit;
         c.valid = false;
         c.rows.clear();
-        const auto wrapRun = [&](const std::string& text,
+        const auto wrapRun = [&](const std::string& text, std::uint8_t tone,
                                  std::vector<std::vector<omk::StyledChar>>& out) {
             omk::TextBlock blk;
+            // THE TONE IS THE BLOCK'S COLOUR, not a coat over the parsed
+            // run: the engine colours a string at the call (`9079FE..FC`)
+            // and its `{I rrrgggbbb}` markup recolours what follows - event
+            // 47's "{I255000000}Ca ne marche pas." is RED. Painting the
+            // tone over every glyph afterwards drew it white.
+            blk.rgb[0] = blk.rgb[1] = blk.rgb[2] = tone;
             blk.left = left; blk.right = right;
             blk.top = 0;     blk.bottom = dispH;
             blk.font = face;
@@ -140,21 +146,18 @@ void drawSubtitle(omk::Surface& fb, const omk::TextLayout& lay,
         };
         // each row in its TONE: the line and the selected reply full, the
         // other replies at half
-        const auto toned = [&](std::vector<std::vector<omk::StyledChar>>& tmp, std::uint8_t tone) {
-            for (auto& r : tmp) {
-                for (auto& sc : r) sc.rgb[0] = sc.rgb[1] = sc.rgb[2] = tone;
-                c.rows.push_back(std::move(r));
-            }
+        const auto toned = [&](std::vector<std::vector<omk::StyledChar>>& tmp) {
+            for (auto& r : tmp) c.rows.push_back(std::move(r));
         };
         if (!line.empty()) {
             std::vector<std::vector<omk::StyledChar>> tmp;
-            wrapRun(line, tmp);
-            toned(tmp, 255);
+            wrapRun(line, 255, tmp);
+            toned(tmp);
         }
         for (std::size_t k = 0; k < menu.size(); ++k) {
             std::vector<std::vector<omk::StyledChar>> tmp;
-            wrapRun(menu[k], tmp);
-            toned(tmp, static_cast<int>(k) == selected ? 255 : 128);
+            wrapRun(menu[k], static_cast<int>(k) == selected ? 255 : 128, tmp);
+            toned(tmp);
         }
         // THE LINE PITCH is the engine's `120 * i16i(font, 6) / 100` - 120% of the
         // face's own line height - not this file's old `height + 2`.
