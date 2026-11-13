@@ -292,6 +292,13 @@ const std::string& UiWidgets::soundName(int screenId, int slot) const {
     return n2 == soundName_.end() ? none : n2->second;
 }
 
+int UiWidgets::soundId(int screenId, int slot) const {
+    const auto s2 = screenSounds_.find(screenId);
+    if (s2 == screenSounds_.end() || slot < 0 ||
+        slot >= static_cast<int>(s2->second.size())) return -1;
+    return s2->second[static_cast<std::size_t>(slot)];
+}
+
 const std::string& UiWidgets::soundNameById(int id) const {
     static const std::string none;
     const auto n2 = soundName_.find(id);
@@ -1002,8 +1009,10 @@ void UiWalk::setItemOff(std::uint32_t item, bool off) {
 void UiWalk::leavePage(const UiPanel& p) {
     // `sub_49B9E0` - the examine page's `+8`: `sub_428FF0(0x004DE2C0,
     // 0x40000002, 0)`, the exact mirror of what its `+4` set.
-    if (p.addr == kPanelSneakExamine)
+    if (p.addr == kPanelSneakExamine) {
         state_->flagOn[kItemSneakExamine] &= ~0x40000002u;
+        state_->pendingSounds.push_back(9);   // its tail: `push 9; call sub_482D90` - SNK006
+    }
     if (p.addr == kPanelSneakVerbs) {
         setListOff(kListSneakVerbs, true);
         setListOff(kListSneakTabs, false);
@@ -1143,9 +1152,11 @@ void UiWalk::buildPage(const UiPanel& p) {
     // you chose stays lit while its page is up. It then reads the row's tag,
     // asks `sub_42B330` for the object's KIND and sends kind 5 to
     // `sub_478EF0`, which is the document path; and it plays interface sound
-    // 8. None of those three is modelled here - this is the navigation only.
+    // 8 (queued below, `takeSounds`).
     if (p.addr == kPanelSneakExamine) {
         setListOff(kListSneakVerbs, true);
+        // its tail, `push 8; call sub_482D90` - SNK005
+        state_->pendingSounds.push_back(8);
         // `sub_428FF0(0x004DE2C0, 0x40000002, 1)` - "Examiner" itself, so it
         // FLASHES while its page is up. `Ui_ItemTextStyle` reads bank B `0x2`
         // as "blink on oscillator 1 when selected", and bank C `0x1` on the
@@ -1602,6 +1613,7 @@ bool UiWalk::denDial(const UiList& l, std::uint32_t bits) {
             state_->colour[l.items[k].addr] = {0, 255, l.items[k].rgb[2]};
         }
         answer_ = 1;
+        state_->pendingSounds.push_back(34);   // `push 22h; call sub_482D90` - den005
         // ...and `Ui_StartOscillator(5, 2000, screen)` (0x004AFDDB): the
         // locker stays up, lit, for two seconds and then closes
         if (!closing()) startCloseTimer(2000.0, "den locker");
@@ -2372,7 +2384,14 @@ bool UiWalk::confirmTerminalCell(const omk::UiItem*& it, bool& retVal) {
         // ARCHIVES starts none (it goes to panel 0x004E4170, above).
         double closeMs = 0.0;
         switch (screen_) {
-            case screen::FightSim: if (row >= 0 && row <= 2) { a = row + 1; closeMs = 4500.0; } break;
+            // case 1 (0x004AF476): the cell's item `+0x3C = 6` and
+            // `push 1Ah; call sub_482D90` - FS003 - before the answer
+            case screen::FightSim:
+                if (row >= 0 && row <= 2) {
+                    a = row + 1; closeMs = 4500.0;
+                    state_->pendingSounds.push_back(26);
+                }
+                break;
             case screen::Morgue: if (row >= 0 && row <= 4) { a = row + 1; closeMs = 2000.0; } break;
             case screen::SurvError: case screen::SurvKit: if (row == 0) a = 1; closeMs = 2000.0; break;
             case screen::SurvNoKit: closeMs = 2000.0; break;
@@ -2537,7 +2556,9 @@ bool UiWalk::confirmXachenCartridge(const omk::UiItem*& it, bool& retVal) {
         if (xachenSolved()) {
             answer_ = 1;
             log_.push_back("xachen: 10 14 7 9 - the door opens");
-            // `Ui_StartOscillator(5, 4000, screen)` (0x004AFAFE)
+            // `Ui_StartOscillator(5, 4000, screen)` (0x004AFAFE), after
+            // `push 2Bh; call sub_482D90` - xach003
+            state_->pendingSounds.push_back(43);
             startCloseTimer(4000.0, "xachen");
         }
         { retVal = true; return true; }
@@ -2579,11 +2600,15 @@ bool UiWalk::confirmGandharCell(const omk::UiItem*& it, bool& retVal) {
         // `cl = 4`: on the fourth press `Ui_StartOscillator(5, 1500,
         // screen)` and sound 0x26 - a wrong code closes 1.5 s later and
         // answers nothing - then, all four bits set, the answer 1, a
-        // RESTART at 4000 ms and sound 0x27 (0x004B0067, 0x004B0094). The
-        // sounds are not ported.
-        if (gandhar_.presses == 4) startCloseTimer(1500.0, "gandhar door, the fourth press");
+        // RESTART at 4000 ms and sound 0x27 (0x004B0067, 0x004B0094) - so
+        // the right code plays BOTH, gan004 and then gan005.
+        if (gandhar_.presses == 4) {
+            startCloseTimer(1500.0, "gandhar door, the fourth press");
+            state_->pendingSounds.push_back(38);
+        }
         if (gandhar_.mask == 0x0Fu) {
             answer_ = 1;
+            state_->pendingSounds.push_back(39);
             log_.push_back("gandhar: the door opens");
             startCloseTimer(4000.0, "gandhar door, the code");
         }

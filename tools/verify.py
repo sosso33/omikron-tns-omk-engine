@@ -15946,6 +15946,82 @@ def c_engine_delayed_close():
            "RIGHT inside the delay moves nothing"
 
 
+def c_engine_ui_sounds():
+    r"""THE INTERFACE SOUNDS A CALLBACK PLAYS BY ID, and the slots that cache
+    them (`docs/UI.md` 3, "Which slot is played where").
+
+    A screen's twelve slots (+60) are all loaded into the 32-entry cache by
+    `UI_CacheScreenSounds`, but only four functions play a SLOT:
+    `sub_482FE0` slots 0..3 by input bit, `sub_483110` slot 4 at
+    `Ui_BeginScreen`, `sub_483150` slot 5 at `Ui_CloseScreenDefault` - cut
+    the same frame by `sub_483190`'s `Sound_FreeBuffer`, so never heard.
+    Slots 6..11 exist to CACHE what the callbacks play by global id through
+    `sub_482D90`, which plays nothing an open screen has not cached. Its ten
+    call sites (the asm, with the shop's three in a stretch IDA left as data):
+
+    * the Gandhar door - the fourth press 38 (gan004), the code 39 (gan005);
+    * the Den's locker 34 (den005), XACHEN 43 (xach003);
+    * the shop - bought 16 (achat), refused 18 (SNK004), and SOLD 17,
+      `vente`, which NO screen's slots name: the original's sale is silent;
+    * the sneak's examine page in (8, SNK005) and out (9, SNK006) - and
+      while it is up, screen flag 0x20002000 mutes `sub_482FE0`: the move
+      inside it plays no slot.
+
+    Six runs, read from `ui.sound` / `ui.slot` events. SHOWN TO FAIL: the
+    cache test removed from `PlayState::uiPlayId` (the sale reads played 1),
+    and `slotSoundsMuted` answering false (a move slot inside the page).
+    """
+    play = _play_built()
+    if not play:
+        return _PLAY_UNBUILT
+    env = {"OMK_EVENTS": "1"}
+    def sounds(*flags):
+        ev = _events(_play_out(play, "--nofmv", "--nodelay", "--no-crowd", *flags, env=env))
+        return ev, [(int(f["id"]), int(f["played"])) for n, f in ev if n == "ui.sound"]
+    g = ("k*50,k28*3,k*40,"
+         "k205*3,k*6,k205*3,k*6,k205*3,k*6,k205*3,k*6,k205*3,k*6,k205*3,k*10,k28*3,k*20,"
+         "k208*3,k*6,k203*3,k*6,k203*3,k*10,k28*3,k*20,"
+         "k208*3,k*6,k208*3,k*6,k208*3,k*6,k203*3,k*10,k28*3,k*20,"
+         "k208*3,k*6,k205*3,k*6,k205*3,k*10,k28*3,k*150")
+    gandhar = sounds("--area", "81", "--address", "263", "--frames", "900", "--hold", g)[1]
+    up, dn, rt = "k200*2,k*6", "k208*2,k*6", "k205*2,k*6"
+    d = ",".join(["k*60", "k28*8", "k*75", up, up, up, rt, dn, dn, rt, dn, rt, dn, dn, dn, "k*60"])
+    den = sounds("--area", "146", "--scene-chunk", "43", "--var", "482=1",
+                 "--stand", "522,-10,343,178", "--zone-disable", "2419",
+                 "--frames", "400", "--hold", d)[1]
+    press, right = "k28*2,k*5", "k205*2,k*5"
+    x = ",".join(["k*60", "k28*8", "k*60"] + [press] * 7 + [right] + [press] * 3 + [right] +
+                 [press] * 10 + [right] + [press] * 5 + ["k*80"])
+    xachen = sounds("--area", "58", "--var", "28=1,57=0", "--stand", "-1471,150,133,290",
+                    "--frames", "600", "--hold", x)[1]
+    buy = sounds("--area", "39", "--money", "300", "--software", "--keys",
+                 "28,28,28,28,28,28,28", "--keydelay", "60", "--frames", "460")[1]
+    sell = sounds("--area", "83", "--stand", "13875,-6,20441,321", "--give", "191",
+                  "--software", "--keys", "28,28,28,28,28,208,28,28", "--keydelay", "60",
+                  "--frames", "560")[1]
+    # the sneak, Examiner on the Notice MK400 (frames 113..127), DOWN inside
+    # the page, SPACE out of it
+    ev, examine = sounds("--software", "--area", "0", "--stand", "1804,0,-6890,336",
+                         "--frames", "260", "--hold",
+                         "0*40,k15*3,0*30,k28*4,0*20,k205*4,0*10,k205*4,0*10,k28*4,"
+                         "0*40,k208*4,0*20,k57*4,0*20")
+    # by FRAME, not order: a frame's slot sound is played before the
+    # callbacks' queue is drained, so the confirm that OPENS the page shares
+    # sound 8's frame and comes first in the log - and must be silent
+    at = {(n, int(f["id"])): int(f["frame"]) for n, f in ev if n == "ui.sound"}
+    f8, f9 = at.get(("ui.sound", 8)), at.get(("ui.sound", 9))
+    inside = [(int(f["frame"]) - f9 if int(f["frame"]) == f9 else "in", int(f["slot"]))
+              for n, f in ev if n == "ui.slot" and f8 <= int(f["frame"]) <= f9] \
+        if f8 is not None and f9 is not None else None
+    return (gandhar, den, xachen, buy, sell, examine, inside), \
+           ([(38, 1), (39, 1)], [(34, 1)], [(43, 1)], [(16, 1), (18, 1)], [(17, 0)],
+            [(8, 1), (9, 1)], [(0, 1)]), \
+           "by id, (id, played): the Gandhar door's code, the Den, XACHEN, a purchase " \
+           "and a refusal, a sale (vente, cached by no screen); the examine page in and " \
+           "out; and the slot sounds from the frame it opens to the frame it closes - " \
+           "none until the BACK that leaves it, on that frame (0, slot 1)"
+
+
 def c_engine_den_locker():
     r"""`omk-play`: DEN'S LOCKER - four wheels, 7 2 1 3, and the cache opens.
 
@@ -55623,6 +55699,7 @@ SLOW = [
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),
     ("engine: xachen", c_engine_xachen, "todo/missing-ui 5d"),
+    ("engine: ui sounds", c_engine_ui_sounds, "docs/UI.md 3"),
     ("engine: high score", c_engine_high_score, "todo/missing-ui 5e"),
     ("engine: hint shop", c_engine_hint_shop, "todo/pending/ui-remainder-survey 2a"),
     ("engine: terminal family", c_engine_terminal_family, "todo/missing-ui 3"),

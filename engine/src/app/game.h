@@ -29,11 +29,12 @@ namespace omk {
 constexpr int kDeviceRate = 22050;
 
 // AUDIO - the setup's "INTERFACE SOUNDS" and "THE MUSIC" banners: the screens'
-// positional sounds (0 the selection move, 1 the confirm, 2 the opening), the
+// positional sounds (by `sub_482FE0`'s input bits: 0 the confirm, 1 the back,
+// 2 the selection move, 3 the close - `UiWidgets::kSound*`), the
 // music stream, and the cutscene voices (`media.play`, one at a time).
 // Not copyable: `voices` points at `voiceLib`.
 struct AudioState {
-    std::vector<float> sndMove, sndConfirm, sndBack;
+    std::vector<float> sndMove, sndConfirm, sndBack, sndClose;
     std::vector<float> optSndMove, optSndConfirm, optSndBack;   // screen 35's own
     AdpcmTables adpcmTables;
     MusicPlayer music{kDeviceRate};

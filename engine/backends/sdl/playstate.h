@@ -510,6 +510,7 @@ struct PlayState {
     std::vector<float> & sndMove = game.audio.sndMove;
     std::vector<float> & sndConfirm = game.audio.sndConfirm;
     std::vector<float> & sndBack = game.audio.sndBack;
+    std::vector<float> & sndClose = game.audio.sndClose;
     std::vector<float> & optSndMove = game.audio.optSndMove;
     std::vector<float> & optSndConfirm = game.audio.optSndConfirm;
     std::vector<float> & optSndBack = game.audio.optSndBack;
@@ -1446,6 +1447,7 @@ struct PlayState {
     void present(const omk::Surface& pic);
     void blip(const std::vector<float>& v);
     const std::vector<float>& uiSoundPcm(int id);   // an interface sound, decoded once
+    bool uiPlayId(int id);   // `sub_482D90`: by id, only when the open screen's slots cached it
     int skeletonRootWalk(const CharModel& mo, const omk::NodeTracks& t);
     int skeletonRootOf(const CharModel& mo, const omk::NodeTracks& t);
     bool hasSeveralSkeletons(const CharModel& mo);

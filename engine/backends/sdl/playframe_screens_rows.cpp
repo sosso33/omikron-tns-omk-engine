@@ -22,6 +22,21 @@ const std::vector<float>& PlayState::uiSoundPcm(int id) {
     return it->second;
 }
 
+// `sub_482D90` (0x00482D90): an interface sound by its GLOBAL id, played
+// only when it is in the 32-entry cache - which nothing but the open
+// screens' twelve slots fill (`UI_CacheScreenSounds`, at the load) and their
+// close empties. An id no slot of the open screen names finds nothing and
+// plays nothing: the shops' sale, `vente` (17), is in no screen's slots, so
+// the original's sale is silent.
+bool PlayState::uiPlayId(int id) {
+    bool cached = false;
+    for (int k = 0; k < 12 && !cached; ++k) cached = uiWidgets.soundId(openScreen, k) == id;
+    omk::event("ui.sound", {{"frame", frameNo}, {"screen", openScreen}, {"id", id},
+                            {"played", cached ? 1 : 0}});
+    if (cached) blip(uiSoundPcm(id));
+    return cached;
+}
+
 // The sneak's inventory rows
 void PlayState::screensSneakRows() {
     OMK_ZONE("screens: sneak rows");   // the profiler (todo/debug-tools.md 6)
@@ -166,7 +181,7 @@ void PlayState::screensSneakRows() {
                 state.listRemove(0, a);
                 state.listRemove(0, b);
                 state.listAdd(0, made);          // InsertFront
-                blip(uiSoundPcm(12));               // `push 0Ch; call sub_482D90`
+                uiPlayId(12);                       // `push 0Ch; call sub_482D90`
                 std::printf("sneak: combine %d '%s' + %d '%s' (gate %d) -> "
                             "%d '%s'\n", a, session.objectName(a).c_str(),
                             b, session.objectName(b).c_str(), gate,
@@ -422,7 +437,7 @@ void PlayState::screensSneakVerbs(bool& useClosedSneak) {
                 omk::readActorProperty(pr, prop, after);      // the setter's clamp
                 state.listRemove(0, objIdx);                  // ObjectList_RemoveAt(0, row)
             }
-            blip(uiSoundPcm(13));               // `sub_42B470`: interface sound 13
+            uiPlayId(13);                       // `sub_42B470`: interface sound 13
             if (after >= 0)
                 std::printf("sneak: '%s' USED - property %d %d -> %d "
                             "(+%d, effect %d), and it leaves the bag "
@@ -902,19 +917,7 @@ void PlayState::screensShopRows() {
             return id >= 0 && id < static_cast<int>(buyText.size())
                 ? buyText[static_cast<std::size_t>(id)] : std::string();
         };
-        static std::map<int, std::vector<float>> shopSounds;
-        const auto playId = [&](int id) {       // `Ui_PlaySound` (0x00482D90)
-            auto it = shopSounds.find(id);
-            if (it == shopSounds.end()) {
-                std::vector<float> pcm;
-                const std::string& nm = uiWidgets.soundNameById(id);
-                if (!nm.empty())
-                    if (const auto path = fs.resolve("I2D/sounds/" + nm + ".wav"))
-                        pcm = wavToDevice(omk::DataFs::readPath(*path), kDeviceRate);
-                it = shopSounds.emplace(id, std::move(pcm)).first;
-            }
-            if (!it->second.empty()) blip(it->second);
-        };
+        const auto playId = [&](int id) { uiPlayId(id); };   // `Ui_PlaySound` (0x00482D90)
         const auto post = [&](int stringId) {
             shopMessage = str(stringId);
             shopMessageMs = shopNowMs;

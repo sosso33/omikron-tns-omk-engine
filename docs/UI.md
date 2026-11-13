@@ -351,6 +351,40 @@ exactly what confirm-at-slot-0 and back-at-slot-1 produce when read as move and
 confirm. No check here could have caught it: the names, the counts and the
 cache all agree with each other whichever meaning is attached.
 
+### Which slot is played where (read 2026-11-13)
+
+Only four functions play a SLOT, and the slots past 5 are never played as
+slots at all:
+
+| slot | played by | when |
+|---|---|---|
+| 0..3 | `sub_482FE0` | by input bit, after `Ui_DispatchInput` - unless the screen carries flag `0x20002000`, which the EXAMINE pages set on the way in and clear on the way out (`sub_49B950`/`sub_49B9E0` for the sneak, `sub_4B0510`/`sub_4B0570` for MULTIPLAN): no key sounds while one is up |
+| 4 | `sub_483110` | the last call of `Ui_BeginScreen` (0x0042A050), the tail of the open callbacks: as the screen comes up. **23** of the 32 live screens carry one (`arc007`, `SNK007`, `VID001`, `FS001`, `savgrd`, `pause`), not only SAVE and PAUSE as the port's comment said |
+| 5 | `sub_483150` | the first call of `Ui_CloseScreenDefault` - and the same close then runs `sub_483190`, which frees every slot through `Sound_FreeBuffer` (0x0046C8B0: IDirectSoundBuffer `Stop` (+72) and `Release` on each voice playing it). The close sound is cut the frame it starts: **never heard**, and the port does not play it |
+| 6..11 | nothing | they put ids in the CACHE for `sub_482D90` |
+
+`sub_482D90(id)` plays an interface sound by its GLOBAL id, and only from the
+cache - which nothing but the open screens' slots fill. Its call sites, from
+the asm (`call sub_482D90`, eleven of them, plus the shop's in a stretch IDA
+left as data - `6A 10 E8`, `6A 12 E8`):
+
+| id | stem | site | cached by |
+|---|---|---|---|
+| 8 / 9 | SNK005 / SNK006 | the sneak's examine page in (`sub_49B950`) and out (`sub_49B9E0`) | SNEAK slots 8, 9 |
+| 12 | SNK009 | the sneak's combine (two sites, after `loc_49BAF3` and `loc_49BDFB`) | SNEAK slot 10 |
+| 13 | SNK012 | `sub_42B470`: `Utiliser` on an object event 35 does not put in the hand (a medikit, used up at once) | SNEAK slot 7 |
+| 16 / 18 | achat / SNK004 | the shop: bought / refused | the shops' slots 7, 8 |
+| 17 | vente | the shop: SOLD (after `loc_4AE6ED`) | **no screen** - the original's sale is silent |
+| 26 | FS003 | FIGHT SIM's cell 0..2 (`loc_4AF476`, case 1 of the terminal family's cell callback) | FIGHT SIM slot 7 |
+| 34 | den005 | the Den's locker opened | DEN slot 7 |
+| 43 | xach003 | XACHEN solved | XACHEN slot 7 |
+| 38 / 39 | gan004 / gan005 | the Gandhar door's fourth press / its code (the right code plays both) | GANDHAR slots 7, 8 |
+
+Five more ship in the table and no slot caches them - `FS002`, `den004`,
+`gan006`, `xach004` and `vente` - so whatever played them was cut or never
+written. Ported 2026-11-13 (`UiWalk::takeSounds`, `PlayState::uiPlayId`,
+`UiWalk::slotSoundsMuted`); `verify.py: engine: ui sounds`.
+
 Sixteen `.wav` files ship that no record names — `arc004..006`, `asc004/005`,
 `FS004..006`, `MUL001..006`, `SNK010`, `cptrebour01/02`. Note `MULTIPLAN` uses
 the `arc*` set despite `MUL*` shipping: a revision the table was not updated
@@ -3540,8 +3574,8 @@ five rows `"%d.- %s"` left and `"%d'%02d\"%02d"` right. The rows live in the
 `verify.py: engine: high score` writes five names into a copy of the save
 fixture and reads them back off the drawn screen.
 
-**Not ported, and labelled in each source**: the interface sounds these
-screens play. The oscillator-5 timers their success arms start (in the
+**The interface sounds these screens play are ported** (2026-11-13, §3
+"Which slot is played where"). The oscillator-5 timers their success arms start (in the
 engine Den's wheels blink for two seconds, XACHEN's lamps for four, before the
 screen closes) were on this list until 2026-10-12 and are ported: oscillator 5
 is the engine's delayed close (§3b's table, `UiWalk::startCloseTimer`,

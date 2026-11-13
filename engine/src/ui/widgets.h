@@ -608,19 +608,27 @@ public:
     // sound at all, and the family reading plays the validation sound when
     // the selection MOVES (seen in play).
     const std::string& soundName(int screenId, int slot) const;
+    // ...and the slot's GLOBAL id, -1 when the screen ships none there
+    int soundId(int screenId, int slot) const;
     // One of the 45 by its GLOBAL id - what `Ui_PlaySound` (0x00482D90) takes
     // when a callback names a sound directly rather than through a screen
-    // slot: the shop's 16 (bought), 17 (sold) and 18 (refused).
+    // slot: the shop's 16 (bought), 17 (sold) and 18 (refused). It plays only
+    // what an open screen's slots CACHED - and no screen caches 17, `vente`,
+    // so the original's sale is silent.
     const std::string& soundNameById(int id) const;
     static constexpr int kSoundConfirm = 0, kSoundBack = 1,
                          kSoundMove    = 2, kSoundClose = 3;
-    // Slot 4 is the SCREEN'S OWN sound, and only two screens carry one:
-    // `SAVE GAME` (sound 4, `savgrd`) and `PAUSE GAME` (sound 3, `pause`).
-    // `sub_482FE0` picks 0..3 by input bit and never reaches this one, so it
-    // is played by the screen rather than by a key - which matches the sound
-    // heard in play when the save/clue menu comes up. The exact call
-    // site is not traced; the slot's exclusivity to the two screens that
-    // announce themselves is the evidence.
+    // Slot 4 is played as the screen comes up - `Ui_BeginScreen` (0x0042A050),
+    // the tail of the open callbacks, ends `sub_483110(screen)`, which plays
+    // `screen[19]`, the slot at +76. 23 of the 32 live screens carry one (the
+    // terminals' arc007, the sneak's SNK007, the videophone's VID001, SAVE
+    // GAME's savgrd, PAUSE GAME's pause...). Slot 5 is `sub_483150`, the
+    // first call of `Ui_CloseScreenDefault` - and the SAME close then runs
+    // `sub_483190`, which frees every cached slot through `Sound_FreeBuffer`
+    // (0x0046C8B0: `Stop` and `Release` on each voice playing it), so the
+    // close sound is cut the frame it starts: never heard, and not played
+    // here. Slots 6..11 are played by no slot function: they CACHE the ids
+    // the screen's callbacks play by id (`UiWalk::takeSounds`).
     static constexpr int kSoundScreen = 4;
     // The screen's artwork, opened as `I2d\\bitmaps\\%s` - one 640x480 sheet
     // for all eleven, which is what lets the tile map serve every screen.
@@ -790,6 +798,12 @@ struct UiListState {
     // page is entered, for a caller to post. (`0x0049BBF0`, a second body of
     // the same shape, is unreferenced in the image.)
     bool pendingExamineMessage = false;
+    // THE SOUNDS A CALLBACK PLAYS BY ID - `sub_482D90(id)` (0x00482D90), the
+    // examine page's 8 and 9, the fight sim's 26, the Den's 34, XACHEN's 43,
+    // the Gandhar door's 38 and 39. Queued here in order for the frontend,
+    // which plays each only when the open screen's slots have it cached, as
+    // `sub_482D90` finds nothing otherwise (`UiWalk::takeSounds`).
+    std::vector<int> pendingSounds;
     // `Utiliser sur`'s COMBINE MODE - `dword_670BE0` and the three slots
     // `670BE4` / `670BE8` / `670BEC`, which are globals like everything else
     // in this device. `sub_49BF30` opens it and `sub_49BC60`'s `loc_49BDD6`
@@ -1110,6 +1124,20 @@ public:
     }
     // MULTIPLAN's source list, `dword_68A610`: 0 the sneak, 1 the kiosk.
     int  multiplanSource() const { return state_->multiplanSource; }
+    // the sounds the callbacks asked for since the last call (`pendingSounds`)
+    std::vector<int> takeSounds() {
+        std::vector<int> s;
+        s.swap(state_->pendingSounds);
+        return s;
+    }
+    // `sub_482FE0` opens with `UI_TestScreenFlag(screen, 0x20002000)`: the
+    // EXAMINE pages set that flag on the way in (`sub_49B950`, `sub_4B0510`)
+    // and clear it on the way out (`sub_49B9E0`, `sub_4B0570`), so while one
+    // is up no key plays its slot sound
+    bool slotSoundsMuted() const {
+        return panel_ && (panel_->addr == kPanelSneakExamine ||
+                          panel_->addr == kPanelMultiplanExamine);
+    }
     bool takeExamineMessage() {
         const bool was = state_->pendingExamineMessage;
         state_->pendingExamineMessage = false;

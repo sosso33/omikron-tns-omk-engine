@@ -52,7 +52,7 @@ is small enough to not count it as a task"). Count a request when it is a
 piece of work in its own right; a flag or a convenience over what was just
 built rides with it.
 
-**tasks since the last full sweep: 0** (reset 2026-11-12 by the `--slow` sweep in the table below, at `adbbe7f`. The nine tasks it closed are listed in its row.)
+**tasks since the last full sweep: 1** (reset 2026-11-12 by the `--slow` sweep in the table below, at `adbbe7f`. The nine tasks it closed are listed in its row. Since: (THE INTERFACE SOUNDS, the reader's "occupe-toi du 5" of the 2026-11-06 review, 2026-11-13: which slot is played where - 4 at `Ui_BeginScreen`, 5 cut by the close's own free, 6..11 the cache `sub_482D90` plays from; the ten by-id sounds wired, the sale silent, the examine pages' mute; `engine: ui sounds` new, shown to fail twice; 15 `--only` green))
 
 (2026-10-05: CPU AGAINST THE ORIGINAL, `todo/cpu-vs-original.md` steps 1-2 and tier A (1 task so far) - `--only` over the 39 checks it could reach, one red re-pinned (`engine: profiler`, the palette textures), `engine: raster cost` new.)
 

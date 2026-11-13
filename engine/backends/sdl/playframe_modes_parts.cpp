@@ -739,8 +739,9 @@ int PlayState::modesShoot() {
                 sndMove    = loadSlot(openScreen, omk::UiWidgets::kSoundMove);
                 sndConfirm = loadSlot(openScreen, omk::UiWidgets::kSoundConfirm);
                 sndBack    = loadSlot(openScreen, omk::UiWidgets::kSoundBack);
-                // ...and the screen's OWN sound, slot 4, played as it comes
-                // up. Only SAVE GAME and PAUSE GAME carry one.
+                sndClose   = loadSlot(openScreen, omk::UiWidgets::kSoundClose);
+                // ...and slot 4, played as it comes up: `Ui_BeginScreen`'s
+                // last call, `sub_483110` (`UiWidgets::kSoundScreen`).
                 if (const auto own = loadSlot(openScreen, omk::UiWidgets::kSoundScreen);
                     !own.empty()) {
                     blip(own);
@@ -1751,11 +1752,23 @@ void PlayState::modesOptionsInput(std::uint32_t& uiBits, bool optActive, bool at
         // `sub_482FE0` does. The move is still gated on the selection
         // having actually moved - `Ui_MoveSelection` steps over
         // unselectable rows and a pinned list stops at its ends.
-        if (bits & omk::kUiConfirm)      blip(sndConfirm);
-        else if (bits & omk::kUiBack)    blip(sndBack);
+        // ...in `sub_482FE0`'s order - confirm, back, CLOSE (slot 3: only
+        // the Gandhar door and the Den carry one), then a move - and none
+        // at all while an examine page has set screen flag 0x20002000
+        const auto slotSound = [&](const std::vector<float>& pcm, int slot) {
+            blip(pcm);
+            omk::event("ui.slot", {{"frame", frameNo}, {"screen", openScreen}, {"slot", slot}});
+        };
+        if (walk->slotSoundsMuted()) {
+        } else if (bits & omk::kUiConfirm) slotSound(sndConfirm, omk::UiWidgets::kSoundConfirm);
+        else if (bits & omk::kUiBack)    slotSound(sndBack, omk::UiWidgets::kSoundBack);
+        else if (bits & omk::kUiClose)   slotSound(sndClose, omk::UiWidgets::kSoundClose);
         else if (walk->selection() != wasSel ||
-                 walk->currentList() != wasList) blip(sndMove);
+                 walk->currentList() != wasList) slotSound(sndMove, omk::UiWidgets::kSoundMove);
     }
+    // the sounds the screen's callbacks played by id this frame
+    if (walk)
+        for (const int id : walk->takeSounds()) uiPlayId(id);
 }
 
 
