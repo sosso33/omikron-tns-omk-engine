@@ -28,19 +28,20 @@ uniform float uStrength;
 uniform int   uMode;
 uniform float uLutN;
 uniform float uHalo;
+uniform sampler2D uHaloTex;   // the halos, made at the glow's size (mode 3)
 varying vec2 vUv;
 // THE HALOS in the rain, `post.frag`'s - keep the two in step
 const float kHaloGain = 1.5;
 const float kHaloRadius = 12.0;
-vec3 haloOf(vec2 uv, vec2 texel) {
-    vec3 h = texture2D(uGlow, uv).rgb;
+vec3 haloOf(sampler2D g, vec2 uv, vec2 texel) {
+    vec3 h = texture2D(g, uv).rgb;
     for (int i = 0; i < 8; ++i) {
         float a = (float(i) + 0.5) * 0.7853982;
-        h += texture2D(uGlow, uv + vec2(cos(a), sin(a)) * (0.5 * kHaloRadius) * texel).rgb;
+        h += texture2D(g, uv + vec2(cos(a), sin(a)) * (0.5 * kHaloRadius) * texel).rgb;
     }
     for (int i = 0; i < 16; ++i) {
         float a = float(i) * 0.3926991;
-        h += texture2D(uGlow, uv + vec2(cos(a), sin(a)) * kHaloRadius * texel).rgb;
+        h += texture2D(g, uv + vec2(cos(a), sin(a)) * kHaloRadius * texel).rgb;
     }
     return h / 25.0;
 }
@@ -75,11 +76,18 @@ void main() {
             wsum += w;
         }
         gl_FragColor = vec4(acc / wsum, 1.0);
+    } else if (uMode == 3) {
+        // THE HALOS alone, at the glow's quarter size, once (`post.frag`'s
+        // mode 3): the glow images are 8-bit here, so the halo - an average,
+        // at most 1 - is kept apart from the glow rather than added to it,
+        // and kept as its SQUARE ROOT: 8 bits of a faint halo banded into
+        // rings, 8 bits of its root do not (squared back in the final pass)
+        gl_FragColor = vec4(sqrt(haloOf(uSrc, vUv, 4.0 * uSrcInv)), 1.0);
     } else {
         vec3 c = texture2D(uSrc, vUv).rgb;
         if (uStrength > 0.0) {
             vec3 g = texture2D(uGlow, vUv).rgb;
-            if (uHalo > 0.0) g += haloOf(vUv, 4.0 * uSrcInv) * (kHaloGain * uHalo);
+            if (uHalo > 0.0) { vec3 h = texture2D(uHaloTex, vUv).rgb; g += h * h * (kHaloGain * uHalo); }
             g = min(g * uStrength, vec3(1.0));
             c = 1.0 - (1.0 - c) * (1.0 - g);
         }

@@ -7,6 +7,9 @@
 //           the alpha being the light map's value `scene.frag` wrote with
 //           the bloom on - four bilinear taps covering each 4x4 block
 //   mode 1  BLUR:  21 taps along `dir`, a Gaussian of sigma 4 quarter-texels
+//   mode 3  HALO:  the blurred glow with the rain's HALOS added (`haloOf`),
+//           at the glow's own quarter size, once - the final pass then reads
+//           it as the glow (its `halo` 0), not 25 taps of it a frame's pixel
 //   mode 2  FINAL: `src` with the glow SCREEN-blended over it (`1 - (1 - c)
 //           (1 - g * strength)`), then the GRADE: a 3D LUT stored as an
 //           N*N x N strip (blue slices side by side), looked up trilinearly;
@@ -43,15 +46,15 @@ float glowOf(float a) { return max(0.0, a * 255.0 - 1.0) / 254.0; }
 // glesrender_remaster_shaders.inl.
 const float kHaloGain = 1.5;      // the halo's light against the bloom's, at full rain
 const float kHaloRadius = 12.0;   // its outer ring, in glow texels (a quarter of the frame's)
-vec3 haloOf(vec2 uv, vec2 texel) {
-    vec3 h = texture(glow, uv).rgb;
+vec3 haloOf(sampler2D g, vec2 uv, vec2 texel) {
+    vec3 h = texture(g, uv).rgb;
     for (int i = 0; i < 8; ++i) {
         float a = (float(i) + 0.5) * 0.7853982;
-        h += texture(glow, uv + vec2(cos(a), sin(a)) * (0.5 * kHaloRadius) * texel).rgb;
+        h += texture(g, uv + vec2(cos(a), sin(a)) * (0.5 * kHaloRadius) * texel).rgb;
     }
     for (int i = 0; i < 16; ++i) {
         float a = float(i) * 0.3926991;
-        h += texture(glow, uv + vec2(cos(a), sin(a)) * kHaloRadius * texel).rgb;
+        h += texture(g, uv + vec2(cos(a), sin(a)) * kHaloRadius * texel).rgb;
     }
     return h / 25.0;
 }
@@ -89,6 +92,9 @@ void main() {
             wsum += w;
         }
         outColour = vec4(acc / wsum, 1.0);
+    } else if (pc.mode == 3) {
+        // `srcInv` is the FRAME's, as the final pass's was: the same texel
+        outColour = vec4(texture(src, uv).rgb + haloOf(src, uv, 4.0 * pc.srcInv) * (kHaloGain * pc.halo), 1.0);
     } else {
         vec4 s0 = texture(src, uv);
         vec3 c = s0.rgb;
@@ -97,7 +103,7 @@ void main() {
         if (pc.ao != 0) c *= s0.a < 0.5 / 255.0 ? 1.0 : mix(texture(occlusion, uv).r, 1.0, glowOf(s0.a));
         if (pc.strength > 0.0) {
             vec3 g = texture(glow, uv).rgb;
-            if (pc.halo > 0.0) g += haloOf(uv, 4.0 * pc.srcInv) * (kHaloGain * pc.halo);
+            if (pc.halo > 0.0) g += haloOf(glow, uv, 4.0 * pc.srcInv) * (kHaloGain * pc.halo);
             g = min(g * pc.strength, vec3(1.0));
             c = 1.0 - (1.0 - c) * (1.0 - g);
         }

@@ -105,10 +105,15 @@ void main() {
         float a0 = 6.2831853 * fract(52.9829189 * fract(dot(vec2(o), vec2(0.06711056, 0.00583715))));
         const int N = 8;
         float r2 = pc.radius * pc.radius, sum = 0.0;
+        // the disk's 8 directions: i golden angles on from a0 - a0's rotation
+        // of the constant ones (cos and sin of float(i) * 2.3999632, the float
+        // the loop computed), two trigonometric calls a pixel, not sixteen
+        const vec2 kDir[N] = vec2[N](vec2(1, 0), vec2(-0.737368818, 0.67549036), vec2(0.0874255469, -0.996171056), vec2(0.608439263, 0.793600443), vec2(-0.984713547, -0.174181599), vec2(0.843755183, -0.536728228), vec2(-0.259603327, 0.965715337), vec2(-0.460907791, -0.887448031));
+        const float ca = cos(a0), sa = sin(a0);
         for (int i = 0; i < N; ++i) {
             float t = (float(i) + 0.5) / float(N);
-            float ang = a0 + float(i) * 2.3999632;   // the golden angle
-            vec2 off = vec2(cos(ang), sin(ang)) * rpx * sqrt(t);
+            const vec2 d = kDir[i];
+            vec2 off = vec2(ca * d.x - sa * d.y, sa * d.x + ca * d.y) * rpx * sqrt(t);
             vec3 S = posAt(o + ivec2(off));
             vec3 v = S - P;
             float vv = dot(v, v);

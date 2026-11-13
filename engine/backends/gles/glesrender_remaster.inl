@@ -21,8 +21,9 @@ void GlesRenderer::runPost() {
         omk::event("remaster.post", {{"backend", "gles"}, {"bloom", static_cast<double>(bloom_)},
                                      {"grade", lutN_}});
         // its uniforms, looked up once
-        const char* names[9] = {"uSrc", "uGlow", "uLut", "uSrcInv", "uDir", "uStrength", "uMode", "uLutN", "uHalo"};
-        for (int k = 0; k < 9; ++k) postLoc_[k] = glGetUniformLocation(postProg_, names[k]);
+        const char* names[10] = {"uSrc", "uGlow", "uLut", "uSrcInv", "uDir", "uStrength", "uMode", "uLutN", "uHalo",
+                                 "uHaloTex"};
+        for (int k = 0; k < 10; ++k) postLoc_[k] = glGetUniformLocation(postProg_, names[k]);
     }
     const auto texture = [](GLuint& id, int w, int h) {
         if (!id) glGenTextures(1, &id);
@@ -61,7 +62,7 @@ void GlesRenderer::runPost() {
     curProg_ = postProg_;
     const GLint lSrc = postLoc_[0], lGlow = postLoc_[1], lLut = postLoc_[2], lInv = postLoc_[3],
                 lDir = postLoc_[4], lStr = postLoc_[5], lMode = postLoc_[6], lN = postLoc_[7];
-    glUniform1i(lSrc, 0); glUniform1i(lGlow, 1); glUniform1i(lLut, 2);
+    glUniform1i(lSrc, 0); glUniform1i(lGlow, 1); glUniform1i(lLut, 2); glUniform1i(postLoc_[9], 3);
     // (the grade alone when no draw bound a light map: the glow would be black)
     const bool glow = bloom_ > 0.0f && lightMapNow_;
     glUniform1f(lStr, glow ? bloom_ : 0.0f);
@@ -85,7 +86,13 @@ void GlesRenderer::runPost() {
         pass(glowFbo_[0], gw, gh, postSrc_, rw_, rh_, 0, 0, 0);
         pass(glowFbo_[1], gw, gh, glowTex_[0], gw, gh, 1, 0, 1);
         pass(glowFbo_[0], gw, gh, glowTex_[1], gw, gh, 0, 1, 1);
+        // THE HALOS at the glow's size into glow B (mode 3), the frame's
+        // `srcInv` as the final pass used: its 25 taps a quarter-size texel
+        // once, not a full-size pixel's
+        if (halo_ > 0.0f) pass(glowFbo_[1], gw, gh, glowTex_[0], rw_, rh_, 0, 0, 3);
     }
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_2D, glowTex_[1]);
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, glowTex_[0]);
     glActiveTexture(GL_TEXTURE2);

@@ -6,9 +6,11 @@
 // sharpens it in `present.frag`, before the original's 565 dither, so the
 // dither stays the output pixel's as the game's was.
 //
-// The 32-bit path (`FSR_EASU_F`): MoltenVK's half floats are no faster on
-// Apple's GPUs for this. `src` is sampled LINEAR, CLAMPED - textureGather
-// takes the four texels round a point.
+// The 32-bit path (`FSR_EASU_F`). The 16-bit one (`FSR_EASU_H`, with
+// `shaderFloat16`) was MEASURED on the M1 at 4K (2026-11-13): 3.07 -> ~2.7 ms,
+// for 4.5% of the frame's pixels moved, some by 36/255 on edges - not taken.
+// `src` is sampled LINEAR, CLAMPED - textureGather takes the four texels
+// round a point.
 #extension GL_GOOGLE_include_directive : require
 #define A_GPU 1
 #define A_GLSL 1

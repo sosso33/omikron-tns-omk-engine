@@ -584,3 +584,30 @@ it (7 min 45 s, Qalisar, the tunnel, a bar): 60 fps held, median and 90%
 in SDL's event pump, not the renderer. The first session's drop is open: the
 reader will report it if it comes back. Next on this host, if it does:
 `vkResetCommandBuffer` (a pool per slot, reset whole) and the draw count.
+
+**The post-pass and the EASU, 2026-11-13** (the reader's "occupe-toi du
+post-traitement et de l'EASU"). `OMK_GPU_TIMES` now splits the post-pass:
+its glow, its occlusion, its final composite. At 4K, FSR 1.5 (drawn at
+2560x1440), standing in Qalisar's full rain: glow 0.27, occlusion 2.03,
+final 1.59 ms; EASU 3.07, RCAS and the present pass 1.59.
+
+* **The HALOS at the glow's size.** The final pass took 25 taps of the
+  quarter-size glow a FULL-size pixel (`haloOf`); they are now taken once a
+  quarter-size texel (`post.frag` mode 3, into glow B, which the final pass
+  reads as its glow). Final 1.4-2.0 -> 0.23-0.39 ms, the glow +0.1. The
+  picture: 0.56% of a 1080p frame's pixels moved by one 565 step, scattered
+  in the halo, nothing structured (`--world-vulkan --dump` against the
+  same, deterministic). GLES the same (its glow images are 8-bit, so the
+  halo is kept apart as its square root - stored plain it banded into
+  rings): 1.35% moved by one step. `engine: rain 3d` (the halos on both),
+  `bloom and grade`, `mist` green.
+* **The OCCLUSION's 16 trigonometric calls a pixel** (a cos and a sin a
+  sample) are two: a0's rotation of the 8 constant golden-angle directions
+  (computed from the same float products). The frame BYTE-IDENTICAL;
+  1.9-2.2 -> 1.76-1.81 ms. What is left of it is the 8 scattered depth
+  reads a pixel (the disk turned per pixel).
+* **The EASU in half precision, measured and NOT taken**: 3.07 -> ~2.7 ms
+  for 4.5% of the pixels moved, up to 36/255 on edges. The old comment's
+  "no faster" had not been measured; `easu.frag` now says what was.
+
+The post-pass: ~3.9 -> ~2.7 ms.

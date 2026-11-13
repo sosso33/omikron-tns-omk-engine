@@ -276,13 +276,14 @@ bool VulkanRenderer::makePostAt() {
         VkDescriptorSetLayoutCreateInfo dli{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
         dli.bindingCount = 4; dli.pBindings = b;
         VKCHECK(vkCreateDescriptorSetLayout(dev_, &dli, nullptr, &postDsl_), "post set layout");
-        VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 32};
+        VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4 * kPostSets};
         VkDescriptorPoolCreateInfo pi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-        pi.maxSets = 8; pi.poolSizeCount = 1; pi.pPoolSizes = &ps;
+        pi.maxSets = kPostSets; pi.poolSizeCount = 1; pi.pPoolSizes = &ps;
         VKCHECK(vkCreateDescriptorPool(dev_, &pi, nullptr, &postPool_), "post pool");
-        const VkDescriptorSetLayout l8[8] = {postDsl_, postDsl_, postDsl_, postDsl_, postDsl_, postDsl_, postDsl_, postDsl_};
+        VkDescriptorSetLayout lays[kPostSets];
+        for (auto& l : lays) l = postDsl_;
         VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-        ai.descriptorPool = postPool_; ai.descriptorSetCount = 8; ai.pSetLayouts = l8;
+        ai.descriptorPool = postPool_; ai.descriptorSetCount = kPostSets; ai.pSetLayouts = lays;
         VKCHECK(vkAllocateDescriptorSets(dev_, &ai, postDs_), "post sets");
         VkSamplerCreateInfo si{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
         si.magFilter = VK_FILTER_LINEAR; si.minFilter = VK_FILTER_LINEAR;
@@ -394,15 +395,17 @@ void VulkanRenderer::bindPostSets() {
     // validation layer's (VUID-vkCmdDraw-imageLayout-00344, -None-09600,
     // 2026-10-24). `postSrc_` is in SHADER_READ through every post pass.
     const VkImageView src = postSrcView_;
-    const VkImageView views[8][4] = {{postSrcView_, src, lut, src},              // down
+    const VkImageView views[kPostSets][4] = {{postSrcView_, src, lut, src},              // down
                                      {glowView_[0], src, lut, src},              // blur H: A -> B
                                      {glowView_[1], src, lut, src},              // blur V: B -> A
                                      {postSrcView_, glowView_[0], lut, occ},     // final
                                      {dep, postSrcView_, zv, postSrcView_},      // AO -> 0
                                      {dep, occ, zv, postSrcView_},               // AO blur H: 0 -> 1
                                      {dep, occ1, zv, postSrcView_},              // AO blur V: 1 -> 0
-                                     {dep, postSrcView_, lut, postSrcView_}};    // AO depth -> z
-    for (int s = 0; s < 8; ++s)
+                                     {dep, postSrcView_, lut, postSrcView_},     // AO depth -> z
+                                     {glowView_[0], src, lut, src},              // the halos: A -> B
+                                     {postSrcView_, glowView_[1], lut, occ}};    // final, the glow B
+    for (int s = 0; s < kPostSets; ++s)
         for (uint32_t k = 0; k < 4; ++k) {
             const bool depth = aoOk_ && s >= 4 && k == 0;
             VkDescriptorImageInfo ii{postSampler_, views[s][k],
@@ -547,7 +550,7 @@ void VulkanRenderer::recordPost(VkCommandBuffer cb) {
     // writes every pixel of it
     barrier(postSrc_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, W, R, OUT, FRAG);
     const auto run = [&](VkRenderPass rp, VkFramebuffer fb, VkPipeline pipe, int w, int h,
-                         VkDescriptorSet ds, int srcW, int srcH, float dx, float dy, int mode) {
+                         VkDescriptorSet ds, int srcW, int srcH, float dx, float dy, int mode, float halo) {
         VkRenderPassBeginInfo bi{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
         bi.renderPass = rp; bi.framebuffer = fb;
         bi.renderArea = {{0, 0}, {static_cast<uint32_t>(w), static_cast<uint32_t>(h)}};
@@ -561,18 +564,27 @@ void VulkanRenderer::recordPost(VkCommandBuffer cb) {
         const PostPush p{{1.0f / static_cast<float>(w), 1.0f / static_cast<float>(h)},
                          {1.0f / static_cast<float>(srcW), 1.0f / static_cast<float>(srcH)},
                          {dx, dy}, glow ? bloom_ : 0.0f, mode, lutN_ > 1 ? lutN_ : 0, aoOk_ ? 1 : 0,
-                         glow ? halo_ : 0.0f};
+                         glow ? halo : 0.0f};
         vkCmdPushConstants(cb, postPlo_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof p, &p);
         vkCmdDraw(cb, 3, 1, 0, 0);
         vkCmdEndRenderPass(cb);
     };
+    // THE HALOS at the glow's own size (`post.frag` mode 3): its 25 taps a
+    // quarter-size texel, once, not a full-size pixel's in the final pass -
+    // which then reads the glow with them as its glow (glow B, set 9)
+    const bool halos = glow && halo_ > 0.0f;
     if (glow) {
-        run(glowPass_, glowFb_[0], glowPipe_, glowW_, glowH_, postDs_[0], rw_, rh_, 0, 0, 0);
+        run(glowPass_, glowFb_[0], glowPipe_, glowW_, glowH_, postDs_[0], rw_, rh_, 0, 0, 0, 0.0f);
         barrier(glowImg_[0], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, W, R, OUT, FRAG);
-        run(glowPass_, glowFb_[1], glowPipe_, glowW_, glowH_, postDs_[1], glowW_, glowH_, 1, 0, 1);
+        run(glowPass_, glowFb_[1], glowPipe_, glowW_, glowH_, postDs_[1], glowW_, glowH_, 1, 0, 1, 0.0f);
         barrier(glowImg_[1], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, W, R, OUT, FRAG);
-        run(glowPass_, glowFb_[0], glowPipe_, glowW_, glowH_, postDs_[2], glowW_, glowH_, 0, 1, 1);
+        run(glowPass_, glowFb_[0], glowPipe_, glowW_, glowH_, postDs_[2], glowW_, glowH_, 0, 1, 1, 0.0f);
         barrier(glowImg_[0], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, W, R, OUT, FRAG);
+        if (halos) {
+            run(glowPass_, glowFb_[1], glowPipe_, glowW_, glowH_, postDs_[8], rw_, rh_, 0, 0, 3, halo_);
+            barrier(glowImg_[1], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, W, R, OUT, FRAG);
+        }
+        stamp("glow");
     } else {
         // the final pass's glow binding must still be an image in SHADER_READ
         barrier(glowImg_[0], VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
@@ -622,9 +634,10 @@ void VulkanRenderer::recordPost(VkCommandBuffer cb) {
         barrier(aoImg_[1], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, W, R, OUT, FRAG);
         ao(0, postDs_[6], 2);
         barrier(aoImg_[0], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, W, R, OUT, FRAG);
+        stamp("ao");
     }
     barrier(colour_, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 0, W, OUT, OUT);
-    run(finalPass_, finalFb_, finalPipe_, rw_, rh_, postDs_[3], rw_, rh_, 0, 0, 2);
+    run(finalPass_, finalFb_, finalPipe_, rw_, rh_, halos ? postDs_[9] : postDs_[3], rw_, rh_, 0, 0, 2, 0.0f);
 }
 
 // ---- THE WATER REFLECTION (`todo/remaster.md` A3) -------------------------

@@ -919,7 +919,9 @@ private:
     bool             lightMapNow_ = false;         // a draw of the frame's pass bound one: else the glow is black
     VkDescriptorSetLayout postDsl_ = VK_NULL_HANDLE;
     VkDescriptorPool postPool_ = VK_NULL_HANDLE;
-    VkDescriptorSet  postDs_[8] = {};   // down, blur H, blur V, final; AO, AO blur H, AO blur V, AO depth
+    // down, blur H, blur V, final; AO, AO blur H, AO blur V, AO depth; the halos, the final over them
+    static constexpr int kPostSets = 10;
+    VkDescriptorSet  postDs_[kPostSets] = {};
     VkSampler        postSampler_ = VK_NULL_HANDLE;
     VkPipelineLayout postPlo_ = VK_NULL_HANDLE;
     VkPipeline       glowPipe_ = VK_NULL_HANDLE, finalPipe_ = VK_NULL_HANDLE;
@@ -4590,7 +4592,9 @@ bool VulkanRenderer::drawMirrorScene(const omk::View& v, const omk::View& refl,
 // the frame's stamps, read after its fence: each pass's time is from the stamp
 // before it to its own (the first, "start", none)
 void VulkanRenderer::readStamps() {
-    static const char* const kNames[kStamps] = {"shadow", "reflection", "scene", "post"};
+    // "post" is the post-pass's FINAL composite; its glow and occlusion
+    // passes stamp their own ("glow", "ao") before it
+    static const char* const kNames[kStamps] = {"shadow", "reflection", "scene", "post", "glow", "ao"};
     if (!tsPool_ || tsCount_ < 2) return;
     uint64_t t[kStamps] = {};
     if (vkGetQueryPoolResults(dev_, tsPool_, 0, tsCount_, sizeof t, t, sizeof(uint64_t),
@@ -4600,10 +4604,13 @@ void VulkanRenderer::readStamps() {
             if (std::strcmp(tsLabel_[i], kNames[n]) == 0)
                 tsSum_[n] += static_cast<double>(t[i] - t[i - 1]) * props_.limits.timestampPeriod / 1e6;
     if (++tsFrames_ < 60) return;
-    std::printf("vulkan: GPU ms a frame (mean of 60) - shadow %.2f, reflection %.2f, scene %.2f, post %.2f\n",
-                tsSum_[0] / 60.0, tsSum_[1] / 60.0, tsSum_[2] / 60.0, tsSum_[3] / 60.0);
+    std::printf("vulkan: GPU ms a frame (mean of 60) - shadow %.2f, reflection %.2f, scene %.2f, post %.2f "
+                "(its glow %.2f, occlusion %.2f, final %.2f)\n",
+                tsSum_[0] / 60.0, tsSum_[1] / 60.0, tsSum_[2] / 60.0,
+                (tsSum_[3] + tsSum_[4] + tsSum_[5]) / 60.0, tsSum_[4] / 60.0, tsSum_[5] / 60.0, tsSum_[3] / 60.0);
     omk::event("gpu.time", {{"shadow", tsSum_[0] / 60.0}, {"reflection", tsSum_[1] / 60.0},
-                            {"scene", tsSum_[2] / 60.0}, {"post", tsSum_[3] / 60.0}});
+                            {"scene", tsSum_[2] / 60.0}, {"post", (tsSum_[3] + tsSum_[4] + tsSum_[5]) / 60.0},
+                            {"glow", tsSum_[4] / 60.0}, {"ao", tsSum_[5] / 60.0}, {"final", tsSum_[3] / 60.0}});
     for (auto& v : tsSum_) v = 0.0;
     tsFrames_ = 0;
 }

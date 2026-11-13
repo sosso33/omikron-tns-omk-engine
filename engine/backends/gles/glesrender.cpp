@@ -1515,7 +1515,7 @@ private:
     GLuint lightBlack_ = 0;              // the light map of a texture with none
     GLuint lastEmis_ = 0;
     std::string bloomFrag_, bloomFragX_; // the variants' fragment sources (plain, enhanced), kept for `link`
-    GLint  postLoc_[9] = {-1, -1, -1, -1, -1, -1, -1, -1, -1};   // uSrc .. uLutN, uHalo, at link
+    GLint  postLoc_[10] = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1};   // uSrc .. uLutN, uHalo, uHaloTex, at link
     GLuint postProg_ = 0, postSrc_ = 0, glowTex_[2] = {0, 0}, glowFbo_[2] = {0, 0}, lutTex_ = 0;
     int    lutN_ = 0;
     int    postW_ = 0, postH_ = 0;
