@@ -265,6 +265,8 @@ given at each.
     Android phone, a Steam Deck in power-save) it is the difference between
     serial and parallel frames. The seven one-shot `vkQueueWaitIdle`s need
     auditing first.
+    **Step 1 DONE 2026-11-13 (§11): one wait a frame.** Step 2, frames in
+    flight, is what the 6.5 ms of §11 needs - see there for its list.
 12. **Area loads spread over frames** - `Async_LoadDuringFrame`, one 128 KB
     chunk a frame from `Game_Tick` (`optimization.md` step 28 row f). The
     Vita's arrival frame was 2480 ms. Step 35's load gate hides the WAIT;
@@ -492,3 +494,42 @@ replicate (as `under.frag` does). What is left of `present` (`sample`):
 memory, and ~1.5 ms in `oneShotEnd`'s `vkQueueWaitIdle` - C11. GLES already
 uploads the 565 words as they are (`GL_UNSIGNED_SHORT_5_6_5`); GL1's targets
 have one core.
+
+**C11 step 1, DONE 2026-11-13: the frame's one wait.** The scene's submit
+(`end`), the present pass's (`runPresentPass`) and an uploaded screen's or
+the cloud's (`presentSurface`, `presentUnder`) were each waited for whole -
+a fence, then two `vkQueueWaitIdle`s. Now none is: the queue runs them in
+order and their barriers already order them, and the present's fence,
+whose wait covers every earlier submission, is the frame's one wait
+(`VulkanRenderer::settle` / `settleIdle`: the scene's stamps and level
+queries are read there; whatever writes memory the GPU may still read -
+`begin`, the two uploads, `readback` - settles first; a waited one-shot or
+a device wait settles too). Measured standing in Qalisar's full rain at 4K
+(the M1 under memory pressure, so A/B alternated against a HEAD build):
+23.2-23.3 ms -> 22.1-22.7, **~1 ms**, the bubbles between the submits -
+what this step could give, since the CPU's own work outside the recording
+is only ~0.5 ms a frame (`world: crowd`, `pump`, input).
+
+Taking the waits out showed what they had hidden. Under the Khronos layer's
+SYNCHRONIZATION validation (`engine: vulkan sync`, new): one present
+semaphore for all swapchain images was signalled again before its image was
+re-acquired (now one per image); and two hazards older than C11 - the
+swapchain image's layout change from TOP_OF_PIPE, not ordered after the
+acquire the submit waits for at TRANSFER, and no barrier between the
+letterbox clear and the blit - both fixed. Still reported, NOT fixed:
+`VUID-vkCmdDraw-imageLayout-00344` with `--remaster`, the reflection image
+sampled as SHADER_READ_ONLY while its known layout is COLOR_ATTACHMENT (20
+in a 300-frame run; harmless on MoltenVK, which has no layouts).
+
+**C11 step 2, the 6.5 ms: frames in flight.** The CPU's ~5 ms is the
+RECORDING (between `begin` and `end`), so it overlaps the GPU only if frame
+N+1 is recorded while frame N runs - which needs everything the CPU writes
+in a frame doubled: the scene's command buffer and fence, the vertex ring
+(`ringPtr_`), the shadow and light UBOs, the point lights and the light
+tiles, the pose buffer (and the descriptor sets that name them), the
+timestamp and level query pools, the dirty-corner VBO replays (written in
+place today, "the buffer is waited on"), and `deadBufs_` freed a frame later
+still. The level query is read a frame later again (its one consumer, the
+remaster's second level, already takes it a frame late). One more frame of
+latency, as the original's flip chain had. Multi-step; `engine: vulkan
+sync` is the net under it.

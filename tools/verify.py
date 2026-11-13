@@ -34092,6 +34092,77 @@ def c_engine_vulkan_teardown():
         "the validation layer inserted; shadow_probe ran; nothing left alive at vkDestroyDevice"
 
 
+def c_engine_vulkan_sync():
+    r"""THE VIEWER'S VULKAN FRAME UNDER SYNCHRONIZATION VALIDATION: no hazard.
+
+    `todo/perf-audit.md` C11 takes the waits out of the frame - step 1
+    (2026-11-13): the scene's, the present pass's and an uploaded screen's
+    submits are no longer waited for one by one, the present's fence is the
+    frame's one wait (`VulkanRenderer::settle`). A missing barrier the old
+    waits hid then becomes a race that MoltenVK on Apple silicon will
+    usually win and another driver will not. So `omk-play` itself walks the
+    street and opens the sneak (a world frame through the upscale's passes,
+    then a screen's upload) under the Khronos layer with
+    `VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT`, and every
+    `SYNC-HAZARD` is a failure, as is a present semaphore signalled again
+    before its image is re-acquired. Skipped without the layer.
+
+    SHOWN TO FAIL (2026-11-13), three ways, each found by this run before it
+    was a check: one present semaphore for all images -
+    `VUID-vkQueueSubmit-pSignalSemaphores-00067` twice in the run (HEAD's
+    `vkQueueWaitIdle` between presents had hidden it); the swapchain image's
+    layout change from TOP_OF_PIPE, not ordered after the acquire it waits
+    for at TRANSFER - 10 `SYNC-HAZARD-WRITE-AFTER-READ`; and no barrier
+    between the letterbox clear and the blit - 10 `WRITE-AFTER-WRITE`. The
+    last two were older than C11.
+
+    NOT asserted: `VUID-vkCmdDraw-imageLayout-00344` on the remaster's
+    reflection image (bound SHADER_READ_ONLY while in COLOR_ATTACHMENT), which
+    this run (no `--remaster`) does not reach; recorded in perf-audit 11.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    layer = None
+    for d in ("/opt/homebrew/share/vulkan/explicit_layer.d", "/usr/local/share/vulkan/explicit_layer.d",
+              "/usr/share/vulkan/explicit_layer.d"):
+        if os.path.exists(os.path.join(d, "VkLayer_khronos_validation.json")):
+            layer = d
+            break
+    if not layer:
+        return ("skipped",), ("skipped",), "no Khronos validation layer installed"
+    mk = subprocess.run(["make", "-s", "play"], cwd=eng, capture_output=True, text=True)
+    play = os.path.join(eng, "build", "omk-play")
+    if mk.returncode != 0 or not os.path.exists(play):
+        return ("build",), ("built",), (mk.stdout + mk.stderr)[-300:]
+    prefix = os.path.dirname(os.path.dirname(os.path.dirname(layer)))
+    env = dict(os.environ, VK_INSTANCE_LAYERS="VK_LAYER_KHRONOS_validation", VK_LOADER_DEBUG="layer",
+               VK_LAYER_ENABLES="VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT",
+               DYLD_FALLBACK_LIBRARY_PATH=os.path.join(prefix, "lib"))
+    frames = 300
+    r = subprocess.run([play, omkpaths.data_root(), os.path.join(ROOT, "tables"),
+                        "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+                        "--area", "101", "--stand", "15300,0,-10050,270", "--nofmv",
+                        "--upscale", "1.5", "--frames", str(frames),
+                        "--hold", "0*90,k200*60,0*30,k15*3,0*60,k15*3,0*40"],
+                       cwd=eng, capture_output=True, text=True, errors="replace", timeout=600, env=env)
+    out = r.stdout + r.stderr
+    if "VULKAN" not in out:
+        return ("skipped",), ("skipped",), "the viewer did not take Vulkan"
+    inserted = 'Insert instance layer "VK_LAYER_KHRONOS_validation"' in out
+    hazards = len(re.findall(r"SYNC-HAZARD-[A-Z_-]+", out))
+    reused = out.count("VUID-vkQueueSubmit-pSignalSemaphores-00067")
+    presented = re.search(r"(\d+) frames presented", out)
+    presented = int(presented.group(1)) if presented else -1
+    sneak = "screen 9 opened" in out
+    print(f"        layer inserted {inserted}; {presented} frames presented; sneak opened {sneak}; "
+          f"sync hazards {hazards}; present semaphores reused {reused}")
+    return (inserted, presented, sneak, hazards, reused), (True, frames, True, 0, 0), \
+        "the validation layer inserted, the street walked and the sneak opened in 300 presented " \
+        "frames, and no synchronization hazard nor present semaphore reused before its image's acquire"
+
+
 def c_engine_classic_build():
     r"""THE CLASSIC MAC OS BUILD (`todo/classic-mac-port-1999.md` step 5): the
     engine and the VIEWER as Carbon binaries for Mac OS 9 and Mac OS X on
@@ -56049,6 +56120,7 @@ SLOW = [
     ("engine: clip memo",    c_engine_clip_memo,    "todo/remaster.md audit bug 2; o3de/renderer.cpp clipAbove"),
     ("engine: vulkan images", c_engine_vulkan_images, "todo/remaster.md audit bug 4; backends/vulkan/vkrender.cpp makeImage2D"),
     ("engine: vulkan teardown", c_engine_vulkan_teardown, "todo/remaster.md audit cleanliness; backends/vulkan/vkrender.cpp ~VulkanRenderer"),
+    ("engine: vulkan sync", c_engine_vulkan_sync, "todo/perf-audit.md C11; backends/vulkan/vkrender.cpp settle"),
     ("engine: mist",         c_engine_mist,         "todo/remaster.md A4; scene.frag"),
     ("engine: upscale",      c_engine_upscale,      "todo/remaster.md A6; o3de/fsrcon.h; easu.frag"),
     ("engine: smooth bodies", c_engine_smooth_bodies, "todo/remaster.md D1; o3de/smoothbody.h"),

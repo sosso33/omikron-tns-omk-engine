@@ -329,7 +329,7 @@ public:
     bool drawTwoReflections(const omk::View& v, const omk::View& refl, std::span<const omk::Draw> scene,
                             std::span<const omk::Draw> above, float strength, float planeY,
                             const omk::View& refl2, std::span<const omk::Draw> above2, float planeY2) override;
-    int secondLevelSeen() override { return levelSeen_; }
+    int secondLevelSeen() override { settle(); return levelSeen_; }
     bool drawMirrorScene(const omk::View& v, const omk::View& refl,
                          std::span<const omk::Draw> scene,
                          std::span<const omk::Draw> sceneClipped,
@@ -444,7 +444,22 @@ private:
     bool makeImage2D(const VkImageCreateInfo& ii, VkImageAspectFlags aspect, const char* what,
                      VkImage& img, VkDeviceMemory& mem, VkImageView* view);
     VkCommandBuffer oneShotBegin();
-    void oneShotEnd(VkCommandBuffer cb);
+    void oneShotEnd(VkCommandBuffer cb);      // submitted and WAITED for
+    void oneShotSubmit(VkCommandBuffer cb);   // submitted; freed once the queue is known done
+    // THE FRAME'S ONE WAIT (`todo/perf-audit.md` C11, step 1). The scene's
+    // submit (`end`), the present pass's and an uploaded screen's are not
+    // waited for one by one: the queue runs them in order, their barriers
+    // order them, and the present's fence - whose wait covers every earlier
+    // submission - is the frame's wait. `settle` waits for anything still
+    // out and reads what the scene left (its stamps, the level queries);
+    // `settleIdle` does the reading when the queue is already known idle.
+    // Everything that writes memory the GPU may still read, or reuses what
+    // it may still run, settles first.
+    void settle();
+    void settleIdle();
+    void readSceneResults();
+    bool sceneInFlight_ = false;
+    std::vector<VkCommandBuffer> pendingCbs_;
     // THE BATCHED UPLOAD (the remaster audit's performance item 2): a pool's
     // texture copies recorded into ONE command buffer (`uploadCb`), submitted
     // and waited on once (`flushUploads`), their bytes staged in one
@@ -773,7 +788,13 @@ private:
     VkExtent2D     swapExt_{};
     std::vector<VkImage> swapImgs_;
     VkSemaphore    acquired_ = VK_NULL_HANDLE;
-    VkSemaphore    drawn_    = VK_NULL_HANDLE;
+    // ONE PER SWAPCHAIN IMAGE: the present waits on it, and it may be
+    // signalled again only once that image is acquired again - with one for
+    // all, the next frame's submit re-signalled it while the last present
+    // could still be waiting (the validation layer's
+    // VUID-vkQueueSubmit-pSignalSemaphores-00067, seen once the frame
+    // stopped idling the queue between presents, C11 step 1)
+    std::vector<VkSemaphore> drawn_;
     VkBuffer       upBuf_ = VK_NULL_HANDLE; VkDeviceMemory upMem_ = VK_NULL_HANDLE;
     VkCommandBuffer pcb_ = VK_NULL_HANDLE;
     VkFence        pfence_ = VK_NULL_HANDLE;
@@ -1078,6 +1099,32 @@ void VulkanRenderer::oneShotEnd(VkCommandBuffer cb) {
     vkQueueSubmit(queue_, 1, &si, VK_NULL_HANDLE);
     vkQueueWaitIdle(queue_);
     vkFreeCommandBuffers(dev_, pool_, 1, &cb);
+    settleIdle();   // the idle queue has run everything before it too
+}
+
+void VulkanRenderer::oneShotSubmit(VkCommandBuffer cb) {
+    vkEndCommandBuffer(cb);
+    VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    si.commandBufferCount = 1; si.pCommandBuffers = &cb;
+    vkQueueSubmit(queue_, 1, &si, VK_NULL_HANDLE);
+    pendingCbs_.push_back(cb);
+}
+
+void VulkanRenderer::settle() {
+    if (sceneInFlight_) vkWaitForFences(dev_, 1, &fence_, VK_TRUE, UINT64_MAX);
+    if (!pendingCbs_.empty()) vkQueueWaitIdle(queue_);
+    settleIdle();
+}
+
+void VulkanRenderer::settleIdle() {
+    if (!pendingCbs_.empty()) {
+        vkFreeCommandBuffers(dev_, pool_, static_cast<uint32_t>(pendingCbs_.size()), pendingCbs_.data());
+        pendingCbs_.clear();
+    }
+    if (sceneInFlight_) {
+        sceneInFlight_ = false;
+        readSceneResults();
+    }
 }
 
 VkCommandBuffer VulkanRenderer::uploadCb() {
@@ -1639,7 +1686,7 @@ bool VulkanRenderer::retexture(int filter, int aniso) {
     filter_ = filter < 1 ? 0 : filter < 2 ? 1 : 2;
     aniso_ = aniso < 1 ? 1 : aniso > 16 ? 16 : aniso;
     if (dev_ == VK_NULL_HANDLE) return true;
-    vkDeviceWaitIdle(dev_);
+    vkDeviceWaitIdle(dev_); settleIdle();
     anisoOn_ = aniso_ > 1 && filter_ >= 2 && anisoAvail_;
     retiredSamplers_.push_back(sampler_);
     sampler_ = VK_NULL_HANDLE;
@@ -2273,7 +2320,8 @@ bool VulkanRenderer::makeSwapchain(int w, int h) {
 
     VkSemaphoreCreateInfo si{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
     VKCHECK(vkCreateSemaphore(dev_, &si, nullptr, &acquired_), "semaphore");
-    VKCHECK(vkCreateSemaphore(dev_, &si, nullptr, &drawn_), "semaphore");
+    drawn_.assign(ni, VK_NULL_HANDLE);
+    for (auto& d : drawn_) VKCHECK(vkCreateSemaphore(dev_, &si, nullptr, &d), "semaphore");
     VkCommandBufferAllocateInfo cai{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
     cai.commandPool = pool_; cai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     cai.commandBufferCount = 1;
@@ -2290,21 +2338,22 @@ void VulkanRenderer::killSwapchain() {
     if (pcb_) { vkFreeCommandBuffers(dev_, pool_, 1, &pcb_); pcb_ = VK_NULL_HANDLE; }
     if (pfence_) { vkDestroyFence(dev_, pfence_, nullptr); pfence_ = VK_NULL_HANDLE; }
     if (acquired_) { vkDestroySemaphore(dev_, acquired_, nullptr); acquired_ = VK_NULL_HANDLE; }
-    if (drawn_) { vkDestroySemaphore(dev_, drawn_, nullptr); drawn_ = VK_NULL_HANDLE; }
+    for (auto& d : drawn_) if (d) vkDestroySemaphore(dev_, d, nullptr);
+    drawn_.clear();
     if (swap_) { vkDestroySwapchainKHR(dev_, swap_, nullptr); swap_ = VK_NULL_HANDLE; }
     swapImgs_.clear();
 }
 
 bool VulkanRenderer::remakeSwapchain() {
     if (!dev_ || surface_ == VK_NULL_HANDLE) return false;
-    vkDeviceWaitIdle(dev_);
+    vkDeviceWaitIdle(dev_); settleIdle();
     killSwapchain();
     return makeSwapchain(w_, h_);
 }
 
 bool VulkanRenderer::resize(int w, int h) {
     if (!dev_ || w <= 0 || h <= 0) return false;
-    vkDeviceWaitIdle(dev_);
+    vkDeviceWaitIdle(dev_); settleIdle();
     const auto img = [&](VkImageView& v, VkImage& i, VkDeviceMemory& m) {
         if (v) vkDestroyImageView(dev_, v, nullptr);
         if (i) vkDestroyImage(dev_, i, nullptr);
@@ -2424,9 +2473,12 @@ bool VulkanRenderer::presentImage(VkImage src, int sw, int sh) {
         vkCmdPipelineBarrier(pcb_, srcS, dstS, 0, 0, nullptr, 0, nullptr, 1, &b);
     };
 
+    // FROM THE TRANSFER STAGE, the one the submit waits for the acquire at:
+    // from the top of the pipe the layout change was not ordered after the
+    // acquire (the validation layer's SYNC-HAZARD-WRITE-AFTER-READ)
     barrier(swapImgs_[idx], VK_IMAGE_LAYOUT_UNDEFINED,
             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT,
-            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
 
     // The letterbox bands. The engine clears to black and the picture occupies
     // the middle rows; clearing the whole image and blitting into the middle
@@ -2435,6 +2487,10 @@ bool VulkanRenderer::presentImage(VkImage src, int sw, int sh) {
     VkImageSubresourceRange all{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
     vkCmdClearColorImage(pcb_, swapImgs_[idx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                          &black, 1, &all);
+    // ...and the blit's write ordered after the clear's (WRITE_AFTER_WRITE)
+    barrier(swapImgs_[idx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
 
     // The `w_ x h_` frame fitted into the window AT ITS OWN ASPECT, centred:
     // in a window of the frame's own width that is the old rule exactly (the
@@ -2470,16 +2526,17 @@ bool VulkanRenderer::presentImage(VkImage src, int sw, int sh) {
     si.waitSemaphoreCount = 1; si.pWaitSemaphores = &acquired_;
     si.pWaitDstStageMask = &wait;
     si.commandBufferCount = 1; si.pCommandBuffers = &pcb_;
-    si.signalSemaphoreCount = 1; si.pSignalSemaphores = &drawn_;
+    si.signalSemaphoreCount = 1; si.pSignalSemaphores = &drawn_[idx];
     vkResetFences(dev_, 1, &pfence_);
     vkQueueSubmit(queue_, 1, &si, pfence_);
 
     VkPresentInfoKHR pi{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
-    pi.waitSemaphoreCount = 1; pi.pWaitSemaphores = &drawn_;
+    pi.waitSemaphoreCount = 1; pi.pWaitSemaphores = &drawn_[idx];
     pi.swapchainCount = 1; pi.pSwapchains = &swap_;
     pi.pImageIndices = &idx;
     vkQueuePresentKHR(queue_, &pi);
     vkWaitForFences(dev_, 1, &pfence_, VK_TRUE, UINT64_MAX);
+    settleIdle();   // this fence covers the scene's and the passes' submits before it
     readPresStamps();
     return true;
 }
@@ -2526,6 +2583,7 @@ constexpr std::size_t kExpandGrain = 640u * 480u / 4u;
 
 bool VulkanRenderer::presentSurface(const omk::Surface& s) {
     if (swap_ == VK_NULL_HANDLE) return false;
+    settle();   // `upBuf_` is written below
     const VkDeviceSize bytes = static_cast<VkDeviceSize>(w_) * h_ * 4;
     if (upBuf_ == VK_NULL_HANDLE &&
         !makeBuffer(bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
@@ -2578,7 +2636,7 @@ bool VulkanRenderer::presentSurface(const omk::Surface& s) {
     vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT,
                          VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &b);
     presStamp(cb, 1);
-    oneShotEnd(cb);
+    oneShotSubmit(cb);   // the present's fence is the wait
     return up ? presentImage(presImg_, w_, h_) : presentDirect();
 }
 
@@ -2728,6 +2786,7 @@ bool VulkanRenderer::makeUnder(int uw, int uh) {
 bool VulkanRenderer::presentUnder(const omk::Surface& s, const unsigned char* mask, const unsigned char* maskRow,
                                   const omk::Surface& under, int filter, std::vector<unsigned char>* readback) {
     if (swap_ == VK_NULL_HANDLE || s.w != w_ || s.h != h_ || !under.valid()) return false;
+    settle();   // `upBuf_` and `undBuf_` are written below
     if (!makeUnder(under.w, under.h)) return false;
     const VkDeviceSize bytes = static_cast<VkDeviceSize>(w_) * h_ * 4;
     if (upBuf_ == VK_NULL_HANDLE &&
@@ -2805,7 +2864,8 @@ bool VulkanRenderer::presentUnder(const omk::Surface& s, const unsigned char* ma
         cp.imageExtent = {static_cast<uint32_t>(w_), static_cast<uint32_t>(h_), 1};
         vkCmdCopyImageToBuffer(cb, presImg_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, presRead_, 1, &cp);
     }
-    oneShotEnd(cb);
+    if (readback) oneShotEnd(cb);    // the copy is read just below
+    else oneShotSubmit(cb);          // the present's fence is the wait
     if (readback && presRead_ != VK_NULL_HANDLE) {
         readback->resize(static_cast<std::size_t>(bytes));
         void* p = nullptr;
@@ -3025,7 +3085,7 @@ bool VulkanRenderer::runPresentPass(int vy, int vh, bool raw) {
            0, VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
            VK_PIPELINE_STAGE_TRANSFER_BIT);
     presStamp(cb, 1);
-    oneShotEnd(cb);
+    oneShotSubmit(cb);   // ordered by the queue; the present's fence (or a readback's wait) is the wait
     return true;
 }
 
@@ -3388,7 +3448,7 @@ void VulkanRenderer::poolTextures(std::span<const omk::Texture> t, bool preload)
     bool waited = false;
     for (auto it = uploaded_.begin(); !preload && it != uploaded_.end(); ) {
         if (it->second.used || it->second.pinned) { ++it; continue; }
-        if (!waited) { vkDeviceWaitIdle(dev_); waited = true; }
+        if (!waited) { vkDeviceWaitIdle(dev_); settleIdle(); waited = true; }
         Tex& old = it->second.t;
         if (old.ds)   vkFreeDescriptorSets(dev_, dpool_, 1, &old.ds);
         if (old.view) vkDestroyImageView(dev_, old.view, nullptr);
@@ -3835,6 +3895,7 @@ void VulkanRenderer::shadowPass(const omk::View& v, std::span<const omk::Draw> c
 }
 
 void VulkanRenderer::begin(const omk::View& view) {
+    settle();   // the last frame's GPU work, before its buffers are reused
     st_ = omk::RasterStats{};
     // the pose buffer from its start: the frame that wrote it was waited for
     poseUsed_ = 0;
@@ -4325,7 +4386,16 @@ void VulkanRenderer::end() {
     si.commandBufferCount = 1; si.pCommandBuffers = &cb_;
     vkResetFences(dev_, 1, &fence_);
     vkQueueSubmit(queue_, 1, &si, fence_);
-    vkWaitForFences(dev_, 1, &fence_, VK_TRUE, UINT64_MAX);
+    // NOT WAITED HERE: the present's fence is the frame's wait (`settle`)
+    sceneInFlight_ = true;
+    recording_ = false;
+    cbStarted_ = false;
+    shadowLive_ = false;
+    dirty_ = true;
+}
+
+// what the scene's submit leaves for the CPU, read once it is done
+void VulkanRenderer::readSceneResults() {
     readStamps();
     // the second level's queries, this frame's: seen if any sample passed
     if (levelIssued_ > 0) {
@@ -4342,10 +4412,6 @@ void VulkanRenderer::end() {
     }
     levelIssued_ = 0;
     levelOver_ = false;
-    recording_ = false;
-    cbStarted_ = false;
-    shadowLive_ = false;
-    dirty_ = true;
 }
 
 const omk::Surface& VulkanRenderer::readback() {
@@ -4359,6 +4425,7 @@ const omk::Surface& VulkanRenderer::readback() {
     if (fb_.w != w_ || fb_.h != h_) fb_ = omk::Surface(w_, h_, 0);
     if (!dirty_) return fb_;
     dirty_ = false;
+    settle();
     // UPSCALED, the picture is read at the OUTPUT size, through the same EASU
     // and RCAS as the present pass's (`raw`: undithered), and quantised below
     // as a frame drawn at that size would be
@@ -4453,7 +4520,7 @@ void VulkanRenderer::geometryGone(void* self, const omk::Geometry* g) {
 VulkanRenderer::~VulkanRenderer() {
     omk::removeGeometryListener(&VulkanRenderer::geometryGone, this);
     if (!dev_) return;
-    vkDeviceWaitIdle(dev_);
+    vkDeviceWaitIdle(dev_); settleIdle();
     killPost();
     killLut();
     killReflection();
@@ -4563,7 +4630,7 @@ VulkanRenderer::~VulkanRenderer() {
     if (litUboMem_) freeDeviceMemory(litUboMem_);
     if (pfence_) vkDestroyFence(dev_, pfence_, nullptr);
     if (acquired_) vkDestroySemaphore(dev_, acquired_, nullptr);
-    if (drawn_) vkDestroySemaphore(dev_, drawn_, nullptr);
+    for (auto& d : drawn_) if (d) vkDestroySemaphore(dev_, d, nullptr);
     if (swap_) vkDestroySwapchainKHR(dev_, swap_, nullptr);
     if (fence_) vkDestroyFence(dev_, fence_, nullptr);
     if (pool_) vkDestroyCommandPool(dev_, pool_, nullptr);
