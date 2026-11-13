@@ -52696,6 +52696,54 @@ def c_engine_undriven_rest_pose():
            "mecaguard 110 staged with his bank; his first pose source; the player in adventure mode"
 
 
+def c_engine_show_context_record():
+    r"""`character.show` / `character.hide` take the RUNNING CONTEXT'S record
+    (`todo/drift-audit.md` M4).
+
+    Both handlers (0x403CB0 / 0x403DD0) hand `Scene_FindObjectRecord`
+    (0x0040D6A0) the context's own area slot - `mov cl, [edi+1Fh]` - so when
+    both resident areas place one id (44 of the 502 `area.goto` edges join
+    two such areas) the record of the SCRIPT'S area is the one attached or
+    detached, and its +18 bit the one written. So do `player.become` (56) and
+    three more (86, 93, 144). The port took the SHOWN slot's record for the
+    bit, the first slot's for the body, and hid every record of the id: a
+    destination's startup script showing its own copy while the origin was
+    still the shown slot put the body at the other area's spot and wrote the
+    other area's bit - a save bit.
+
+    `m4_show`: Anekbah's street (AREA 0) and AREA 46, which both place
+    actors 59 and 62 at two spots (59: bits 2 and 163; 62: 3 and 164, all set
+    in START - so BOTH copies are shown, which the viewer still draws as one,
+    M4's other half). Both copies hidden from their own areas, then 46 shows
+    59 (its record, bit 163), 0 shows 62 (its record, bit 3), 46 hides 62
+    (its record, not shown: 0's stays).
+
+    SHOWN TO FAIL (2026-11-13) with the context's slot ignored (`ctxAreaSlot`
+    answering -1): hiding both copies left two of the four bits set (each
+    hide wrote the shown area's), 46's show of 59 put the body at AREA 0's
+    spot, 0's show of 62 set bit 164 too, and 46's hide of 62 hid AREA 0's.
+    """
+    import subprocess
+    eng = os.path.join(ROOT, "engine")
+    mk = subprocess.run(["make", "-s", "build/m4_show"], cwd=eng, capture_output=True, text=True)
+    tool = os.path.join(eng, "build", "m4_show")
+    if mk.returncode != 0 or not os.path.exists(tool):
+        return ("built",), ("not built",), (mk.stdout + mk.stderr)[-300:]
+    r = subprocess.run([tool, omkpaths.data_root(), os.path.join(ROOT, "tables")],
+                       capture_output=True, text=True, timeout=300)
+    m = re.search(r"^m4 .*$", r.stdout, re.M)
+    if not m:
+        return ("ran",), ("no m4 line",), (r.stdout + r.stderr)[-300:]
+    got = re.sub(r"shown_slot \d+ ", "", m.group(0))
+    print("        " + got)
+    want = ("m4 area0_slot 0 area46_slot 1 | start bits 59 11 62 11 | hidden none/none bits 0 | "
+            "46 shows 59: bits 01 shown 6716,419 | 0 shows 62: bits 10 shown 3578,-1982 | "
+            "46 hides 62: bits 10 shown 3578,-1982")
+    return (got,), (want,), \
+        "both copies hidden, then each show and hide from a context of one area acting on THAT " \
+        "area's record alone - its body's spot and its own ObjectShown bit"
+
+
 def c_character_shows_resolve():
     r"""EVERY `character.show` NAMES A BODY A TABLE PLACES (`todo/drift-audit.md`
     T4, checked 2026-10-06).
@@ -53272,8 +53320,9 @@ def c_licence_headers():
     # 709: + `engine/tools/inventory_insert_probe.cpp` (`engine: inventory insert`)
     # 710: + `engine/tools/npc_ground_probe.cpp` (`engine: npc ground`)
     # 711: + `engine/tools/scx_euler_probe.cpp` (`engine: scx euler`)
+    # 713: + `engine/tools/m4_pairs.cpp`, `m4_show.cpp` (`engine: show context record`)
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (711, [], 10, []), \
+           (713, [], 10, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -55897,6 +55946,7 @@ SLOW = [
     ("engine: actor lighting", c_engine_actor_lighting, "todo/drift-audit.md L1; backends/sdl/playframe_world_staged.cpp"),
     ("engine: undriven rest pose", c_engine_undriven_rest_pose, "todo/drift-audit.md M2; backends/sdl/playframe_world_staged.cpp"),
     ("character shows resolve", c_character_shows_resolve, "todo/drift-audit.md T4; script/area.cpp"),
+    ("engine: show context record", c_engine_show_context_record, "todo/drift-audit.md M4; script/area.cpp recordIn"),
     ("engine: lift", c_engine_lift, "todo/next-tasks 13"),
     ("engine: gandhar door", c_engine_gandhar_door, "todo/missing-ui 5"),
     ("engine: den locker", c_engine_den_locker, "todo/missing-ui 5b"),

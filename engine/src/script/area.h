@@ -476,8 +476,12 @@ public:
     // bit - so a harness (`omk-play --hide-show`) reaches exactly what a
     // script does. `field1` is `character.show`'s second field: non-zero
     // re-places the body at its record (todo/drift-audit.md M1).
-    void characterShow(int actor, int field1);
-    void characterHide(int actor);
+    // `ctx`: the running context, whose AREA SLOT (+31) the handlers hand
+    // `Scene_FindObjectRecord` - the record of THAT slot's tables is the one
+    // attached and whose bit is written (todo/drift-audit.md M4). -1 (a
+    // harness, no context): the shown slot's first, then the other's.
+    void characterShow(int actor, int field1, int ctx = -1);
+    void characterHide(int actor, int ctx = -1);
     // `g_IgnoreLedges`, as ops 129 / 130 last wrote it - for the walker
     bool ignoreLedges() const { return ignoreLedges_; }
     // ...and its mirror, the op-65 arm's two lines: the save bit cleared and
@@ -1402,7 +1406,7 @@ public:
     // `becomePlayer`. The id is read back out of the game DB's player record
     // (+60, id at +272), which the handler's own `rep movsd` writes, so a
     // save carries it and `IAM\START`'s -1 is what a new game starts with.
-    void becomePlayer(int actor);
+    void becomePlayer(int actor, int ctx = -1);
     int  playerActor() const;
     // Whether a TELEPORT (`placeActorAt`) has landed since the last
     // `becomePlayer`. The script runs on after op 56 in the same pump, and
@@ -2129,8 +2133,13 @@ private:
     void spawnFromTables(int slot, bool area, bool scene);
     void freeActorSlots(int slot, bool area, bool scene);
     void rebuildShown();
-    void showCharacter(int actor, bool place = false);
-    void hideCharacter(int actor);
+    void showCharacter(int actor, bool place = false, int inSlot = -1);
+    void hideCharacter(int actor, int inSlot = -1);
+    // `Scene_FindObjectRecord(slot, actor)` (0x0040D6A0): the slot's AREA
+    // records, then its SCENE's - the first with the id; null when neither
+    // table of that slot places him
+    Character* recordIn(int slot, int actor);
+    int ctxAreaSlot(int ctx) const;   // the context's +31, -1 for none
     double       frameSeconds_ = 1.0 / 30.0;
     void openDialog(int id);
     // `camera.set` / `camera.set.wait`: cut when the move is 0 frames long,

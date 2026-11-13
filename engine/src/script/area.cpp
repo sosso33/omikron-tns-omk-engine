@@ -2052,7 +2052,7 @@ bool Session::postMessage(int message, int sender) {
 // placement, so that is what it moves the player to; a frontend that draws
 // the body has its live node and puts the player there instead
 // (`playframe_world.cpp`). The new body joins `shown_`.
-void Session::becomePlayer(int actor) {
+void Session::becomePlayer(int actor, int ctx) {
     if (actor == playerActor()) return;
     std::vector<std::byte> chunk;
     std::size_t off = 0;
@@ -2148,9 +2148,11 @@ void Session::becomePlayer(int actor) {
             // (`sub_40D6A0` on the context's slot), the active one when no
             // table places the new body
             sh.areaSlot = activeSlot();
-            for (int k = 0; k < 2; ++k)
-                for (const auto& c : slots_[k].characters)
-                    if (c.actor == actor) sh.areaSlot = k;
+            if (recordIn(ctxAreaSlot(ctx), actor)) sh.areaSlot = ctxAreaSlot(ctx);
+            else
+                for (int k = 0; k < 2; ++k)
+                    for (const auto& c : slots_[k].characters)
+                        if (c.actor == actor) sh.areaSlot = k;
             if (!sh.model.empty()) scriptShown_.push_back(sh);
         }
     }
@@ -2159,7 +2161,7 @@ void Session::becomePlayer(int actor) {
     // body it is that record's `attached` that turns on; otherwise the body
     // joins the script-shown list, which is what this did for everyone
     // before the spawn landed.
-    showCharacter(actor);
+    showCharacter(actor, false, ctxAreaSlot(ctx));
     becomeSeq_ = placementSeq_;                    // `placedSinceBecome`
     // `sub_41C270(esi, &pos)` / `sub_41BDF0(esi, &pos)`: the new body's own
     // place. Only a body a placement record put here has one the Session
@@ -2504,10 +2506,40 @@ void Session::rebuildShown() {
 // puts the node at the record's position and facing. With 0 the node is
 // re-linked where `Actor_Detach` left it, in the pose it was left in.
 // 801 of the 1256 shipped shows pass 0. `place` is that field.
-void Session::showCharacter(int actor, bool place) {
+Session::Character* Session::recordIn(int slot, int actor) {
+    if (slot < 0 || actor == -1) return nullptr;
+    auto& cs = slots_[slot & 1].characters;
+    for (const bool scene : {false, true})
+        for (auto& c : cs)
+            if (c.fromScene == scene && c.actor == actor) return &c;
+    return nullptr;
+}
+
+int Session::ctxAreaSlot(int ctx) const {
+    if (ctx < 0 || static_cast<std::size_t>(ctx) >= ctxs_.size() || !ctxs_[static_cast<std::size_t>(ctx)])
+        return -1;
+    return ctxs_[static_cast<std::size_t>(ctx)]->slot & 1;
+}
+
+// THE CONTEXT'S RECORD (todo/drift-audit.md M4). 78 and 56 hand
+// `Scene_FindObjectRecord` the running context's own area slot (`mov cl,
+// [edi+1Fh]`), so when both resident areas place one id - 44 of the 502
+// `area.goto` edges join two such areas, Anekbah 0 and 46 sharing six - it
+// is the record of the SCRIPT'S area that is attached, not the first found.
+// The port took the first, the shown slot's: a destination's startup script
+// showing its own copy while the origin was still the shown slot attached
+// the ORIGIN's record, the body at the other area's spot. `inSlot` -1 keeps
+// that search for the callers with no context.
+void Session::showCharacter(int actor, bool place, int inSlot) {
     if (actor == -1) return;
     // `Actor_Attach` registers the body again - an old player body too
     bodyless_.erase(actor);
+    if (Character* c = recordIn(inSlot, actor)) {
+        c->attached = true;
+        if (place) ++c->placeSeq;
+        rebuildShown();
+        return;
+    }
     for (auto& sl : slots_)
         for (auto& c : sl.characters)
             if (c.actor == actor) {
@@ -2535,16 +2567,21 @@ void Session::showCharacter(int actor, bool place) {
     rebuildShown();
 }
 
-void Session::characterShow(int actor, int field1) {
-    showCharacter(actor, field1 != 0);
-    const int bit = shownBitOf(actor);
+void Session::characterShow(int actor, int field1, int ctx) {
+    const int slot = ctxAreaSlot(ctx);
+    // the bit is the record's own +18 (`movsx eax, word ptr [esi+12h]`)
+    const Character* rec = recordIn(slot, actor);
+    const int bit = rec ? rec->bit : shownBitOf(actor);
+    showCharacter(actor, field1 != 0, slot);
     if (bit >= 0) state_.setBit(StateArray::ObjectShown, bit, 1);
 }
 
-void Session::characterHide(int actor) {
+void Session::characterHide(int actor, int ctx) {
     const int id = actor == -1 ? playerActor() : actor;
-    hideCharacter(id);
-    const int bit = actor == -1 ? -1 : shownBitOf(id);
+    const int slot = actor == -1 ? -1 : ctxAreaSlot(ctx);
+    const Character* rec = recordIn(slot, id);
+    const int bit = actor == -1 ? -1 : rec ? rec->bit : shownBitOf(id);
+    hideCharacter(id, rec ? slot : -1);
     if (bit >= 0) state_.setBit(StateArray::ObjectShown, bit, 0);
 }
 
@@ -2557,8 +2594,15 @@ bool Session::actorHeld(int actor) const {
 }
 
 // `character.hide` (79, 0x403DD0): `sub_41CDD0` on the record's slot.
-void Session::hideCharacter(int actor) {
+void Session::hideCharacter(int actor, int inSlot) {
     if (actor == -1) return;
+    // `sub_41CDD0` on the context's record alone (M4); with no context, every
+    // record of the id, as before
+    if (Character* c = recordIn(inSlot, actor)) {
+        c->attached = false;
+        rebuildShown();
+        return;
+    }
     for (auto& sl : slots_)
         for (auto& c : sl.characters)
             if (c.actor == actor) c.attached = false;
@@ -3128,7 +3172,7 @@ void Session::onCall(int i, const Call& call) {
         break;
     case op::PlayerBecome:
         // `player.become`: the soul transfer - see `becomePlayer`.
-        if (!call.fields.empty()) becomePlayer(call.fields[0]);
+        if (!call.fields.empty()) becomePlayer(call.fields[0], i);
         break;
     case op::SceneLoad:
         // `scene.load` / `scene.unload`: on a RESIDENT area the swap is
@@ -3415,7 +3459,7 @@ void Session::onCall(int i, const Call& call) {
         // `ObjectShown` map at DB +20, which `Actors_SpawnFromTables` reads
         // back on every area load and which travels in the save (issue 28).
         if (call.fields.empty()) break;
-        characterShow(call.fields[0], call.fields.size() > 1 ? call.fields[1] : 0);
+        characterShow(call.fields[0], call.fields.size() > 1 ? call.fields[1] : 0, i);
         break;
     }
     case op::CharacterHide: {
@@ -3424,7 +3468,7 @@ void Session::onCall(int i, const Call& call) {
         // 1050, three bytes after `player.become 136`, so the body the
         // player just took leaves the screen. No bit is written for him.
         if (call.fields.empty()) break;
-        characterHide(call.fields[0]);
+        characterHide(call.fields[0], i);
         break;
     }
     case op::PlayerAnimHold:
