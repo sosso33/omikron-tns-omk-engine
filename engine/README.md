@@ -412,15 +412,28 @@ stale, and the README quoted it.)
   cache on the pointer, so a relight (`L`) or any per-frame geometry edit
   re-uploads. A dirty flag, or splitting static positions from the per-vertex
   colour, removes it.
-* **One command buffer, one fence, one frame in flight.** `end()` waits for the
-  GPU before returning. Two or three frames in flight would overlap CPU and GPU
-  and is the single largest win if one is ever needed.
+* **Frames in flight: one by default, two on asking** (`todo/perf-audit.md`
+  C11, 2026-11-13). No submit is waited for whole: a frame works in a SLOT -
+  its command buffers, fences, query pools, uniforms, lights, tiles, pose
+  buffer, upload buffers and the sets naming them - and the slot is waited
+  for when a frame takes it again (`acquireSlot`). At one in flight that is
+  the frame before, at its first GPU use; `OMK_FRAMES_IN_FLIGHT=2` records the
+  next frame while the GPU runs this one (one more frame of latency). Vertex
+  buffers a frame in flight may read are written copy-on-write
+  (`vboWritable`); on Apple, MoltenVK's submits are asynchronous
+  (`MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS=0`, set unless the user did).
+  `verify.py: engine: vulkan sync` runs both depths under the Khronos
+  synchronization validation.
 * **The mirror pass costs a second full scene draw**, which is what a planar
   mirror costs; the reflection could be culled harder than `inFrontOf` does
   (it clips per triangle against one plane and nothing else).
 * **`presentSurface` converts 565 on the CPU** for a software or CPU-composited
-  frame. A compute shader or a 565 staging image would move it, but it only
-  runs on frames that are not GPU-resident anyway.
+  frame - every interface screen - split over the thread pool since
+  2026-11-13 (4K: 6.7 -> 4.9 ms). A 565 staging IMAGE would not be the same
+  bytes: a UNORM read widens a channel as round(c * 255 / 31), which differs
+  from the replication for 4 of 32 five-bit and 10 of 64 six-bit values; a
+  shader reading the words as integers would (`under.frag` does) - not built
+  (`todo/perf-audit.md` 11).
 * **The 2D layer is still a texture upload per frame** and is not on the
   renderer boundary at all (A2 lists `submit2d`). Worth doing when the UI and
   the 3D scene have to compose in one frame, not before. `audio/` still wants a device behind the
@@ -3960,6 +3973,29 @@ rows**. This table has now been wrong twice — once with a count that had
 quietly dropped the rows it judged unportable, once with a figure left stale by
 a day's work — so it is written out in full rather than summarised, and every
 row is named so the count can be checked rather than believed.
+
+**And 2026-11-13, A BODY PER PLACEMENT RECORD** (`todo/drift-audit.md` M4,
+both steps). Two resident areas may place one id - 95 ids are placed by more
+than one AREA table - and the engine gives each record its own runtime slot,
+node and shown bit. Ported: every op that addresses a character resolves its
+record through the RUNNING CONTEXT's area (`Scene_FindObjectRecord` /
+`Scene_FindObjectIndexById`; the speaker through the active slot's; a bare id
+the lowest slot, `sub_40AF00`) - show, hide, become, programs, fights, the
+shoot ops, the looks; the viewer stages a body per record (`Staged::rt`) and
+keys per-actor state by `Session::actorKey` (the id for the lowest copy, so
+nothing changes where an id is placed once); a hidden set's characters are
+not drawn. Not ported: holds/releases (67/69) and the stat ops stay by id.
+Checks: `engine: show context record`, `engine: record bodies`.
+
+**And 2026-11-13, THE REMASTER AT 4K** (`todo/perf-audit.md` 11) - measured
+on the M1 and taken: a screen's scaled background kept as what it writes
+(`WrittenLayer`; the sneak 30 -> 60 fps), the fills' blend tables, the 565
+present over the pool, Vulkan's frame SLOTS (one frame in flight by default,
+two with `OMK_FRAMES_IN_FLIGHT=2`), MoltenVK's submits off the main thread,
+the rain's halos at the glow's size, the occlusion's trigonometry once.
+Measured and left: the EASU in half precision and fused with RCAS. Checks:
+`engine: screen background kept`, `engine: vulkan sync` (both depths, under
+the synchronization validation).
 
 **31 fully ported.** IAM archives and `IAM\DIALOG`; the script VM; `.3DM`;
 ADPCM; `.3DT`; `.3DO`; `.ani`; `.CTL`; `.SCX` block, stream and object

@@ -167,8 +167,12 @@ Four things the table is worth reading for:
   the game and every one of them lands outside the saved arrays unless the
   target is the player.
 * **The `ObjectShown` bit index is the character record's `+18`**, not the
-  object id: ops 78/79 resolve the actor with `Scene_FindObjectRecord`, read
-  `movsx eax, [esi+12h]` and hand that to `State_SetBit`. `character.hide -1`
+  object id: ops 78/79 resolve the actor with `Scene_FindObjectRecord` - on the
+  RUNNING CONTEXT'S area slot (`ctx+0x1F`) - read `movsx eax, [esi+12h]` and
+  hand that to `State_SetBit`. An id two areas both place has TWO records and
+  two bits (Anekbah's street and restaurant: actor 59's are 2 and 163), and
+  the script's own area decides which is written (`docs/SCRIPT_VM.md`, "Naming the opcodes", the
+  note after op 79; `todo/drift-audit.md` M4). `character.hide -1`
   writes **no** bit at all — it is `sub_41CED0(Actor_Player(), 1)`, hiding the
   player.
 * **Five of these opcodes are the only writers of their array**, so a replica

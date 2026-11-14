@@ -1985,7 +1985,11 @@ still live — then setting the requesting script's status to 10 so it waits.
 This is what the paired globals throughout the engine are:
 `dword_69BC48[4 * slot]` is the scene id in each slot, `dword_69BC40[4 * slot]`
 the loaded block. `Scene_FindObjectIndexById` searches the named scene first and
-its parent second for the same reason.
+its parent second for the same reason. Both slots' characters are spawned and
+ticked - one runtime slot a placement RECORD, so an id both areas place is two
+actors - and drawn while their set is shown (the object table below, "Which
+area, and two records of one id"; `docs/SCRIPT_VM.md`, "A HIDDEN set is still
+SOLID").
 
 ### Every byte of an AREA / SCENE chunk, accounted for
 
@@ -2121,6 +2125,16 @@ The counts are int16 at **`AREA +72`** and **`SCENE +40`** — 830 and 202
 records — both read straight out of `Scene_FindObjectIndexById`, which searches
 the area's table first and then the table of the scene loaded over it. Every
 operand of VM opcodes 69, 82 and 84 names a record here: **1135 / 1135**.
+
+**Which area, and two records of one id** (2026-11-13, `todo/drift-audit.md`
+M4). The callers pass the RUNNING CONTEXT's area (`dword_69BC48[ctx+1F * 16]`),
+the conversation the ACTIVE slot's; failing both tables the answer is the lowest
+entry of `word_69BC80` holding the id. An id is not unique across areas: **95**
+are placed by more than one AREA table, and since `Actors_SpawnFromTables`
+gives every record its own runtime slot (its `+0`), two resident areas placing
+one id hold two actors - each with its own position, its own `stateBit`, its own
+node. `engine/tools/m4_pairs` lists a pair's shared ids and spots, `--census`
+the sites that name one (`docs/SCRIPT_VM.md`, "Naming the opcodes", the note after op 79).
 
 Three independent things line up on this reading: the 830 records in `AREA`
 carry **830 distinct** `stateBit` values (0..1031) — one bit each, which is what

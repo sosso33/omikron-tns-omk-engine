@@ -578,6 +578,24 @@ from the same `NAME` and `LEN_FIX` the disassembler uses
 | 78 | `character.show` | resolves its `CHARACTERS` operand via `Scene_FindObjectRecord`, calls `Actor_Attach`, sets the record's state bit to **1**; places the actor at the record's own position when field 1 is non-zero - with 0 the node is re-linked where and as `Actor_Detach` (79) left it, transform and pose untouched (801 of the 1256 sites; the port dropped a hidden body and ignored the field until 2026-10-05, `todo/drift-audit.md` M1, `verify.py: engine: hide show`) |
 | 79 | `character.hide` | same resolution, calls `Actor_Detach`, clears the state bit to **0** |
 
+**Which record a `CHARACTERS` operand names - the RUNNING CONTEXT'S AREA**
+(read 2026-11-13, `todo/drift-audit.md` M4). 78, 79 and 56 hand
+`Scene_FindObjectRecord` the context's own area slot (`mov cl, [edi+1Fh]`, the
+context's `+31`); 59, 60, 62, 67, 69, 82, 83, 84, 85, 138 and 139 hand
+`Scene_FindObjectIndexById` (0x0040D760) that slot's AREA id
+(`dword_69BC48[ctx+1F * 16]`) - that area's record, then its scene's, and failing
+both the lowest entry of `word_69BC80` holding the id (`sub_40AF00`); 86, 93 and
+144 resolve through the context's record too (`asmfn.py --op` over all 153). It
+matters because **two resident areas may place one id**: 95 ids are placed by
+more than one AREA table (Anekbah's street and its restaurant both place 59,
+62, 63, 69, 70, 71), each record takes its OWN runtime slot and node, and both
+are drawn while both sets are shown. So the same `character.show 59` from the
+street's script and from the restaurant's attaches two different bodies and
+writes two different `ObjectShown` bits (2 and 163). `Dialog_Load` resolves its
+speaker on the ACTIVE slot's area. The port: `Session::recordIn`,
+`resolveActorSlot`, `actorSlotOf`; `verify.py: engine: show context record`,
+`engine: record bodies`.
+
 | 50 | `inventory.add` | reads the record from `IAM\OBJECT` and calls `Inventory_Insert`; skips the add when lists 2 or 3 already hold the id |
 | 93 | `actor.stat.set` | field 2 is the `VARIABLES` index (traced through `esi`) and `Var_Get` reads it; **both** arms then reach `Actor_SetProperty`, so the opcode writes that variable into an actor's stat — see the section below. Named `hud.show_var` until 2026-09-02, after the `Hud_ShowValue` call on the player arm. Every variable it appears with is a stat — `Vie` ×262, `Carac Attack` ×133, `Carac Dodge` ×131, `Anneaux`, `Mana`, `Argent` |
 | 138 / 139 | `character.look_at_player` / `character.look_away` | both call `Actor_SetLookAt` with 1 and 0, setting the actor's `+400` look-at field to the current player or `-1`. The renderer reads it: set, it takes the vector between the two actors' transforms and turns the head; `-1`, it zeroes the angles |
@@ -2628,6 +2646,16 @@ separate list: a set joins it when it finishes loading (`sub_443300`, in
 `sub_4195C0` right after `Area_LoadSet`) and leaves it only on unload or
 eviction (`sub_443320`), and `o3de_ForEachMeshInBox` walks that array. So a
 hidden set keeps its walls.
+
+...AND ITS CHARACTERS ARE NOT DRAWN (read 2026-11-08, ported 2026-11-13,
+`todo/drift-audit.md` M4). `Actor_Attach` (0x0041CCA0) links an actor's node
+under ITS decor slot's node (`actor[103]`, the slot's `+4`), so unlinking the
+slot's scene from the render chain (`sub_441200`) takes its attached actors out
+of the drawing with it. `Actors_TickAll` walks all 100 live slots with no test
+on the decor's state, so they are still TICKED. The port listed them whatever
+the slot's state; `Session::rebuildShown` now leaves a hidden set's actors out
+(`showSet` / `hideSet` rebuild it) and the viewer parks them as `Actor_Detach`
+keeps a body (`verify.py: engine: record bodies`).
 
 And its floor refuses him. `Walk_ProbeGround`'s tail (0x00467030), read whole:
 when the floor under the actor belongs to another scene, a slot in state 2

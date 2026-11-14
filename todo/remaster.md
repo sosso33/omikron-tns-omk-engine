@@ -1077,6 +1077,13 @@ The reader's "continue" after B3; confirmed in play at 2 ("commit, push").
     `MESHES/PERSOS` now, and the pack's 279 character `_e.png` were MOVED to
     `full/lights-persos-removed/` (kept, not deleted).
 
+**Its cost at 4K, 2026-11-13** (`todo/perf-audit.md` 11, `OMK_GPU_TIMES` now
+splitting the post-pass): at 2560x1440 drawn, the half-size depth 0.29 ms, the
+estimator 2.08, the two blurs 0.45 and 0.21. The estimator's 16 cos/sin a pixel
+are two now (a0's rotation of the 8 constant golden-angle directions, from the
+same float products): the frame byte-identical, 2.1 -> 1.8 ms. The rest is its
+8 scattered depth reads a pixel (the disk turned per pixel).
+
 ## B2 - the curation: the mechanism and a draft, NOT applied (2026-10-21)
 
 The reader's choice: "build the tool + draft, don't apply" - which textures
@@ -1507,7 +1514,7 @@ The reader's "continue" after the wet floors - item 3 of the weather list.
   | # | item | state |
   |---|---|---|
   | 1 | the lights' streaks on wet floors | DONE `d50f917b` - from the lights themselves (the reflection-based try taken out); faded in against the first light left out |
-  | 2 | halos round the lights in the shower | DONE `2cf19683`, gain 1.5 |
+  | 2 | halos round the lights in the shower | DONE `2cf19683`, gain 1.5; taken at the GLOW's size since 2026-11-13 (`post.frag` mode 3: 25 taps a quarter-size texel, not a full-size pixel's - the final pass 1.4-2.0 -> 0.3 ms at 4K; one 565 step on 0.56% of the pixels, GLES keeping it as its square root, 1.35%) |
   | 3 | bodies drying slowly under cover | DONE `2cf19683` |
   | 4 | drips from roof edges | DONE `ca3f49de` - past the eaves, the drawn set's sky too |
   | 5 | splashes from feet and on shoulders | DONE (2026-10-29) - a crown at each step of a body in the open, drops bursting on heads and shoulders; see "5, the splashes off the bodies" below |
@@ -2953,6 +2960,14 @@ levels.
 
 **Open**: the sharpness as an option, if the reader finds RCAS's 0.2 too
 strong - judged in play, not yet.
+
+**Measured at 4K on the M1, 2026-11-13** (`todo/perf-audit.md` 11): EASU 3.07
+ms, RCAS and the present pass 1.59. Half precision (`FSR_EASU_H` with
+`shaderFloat16`): ~2.7 ms for 4.5% of the pixels moved, up to 36/255 on edges -
+not taken (`easu.frag` says so). EASU and RCAS fused in one compute pass: the
+intermediate's round trip is ~0.15 ms (RCAS with its reads replaced by a
+constant: 1.59 -> 1.44) against ~27% more EASU for the tiles' border and a
+second copy of `present.frag`'s dither and placement - not built.
 
 ## Step 1, as built (2026-10-20) - the texture pack
 

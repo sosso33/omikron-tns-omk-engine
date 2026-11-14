@@ -52,10 +52,13 @@ enhancement's start colour.
    and the face samples that clock (`engine: line sync`; `todo/play-test.md`
    36 - the classic Mac and the Vita are where it shows).
 5. ~~**T3**~~, ~~**T5**~~, S12's watchdog and T6's smoothing - **DONE 2026-10-06**; M7 reviewed and left declared (a pitch sign needs a frame); M5's pool measured (no exposure); **M6 READ** - the original grounds every NPC each frame through `Actor_ApplyMotion`'s probe and response, the port's walker has both, waiting on the reader's go like M4 (the fight AI on the wall
-   clock in paced play; the session's randomness seeded at boot). **M4** READ
-   and MEASURED 2026-10-06 (44 transitions pair two areas sharing actor ids;
-   the original keeps one actor per placement RECORD) and NOT changed - a
-   viewer refactor off actor-id keys, waiting on the reader. Was: **M4** one actor id in both resident chunks (95 ids, co-residence not
+   clock in paced play; the session's randomness seeded at boot). ~~**M4**~~
+   **DONE 2026-11-13** (`504c146`, `24f5d61`): READ and MEASURED 2026-10-06
+   (44 transitions pair two areas sharing actor ids; the original keeps one
+   actor per placement RECORD), then ported at the reader's go - the
+   context's record for every character op, a body per record, per-actor
+   state by `actorKey`, a hidden set's characters not drawn (`todo/drift-audit.md`
+   M4; `engine: show context record`, `engine: record bodies`). Was: **M4** one actor id in both resident chunks (95 ids, co-residence not
    measured); **T5** randomness (the VM's xorshift never seeded, the crowd
    reseeded to 1 on every load); **T3** the fight AI on game time;
    **M6** the port's 100-unit floor snap; **M7** a scene clip's pitch (3
