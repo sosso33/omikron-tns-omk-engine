@@ -2044,7 +2044,8 @@ void PlayState::adventurePutAway() {
         : front.openSound(1, omk::kAdpcmRate, pcm.size(), dialogueGain());
     front.feedSound(voiceOverShot, pcm);
     std::printf("hand: object %d PUT AWAY (sub_41C770) - group 150 %s, event 47: object %d "
-                "'%s', JINGOFF2 %.2f s\n", held, went ? "entered" : "MISSING", doc, text.c_str(),
+                "'%s', JINGOFF2 %.2f s\n", held, went ? "entered" : "MISSING", doc,
+                omk::cp1252ToUtf8(text).c_str(),   // the game's 8-bit text, the log's UTF-8
                 static_cast<double>(pcm.size()) / omk::kAdpcmRate);
     omk::event("hand.putaway", {{"frame", frameNo}, {"object", held}, {"group150", went ? 1 : 0},
                                 {"text", doc}, {"jingle", pcm.empty() ? 0 : 1}});
