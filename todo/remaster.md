@@ -3096,36 +3096,47 @@ mesures prises sur le M1, donne un objectif credible, et cree un pack de
 textures adaptes"*, then *"adapte la resolution pour que cela ne soit pas
 inutilement lourd pour la machine"*.
 
-**The target, from the measurements.** The Vita's last street (2026-10-05,
-`handoff-vita-port.md` 3b4c, original mode, 960x544): sim+draw 22-25 + present
-2-7 = ~27-31 ms of a 33.3 ms frame - 2 to 6 ms of headroom, the CPU the
-limit (~10-40x the M1 by the handoffs' ratios). The M1's remaster
-(`todo/perf-audit.md` 11, 4K, FSR 1.5, so 2560x1440 rendered): 13.5 ms of
-GPU in Qalisar's full rain - scene 4.4, post 3.6, reflection 0.65; the
-rain's passes bloom 1.7, AO 1.25, halos 1.1, veils 0.7, wet floors 0.7; the
-3D rain 4.4 of the frame; at load the drips' grid 85-106 ms. 960x544 is a
-seventh of 2560x1440's pixels, but the SGX543MP4+ has one to two orders of
-magnitude less shading power than the M1's GPU, so the post chain alone
-(~0.5 ms on the M1 at 544p) is tens of ms there, and every CPU cost of the
-remaster (the drips' grid at a city load, the probes, the smoothing, the
-preload's thread) is 10-40x. **What fits is what costs no work a frame: the
-textures.** So:
+**The target - first reading, then CORRECTED by the reader the same day.**
+The first reading leaned on the Vita's last street (2026-10-05,
+`handoff-vita-port.md` 3b4c: ~27-31 ms of a 33.3 ms frame) as if it were the
+console's limit, and on the M1's remaster costs (`todo/perf-audit.md` 11, 4K,
+FSR 1.5: 13.5 ms of GPU in Qalisar's full rain - scene 4.4, post 3.6,
+reflection 0.65; bloom 1.7, AO 1.25, halos 1.1, veils 0.7, wet floors 0.7;
+the drips' grid 85-106 ms at a city load) scaled by a raw compute ratio -
+which put the post chain at tens of ms and kept only the textures.
+**The reader: those Vita figures are NOT reliable** - many optimizations
+since, and reaching 30 fps with difficulty most likely came from the port's
+own unoptimized paths or needlessly high settings, not from the console's
+power (the games it runs smoothly say so). The record agrees: that run was a
+DEVELOPMENT build with `--enhance-all` on (3b4c's own line), the profiler's
+instruments in; ~70 Vita / GLES / optimization commits followed, none run on
+a console since 2026-10-11 (`todo/perf-audit.md` 5). And a raw FLOPS ratio
+applied to shaders written for desktop GPUs measures those shaders, not
+what the SGX543MP4+ can do with passes written for it (reduced-size
+targets, few taps, the work moved to vertices) - which is how the console's
+own games carry bloom, normal maps and dynamic lights at 30 fps.
 
-* **IN - "remaster Vita" = the texture pack**, 2x the original (512 at most)
-  in DXT, and the light maps (BC4, 256) as a self-lit add on emitter
-  textures only, with NO bloom. Held to: the street at 30 fps as in original
-  mode (the pack's frame cost within the noise - a compressed texel is less
-  bandwidth than today's RGBA8; the light maps one extra fetch on emitters,
-  1 ms at most or they go); a city arrival within +0.5 s of original mode
-  (~7 MB more read, no decode - KTX2 blocks go to the GPU as they are; a PNG
-  inflate on the A9 is out of the question).
-* **STRETCH, measured on the console first**: the city grade (one full-screen
-  LUT pass) if it costs 2 ms or less.
-* **OUT**: bloom and the post pass, AO, mist, the water and floor
-  reflections, the 3D rain and the wet floors, the normal maps, the tiled
-  point lights and the emitters' light, the light probes, the body
-  smoothing, FSR, the preload radius (RAM and a core), and the interface /
-  font / film packs (made for 4K; a 2x interface pack is a later question).
+So the target is set by the console, in tiers, each taken only once a run
+on it says so:
+
+* **Tier 1, the base - no doubt about it**: the texture pack at 2x (512) in
+  DXT and the light maps (BC4, 256) as a self-lit add on emitters - no work
+  a frame beyond one fetch on emitters (a compressed texel is less bandwidth
+  than today's RGBA8), ~7 MB more read at a city arrival, no decode (KTX2
+  blocks go to the GPU as they are; a PNG inflate on the A9 is ruled out).
+* **Tier 2, likely in reach with passes written for the Vita** - the
+  measurement decides each: the city grade (one LUT pass), the bloom from a
+  quarter-size target, the emitters' light and a few point lights, the
+  normal maps on near surfaces.
+* **Tier 3, doubtful, measured last**: the water / floor reflections (a
+  second scene draw), the AO, the 3D rain with its wet floors (and the drips'
+  grid at load: a CPU cost, 10x+ the M1's).
+* **Not for the Vita**: FSR (the screen is 960x544), the 4K interface / font
+  / film packs (a 2x interface pack is a later question).
+* **The goal**: 30 fps held in the street with tier 1, and every tier-2/3
+  feature priced in ms on the console before it is kept - a FRESH RELEASE
+  build's baseline in original mode first, the settings at the original's
+  defaults (no `--enhance-all`).
 
 **The pack, as built.** `omktexpack.py vita ROOT --from PACK [--max 512]
 [--light-max 256]` (`cmd_vita`) over a desktop `pack/` -> `ROOT/pack`:
@@ -3134,7 +3145,8 @@ textures.** So:
   texel) when every texel of the written level is opaque, else
   `<key>.bc3.ktx2` (BC3 / DXT5, 8 bits) - the alpha is the colour key
   (`o3de/texpack.h`); a light map at most 256: `<key>_e.bc4.ktx2`; no normal
-  maps. The Vita's GPU samples UBC1..5 (`psp2/gxm.h`; vitaGL names DXT1/3/5
+  maps (tier 2 may want them: then BC3 at 256 - xyz and the height in
+  alpha - or BC5 without the height). The Vita's GPU samples UBC1..5 (`psp2/gxm.h`; vitaGL names DXT1/3/5
   and `GL_COMPRESSED_RED_RGTC1`), neither BC7 nor ASTC.
 * `tex_encode --max N` drops the levels larger than N from the full image's
   own 2x2 chain, so a replacement stays the original's size times a power of

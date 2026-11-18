@@ -21,8 +21,10 @@ overlay` (the fight's frame, pixel for pixel against the CPU composite),
 not run here.
 
 **THE REMASTER ON THE VITA: A TARGET AND A PACK (2026-11-18), the engine
-side NOT built.** The target (the texture pack at 2x in DXT, the light maps
-without bloom, 30 fps held; everything else of the remaster out) and the
+side NOT built.** The target (tier 1 the texture pack at 2x in DXT and the
+light maps; the rest of the remaster in tiers, each priced on the console -
+the reader: the 2026-10-05 figures, a development build with
+`--enhance-all`, are NOT the console's limit) and the
 pack made to `/Volumes/Crucial_X8/omk/omk-pack/vita/pack` (340 MB) are
 `todo/remaster.md` "The Vita's pack"; nothing in the Vita build reads it yet.
 
