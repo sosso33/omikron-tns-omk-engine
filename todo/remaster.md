@@ -3133,6 +3133,11 @@ on it says so:
   grid at load: a CPU cost, 10x+ the M1's).
 * **Not for the Vita**: FSR (the screen is 960x544), the 4K interface / font
   / film packs (a 2x interface pack is a later question).
+* **The baseline, taken the same night** (`handoff-vita-port.md` 3b4d, a
+  RELEASE build at its defaults): the street's sim+draw median 22.8 ms, max
+  40; the CPU frame is not the wall. Two port faults are: an open screen
+  42-83 ms of interface composing, ARESTO14's swap 27-60 ms for ~24 draws.
+  No GPU time measured on the console yet - tier 2 waits for one.
 * **The goal**: 30 fps held in the street with tier 1, and every tier-2/3
   feature priced in ms on the console before it is kept - a FRESH RELEASE
   build's baseline in original mode first, the settings at the original's

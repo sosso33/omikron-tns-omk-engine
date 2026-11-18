@@ -28,6 +28,45 @@ the reader: the 2026-10-05 figures, a development build with
 pack made to `/Volumes/Crucial_X8/omk/omk-pack/vita/pack` (340 MB) are
 `todo/remaster.md` "The Vita's pack"; nothing in the Vita build reads it yet.
 
+## 3b4d. The reader, 2026-11-18: the FIRST RELEASE BASELINE (`4d6d793`)
+
+`omk-play-20261118-032606.log` (kept by the reader in
+`engine/build/vita-release/`): `build: RELEASE`, no `omk.ini` (every
+setting its default - no enhancement), 960x544, 8584 frames: the start
+menu, a new game, ARESTO14 (area 217), Anekbah, the market (ASMRK1SS /
+ASMARKT1, areas 185 / 68), Anekbah again, the start menu, quit. The
+release build still prints the 60-frame `phases` / `sections` / `gles`
+lines (only the profiler and the instruments are out).
+
+* **The street, no screen open** (43 windows of 60 frames): sim+draw
+  **median 22.8 ms**, max 40.0; with the present 27.4. The heaviest window
+  (frame 2639): world submit 11.2 (307 draws), pedestrians and traffic 7.7,
+  staged bodies 4.3, game frame 3.4, shadows 3.3. A typical one (2099):
+  bodies 3.7, submit 3.6, game frame 2.7, pedestrians 2.6. Inside 33 ms
+  most of the time - the CPU is NOT the wall the 2026-10-05 run suggested.
+* **AN OPEN SCREEN IS THE LARGEST COST OF THE RUN**: `screens, hud` 42-83
+  ms a frame (median 43, 50 windows) whenever the start menu, the options
+  or screen 9 is open - ~12-20 fps in every menu, with no world drawn (0
+  draws). The interface composed on the CPU each frame; the M1's 4K fixes
+  of 2026-11-13 (`todo/perf-audit.md` 11: the background kept, four blend
+  tables) do not bring it under budget here. 3696 of the 8584 frames are
+  `SLOW FRAME`s, most of them in screens.
+* **ARESTO14 (area 217), PRESENT-BOUND**: sim+draw 6-35 ms but `present,
+  swap` 27-60 ms (swap 43.8 at frame 1379, 56.9 at 1439) for ~24 draws and
+  ~90 KB sent - the GPU or the driver holding the swap ~3 vblanks with
+  almost nothing submitted. UNEXPLAINED (overdraw of a large blended quad?
+  a sync in vitaGL?). The market: sim+draw ~6 ms, swap ~16.8 - one 60 Hz
+  period, most likely the vblank wait, not work.
+* Loads: Anekbah's set on its thread (read 310-357 ms, geometry ~430, soups
+  ~373), the session's load 16-38 frames, the frame never waited.
+* **No GPU time is measured on the console**: `swap` mixes the vblank wait
+  and GPU work. The remaster's tiers 2-3 (`todo/remaster.md` "The Vita's
+  pack") need one before any is priced.
+
+**What follows from it**: the two port faults first (the screens'
+composer; ARESTO14's swap), then a GPU time on the console, then the
+remaster's tier 1 in the Vita build.
+
 ## 1. Where it stands (rewritten 2026-09-22)
 
 * **The game runs on a real console INTO THE CITY.** 2026-09-21/22, three
