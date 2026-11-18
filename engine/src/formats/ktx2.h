@@ -31,6 +31,10 @@ namespace omk {
 
 // The Vulkan format numbers the file carries (`VkFormat`), UNORM throughout:
 // the engine's textures are R8G8B8A8_UNORM, no sRGB decode.
+// BC1 (DXT1) and BC3 (DXT5): the Vita's pack (`omktexpack.py vita`) - its
+// GPU samples UBC1..5 (sceGxm) and neither BC7 nor ASTC
+inline constexpr std::uint32_t kVkBc1RgbaUnorm = 133;
+inline constexpr std::uint32_t kVkBc3Unorm = 137;
 inline constexpr std::uint32_t kVkBc4Unorm = 139;
 inline constexpr std::uint32_t kVkBc7Unorm = 145;
 inline constexpr std::uint32_t kVkAstc4x4Unorm = 157;

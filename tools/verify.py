@@ -38649,6 +38649,92 @@ def c_engine_block_formats():
         "and within a step trilinear; the real pack's arrival read from blocks at a third of the PNGs' cost or less"
 
 
+def c_engine_vita_pack():
+    r"""THE PS VITA'S TEXTURE PACK (`todo/remaster.md` "The Vita's pack",
+    `omktexpack.py vita`): the desktop pack's colours as BC1 (DXT1) when
+    opaque and BC3 (DXT5) when their alpha carries the key, its light maps as
+    BC4, each capped (`tex_encode --max`) - the Vita's sceGxm samples UBC1..5
+    and neither BC7 nor ASTC, and its 960x544 screen has no use for the 4x.
+    Made here over 64x64 PNGs: an opaque gradient, the same with a keyed
+    corner (alpha 0, colour 0), a light map, a normal map:
+      1. `tex_encode --max 16 dxt`: the opaque one BC1 (vkFormat 133), the
+         keyed one BC3 (137), both 16x16 with 5 levels (the full image's own
+         chain, its top two levels dropped), round trip over 25 dB; `--max
+         16 bc4` 16x16; the engine's reader takes all three;
+      2. `omktexpack.py vita` over the four: one .bc1, one .bc3, one _e.bc4,
+         NO normal map, and a second run makes nothing (up to date).
+    SHOWN TO FAIL (2026-11-18), one at a time: the cap's loop taken out of
+    tex_encode - 64x64 7 levels (part 1); the opacity test always true - the
+    keyed one BC1 (parts 1 and 2).
+    """
+    import subprocess, tempfile, shutil, re, zlib
+    eng = os.path.join(ROOT, "engine")
+    if not os.path.isdir(eng):
+        return ("skipped",), ("skipped",), "engine/ absent"
+    mk = subprocess.run(["make", "-s", "build/texpack_tool", "build/tex_encode"], cwd=eng,
+                        capture_output=True, text=True)
+    tool, enc = os.path.join(eng, "build", "texpack_tool"), os.path.join(eng, "build", "tex_encode")
+    if mk.returncode != 0 or not all(os.path.exists(x) for x in (tool, enc)):
+        return ("build",), ("built",), mk.stderr[-300:]
+    def chunk(t, b):
+        return struct.pack(">I", len(b)) + t + b + struct.pack(">I", zlib.crc32(t + b) & 0xffffffff)
+    def png(path, w, h, rgba):
+        rows = b"".join(b"\x00" + rgba[y * w * 4:(y + 1) * w * 4] for y in range(h))
+        open(path, "wb").write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)) +
+                               chunk(b"IDAT", zlib.compress(rows, 1)) + chunk(b"IEND", b""))
+    def texel(x, y, keyed):
+        if keyed and x < 16 and y < 16:
+            return (0, 0, 0, 0)
+        return (x * 4, y * 4, (x + y) * 2, 255)
+    tmp = tempfile.mkdtemp()
+    try:
+        src = os.path.join(tmp, "src")
+        os.makedirs(src)
+        names = {"opaque": "0000000000000001.png", "keyed": "0000000000000002.png",
+                 "light": "0000000000000001_e.png", "normal": "0000000000000001_n.png"}
+        for kind, name in names.items():
+            png(os.path.join(src, name), 64, 64,
+                bytes(v for y in range(64) for x in range(64) for v in texel(x, y, kind == "keyed")))
+        # 1. the encoder
+        enc_out = []
+        for kind, args in (("opaque", ["dxt"]), ("keyed", ["dxt"]), ("light", ["bc4"])):
+            pin = os.path.join(src, names[kind])
+            dst = os.path.join(tmp, kind) + (".bc4.ktx2" if kind == "light" else "")
+            r = subprocess.run([enc, "--max", "16"] + args + [pin, dst], capture_output=True, text=True)
+            m = re.search(r"@tex_encode (\S+) (\d+x\d+) levels (\d+) psnr (\S+)", r.stdout)
+            if not m:
+                enc_out.append(("failed", r.stderr[-120:]))
+                continue
+            made = [f for f in os.listdir(tmp) if f.startswith(kind + ".") and f.endswith(".ktx2")]
+            rd = subprocess.run([tool, "ktx2"] + [os.path.join(tmp, f) for f in made],
+                                capture_output=True, text=True).stdout.split()
+            # 25 dB: the 16x16 level is a STEEP gradient (48 steps a block
+            # each channel) - BC1 28.5 there, BC7 34.7; a keyed texture forced
+            # to BC1 loses its alpha, ~19 dB on the real pack
+            enc_out.append((m.group(1), m.group(2), int(m.group(3)), float(m.group(4)) > 25.0,
+                            tuple(rd[1:4]) if len(rd) >= 4 else tuple(rd)))
+        # 2. the pack command
+        root = os.path.join(tmp, "vita")
+        cmd = [sys.executable, os.path.join(ROOT, "tools", "omktexpack.py"), "vita", root, "--from", src,
+               "--max", "16", "--light-max", "16", "--jobs", "2"]
+        r1 = subprocess.run(cmd, capture_output=True, text=True)
+        made = tuple(sorted(os.listdir(os.path.join(root, "pack")))) if os.path.isdir(os.path.join(root, "pack")) else ()
+        r2 = subprocess.run(cmd, capture_output=True, text=True)
+        again = re.search(r"vita: (\d+) files to make", r2.stdout)
+        pack_out = (r1.returncode, made, int(again.group(1)) if again else None)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    print(f"        tex_encode: {enc_out}; omktexpack vita: {pack_out}")
+    want_enc = [("bc1", "16x16", 5, True, ("ok", "133", "16x16")),
+                ("bc3", "16x16", 5, True, ("ok", "137", "16x16")),
+                ("bc4", "16x16", 5, True, ("ok", "139", "16x16"))]
+    want_pack = (0, ("0000000000000001.bc1.ktx2", "0000000000000001_e.bc4.ktx2", "0000000000000002.bc3.ktx2"), 0)
+    return (enc_out, pack_out), (want_enc, want_pack), \
+        "the Vita's pack: BC1 when opaque, BC3 when keyed, BC4 light maps, capped by --max from the image's " \
+        "own chain, read by the engine's KTX2 reader; omktexpack vita leaves the normal maps out and keeps " \
+        "what is up to date"
+
+
 def c_engine_preload():
     r"""THE PRELOAD RADIUS (`todo/remaster.md`; first planned for the Quest,
     `todo/quest-port.md` §4): `--preload M` / `[Remaster] preload = M`, the
@@ -56252,6 +56338,7 @@ SLOW = [
     ("engine: gles upscale", c_engine_gles_upscale, "todo/remaster.md A6; backends/gles/glesrender.cpp"),
     ("engine: film pack",    c_engine_film_pack,    "todo/remaster.md Tier E; platform/filmpack.h"),
     ("engine: block formats", c_engine_block_formats, "todo/remaster.md; formats/ktx2.h; o3de/texpack.h"),
+    ("engine: vita pack",    c_engine_vita_pack,    "todo/remaster.md The Vita's pack; tools/omktexpack.py vita"),
     ("engine: preload",      c_engine_preload,      "todo/remaster.md; backends/remaster/playpreload.cpp"),
     ("engine: remaster switch", c_engine_remaster_switch, "todo/remaster.md; engine/Makefile REMASTER"),
     ("engine: ao", c_engine_ao, "todo/remaster.md A4; ao.frag"),

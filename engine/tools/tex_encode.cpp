@@ -2,8 +2,9 @@
 // THE TEXTURE PACK IN GPU BLOCK FORMATS (`o3de/texpack.h`, `formats/ktx2.h`) -
 // for `tools/omktexpack.py compress`.
 //
-//     tex_encode bc7|bc7n|bc4 <in.png> <out.ktx2>
-//     tex_encode astc <in.png> <out.ktx2> <astcenc> <block>
+//     tex_encode [--max N] bc7|bc7n|bc4|bc1|bc3 <in.png> <out.ktx2>
+//     tex_encode [--max N] dxt <in.png> <out-stem>
+//     tex_encode [--max N] astc <in.png> <out.ktx2> <astcenc> <block>
 //
 // One pack PNG -> one KTX2 holding its WHOLE mip chain, each level the
 // previous one halved by 2x2 averages of RGBA - what the Vulkan backend's
@@ -13,9 +14,17 @@
 //   * bc7  - the colour, BC7 (bc7enc, perceptual weights, `third_party/bc7enc`)
 //   * bc7n - a normal map, BC7 with LINEAR weights (no channel is luma)
 //   * bc4  - a light map, its red channel, BC4 (rgbcx)
+//   * bc1  - a colour with no alpha, BC1 (DXT1, rgbcx; 4 bits a texel)
+//   * bc3  - a colour with alpha, BC3 (DXT5, rgbcx; 8 bits a texel)
+//   * dxt  - bc1 when every texel of the written level 0 is opaque, else
+//            bc3, to <out-stem>.bc1.ktx2 / .bc3.ktx2 (the Vita's pack,
+//            `omktexpack.py vita`: its GPU samples DXT, neither BC7 nor ASTC)
 //   * astc - any of them, ASTC at <block> (4x4, 5x5, 6x6, 8x8) by ARM's
 //            `astcenc` (run per level, `-cl ... -medium`; a normal map too:
 //            `-normal` would drop the height its alpha carries)
+// --max N: the levels larger than N either way are left out - the file
+// starts at the first level of the chain that fits, so its mips are still the
+// 2x2 averages of the full image (the Vita's pack: 2x the original, not 4x).
 // Prints "@tex_encode <codec> WxH levels N psnr P" - P the level 0 round trip
 // in dB (decoded back by bc7decomp / rgbcx / `astcenc -dl`), over RGBA (or R
 // for bc4).
@@ -128,13 +137,21 @@ std::vector<std::uint8_t> readAll(const std::string& p) {
 }  // namespace
 
 int main(int argc, char** argv) {
+    int maxSize = 0;
+    if (argc >= 3 && std::strcmp(argv[1], "--max") == 0) {
+        maxSize = std::atoi(argv[2]);
+        if (maxSize < 4) { std::fprintf(stderr, "--max %s: at least 4\n", argv[2]); return 2; }
+        argc -= 2;
+        argv += 2;
+    }
     if (argc < 4) {
-        std::fprintf(stderr, "usage: tex_encode bc7|bc7n|bc4 <in.png> <out.ktx2>\n"
-                             "       tex_encode astc <in.png> <out.ktx2> <astcenc> <block>\n");
+        std::fprintf(stderr, "usage: tex_encode [--max N] bc7|bc7n|bc4|bc1|bc3 <in.png> <out.ktx2>\n"
+                             "       tex_encode [--max N] dxt <in.png> <out-stem>\n"
+                             "       tex_encode [--max N] astc <in.png> <out.ktx2> <astcenc> <block>\n");
         return 2;
     }
-    const std::string codec = argv[1], in = argv[2], out = argv[3];
-    if (!omk::safeOutputPath(out)) return 2;
+    std::string codec = argv[1], out = argv[3];
+    const std::string in = argv[2];
     const auto png = readAll(in);
     omk::PngImage img;
     std::string why;
@@ -145,6 +162,15 @@ int main(int argc, char** argv) {
     std::vector<Rgba> chain(1);
     chain[0].w = img.w; chain[0].h = img.h; chain[0].px = std::move(img.rgba);
     while (chain.back().w > 1 || chain.back().h > 1) chain.push_back(halve(chain.back()));
+    if (maxSize)
+        while (chain.size() > 1 && (chain[0].w > maxSize || chain[0].h > maxSize)) chain.erase(chain.begin());
+    if (codec == "dxt") {
+        bool opaque = true;
+        for (std::size_t q = 3; q < chain[0].px.size() && opaque; q += 4) opaque = chain[0].px[q] == 255;
+        codec = opaque ? "bc1" : "bc3";
+        out += opaque ? ".bc1.ktx2" : ".bc3.ktx2";
+    }
+    if (!omk::safeOutputPath(out)) return 2;
 
     std::vector<std::vector<std::uint8_t>> levels;
     std::uint32_t fmt = 0;
@@ -177,6 +203,23 @@ int main(int argc, char** argv) {
                 std::uint8_t d[64];
                 rgbcx::unpack_bc4(o, d, 4);
                 for (int i = 0; i < 16; ++i) { se += (d[i * 4] - blk[i * 4]) * (d[i * 4] - blk[i * 4]); n += 1; }
+            }));
+    } else if (codec == "bc1" || codec == "bc3") {
+        // level 10 of rgbcx's 0..18: its documented good default; no 3-colour
+        // blocks (their black is transparent on some decoders)
+        const bool bc1 = codec == "bc1";
+        fmt = bc1 ? omk::kVkBc1RgbaUnorm : omk::kVkBc3Unorm;
+        rgbcx::init();
+        for (const Rgba& a : chain)
+            levels.push_back(blocks4(a, bc1 ? 8 : 16, [&](const std::uint8_t* blk, std::uint8_t* o) {
+                if (bc1) rgbcx::encode_bc1(10, o, blk, false, false);
+                else rgbcx::encode_bc3(10, o, blk);
+                if (&a != &chain[0]) return;
+                std::uint8_t d[64];
+                if (bc1) rgbcx::unpack_bc1(o, d, true);
+                else rgbcx::unpack_bc3(o, d);
+                for (int i = 0; i < 16; ++i)
+                    for (int k = 0; k < 4; ++k) { se += (d[i * 4 + k] - blk[i * 4 + k]) * (d[i * 4 + k] - blk[i * 4 + k]); n += 1; }
             }));
     } else if (codec == "astc" && argc >= 6) {
         const std::string enc = argv[4], block = argv[5];

@@ -36,6 +36,11 @@ two each way, the key the engine's `textureKey` (engine/src/o3de/texpack.h).
                                                   antialiasing super-resolved for the rest ->
                                                   ROOT/fonts/pack (`omk-play --font-pack`, or
                                                   the --remaster preset's ROOT/fonts/pack)
+    omktexpack.py vita    ROOT --from PACK [--max 512] [--light-max 256] [--jobs N]
+                                                  the PS VITA's pack: PACK's colours as DXT1/DXT5
+                                                  and its light maps as BC4, in KTX2, capped to
+                                                  what a 960x544 screen uses -> ROOT/pack (no
+                                                  normal maps); see cmd_vita
     omktexpack.py films   ROOT --bin PATH [--model M] [--q Q]
                                                   the FILM PACK (engine/src/platform/filmpack.h):
                                                   the three FLIS films' frames (ffmpeg) upscaled
@@ -1089,6 +1094,86 @@ def cmd_compress(pack, codec, astcenc, block, jobs):
         sys.exit(f"{len(failed)} failed")
 
 
+def cmd_vita(src, root, colour_max, light_max, jobs):
+    """The PS VITA's pack: SRC (a desktop pack/, its PNGs) -> ROOT/pack, DXT
+    in KTX2 at a resolution the console can use (todo/remaster.md "The Vita's
+    pack"). Its GPU (SGX543MP4+, sceGxm) samples UBC1..5 and neither BC7 nor
+    ASTC; its screen is 960x544, so the desktop pack's 4x is wasted there:
+      * a colour: at most COLOUR_MAX (512 - 2x a 256 original) each way, BC1
+        (4 bits a texel) when opaque, BC3 (8) when its alpha carries the key -
+        <key>.bc1.ktx2 / <key>.bc3.ktx2; 512 BC1 with its mips is 171 KB,
+        LESS than the 256 KB the port holds today for a 256 RGBA8 original
+      * a light map: at most LIGHT_MAX (256 - a glow mask is low-frequency),
+        BC4 - <key>_e.bc4.ktx2
+      * the normal maps: NOT made - per-pixel lighting is outside the Vita's
+        remaster (its frame has no room for it)
+    The levels above the cap are dropped from the full image's own 2x2 chain
+    (`tex_encode --max`), so a replacement stays the original's size times a
+    power of two. An output newer than its PNG is kept."""
+    import concurrent.futures
+    src = os.path.realpath(src)
+    out = os.path.join(safe_out(root), "pack")
+    tool = os.path.join(os.path.dirname(TOOL), "tex_encode")
+    if not os.path.exists(tool):
+        sys.exit(f"{tool} is missing - run `make build/tex_encode` in engine/ first")
+    if not os.path.isdir(src):
+        sys.exit(f"{src}: not a directory")
+    os.makedirs(out, exist_ok=True)
+    work, kept, normals = [], 0, 0
+    for name in sorted(os.listdir(src)):
+        if not name.endswith(".png") or len(name) not in (20, 22):
+            continue
+        if name.endswith("_n.png"):
+            normals += 1
+            continue
+        light = name.endswith("_e.png")
+        pin = os.path.join(src, name)
+        stem = os.path.join(out, name[:-4])
+        made = [stem + e for e in ((".bc4.ktx2",) if light else (".bc1.ktx2", ".bc3.ktx2"))]
+        if any(os.path.exists(m) and os.path.getmtime(m) >= os.path.getmtime(pin) for m in made):
+            kept += 1
+            continue
+        for m in made:
+            if os.path.lexists(m):
+                os.remove(m)
+        cmd = [tool, "--max", str(light_max if light else colour_max)] + \
+            (["bc4", pin, made[0]] if light else ["dxt", pin, stem])
+        work.append(("light" if light else "colour", cmd))
+    if not work and not kept:
+        sys.exit(f"{src}: no pack PNG read - is it a pack/ directory?")
+    print(f"vita: {len(work)} files to make in {out} ({kept} up to date, {normals} normal maps left out), "
+          f"colours <= {colour_max}, light maps <= {light_max}, {jobs} at once")
+    stats, failed, done = {}, [], 0
+
+    def run(w):
+        return w, subprocess.run(w[1], capture_output=True, text=True)
+    with concurrent.futures.ThreadPoolExecutor(jobs) as ex:
+        for w, r in ex.map(run, work):
+            done += 1
+            m = re.search(r"@tex_encode (\S+) (\d+)x(\d+) levels \d+ psnr (\S+)", r.stdout)
+            if r.returncode != 0 or not m:
+                failed.append((w[1][4], r.stderr.strip()[:200]))
+                continue
+            st = stats.setdefault(m.group(1), [0, 0.0, {}])
+            st[0] += 1
+            st[1] += float(m.group(4))
+            size = f"{m.group(2)}x{m.group(3)}"
+            st[2][size] = st[2].get(size, 0) + 1
+            if done % 250 == 0:
+                print(f"  {done} of {len(work)}")
+    for c, (n, p, sizes) in sorted(stats.items()):
+        print(f"  {c}: {n} made, mean PSNR {p / n:.1f} dB, sizes "
+              + ", ".join(f"{k} x{v}" for k, v in sorted(sizes.items(), key=lambda kv: -kv[1])))
+    for f, why in failed[:20]:
+        print(f"  FAILED {f}: {why}")
+    for ext in (".bc1.ktx2", ".bc3.ktx2", ".bc4.ktx2"):
+        files = [n for n in os.listdir(out) if n.endswith(ext)]
+        print(f"  {ext[1:4]}: {len(files)} files, "
+              f"{sum(os.path.getsize(os.path.join(out, n)) for n in files) / 1e6:.1f} MB")
+    if failed:
+        sys.exit(f"{len(failed)} failed")
+
+
 def cmd_ui(root, binary, model, tile, anchor_passes):
     """The interface pack, end to end, into ROOT/ui: `export` (the engine's
     keys from `texpack_tool uikeys`, each BMP padded by its edge, its key -
@@ -1255,7 +1340,7 @@ def cmd_build(out, nearest_n, solid, match, grain=0.0, anchored=True, anchor_pas
 
 def main(argv):
     argv = omkpaths.take_flags(list(argv))
-    if len(argv) < 3 or argv[1] not in ("export", "upscale", "build", "emissive", "grades", "materials", "curate", "ui", "fonts", "films", "compress"):
+    if len(argv) < 3 or argv[1] not in ("export", "upscale", "build", "emissive", "grades", "materials", "curate", "ui", "fonts", "films", "compress", "vita"):
         sys.exit(__doc__)
     cmd, out, rest = argv[1], argv[2], argv[3:]
     match, binary, model, tile, nearest_n, solid, grain, anchored = [], None, None, 0, 0, None, 0.0, True
@@ -1264,6 +1349,7 @@ def main(argv):
     fonts_k = 8
     film_q = 2
     codec, astcenc, astc_block = "bc", None, "6x6"
+    vita_src, colour_max, light_max = None, 512, 256
     deepbump, python, jobs, force = None, None, 3, False
     # a flag without its value, or a value that is not a number: said, with
     # the usage - not a traceback
@@ -1276,6 +1362,9 @@ def main(argv):
             elif a == "--k": fonts_k = int(rest[i + 1]); i += 2
             elif a == "--q": film_q = int(rest[i + 1]); i += 2
             elif a == "--codec": codec = rest[i + 1]; i += 2
+            elif a == "--from": vita_src = rest[i + 1]; i += 2
+            elif a == "--max": colour_max = int(rest[i + 1]); i += 2
+            elif a == "--light-max": light_max = int(rest[i + 1]); i += 2
             elif a == "--astcenc": astcenc = rest[i + 1]; i += 2
             elif a == "--astc-block": astc_block = rest[i + 1]; i += 2
             elif a == "--bin": binary = rest[i + 1]; i += 2
@@ -1307,6 +1396,13 @@ def main(argv):
         if codec not in ("bc", "astc", "all"):
             sys.exit("--codec is bc, astc or all")
         cmd_compress(out, codec, astcenc, astc_block, jobs)
+    elif cmd == "vita":
+        if not vita_src:
+            sys.exit("vita needs --from PACK (a desktop pack/ directory)")
+        for n in (colour_max, light_max):
+            if n < 4 or n & (n - 1):
+                sys.exit("--max / --light-max: a power of two, at least 4")
+        cmd_vita(vita_src, out, colour_max, light_max, jobs)
     elif cmd == "films":
         cmd_films(out, binary, model or "realesr-animevideov3-x4", film_q)
     elif cmd == "emissive":

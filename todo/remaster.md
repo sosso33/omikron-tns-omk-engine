@@ -77,7 +77,8 @@ new renderer.
   the GPU in the original's TEXELS and the shader divides by the bound
   texture's size, so a 4x texture needs the factor passed - see below.)
   Memory: 2534 x 1024² is fine on desktop, not on the Vita or the 3DS - the
-  pack is desktop/Quest only.
+  full pack is desktop/Quest only; the Vita has its own, capped and in DXT
+  ("The Vita's pack", at the end of this file).
 * **B5, optional and more creative**: ComfyUI + a Stable Diffusion tile
   ControlNet re-draws detail rather than sharpening it. Better-looking, and it
   DRIFTS in style: sign-off per texture on the main ones only.
@@ -3087,3 +3088,89 @@ run headless.
 The full-sweep red seen on the way, NOT this change's: `engine: release
 build`'s second field (the development build's `OMKSNAP1` marker) is 0 in the
 build from before this feature too.
+
+## The Vita's pack, and the Vita's remaster target (2026-11-18)
+
+The reader: *"utiliser le mode remaster sur la version ps vita. Au vu des
+mesures prises sur le M1, donne un objectif credible, et cree un pack de
+textures adaptes"*, then *"adapte la resolution pour que cela ne soit pas
+inutilement lourd pour la machine"*.
+
+**The target, from the measurements.** The Vita's last street (2026-10-05,
+`handoff-vita-port.md` 3b4c, original mode, 960x544): sim+draw 22-25 + present
+2-7 = ~27-31 ms of a 33.3 ms frame - 2 to 6 ms of headroom, the CPU the
+limit (~10-40x the M1 by the handoffs' ratios). The M1's remaster
+(`todo/perf-audit.md` 11, 4K, FSR 1.5, so 2560x1440 rendered): 13.5 ms of
+GPU in Qalisar's full rain - scene 4.4, post 3.6, reflection 0.65; the
+rain's passes bloom 1.7, AO 1.25, halos 1.1, veils 0.7, wet floors 0.7; the
+3D rain 4.4 of the frame; at load the drips' grid 85-106 ms. 960x544 is a
+seventh of 2560x1440's pixels, but the SGX543MP4+ has one to two orders of
+magnitude less shading power than the M1's GPU, so the post chain alone
+(~0.5 ms on the M1 at 544p) is tens of ms there, and every CPU cost of the
+remaster (the drips' grid at a city load, the probes, the smoothing, the
+preload's thread) is 10-40x. **What fits is what costs no work a frame: the
+textures.** So:
+
+* **IN - "remaster Vita" = the texture pack**, 2x the original (512 at most)
+  in DXT, and the light maps (BC4, 256) as a self-lit add on emitter
+  textures only, with NO bloom. Held to: the street at 30 fps as in original
+  mode (the pack's frame cost within the noise - a compressed texel is less
+  bandwidth than today's RGBA8; the light maps one extra fetch on emitters,
+  1 ms at most or they go); a city arrival within +0.5 s of original mode
+  (~7 MB more read, no decode - KTX2 blocks go to the GPU as they are; a PNG
+  inflate on the A9 is out of the question).
+* **STRETCH, measured on the console first**: the city grade (one full-screen
+  LUT pass) if it costs 2 ms or less.
+* **OUT**: bloom and the post pass, AO, mist, the water and floor
+  reflections, the 3D rain and the wet floors, the normal maps, the tiled
+  point lights and the emitters' light, the light probes, the body
+  smoothing, FSR, the preload radius (RAM and a core), and the interface /
+  font / film packs (made for 4K; a 2x interface pack is a later question).
+
+**The pack, as built.** `omktexpack.py vita ROOT --from PACK [--max 512]
+[--light-max 256]` (`cmd_vita`) over a desktop `pack/` -> `ROOT/pack`:
+
+* a colour at most 512 each way: `<key>.bc1.ktx2` (BC1 / DXT1, 4 bits a
+  texel) when every texel of the written level is opaque, else
+  `<key>.bc3.ktx2` (BC3 / DXT5, 8 bits) - the alpha is the colour key
+  (`o3de/texpack.h`); a light map at most 256: `<key>_e.bc4.ktx2`; no normal
+  maps. The Vita's GPU samples UBC1..5 (`psp2/gxm.h`; vitaGL names DXT1/3/5
+  and `GL_COMPRESSED_RED_RGTC1`), neither BC7 nor ASTC.
+* `tex_encode --max N` drops the levels larger than N from the full image's
+  own 2x2 chain, so a replacement stays the original's size times a power of
+  two (4x -> 2x) and its mips are what they were; `tex_encode dxt` picks BC1
+  or BC3 by the alpha (rgbcx, level 10, no 3-colour blocks). KTX2 gains
+  `VK_FORMAT_BC1_RGBA_UNORM` (133) and `BC3_UNORM` (137), DFD models 128 and
+  130 (`formats/ktx2.h`); the desktop pack's reader still takes only its own
+  codecs by name (`.bc7` / `.bc4` / `.astc`).
+
+**Made** from `full-anchor3/pack` (M1, 27 s, 8 at once) to
+`/Volumes/Crucial_X8/omk/omk-pack/vita/pack`: **BC1 594** (512² x453, 256²
+x141; 85.6 MB), **BC3 661** (512² x632, 256² x29; 223.7 MB), **BC4 833**
+(256² x699, 64² x134; 31.2 MB) - **340 MB** of files (476 MB on the exFAT
+disk, its clusters), against the desktop pack's 3.1 GB of BC. Mean round
+trip at the written level 39.7 dB (BC1), 39.6 (BC3), 53.7 (BC4); BC7 on the
+same textures ~46. **In memory**, a set's textures (`texpack_tool keys`):
+Anekbah's 20 at 5.2 MB as the port holds them today (RGBA8 at the original's
+size, no mips) -> **7.3 MB** from the Vita pack, Lahoreh 5.2 -> 7.0, Qalisar
+4.7 -> 6.8 - a 512 BC1 with its mips is 171 KB, LESS than a 256 RGBA8
+original's 256 KB; a BC3 341 KB. Against 128 MB of CDRAM.
+
+**Possible halving, not done**: 661 colours are BC3 only because their alpha
+holds the key, and the original's key is ONE bit (1555 on the card). A BC1
+with punch-through alpha (3-colour blocks, index 3 transparent) would halve
+them - but rgbcx only USES transparent texels as an MSE trick on dark
+pixels, it does not guarantee them, so it needs an encoder of its own.
+
+**Not yet usable in the game**: the Vita build has no OMK_REMASTER (the
+switch's rule), so nothing reads this pack there. What it needs: the
+texture pack and the KTX2 reader in the Vita's build without the rest of
+the remaster; GLES's upload of BC1/BC3/BC4 through vitaGL's
+`glCompressedTexImage2D` (`GL_COMPRESSED_RGB_S3TC_DXT1_EXT`,
+`GL_COMPRESSED_RGBA_S3TC_DXT5_EXT`, `GL_COMPRESSED_RED_RGTC1` - the last
+named by vitaGL's header, unproven on a console); the pack's index taking
+`.bc1` / `.bc3`; the light maps' add without the bloom; a `ux0:data/omk/
+remaster/pack` path. `verify.py: engine: vita pack` holds the tools (shown
+to fail: the cap's loop taken out - 64x64 with 7 levels; the opacity test
+always true - the keyed texture BC1).
+

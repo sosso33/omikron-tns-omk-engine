@@ -20,6 +20,12 @@ overlay` (the fight's frame, pixel for pixel against the CPU composite),
 `gles backend` and `vita build` green; the Vita's block copy is compiled,
 not run here.
 
+**THE REMASTER ON THE VITA: A TARGET AND A PACK (2026-11-18), the engine
+side NOT built.** The target (the texture pack at 2x in DXT, the light maps
+without bloom, 30 fps held; everything else of the remaster out) and the
+pack made to `/Volumes/Crucial_X8/omk/omk-pack/vita/pack` (340 MB) are
+`todo/remaster.md` "The Vita's pack"; nothing in the Vita build reads it yet.
+
 ## 1. Where it stands (rewritten 2026-09-22)
 
 * **The game runs on a real console INTO THE CITY.** 2026-09-21/22, three

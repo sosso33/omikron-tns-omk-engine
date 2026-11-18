@@ -44,6 +44,8 @@ bool fail(std::string* why, const char* s) {
 
 BlockFormat blockFormat(std::uint32_t f) {
     switch (f) {
+        case kVkBc1RgbaUnorm: return {4, 4, 8, false};
+        case kVkBc3Unorm: return {4, 4, 16, false};
         case kVkBc4Unorm: return {4, 4, 8, false};
         case kVkBc7Unorm: return {4, 4, 16, false};
         case kVkAstc4x4Unorm: return {4, 4, 16, true};
@@ -97,7 +99,12 @@ std::vector<std::uint8_t> writeKtx2(std::uint32_t vkFormat, int w, int h,
     for (const std::uint32_t v : header) put32(o, v);
     // the DATA FORMAT DESCRIPTOR: one basic block, one sample over the whole
     // block (the spec's form for a block-compressed format)
-    const std::uint32_t model = bf.astc ? 162u : vkFormat == kVkBc4Unorm ? 131u : 134u;
+    // KHR_DF_MODEL_BC1A 128, BC3 130, BC4 131, BC7 134, ASTC 162
+    const std::uint32_t model = bf.astc ? 162u
+                              : vkFormat == kVkBc1RgbaUnorm ? 128u
+                              : vkFormat == kVkBc3Unorm     ? 130u
+                              : vkFormat == kVkBc4Unorm     ? 131u
+                                                            : 134u;
     const std::uint32_t dfdSize = 4 + 24 + 16;
     const std::uint32_t dfdOff = static_cast<std::uint32_t>(80 + 24 * nl);
     put32(o, dfdOff);
