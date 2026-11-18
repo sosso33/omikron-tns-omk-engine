@@ -52,7 +52,7 @@ is small enough to not count it as a task"). Count a request when it is a
 piece of work in its own right; a flag or a convenience over what was just
 built rides with it.
 
-**tasks since the last full sweep: 1** (2026-11-18: the Vita's remaster target and texture pack, `engine: vita pack` new, never swept) (reset 2026-11-14 by the `--slow` sweep in the table below, at `9cebbab`. The five tasks it closed are listed in its row.)
+**tasks since the last full sweep: 2** (2026-11-18: the screens' composer on the Vita - the fills' per-channel tables, the cloud over the pool, the sprite hash in four lanes) (2026-11-18: the Vita's remaster target and texture pack, `engine: vita pack` new, never swept) (reset 2026-11-14 by the `--slow` sweep in the table below, at `9cebbab`. The five tasks it closed are listed in its row.)
 
 (2026-10-05: CPU AGAINST THE ORIGINAL, `todo/cpu-vs-original.md` steps 1-2 and tier A (1 task so far) - `--only` over the 39 checks it could reach, one red re-pinned (`engine: profiler`, the palette textures), `engine: raster cost` new.)
 

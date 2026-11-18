@@ -133,16 +133,40 @@ thread_local bool t_spriteFilling = false;
 constexpr std::uint64_t kFnv64OffsetBasis = 14695981039346656037ull;
 constexpr std::uint64_t kFnv64Prime = 1099511628211ull;
 
+//
+// FOUR CHAINS, TWO PIXELS A STEP. One chain fed a word at a time is a
+// multiply that waits on the last - and on the Vita's 32-bit A9 a 64-bit
+// multiply is three instructions - so the hash of a menu's sprite sheet each
+// frame was ~22% of an open start menu's interface on the M1, and more there
+// (`todo/handoff-vita-port.md` 3b4d). The overlay's row hash made the same
+// move (`glesrender.cpp`, "FOUR LANES"). The value is only ever compared with
+// another of this function's in the same run (the cache's key, beside the
+// rectangles' sizes), so it is free to change; the four lanes start apart
+// and are folded together at the end, each step still FNV-1a's.
 std::uint64_t rectHash(const Surface& s, Rect r) {
-    std::uint64_t hash = kFnv64OffsetBasis;
+    std::uint64_t h0 = kFnv64OffsetBasis, h1 = kFnv64OffsetBasis ^ 1u, h2 = kFnv64OffsetBasis ^ 2u,
+                  h3 = kFnv64OffsetBasis ^ 3u;
+    const int w = r.right - r.left;
     for (int y = r.top; y < r.bottom; ++y) {
         const std::uint16_t* row = &s.px[static_cast<std::size_t>(y) * s.w + r.left];
-        for (int x = 0; x < r.right - r.left; ++x) {
-            hash ^= row[x];
-            hash *= kFnv64Prime;
+        int x = 0;
+        for (; x + 8 <= w; x += 8) {
+            std::uint32_t q[4];
+            std::memcpy(q, row + x, sizeof q);
+            h0 = (h0 ^ q[0]) * kFnv64Prime;
+            h1 = (h1 ^ q[1]) * kFnv64Prime;
+            h2 = (h2 ^ q[2]) * kFnv64Prime;
+            h3 = (h3 ^ q[3]) * kFnv64Prime;
         }
+        for (; x < w; ++x) h0 = (h0 ^ row[x]) * kFnv64Prime;
+        // the row's end in the chain, so a row's pixels cannot pass as the next's
+        h1 = (h1 ^ static_cast<std::uint64_t>(y)) * kFnv64Prime;
     }
-    return hash;
+    std::uint64_t h = h0;
+    h = (h ^ h1) * kFnv64Prime;
+    h = (h ^ h2) * kFnv64Prime;
+    h = (h ^ h3) * kFnv64Prime;
+    return h;
 }
 
 // "Big": a quarter of a 640x480 frame and up - the size from which a blit

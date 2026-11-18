@@ -4,6 +4,7 @@
 #include "ui/cloud.h"
 #include "platform/cacheline.h"
 #include "platform/profile.h"
+#include "platform/threads.h"
 
 #include <cmath>
 #include <cstring>
@@ -175,7 +176,10 @@ void MenuCloud::draw(Surface& fb, long frame) const {
     OMK_ZONE("ui: cloud warp");   // the profiler (todo/debug-tools.md)
     std::uint8_t colRev[640];
     for (int x = 0; x < 640; ++x) colRev[x] = colTab[639 - x];
-    for (int y = 0; y < 480; ++y) {
+    // each row its own, read from `buf` alone: split over the pool (the
+    // Vita's three runners; one where there are no threads) - the same pixels
+    Threads::shared().parallelFor(0, 480, 32, [&](std::size_t from, std::size_t to) {
+    for (int y = static_cast<int>(from); y < static_cast<int>(to); ++y) {
         std::uint8_t al = rowTab[479 - y];
         const std::uint8_t yy = static_cast<std::uint8_t>(y);
         std::uint16_t* dst = &fb.px[static_cast<std::size_t>(y) * 640];
@@ -191,6 +195,7 @@ void MenuCloud::draw(Surface& fb, long frame) const {
             dst[x + 1] = buf[static_cast<std::size_t>(ahb) << 8 | alb];
         }
     }
+    });
 }
 
 bool MenuCloud::drawScaled(Surface& fb, long frame) const {
@@ -207,7 +212,10 @@ bool MenuCloud::drawScaled(Surface& fb, long frame) const {
         sxOf[static_cast<std::size_t>(x)] = sx;
         colOf[static_cast<std::size_t>(x)] = colTab_[639 - sx];
     }
-    for (int y = 0; y < fb.h; ++y) {
+    // each row its own: split over the pool, as `draw`'s (an open menu's
+    // cloud is ~70% of its interface frame - 2026-11-18, the M1's sample)
+    Threads::shared().parallelFor(0, static_cast<std::size_t>(fb.h), 32, [&](std::size_t from, std::size_t to) {
+    for (int y = static_cast<int>(from); y < static_cast<int>(to); ++y) {
         const int sy = y * 480 / fb.h;
         const int al0 = rowTab_[479 - sy];
         std::uint16_t* dst = &fb.px[static_cast<std::size_t>(y) * static_cast<std::size_t>(fb.w)];
@@ -219,6 +227,7 @@ bool MenuCloud::drawScaled(Surface& fb, long frame) const {
             dst[x] = buf[static_cast<std::size_t>(ah) * 256 + static_cast<std::size_t>(al)];
         }
     }
+    });
     return true;
 }
 

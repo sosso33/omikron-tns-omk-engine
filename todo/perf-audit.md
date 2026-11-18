@@ -479,7 +479,9 @@ at 800x600, 1920x1080 and 3840x2160, both filters):
    200) and cursor (233) alternate within a frame, and at 4K each bar is
    ~250k pixels - over the table's line - so every switch rebuilt all 65536
    blends. Four tables are kept now, and a big fill with no overlay planes is
-   split over the pool.
+   split over the pool. (2026-11-18: the 65536-colour tables are gone - the law is per
+   channel, so every fill now builds three tables of 32 / 64 / 32 entries,
+   the same bytes; `handoff-vita-port.md` 3b4d.)
 
 What a screen costs at 4K after that is mostly `present` - 6.7 ms, the 565
 frame expanded to RGBA on the CPU (one core, 8.3 million table reads) and

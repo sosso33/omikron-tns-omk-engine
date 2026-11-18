@@ -31,15 +31,26 @@ pack made to `/Volumes/Crucial_X8/omk/omk-pack/vita/pack` (340 MB) are
 ## 3b4d. The reader, 2026-11-18: the FIRST RELEASE BASELINE (`4d6d793`)
 
 `omk-play-20261118-032606.log` (kept by the reader in
-`engine/build/vita-release/`): `build: RELEASE`, no `omk.ini` (every
-setting its default - no enhancement), 960x544, 8584 frames: the start
-menu, a new game, ARESTO14 (area 217), Anekbah, the market (ASMRK1SS /
-ASMARKT1, areas 185 / 68), Anekbah again, the start menu, quit. The
-release build still prints the 60-frame `phases` / `sections` / `gles`
-lines (only the profiler and the instruments are out).
+`engine/build/vita-release/`): `build: RELEASE`, no `omk.ini` at the start,
+960x544, 8584 frames: the start menu, a new game, ARESTO14 (area 217),
+Anekbah, the market (ASMRK1SS / ASMARKT1, areas 185 / 68), Anekbah again,
+the start menu, quit. The release build still prints the 60-frame `phases`
+/ `sections` / `gles` lines (only the profiler and the instruments are out).
 
-* **The street, no screen open** (43 windows of 60 frames): sim+draw
-  **median 22.8 ms**, max 40.0; with the present 27.4. The heaviest window
+**THE READER TRIED THE OPTIONS DURING THE RUN** - first read here as a
+defaults run, which it is only in part (the `options: ... applied` lines,
+by frame): `enhancements.all = max` at 659 (per-pixel lighting, mapped
+shadows; MSAA refused, 4x supersampling tried and undone), everything back
+OFF at 1561 (`all = off`, framerate 30); then framerate 60 at 2283 and
+smooth animation at 2330, trilinear at 3847, the clip distance unlimited at
+5040, the interface scaling smooth/nearest toggled in the menus. So:
+
+* **The street AT ITS DEFAULTS** (frames 1919-2283, the only such window):
+  sim+draw 17.6-18.7 ms (one window 28.3), present 0.3-0.4 - **~19 ms of a
+  33.3 ms frame.** With 60 fps and smooth animation asked (2283-2999): 28-36.
+* **The street, all windows with no screen open** (43 of 60 frames, every
+  setting above mixed): sim+draw median 22.8 ms, max 40.0; with the present
+  27.4. The heaviest window
   (frame 2639): world submit 11.2 (307 draws), pedestrians and traffic 7.7,
   staged bodies 4.3, game frame 3.4, shadows 3.3. A typical one (2099):
   bodies 3.7, submit 3.6, game frame 2.7, pedestrians 2.6. Inside 33 ms
@@ -66,6 +77,35 @@ lines (only the profiler and the instruments are out).
 **What follows from it**: the two port faults first (the screens'
 composer; ARESTO14's swap), then a GPU time on the console, then the
 remaster's tier 1 in the Vita build.
+
+**The screens, DONE 2026-11-18 on the M1 (not yet on a console).** The
+ratio console / M1 for the same screen at 960x544 was ~35x (the start menu
+22 / 0.6 ms, the sneak 43-64 / 1.6), so the work was the M1's too; `sample`
+named it:
+
+1. **The sneak: `fillQuad`, two thirds of the frame** - ~400 row bars of
+   ~13.5k pixels, under the 65536-pixel line of the blend TABLE, so each
+   pixel ran the law's ten operations. The law is PER CHANNEL, so three
+   tables of 32 / 64 / 32 entries (128 steps to make, in L1) give the same
+   bytes for every fill, big or small (`ui/screendraw.cpp`): 0 of 6.4
+   billion cases differ (every 565 colour x 256 alphas x 1536 fill
+   colours). **The sneak 1.6 -> 0.5 ms.**
+2. **The start menu: the cloud, ~68%** - `MenuCloud::draw` / `drawScaled`
+   one row after another; each row is its own, now split over the pool
+   (`ui/cloud.cpp`; three runners on the Vita).
+3. **...and `rectHash`, ~22%** - the sprite cache's key, a 64-bit FNV chain
+   one pixel a step (three instructions a multiply on the 32-bit A9): four
+   lanes, two pixels a word (`ui/surface.cpp`), the overlay's own move.
+   **The start menu 0.6 -> 0.3-0.4 ms.**
+
+Each the same bytes as before (frame dumps `cmp`-equal, old build against
+new: the start menu at 640x480, 960x544 and 1920x1080 on two frames, the
+open sneak and the options at 960x544 and 1920x1080, the pause's
+full-screen dim); `engine: screen`, `screen scale`, `screen background
+kept`, `screen world`, `screen close`, `gpu cloud`, `gles overlay`, `menu
+cloud`, `ui sprites`, `vita build` green. **For the console**: an open
+sneak and the start menu's `screens, hud` in a release log - 43-64 and 22
+ms before.
 
 ## 1. Where it stands (rewritten 2026-09-22)
 

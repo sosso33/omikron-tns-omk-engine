@@ -129,51 +129,36 @@ void fillQuad(Surface& fb, int x0, int y0, int x1, int y1,
     if (x1 <= x0 || y1 <= y0) return;    // nothing to fill (and no negative area)
     const int keep = alpha;              // dst weight
     const int add  = 255 - alpha;        // src weight
-    const auto blend = [&](std::uint16_t d) {
-        const int dr = ((d >> 11) & 31) * 255 / 31;
-        const int dg = ((d >> 5) & 63) * 255 / 63;
-        const int db = (d & 31) * 255 / 31;
-        const int nr = (r * add + dr * keep) / 255;
-        const int ng = (g * add + dg * keep) / 255;
-        const int nb = (b * add + db * keep) / 255;
-        return static_cast<std::uint16_t>(((nr * 31 / 255) << 11) | ((ng * 63 / 255) << 5) | (nb * 31 / 255));
-    };
-    // A BIG fill (the full-screen dim: 8.3 million pixels at 4K, ten integer
-    // divisions each) takes the blend from a TABLE of all 65536 colours, made
-    // by the same arithmetic - the same pixels, byte for byte - and kept while
-    // the colour and the alpha are the same (they are, frame after frame).
-    // FOUR are kept, not one: the sneak draws its row bars at alpha 200 and
-    // its cursor at 233 in the same frame, and at 4K each bar is ~250k pixels -
-    // with one table, every switch rebuilt it (65536 blends), several times a
-    // frame (`todo/perf-audit.md` 11).
-    struct BlendLut { int key = -1; long used = 0; std::vector<std::uint16_t> px; };
-    thread_local std::array<BlendLut, 4> luts;
-    thread_local long lutTick = 0;
-    const long area = static_cast<long>(x1 - x0) * (y1 - y0);
-    const std::uint16_t* lut = nullptr;
-    if (area >= 65536) {
-        const int key = ((r & 255) << 24) | ((g & 255) << 16) | ((b & 255) << 8) | (alpha & 255);
-        BlendLut* hit = nullptr;
-        for (auto& t : luts) if (t.key == key && t.px.size() == 65536) { hit = &t; break; }
-        if (!hit) {
-            hit = &*std::min_element(luts.begin(), luts.end(),
-                                     [](const BlendLut& l, const BlendLut& q) { return l.used < q.used; });
-            hit->px.resize(65536);
-            for (int c = 0; c < 65536; ++c) hit->px[static_cast<std::size_t>(c)] = blend(static_cast<std::uint16_t>(c));
-            hit->key = key;
-        }
-        hit->used = ++lutTick;
-        lut = hit->px.data();
+    // THE LAW IS PER CHANNEL: a channel's result depends on that channel's
+    // own 5 or 6 bits alone, so the blend is three small tables - 32, 64 and
+    // 32 entries, made in 128 steps by the very arithmetic
+    //     dc = c * 255 / max;  n = (s * add + dc * keep) / 255;  out = n * max / 255
+    // - and a pixel is three lookups, the same bytes as the arithmetic. The
+    // tables fit the A9's L1 where the 65536-colour table this replaced
+    // (128 KB, made only for fills of 65536 pixels or more) did not; the
+    // sneak's ~13k-pixel row bars went through the ten-operation arithmetic
+    // per pixel (`todo/handoff-vita-port.md` 3b4d: an open sneak 43-64 ms a
+    // frame on the console, 1.6 ms on the M1, two thirds of it in here).
+    std::uint16_t tr[32], tg[64], tb[32];
+    for (int c = 0; c < 32; ++c) {
+        tr[c] = static_cast<std::uint16_t>(((r * add + (c * 255 / 31) * keep) / 255 * 31 / 255) << 11);
+        tb[c] = static_cast<std::uint16_t>((b * add + (c * 255 / 31) * keep) / 255 * 31 / 255);
     }
+    for (int c = 0; c < 64; ++c)
+        tg[c] = static_cast<std::uint16_t>(((g * add + (c * 255 / 63) * keep) / 255 * 63 / 255) << 5);
+    const auto blend = [&](std::uint16_t d) {
+        return static_cast<std::uint16_t>(tr[d >> 11] | tg[(d >> 5) & 63] | tb[d & 31]);
+    };
+    const long area = static_cast<long>(x1 - x0) * (y1 - y0);
     OverlayPlanes& ov = overlayPlanes();
     // ...and with no overlay planes (whose row cursor is one per frame) a big
-    // fill is a table lookup per pixel, each row its own: split over the pool
-    if (lut && !ov.on && area >= kBigFillPixels) {
+    // fill's rows are each their own: split over the pool
+    if (!ov.on && area >= kBigFillPixels) {
         Threads::shared().parallelFor(static_cast<std::size_t>(y0), static_cast<std::size_t>(y1), 16,
                                       [&](std::size_t from, std::size_t to) {
             for (std::size_t y = from; y < to; ++y) {
                 std::uint16_t* d = &fb.px[y * static_cast<std::size_t>(fb.w)];
-                for (int x = x0; x < x1; ++x) d[x] = lut[d[x]];
+                for (int x = x0; x < x1; ++x) d[x] = blend(d[x]);
             }
         });
         return;
@@ -189,7 +174,7 @@ void fillQuad(Surface& fb, int x0, int y0, int x1, int y1,
                 ov.m[ovI] = static_cast<std::uint8_t>(ov.m[ovI] * keep / 255);
             }
             std::uint16_t& d = ovKey ? ov.c[ovI] : fb.px[ovI];
-            d = lut ? lut[d] : blend(d);
+            d = blend(d);
         }
     }
 }
