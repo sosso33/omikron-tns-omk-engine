@@ -130,11 +130,19 @@ bool avAudio(AvFilm* f, std::vector<float>& pcm, int& rate);
 void avClose(AvFilm* f);
 }
 #endif
+// THE SYSTEM KEYBOARD, for the name field, where the host has no keyboard
+// of its own: the Vita's (`backends/vita/ime.h`) and the Switch's
+// (`backends/switch/swkbd.cpp`) - the same modal call, the same answer.
 #if defined(__vita__)
-// The Vita's on-screen keyboard (`backends/vita/ime.h`), for the name field.
 namespace omk::vita {
 bool imeEdit(const char* title, const std::string& initial, int maxLen, std::string& out);
 }
+#  define OMK_SYSTEM_KEYBOARD omk::vita::imeEdit
+#elif defined(__SWITCH__)
+namespace omk::nx {
+bool imeEdit(const char* title, const std::string& initial, int maxLen, std::string& out);
+}
+#  define OMK_SYSTEM_KEYBOARD omk::nx::imeEdit
 #endif
 
 

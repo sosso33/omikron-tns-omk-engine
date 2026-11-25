@@ -211,6 +211,45 @@ The plan as written:
   without a toolchain; **shown to fail** with a Switch-only break (an include
   removed on a scratch copy, asserted applied).
 
+**THE FIRST CONSOLE RUN - the reader, 2026-11-25** (the S1 NRO, on the
+reader's Erista): *"j'ai testé la version switch. Elle se lance mais quelques
+problèmes: 1) la clavier s'ouvre tout seul au lancement et il n'est plus
+possible de le rouvrir ensuite (nouvelle partie) 2) menu remaster absent
+3) Les boutons sont en configurations ps vita (avec b pour valider, au lieu
+de a, inverse les deux boutons."* So it boots, the films and the menu run,
+and the pad works. The three faults and what was done (S3's first half, and
+the remaster's build half of S6 brought forward):
+1. **The keyboard.** `front.startTextInput()` at boot calls
+   `SDL_StartTextInput`, and devkitPro's SDL2 answers it with libnx's
+   INLINE keyboard (`SWITCH_StartTextInput`, `swkbdInline*` in `libSDL2.a`),
+   shown once at launch, unaware of the name field. Now: the Switch stops
+   SDL's text input instead (`sdlfront.cpp`), and the name field opens the
+   system keyboard - the library applet, modal, `swkbdShow` - when the focus
+   lands on it, the Vita's arrangement exactly (`backends/switch/swkbd.cpp`,
+   the hook in `playframe_modes_parts.cpp` now `OMK_SYSTEM_KEYBOARD`, defined
+   in `playshared.h` for the Vita and the Switch). The name already in the
+   field comes up in the keyboard; Latin-1 both ways. A cancel does not
+   reopen it every frame: move off the field and back to type again.
+   **Not yet seen on the console** - whether `swkbdShow` runs from the game's
+   own thread (not the process's main thread) is the next run's question.
+2. **The Remaster page.** It exists only in a build with `OMK_REMASTER`
+   (`playomkoptions.cpp`), and the Switch build had none. Now the CMake file
+   defines it for every object and compiles `backends/remaster/*.cpp`, as
+   Android's does. One newlib include trap followed: `rgbcx.h` calls
+   `memcpy`/`memset` without `<cstring>` - included by
+   `src/formats/blockdecode.cpp` before it, the vendored header untouched.
+   Its shaders are `#version 100`, so the GLES 2 context runs them; which
+   pack fits applet mode's memory is still S6's measurement.
+3. **The buttons.** devkitPro's SDL2 maps the pad by POSITION - its
+   `SDL_CONTROLLER_BUTTON_A` is the bottom button, Nintendo's B - so the
+   confirm (`pad::South`) sat on B. On the Switch the map takes
+   `SDL_CONTROLLER_BUTTON_B` (Nintendo's A, the right button) for the
+   confirm and `..._A` for the back (`sdlfront.cpp`); X and Y keep their
+   positions (left = West, top = North). **The decision S3 asked for: the
+   game's validate is Nintendo's A.**
+The NRO 11.1 MB; `engine: switch build` and `engine: vita build` green,
+`make play play-gles` builds.
+
 **S2 - first light.** ~1-2 days, needs a console or an emulator (§4).
 * `playgpu_gles.cpp`: on the Switch a GLES 3.0 context (the Quest's branch;
   Mesa offers 3.2); decision 2's `OMK_GLES3` in `glesrender.cpp`.

@@ -6,6 +6,9 @@
 #include "formats/blockdecode.h"
 
 #include <algorithm>
+// rgbcx.h calls memcpy / memset without <cstring>: the host's and Android's
+// headers bring it in transitively, newlib's (the Switch) do not
+#include <cstring>
 
 #if defined(__clang__)
 #pragma clang diagnostic push

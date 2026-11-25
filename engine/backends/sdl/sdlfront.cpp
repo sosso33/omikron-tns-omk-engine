@@ -229,9 +229,14 @@ void SdlFrontend::setWindowTitle(const std::string& t) {
 // the Vita: there SDL answers with the system's on-screen keyboard, which
 // would cover the game from the first frame (`todo/vita-port.md` F4). Nor
 // on Android - the Quest opens its keyboard under the panel at boot;
-// the name field's keyboard is `todo/quest-port.md` step 6.
+// the name field's keyboard is `todo/quest-port.md` step 6. Nor on the
+// Switch, whose SDL shows libnx's inline keyboard the moment text input
+// starts - up at launch, never again (the reader's report, 2026-11-25); its
+// name field opens the system keyboard itself (`backends/switch/swkbd.cpp`).
 void SdlFrontend::startTextInput() {
-#if !defined(__vita__) && !defined(__ANDROID__)
+#if defined(__SWITCH__)
+    SDL_StopTextInput();   // and put away anything SDL itself started
+#elif !defined(__vita__) && !defined(__ANDROID__)
 #  if defined(OMK_SDL3)
     if (SDL_Window* w = active()) SDL_StartTextInput(w);   // SDL3's is per window
 #  else
@@ -599,7 +604,17 @@ void SdlFrontend::readPad(omk::HostInput& out) {
         const auto axis = [&](SDL_GameControllerAxis a) {
             return static_cast<int>(SDL_GameControllerGetAxis(pad, a)) * 1000 / 32767; };
         const std::pair<SDL_GameControllerButton, omk::pad::Button> map[] = {
+#if defined(__SWITCH__)
+            // BY LABEL ON A NINTENDO PAD: devkitPro's SDL2 maps the Switch's
+            // buttons by POSITION (its "A" is the bottom button, Nintendo's
+            // B), so the confirm sat on B and the back on A - the Vita's
+            // layout (the reader's report, 2026-11-25). Nintendo's confirm is
+            // A, the RIGHT button, and back is B: the two are swapped here.
+            // X / Y keep their places (left = West, top = North).
+            {SDL_CONTROLLER_BUTTON_B, omk::pad::South}, {SDL_CONTROLLER_BUTTON_A, omk::pad::East},
+#else
             {SDL_CONTROLLER_BUTTON_A, omk::pad::South}, {SDL_CONTROLLER_BUTTON_B, omk::pad::East},
+#endif
             {SDL_CONTROLLER_BUTTON_X, omk::pad::West}, {SDL_CONTROLLER_BUTTON_Y, omk::pad::North},
             {SDL_CONTROLLER_BUTTON_LEFTSHOULDER, omk::pad::LeftShoulder},
             {SDL_CONTROLLER_BUTTON_RIGHTSHOULDER, omk::pad::RightShoulder},

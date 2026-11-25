@@ -1256,26 +1256,26 @@ void PlayState::modesScreenWalk(omk::Input& in, omk::OptionsMenu& optMenu, omk::
         // both. Without this gate ENTER moved the focus to the buttons
         // and then confirmed one of them in the same press, which starts
         // a game the player never asked for.
-#if defined(__vita__)
-        // THE NAME FIELD ON A VITA, which has no keyboard: the system's
+#if defined(OMK_SYSTEM_KEYBOARD)
+        // THE NAME FIELD ON A VITA OR A SWITCH, which have no keyboard: the system's
         // on-screen one opens when the focus lands on the field - once per
         // arrival, so a cancel does not reopen it every frame; move off the
         // field and back to type again - and its answer goes in through
         // the field's own character channel: a BACKSPACE for every
         // character already there, the new name, and RETURN, which moves
         // the focus to the buttons exactly as a typed RETURN does. The
-        // field stays the engine's; only the keys are the Vita's.
+        // field stays the engine's; only the keys are the console's.
         {
             static bool imeOpenedHere = false;
             const bool onField = walk->nameFieldFocused();
             if (onField && !imeOpenedHere) {
                 imeOpenedHere = true;
                 std::string typed;
-                if (omk::vita::imeEdit("Nom", walk->name(), walk->nameMaxLength(), typed)) {
+                if (OMK_SYSTEM_KEYBOARD("Nom", walk->name(), walk->nameMaxLength(), typed)) {
                     host.text = std::string(walk->name().size(), '\b') + typed + "\r";
-                    std::printf("name field: the Vita keyboard gave \"%s\"\n", typed.c_str());
+                    std::printf("name field: the system keyboard gave \"%s\"\n", typed.c_str());
                 } else {
-                    std::printf("name field: the Vita keyboard was cancelled\n");
+                    std::printf("name field: the system keyboard was cancelled\n");
                 }
             }
             if (!onField) imeOpenedHere = false;

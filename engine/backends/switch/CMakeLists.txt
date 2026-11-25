@@ -16,9 +16,11 @@
 # `backends/android/CMakeLists.txt` are not. It compiles the SAME
 # `src/*/*.cpp` the host does, and the viewer's sources by the Makefile's own
 # rule: every `backends/sdl/*.cpp` except the other GPU windows and the unused
-# half of the instruments - the Android file's glob. No OMK_VR and no
-# OMK_REMASTER (step S6), so `playvr_off.cpp` / `playremaster_off.cpp` are the
-# seams' stubs.
+# half of the instruments - the Android file's glob. No OMK_VR, so
+# `playvr_off.cpp` is that seam's stub. OMK_REMASTER is ON, as Android's
+# (the reader's report of 2026-11-25: the Remaster page was missing): the
+# page, the packs' code and the GLES half - which pack fits in which memory
+# mode is still step S6's measurement.
 #
 # The probe of 2026-11-25 (`todo/switch-port.md` §0) compiled all of it with
 # zero engine changes; this file is that probe made permanent.
@@ -38,6 +40,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # multiply-add the compiler would otherwise use - the Android build's reason)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -ffp-contract=off")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2")
+
+# THE REMASTER (`engine/Makefile`'s REMASTER), for the engine and the viewer
+# alike - it changes the same layouts' meaning, so every object carries it.
+# Its shaders are `#version 100`, which the GLES 2 context runs; the packs
+# read as ASTC when Mesa names `GL_KHR_texture_compression_astc_ldr`.
+add_compile_definitions(OMK_REMASTER=1)
 
 option(OMK_INSTRUMENTS "build the viewer's harnesses (--money, --fight, --board...)" ON)
 option(OMK_RELEASE "a release build: no profiler, no instruments" OFF)
@@ -60,12 +68,16 @@ else()
   list(FILTER OMK_PLAY_SRC EXCLUDE REGEX "/playharness\\.cpp$")
 endif()
 
+file(GLOB OMK_REMASTER_SRC ${ENGINE}/backends/remaster/*.cpp)
+
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(OMK_SDL2 REQUIRED sdl2)
 
 add_executable(omk_switch
   ${CMAKE_CURRENT_SOURCE_DIR}/switch_main.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/swkbd.cpp
   ${OMK_PLAY_SRC}
+  ${OMK_REMASTER_SRC}
   ${ENGINE}/backends/sdl/playgpu_gles.cpp
   ${ENGINE}/backends/gles/glesrender.cpp)
 # `play.cpp`'s `main` becomes `omk_play_main`, which `switch_main.cpp` calls
