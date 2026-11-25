@@ -161,7 +161,33 @@ numbers here (CLAUDE.md §4: a finding that produces a number gets a check).
 
 **S0 - toolchain and probe.** DONE 2026-11-25 (§0).
 
-**S1 - the build in the tree.** ~1 day.
+**S1 - the build in the tree.** DONE 2026-11-25 - the record first, the
+plan as written after it.
+* `make switch` builds `build/switch/omk.nro`, **10.7 MB**, through the
+  pinned image (~2.5 min fresh, ~15 s incremental on the M1); `make
+  switch-release` the same with `OMK_RELEASE`. The ROMFS holds the 14
+  tables. 0 warnings, every source unchanged. One fault, the CMake file's:
+  SDL2's pkg-config link line does not carry Mesa (`glGetError` undefined),
+  so `EGL GLESv2 glapi drm_nouveau nx` are named after it, the probe's order.
+* `switch_main.cpp`: romfs, the `sdmc:/switch/omk/` tree, `args.txt`, the
+  dated log pair (or `nxlink` stdio when `nxlink -s` launched it), the
+  frame from `appletGetOperationMode` (1920x1080 docked, 1280x720
+  handheld), the applet type and the process memory logged at start and
+  exit, **the game on a thread with an 8 MB stack**.
+* **The pool on the Switch's cores** (`platform/threads_std.cpp`, two
+  `__SWITCH__` blocks): libnx makes every pthread on the process's default
+  core - core 0, the main thread's - so worker i is pinned to core
+  1 + i % 2, and `hardwareDefault()` answers 2 without asking newlib. Host
+  unchanged: `thread pool` and `engine: threaded bodies` green.
+* `verify.py: engine: switch build` - exit 0, no `error:`, the NRO written
+  by THIS run, its `NRO0` / `ASET` and a table name inside; skipped with no
+  devkitA64 and no Docker daemon. Shown to fail by a Switch-only `#error`
+  in `threads_std.cpp`: (2, 1, False, (False, False, False)). `engine: vita
+  build` green after it.
+* Not yet: nothing has run. Whether the pinning is right (the worker's core
+  as `svcGetCurrentProcessorNumber` reports it) is S2's first log line to read.
+
+The plan as written:
 * `engine/backends/switch/CMakeLists.txt` on the Android file's model: the
   same `src/*/*.cpp` glob, the same `PLAY_SDL_SRCS` filter, `OMK_GLES=1`,
   `-ffp-contract=off` (A57 has FMA; the host's floats must match), the
@@ -245,6 +271,22 @@ all off by default.
   again (jig + injector); hbmenu then launches the NRO - from the album
   (applet mode, little memory) or by holding R over a game (title takeover,
   full memory): log which.
+* **The SD card, prepared 2026-11-25** (outside the repo, in
+  `/Volumes/omk-devtools/switch/`): hekate 6.5.5 and Atmosphere 1.12.2
+  (release digests checked), `sd-stage/` the tree to copy, `install-sd.sh
+  <card> <repo>` the copy - it refuses a card with less than 32 GiB free,
+  writes no `._` files (`cp -X`, `dot_clean`), and compares every file it
+  copied. **The reader's rule: no CFW on the real eMMC.** So
+  `hekate_ipl.ini` offers two entries only - Atmosphere with
+  `emummcforce=1` (refuses to boot without the emuMMC) and stock firmware
+  (`stock=1`, `emummc_force_disable=1`); `exosphere.ini` blanks the
+  emuMMC's PRODINFO; `atmosphere/hosts/emummc.txt` sends Nintendo's hosts
+  to 127.0.0.1 (conntest to 90DNS, so Wi-Fi - nxlink - still connects).
+  The emuMMC itself is made ON THE CONSOLE (hekate: emuMMC > Create emuMMC
+  > SD File, ~29.2 GiB for a 32 GB Erista). The game data goes to
+  `switch/omk/gamedata/` as its directories and `.TAB` files - not the
+  executables or the disassembler's databases. Tested on a 40 GB exFAT
+  image: 1.6 GB in 32 s, verified, 0 AppleDouble files.
 * **An emulator** as the Vita3K / Azahar stand-in: Ryujinx's maintained fork
   runs NROs on macOS arm64; it would go on the external disk image beside the
   toolchain. Its GPU timings mean nothing (the Azahar lesson: no cache model),

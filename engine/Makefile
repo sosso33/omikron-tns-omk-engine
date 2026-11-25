@@ -503,6 +503,65 @@ else
 	@echo "built build/vita-tuned/ (Cortex-A9 scheduling + LTO): omk_vita.vpk, omk_bench.vpk, omk_smoke.vpk"
 endif
 
+# THE NINTENDO SWITCH BUILD (`todo/switch-port.md` S1): devkitA64 + libnx,
+# SDL2 and Mesa from devkitPro's portlibs, `backends/switch/CMakeLists.txt`,
+# one NRO for hbmenu. Optional like the Vita's: `make` and the suite never
+# need it. Two routes, the first found wins:
+#
+#   native   `$DEVKITPRO` (default /opt/devkitpro) holding devkitA64 and
+#            libnx - a devkitPro pacman install (`switch-dev switch-sdl2
+#            switch-mesa`)
+#   docker   devkitPro's own image, PINNED below, through whatever Docker
+#            daemon `$DOCKER_HOST` names (on the M1, a colima VM inside the
+#            external omk-devtools image - `todo/switch-port.md` §0). The
+#            repo is mounted at its own path, so CMake's absolute paths are
+#            the host's. The daemon is not started here: a stopped VM is
+#            "no toolchain".
+#
+#     make switch            -> build/switch/omk.nro
+#     make switch-release    -> build/switch-release/omk.nro (OMK_RELEASE)
+#
+# **Keep it compiling**: `verify.py: engine: switch build`.
+SWITCH_IMAGE ?= devkitpro/devkita64@sha256:1fc388c3a0d34bd2045a6dadcb1020e069d5f876a187fd705de14b4440c00282
+SWITCH_DKP := $(or $(DEVKITPRO),/opt/devkitpro)
+SWITCH_NATIVE := $(wildcard $(SWITCH_DKP)/devkitA64/bin/aarch64-none-elf-g++)
+REPO_ROOT := $(abspath $(CURDIR)/..)
+# $(1) the CMake build directory, $(2) the output directory, $(3) extra definitions
+ifneq ($(SWITCH_NATIVE),)
+switch_cmake = DEVKITPRO=$(SWITCH_DKP) cmake -S backends/switch -B $(1)-native \
+	    -DCMAKE_TOOLCHAIN_FILE=$(SWITCH_DKP)/cmake/Switch.cmake $(3) >/dev/null && \
+	DEVKITPRO=$(SWITCH_DKP) cmake --build $(1)-native -j$(NPROC) && \
+	cp $(1)-native/omk.nro $(2)/
+else
+switch_cmake = docker run --rm --user "$$(id -u):$$(id -g)" -v "$(REPO_ROOT):$(REPO_ROOT)" \
+	    -w "$(CURDIR)" $(SWITCH_IMAGE) sh -c 'cmake -S backends/switch -B $(1)-docker \
+	    -DCMAKE_TOOLCHAIN_FILE=/opt/devkitpro/cmake/Switch.cmake $(3) >/dev/null && \
+	    cmake --build $(1)-docker -j$(NPROC)' && \
+	cp $(1)-docker/omk.nro $(2)/
+endif
+SWITCH_HAVE = $(or $(SWITCH_NATIVE),$(shell docker info >/dev/null 2>&1 && echo docker))
+
+.PHONY: switch switch-release
+switch:
+ifeq ($(SWITCH_HAVE),)
+	@echo "no Switch toolchain (devkitA64 under \$$DEVKITPRO, or a running Docker daemon"
+	@echo "for $(SWITCH_IMAGE)) - the Switch build is optional;"
+	@echo "everything else builds and the suite passes without it (todo/switch-port.md)."
+else
+	@mkdir -p build/switch
+	$(call switch_cmake,build/switch-cmake,build/switch,)
+	@echo "built build/switch/omk.nro ($(if $(SWITCH_NATIVE),native devkitA64,docker image))"
+endif
+
+switch-release:
+ifeq ($(SWITCH_HAVE),)
+	@echo "no Switch toolchain - the Switch build is optional (todo/switch-port.md)."
+else
+	@mkdir -p build/switch-release
+	$(call switch_cmake,build/switch-release-cmake,build/switch-release,-DOMK_RELEASE=ON)
+	@echo "built build/switch-release/omk.nro - no profiler, no instruments"
+endif
+
 # The Vita bench on THIS machine - the same source, so a device run divides
 # by it (`backends/vita/bench_main.cpp`). Needs nothing installed.
 build/vita_bench: backends/vita/bench_main.cpp $(SRCOBJS)

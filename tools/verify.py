@@ -19308,6 +19308,54 @@ def c_engine_3ds_build():
     return (r.returncode, errors, progs), (0, 0, (True, True)), \
         "the 3DS Makefile's exit status, compiler errors, and the two .3dsx present " \
         "- omk_boot (the engine headless) and omk_play (the game, libctru frontend)"
+def c_engine_switch_build():
+    r"""The engine still COMPILES FOR THE NINTENDO SWITCH (todo/switch-port.md
+    S1). Like the Vita's and the 3DS's: a cross toolchain's headers and C++
+    library are not the host's, so a change can build here and fail there
+    with nothing saying so. This runs `make switch`
+    (`engine/backends/switch/CMakeLists.txt`: devkitA64 + libnx, the whole of
+    `src/` for the Cortex-A57, THE GAME - `play.cpp` through
+    `switch_main.cpp` on the GLES backend, SDL2 and Mesa - linked and packed
+    into `omk.nro` with the tables in its ROMFS) and asserts: exit 0, no
+    compiler error, the NRO WRITTEN BY THIS RUN (the Makefile copies it out,
+    so an old one left on disk does not count - the 3DS check's lesson), its
+    `NRO0` magic, its `ASET` section, and one table's name inside it (the
+    ROMFS really holds `tables/`).
+    SKIPPED without a toolchain: neither devkitA64 under `$DEVKITPRO`
+    (default /opt/devkitpro) nor a Docker daemon answering `docker info`
+    (on the M1 a colima VM - `todo/switch-port.md` §0; start it first, with
+    `DOCKER_HOST` pointing at its socket). ~2.5 min on a fresh build
+    directory, ~15 s incremental.
+    The first in-tree build (2026-11-25) compiled every source unchanged;
+    its one fault was the CMake file's own (Mesa's GLES2 / EGL are not in
+    SDL2's pkg-config link line, so `glGetError` was undefined).
+    SHOWN TO FAIL, 2026-11-25: `#if defined(__SWITCH__) #error ... #endif`
+    appended to `platform/threads_std.cpp` (a Switch-only break the host
+    build never sees) turns it red as (2, 1, False, (False, False, False)) -
+    the previous NRO still on disk but not fresh; removed, `cmp` against the
+    saved copy, touched, green.
+    """
+    import subprocess, shutil, time
+    eng = os.path.join(ROOT, "engine")
+    dkp = os.environ.get("DEVKITPRO") or "/opt/devkitpro"
+    native = os.path.exists(os.path.join(dkp, "devkitA64", "bin", "aarch64-none-elf-g++"))
+    docker = (not native and shutil.which("docker") and
+              subprocess.run(["docker", "info"], capture_output=True).returncode == 0)
+    if not native and not docker:
+        return ("skipped",), ("skipped",), \
+            "no Switch toolchain (devkitA64 under $DEVKITPRO, or a running Docker daemon)"
+    nro = os.path.join(eng, "build", "switch", "omk.nro")
+    start = time.time() - 1
+    r = subprocess.run(["make", "-s", "switch"], cwd=eng, capture_output=True, text=True)
+    errors = len(re.findall(r"error:", r.stdout + r.stderr))
+    fresh = os.path.exists(nro) and os.path.getmtime(nro) >= start
+    data = open(nro, "rb").read() if fresh else b""
+    shape = (data[0x10:0x14] == b"NRO0", b"ASET" in data, b"camera_presets.json" in data)
+    return (r.returncode, errors, fresh, shape), (0, 0, True, (True, True, True)), \
+        "make switch's exit status, compiler errors, the NRO written by this run, " \
+        "and its (NRO0 magic, ASET section, a table in the ROMFS)"
+
+
 def c_engine_tie_memory():
     r"""The depth tie's memory is almost all ONE group - the claimed keys - and
 
@@ -53464,8 +53512,9 @@ def c_licence_headers():
     # 710: + `engine/tools/npc_ground_probe.cpp` (`engine: npc ground`)
     # 711: + `engine/tools/scx_euler_probe.cpp` (`engine: scx euler`)
     # 713: + `engine/tools/m4_pairs.cpp`, `m4_show.cpp` (`engine: show context record`)
+    # 714: + `engine/backends/switch/switch_main.cpp` (`engine: switch build`)
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (713, [], 10, []), \
+           (714, [], 10, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
@@ -56174,6 +56223,7 @@ SLOW = [
     ("engine: gles pose", c_engine_gles_pose, "todo/gpu-skinning.md 1; backends/gles/glesrender.cpp"),
     ("engine: vita build", c_engine_vita_build, "todo/vita-port.md B1; backends/vita/CMakeLists.txt"),
     ("engine: 3ds build", c_engine_3ds_build, "todo/3ds-port.md step 0; backends/n3ds/Makefile"),
+    ("engine: switch build", c_engine_switch_build, "todo/switch-port.md S1; backends/switch/CMakeLists.txt"),
     ("engine: vita printf", c_engine_vita_printf, "todo/vita-port.md; backends/vita/c99format.h"),
     ("engine: sweep grid", c_engine_sweep_grid, "todo/optimization.md 11; o3de/collision.h"),
     ("engine: shot run boxes", c_engine_shot_run_boxes, "todo/handoff-classic-mac.md 3g; o3de/collision.h"),

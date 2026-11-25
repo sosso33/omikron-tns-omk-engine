@@ -249,6 +249,10 @@ backends/vita/           the PS VITA build (`make vita`, VitaSDK through
 backends/n3ds/           the NINTENDO 3DS build (`make -C backends/n3ds`,
                          devkitARM): a citro3d renderer, its own frontend and
                          the bottom screen's panel (`todo/handoff-3ds-port.md`).
+backends/switch/         the NINTENDO SWITCH build (`make switch`, devkitA64
+                         through CMake - native, or devkitPro's pinned Docker
+                         image; `todo/switch-port.md`): `switch_main.cpp`, the
+                         SDL frontend on the GLES backend over Mesa, one NRO.
 backends/android/, backends/openxr/, backends/vr/
                          the META QUEST build (`scripts/android-build.sh`, the
                          NDK through CMake, no Gradle): the OpenXR host and

@@ -14,6 +14,28 @@
 #include <thread>
 #include <vector>
 
+#if defined(__SWITCH__)
+// THE SWITCH'S CORES (`todo/switch-port.md` S1). libnx makes every pthread -
+// so every `std::thread` - on the process's DEFAULT core (`threadCreate`'s
+// cpuid -2), which for an application is core 0, the main thread's: a pool
+// left there is a pool on one core. An application owns cores 0-2 (core 3 is
+// the system's), so worker i is pinned to core 1 + i % 2 and the main thread
+// keeps core 0. `hardware_concurrency()` is not trusted either (newlib's may
+// answer 0, which would read as "no workers").
+#include <switch.h>
+#include <cstdio>
+namespace {
+constexpr int kSwitchAppCores = 3;   // cores 0..2; core 3 belongs to the system
+void pinSwitchWorker(int i) {
+    const int core = 1 + i % (kSwitchAppCores - 1);
+    svcSetThreadCoreMask(threadGetCurHandle(), core, 1u << core);
+    // read back, not assumed: the first console log says whether it held
+    std::printf("threads: worker %d on core %u (asked %d)\n", i,
+                static_cast<unsigned>(svcGetCurrentProcessorNumber()), core);
+}
+}  // namespace
+#endif
+
 namespace omk {
 
 namespace {
@@ -63,7 +85,12 @@ struct Threads::Impl {
 Threads::Threads(int workers) : impl_(new Impl) {
     const int want = workers > 0 ? workers : hardwareDefault();
     for (int i = 0; i < want; ++i) {
-        impl_->pool.emplace_back([this] {
+        impl_->pool.emplace_back([this, i] {
+#if defined(__SWITCH__)
+            pinSwitchWorker(i);
+#else
+            (void)i;
+#endif
             Impl& s = *impl_;
             unsigned long long seen = 0;
             for (;;) {
@@ -105,6 +132,9 @@ Threads::~Threads() {
 int Threads::workers() const { return impl_ ? static_cast<int>(impl_->pool.size()) : 0; }
 
 int Threads::hardwareDefault() {
+#if defined(__SWITCH__)
+    return kSwitchAppCores - 1;      // the main thread is the third
+#endif
     const unsigned hw = std::thread::hardware_concurrency();
     if (hw <= 1) return 0;
     return static_cast<int>(std::min(hw - 1u, 7u));
