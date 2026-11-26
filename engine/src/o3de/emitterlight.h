@@ -74,6 +74,9 @@ inline constexpr float kSelfNear = 30.0f, kSelfFar = 90.0f;
 // PackImage emissive, the bloom's), or whose colour is a NEON's - bright and
 // strongly saturated - which the particles never were - a pink sign cast
 // no pink light (the reader, 2026-10-20: "not visible that they emit light").
+// The NEON RULE holds on a texture the curated list names only: unguarded it
+// took AIMPASSE's orange wood for a tube (2026-11-26); a set the list does
+// not name lights from its light maps alone.
 // Each triangle of `g` with a light map, its light sampled at its corners and
 // centre, weighted by its area, is summed into `kSurfaceCell` cells; a cell
 // with more than `kSurfaceMin` square units of light becomes ONE point light

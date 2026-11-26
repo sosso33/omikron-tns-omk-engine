@@ -323,8 +323,10 @@ compared.
 **The light**: the reader's `omk.ini` has `[Enhancements] all = max`, so
 per-pixel lighting is on with the remaster - and that pair floods a set on
 EVERY GPU backend, not the Switch's alone (the Mac's GLES and Vulkan
-measured, `todo/remaster.md` "OPEN: per-pixel lighting floods a set").
-Per-pixel lighting off is the workaround until it is read.
+measured, `todo/remaster.md` "DONE: per-pixel lighting flooded a set").
+FIXED the same day: the alley's orange wood planks were taken for a neon by
+the automatic rules; the neon rule now holds only where `lights.txt` names
+the texture (60.6 -> 36.5 on the Mac). The NRO on the card carries it.
 
 **S2 - first light.** ~1-2 days, needs a console or an emulator (§4).
 * `playgpu_gles.cpp`: on the Switch a GLES 3.0 context (the Quest's branch;

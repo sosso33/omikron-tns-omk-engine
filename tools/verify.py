@@ -35633,7 +35633,12 @@ def c_engine_emitter_light():
          from `lights.txt` (`world.fxsurfaces` curated, and some) and its
          night is 0.5 (`remaster.night`); Anekbah's too, with no night (the
          four cities' drafts, 2026-10-20); Kay'l's flat, which the list does
-         not name, keeps the automatic rules;
+         not name, keeps the automatic rules - and THE NEON RULE only on a
+         texture the list names: AIMPASSE, the first street of a new game,
+         lights from its light maps alone, 2 glowing surfaces (4 with the
+         rule unguarded: its orange wood planks, XAMPAK2, lit as a neon -
+         the alley evenly lit at twice its level, the reader's Switch run,
+         2026-11-26);
       5. THE TILES (`o3de/lighttiles.h`, "go" on the per-tile lists,
          2026-10-20): on Vulkan, Qalisar's every point light within the clip
          distance is binned to 32-pixel tiles x 16 depth slices (more than
@@ -35744,9 +35749,10 @@ def c_engine_emitter_light():
             q = fxs(run(vk, None, "101", "15300,0,-10050,270", "--remaster", pack, "--mist", "0", "--enhance-all")[0])
             a = fxs(run(vk, None, "0", "1804,0,-6890,336", "--remaster", pack, "--mist", "0", "--enhance-all")[0])
             k = fxs(run(vk, None, "237", None, "--remaster", pack, "--mist", "0", "--enhance-all")[0])
+            i = fxs(run(vk, None, "222", None, "--remaster", pack, "--mist", "0", "--enhance-all")[0])
             curate = (q[0] in ("1", "true", True), q[1] > 0, q[2] == [0.5], a[0] in ("1", "true", True), a[2] == [],
-                      k[0] in ("0", "false", False))
-            print(f"        qalisar {q}; anekbah {a}; kayl's flat {k}")
+                      k[0] in ("0", "false", False), i[0] in ("0", "false", False), i[1] == 2)
+            print(f"        qalisar {q}; anekbah {a}; kayl's flat {k}; aimpasse {i}")
         # THE TILES (`o3de/lighttiles.h`): Qalisar's every point light binned
         # on Vulkan, no cluster full, and the tight box test drawing the same
         # frame byte for byte as the loose instrument (every light in every
@@ -35845,7 +35851,7 @@ def c_engine_emitter_light():
     want = (True, True, True)
     return (src_ok, rule, curate, tiles, vres, gres, agree, cut, dark), \
            ((True,) * 4, ((117, 12, 24), (89, 8, 7), (15, 0, 32)),
-            _or_skip(curate, (True,) * 6),
+            _or_skip(curate, (True,) * 8),
             _or_skip(tiles, (True,) * 3),
             _or_skip(vres, want), _or_skip(gres, want),
             agree if isinstance(agree, tuple) else True,

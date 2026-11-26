@@ -297,11 +297,19 @@ std::vector<Light3do> surfaceLights(const Geometry& g, std::span<const Texture> 
             // ...or a NEON's: a texel both bright and strongly saturated - a
             // tube's colour - lights whatever its light map says (Qalisar's
             // pink letters carry little of one: the bloom's white was the
-            // halo sprite's)
-            const float hi = std::max({rgb[0], rgb[1], rgb[2]}), lo = std::min({rgb[0], rgb[1], rgb[2]});
-            const float sat = hi > 0.0f ? (hi - lo) / hi : 0.0f;
-            const float neon = std::clamp((sat - kNeonSat) / 0.3f, 0.0f, 1.0f) *
-                               std::clamp((hi - kNeonValue) / 0.25f, 0.0f, 1.0f);
+            // halo sprite's) - ON A TEXTURE THE LIST NAMES ONLY (and for the
+            // list's census, `stats`): the rule cannot tell a tube from a
+            // bright painted panel, and where no list stands guard it lit
+            // AIMPASSE's orange WOOD PLANKS (XAMPAK2) as a neon at up to
+            // 1 + kNeonBoost - the first street of a new game evenly lit,
+            // twice its level (the reader's Switch run, 2026-11-26)
+            float neon = 0.0f;
+            if (named || stats) {
+                const float hi = std::max({rgb[0], rgb[1], rgb[2]}), lo = std::min({rgb[0], rgb[1], rgb[2]});
+                const float sat = hi > 0.0f ? (hi - lo) / hi : 0.0f;
+                neon = std::clamp((sat - kNeonSat) / 0.3f, 0.0f, 1.0f) *
+                       std::clamp((hi - kNeonValue) / 0.25f, 0.0f, 1.0f);
+            }
             neonPart = neon > e ? 1.0f : 0.0f;   // ...which of the two lit it
             return std::max(e, neon);
         };

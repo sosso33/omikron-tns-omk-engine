@@ -3192,7 +3192,7 @@ remaster/pack` path. `verify.py: engine: vita pack` holds the tools (shown
 to fail: the cap's loop taken out - 64x64 with 7 levels; the opacity test
 always true - the keyed texture BC1).
 
-## OPEN: per-pixel lighting floods a set under the remaster's fx light (2026-11-26)
+## DONE: per-pixel lighting flooded a set under the remaster's fx light (2026-11-26)
 
 Found from the reader's first Switch run (`todo/switch-port.md`, *"les
 lumières semblaient ne pas fonctionner, tout était affiché de manière
@@ -3220,7 +3220,33 @@ lights reach the player, 4 of the 8 are emitters' lights`) light the set's
 batches per pixel, and the alley comes out evenly lit at about twice the
 vertex-lit level - the original's darkness gone. `maxPixelLights()` takes
 `kMaxGpuLights` only when both are on (`glesrender.cpp`), which is why
-neither alone shows it. NOT YET READ: whether the set's batches should
-receive these lights at all, and at what strength - the reading the fix
-waits on. Workaround: per-pixel lighting off (`[Enhancements] lighting`).
+neither alone shows it.
+
+**The cause: two of the 4 "glowing surfaces" were WOOD.** The set lit by the
+point lights is A5b's design (mode 3); what lit it was a false light source.
+AIMPASSE is not in `lights.txt`, so its surfaces came from the AUTOMATIC
+rules, and `texpack_tool lights` lists XAMPAK2 (3502 lit, 0.89 of it the
+NEON rule, `ffb052`) - the orange wood planks of its crates and doors,
+bright and saturated, which the neon rule reads as a tube and boosts up to
+1 + `kNeonBoost` = 4x - and BATITR12 (2302, all light map, its lit panel).
+Measured (GLES, the frame's mean, the same run as above; this script's mean
+reads 33.6 / 60.6 where the table's reads 32.9 / 59.3): the list naming
+nothing for AIMPASSE 33.6; BATITR12 alone 36.1; XAMPAK2 alone at gain 1
+48.6; both by the rules 60.6. The emitters' 2 glows add nothing visible.
+
+The census over the 220 sets (`texpack_tool lights` on each `.3DO`): 915
+textures with 300 lit square units or more, 52 of them lit mostly by the
+neon rule, in 32 sets - wood, paints, LAVE/LAVADOWN, CHIEN1, SNOWTIGER - the
+header's own warning, "the data cannot tell a neon tube from a bright
+painted panel". The rule was made for Qalisar's pink letters, which carry
+no light map, and the four cities are CURATED now.
+
+**The fix** (`emitterlight.cpp` surfaceLights): the neon rule holds on a
+texture the list NAMES only (and for the census, `stats`); a set the list
+does not name lights from the pack's LIGHT MAPS alone. AIMPASSE 4 -> 2
+surfaces, 60.6 -> 36.5 (the remaster without per-pixel lighting 33.6);
+Qalisar 216, Anekbah 494, Kay'l's flat 21 the same either way.
+`verify.py: engine: emitter light` part 4 holds AIMPASSE at 2 (4 with the
+guard mutated away: shown to fail). A real glow the light maps miss in an
+uncurated set (the lava's orange) is the list's to name now.
 
