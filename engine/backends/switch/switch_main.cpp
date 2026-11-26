@@ -30,7 +30,12 @@
 //                                    so the launch after it is the game again.
 //
 // Launched with `nxlink -s omk.nro` (the dev loop over Wi-Fi) the output goes
-// to the Mac's terminal instead of the files.
+// to the Mac's terminal instead of the files - `tools/switch_link.py` is the
+// Mac's side, nxlink's protocol in Python. The ARGUMENTS it sends: `--ls DIR`
+// and `--cat FILE` print and end (read-only, no game: the card's logs and
+// reports read without taking the card out), `--no-plan` leaves the
+// performance sweep's plan alone, and any other is the game's, after
+// args.txt's.
 //
 // The frame is the mode's own: 1280x720 handheld, 1920x1080 docked, taken at
 // launch (a dock change mid-run is step S4). The 3D keeps its horizontal FOV;
@@ -43,6 +48,7 @@
 #include <sys/stat.h>
 
 #include <cstdio>
+#include <dirent.h>
 #include <ctime>
 #include <fstream>
 #include <new>
@@ -155,6 +161,51 @@ int main(int argc, char** argv) {
     std::setvbuf(stdout, nullptr, _IOLBF, 0);
     std::setvbuf(stderr, nullptr, _IONBF, 0);
 
+    // THE LINK'S ARGUMENTS (nxlink's, after argv[0]): the read-only requests
+    // first - answered and the program ended, no game
+    std::vector<std::string> linkArgs;
+    for (int i = 1; i < argc; ++i)
+        if (argv[i] && argv[i][0]) linkArgs.push_back(argv[i]);
+    bool noPlan = false, served = false;
+    for (std::size_t i = 0; i < linkArgs.size(); ++i) {
+        const std::string& a = linkArgs[i];
+        if (a == "--no-plan") { noPlan = true; continue; }
+        if ((a == "--ls" || a == "--cat") && i + 1 < linkArgs.size()) {
+            const std::string path = linkArgs[++i];
+            served = true;
+            if (a == "--ls") {
+                std::printf("ls %s\n", path.c_str());
+                if (DIR* d = opendir(path.c_str())) {
+                    while (const dirent* e = readdir(d)) {
+                        struct stat st{};
+                        const std::string full = path + "/" + e->d_name;
+                        const bool ok = stat(full.c_str(), &st) == 0;
+                        std::printf("%10lld %s%s\n", ok ? static_cast<long long>(st.st_size) : -1LL, e->d_name,
+                                    ok && S_ISDIR(st.st_mode) ? "/" : "");
+                    }
+                    closedir(d);
+                } else {
+                    std::printf("(not a folder)\n");
+                }
+            } else if (std::FILE* f = std::fopen(path.c_str(), "rb")) {
+                std::printf("cat %s\n", path.c_str());
+                char buf[4096];
+                std::size_t n;
+                while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) std::fwrite(buf, 1, n, stdout);
+                std::fclose(f);
+                std::printf("\n-- end of %s\n", path.c_str());
+            } else {
+                std::printf("cat %s: cannot open\n", path.c_str());
+            }
+        }
+    }
+    if (served) {
+        std::fflush(stdout);
+        if (nxlink) socketExit();
+        romfsExit();
+        return 0;
+    }
+
     const bool docked = appletGetOperationMode() == AppletOperationMode_Console;
     GameArgs game;
     game.args = {"omk-play", kRoot, kTables, "--saves", kSaves,
@@ -168,9 +219,11 @@ int main(int argc, char** argv) {
             if (!line.empty() && line[0] != '#') game.args.push_back(line);
         }
     }
+    for (const auto& a : linkArgs)
+        if (a != "--no-plan") game.args.push_back(a);
     // THE PERFORMANCE SWEEP's plan: this launch's run, its place's arguments
     // split at the spaces, and where its report goes
-    const std::vector<std::string> plan = benchPlan();
+    const std::vector<std::string> plan = noPlan ? std::vector<std::string>() : benchPlan();
     const int run = plan.empty() ? -1 : benchNext();
     const bool benching = run >= 0 && run < static_cast<int>(plan.size());
     if (benching) {

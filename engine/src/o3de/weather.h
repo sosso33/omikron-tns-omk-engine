@@ -97,6 +97,17 @@ public:
     // reader's choice "as the asset suggests", todo/restore-weather.md)
     std::vector<WeatherDrop> step(unsigned bits, const float eye[3], const float at[3]);
 
+    // AN INSTRUMENT, not the original's: the performance sweep (`--bench`)
+    // holds the shower at its full 200 (state 2) or away (state 0), each for
+    // as long as a step lasts - the cycle's own first rain is 8-14 minutes
+    // off. The roof ray still ends a held shower over a covered player.
+    void holdForBench(bool rain, long nowMs) {
+        state_ = rain ? 2 : 0;
+        start_ = nowMs;
+        length_ = 1L << 30;
+        count_ = rain ? 200 : 0;
+    }
+
     int  state() const { return state_; }
     int  count() const { return count_; }
     long waitEndsAt() const { return start_ + length_; }

@@ -554,6 +554,21 @@ void GlesRenderer::remasterInitCodecs() {
         astcOk_ = ext && std::strstr(ext, "GL_KHR_texture_compression_astc_ldr") &&
                   !omk::envFlag("OMK_NO_BLOCK_FORMATS");
         omk::texturePack().setCodecs(astcOk_ ? omk::kCodecAstc : 0u);
+        // ...and every compressed family the context NAMES, said: a format
+        // named may still be decoded by the driver on the CPU (the Switch's
+        // Mesa: ~205 ms an ASTC 1024 upload, 2026-11-26) - which ones it
+        // samples natively is the next question
+        if (ext) {
+            std::string named;
+            for (const char* e : {"GL_KHR_texture_compression_astc_ldr", "GL_EXT_texture_compression_s3tc",
+                                  "GL_EXT_texture_compression_dxt1", "GL_EXT_texture_compression_rgtc",
+                                  "GL_EXT_texture_compression_bptc", "GL_OES_compressed_ETC1_RGB8_texture"})
+                if (std::strstr(ext, e)) named += std::string(named.empty() ? "" : ", ") + (e + 3);
+            const char* rend = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+            const char* ver = reinterpret_cast<const char*>(glGetString(GL_VERSION));
+            std::printf("gles: %s, %s - compressed formats named: %s\n", rend ? rend : "?", ver ? ver : "?",
+                        named.empty() ? "none" : named.c_str());
+        }
         if (astcOk_ && omk::texturePack().active())
             std::printf("gles: the texture pack's ASTC files - %zu colours read as blocks\n",
                         omk::texturePack().blockFiles(omk::kCodecAstc));

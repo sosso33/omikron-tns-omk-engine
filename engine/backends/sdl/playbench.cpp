@@ -11,7 +11,11 @@
 //   2. THE SETTINGS, in turn: the original mode, the remaster as set (its
 //      first frame is the pack's load), each remaster strength off, every
 //      one off (the pack alone), each enhancement down, the upscale's
-//      factors, the original with the enhancements off, the remaster again.
+//      factors, the WEATHER where the place has one (the shower held at its
+//      full 200 drops, with the remaster, its 3D rain or its wet floors off,
+//      and in the original - the reader's "measure the weather's impact
+//      too", 2026-11-26; every other step holds it away), the original with
+//      the enhancements off, the remaster again.
 //      Each step starts from the run's own settings, applied LIVE as the
 //      options menu applies them (`omkApplyLive`, the remaster's
 //      strengths), SETTLE frames left to settle, MEASURE frames measured:
@@ -74,6 +78,9 @@ struct PlayState::BenchRun {
     // the run's own settings, every step's start
     std::map<std::string, float> strengths;
     bool switchable = false;
+    bool weather = false;    // this place rains: its view bits, option row 7 at 2
+    int drops = 0;           // the most drops a measured frame had - the rain said, not assumed
+    bool raining = false;    // a rain step: the shower held again every frame (a roof's ray ends it)
     int lighting = 0, shadow = 0, aniso = 0, filter = 0;
     bool unlimited = false;
     float upscale = 1.0f;
@@ -143,6 +150,8 @@ void PlayState::benchRestore() {
     if (texFilter != b.filter) omkApplyLive("enhancements.texturefiltering", b.filter);
     if (std::max(upscale, 1.0f) != b.upscale) omkApplyLive("remaster.upscale", b.upscale);
     if (b.switchable && !remasterShown_) remasterShow(true, "the bench");
+    b.raining = false;
+    if (b.weather) weather.holdForBench(false, static_cast<long>(weatherClockMs));
 }
 
 void PlayState::benchSetup() {
@@ -160,16 +169,21 @@ void PlayState::benchSetup() {
     benchProbeDir(remDir.empty() ? std::string() : remDir + "/grades", "a small folder");
     benchProbeDir(dataRoot + "/MESHES/DECORS", "the game's sets");
     // 2. THE SETTINGS - the run's own first
+    // the strengths the remaster RUNS with - the start's (`remasterArmed`)
+    // while it is hidden, where its own read 0 (`[Remaster] mode = original`:
+    // the reader's first console sweep skipped every one of them)
     for (const char* k : kStrengths)
-        if (const float* p = remasterStrength(k)) b.strengths[k] = *p;
+        if (const float* p = remasterStrength(k)) b.strengths[k] = remasterShown_ ? *p : remasterArmed(k);
     b.switchable = remasterSwitchable();
+    b.weather = weatherBitsTold != 0 && weatherBitsTold != 0xFFFFu && shadowDetail == 2;
     b.lighting = lighting; b.shadow = shadowQuality; b.unlimited = unlimitedClip;
     b.aniso = texAniso; b.filter = texFilter; b.upscale = std::max(upscale, 1.0f);
     std::string had;
     for (const auto& [k, v] : b.strengths) if (v > 0.0f) had += " " + k + " " + std::to_string(v).substr(0, 4);
     b.say("the run's settings: remaster %s;%s; lighting %d, shadows %d, unlimited distance %d, anisotropy %d, "
-          "filter %d, upscale %.2f, aa %d", b.switchable ? "armed" : "not armed", had.c_str(), lighting,
-          shadowQuality, unlimitedClip ? 1 : 0, texAniso, texFilter, b.upscale, aaSamples);
+          "filter %d, upscale %.2f, aa %d; weather %s (view bits 0x%x, detail %d)",
+          b.switchable ? "armed" : "not armed", had.c_str(), lighting, shadowQuality, unlimitedClip ? 1 : 0,
+          texAniso, texFilter, b.upscale, aaSamples, b.weather ? "here" : "none", weatherBitsTold, shadowDetail);
     const auto add = [&](std::string name, std::function<bool()> fn) { b.steps.push_back({std::move(name), std::move(fn)}); };
     add("original", [this] { return remasterShow(false, "the bench") || !bench_->switchable; });
     add("remaster", [this] { return bench_->switchable; });
@@ -205,6 +219,25 @@ void PlayState::benchSetup() {
         return true;
     });
     add("remaster, again", [this] { return bench_->switchable; });
+    if (b.weather) {
+        // THE KIND, by the view's bits (`weatherBitsOfAreaType`): 2 the
+        // rain (Anekbah, the Impasse, Qalisar and Lahoreh restored), 4 the
+        // snow (Mahaleel, 145 - it never ends), 8 the sand (Jaunpur and the
+        // docks, restored)
+        const std::string kind = (weatherBitsTold & 4u) ? "snow" : (weatherBitsTold & 8u) ? "sand" : "rain";
+        // LAST: the floors stay wet and dry after a shower, which would
+        // weigh on any step after it
+        const auto rain = [this] { bench_->raining = true; weather.holdForBench(true, static_cast<long>(weatherClockMs)); };
+        add(kind, [this, rain] { rain(); return true; });
+        for (const char* k : {"rain3d", "wet"}) {
+            if (std::string(k) == "wet" && kind != "rain") continue;   // only the rain wets
+            const std::string key = k;
+            const auto at = b.strengths.find(key);
+            if (at == b.strengths.end() || at->second <= 0.0f) continue;
+            add(kind + ", " + key + " off", [this, rain, key] { rain(); *remasterStrength(key) = 0.0f; return true; });
+        }
+        if (b.switchable) add(kind + ", original", [this, rain] { rain(); return remasterShow(false, "the bench"); });
+    }
     b.say("%zu steps", b.steps.size());
 }
 
@@ -212,14 +245,25 @@ void PlayState::benchSetup() {
 void PlayState::benchFrame(double workMs) {
     if (benchDone_) return;
     if (!bench_) {
-        // the place loaded and a second of it run, first
+        // the place loaded and a second of it run, first - and under a forced
+        // adventure start (`--area`), the PLAYER handed over a second ago: until
+        // then the camera is the place's own, not the one the game is played
+        // through (the reader's first console sweep, 2026-11-26: without a save
+        // the player has no model, the handover never came, and Qalisar was
+        // measured looking at a wall). Past a minute, it starts anyway, said.
         if (frameNo < 60 || !session_ || session_->loading()) return;
+        const bool handedOver = playerReady && frameNo >= handoverFrame + 60;
+        if (forceAdventure && !handedOver && frameNo < 1800) return;
+        if (forceAdventure && !handedOver)
+            std::printf("bench: NO PLAYER handed over in 1800 frames - measured from the place's own camera "
+                        "(a forced start needs --save with a player record)\n");
         benchSetup();
         bench_->left = 0;
         bench_->measuring = true;   // so that the first step begins below
         bench_->at = static_cast<std::size_t>(-1);
     }
     auto& b = *bench_;
+    if (b.raining) weather.holdForBench(true, static_cast<long>(weatherClockMs));
     if (b.at != static_cast<std::size_t>(-1) && b.at < b.steps.size()) {
         if (b.first) {
             b.switchMs = b.applyMs + workMs;
@@ -229,6 +273,7 @@ void PlayState::benchFrame(double workMs) {
             b.settleSum += workMs;
         } else {
             b.work.push_back(workMs);
+            b.drops = std::max(b.drops, weather.count());
             for (std::size_t k = 1; k < phases.marks.size(); ++k)
                 b.sections[phases.marks[k].first] += (phases.marks[k].second - phases.marks[k - 1].second) * 1000.0;
         }
@@ -252,11 +297,11 @@ void PlayState::benchFrame(double workMs) {
         }
         const double med = percentile(b.work, 0.5), p90 = percentile(b.work, 0.9), mx = percentile(b.work, 1.0);
         b.say("step %zu \"%s\": work median %.1f ms (%.0f fps), p90 %.1f, max %.1f; its switch %.0f ms, "
-              "settling %.0f ms in all (max %.0f); sections (ms a frame): %s",
+              "settling %.0f ms in all (max %.0f); weather drops %d; sections (ms a frame): %s",
               b.at + 1, b.steps[b.at].name.c_str(), med, med > 0.0 ? 1000.0 / med : 0.0, p90, mx, b.switchMs,
-              b.settleSum, b.settleMax, top.c_str());
+              b.settleSum, b.settleMax, b.drops, top.c_str());
         omk::event("bench.step", {{"step", b.steps[b.at].name}, {"median", med}, {"p90", p90}, {"max", mx},
-                                  {"switch", b.switchMs}, {"settle", b.settleSum}});
+                                  {"switch", b.switchMs}, {"settle", b.settleSum}, {"drops", b.drops}});
     }
     // the next step that applies
     for (;;) {
@@ -278,6 +323,7 @@ void PlayState::benchFrame(double workMs) {
     }
     b.work.clear();
     b.sections.clear();
+    b.drops = 0;
     b.switchMs = b.settleMax = b.settleSum = 0.0;
     b.first = true;
     b.measuring = false;

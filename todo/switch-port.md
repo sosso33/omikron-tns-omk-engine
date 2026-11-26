@@ -386,6 +386,111 @@ The plan put on the card (2026-11-26): Anekbah's street (`--area 0 --stand
 1804,0,-6890,336`), Qalisar (`--area 101 --stand 15300,0,-10050,270`), the
 restaurant (`--area 217`) - 90 frames settled, 240 measured, ~5 min a place.
 
+**The reader, during that sweep (2026-11-26)**: *"certains de tes caméras ne
+sont pas bien placées: par exemple, la deuxième caméra (qui semble être le sas
+vers Anekbah depuis Qalisar) regarde un mur et un bout de trottoir au lieu de
+regarder la rue avec les néons, ce qui donnerait bien plus d'informations.
+vérifie les caméras"*. The stands were taken from `verify.py`'s checks, which
+needed a place, not a view. **The cause was worse than the stands**: with
+no `--save`, a fresh START has no player record - `adventure: no model/bank/
+set for <garbage>` - so the handover never came, the camera stayed the
+place's own, and the sweep measured that. Fixed: the plan names
+`--save sdmc:/switch/omk/bench/save-appart.bin` (`traces/save-appart.bin`,
+as the Mac's street starts do), and the sweep waits for the handover plus
+60 frames (`bench: NO PLAYER ...` past 1800). The views checked on the M1
+with the save (300 frames, GLES, the pack): Anekbah's street - the burner,
+the crowd; Qalisar at 15300,0,-10050,270 - the pink neon, the green signs,
+passers-by; the restaurant (217, its first address) - the room, Kay'l in
+view. Qalisar's arcade (15132,0,-10597,204) left out: dark, his back fills
+it.
+
+**And the weather** (the reader: *"pense aussi à mesurer l'impact de la
+météo sur les perfs"*): where the place rains (its view bits, option row 7
+at 2 - Qalisar under `[Restored] weather`), the sweep's last steps hold the
+shower at its full 200 drops (`Weather::holdForBench`, an instrument: the
+cycle's own first rain is 8-14 minutes off; held again every frame, a
+roof's ray ends it), with the remaster, its 3D rain off, its wet floors
+off, and in the original; every other step holds it away, and the steps
+come last because the floors dry after a shower. Each line says the most
+drops a measured frame had. On the M1 in Qalisar (640x360, the preset):
+remaster dry 5.2 ms, raining 11.3, its 3D rain off 8.8, its wet floors off
+7.9, the original raining 2.3.
+
+**THE FIRST CONSOLE SWEEP** (2026-11-26 16:17-16:28, `bench/first-sweep/`;
+the plan of three places WITHOUT a save, so measured from each place's own
+camera, and with `mode = original` hiding the strengths - every "off" step
+skipped; both fixed since). What it does say:
+* **THE LOAD IS THE UPLOAD**: a place's 36 pack textures (Anekbah) - the
+  pack's reads and decodes 2.35 s (~65 ms a texture: colour + light map),
+  **the uploads 7.4 s (~205 ms a texture)**, against ~1 ms an original's;
+  bilinear (no mips) 5.35 s. An ASTC upload at that cost is the DRIVER
+  decoding it on the CPU (Mesa's nouveau on the GM20B), not the GPU
+  sampling it; the log now names the context's compressed families
+  (`gles: <renderer>, <version> - compressed formats named: ...`). The pack's
+  folder costs too, but less: an open 3.3 ms there against 0.6-0.9 in a
+  small one, its listing 137 ms, its reads 18.9 MB/s against 35-47.
+* the frames (the place's own camera, the reader's `all = max`, upscale
+  1.5): Anekbah original 32.0 ms, remaster 58.7; per-vertex lighting 23.6,
+  shadows not mapped 23.8, the options' distance 30.4; original with the
+  enhancements off 17.5. Qalisar 35.4 / 65.0, the options' distance 22.8,
+  shadows not mapped 16.6. The restaurant at the 16.6 floor throughout: the
+  swap still waits for the refresh there (v-sync off is not honoured by
+  this SDL), so a step under 16.6 reads 16.6.
+
+**THE SECOND PLAN** (the reader: *"as-tu pensé au sable, au brouillard et à
+la neige ?"*): the weather steps take the place's KIND by its view bits -
+rain (Anekbah's own, AREA type 1, and Qalisar's restored), SNOW (Mahaleel,
+145, type 2 - it never ends) and SAND (Jaunpur, type 3, restored) - the
+wet floors' step for the rain alone. The FOG is two things, both in every
+run: the game's distance fog, back with the options' draw distance (`draw
+distance the options'`), and the remaster's ground MIST (`remaster, mist
+off`). On the M1 (640x360, the preset, short steps): Mahaleel remaster 5.8,
+snowing 6.1, its 3D snow off 4.7; Jaunpur remaster 7.0, the sand 8.3, its 3D
+sand off 6.5. Places, each view checked on the M1 with the save: Anekbah
+(as before), Qalisar (as before), the restaurant, Mahaleel's first address
+(the snowy path), Jaunpur's address 44 (the square: signs, passers-by, the
+sky - its first address faced a door, and its cameras are FIXED: the
+player's facing does not move them). The first sweep's reports moved to
+`bench/first-sweep/`.
+
+**The reader, during the second sweep (2026-11-26)**: *"le benchmark a
+freeze"* - read over the network (`tools/switch_link.py`, the netloader:
+`--cat` on the card's files, no card out). **QALISAR froze** five frames
+after its step 2 switched the remaster on (`frame 392: per-pixel lighting -
+60 of the 64 are emitters' lights`, the floors reflecting; frames 393-397
+at 60-80 ms, then not one line more, no crash report): the GPU stalled, by
+every sign - the street's neons in view at this stand (the first sweep, from
+the place's own camera, ran this step at 65 ms). Its step 1 (original) 30.8.
+NOT YET PROVEN which part; per-pixel lighting with 60 point lights a pixel
+over a reflected pass is the first suspect.
+
+**ANEKBAH, the second sweep (complete, 26 steps, the street with its crowd,
+the reader's `all = max`, upscale 1.5)** - work a frame, median ms:
+
+| step | ms | | step | ms |
+|---|---|---|---|---|
+| original | 34.9 | | lighting per vertex | 47.7 |
+| remaster | 53.5 | | shadows not mapped | 42.7 |
+| ao off (not drawn on GLES) | 52.3 | | the options' distance | 50.3 |
+| bloom off | 52.8 | | anisotropy off | 53.7 |
+| body light off | 50.8 | | bilinear | 54.2 |
+| floors off | 52.4 | | upscale 1.0 (native) | **92.8** |
+| fx light off | 50.6 | | upscale 2.0 | 52.4 |
+| mist off | 52.4 | | original, enhancements off | 16.6 (the floor) |
+| water / wet / relief / rain3d off | 52.6-53.7 | | remaster again | 55.8 |
+| every effect off (the pack alone) | 44.5 | | **rain** (200 drops) | **138.8** |
+| | | | rain, 3D rain off | 125.5 |
+| | | | rain, wet floors off | 79.4 |
+| | | | rain, original | 50.4 |
+
+Read: the GPU is the wall at native 720p (92.8 -> 53.5 with the 1.5
+upscale; 2.0 gains nothing more - then the CPU's `pedestrians, traffic`
+22 ms and the world's submit 24); the crowd's section DOUBLES under the
+remaster (10.6 -> 22, the bodies rounded - `smooth` - not measured alone:
+it is not live); the enhancements cost the original ~18 ms (34.9 against
+16.6); the effects ~1-3 ms each; the WET FLOORS under rain ~60 ms and the
+rain in all +85.
+
 **S2 - first light.** ~1-2 days, needs a console or an emulator (§4).
 * `playgpu_gles.cpp`: on the Switch a GLES 3.0 context (the Quest's branch;
   Mesa offers 3.2); decision 2's `OMK_GLES3` in `glesrender.cpp`.
