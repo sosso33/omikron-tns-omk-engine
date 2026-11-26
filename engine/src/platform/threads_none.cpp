@@ -23,6 +23,7 @@ void Threads::parallelFor(std::size_t begin, std::size_t end, std::size_t,
 namespace hostthread {
 bool spawnDetached(const char*, std::size_t, std::function<void()>) { return false; }
 void sleepMs(int) {}
+int drainDetached() { return 0; }
 }  // namespace hostthread
 
 }  // namespace omk

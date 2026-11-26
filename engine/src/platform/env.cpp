@@ -35,6 +35,7 @@ constexpr const char* kSwitches[] = {
     "OMK_FADELOG",              // =1 log: the screen fade's terms when they change (engine: fight letterbox)
     "OMK_FEETLOG",              // =<actor> log: that body's lowest drawn corner against the floor, every 30 frames (engine: astaroth floor)
     "OMK_FIGHT_REFUSE",         // the frontend refuses every fight, so a script's wait for event 2 shows (engine: fight park)
+    "OMK_FORCE_BC_CODECS",      // =1 GLES takes the pack's BC blocks where the GL names no BPTC (the sanitizers' run)
     "OMK_FRAMES_IN_FLIGHT",     // =2 Vulkan: the next frame recorded while the GPU runs this one; 1 the default (engine: vulkan sync)
     "OMK_GL1",                  // =0: the GL1 build draws with the software reference (engine: gl1 backend)
     "OMK_GL1_COMPOSITE",        // GL1: the interface composed on the CPU instead of drawn as an overlay
@@ -57,6 +58,7 @@ constexpr const char* kSwitches[] = {
     "OMK_GPU_TIMES",            // Vulkan: the GPU's time per pass (shadow, reflection, scene, post), every 60 frames
     "OMK_GRADE",                // =<file.cube> run_vulkan: the remaster's grade (engine: bloom and grade)
     "OMK_GUNMAN_FEET",          // A/B: a gunman on his shoot clips seated by his FEET on the walkable floor, the old reading (todo/drift-audit.md M6)
+    "OMK_HEAP_CHECK",           // =1 every new block guarded and listed, the guards read after each frame phase
     "OMK_HIDDEN_WINDOW",        // the GPU window created hidden, the present kept - for profiling (engine: gles overlay)
     "OMK_KOTRACE",              // =1 log: a knocked-out fighter's channel, tick by tick
     "OMK_LBLOG",                // =1 log: which term holds the letterbox bars, when it changes
@@ -76,6 +78,7 @@ constexpr const char* kSwitches[] = {
     "OMK_NO_DIRTY",             // A/B: whole uploads instead of the dirty corners (engine: dirty corners)
     "OMK_NO_DRIPS",             // =1 no drips off the roofs' edges in the rain (engine: rain 3d)
     "OMK_NO_DUST",              // =1 the restored sand's dust fog left out, its grains and grade kept (engine: rain 3d)
+    "OMK_NO_DUST_PASS",         // =1 GLES computes the sand's dust in each draw, not once a pixel from the depth
     "OMK_NO_FX_GATE",           // A/B: every particle drawn, none gated by distance (engine: particle gate)
     "OMK_NO_GEOMETRY_RELEASE",  // GLES: a destroyed geometry's GPU state kept (engine: geometry release)
     "OMK_NO_GPU_CLOUD",         // the menus' cloud stretched on the CPU, not under the interface on the GPU (engine: gpu cloud)

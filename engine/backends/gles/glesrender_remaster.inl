@@ -570,6 +570,10 @@ void GlesRenderer::remasterInitCodecs() {
         // Mac's 2.1, Android's) is as it was.
         bcOk_ = ext && std::strstr(ext, "GL_EXT_texture_compression_bptc") &&
                 std::strstr(ext, "GL_EXT_texture_compression_rgtc") && !omk::envFlag("OMK_NO_BLOCK_FORMATS");
+        // `OMK_FORCE_BC_CODECS=1`, an INSTRUMENT: the BC path taken where the
+        // GL names no BPTC (the Mac's) - its uploads fail, but every CPU step
+        // the Switch's pack takes runs, for the sanitizers
+        if (omk::envFlag("OMK_FORCE_BC_CODECS")) bcOk_ = true;
         omk::texturePack().setCodecs((bcOk_ ? omk::kCodecBc : 0u) | (astcOk_ ? omk::kCodecAstc : 0u));
         // ...and every compressed family the context NAMES, said: a format
         // named may still be decoded by the driver on the CPU (the Switch's
@@ -594,6 +598,148 @@ void GlesRenderer::remasterInitCodecs() {
             std::printf("gles: the texture pack's ASTC files - %zu colours read as blocks\n",
                         omk::texturePack().blockFiles(omk::kCodecAstc));
     }
+}
+
+// THE DUST ONCE A PIXEL (the reader's "piste 3", 2026-11-26): the sand's dust
+// (`kDustGlsl`'s `dustAmount` - three noises of eight hashes) was computed in
+// every opaque draw's fragments, so a pixel paid it once per layer drawn over
+// it - ~13 ms of the Switch's frame in Jaunpur's sand (33.3 against 20.5
+// without the dust). Where the context samples a DEPTH TEXTURE the world
+// target keeps its depth in one (the same 16 bits as the renderbuffer), the
+// opaque draws skip their dust, and before the first blended draw - or at
+// `end` - one full-screen pass rebuilds each pixel's world point from that
+// depth through the inverse of the frame's `mvp_`, and mixes the same
+// `dustAmount` over the colour - after the game's fog and the mist, as the
+// draws' own did, the bloom's light-map alpha untouched. Not with MSAA (the
+// samples' depth is another buffer's) nor in the water's reflection;
+// elsewhere the draws keep their own. `OMK_NO_DUST_PASS=1` keeps them always.
+constexpr const char* kDustPassFrag = R"(
+#ifdef GL_ES
+precision highp float;
+#endif
+uniform sampler2D uDepth;
+uniform mat4 uInv;
+uniform vec3 uEye;
+uniform vec4 uDust;
+uniform vec3 uDustColour;
+varying vec2 vUv;
+)";
+constexpr const char* kDustPassMain = R"(
+void main() {
+    float z = texture2D(uDepth, vUv).r;
+    if (z >= 1.0) discard;   // nothing drawn there: no draw's dust either
+    vec4 p = uInv * vec4(vUv * 2.0 - 1.0, z * 2.0 - 1.0, 1.0);
+    gl_FragColor = vec4(uDustColour, dustAmount(uEye, p.xyz / p.w, uDust));
+}
+)";
+
+GLuint GlesRenderer::remasterDepthTexture() {
+    if (depthTexState_ == 0) {
+        // a context that samples depth: GLES 3, or the ES 2 / desktop extension
+        const char* ver = reinterpret_cast<const char*>(glGetString(GL_VERSION));
+        const char* ext = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
+        const bool es3 = ver && std::strstr(ver, "OpenGL ES 3");
+        const bool takes = es3 || (ext && (std::strstr(ext, "GL_OES_depth_texture") || std::strstr(ext, "GL_ARB_depth_texture")));
+        depthTexState_ = takes && !omk::envFlag("OMK_NO_DUST_PASS") ? 1 : -1;
+        std::printf("gles: the world target's depth %s\n",
+                    depthTexState_ > 0 ? "as a TEXTURE - the dust's screen pass reads it"
+                                       : "as a renderbuffer - the dust computed in each draw");
+    }
+    if (depthTexState_ < 0) return 0;
+    if (!depthTex_) glGenTextures(1, &depthTex_);
+    glBindTexture(GL_TEXTURE_2D, depthTex_);
+    texParams(GL_NEAREST, GL_CLAMP_TO_EDGE);
+    // the renderbuffer's own 16 bits: GLES 2's extension takes no sized format
+    const char* ver = reinterpret_cast<const char*>(glGetString(GL_VERSION));
+    const bool es2 = ver && std::strstr(ver, "OpenGL ES 2");
+    glTexImage2D(GL_TEXTURE_2D, 0, es2 ? GL_DEPTH_COMPONENT : GL_DEPTH_COMPONENT16, rw_, rh_, 0, GL_DEPTH_COMPONENT,
+                 GL_UNSIGNED_SHORT, nullptr);
+    gpuTexture("render targets", depthTex_, 2LL * rw_ * rh_);
+    // ...and the pass's own target: `colour_` with no depth (the depth texture
+    // is read, so it may not be attached where the pass draws)
+    if (!dustFbo_) glGenFramebuffers(1, &dustFbo_);
+    glBindFramebuffer(GL_FRAMEBUFFER, dustFbo_);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colour_, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    return depthTex_;
+}
+
+void GlesRenderer::remasterDepthTextureFailed() {
+    std::printf("gles: the depth texture left the world target incomplete - a renderbuffer, the dust in each draw\n");
+    depthTexState_ = -1;
+    if (depthTex_) { deleteTextures(1, &depthTex_); depthTex_ = 0; }
+}
+
+bool GlesRenderer::remasterDustPassDue() const {
+    return depthTex_ && depthTexState_ > 0 && !dustDone_ && !reflectingNow_ && !msFbo_ && dust_[0] > 0.0f &&
+           (fog_ || mistOn_);
+}
+
+void GlesRenderer::remasterDustPass(const Draw*) {
+    dustDone_ = true;
+    if (!dustProg_) {
+        const std::string frag = std::string(kDustPassFrag) + kDustGlsl + kDustPassMain;
+        dustProg_ = link(kPostVert, frag.c_str(), {{0, "aPos"}});
+        if (!dustProg_) {
+            std::printf("gles: the dust's screen pass did not build - the dust in each draw\n");
+            depthTexState_ = -1;
+            return;
+        }
+        const char* names[6] = {"uDepth", "uInv", "uEye", "uDust", "uDustColour", "uSrcInv"};
+        for (int k = 0; k < 6; ++k) dustLoc_[k] = glGetUniformLocation(dustProg_, names[k]);
+        std::printf("gles: the dust's screen pass - once a pixel, from the depth\n");
+        omk::event("remaster.dustpass", {{"backend", "gles"}});
+    }
+    // the frame's clip space back to the world: the inverse of `mvp_`
+    // (column-major), by cofactors
+    const float* m = mvp_;
+    float inv[16];
+    inv[0] = m[5] * m[10] * m[15] - m[5] * m[11] * m[14] - m[9] * m[6] * m[15] + m[9] * m[7] * m[14] + m[13] * m[6] * m[11] - m[13] * m[7] * m[10];
+    inv[4] = -m[4] * m[10] * m[15] + m[4] * m[11] * m[14] + m[8] * m[6] * m[15] - m[8] * m[7] * m[14] - m[12] * m[6] * m[11] + m[12] * m[7] * m[10];
+    inv[8] = m[4] * m[9] * m[15] - m[4] * m[11] * m[13] - m[8] * m[5] * m[15] + m[8] * m[7] * m[13] + m[12] * m[5] * m[11] - m[12] * m[7] * m[9];
+    inv[12] = -m[4] * m[9] * m[14] + m[4] * m[10] * m[13] + m[8] * m[5] * m[14] - m[8] * m[6] * m[13] - m[12] * m[5] * m[10] + m[12] * m[6] * m[9];
+    inv[1] = -m[1] * m[10] * m[15] + m[1] * m[11] * m[14] + m[9] * m[2] * m[15] - m[9] * m[3] * m[14] - m[13] * m[2] * m[11] + m[13] * m[3] * m[10];
+    inv[5] = m[0] * m[10] * m[15] - m[0] * m[11] * m[14] - m[8] * m[2] * m[15] + m[8] * m[3] * m[14] + m[12] * m[2] * m[11] - m[12] * m[3] * m[10];
+    inv[9] = -m[0] * m[9] * m[15] + m[0] * m[11] * m[13] + m[8] * m[1] * m[15] - m[8] * m[3] * m[13] - m[12] * m[1] * m[11] + m[12] * m[3] * m[9];
+    inv[13] = m[0] * m[9] * m[14] - m[0] * m[10] * m[13] - m[8] * m[1] * m[14] + m[8] * m[2] * m[13] + m[12] * m[1] * m[10] - m[12] * m[2] * m[9];
+    inv[2] = m[1] * m[6] * m[15] - m[1] * m[7] * m[14] - m[5] * m[2] * m[15] + m[5] * m[3] * m[14] + m[13] * m[2] * m[7] - m[13] * m[3] * m[6];
+    inv[6] = -m[0] * m[6] * m[15] + m[0] * m[7] * m[14] + m[4] * m[2] * m[15] - m[4] * m[3] * m[14] - m[12] * m[2] * m[7] + m[12] * m[3] * m[6];
+    inv[10] = m[0] * m[5] * m[15] - m[0] * m[7] * m[13] - m[4] * m[1] * m[15] + m[4] * m[3] * m[13] + m[12] * m[1] * m[7] - m[12] * m[3] * m[5];
+    inv[14] = -m[0] * m[5] * m[14] + m[0] * m[6] * m[13] + m[4] * m[1] * m[14] - m[4] * m[2] * m[13] - m[12] * m[1] * m[6] + m[12] * m[2] * m[5];
+    inv[3] = -m[1] * m[6] * m[11] + m[1] * m[7] * m[10] + m[5] * m[2] * m[11] - m[5] * m[3] * m[10] - m[9] * m[2] * m[7] + m[9] * m[3] * m[6];
+    inv[7] = m[0] * m[6] * m[11] - m[0] * m[7] * m[10] - m[4] * m[2] * m[11] + m[4] * m[3] * m[10] + m[8] * m[2] * m[7] - m[8] * m[3] * m[6];
+    inv[11] = -m[0] * m[5] * m[11] + m[0] * m[7] * m[9] + m[4] * m[1] * m[11] - m[4] * m[3] * m[9] - m[8] * m[1] * m[7] + m[8] * m[3] * m[5];
+    inv[15] = m[0] * m[5] * m[10] - m[0] * m[6] * m[9] - m[4] * m[1] * m[10] + m[4] * m[2] * m[9] + m[8] * m[1] * m[6] - m[8] * m[2] * m[5];
+    const float det = m[0] * inv[0] + m[1] * inv[4] + m[2] * inv[8] + m[3] * inv[12];
+    if (det == 0.0f) return;
+    for (float& v : inv) v /= det;
+    glBindFramebuffer(GL_FRAMEBUFFER, dustFbo_);
+    glViewport(0, 0, rw_, rh_);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE);   // the alpha is the bloom's light map
+    glUseProgram(dustProg_);
+    curProg_ = dustProg_;
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, depthTex_);
+    glUniform1i(dustLoc_[0], 0);
+    glUniformMatrix4fv(dustLoc_[1], 1, GL_FALSE, inv);
+    glUniform3f(dustLoc_[2], waterEye_[0], waterEye_[1], waterEye_[2]);
+    glUniform4f(dustLoc_[3], dust_[0], dust_[1], dust_[2], dust_[3]);
+    glUniform3f(dustLoc_[4], dustColour_[0], dustColour_[1], dustColour_[2]);
+    glBindBuffer(GL_ARRAY_BUFFER, quad_);
+    for (GLuint a = 1; a <= kAttrPhase; ++a) glDisableVertexAttribArray(a);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    // the scene's own state back
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
+    glEnable(GL_DEPTH_TEST);
+    forgetState();
+    lastEmis_ = 0;
 }
 
 // THE UPLOAD PROBE (`OMK_UPLOAD_PROBE=<an .astc.ktx2 of the pack>`, an
@@ -714,7 +860,9 @@ void GlesRenderer::remasterWaterUniforms(const Draw& d, const SceneLoc& L, UniCa
             U.mist[0] = m0; U.mist[1] = mist_[1]; U.mist[2] = mist_[2];
         }
         // ...and THE SAND'S DUST (`View::dust`), not in the reflection's pass
-        const float d0 = reflectingNow_ ? 0.0f : dust_[0];
+        // (an OPAQUE draw leaves it to the screen pass when that is due -
+        // `remasterDustPass`, once a pixel, not once a draw's fragment)
+        const float d0 = reflectingNow_ || (d.blend == Blend::Opaque && remasterDustPassDue()) ? 0.0f : dust_[0];
         if (set(!uv || U.dust[0] != d0 || U.dust[1] != dust_[1] || U.dust[2] != dust_[2] || U.dust[3] != dust_[3])) {
             glUniform4f(L.dust, d0, dust_[1], dust_[2], dust_[3]);
             U.dust[0] = d0; U.dust[1] = dust_[1]; U.dust[2] = dust_[2]; U.dust[3] = dust_[3];

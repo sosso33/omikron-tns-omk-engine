@@ -543,6 +543,9 @@ inline constexpr RemasterPresetValue kRemasterPreset[] = {
 #else
     {"smooth", 0.75f},   // "do it by default" (2026-10-22)
 #endif
+    // (the Switch's chained Jaunpur loads crashed with it, 2026-11-26: its
+    // threads were never joined before hbloader loaded the next program
+    // into the same process - `hostthread::drainDetached` - not the preload)
     {"preload", 15.0f},  // 25 until the measurement of 2026-10-26
 };
 // ...and THE UPSCALE under the preset, a platform's (not the preset's

@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <atomic>
 #include <cstdlib>
 #include <cstring>
 #include <new>
@@ -184,6 +185,34 @@ __attribute__((always_inline)) inline Chain chainFrom(const void* first, void* c
 inline Chain chainFrom(const void* first, void* const*) { Chain c{}; c.at[0] = first; return c; }
 #endif
 constexpr std::uint32_t kMagic = 0x4F4D4B6Du;   // "OMKm"
+// ...and THE HEAP CHECK's: a GUARDED block's magic, the guard after its bytes,
+// the live guarded blocks in an open-addressed table malloc'd at the enable
+// (nothing here may call `new`), a removed one a tombstone
+constexpr std::uint32_t kMagicGuarded = 0x4F4D4B67u;   // "OMKg"
+constexpr std::uint64_t kTailGuard = 0x7A11C0DE5AFE7A11ull;
+constexpr std::size_t kGuardBytes = 8;
+std::atomic<bool> g_guarding{false};
+void** g_guarded = nullptr;
+std::size_t g_guardedCap = 0;
+void* const kTomb = reinterpret_cast<void*>(1);
+std::atomic_flag g_guardLock = ATOMIC_FLAG_INIT;
+struct GuardLock {
+    GuardLock() { while (g_guardLock.test_and_set(std::memory_order_acquire)) {} }
+    ~GuardLock() { g_guardLock.clear(std::memory_order_release); }
+};
+std::size_t guardSlot(const void* p) {
+    return static_cast<std::size_t>((reinterpret_cast<std::uintptr_t>(p) >> 4) * 0x9E3779B97F4A7C15ull) & (g_guardedCap - 1);
+}
+void guardAdd(void* p) {
+    GuardLock lk;
+    for (std::size_t i = guardSlot(p), n = 0; n < g_guardedCap; i = (i + 1) & (g_guardedCap - 1), ++n)
+        if (!g_guarded[i] || g_guarded[i] == kTomb) { g_guarded[i] = p; return; }
+}
+void guardRemove(void* p) {
+    GuardLock lk;
+    for (std::size_t i = guardSlot(p), n = 0; n < g_guardedCap && g_guarded[i]; i = (i + 1) & (g_guardedCap - 1), ++n)
+        if (g_guarded[i] == p) { g_guarded[i] = kTomb; return; }
+}
 
 int workersTag();
 
@@ -226,7 +255,8 @@ __attribute__((noinline)) void printStackCode() {
 #endif
 
 __attribute__((noinline)) void* counted(std::size_t n, const void* site) {
-    auto* p = static_cast<unsigned char*>(std::malloc(n + kHeader));
+    const bool guard = g_guarding.load(std::memory_order_relaxed);
+    auto* p = static_cast<unsigned char*>(std::malloc(n + kHeader + (guard ? kGuardBytes : 0)));
     if (!p) {
         // A REFUSED ALLOCATION SAYS ITS SIZE - the Vita's own `operator new`
         // did (vita_main.cpp, a city load dead at 86 MB of 192); this one
@@ -249,7 +279,11 @@ __attribute__((noinline)) void* counted(std::size_t n, const void* site) {
     auto* h = reinterpret_cast<Header*>(p);
     h->size = n;
     h->tag = static_cast<std::uint32_t>(tag);
-    h->magic = kMagic;
+    h->magic = guard ? kMagicGuarded : kMagic;
+    if (guard) {
+        std::memcpy(p + kHeader + n, &kTailGuard, kGuardBytes);
+        guardAdd(p);
+    }
     account(tag, static_cast<long long>(n), 1);
     h->site = siteAccount(chainFrom(site, static_cast<void* const*>(__builtin_frame_address(0))),
                           static_cast<long long>(n), 1);
@@ -260,6 +294,20 @@ void uncounted(void* q) {
     if (!q) return;
     auto* p = static_cast<unsigned char*>(q) - kHeader;
     auto* h = reinterpret_cast<Header*>(p);
+    if (h->magic == kMagicGuarded) {
+        std::uint64_t tail = 0;
+        std::memcpy(&tail, p + kHeader + h->size, kGuardBytes);
+        if (tail != kTailGuard) {
+            std::printf("heap: CORRUPTED at a free - block %p, %lu bytes, its guard after them overwritten "
+                        "(0x%016llx), allocated at %p %p %p %p\n", static_cast<void*>(p + kHeader),
+                        static_cast<unsigned long>(h->size), static_cast<unsigned long long>(tail),
+                        g_sites[h->site].at[0], g_sites[h->site].at[1], g_sites[h->site].at[2], g_sites[h->site].at[3]);
+            std::fflush(stdout);
+            std::abort();
+        }
+        guardRemove(p);
+        h->magic = kMagic;   // accounted below as any block
+    }
     if (h->magic == kMagic && h->tag < static_cast<std::uint32_t>(kTags)) {
         account(static_cast<int>(h->tag), -static_cast<long long>(h->size), -1);
         siteRelease(h->site, static_cast<long long>(h->size));
@@ -269,6 +317,56 @@ void uncounted(void* q) {
 }
 
 }  // namespace omk::prof::mem
+
+namespace omk::prof {
+
+void heapCheckEnable() {
+    using namespace mem;
+    if (g_guarding.load()) return;
+    g_guardedCap = std::size_t(1) << 22;   // 4M blocks, 32 MB - malloc'd, not `new`
+    g_guarded = static_cast<void**>(std::calloc(g_guardedCap, sizeof(void*)));
+    if (!g_guarded) { std::printf("heap: the check's table refused - no check\n"); return; }
+    g_guarding.store(true);
+    std::printf("heap: CHECKED from here - every new block guarded and listed (OMK_HEAP_CHECK)\n");
+}
+
+void heapCheck(const char* where) {
+    using namespace mem;
+    if (!g_guarding.load(std::memory_order_relaxed)) return;
+    GuardLock lk;
+    static long checks = 0;
+    long blocks = 0;
+    for (std::size_t i = 0; i < g_guardedCap; ++i) {
+        void* q = g_guarded[i];
+        if (!q || q == kTomb) continue;
+        ++blocks;
+        auto* p = static_cast<unsigned char*>(q);
+        const auto* h = reinterpret_cast<const Header*>(p);
+        std::uint64_t tail = 0;
+        const bool head = h->magic == kMagicGuarded && h->site < kSites;
+        if (head) std::memcpy(&tail, p + kHeader + h->size, kGuardBytes);
+        if (!head || tail != kTailGuard) {
+            std::printf("heap: CORRUPTED, found at '%s' (check %ld) - block %p: %s; ", where, checks,
+                        static_cast<void*>(p + kHeader),
+                        head ? "its guard AFTER its bytes overwritten" : "its HEADER overwritten (the block before ran over)");
+            if (head)
+                std::printf("%lu bytes, guard 0x%016llx, allocated at %p %p %p %p\n", static_cast<unsigned long>(h->size),
+                            static_cast<unsigned long long>(tail), g_sites[h->site].at[0], g_sites[h->site].at[1],
+                            g_sites[h->site].at[2], g_sites[h->site].at[3]);
+            else
+                std::printf("magic 0x%08x, the header's bytes %016llx %016llx\n", h->magic,
+                            static_cast<unsigned long long>(reinterpret_cast<const std::uint64_t*>(p)[0]),
+                            static_cast<unsigned long long>(reinterpret_cast<const std::uint64_t*>(p)[1]));
+            std::fflush(stdout);
+            std::abort();
+        }
+    }
+    if (checks < 3 || checks % 600 == 0)
+        std::printf("heap: check %ld at '%s' - %ld guarded blocks whole\n", checks, where, blocks);
+    ++checks;
+}
+
+}  // namespace omk::prof
 
 // The standard's replaceable allocation functions: defined here, they take
 // the place of the library's in every program linking the engine - a

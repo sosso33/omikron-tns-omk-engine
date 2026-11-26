@@ -14,5 +14,13 @@ namespace omk::hostthread {
 // a size -> false when no thread could be made (the caller then runs it).
 bool spawnDetached(const char* name, std::size_t stackBytes, std::function<void()> fn);
 void sleepMs(int ms);
+// EVERY THREAD `spawnDetached` made, waited for and released - before the
+// program hands its process on. The Switch's hbloader loads the NEXT program
+// (a chained launch, `envSetNextLoad`; hbmenu again) into the SAME process: a
+// job still running then (a preload's set) ran on into the new program's
+// heap - the chained Jaunpur loads crashed, every one, the ones launched by
+// hand never (`todo/switch-port.md`, 2026-11-26). -> how many it waited for.
+// Elsewhere a process's end ends its threads: nothing to do, 0.
+int drainDetached();
 
 }  // namespace omk::hostthread

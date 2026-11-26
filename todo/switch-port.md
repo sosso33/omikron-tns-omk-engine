@@ -633,6 +633,55 @@ the frames sit at the refresh's edge, half at 16.6, half at 33.3; its
 - the remaster's dust fog is the sand's cost (~13 ms), the next for the
 Switch; the original's sand 16.6.
 
+**THE DUST ONCE A PIXEL - THE FIRST CONSOLE RUN CRASHED** (the reader,
+2026-11-26: *"crash au lancement"*): Jaunpur, the world target's depth as a
+TEXTURE (`remasterDepthTexture`), the log ends at frame 2 (`SLOW FRAME - 129
+ms`, then a mesh's collision line); the M1 drew the same frames fine. Cause
+NOT YET READ - Atmosphère's report next.
+
+**IT WAS NOT THE DUST: THE PRELOAD** (2026-11-26). The report: `malloc`
+faulting at 0 on the main thread in `promoteBothSoups` - the same as the
+second sweep's Jaunpur crash, before this code. Two automatic SERIES of
+eight Jaunpur loads (plan lines starting `!`, run as written, `--env` in
+them; short sweeps, 10 frames settled and 20 measured):
+
+| series | preload | the bodies' pool | crashed |
+|---|---|---|---|
+| A | on | on | 2 of 4 |
+| B | off | off | 0 of 4 |
+| C | off | on | 0 of 4 |
+| D | on | off | 2 of 4 |
+
+Every crash the same, and each BEFORE the preload's thread was made (the
+log never reaches `preload: X - its door ... prepared on a thread`, printed
+right after it): the heap is corrupted by what the preload does first on
+the MAIN thread - its 54 destinations found on the card (`fs.resolve`),
+its pins - or by its effect on the renderer. On the M1 the same load (the
+BC path forced, `OMK_FORCE_BC_CODECS=1`; the audio device open,
+`OMK_AUDIO_DEVICE=1`) is clean under AddressSanitizer and ThreadSanitizer.
+**THE CAUSE, FOUND** (2026-11-26/27): a third series with every block
+guarded (`OMK_HEAP_CHECK=1` - `platform/profile.h` heapCheck: a guard after
+each `new` block, every live block listed, the guards read after each frame
+phase and in the preload; shown to catch a one-byte overrun at its check)
+found NO block overrun - and a pattern: the runs launched BY HAND (1, 3, 5,
+7) finished, every CHAINED one (2, 4, 6, 8 - `envSetNextLoad`) crashed in
+its first frame; series A and D the same (a2, a4, d2, d4 chained). hbloader
+loads the next program into the SAME process, and the Switch's
+`spawnDetached` (`threads_std.cpp`) joined a finished thread only at the
+next spawn - never at the program's end: the preload's threads, their
+stacks taken from the heap and mapped elsewhere until joined, were left to
+the next program. Without the preload no such thread, no crash. Fixed:
+`hostthread::drainDetached`, every spawned thread joined before the
+launcher hands the process on. **A fourth series, eight chained loads with
+the preload ON: eight finished, no crash report.** The Switch's preset
+keeps the preload at 15 m again.
+
+**THE DUST ONCE A PIXEL, measured** (Jaunpur, the Switch's tier, the
+preload off): the sand 30.8 ms, its dust off 26.3 - the dust ~4.5 ms
+against ~13 drawn per draw (33.3 / 20.5). The frames sit on the refresh's
+16.6 / 33.3 steps there (the swap waits for it), so these medians are
+coarse.
+
 **S2 - first light.** ~1-2 days, needs a console or an emulator (§4).
 * `playgpu_gles.cpp`: on the Switch a GLES 3.0 context (the Quest's branch;
   Mesa offers 3.2); decision 2's `OMK_GLES3` in `glesrender.cpp`.

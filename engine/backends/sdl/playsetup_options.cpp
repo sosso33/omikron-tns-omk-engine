@@ -18,6 +18,9 @@ int PlayState::setupOptions(int argc, char** argv) {
     // THE PROFILER (`todo/debug-tools.md`): `--profile <file>` writes a
     // capture for `tools/omkprof.py`, the clock being the frontend's
 #if OMK_PROFILE
+    // THE HEAP CHECK (`OMK_HEAP_CHECK=1`, an instrument): every block from
+    // here guarded and listed, read after each phase (`platform/profile.h`)
+    if (omk::envFlag("OMK_HEAP_CHECK")) omk::prof::heapCheckEnable();
     if (!opt.profilePath.empty()) {
         static omk::Frontend* profFront = nullptr;
         profFront = &front;

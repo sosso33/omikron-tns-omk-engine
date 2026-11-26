@@ -1559,6 +1559,13 @@ private:
     std::string tintPosedVert_, tintPosedVertX_;   // ...its posing programs' sources (plain, enhanced)
     GLuint reflFbo_ = 0, reflTex_ = 0, reflDepth_ = 0, passFbo_ = 0;
     int    reflW_ = 0, reflH_ = 0;
+    // THE DUST'S SCREEN PASS (`remasterDustPass`): the world target's depth
+    // as a texture where the context samples one, the pass's own target
+    // (`colour_` alone), its program
+    GLuint depthTex_ = 0, dustFbo_ = 0, dustProg_ = 0;
+    GLint  dustLoc_[6] = {-1, -1, -1, -1, -1, -1};
+    int    depthTexState_ = 0;   // 0 not asked, 1 the context takes one, -1 it does not (or it failed)
+    bool   dustDone_ = false;    // this pass's dust applied: the draws after it take their own
 #else
     static constexpr float  bloom_ = 0.0f, waterWant_ = 0.0f;
     static constexpr bool   bloomBuilt_ = false;
@@ -1582,6 +1589,10 @@ private:
     bool remasterInitUpscale();                    // FSR's programs; false: the target failed
     void remasterInitCodecs();                     // the pack's block formats the context samples
     void uploadProbe(const char* astcPath, const char* ext);   // OMK_UPLOAD_PROBE, an instrument
+    GLuint remasterDepthTexture();                 // the world target's depth as a texture (0: a renderbuffer)
+    void remasterDepthTextureFailed();             // ...which made the target incomplete: never again
+    bool remasterDustPassDue() const;              // the opaque draws leave the dust to the screen pass
+    void remasterDustPass(const Draw* next);       // ...run before `next` (a blended draw) or at `end`
     bool packActive() const;                       // a texture pack is open
     std::vector<PackImage> packDecode(std::span<const Texture* const> ts) const;
     static bool gpuBlocks(const PackBlocks& z);   // `z` holds blocks the GL takes as they are (ASTC or BC)
@@ -2120,16 +2131,23 @@ bool GlesRenderer::allocTarget() {
         glBindTexture(GL_TEXTURE_2D, colour_);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, rw_, rh_, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
         gpuTexture("render targets", colour_, 4LL * rw_ * rh_);
-        glBindRenderbuffer(GL_RENDERBUFFER, depth_);
-        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, rw_, rh_);
-        gpuRenderbuffer("render targets", depth_, 2LL * rw_ * rh_);
+        // the depth: a TEXTURE where the remaster's screen passes read it
+        // (`remasterDepthTexture`, the same 16 bits), else the renderbuffer
+        const GLuint depthTex = remasterDepthTexture();
+        if (!depthTex) {
+            glBindRenderbuffer(GL_RENDERBUFFER, depth_);
+            glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, rw_, rh_);
+            gpuRenderbuffer("render targets", depth_, 2LL * rw_ * rh_);
+        }
         const bool oom = glGetError() == GL_OUT_OF_MEMORY;
         glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colour_, 0);
-        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depth_);
+        if (depthTex) glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthTex, 0);
+        else glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depth_);
         const GLenum fbs = glCheckFramebufferStatus(GL_FRAMEBUFFER);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         if (!oom && fbs == GL_FRAMEBUFFER_COMPLETE) return true;
+        if (depthTex) { remasterDepthTextureFailed(); continue; }   // the renderbuffer, again
         if (ss_ <= 1) {
             std::fprintf(stderr, "gles: render target incomplete (0x%x)%s\n", fbs,
                          oom ? ", out of memory" : "");
@@ -2960,6 +2978,9 @@ void GlesRenderer::begin(const View& view) {
 void GlesRenderer::beginPass(const View& view) {
     st_ = RasterStats{};
     lightMapNow_ = false;
+#if OMK_REMASTER
+    dustDone_ = false;   // each pass its own dust (`remasterDustPass`)
+#endif
     view_ = view;
     fog_ = view.fog;
     fogStart_ = view.fogStart;
@@ -3310,6 +3331,8 @@ void GlesRenderer::shadowPass(const View& v, std::span<const Draw> casters) {
 
 void GlesRenderer::submit(const Draw& d) {
     if (!recording_ || !d.geo || !d.count) return;
+    // the opaque draws done: the remaster's dust over them, once a pixel
+    if (d.blend != Blend::Opaque && remasterDustPassDue()) remasterDustPass(&d);
     PoseVbo* pvb = nullptr;
     bool posed = usePosed(d);
     // a LIT plain draw reads its normals from a buffer of their own
@@ -3527,6 +3550,7 @@ void GlesRenderer::submit(const Draw& d) {
 
 void GlesRenderer::end() {
     if (!recording_) return;
+    if (remasterDustPassDue()) remasterDustPass(nullptr);   // no blended draw came: the dust now
     recording_ = false;
     shadowLive_ = false;   // the next frame's depth pass, if any, fills it again
     // The cull is the SCENE's: nothing drawn after it (the mirror composite,
@@ -4166,6 +4190,10 @@ void GlesRenderer::remasterRelease() {}
 void GlesRenderer::remasterWaterUniforms(const Draw&, const SceneLoc&, UniCache&, bool) {}
 bool GlesRenderer::remasterWantsNormals(const Draw&) const { return false; }
 void GlesRenderer::remasterLightMap(const Tex&) {}
+GLuint GlesRenderer::remasterDepthTexture() { return 0; }
+void GlesRenderer::remasterDepthTextureFailed() {}
+bool GlesRenderer::remasterDustPassDue() const { return false; }
+void GlesRenderer::remasterDustPass(const Draw*) {}
 #endif  // OMK_REMASTER
 
 }  // namespace omk

@@ -231,6 +231,17 @@ bool spawnDetached(const char*, std::size_t stackBytes, std::function<void()> fn
     list.push_back(s);
     return true;
 }
+int drainDetached() {
+    std::lock_guard<std::mutex> lk(spawnedLock());
+    auto& list = spawnedList();
+    const int n = static_cast<int>(list.size());
+    for (Spawned* s : list) {
+        pthread_join(s->t, nullptr);   // done or not: waited for
+        delete s;
+    }
+    list.clear();
+    return n;
+}
 #else
 // -> false when no thread could be made, as `hostthread.h` promises: a
 // `std::system_error` out of here would reach `std::terminate`. And a
@@ -251,6 +262,9 @@ bool spawnDetached(const char*, std::size_t, std::function<void()> fn) {
 }
 #endif
 void sleepMs(int ms) { std::this_thread::sleep_for(std::chrono::milliseconds(ms)); }
+#if !defined(__SWITCH__)
+int drainDetached() { return 0; }   // a process's end ends its threads
+#endif
 }  // namespace hostthread
 
 }  // namespace omk

@@ -26,6 +26,7 @@
 // 2026-10-26).
 #if OMK_REMASTER
 
+#include "platform/profile.h"
 #include "../sdl/playstate.h"
 
 #include "o3de/texpack.h"
@@ -120,6 +121,7 @@ void PlayState::preloadPin() {
         if (p.sent && p.L && p.L->found)
             pins.insert(pins.end(), p.L->out.tex.begin(), p.L->out.tex.end());
     if (world_) world_->setPreloadTextures(pins);
+    omk::prof::heapCheck("the preload: after its pins");
 }
 
 void PlayState::phasePreload() {
@@ -128,6 +130,7 @@ void PlayState::phasePreload() {
     const auto& fs = *fs_;
     // the renderer's share of the work: a few uploads a frame, spread
     world_->preloadStep(kUploadsPerFrame);
+    omk::prof::heapCheck("the preload: after the renderer's step");   // OMK_HEAP_CHECK
     // the doors, read again when the resident pair changes
     const int k0 = session.residentSlot(0).area, k1 = session.residentSlot(1).area;
     if (k0 != preloadDoorsKey[0] || k1 != preloadDoorsKey[1]) {
@@ -138,6 +141,7 @@ void PlayState::phasePreload() {
         for (const auto& d : preloadDoors) second += d.via >= 0 ? 1 : 0;
         std::printf("preload: areas %d and %d resident - %zu destinations behind their doors (%d through an "
                     "airlock or corridor)\n", k0, k1, preloadDoors.size(), second);
+        omk::prof::heapCheck("the preload: after the doors");
         omk::event("preload.doors", {{"area0", k0}, {"area1", k1}, {"targets", static_cast<long>(preloadDoors.size())},
                                      {"second", second}});
     }

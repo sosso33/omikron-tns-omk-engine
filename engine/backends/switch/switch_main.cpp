@@ -66,6 +66,8 @@
 #include <string>
 #include <vector>
 
+#include "platform/hostthread.h"
+
 int omk_play_main(int argc, char** argv);
 
 namespace {
@@ -380,17 +382,35 @@ int main(int argc, char** argv) {
     const int run = plan.empty() ? -1 : benchNext();
     const bool benching = run >= 0 && run < static_cast<int>(plan.size());
     if (benching) {
+        // a line starting `!` is the RUN'S OWN: its arguments as they stand,
+        // no report added (a series of loads, its own `--bench` or `--frames`);
+        // `--env NAME=VALUE` in a line sets that variable for the run
+        std::string line = plan[static_cast<std::size_t>(run)];
+        const bool raw = !line.empty() && line[0] == '!';
+        if (raw) line.erase(0, 1);
+        std::vector<std::string> words;
         std::string word;
-        for (const char c : plan[static_cast<std::size_t>(run)] + " ") {
+        for (const char c : line + " ") {
             if (c != ' ') { word += c; continue; }
-            if (!word.empty()) game.args.push_back(word);
+            if (!word.empty()) words.push_back(word);
             word.clear();
+        }
+        for (std::size_t w = 0; w < words.size(); ++w) {
+            if (words[w] == "--env" && w + 1 < words.size()) {
+                const std::string kv = words[++w];
+                const auto eq = kv.find('=');
+                if (eq != std::string::npos) setenv(kv.substr(0, eq).c_str(), kv.substr(eq + 1).c_str(), 1);
+                continue;
+            }
+            game.args.push_back(words[w]);
         }
         char report[160];
         // 90 frames settled and 240 measured a step: ~5 minutes a place
         std::snprintf(report, sizeof report, "%s/%02d-%s.txt:90:240", kBench, run + 1, stamp);
-        game.args.push_back("--bench");
-        game.args.push_back(report);
+        if (!raw) {
+            game.args.push_back("--bench");
+            game.args.push_back(report);
+        }
         if (std::FILE* f = std::fopen((std::string(kBench) + "/next.txt").c_str(), "w")) {
             std::fprintf(f, "%d\n", run + 1);
             std::fclose(f);
@@ -430,6 +450,11 @@ int main(int argc, char** argv) {
             std::printf("switch: the performance sweep's plan done - put away as plan-done-%s.txt\n", stamp);
         }
     }
+    // ...and every background thread the game left running WAITED FOR before
+    // the process goes to the next program (hbloader loads it into this one:
+    // a preload job running on wrote into the next run's heap)
+    const int drained = omk::hostthread::drainDetached();
+    if (drained > 0) std::printf("switch: %d background thread(s) waited for before the next program\n", drained);
     logMemory("at exit");
     std::fflush(stdout);
     std::fflush(stderr);

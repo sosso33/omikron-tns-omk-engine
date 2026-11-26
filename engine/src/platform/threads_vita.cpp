@@ -204,6 +204,7 @@ bool spawnDetached(const char* name, std::size_t stackBytes, std::function<void(
 }
 
 void sleepMs(int ms) { sceKernelDelayThread(static_cast<SceUInt>(ms) * 1000); }
+int drainDetached() { return 0; }   // the Vita's process ends with the app
 }  // namespace hostthread
 
 }  // namespace omk

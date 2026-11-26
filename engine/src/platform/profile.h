@@ -169,6 +169,14 @@ void gpuFree(std::uint64_t key);
 // The memory categories: a name (a literal, kept by pointer) -> its id.
 int memTag(const char* name);
 int memTagSwap(int id);            // the thread's category set, the old one back
+// THE HEAP CHECK (`OMK_HEAP_CHECK=1`, an INSTRUMENT - the Switch's heap
+// corrupted at a Jaunpur load, `todo/switch-port.md`): from `heapCheckEnable`
+// on, every block `new` gives carries a guard after its bytes and is listed;
+// `heapCheck(where)` reads every listed block's two guards and, at the first
+// one broken, says the block, its size, the code that allocated it and
+// WHERE, and aborts there - the corruption bracketed between two checks.
+void heapCheckEnable();
+void heapCheck(const char* where);
 struct MemTotals { long long live = 0, peak = 0; long blocks = 0; };
 MemTotals memTotals();             // live and peak over the whole run (heapcount)
 
@@ -228,6 +236,8 @@ enum class Run { Go, Hold };
 inline Run control(long) { return Run::Go; }
 struct MemTotals { long long live = 0, peak = 0; long blocks = 0; };
 inline MemTotals memTotals() { return {}; }
+inline void heapCheckEnable() {}
+inline void heapCheck(const char*) {}
 inline bool snapshotOwed() { return false; }
 inline void snapshot(long, int, int, const std::uint16_t*) {}
 
