@@ -55,6 +55,12 @@ struct PlayOptions {
     double profileWindow = 0;  // --profile-window S: the frames summed S seconds a chunk
     std::string profileAb;     // --profile-ab NAME[:S]: a renderer's switch flipped every S s
     double profileAbSec = 20;
+    // --bench F[:SETTLE:MEASURE]: the PERFORMANCE SWEEP at the place the run
+    // starts in (`backends/sdl/playbench.cpp`) - the file I/O probed, then
+    // each setting off in turn, SETTLE frames to settle and MEASURE frames
+    // measured a step; the report written to F and the run ended
+    std::string benchPath;
+    int benchSettle = 120, benchMeasure = 300;
     bool waterCamPreset = false;   // `--water-cam preset`: the old fixed-offset reading
     int snapEvery = 30;            // `--snap-every N`: 1 catches a flicker
     // A STREET START (docs/STREET_LIFE.md, step 4): `--save FILE` takes the

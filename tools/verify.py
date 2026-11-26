@@ -53520,8 +53520,9 @@ def c_licence_headers():
     # 713: + `engine/tools/m4_pairs.cpp`, `m4_show.cpp` (`engine: show context record`)
     # 714: + `engine/backends/switch/switch_main.cpp` (`engine: switch build`)
     # 715: + `engine/backends/switch/swkbd.cpp` (the name field's keyboard)
+    # 716: + `engine/backends/sdl/playbench.cpp` (the performance sweep, `--bench`)
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (715, [], 10, []), \
+           (716, [], 10, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \

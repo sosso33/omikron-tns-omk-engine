@@ -389,6 +389,10 @@ int PlayOptions::parse(int argc, char** argv) {
 "                   todo/debug-tools.md - absent from `make release`)\n"
 "  --profile-window S  the capture sums its frames S seconds at a time: a few\n"
 "                   KB per window, not a chunk a frame (a slow disk)\n"
+"  --bench F[:S:M]  the performance sweep where the run starts: the file I/O\n"
+"                   probed, then the original, the remaster and each setting\n"
+"                   off in turn, S frames settled (120) and M measured (300)\n"
+"                   a step; the report to F, then the run ends\n"
 "  --profile-ab NAME[:S]  flip the renderer's switch NAME every S seconds\n"
 "                   (20), so one run measures both sides; windows implied.\n"
 "                   GL1: lock, cardfog\n"
@@ -513,6 +517,17 @@ int PlayOptions::parse(int argc, char** argv) {
         else if (a == "--flicker" && i + 1 < argc) flickerDir = argv[++i];
         else if (a == "--profile" && i + 1 < argc) profilePath = argv[++i];
         else if (a == "--profile-window" && i + 1 < argc) profileWindow = std::atof(argv[++i]);
+        else if (a == "--bench" && i + 1 < argc) {
+            benchPath = argv[++i];
+            // F[:SETTLE:MEASURE] - a Windows drive letter's colon is not one
+            int s = 0, m = 0;
+            const auto c = benchPath.rfind(':');
+            if (c != std::string::npos && c > 1 &&
+                std::sscanf(benchPath.c_str() + benchPath.rfind(':', c - 1) + 1, "%d:%d", &s, &m) == 2 && s >= 0 && m > 0) {
+                benchSettle = s; benchMeasure = m;
+                benchPath.resize(benchPath.rfind(':', c - 1));
+            }
+        }
         else if (a == "--profile-ab" && i + 1 < argc) {
             profileAb = argv[++i];
             if (const auto c = profileAb.find(':'); c != std::string::npos) {

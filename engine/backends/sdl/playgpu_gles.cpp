@@ -105,7 +105,13 @@ void PlayState::gpuOpenWindow() {
 #endif
         }
         if (glWin && SDL_GL_CreateContext(glWin)) {
-            SDL_GL_SetSwapInterval(1);
+            // v-sync, but not under the performance sweep (`--bench`) or
+            // `OMK_PRESENT_IMMEDIATE=1` (Vulkan's instrument): a frame's
+            // work then ends when the GL takes it, not at the next refresh -
+            // the console's frames read 33, 43, 50 ms, the refresh's steps
+            const bool unsynced = !opt.benchPath.empty() || omk::envFlag("OMK_PRESENT_IMMEDIATE");
+            SDL_GL_SetSwapInterval(unsynced ? 0 : 1);
+            if (unsynced) std::printf("gles: v-sync off - the performance sweep or OMK_PRESENT_IMMEDIATE\n");
             omk::Renderer* gr = omk::makeGlesRenderer();
             if (aaSamples > 1) gr->setMultisample(aaSamples);     // the enhancements
             if (texFilter > 0) gr->setTextureFilter(texFilter);

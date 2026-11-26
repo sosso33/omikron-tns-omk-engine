@@ -75,6 +75,7 @@ int PlayState::phasePresent() {
         harnessSnaps();
         ++frameNo;
         if (frames && frameNo >= frames) break;
+        if (benchDone_) break;   // the performance sweep's report written
         // 30 Hz, PORTING A7 - and it is a CAP, not an addition. A flat
         // `SDL_Delay(33)` sleeps a whole frame budget ON TOP of however long
         // the frame took, so a 30 ms software frame ran the loop at ~16 fps
@@ -111,6 +112,8 @@ int PlayState::phasePresent() {
                             (now - paceLeft) * 1000.0,
                             player ? (" at " + std::to_string(int(player->pos()[0])) + " " +
                                       std::to_string(int(player->pos()[2]))).c_str() : "");
+            // THE PERFORMANCE SWEEP (`--bench`, playbench.cpp) takes the same work
+            if (!opt.benchPath.empty() && paceLeft > 0.0) benchFrame((now - paceLeft) * 1000.0);
             // ...and one over OMK_MARKS_MS (150) says which SECTIONS: the
             // gaps between the marks, largest first, the top eight
             static const double marksMs = omk::envNum("OMK_MARKS_MS", 150.0);
@@ -138,7 +141,9 @@ int PlayState::phasePresent() {
                 // the WAIT for the frame's slot, apart from the work (`present`
                 // holds both; the iBook's profiles read the two as one)
                 OMK_ZONE("frame: pace");
-                while (!front.paces() && now < paceNext) {
+                // (the performance sweep runs unpaced: back to back, a frame
+                // costs what its CPU or its GPU costs, whichever is the more)
+                while (!front.paces() && opt.benchPath.empty() && now < paceNext) {
                     const double left = paceNext - now;
                     front.delayMs(left > 0.002 ? static_cast<std::uint32_t>((left - 0.0015) * 1000.0) : 0);
                     now = nowSec();

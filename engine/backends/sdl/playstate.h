@@ -23,6 +23,7 @@
 #include "../vr/playvr.h"   // VrState: the VR build's only state (todo/quest-port.md)
 #endif
 
+#include <memory>
 #include <optional>
 #include <string_view>
 
@@ -950,6 +951,15 @@ struct PlayState {
     float remasterArmed(const char* key) const;    // the start's strength, its resources loaded when > 0
     float remasterRunning(const char* key, float v) const;   // ...what the remaster mode runs with
     float* remasterStrength(const std::string& key);
+    // THE PERFORMANCE SWEEP (`--bench`, playbench.cpp): each frame's work from
+    // the pacer; done -> the run ends
+    struct BenchRun;
+    std::shared_ptr<BenchRun> bench_;
+    bool benchDone_ = false;
+    void benchFrame(double workMs);
+    void benchSetup();
+    void benchRestore();
+    void benchProbeDir(const std::string& dir, const char* what);
     void preloadReleaseAll();                      // the preload radius turned to 0, live
     void omkOptionsSetup();                        // OMK's pages, beside screen 35
     void omkOptionsOpen();                         // ...given this run's values, at each open

@@ -18,6 +18,16 @@
 //                                    defaults ('#' starts a comment) - `--area`,
 //                                    `--res`, `--fps` without a rebuild
 //   sdmc:/switch/omk/omk-play-YYYYMMDD-HHMMSS.log / .err   each run's output
+//   sdmc:/switch/omk/bench/plan.txt  THE PERFORMANCE SWEEP's PLAN, when there:
+//                                    one RUN a line (its extra arguments, a
+//                                    place: `--area 0 --stand X,Y,Z,YAW`); each
+//                                    launch runs the next line under `--bench`
+//                                    (`backends/sdl/playbench.cpp`), its report
+//                                    `bench/NN-<stamp>.txt`, and loads itself
+//                                    again for the line after (hbloader's next
+//                                    load) - one launch takes every reading. The
+//                                    last renames the plan `plan-done-<stamp>`,
+//                                    so the launch after it is the game again.
 //
 // Launched with `nxlink -s omk.nro` (the dev loop over Wi-Fi) the output goes
 // to the Mac's terminal instead of the files.
@@ -48,6 +58,25 @@ constexpr const char* kTables = "romfs:/tables";
 constexpr const char* kSaves  = "sdmc:/switch/omk/saves/GAMES";
 constexpr const char* kIni    = "sdmc:/switch/omk/omk.ini";
 constexpr const char* kExtra  = "sdmc:/switch/omk/args.txt";
+constexpr const char* kBench  = "sdmc:/switch/omk/bench";
+constexpr const char* kNro    = "sdmc:/switch/omk/omk.nro";   // when argv[0] does not say
+
+// the plan's runs: its lines, blanks and `#` comments out
+std::vector<std::string> benchPlan() {
+    std::vector<std::string> runs;
+    std::ifstream in{std::string(kBench) + "/plan.txt"};
+    std::string line;
+    while (std::getline(in, line)) {
+        while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+        if (!line.empty() && line[0] != '#') runs.push_back(line);
+    }
+    return runs;
+}
+int benchNext() {
+    std::ifstream in{std::string(kBench) + "/next.txt"};
+    int n = 0;
+    return in >> n ? n : 0;
+}
 
 // `play.cpp`'s `main` is one function with ~470 locals in a single frame; the
 // Vita needed 8 MiB for it and the recursion below it. An NRO's main stack is
@@ -99,22 +128,24 @@ const char* appletTypeName(AppletType t) {
 }
 }  // namespace
 
-int main(int, char**) {
+int main(int argc, char** argv) {
     romfsInit();
     mkdir(kHome, 0777);
     mkdir("sdmc:/switch/omk/saves", 0777);
+
+    mkdir(kBench, 0777);
+    // ONE PAIR A RUN, DATED, so the runs sort by name and a report never
+    // overwrites the one before it. The console's local clock.
+    char stamp[32] = "undated";
+    const std::time_t now = std::time(nullptr);
+    if (const std::tm* t = std::localtime(&now))
+        std::strftime(stamp, sizeof stamp, "%Y%m%d-%H%M%S", t);
 
     const bool nxlink = __nxlink_host.s_addr != 0;
     if (nxlink) {
         socketInitializeDefault();
         nxlinkStdio();
     } else {
-        // ONE PAIR A RUN, DATED, so the runs sort by name and a report never
-        // overwrites the one before it. The console's local clock.
-        char stamp[32] = "undated";
-        const std::time_t now = std::time(nullptr);
-        if (const std::tm* t = std::localtime(&now))
-            std::strftime(stamp, sizeof stamp, "%Y%m%d-%H%M%S", t);
         const std::string base = std::string(kHome) + "/omk-play-" + stamp;
         std::freopen((base + ".log").c_str(), "w", stdout);
         std::freopen((base + ".err").c_str(), "w", stderr);
@@ -137,6 +168,30 @@ int main(int, char**) {
             if (!line.empty() && line[0] != '#') game.args.push_back(line);
         }
     }
+    // THE PERFORMANCE SWEEP's plan: this launch's run, its place's arguments
+    // split at the spaces, and where its report goes
+    const std::vector<std::string> plan = benchPlan();
+    const int run = plan.empty() ? -1 : benchNext();
+    const bool benching = run >= 0 && run < static_cast<int>(plan.size());
+    if (benching) {
+        std::string word;
+        for (const char c : plan[static_cast<std::size_t>(run)] + " ") {
+            if (c != ' ') { word += c; continue; }
+            if (!word.empty()) game.args.push_back(word);
+            word.clear();
+        }
+        char report[160];
+        // 90 frames settled and 240 measured a step: ~5 minutes a place
+        std::snprintf(report, sizeof report, "%s/%02d-%s.txt:90:240", kBench, run + 1, stamp);
+        game.args.push_back("--bench");
+        game.args.push_back(report);
+        if (std::FILE* f = std::fopen((std::string(kBench) + "/next.txt").c_str(), "w")) {
+            std::fprintf(f, "%d\n", run + 1);
+            std::fclose(f);
+        }
+        std::printf("switch: the performance sweep, run %d of %zu: %s\n", run + 1, plan.size(),
+                    plan[static_cast<std::size_t>(run)].c_str());
+    }
     std::printf("switch: %s, %s, output to %s\n", appletTypeName(appletGetAppletType()),
                 docked ? "docked" : "handheld", nxlink ? "nxlink" : "the SD card");
     logMemory("at main");
@@ -154,6 +209,21 @@ int main(int, char**) {
     }
     pthread_attr_destroy(&attr);
 
+    // ...and the next run of the plan loaded after this one, or the plan put
+    // away when this was its last
+    if (benching) {
+        if (run + 1 < static_cast<int>(plan.size())) {
+            const std::string self = argc > 0 && argv[0] && argv[0][0] ? argv[0] : kNro;
+            const Result rc = envSetNextLoad(self.c_str(), self.c_str());
+            std::printf("switch: the performance sweep's next run loaded after this one (%s): %s\n",
+                        self.c_str(), R_SUCCEEDED(rc) ? "set" : "REFUSED - launch the game again");
+        } else {
+            std::rename((std::string(kBench) + "/plan.txt").c_str(),
+                        (std::string(kBench) + "/plan-done-" + stamp + ".txt").c_str());
+            std::remove((std::string(kBench) + "/next.txt").c_str());
+            std::printf("switch: the performance sweep's plan done - put away as plan-done-%s.txt\n", stamp);
+        }
+    }
     logMemory("at exit");
     std::fflush(stdout);
     std::fflush(stderr);

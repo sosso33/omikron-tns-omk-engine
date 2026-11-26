@@ -2397,7 +2397,9 @@ void GlesRenderer::setTextures(std::span<const Texture> t) {
     // ORIGINAL's: the UVs are in its texels and `texSize` divides by it.
     const bool packOn = packActive();
     std::vector<omk::PackImage> reps;
+    double packMs = 0.0;   // the pack's reads and decodes, apart from the GL uploads
     if (packOn) {
+        const double p0 = glesClockMs();
         // every texture this pool brings that the GPU does not hold yet,
         // decoded together on the thread pool
         std::vector<const omk::Texture*> toDecode(t.size(), nullptr);
@@ -2406,6 +2408,7 @@ void GlesRenderer::setTextures(std::span<const Texture> t) {
                 !uploaded_.count(std::make_tuple(t[i].idx.data(), t[i].pal.data(), t[i].width, t[i].height)))
                 toDecode[i] = &t[i];
         reps = packDecode(toDecode);   // no relief here: no normal maps
+        packMs = glesClockMs() - p0;
     }
     for (std::size_t i = 0; i < t.size(); ++i) {
         const auto& s = t[i];
@@ -2447,8 +2450,16 @@ void GlesRenderer::setTextures(std::span<const Texture> t) {
 #if OMK_REMASTER
     if (dropped) lastEmis_ = 0;
 #endif
-    std::printf("gles: texture pool of %zu - %d kept on the GPU, %d uploaded, %d dropped, %.1f ms\n",
-                t.size(), reused, fresh, dropped, glesClockMs() - t0);
+    const double poolMs = glesClockMs() - t0;
+    if (packOn)
+        // ...split: the pack's files read and decoded, then the rest - the
+        // uploads (a slow place change on the Switch, 2026-11-26: which?)
+        std::printf("gles: texture pool of %zu - %d kept on the GPU, %d uploaded, %d dropped, %d from the pack, "
+                    "%.1f ms: the pack's reads and decodes %.1f, the uploads and the rest %.1f\n",
+                    t.size(), reused, fresh, dropped, packed, poolMs, packMs, poolMs - packMs);
+    else
+        std::printf("gles: texture pool of %zu - %d kept on the GPU, %d uploaded, %d dropped, %.1f ms\n",
+                    t.size(), reused, fresh, dropped, poolMs);
     if (packOn)
         omk::event("texpack.pool", {{"backend", "gles"}, {"textures", static_cast<long>(t.size())},
                                     {"replaced", packed}, {"lights", lit}});

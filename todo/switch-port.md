@@ -328,6 +328,64 @@ FIXED the same day: the alley's orange wood planks were taken for a neon by
 the automatic rules; the neon rule now holds only where `lights.txt` names
 the texture (60.6 -> 36.5 on the Mac). The NRO on the card carries it.
 
+**THE THIRD CONSOLE RUN - the reader, 2026-11-26** (the NRO of `9ed1ae1`,
+the restaurant save `traces/games-resto.bin` on the card as
+`saves/GAMES`, the reader's own kept as `GAMES.bak`): *"j'ai testé, ça ne
+plante plus. le mode remaster rame (avec chargement lors des changements de
+lieu long), mode original ok"*. The crash fix holds. The remaster is the
+open item - it is S6's, which this plan put after S5's measured baseline;
+the reader reached it early. What the SECOND run's log (remaster +
+`all = max`, before today's fixes) already says, to read beside the third's:
+* **the frame**: 1903 of ~3650 frames over the 33 ms budget, most at 42-50
+  ms (397 at 43, 394 at 50) - about 20 fps; no section breakdown on an
+  ordinary frame (the `sections` line prints on long frames only);
+* **the place changes**: the GLES texture pool spends **150-270 ms a pack
+  texture** - 14 uploaded 2239.5 ms, 8 in 1716.7, 14 in 2864.6, 2 in 536.8 -
+  and the frame waits for it (`props, guns 2877.0 ms`); a set's load adds
+  "the rest 347.1 ms" (AIMPASSE). Read, decode or upload - NOT SPLIT by any
+  line yet. The pack is ASTC only (colours, light maps, normal maps);
+* `all = max` asked 8x MSAA, refused (no multisampled target), so the
+  enhancements there are trilinear, anisotropy 16, mapped shadows,
+  per-pixel lighting, unlimited draw distance.
+**The reader's answers (2026-11-26)**: yes, `all = max` both ways - they
+switched with SELECT (the remaster's F10) - and *"plutôt que de bloquer, fais
+une configuration par défaut adaptée à la plateforme (sans changer la config
+par défaut pc). Pour l'évaluation, n'hésite pas à faire un programme de
+mesure automatique"*. The THIRD run's own log (`omk-play-20261126-134622`,
+remaster `upscale = 1.5` set from the menu) by mode, between the switches:
+
+| | original | remaster |
+|---|---|---|
+| a place's 47-51 textures put on the GPU | 61-68 ms | **11.7-13.2 s** |
+| the slow frames' median | 35-38 ms | 64-114 ms |
+
+The pack on the card is ASTC **6x6, 1024x1024, 11 levels** (~620 KB a
+file), 3347 files in ONE folder: 51 textures (colour + light map) in 13 s is
+~5 MB/s - far under the card's speed, so the opens are the suspect (a FAT
+folder of 3347 names is scanned for each). And the frames' 33 / 43 / 50 ms
+are the refresh's steps (v-sync), not the work.
+
+**THE PERFORMANCE SWEEP** (`--bench F[:SETTLE:MEASURE]`,
+`backends/sdl/playbench.cpp`): at the place the run starts in, the file I/O
+probed (the pack's folder, a small one, the game's sets: listing, open,
+MB/s), then 22 steps from the run's own settings - original, remaster, each
+remaster strength off, all off (the pack alone), each enhancement down, the
+upscale's factors, original with the enhancements off, the remaster again -
+each applied live (`omkApplyLive`, the strengths), settled, measured: the
+work a frame (median, p90, max), the switch's own cost (an apply's texture
+uploads included), the sections. Unpaced and v-sync off for the run. The
+GLES pool line now splits "the pack's reads and decodes" from the uploads.
+On the Switch, `sdmc:/switch/omk/bench/plan.txt` (one place a line) runs
+every line from ONE launch: each run loads the NRO again for the next
+(`envSetNextLoad`), the last renames the plan. On the M1 (640x480, the
+street, `--enhance-all` + the preset): original 7.5 ms, remaster 9.4, the
+fx light off 8.0, the options' draw distance 4.4, original with the
+enhancements off 2.4; the pack's 41 textures 90 ms (reads 41, uploads 49).
+
+The plan put on the card (2026-11-26): Anekbah's street (`--area 0 --stand
+1804,0,-6890,336`), Qalisar (`--area 101 --stand 15300,0,-10050,270`), the
+restaurant (`--area 217`) - 90 frames settled, 240 measured, ~5 min a place.
+
 **S2 - first light.** ~1-2 days, needs a console or an emulator (§4).
 * `playgpu_gles.cpp`: on the Switch a GLES 3.0 context (the Quest's branch;
   Mesa offers 3.2); decision 2's `OMK_GLES3` in `glesrender.cpp`.
