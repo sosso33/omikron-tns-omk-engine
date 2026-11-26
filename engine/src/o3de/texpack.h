@@ -60,6 +60,21 @@ std::string textureKeyHex(std::uint64_t key);
 // and where pixels are wanted (a GL without BPTC, a grey alias) the BC is
 // decoded on the CPU (`formats/blockdecode.h`). An ASTC-only pack keeps them.
 enum PackCodec : unsigned { kCodecBc = 1, kCodecAstc = 2 };
+
+// THE PACK'S ARCHIVE (`pack.omkp` in the pack's folder, `texpack_tool
+// packarchive`): its files in ONE, for a console's card - the Switch's opens
+// 2.3 ms a file in a folder of 2088 names, its reads 12 MB/s a small file,
+// its listing 83 ms, and a copy one file at a time 3.3 MB/s (2026-11-26).
+// Opened once and kept open; when present its index REPLACES the folder's
+// names (`exclude.txt` is still read beside it). The layout: the magic (8
+// bytes), the count (u32 LE), 0 (u32); then the index, an entry a file - its
+// name NUL-padded to kPackArchiveNameBytes, its offset and its size (u64 LE
+// each); then the files, each at a multiple of kPackArchiveAlign.
+inline constexpr char kPackArchiveName[] = "pack.omkp";
+inline constexpr char kPackArchiveMagic[9] = "OMKPACK1";
+inline constexpr std::size_t kPackArchiveNameBytes = 40;
+inline constexpr std::size_t kPackArchiveEntryBytes = kPackArchiveNameBytes + 16;
+inline constexpr std::size_t kPackArchiveAlign = 512;
 struct PackBlocks {
     std::uint32_t vkFormat = 0;   // `formats/ktx2.h`'s numbers
     int w = 0, h = 0;

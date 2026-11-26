@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 
 namespace omk {
 namespace {
@@ -47,13 +48,105 @@ bool blockPixels(const std::string* path, const Texture& t, bool light, std::vec
 // the normal map's PNG - or, with none (`path` empty), its BC7 decoded - at
 // the colour's size or a power of two of the original's; its alpha (the
 // height) kept at 1 or more - 0 reads "none"
+// THE ARCHIVE (`kPackArchiveName`, texpack.h): the one the pack opened, kept
+// open; its files are indexed as `omkp:<name>` and read here, one at a time
+// (a descriptor's offset is shared - newlib's pread on the Switch seeks)
+struct Archive {
+    Mutex m;
+    long handle = -1;
+    void* file = nullptr;
+    std::string path;
+    std::unordered_map<std::string, std::pair<std::uint64_t, std::uint64_t>> at;   // name -> offset, size
+};
+Archive& archive() {
+    static auto* a = new Archive;   // never destroyed: a reader may outlive the statics
+    return *a;
+}
+constexpr char kArchivePath[] = "omkp:";
+
+// a pack file's bytes: from the archive, or the file itself
+std::vector<std::byte> packRead(const std::string& path) {
+    if (path.rfind(kArchivePath, 0) != 0) return readWholeFile(path);
+    Archive& a = archive();
+    const auto it = a.at.find(path.substr(sizeof kArchivePath - 1));
+    if (it == a.at.end()) return {};
+    std::vector<std::byte> d(static_cast<std::size_t>(it->second.second));
+    ScopedLock l(a.m);
+    if (a.handle < 0 && !a.file) return {};
+    const long long r = hostfs::readAt(a.handle, a.file, it->second.first, d.data(), d.size());
+    if (r != static_cast<long long>(d.size())) return {};
+    return d;
+}
+
+// open DIR's archive, if it has one: its names, or nothing (no archive, or
+// one whose index does not hold - said)
+std::vector<std::string> openArchive(const std::string& dir) {
+    Archive& a = archive();
+    {
+        ScopedLock l(a.m);
+        if (a.handle >= 0 || a.file) hostfs::closeFile(a.handle, a.file);
+        a.handle = -1;
+        a.file = nullptr;
+        a.at.clear();
+    }
+    const std::string path = dir + "/" + kPackArchiveName;
+    const long long size = fileSize(path);
+    if (size < 16) return {};
+    const auto head = readFileRange(path, 0, 16);
+    if (head.size() != 16 || std::memcmp(head.data(), kPackArchiveMagic, 8) != 0) {
+        std::fprintf(stderr, "texture pack: %s is not an archive this reads\n", path.c_str());
+        return {};
+    }
+    const auto u32 = [](const std::byte* p) {
+        return static_cast<std::uint32_t>(p[0]) | static_cast<std::uint32_t>(p[1]) << 8 |
+               static_cast<std::uint32_t>(p[2]) << 16 | static_cast<std::uint32_t>(p[3]) << 24;
+    };
+    const auto u64 = [&](const std::byte* p) {
+        return static_cast<std::uint64_t>(u32(p)) | static_cast<std::uint64_t>(u32(p + 4)) << 32;
+    };
+    const std::uint32_t count = u32(head.data() + 8);
+    const std::uint64_t indexEnd = 16 + static_cast<std::uint64_t>(count) * kPackArchiveEntryBytes;
+    if (count == 0 || indexEnd > static_cast<std::uint64_t>(size)) {
+        std::fprintf(stderr, "texture pack: %s - %u entries do not fit its %lld bytes\n", path.c_str(), count, size);
+        return {};
+    }
+    const auto index = readFileRange(path, 16, static_cast<std::size_t>(indexEnd - 16));
+    if (index.size() != indexEnd - 16) return {};
+    // SELF-CHECKING: every file inside the archive, past the index, in order,
+    // none overlapping the next, every name ended
+    std::vector<std::string> names;
+    std::unordered_map<std::string, std::pair<std::uint64_t, std::uint64_t>> at;
+    std::uint64_t after = indexEnd;
+    for (std::uint32_t i = 0; i < count; ++i) {
+        const std::byte* e = index.data() + static_cast<std::size_t>(i) * kPackArchiveEntryBytes;
+        const char* n = reinterpret_cast<const char*>(e);
+        const std::size_t len = strnlen(n, kPackArchiveNameBytes);
+        const std::uint64_t off = u64(e + kPackArchiveNameBytes), sz = u64(e + kPackArchiveNameBytes + 8);
+        if (len == 0 || len == kPackArchiveNameBytes || off < after || sz > static_cast<std::uint64_t>(size) ||
+            off > static_cast<std::uint64_t>(size) - sz) {
+            std::fprintf(stderr, "texture pack: %s - entry %u does not hold (its name, or its bytes past the "
+                                 "file or over the one before)\n", path.c_str(), i);
+            return {};
+        }
+        after = off + sz;
+        names.emplace_back(n, len);
+        at[names.back()] = {off, sz};
+    }
+    ScopedLock l(a.m);
+    if (!hostfs::openRead(path, a.handle, a.file)) return {};
+    a.path = path;
+    a.at = std::move(at);
+    std::printf("texture pack: %s - %u files in one archive, %lld bytes\n", path.c_str(), count, size);
+    return names;
+}
+
 void pngNormal(const std::string& path, const std::string* bc, const Texture& t, PackImage& o) {
     PngImage ni;
     std::string why;
     if (path.empty()) {
         if (!blockPixels(bc, t, false, ni.rgba, ni.w, ni.h, why)) return;
     } else {
-        const auto nb = readWholeFile(path);
+        const auto nb = packRead(path);
         if (nb.empty() || !decodePng(reinterpret_cast<const std::uint8_t*>(nb.data()), nb.size(), ni) ||
             !powerOfTwoFactor(ni.w, t.width) || !powerOfTwoFactor(ni.h, t.height)) return;
     }
@@ -64,7 +157,7 @@ void pngNormal(const std::string& path, const std::string* bc, const Texture& t,
 // a pack KTX2 of `t`'s: read, its format right for its kind (`light`: BC4 or
 // ASTC; else BC7 or ASTC), its size a power of two of t's
 bool readBlocks(const std::string& path, const Texture& t, bool light, PackBlocks& z, std::string& why) {
-    const auto b = readWholeFile(path);
+    const auto b = packRead(path);
     std::vector<std::uint8_t> bytes(reinterpret_cast<const std::uint8_t*>(b.data()),
                                     reinterpret_cast<const std::uint8_t*>(b.data()) + b.size());
     Ktx2 k;
@@ -139,7 +232,14 @@ bool TexturePack::open(const std::string& dir) {
                      dir.c_str());
         return false;
     }
-    for (const auto& name : hostfs::listNames(dir)) {
+    // ...its ARCHIVE's names when it has one, else the folder's
+    std::vector<std::string> names = openArchive(dir);
+    const bool archived = !names.empty();
+    if (!archived) names = hostfs::listNames(dir);
+    const auto at = [&](const std::string& name) {
+        return archived ? std::string(kArchivePath) + name : dir + "/" + name;
+    };
+    for (const auto& name : names) {
         // `<key>[_e|_n].<bc7|bc4|astc>.ktx2` - the block formats
         if (name.size() > 21 && name.compare(name.size() - 5, 5, ".ktx2") == 0) {
             std::uint64_t k;
@@ -149,7 +249,7 @@ bool TexturePack::open(const std::string& dir) {
             if (rest.compare(0, 2, "_e") == 0) { kind = 1; rest = rest.substr(2); }
             else if (rest.compare(0, 2, "_n") == 0) { kind = 2; rest = rest.substr(2); }
             const int codec = rest == ".astc" ? 1 : (rest == ".bc7" && kind != 1) || (rest == ".bc4" && kind == 1) ? 0 : -1;
-            if (codec >= 0) ktx_[codec][kind][k] = dir + "/" + name;
+            if (codec >= 0) ktx_[codec][kind][k] = at(name);
             continue;
         }
         if (name.size() != 20 && name.size() != 22) continue;
@@ -160,7 +260,7 @@ bool TexturePack::open(const std::string& dir) {
         const bool normal = suffixed && name.compare(16, 2, "_n") == 0;
         if (suffixed && !light && !normal) continue;
         std::uint64_t k;
-        if (hexKey(name.substr(0, 16), k)) (light ? lights_ : normal ? normals_ : files_)[k] = dir + "/" + name;
+        if (hexKey(name.substr(0, 16), k)) (light ? lights_ : normal ? normals_ : files_)[k] = at(name);
     }
     // A KTX2 NEEDS NO PNG BESIDE IT: a key with blocks and no PNG is indexed
     // with an EMPTY path - drawn from its blocks, and where pixels are wanted
@@ -301,7 +401,7 @@ std::vector<PackImage> TexturePack::replacements(std::span<const Texture* const>
                 }
             } else if (jb.light) {
                 // the light map: its red channel, any size the rule allows
-                const auto lb = readWholeFile(*jb.light);
+                const auto lb = packRead(*jb.light);
                 PngImage li;
                 if (!lb.empty() &&
                     decodePng(reinterpret_cast<const std::uint8_t*>(lb.data()), lb.size(), li) &&
@@ -330,7 +430,7 @@ std::vector<PackImage> TexturePack::replacements(std::span<const Texture* const>
                 // no PNG: the BC7 decoded - a GL without BPTC, a grey alias
                 if (!blockPixels(jb.bc[0], t, false, img.rgba, img.w, img.h, jb.why)) continue;
             } else {
-                const auto bytes = readWholeFile(*jb.file);
+                const auto bytes = packRead(*jb.file);
                 if (bytes.empty()) { jb.why = "unreadable"; continue; }
                 if (!decodePng(reinterpret_cast<const std::uint8_t*>(bytes.data()), bytes.size(), img, &jb.why))
                     continue;

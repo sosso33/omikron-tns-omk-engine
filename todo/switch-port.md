@@ -604,6 +604,18 @@ the 3D rain off - the original's 2D lines composed on the CPU - 22.9, now
 the DEARER of the two; the original raining 17.8. No part off moves the
 median (16.6-16.7, the swap's floor).
 
+**4. THE PACK'S ARCHIVE** (`pack.omkp`, `o3de/texpack.h`; `texpack_tool
+packarchive`): the pack's files in ONE - an index (name, offset, size), the
+files at 512-byte boundaries; opened once, kept open, read under one lock,
+its index self-checked (inside the file, in order, none over the next).
+2088 files, 426.6 MB, in 3.6 s; on the M1 Anekbah's frame the same bytes
+from it as from the files. Put on the card over Wi-Fi in 85 s (5.0 MB/s,
+against 130 s a file at a time). **On the console** (Anekbah): a place's 39
+textures READ in **0.35 s** against 1.32 (the archive at 80.8 MB/s against
+12 for the small files), the pool 0.55 s against 1.5, the switch to the
+remaster 0.97 s against 1.9; the frames as before. `verify.py: engine: pack
+archive`.
+
 **S2 - first light.** ~1-2 days, needs a console or an emulator (§4).
 * `playgpu_gles.cpp`: on the Switch a GLES 3.0 context (the Quest's branch;
   Mesa offers 3.2); decision 2's `OMK_GLES3` in `glesrender.cpp`.

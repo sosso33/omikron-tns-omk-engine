@@ -74,6 +74,11 @@
 //                                           dropped - the same blocks, no
 //                                           re-encoding - into <out>; one kept
 //                                           newer than its source is not redone
+//     texpack_tool packarchive <dir> <out.omkp>
+//                                           THE PACK'S ARCHIVE (`o3de/texpack.h`
+//                                           kPackArchiveName): every .ktx2 and
+//                                           .png of <dir> in one file, sorted
+//                                           by name, each at a 512-byte boundary
 //     texpack_tool ktx2 <file>...            THE BLOCK FORMATS (`formats/ktx2.h`):
 //                                           "@ktx2 ok <vkFormat> <w>x<h> levels <n>"
 //                                           or "@ktx2 refused <why>", a file a line
@@ -676,6 +681,56 @@ int switchpack(const std::string& src, const std::string& dst, int colourMax, in
     return failed ? 1 : 0;
 }
 
+// THE PACK'S ARCHIVE: the layout `texpack.h` states, written in one pass
+// (the index first, every offset known from the sizes)
+int packarchive(const std::string& dir, const std::string& out) {
+    std::vector<std::pair<std::string, std::uintmax_t>> files;
+    std::error_code ec;
+    for (const auto& e : fs::directory_iterator(dir, fs::directory_options::follow_directory_symlink, ec)) {
+        const std::string n = e.path().filename().string();
+        const bool ktx = n.size() > 5 && n.compare(n.size() - 5, 5, ".ktx2") == 0;
+        const bool png = n.size() > 4 && n.compare(n.size() - 4, 4, ".png") == 0;
+        if ((!ktx && !png) || n.size() >= omk::kPackArchiveNameBytes) continue;
+        files.emplace_back(n, fs::file_size(fs::canonical(e.path())));
+    }
+    std::sort(files.begin(), files.end());
+    if (files.empty()) { std::fprintf(stderr, "%s: no .ktx2 or .png\n", dir.c_str()); return 1; }
+    const auto align = [](std::uint64_t v) {
+        return (v + omk::kPackArchiveAlign - 1) / omk::kPackArchiveAlign * omk::kPackArchiveAlign;
+    };
+    std::vector<std::uint8_t> head(16 + files.size() * omk::kPackArchiveEntryBytes, 0);
+    std::memcpy(head.data(), omk::kPackArchiveMagic, 8);
+    const auto put = [&](std::size_t at, std::uint64_t v, int bytes) {
+        for (int i = 0; i < bytes; ++i) head[at + static_cast<std::size_t>(i)] = static_cast<std::uint8_t>(v >> (8 * i));
+    };
+    put(8, files.size(), 4);
+    std::vector<std::uint64_t> offs;
+    std::uint64_t off = align(head.size());
+    for (std::size_t i = 0; i < files.size(); ++i) {
+        const std::size_t e = 16 + i * omk::kPackArchiveEntryBytes;
+        std::memcpy(head.data() + e, files[i].first.c_str(), files[i].first.size());
+        put(e + omk::kPackArchiveNameBytes, off, 8);
+        put(e + omk::kPackArchiveNameBytes + 8, files[i].second, 8);
+        offs.push_back(off);
+        off = align(off + files[i].second);
+    }
+    std::FILE* f = omk::safeOutputPath(out) ? std::fopen(out.c_str(), "wb") : nullptr;
+    if (!f) { std::fprintf(stderr, "%s: not written\n", out.c_str()); return 1; }
+    bool ok = std::fwrite(head.data(), 1, head.size(), f) == head.size();
+    std::uint64_t at = head.size();
+    const std::vector<char> zeros(omk::kPackArchiveAlign, 0);
+    for (std::size_t i = 0; i < files.size() && ok; ++i) {
+        ok = std::fwrite(zeros.data(), 1, static_cast<std::size_t>(offs[i] - at), f) == offs[i] - at;
+        const auto b = omk::readWholeFile((fs::path(dir) / files[i].first).string());
+        ok = ok && b.size() == files[i].second && std::fwrite(b.data(), 1, b.size(), f) == b.size();
+        at = offs[i] + files[i].second;
+    }
+    std::fclose(f);
+    if (!ok) { std::fprintf(stderr, "%s: a write failed\n", out.c_str()); return 1; }
+    std::printf("packarchive: %zu files, %.1f MB in %s\n", files.size(), static_cast<double>(at) / 1e6, out.c_str());
+    return 0;
+}
+
 int cube(const std::string& path) {
     omk::ColourLut lut;
     std::string why;
@@ -717,6 +772,7 @@ int main(int argc, char** argv) {
     if (mode == "png" && argc == 4) return png(argv[2], argv[3]);
     if (mode == "grey" && argc == 4) return grey(argv[2], argv[3]);
     if (mode == "cube" && argc == 3) return cube(argv[2]);
+    if (mode == "packarchive" && argc == 4) return packarchive(argv[2], argv[3]);
     if (mode == "switchpack" && argc == 6)
         return switchpack(argv[2], argv[3], std::atoi(argv[4]), std::atoi(argv[5]));
     if (mode == "pngpar" && argc == 4 && std::atoi(argv[3]) > 0) return pngpar(argv[2], std::atoi(argv[3]));

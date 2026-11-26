@@ -38506,6 +38506,78 @@ def c_engine_film_pack():
         "the real pack's three found, 1280x960, frame for frame the originals' count"
 
 
+def c_engine_pack_archive():
+    r"""THE PACK'S ARCHIVE (`o3de/texpack.h` kPackArchiveName, `texpack_tool
+    packarchive`): a console's pack in ONE file - the Switch opened a file in
+    2.3 ms in a folder of 2088 and read a small one at 12 MB/s, so a place's
+    39 textures took 1.32 s to read; from the archive, 0.35 s (Anekbah, the
+    reader's console, 2026-11-26; the whole archive read at 80.8 MB/s).
+
+    Parts:
+      1. the source: the archive's index replaces the folder's names when it
+         is there, read through `packRead`, under one lock;
+      2. the SAME BYTES: a quarter of the pack (the keys starting 0-3),
+         capped to 512 (`switchpack`) - Anekbah's street at 640x480 through
+         GLES from those files loose, and from their archive: one frame;
+      3. a DAMAGED archive refused - an entry pointed past the file: the pack
+         opens with nothing (no archive and no loose file), said.
+    Skipped without the pack."""
+    import subprocess, tempfile, shutil, struct as st
+    eng = os.path.join(ROOT, "engine")
+    fr = omkpaths.data_root()
+    tp = open(os.path.join(eng, "src", "o3de", "texpack.cpp")).read()
+    src_ok = ("std::vector<std::string> names = openArchive(dir);" in tp and
+              "if (codec >= 0) ktx_[codec][kind][k] = at(name);" in tp and
+              "const auto b = packRead(path);" in tp and "ScopedLock l(a.m);" in tp)
+    pack = os.path.join(omkpaths.pack_path() or "", "pack")
+    if not os.path.isdir(pack):
+        return (src_ok, "skipped"), (True, "skipped"), "the source; no pack (omk.conf) to archive"
+    mk = subprocess.run(["make", "-s", "build/texpack_tool", "play-gles"], cwd=eng, capture_output=True, text=True)
+    if mk.returncode != 0:
+        return ("build",), ("built",), mk.stderr[-300:]
+    tool = os.path.join(eng, "build", "texpack_tool")
+    tmp = tempfile.mkdtemp()
+    try:
+        sub, loose, arch = (os.path.join(tmp, n) for n in ("sub", "loose", "arch"))
+        os.makedirs(sub); os.makedirs(arch)
+        for n in os.listdir(pack):
+            if n[:1] in "0123" and n.endswith(".ktx2"):
+                os.symlink(os.path.join(pack, n), os.path.join(sub, n))
+        r1 = subprocess.run([tool, "switchpack", sub, loose, "512", "256"], capture_output=True, text=True)
+        r2 = subprocess.run([tool, "packarchive", loose, os.path.join(arch, "pack.omkp")], capture_output=True, text=True)
+        nloose = len(os.listdir(loose)) if os.path.isdir(loose) else 0
+
+        def frame(texdir):
+            out = os.path.join(tmp, os.path.basename(texdir) + ".bin")
+            env = dict(os.environ, OMK_NO_GPU_PRESENT="1")
+            rr = subprocess.run(["caffeinate", "-d", "-u", "-i", os.path.join(eng, "build", "omk-play-gles"), fr,
+                                 os.path.join(ROOT, "tables"), "--save", os.path.join(ROOT, "traces", "save-appart.bin"),
+                                 "--nofmv", "--saves", tempfile.mkdtemp(dir=tmp), "--res", "640x480", "--frames", "60",
+                                 "--area", "0", "--stand", "1804,0,-6890,336", "--remaster", omkpaths.pack_path(),
+                                 "--texture-pack", texdir, "--dump", out],
+                                capture_output=True, text=True, env=env, timeout=300)
+            return (open(out, "rb").read() if os.path.exists(out) else None), rr.stdout + rr.stderr
+        a, la = frame(loose)
+        b, lb = frame(arch)
+        archived = f"{nloose} files in one archive" in lb
+        same = a is not None and a == b
+        # the damage: the first entry's offset past the file's end
+        bad = os.path.join(tmp, "bad")
+        os.makedirs(bad)
+        data = bytearray(open(os.path.join(arch, "pack.omkp"), "rb").read())
+        st.pack_into("<Q", data, 16 + 40, len(data) + 1)
+        open(os.path.join(bad, "pack.omkp"), "wb").write(bytes(data))
+        rb = subprocess.run([tool, "open", bad], capture_output=True, text=True)
+        refused = "does not hold" in rb.stderr and "@pack files 0 " in rb.stdout
+        print(f"        {nloose} files loose ({r1.stdout.strip()[:80]}); {r2.stdout.strip()[:80]}; "
+              f"the archive read {archived}; the same frame {same}; the damaged one refused {refused}")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return (src_ok, nloose > 100, archived, same, refused), (True, True, True, True, True), \
+           "the source; a quarter of the pack capped and archived; Anekbah's street the same bytes from the " \
+           "files and from their archive; an entry past the file's end refused"
+
+
 def c_engine_block_formats():
     r"""THE TEXTURE PACK IN GPU BLOCK FORMATS (`todo/remaster.md`): beside each
     pack PNG, `<key>.bc7.ktx2` (BC7; BC4 for a light map) for desktop GPUs and
@@ -56383,6 +56455,7 @@ SLOW = [
     ("engine: water reflection", c_engine_water_reflection, "todo/remaster.md A3; o3de/renderer.h"),
     ("engine: body light", c_engine_body_light, "todo/remaster.md A5; o3de/lightprobe.h"),
     ("engine: emitter light", c_engine_emitter_light, "todo/remaster.md A5b; o3de/emitterlight.h"),
+    ("engine: pack archive", c_engine_pack_archive, "todo/switch-port.md; o3de/texpack.h"),
     ("engine: relief", c_engine_relief, "todo/remaster.md B3; scene.frag relief()"),
     ("engine: normal maps", c_engine_normal_maps, "todo/remaster.md B3; o3de/normalmap.h"),
     ("engine: floors",       c_engine_floors,       "todo/remaster.md A3; o3de/floorreflect.h"),
