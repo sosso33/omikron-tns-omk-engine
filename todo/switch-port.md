@@ -508,6 +508,85 @@ used, sent by netloader - into a thread-pool worker posing the crowd
 KNOWN. The next test: the same start (`--area 1 --address 44`) again, then
 with `--no-thread-bodies`.
 
+**Jaunpur again, 2026-11-26**: the same start over the network, 900 frames,
+NO crash; the Mac's load and whole sweep there clean under AddressSanitizer
+(`OMK_PROFILE=0` - the profiler's `new`/`delete` and ASan's collide in
+Apple's driver) and ThreadSanitizer (its 34 reports all the profiler's
+headers against the driver's GCD threads). ASan found one real fault, a
+read: the three pack readers' `strtoull(name.substr(...).c_str(), &end)`
+(fixed `420c758`). The crash's cause NOT FOUND.
+
+**THE UPLOAD PROBE** (`OMK_UPLOAD_PROBE=<an .astc.ktx2>`, set by the link's
+`--env`; `glesrender_remaster.inl` uploadProbe): one 1024x1024 with its 11
+levels, to a glFinish, three times, on the console (NV120, OpenGL ES 3.2,
+Mesa 20.1.0-rc3, which names ASTC, S3TC, RGTC, BPTC and ETC1):
+
+| format | KB | ms |
+|---|---|---|
+| ASTC 6x6 (the pack's own file) | 611 | **220.8, 220.6, 221.0** |
+| BC1 / DXT1 | 682 | 5.6, 6.6, 6.0 |
+| BC3 / DXT5 | 1365 | 7.3, 7.1, 7.4 |
+| BC4 / RGTC1 | 682 | 5.5, 6.2, 5.4 |
+| BC7 / BPTC | 1365 | 7.6, 7.7, 7.6 |
+| RGBA8 | 5461 | 15.6, 16.1, 15.1 |
+
+So Mesa DECODES ASTC on the CPU here (~30x the BC formats, 14x slower than
+uncompressed RGBA8): the place changes' seconds are that. The BC formats go
+to the GPU as they are. The Switch's pack must be BC - and the GLES backend
+read BC (it reads ASTC alone today).
+
+**THE PLAN, the reader's (2026-11-26)**: *"pars du principe que deko3d
+restera un objectif, et fais ce que tu penses être le plus pertinent"* - so
+the work goes where deko3d keeps it: the platform's settings, the effects'
+GPU cost (the same chip under deko3d), the lights' binning and fewer draws
+in the SHARED layers; GLES-only tuning avoided. The BC pack is the one
+stopgap (deko3d samples the ASTC pack natively), small: the GLES upload and
+a script. deko3d itself will start from the VULKAN backend (it is
+Vulkan-shaped, and that one has the remaster and the tiled lights).
+
+**1. THE SWITCH'S SETTINGS** (`settings.h`): `all = max` / `--enhance-all`
+raise to the PLATFORM's tier (`kAll*`), not the parsers' tops (`kMax*`,
+unchanged - every row still takes any value by hand, "rather than
+blocking"): on the Switch shadows fitted (not mapped), lighting per vertex,
+the options' distance, 30 fps; elsewhere `kAll* = kMax*`, byte for byte.
+The remaster preset on the Switch: `wet` 0, `smooth` 0, and the upscale
+1.5 under the preset (`kPresetUpscale`; 1 elsewhere; a flag or key beats
+it).
+
+**2. THE BC PACK** (the stopgap until deko3d): GLES takes BC7 colours and
+BC4 light maps FIRST where the context names BPTC and RGTC (`bcOk_`,
+`uploadBlocks` - BC1/BC3 too, for the Vita), ASTC after; a GL naming
+neither (the Mac's, Android's) is as it was. The pack: `texpack_tool
+switchpack <desktop pack> <out> 512 256` - the desktop pack's own BC7 / BC4
+KTX2s with the levels above the cap DROPPED (the same blocks, no
+re-encoding; the normal maps left out, GLES draws no relief): 2088 files,
+**425.8 MB** (BC7 512x512 x1085, 256x256 x170; BC4 256x256 x699, 64x64
+x134) in 2.7 s, at `/Volumes/omk-devtools/switch/pack-bc512/pack`. Against
+the card's ASTC pack, 1.5 GB.
+
+**Put on the card over Wi-Fi** (`switch_link.py --push`, the launcher's
+`--rmtree` / `--recv`, 2026-11-26): the ASTC pack deleted (3347 files), the
+BC pack written - 2088 of 2088, 425.8 MB in 130 s, **3.3 MB/s** (a file at
+a time). **THE ANEKBAH SWEEP ON IT** (the reader's `omk.ini`, the Switch's
+tier now: fitted shadows, per-vertex lighting, the save's 200 m distance,
+30 fps, wet 0, smooth 0, upscale 1.5):
+
+| | before (ASTC, the PC's `all`) | now (BC 512, the Switch's tier) |
+|---|---|---|
+| a place's textures on the GPU | 10.8 s (reads 2.35, uploads 7.4) | **1.5 s** (reads 1.32, uploads 0.20) |
+| original | 34.9 ms | 16.6 (the floor) |
+| remaster | 53.5 | **16.6 (the floor)** - every step at it |
+| the crowd's section | 22 | 3.5 |
+| rain, remaster | 138.8 | **40.2** |
+| rain, 3D rain off | 125.5 | 23.1 |
+| rain, original | 50.4 | 18.2 |
+
+The Mesa-decoded ASTC sat on the GPU as RGBA8 too - four to eight times
+the bandwidth of the BC blocks. What is left: the READS (1.32 s for 39
+textures - 2.3 ms an open in the 2088-name folder, 12 MB/s), the archive's
+case; and the 3D RAIN (~17 ms over the original's 2D under rain). The swap
+still waits for the refresh (16.6 ms floors every step that fits).
+
 **S2 - first light.** ~1-2 days, needs a console or an emulator (§4).
 * `playgpu_gles.cpp`: on the Switch a GLES 3.0 context (the Quest's branch;
   Mesa offers 3.2); decision 2's `OMK_GLES3` in `glesrender.cpp`.

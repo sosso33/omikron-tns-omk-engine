@@ -489,6 +489,28 @@ inline constexpr int kMaxAnimation     = 1;   // smooth
 // "unlimited" replaces, and because a check quotes it.
 inline constexpr int kMaxOptionClipMetres = 200;
 
+// THE PLATFORM'S `all = max` (the reader, 2026-11-26: "a default
+// configuration adapted to the platform, without changing the PC's" - and
+// "rather than blocking"): what `all = max` / `--enhance-all` RAISE each of
+// these to. The rows still take any value by hand - the parsers and the menu
+// keep the kMax tops above; only the base `all` lays differs. On the SWITCH,
+// from its console sweeps (`todo/switch-port.md`, Anekbah's street, Mesa's
+// GLES): the mapped shadows ~11 ms (53.5 -> 42.7), per-pixel lighting
+// ~6 ms there and the Qalisar freeze with 60 point lights a pixel, the
+// unlimited distance 3-12 ms (Qalisar 35.4 -> 22.8), and a frame of 35-50
+// ms paced at 60 jitters where 30 - the original's - holds.
+#if defined(__SWITCH__)
+inline constexpr int kAllShadowQuality = 1;   // fitted, not mapped
+inline constexpr int kAllLighting      = 0;   // per vertex, the engine's own
+inline constexpr int kAllUnlimitedDraw = 0;   // the options' distance and its fog
+inline constexpr int kAllFrameRate     = 30;
+#else
+inline constexpr int kAllShadowQuality = kMaxShadowQuality;
+inline constexpr int kAllLighting      = kMaxLighting;
+inline constexpr int kAllUnlimitedDraw = kMaxUnlimitedDraw;
+inline constexpr int kAllFrameRate     = kMaxFrameRate;
+#endif
+
 // Apply them, leaving anything an explicit key already set alone.
 // THE REMASTER PRESET'S STRENGTHS (`[Remaster] dir` / `--remaster DIR`): what
 // each key takes when the preset is on and neither its flag nor its key says
@@ -505,16 +527,33 @@ inline constexpr RemasterPresetValue kRemasterPreset[] = {
     {"water", 0.6f},     // 0.35 before the Fresnel (2026-10-20)
     {"floors", 1.0f},
     {"reflections", 2.0f},   // the second level (the reader's "go with 9", 2026-10-29)
+#if defined(__SWITCH__)
+    {"wet", 0.0f},       // the Switch: ~60 ms a frame under rain (Anekbah 138.8 -> 79.4) until it is redone
+#else
     {"wet", 1.0f},
+#endif
     {"rain3d", 1.0f},
     {"mist", 0.5f},      // the reader's, from a sheet of 0, 0.5 and 1 (2026-10-21)
     {"relief", 2.0f},    // 2 once the pack's generated normal maps came
     {"ao", 2.0f},        // confirmed in play at 2 (2026-10-21)
     {"bodylight", 1.0f},
     {"fxlight", 1.0f},
+#if defined(__SWITCH__)
+    {"smooth", 0.0f},    // the Switch: the crowd's section doubles under the remaster (10.6 -> 22 ms, A57)
+#else
     {"smooth", 0.75f},   // "do it by default" (2026-10-22)
+#endif
     {"preload", 15.0f},  // 25 until the measurement of 2026-10-26
 };
+// ...and THE UPSCALE under the preset, a platform's (not the preset's
+// look): the Switch's GPU draws Anekbah's street in 92.8 ms at its own 720p,
+// 53.5 from 853x480 brought up by FSR - 2.0 gains nothing more there (the CPU
+// is the wall). Elsewhere 1, as before. A flag or key beats it.
+#if defined(__SWITCH__)
+inline constexpr float kPresetUpscale = 1.5f;
+#else
+inline constexpr float kPresetUpscale = 1.0f;
+#endif
 inline float remasterPresetValue(const char* key) {
     for (const auto& p : kRemasterPreset)
         if (std::string(p.key) == key) return p.value;
@@ -535,14 +574,14 @@ inline void applyMaxEnhancements(Settings& s) {
     take(s.antiAliasing,  kMaxAntiAliasing,  s.antiAliasingSource);
     take(s.textureFilter, kMaxTextureFilter, s.textureFilterSource);
     take(s.anisotropy,    kMaxAnisotropy,    s.anisotropySource);
-    take(s.shadowQuality, kMaxShadowQuality, s.shadowQualitySource);
-    take(s.lighting,      kMaxLighting,      s.lightingSource);
+    take(s.shadowQuality, kAllShadowQuality, s.shadowQualitySource);
+    take(s.lighting,      kAllLighting,      s.lightingSource);
     // NOT `s.supersample`: the one enhancement asked for by name only (above).
     take(s.uiScaling,     kMaxUiScaling,     s.uiScalingSource);
     take(s.textScaling,   kMaxTextScaling,   s.textScalingSource);
-    takeFlag(s.unlimitedDrawDistance, kMaxUnlimitedDraw, s.unlimitedDrawSource);
+    takeFlag(s.unlimitedDrawDistance, kAllUnlimitedDraw, s.unlimitedDrawSource);
     takeFlag(s.radarAlways, kMaxRadar, s.radarSource);
-    take(s.frameRate,     kMaxFrameRate,     s.frameRateSource);
+    take(s.frameRate,     kAllFrameRate,     s.frameRateSource);
     takeFlag(s.smoothAnimation, kMaxAnimation, s.smoothAnimationSource);
 }
 

@@ -38580,11 +38580,15 @@ def c_engine_block_formats():
     src_ok = ("enable.textureCompressionBC = VK_TRUE; bcOk_ = true;" in vk and
               "omk::texturePack().setCodecs(bcOk_ ? omk::kCodecBc : 0u);" in vk,
               "GL_KHR_texture_compression_astc_ldr" in gl and
-              "omk::texturePack().setCodecs(astcOk_ ? omk::kCodecAstc : 0u);" in gl,
+              # BC first where BPTC and RGTC are named (the Switch's Mesa decodes
+              # ASTC on the CPU - the upload probe, 2026-11-26), ASTC after
+              "std::strstr(ext, \"GL_EXT_texture_compression_rgtc\")" in gl and
+              "omk::texturePack().setCodecs((bcOk_ ? omk::kCodecBc : 0u) | (astcOk_ ? omk::kCodecAstc : 0u));" in gl,
               "if (colour && codecs_ && !grey) {" in tp and "jb.light != nullptr && !rawLight" in tp,
               "setLightHook(&omk::curateBloom, &omk::bloomCurated)" in ps,
               "return chain || !mips;" in gl and
-              "if (!uploadAstc(rep->colourZ, mips)) glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, f);" in gl and
+              "if (!uploadBlocks(rep->colourZ, mips)) glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, f);" in gl and
+              ": z.vkFormat == omk::kVkBc7Unorm ? 0x8E8C" in gl and ": z.vkFormat == omk::kVkBc4Unorm ? 0x8DBB" in gl and
               "pot(rep->emissiveZ.w) && pot(rep->emissiveZ.h) ? GL_REPEAT : GL_CLAMP_TO_EDGE" in gl and
               "pot(e.ew) && pot(e.eh) ? GL_REPEAT : GL_CLAMP_TO_EDGE" in gl,
               "if (f.astc != astcSlot) {" in tp and "out.reserve(std::min(expect, n * 1032));" in pr)

@@ -142,7 +142,7 @@ int PlayState::setupSession() {
     // distance test and the fog, whose range IS the clip distance - so with
     // no distance there is nothing to fade over and the fog goes off.
     unlimitedClip = (clipFlag && clipArg <= 0)
-                            || (!clipFlag && (enhanceAll || settings.unlimitedDrawDistance));
+                            || (!clipFlag && ((enhanceAll && omk::kAllUnlimitedDraw) || settings.unlimitedDrawDistance));
     clipInches = unlimitedClip ? std::numeric_limits<double>::infinity()
                       : clipFlag ? static_cast<double>(clipArg) * omk::kInchesPerMetre
                                  : settings.clipInches();
@@ -182,7 +182,7 @@ int PlayState::setupSession() {
     // not const: a renderer that cannot draw an enhancement refuses it, once
     // the renderer exists (below `world`)
     shadowQuality = enh(shadowQFlag, settings.shadowQuality,
-                            omk::kMaxShadowQuality);
+                            omk::kAllShadowQuality);   // the platform's `all` (settings.h)
     shadowDetail = detailFlag >= 0 ? detailFlag : settings.v.levelOfDetail;
     // THE RESTORED WEATHER (`[Restored] weather`, `todo/restore-weather.md`):
     // its flag, its key - off otherwise; the remaster preset may turn it on
@@ -190,7 +190,7 @@ int PlayState::setupSession() {
     restoredWeather = restoreWeatherFlag >= 0 ? restoreWeatherFlag != 0 : settings.restoredWeather != 0;
     // Row 7. Per pixel ALSO widens who receives: the engine lights the
     // procedural crowd and nothing else, and this lets every character.
-    lighting = enh(lightingFlag, settings.lighting, omk::kMaxLighting);
+    lighting = enh(lightingFlag, settings.lighting, omk::kAllLighting);
     if (lighting > 0)
         std::printf("lighting: per pixel - an ENHANCEMENT the original never had "
                     "(it lights the crowd alone, per vertex); every character receives\n");
@@ -208,7 +208,7 @@ int PlayState::setupSession() {
     // Row 11: the PACER's rate. Not the simulation's - that steps on the
     // measured delta whatever this is - and never a `--frames` run's, which
     // steps a fixed 1/30 and never reaches the pacer.
-    frameRate = enh(frameRateFlag, settings.frameRate, omk::kMaxFrameRate);
+    frameRate = enh(frameRateFlag, settings.frameRate, omk::kAllFrameRate);
     // Row 12, set once for every `composePose` that takes a float frame
     smoothAnim = enh(smoothAnimFlag, settings.smoothAnimation ? 1 : 0,
                                 omk::kMaxAnimation) > 0;

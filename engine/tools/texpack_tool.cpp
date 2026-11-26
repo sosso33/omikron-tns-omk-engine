@@ -65,6 +65,15 @@
 //                                           the pack) - w*h 565 - "@filmframe hd
 //                                           <0|1> size <w>x<h> frames <n>
 //                                           duration <s>"
+//     texpack_tool switchpack <pack> <out> <colourMax> <lightMax>
+//                                           THE SWITCH'S PACK (`todo/switch-port.md`):
+//                                           every BC7 colour and BC4 light map
+//                                           of <pack> (the desktop's KTX2s, the
+//                                           normal maps left out - GLES draws no
+//                                           relief) with its levels ABOVE the cap
+//                                           dropped - the same blocks, no
+//                                           re-encoding - into <out>; one kept
+//                                           newer than its source is not redone
 //     texpack_tool ktx2 <file>...            THE BLOCK FORMATS (`formats/ktx2.h`):
 //                                           "@ktx2 ok <vkFormat> <w>x<h> levels <n>"
 //                                           or "@ktx2 refused <why>", a file a line
@@ -604,6 +613,69 @@ int lights(const std::string& pack, const std::string& model) {
     return 0;
 }
 
+// THE SWITCH'S PACK: the desktop pack's BC KTX2s with their top levels
+// dropped. The Switch's Mesa decodes ASTC on the CPU (~221 ms a 1024 with its
+// mips, against 6-8 for BC1/BC3/BC4/BC7 - `glesrender_remaster.inl`'s upload
+// probe, 2026-11-26), and its card is small.
+int switchpack(const std::string& src, const std::string& dst, int colourMax, int lightMax) {
+    std::error_code ec;
+    fs::create_directories(dst, ec);
+    int made = 0, kept = 0, failed = 0;
+    std::size_t bytes = 0;
+    std::map<std::string, int> sizes;
+    for (const auto& e : fs::directory_iterator(src, fs::directory_options::follow_directory_symlink, ec)) {
+        const std::string name = e.path().filename().string();
+        const bool colour = name.size() == 25 && name.compare(16, 9, ".bc7.ktx2") == 0;
+        const bool light = name.size() == 27 && name.compare(16, 11, "_e.bc4.ktx2") == 0;
+        if (!colour && !light) continue;
+        const fs::path out = fs::path(dst) / name;
+        if (fs::exists(out) && fs::last_write_time(out) >= fs::last_write_time(fs::canonical(e.path()))) {
+            ++kept;
+            bytes += static_cast<std::size_t>(fs::file_size(out));
+            continue;
+        }
+        const auto raw = omk::readWholeFile(e.path().string());
+        std::vector<std::uint8_t> file(reinterpret_cast<const std::uint8_t*>(raw.data()),
+                                       reinterpret_cast<const std::uint8_t*>(raw.data()) + raw.size());
+        omk::Ktx2 k;
+        std::string why;
+        if (!omk::readKtx2(std::move(file), k, &why)) {
+            std::fprintf(stderr, "%s: %s\n", name.c_str(), why.c_str());
+            ++failed;
+            continue;
+        }
+        const int cap = colour ? colourMax : lightMax;
+        std::size_t first = 0;
+        int w = k.w, h = k.h;
+        while (first + 1 < k.levels.size() && std::max(w, h) > cap) {
+            ++first;
+            w = std::max(1, w / 2);
+            h = std::max(1, h / 2);
+        }
+        std::vector<std::vector<std::uint8_t>> levels;
+        for (std::size_t l = first; l < k.levels.size(); ++l) {
+            const auto lv = k.level(l);
+            levels.emplace_back(lv.begin(), lv.end());
+        }
+        const auto o = omk::writeKtx2(k.vkFormat, w, h, levels);
+        std::FILE* f = omk::safeOutputPath(out.string()) ? std::fopen(out.string().c_str(), "wb") : nullptr;
+        if (!f || std::fwrite(o.data(), 1, o.size(), f) != o.size()) {
+            if (f) std::fclose(f);
+            std::fprintf(stderr, "%s: not written\n", out.string().c_str());
+            ++failed;
+            continue;
+        }
+        std::fclose(f);
+        ++made;
+        bytes += o.size();
+        ++sizes[std::string(colour ? "bc7 " : "bc4 ") + std::to_string(w) + "x" + std::to_string(h)];
+    }
+    std::printf("switchpack: %d made, %d up to date, %d failed - %.1f MB in %s\n", made, kept, failed,
+                static_cast<double>(bytes) / 1e6, dst.c_str());
+    for (const auto& [s, n] : sizes) std::printf("  %s x%d\n", s.c_str(), n);
+    return failed ? 1 : 0;
+}
+
 int cube(const std::string& path) {
     omk::ColourLut lut;
     std::string why;
@@ -645,6 +717,8 @@ int main(int argc, char** argv) {
     if (mode == "png" && argc == 4) return png(argv[2], argv[3]);
     if (mode == "grey" && argc == 4) return grey(argv[2], argv[3]);
     if (mode == "cube" && argc == 3) return cube(argv[2]);
+    if (mode == "switchpack" && argc == 6)
+        return switchpack(argv[2], argv[3], std::atoi(argv[4]), std::atoi(argv[5]));
     if (mode == "pngpar" && argc == 4 && std::atoi(argv[3]) > 0) return pngpar(argv[2], std::atoi(argv[3]));
     if (mode == "water" && argc >= 3) return water(argc, argv);
     if (mode == "probe" && argc >= 3) return probe(argc, argv);

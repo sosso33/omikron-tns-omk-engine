@@ -1581,10 +1581,11 @@ private:
     void remasterLightMap(const Tex& t);           // the bloom's light map on unit 3
     bool remasterInitUpscale();                    // FSR's programs; false: the target failed
     void remasterInitCodecs();                     // the pack's block formats the context samples
+    void uploadProbe(const char* astcPath, const char* ext);   // OMK_UPLOAD_PROBE, an instrument
     bool packActive() const;                       // a texture pack is open
     std::vector<PackImage> packDecode(std::span<const Texture* const> ts) const;
-    static bool astcBlocks(const PackBlocks& z);   // `z` holds ASTC
-    static bool uploadAstc(const PackBlocks& z, bool mips);   // into the bound texture; false: no whole chain
+    static bool gpuBlocks(const PackBlocks& z);   // `z` holds blocks the GL takes as they are (ASTC or BC)
+    static bool uploadBlocks(const PackBlocks& z, bool mips);   // into the bound texture; false: no whole chain
     int surfW_ = 0, surfH_ = 0;
 
     std::vector<Tex> tex_;
@@ -1597,6 +1598,7 @@ private:
     int  anisoOn_ = 1;       // what `init` found the context grants (1: none)
 #if OMK_REMASTER
     bool astcOk_ = false;    // ASTC sampled: the pack's `.astc.ktx2` files (`setTextures`)
+    bool bcOk_ = false;      // BC7 and BC4 sampled: its `.bc7.ktx2` / `_e.bc4.ktx2`, taken first
 #endif
     GLuint windowFbo_ = 0;
     bool overlayLayer_ = false;
@@ -2305,7 +2307,7 @@ GlesRenderer::Uploaded GlesRenderer::uploadOne(const Texture& s, PackImage* rep,
     u.w = s.width; u.h = s.height; u.keep = s.idx; u.used = true;
     int upW = s.width, upH = s.height;
     const bool fromPack = rep && rep->ok;
-    const bool blocks = fromPack && astcBlocks(rep->colourZ);
+    const bool blocks = fromPack && gpuBlocks(rep->colourZ);
     if (blocks) {
         upW = rep->w; upH = rep->h;
     } else if (fromPack) {
@@ -2326,11 +2328,11 @@ GlesRenderer::Uploaded GlesRenderer::uploadOne(const Texture& s, PackImage* rep,
     // texture: another is CLAMPED, or it is incomplete and its glow silently
     // black (the audit's item 9)
     GLuint em = 0;
-    if (bloomBuilt_ && rep && astcBlocks(rep->emissiveZ)) {
+    if (bloomBuilt_ && rep && gpuBlocks(rep->emissiveZ)) {
         glGenTextures(1, &em);
         glBindTexture(GL_TEXTURE_2D, em);
         texParams(GL_LINEAR, pot(rep->emissiveZ.w) && pot(rep->emissiveZ.h) ? GL_REPEAT : GL_CLAMP_TO_EDGE);
-        uploadAstc(rep->emissiveZ, false);   // the grey's red, as LUMINANCE's
+        uploadBlocks(rep->emissiveZ, false);   // the grey's red, as LUMINANCE's
         gpuTexture("textures", em, rep->emissiveZ.levels.empty() ? 0LL : static_cast<long long>(rep->emissiveZ.levels[0].second));
         ++lit;
     } else if (bloom_ > 0.0f && rep && !rep->emissive.empty()) {
@@ -2372,7 +2374,7 @@ GlesRenderer::Uploaded GlesRenderer::uploadOne(const Texture& s, PackImage* rep,
     if (blocks) {
         // its own chain, nothing generated - and no mip in the filter where
         // the file's is not whole
-        if (!uploadAstc(rep->colourZ, mips)) glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, f);
+        if (!uploadBlocks(rep->colourZ, mips)) glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, f);
     } else {
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, upW, upH, 0, GL_RGBA,
                      GL_UNSIGNED_BYTE, px.data());
@@ -4158,8 +4160,8 @@ bool GlesRenderer::remasterInitUpscale() { return true; }
 void GlesRenderer::remasterInitCodecs() {}
 bool GlesRenderer::packActive() const { return false; }
 std::vector<PackImage> GlesRenderer::packDecode(std::span<const Texture* const>) const { return {}; }
-bool GlesRenderer::astcBlocks(const PackBlocks&) { return false; }
-bool GlesRenderer::uploadAstc(const PackBlocks&, bool) { return true; }
+bool GlesRenderer::gpuBlocks(const PackBlocks&) { return false; }
+bool GlesRenderer::uploadBlocks(const PackBlocks&, bool) { return true; }
 void GlesRenderer::remasterRelease() {}
 void GlesRenderer::remasterWaterUniforms(const Draw&, const SceneLoc&, UniCache&, bool) {}
 bool GlesRenderer::remasterWantsNormals(const Draw&) const { return false; }

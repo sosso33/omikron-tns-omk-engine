@@ -18,6 +18,9 @@
 //                                    defaults ('#' starts a comment) - `--area`,
 //                                    `--res`, `--fps` without a rebuild
 //   sdmc:/switch/omk/omk-play-YYYYMMDD-HHMMSS.log / .err   each run's output
+//   (link arguments, too: `--env NAME=VALUE` sets an instrument's variable;
+//   `--rmtree DIR` deletes a folder and `--recv` takes files from the Mac -
+//   both under sdmc:/switch/omk/ only - `tools/switch_link.py --push`)
 //   sdmc:/switch/omk/bench/plan.txt  THE PERFORMANCE SWEEP's PLAN, when there:
 //                                    one RUN a line (its extra arguments, a
 //                                    place: `--area 0 --stand X,Y,Z,YAW`); each
@@ -47,10 +50,15 @@
 
 #include <arpa/inet.h>
 #include <pthread.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
+#include <netinet/in.h>
+#include <unistd.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <dirent.h>
 #include <ctime>
 #include <fstream>
@@ -68,6 +76,7 @@ constexpr const char* kSaves  = "sdmc:/switch/omk/saves/GAMES";
 constexpr const char* kIni    = "sdmc:/switch/omk/omk.ini";
 constexpr const char* kExtra  = "sdmc:/switch/omk/args.txt";
 constexpr const char* kBench  = "sdmc:/switch/omk/bench";
+constexpr int kPushPort = 28772;   // `switch_link.py --push` listens here (nxlink's stdout is 28771)
 constexpr const char* kNro    = "sdmc:/switch/omk/omk.nro";   // when argv[0] does not say
 
 // the plan's runs: its lines, blanks and `#` comments out
@@ -201,6 +210,17 @@ int main(int argc, char** argv) {
     for (std::size_t i = 0; i < linkArgs.size(); ++i) {
         const std::string& a = linkArgs[i];
         if (a == "--no-plan") { noPlan = true; continue; }
+        // `--env NAME=VALUE`: an instrument's variable (`OMK_UPLOAD_PROBE`...),
+        // set before the game reads it
+        if (a == "--env" && i + 1 < linkArgs.size()) {
+            const std::string kv = linkArgs[++i];
+            const auto eq = kv.find('=');
+            if (eq != std::string::npos) {
+                setenv(kv.substr(0, eq).c_str(), kv.substr(eq + 1).c_str(), 1);
+                std::printf("switch: %s set\n", kv.c_str());
+            }
+            continue;
+        }
         if ((a == "--ls" || a == "--cat" || a == "--b64") && i + 1 < linkArgs.size()) {
           for (const std::string& path : a == "--ls" ? std::vector<std::string>{linkArgs[i + 1]} : expand(linkArgs[i + 1])) {
             served = true;
@@ -236,6 +256,99 @@ int main(int argc, char** argv) {
           ++i;
         }
     }
+    // ...and the WRITES, under kHome alone: `--rmtree DIR`, then `--recv` -
+    // the Mac's `switch_link.py --push` listening on kPushPort: per file its
+    // path's length (u32 LE, 0 ends), the path under kHome, its size (u64
+    // LE), its bytes; a line said per file, the stream's end acknowledged
+    const auto underHome = [](const std::string& p) {
+        const std::string home = std::string(kHome) + "/";
+        return p.rfind(home, 0) == 0 && p.find("..") == std::string::npos && p.size() > home.size();
+    };
+    for (std::size_t i = 0; i < linkArgs.size(); ++i) {
+        if (linkArgs[i] != "--rmtree" || i + 1 >= linkArgs.size()) continue;
+        const std::string dir = linkArgs[++i];
+        served = true;
+        if (!underHome(dir)) { std::printf("rmtree %s: refused - not under %s\n", dir.c_str(), kHome); continue; }
+        int files = 0, dirs = 0;
+        // depth first, without recursion's stack: the folders found, deleted last
+        std::vector<std::string> todo{dir}, found;
+        while (!todo.empty()) {
+            const std::string d = todo.back();
+            todo.pop_back();
+            found.push_back(d);
+            if (DIR* h = opendir(d.c_str())) {
+                while (const dirent* e = readdir(h)) {
+                    const std::string n = e->d_name;
+                    if (n == "." || n == "..") continue;
+                    const std::string full = d + "/" + n;
+                    struct stat st{};
+                    if (stat(full.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) todo.push_back(full);
+                    else if (std::remove(full.c_str()) == 0) ++files;
+                }
+                closedir(h);
+            }
+        }
+        for (auto it = found.rbegin(); it != found.rend(); ++it) dirs += rmdir(it->c_str()) == 0 ? 1 : 0;
+        std::printf("rmtree %s: %d files and %d folders deleted\n", dir.c_str(), files, dirs);
+    }
+    if (std::find(linkArgs.begin(), linkArgs.end(), "--recv") != linkArgs.end()) {
+        served = true;
+        const int s = socket(AF_INET, SOCK_STREAM, 0);
+        sockaddr_in a{};
+        a.sin_family = AF_INET;
+        a.sin_port = htons(kPushPort);
+        a.sin_addr = __nxlink_host;
+        if (s < 0 || connect(s, reinterpret_cast<sockaddr*>(&a), sizeof a) != 0) {
+            std::printf("recv: no connection to the Mac's port %d\n", kPushPort);
+        } else {
+            const auto readAll = [s](void* dst, std::size_t n) {
+                auto* p = static_cast<char*>(dst);
+                while (n > 0) {
+                    const ssize_t r = recv(s, p, n, 0);
+                    if (r <= 0) return false;
+                    p += r;
+                    n -= static_cast<std::size_t>(r);
+                }
+                return true;
+            };
+            std::vector<char> buf(1u << 20);
+            int files = 0;
+            unsigned long long total = 0;
+            const u64 t0 = armGetSystemTick();
+            for (;;) {
+                std::uint32_t len = 0;
+                if (!readAll(&len, 4) || len == 0 || len > 1024) break;
+                std::string rel(len, '\0');
+                std::uint64_t size = 0;
+                if (!readAll(rel.data(), len) || !readAll(&size, 8)) break;
+                const std::string path = std::string(kHome) + "/" + rel;
+                if (!underHome(path)) { std::printf("recv %s: refused\n", rel.c_str()); break; }
+                // its folders, then the file
+                for (std::size_t k = std::string(kHome).size() + 1; (k = path.find('/', k)) != std::string::npos; ++k)
+                    mkdir(path.substr(0, k).c_str(), 0777);
+                std::FILE* f = std::fopen(path.c_str(), "wb");
+                std::uint64_t left = size;
+                bool ok = f != nullptr;
+                while (left > 0) {
+                    const std::size_t n = static_cast<std::size_t>(std::min<std::uint64_t>(left, buf.size()));
+                    if (!readAll(buf.data(), n)) { ok = false; left = 0; break; }
+                    if (f && std::fwrite(buf.data(), 1, n, f) != n) ok = false;
+                    left -= n;
+                }
+                if (f) std::fclose(f);
+                if (!ok) { std::printf("recv %s: FAILED\n", rel.c_str()); break; }
+                ++files;
+                total += size;
+                if (files % 100 == 0) std::printf("recv: %d files, %llu MB\n", files, total >> 20);
+            }
+            const double sec = static_cast<double>(armTicksToNs(armGetSystemTick() - t0)) / 1e9;
+            std::printf("recv: %d files, %.1f MB in %.0f s (%.1f MB/s)\n", files, static_cast<double>(total) / 1e6,
+                        sec, sec > 0 ? static_cast<double>(total) / 1e6 / sec : 0.0);
+            const std::uint32_t ack = static_cast<std::uint32_t>(files);
+            send(s, &ack, 4, 0);
+            close(s);
+        }
+    }
     if (served) {
         std::fflush(stdout);
         if (nxlink) socketExit();
@@ -256,8 +369,11 @@ int main(int argc, char** argv) {
             if (!line.empty() && line[0] != '#') game.args.push_back(line);
         }
     }
-    for (const auto& a : linkArgs)
-        if (a != "--no-plan") game.args.push_back(a);
+    for (std::size_t i = 0; i < linkArgs.size(); ++i) {
+        if (linkArgs[i] == "--no-plan") continue;
+        if (linkArgs[i] == "--env") { ++i; continue; }
+        game.args.push_back(linkArgs[i]);
+    }
     // THE PERFORMANCE SWEEP's plan: this launch's run, its place's arguments
     // split at the spaces, and where its report goes
     const std::vector<std::string> plan = noPlan ? std::vector<std::string>() : benchPlan();

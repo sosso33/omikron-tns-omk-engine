@@ -75,9 +75,9 @@ void PlayState::omkOptionsOpen() {
     enh("anisotropy", texAniso, d.anisotropy, anisoFlag, "--anisotropy", f0.anisotropy, f1.anisotropy,
         omk::kMaxAnisotropy);
     enh("shadowquality", shadowQuality, d.shadowQuality, shadowQFlag, "--shadow-quality", f0.shadowQuality,
-        f1.shadowQuality, omk::kMaxShadowQuality);
+        f1.shadowQuality, omk::kAllShadowQuality);
     enh("lighting", lighting, d.lighting, lightingFlag, "--lighting", f0.lighting, f1.lighting,
-        omk::kMaxLighting);
+        omk::kAllLighting);
     enh("uiscaling", uiScaling, d.uiScaling, uiScaleFlag, "--ui-scaling", f0.uiScaling, f1.uiScaling,
         omk::kMaxUiScaling);
     enh("textscaling", textScaling, d.textScaling, textScaleFlag, "--text-scaling", f0.textScaling,
@@ -85,11 +85,11 @@ void PlayState::omkOptionsOpen() {
     enh("radar", radarAlways ? 1 : 0, d.radarAlways ? 1 : 0, radarFlag, "--radar", f0.radarAlways ? 1 : 0,
         f1.radarAlways ? 1 : 0, omk::kMaxRadar);
     enh("framerate", frameRate, d.frameRate, frameRateFlag, "--framerate", f0.frameRate, f1.frameRate,
-        omk::kMaxFrameRate);
+        omk::kAllFrameRate);
     enh("animation", smoothAnim ? 1 : 0, d.smoothAnimation ? 1 : 0, smoothAnimFlag, "--smooth-anim",
         f0.smoothAnimation ? 1 : 0, f1.smoothAnimation ? 1 : 0, omk::kMaxAnimation);
     enh("clipdistance", unlimitedClip ? 1 : 0, 0, clipFlag ? (clipArg <= 0 ? 1 : 0) : -1, "--clip",
-        f0.unlimitedDrawDistance ? 1 : 0, f1.unlimitedDrawDistance ? 1 : 0, 1);
+        f0.unlimitedDrawDistance ? 1 : 0, f1.unlimitedDrawDistance ? 1 : 0, omk::kAllUnlimitedDraw);
     // ---- [Remaster]: what the remaster mode runs with - the flag, the key,
     // the preset's - from the file, since `mode = original` left this run's
     // settings without them; what runs is this run's strength

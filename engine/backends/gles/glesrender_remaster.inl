@@ -323,9 +323,17 @@ void GlesRenderer::fsrPass(int vh) {
 // GLES2 has no `GL_TEXTURE_MAX_LEVEL`, and an incomplete chain samples black
 // under a mipmap filter - the caller then drops the filter's mip (the audit's
 // item 9; every ASTC of the pack holds its whole chain, 2026-10-26)
-bool GlesRenderer::uploadAstc(const omk::PackBlocks& z, bool mips) {
+bool GlesRenderer::uploadBlocks(const omk::PackBlocks& z, bool mips) {
     const omk::BlockFormat f = omk::blockFormat(z.vkFormat);
-    const GLenum gl = f.bw == 4 ? 0x93B0 : f.bw == 5 ? 0x93B2 : f.bw == 6 ? 0x93B4 : 0x93B7;   // 4x4 5x5 6x6 8x8
+    // ASTC by its block size (4x4 5x5 6x6 8x8); BC by its format: BC7 the
+    // BPTC unorm, BC4 RGTC1's red (a light map's grey, read as `.r`), BC1
+    // and BC3 S3TC's DXT1 and DXT5 (the Vita's pack)
+    const GLenum gl = f.astc ? (f.bw == 4 ? 0x93B0 : f.bw == 5 ? 0x93B2 : f.bw == 6 ? 0x93B4 : 0x93B7)
+                    : z.vkFormat == omk::kVkBc7Unorm ? 0x8E8C
+                    : z.vkFormat == omk::kVkBc4Unorm ? 0x8DBB
+                    : z.vkFormat == omk::kVkBc1RgbaUnorm ? 0x83F1
+                    : z.vkFormat == omk::kVkBc3Unorm ? 0x83F3 : 0;
+    if (!gl) return false;
     std::size_t whole = 1;
     for (int s = std::max(z.w, z.h); s > 1; s >>= 1) ++whole;
     const bool chain = mips && z.levels.size() == whole;
@@ -350,7 +358,7 @@ std::vector<PackImage> GlesRenderer::packDecode(std::span<const Texture* const> 
     return texturePack().replacements(ts, true, false);
 }
 
-bool GlesRenderer::astcBlocks(const PackBlocks& z) { return !z.empty() && blockFormat(z.vkFormat).astc; }
+bool GlesRenderer::gpuBlocks(const PackBlocks& z) { return !z.empty() && blockFormat(z.vkFormat).bytes > 0; }
 
 // THE PRELOAD RADIUS (`Renderer::setPreloadTextures`, `todo/remaster.md`): a
 // prepared set's textures, PINNED - `setTextures`' eviction spares them while
@@ -553,7 +561,16 @@ void GlesRenderer::remasterInitCodecs() {
         const char* ext = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
         astcOk_ = ext && std::strstr(ext, "GL_KHR_texture_compression_astc_ldr") &&
                   !omk::envFlag("OMK_NO_BLOCK_FORMATS");
-        omk::texturePack().setCodecs(astcOk_ ? omk::kCodecAstc : 0u);
+        // ...and BC - BC7 colours, BC4 light maps, the desktop pack's own -
+        // where the context names BPTC AND RGTC (the Switch's Mesa: GLES 3.2
+        // on the GM20B), FIRST: the pack index takes a texture's BC files
+        // before its ASTC ones. The Switch's Mesa names ASTC too but DECODES
+        // it on the CPU - 221 ms a 1024 with its mips against 6-8 ms for BC
+        // (the upload probe below, 2026-11-26). A GL naming neither (the
+        // Mac's 2.1, Android's) is as it was.
+        bcOk_ = ext && std::strstr(ext, "GL_EXT_texture_compression_bptc") &&
+                std::strstr(ext, "GL_EXT_texture_compression_rgtc") && !omk::envFlag("OMK_NO_BLOCK_FORMATS");
+        omk::texturePack().setCodecs((bcOk_ ? omk::kCodecBc : 0u) | (astcOk_ ? omk::kCodecAstc : 0u));
         // ...and every compressed family the context NAMES, said: a format
         // named may still be decoded by the driver on the CPU (the Switch's
         // Mesa: ~205 ms an ASTC 1024 upload, 2026-11-26) - which ones it
@@ -568,10 +585,95 @@ void GlesRenderer::remasterInitCodecs() {
             const char* ver = reinterpret_cast<const char*>(glGetString(GL_VERSION));
             std::printf("gles: %s, %s - compressed formats named: %s\n", rend ? rend : "?", ver ? ver : "?",
                         named.empty() ? "none" : named.c_str());
+            if (const char* probe = omk::envStr("OMK_UPLOAD_PROBE")) uploadProbe(probe, ext);
         }
+        if (bcOk_ && omk::texturePack().active())
+            std::printf("gles: the texture pack's BC files (BC7, BC4) - %zu colours read as blocks, first\n",
+                        omk::texturePack().blockFiles(omk::kCodecBc));
         if (astcOk_ && omk::texturePack().active())
             std::printf("gles: the texture pack's ASTC files - %zu colours read as blocks\n",
                         omk::texturePack().blockFiles(omk::kCodecAstc));
+    }
+}
+
+// THE UPLOAD PROBE (`OMK_UPLOAD_PROBE=<an .astc.ktx2 of the pack>`, an
+// INSTRUMENT): which compressed format this GL takes FAST. The Switch's Mesa
+// names ASTC, S3TC, RGTC and BPTC, and an ASTC 1024 with its mips cost ~205
+// ms to put on the GPU (2026-11-26) - the driver decoding it, or not? The
+// same 1024x1024 with its whole chain in each format named, timed to a
+// glFinish, three times: the given ASTC file's own blocks, then BC1, BC3,
+// BC4 and BC7 (blocks of noise - a driver that decodes on the CPU pays for
+// any content), and RGBA8 as the yardstick. Said, then the game goes on.
+void GlesRenderer::uploadProbe(const char* astcPath, const char* ext) {
+    struct Fmt { const char* name; const char* needs; GLenum gl; int blockBytes; int bw; };
+    const Fmt fmts[] = {
+        {"ASTC 6x6 (the pack's file)", "GL_KHR_texture_compression_astc_ldr", 0x93B4, 16, 6},
+        {"BC1 / DXT1", "GL_EXT_texture_compression_s3tc", 0x83F1, 8, 4},
+        {"BC3 / DXT5", "GL_EXT_texture_compression_s3tc", 0x83F3, 16, 4},
+        {"BC4 / RGTC1", "GL_EXT_texture_compression_rgtc", 0x8DBB, 8, 4},
+        {"BC7 / BPTC", "GL_EXT_texture_compression_bptc", 0x8E8C, 16, 4},
+        {"RGBA8, not compressed", nullptr, GL_RGBA, 4, 1},
+    };
+    constexpr int kSide = 1024;
+    // the ASTC file: KTX2, its level index at byte 80 (offset, length, and
+    // the uncompressed length, 8 bytes each)
+    std::vector<unsigned char> file;
+    if (std::FILE* f = std::fopen(astcPath, "rb")) {
+        unsigned char b[65536];
+        std::size_t n;
+        while ((n = std::fread(b, 1, sizeof b, f)) > 0) file.insert(file.end(), b, b + n);
+        std::fclose(f);
+    }
+    const auto u32 = [&](std::size_t at) { return at + 4 <= file.size() ? static_cast<std::uint32_t>(file[at] | file[at + 1] << 8 | file[at + 2] << 16 | static_cast<std::uint32_t>(file[at + 3]) << 24) : 0u; };
+    const auto u64 = [&](std::size_t at) { return static_cast<std::uint64_t>(u32(at)) | static_cast<std::uint64_t>(u32(at + 4)) << 32; };
+    std::printf("gles: the upload probe - %s, %zu bytes, vkFormat %u, %ux%u, %u levels\n", astcPath, file.size(),
+                u32(12), u32(20), u32(24), u32(40));
+    std::uint32_t seed = 12345;
+    for (const Fmt& fm : fmts) {
+        if (fm.needs && !std::strstr(ext, fm.needs)) { std::printf("gles: upload probe %s - not named\n", fm.name); continue; }
+        const bool astc = fm.gl == 0x93B4;
+        if (astc && (u32(12) != 165 || u32(20) != kSide)) { std::printf("gles: upload probe %s - the file is not a 1024 ASTC 6x6\n", fm.name); continue; }
+        // the chain: each level's bytes
+        std::vector<std::vector<unsigned char>> levels;
+        std::size_t bytes = 0;
+        for (int l = 0, s = kSide; s >= 1; ++l, s >>= 1) {
+            std::vector<unsigned char> lv;
+            if (astc) {
+                const std::uint64_t off = u64(80 + 24 * static_cast<std::size_t>(l)), len = u64(88 + 24 * static_cast<std::size_t>(l));
+                if (off + len > file.size()) break;
+                lv.assign(file.begin() + static_cast<std::ptrdiff_t>(off), file.begin() + static_cast<std::ptrdiff_t>(off + len));
+            } else {
+                const int blocks = (s + fm.bw - 1) / fm.bw;
+                lv.resize(static_cast<std::size_t>(blocks) * blocks * fm.blockBytes);
+                for (auto& c : lv) { seed = seed * 1664525u + 1013904223u; c = static_cast<unsigned char>(seed >> 24); }
+            }
+            bytes += lv.size();
+            levels.push_back(std::move(lv));
+        }
+        double ms[3] = {0, 0, 0};
+        for (int rep = 0; rep < 3; ++rep) {
+            GLuint id = 0;
+            glGenTextures(1, &id);
+            glBindTexture(GL_TEXTURE_2D, id);
+            glFinish();
+            const double t0 = glesClockMs();
+            for (std::size_t l = 0; l < levels.size(); ++l) {
+                const int s = std::max(1, kSide >> l);
+                if (fm.gl == GL_RGBA)
+                    glTexImage2D(GL_TEXTURE_2D, static_cast<GLint>(l), GL_RGBA, s, s, 0, GL_RGBA, GL_UNSIGNED_BYTE, levels[l].data());
+                else
+                    glCompressedTexImage2D(GL_TEXTURE_2D, static_cast<GLint>(l), fm.gl, s, s, 0,
+                                           static_cast<GLsizei>(levels[l].size()), levels[l].data());
+            }
+            glFinish();
+            ms[rep] = glesClockMs() - t0;
+            const GLenum err = glGetError();
+            glDeleteTextures(1, &id);
+            if (err != GL_NO_ERROR) { std::printf("gles: upload probe %s - GL error 0x%x\n", fm.name, err); break; }
+        }
+        std::printf("gles: upload probe %s - %zu levels, %zu KB: %.1f, %.1f, %.1f ms\n", fm.name, levels.size(),
+                    bytes / 1024, ms[0], ms[1], ms[2]);
+        omk::event("gles.uploadprobe", {{"format", fm.name}, {"kb", static_cast<long>(bytes / 1024)}, {"ms", ms[1]}});
     }
 }
 

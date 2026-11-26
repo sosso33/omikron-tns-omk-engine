@@ -183,9 +183,11 @@ void PlayState::remasterSetup() {
                         "GPU ahead, released past %.0f m\n", static_cast<double>(preloadMetres),
                         static_cast<double>(preloadMetres), static_cast<double>(preloadMetres) + 10.0);
         // THE UPSCALE (`Renderer::setUpscale`): its flag, its key - not the
-        // preset's, a frame rate's choice rather than a look's
+        // preset's look, a frame rate's choice: the PLATFORM's under the
+        // preset (`kPresetUpscale`, 1.5 on the Switch, 1 elsewhere)
         upscale = upscaleFlag >= 0.0f ? upscaleFlag
-                : settings.upscaleSource == omk::Settings::Source::Ini ? settings.upscale : 1.0f;
+                : settings.upscaleSource == omk::Settings::Source::Ini ? settings.upscale
+                : !preset.empty() ? omk::kPresetUpscale : 1.0f;
         if (upscale > 1.0f)
             std::printf("upscale: x%.2f - a REMASTER feature: the frame drawn smaller and brought up by "
                         "AMD FSR 1, Vulkan and GLES\n", static_cast<double>(upscale));
