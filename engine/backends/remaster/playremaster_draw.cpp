@@ -74,20 +74,20 @@ void PlayState::remasterViewMist(omk::View& v) {
     // while paused), a light grey lit as the set's ambient
     // THE PUDDLES on the wet floors - `OMK_NO_PUDDLES=1`, an INSTRUMENT, an
     // even film instead (`verify.py: engine: wet floors` part 9)
-    static const bool noPuddles = omk::envFlag("OMK_NO_PUDDLES");
+    const bool noPuddles = omk::envFlag("OMK_NO_PUDDLES");   // read each frame: the sweep switches it
     v.puddles = noPuddles ? 0.0f : 1.0f;
     // ...and THE LIGHTS' STREAKS on them (the reader's "go with 1", 2026-10-28):
     // their lights picked with the emitters' (`remasterPointLights`), which
     // run under per-pixel light alone - `OMK_NO_STREAKS=1`, an INSTRUMENT,
     // none (`verify.py: engine: wet floors` part 14)
-    static const bool noStreaks = omk::envFlag("OMK_NO_STREAKS");
+    const bool noStreaks = omk::envFlag("OMK_NO_STREAKS");   // read each frame: the sweep switches it
     v.streaks = !noStreaks && remasterShown_ ? wetStrength : 0.0f;
     v.streakLights.clear();
     v.veil = 0.0f;
     v.veilGust = 0.0f;
     // `OMK_NO_VEIL=1`, an INSTRUMENT: the veils alone left out
     // (`verify.py: engine: rain 3d` part 13)
-    static const bool noVeil = omk::envFlag("OMK_NO_VEIL");
+    const bool noVeil = omk::envFlag("OMK_NO_VEIL");   // read each frame: the sweep switches it
     if (!noVeil && rain3dStrength > 0.0f && remasterShown_ && weatherRain > 0.0f) {
         const WorldSlot& ws = worldSlots[static_cast<std::size_t>(session_->shownSlot() & 1)];
         const float amb = std::clamp(kAirAmbientMin + kAirAmbientGain * static_cast<float>(ws.ambientGrey) / 255.0f,
@@ -102,13 +102,13 @@ void PlayState::remasterViewMist(omk::View& v) {
     // the weather list's 2, 2026-10-28): the lights' bloom spread by the wet
     // air, as strong as the shower. `OMK_NO_HALO=1`, an INSTRUMENT, leaves
     // the bloom as it is dry (`verify.py: engine: rain 3d` part 15)
-    static const bool noHalo = omk::envFlag("OMK_NO_HALO");
+    const bool noHalo = omk::envFlag("OMK_NO_HALO");   // read each frame: the sweep switches it
     v.halo = !noHalo && rain3dStrength > 0.0f && remasterShown_
         ? std::clamp(weatherRain * rain3dStrength, 0.0f, 1.0f) : 0.0f;
     v.dust = 0.0f;
     // `OMK_NO_DUST=1`, an INSTRUMENT: the dust fog alone left out, the grains
     // and the grade kept (`verify.py: engine: rain 3d` part 11)
-    static const bool noDust = omk::envFlag("OMK_NO_DUST");
+    const bool noDust = omk::envFlag("OMK_NO_DUST");   // read each frame: the sweep switches it
     if (!noDust && restoredWeather && rain3dStrength > 0.0f && remasterShown_ && weatherSandLevel > 0.0f) {
         const WorldSlot& ws = worldSlots[static_cast<std::size_t>(session_->shownSlot() & 1)];
         const float amb = std::clamp(kAirAmbientMin + kAirAmbientGain * static_cast<float>(ws.ambientGrey) / 255.0f,
@@ -411,7 +411,7 @@ void PlayState::remasterSnowCover(std::vector<omk::Draw>& list) {
 // under cover from frame N - the drying seen with no roof to walk under
 // (part 12).
 void PlayState::remasterWetBodies(std::vector<omk::Draw>& list) {
-    static const bool noBodies = omk::envFlag("OMK_NO_WET_BODIES");
+    const bool noBodies = omk::envFlag("OMK_NO_WET_BODIES");   // read each frame: the sweep switches it
     static const long coverAt = static_cast<long>(omk::envNum("OMK_WET_BODY_COVER_AT", 0.0));
     const bool rainArea = weatherBitsTold != 0xFFFFu && (weatherBitsTold & 2u) != 0;
     const float floors = wetness.value();
@@ -441,8 +441,8 @@ void PlayState::remasterWetBodies(std::vector<omk::Draw>& list) {
     // THE SPLASHES OFF THE BODIES (the weather list's 5, 2026-10-29): in the
     // 3D rain's shower, a body in the open splashes at its feet a step at a
     // time as it walks, and drops burst on its head
-    static const bool noSplashes = omk::envFlag("OMK_NO_SPLASHES");
-    static const bool noBodySplashes = omk::envFlag("OMK_NO_BODY_SPLASHES");
+    const bool noSplashes = omk::envFlag("OMK_NO_SPLASHES");   // read each frame: the sweep switches it
+    const bool noBodySplashes = omk::envFlag("OMK_NO_BODY_SPLASHES");   // read each frame: the sweep switches it
     const bool splashing = !noSplashes && !noBodySplashes && rain3dStrength > 0.0f && !rainDrops.empty() &&
                            (rainBits & 2u) != 0 && splashClock >= 0.0;
     const double shower = std::min(1.0, static_cast<double>(rainDrops.size()) / kBodyShowerFull);

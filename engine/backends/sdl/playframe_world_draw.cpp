@@ -1396,7 +1396,11 @@ void PlayState::worldMirror() {
         omk::greyClear565(view.clearColour, drawn.clearColour);
     }
     remasterLitSet(draws);   // the emitters' lights on the set (`backends/remaster/`)
-    remasterRainDraws(draws, drawn);   // the rain in the scene (`backends/remaster/`)
+    {
+        const double rain0 = phaseNow();
+        remasterRainDraws(draws, drawn);   // the rain in the scene (`backends/remaster/`)
+        phases.span["rain build"] += phaseNow() - rain0;   // its drops' roofs and lights, on the CPU
+    }
     remasterSnowCover(draws);          // the snow lying on the open floors (`backends/remaster/`)
     remasterWetBodies(draws);          // ...and the bodies wet in the rain
     // a headset's two eyes, drawn there instead (backends/vr; empty without OMK_VR)

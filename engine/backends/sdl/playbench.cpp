@@ -27,6 +27,7 @@
 #include "playstate.h"
 
 #include "platform/datafs.h"
+#include "platform/env.h"
 #include "platform/events.h"
 #include "platform/hostfs.h"
 
@@ -52,6 +53,22 @@ double percentile(std::vector<double> v, double p) {
     const std::size_t k = std::min(v.size() - 1, static_cast<std::size_t>(p * static_cast<double>(v.size() - 1) + 0.5));
     return v[k];
 }
+
+// THE WEATHER'S PARTS, each turned off for a step of its own under the held
+// weather by its instrument (`envOverride`): which of them the frame pays for
+// (the Switch's Anekbah, 2026-11-26: raining 40.2 ms, the 3D rain off 23.1)
+struct WeatherPart { const char* label; const char* env; unsigned kinds; };   // kinds: 2 rain, 4 snow, 8 sand
+constexpr WeatherPart kWeatherParts[] = {
+    {"its strips (the drops, flakes or grains)", "OMK_NO_RAIN_STRIPS", 2u | 4u | 8u},
+    {"its splashes", "OMK_NO_SPLASHES", 2u},
+    {"its veils", "OMK_NO_VEIL", 2u},
+    {"its halos", "OMK_NO_HALO", 2u},
+    {"the lights' streaks", "OMK_NO_STREAKS", 2u},
+    {"the wet bodies", "OMK_NO_WET_BODIES", 2u},
+    {"the puddles", "OMK_NO_PUDDLES", 2u},
+    {"the drips", "OMK_NO_DRIPS", 2u},
+    {"the dust", "OMK_NO_DUST", 8u},
+};
 
 // the strengths a step turns off, each where the run has it on
 constexpr const char* kStrengths[] = {"bloom", "water", "floors", "wet", "rain3d", "mist",
@@ -81,6 +98,8 @@ struct PlayState::BenchRun {
     bool weather = false;    // this place rains: its view bits, option row 7 at 2
     int drops = 0;           // the most drops a measured frame had - the rain said, not assumed
     bool raining = false;    // a rain step: the shower held again every frame (a roof's ray ends it)
+    std::map<std::string, std::string> envWas;   // the parts' switches as the run had them ("" unset... and set)
+    std::map<std::string, bool> envSet;
     int lighting = 0, shadow = 0, aniso = 0, filter = 0;
     bool unlimited = false;
     float upscale = 1.0f;
@@ -152,6 +171,7 @@ void PlayState::benchRestore() {
     if (b.switchable && !remasterShown_) remasterShow(true, "the bench");
     b.raining = false;
     if (b.weather) weather.holdForBench(false, static_cast<long>(weatherClockMs));
+    for (const auto& [name, was] : b.envWas) omk::envOverride(name.c_str(), b.envSet[name] ? was.c_str() : nullptr);
 }
 
 void PlayState::benchSetup() {
@@ -235,6 +255,19 @@ void PlayState::benchSetup() {
             const auto at = b.strengths.find(key);
             if (at == b.strengths.end() || at->second <= 0.0f) continue;
             add(kind + ", " + key + " off", [this, rain, key] { rain(); *remasterStrength(key) = 0.0f; return true; });
+        }
+        // ...and each of its PARTS off, the remaster on
+        const unsigned kindBit = kind == "snow" ? 4u : kind == "sand" ? 8u : 2u;
+        for (const WeatherPart& part : kWeatherParts) {
+            if (!(part.kinds & kindBit) || !b.switchable) continue;
+            const char* was = omk::envStr(part.env);
+            b.envSet[part.env] = was != nullptr;
+            b.envWas[part.env] = was ? was : "";
+            const std::string env = part.env;
+            add(kind + ", " + part.label + " off", [this, rain, env] {
+                rain();
+                return omk::envOverride(env.c_str(), "1");
+            });
         }
         if (b.switchable) add(kind + ", original", [this, rain] { rain(); return remasterShow(false, "the bench"); });
     }

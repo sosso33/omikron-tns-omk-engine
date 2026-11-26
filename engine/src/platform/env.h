@@ -35,4 +35,11 @@ long envInt(const char* name, long unset);
 // Its value as a number (`atof`), or `unset` when it is not set.
 double envNum(const char* name, double unset);
 
+// AN INSTRUMENT'S OVERRIDE - the performance sweep's (`--bench`), which turns
+// a switch on and off between its steps: the snapshot's value replaced
+// (nullptr: not set). False for a name the table does not carry. From the
+// MAIN thread only, and only for switches read there each frame (a worker
+// reading the snapshot meanwhile is not guarded).
+bool envOverride(const char* name, const char* value);
+
 }  // namespace omk

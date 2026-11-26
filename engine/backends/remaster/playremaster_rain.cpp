@@ -80,10 +80,25 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <unordered_map>
 
 namespace {
 constexpr double kRainRoofRay = 4000.0;   // how far up a roof stops a drop (`kWetSkyRay`'s)
 constexpr float kRainBox = 1000.0f;       // the rain's box (`dword_4D0780`, `o3de/weather.cpp`)
+// THE ROOFS, KEPT: a drop's roof ray answered once for the CELL it is in -
+// `kRoofCell` units a side, the ray cast from the cell's centre - and kept
+// while the set stays. The ray per drop per frame was ~60% of the rain's
+// build (M1 Anekbah: 3.7 ms a frame, 1.5 without it; the Switch's A57 ~5-8x
+// that - its rain 40.2 ms against 23.1 without the 3D rain, 2026-11-26); the
+// drops fall through the same cells round the eye, so the cells fill once.
+// A drop within a cell of a roof's edge may take its neighbour's answer:
+// ~0.8 m, on faint additive streaks.
+constexpr float kRoofCell = 32.0f;
+constexpr std::size_t kRoofCacheMax = 1u << 20;   // cells kept before the cache starts again
+// ...and THEIR LIGHT the same way: a streak's colour from the set's lights at
+// its cell's centre, kept while the slot's light table is the same one (the
+// rest of the build's cost: 1.45 -> 0.5 ms on the M1 without it). The light
+// varies over metres; a cell is 0.8 m.
 constexpr int kRainCopies = 3;            // the drops each original one brings
 constexpr float kRainGlow = 0.4f;         // a strip's brightness against the original line's (0.55: solid)
 constexpr float kRainOwnMin = 0.35f;      // ...times each drop's own, from this to 1
@@ -308,7 +323,7 @@ void PlayState::remasterPoolRain(std::vector<omk::Texture>& slots) {
 // times the shower's strength (`shower` 0..1). `OMK_NO_GUSTS=1`, an
 // INSTRUMENT: none (`verify.py: engine: rain 3d` part 18)
 float PlayState::remasterGust(double ms, float along, float shower) const {
-    static const bool noGusts = omk::envFlag("OMK_NO_GUSTS");
+    const bool noGusts = omk::envFlag("OMK_NO_GUSTS");   // read each frame: the sweep switches it
     if (noGusts || !(shower > 0.0f)) return 0.0f;
     const double t = ms - static_cast<double>(along) / kGustSpeed;
     double wave = 0.0;
@@ -406,7 +421,7 @@ void PlayState::remasterRainDraws(std::vector<omk::Draw>& list, const omk::View&
     // `kRainNeon` and taking the grey base's place as they grow: a drop by a
     // pink sign glows pink (the reader's "rain effect on neon", 2026-10-27).
     // Whether the set's lights reached it, and the emitters' luminance
-    const auto lightAt = [&](const float p[3], float base, float rgb[3]) {
+    const auto lightAtPoint = [&](const float p[3], float base, float rgb[3]) {
         bool lit = false;
         float neon[3] = {0.0f, 0.0f, 0.0f};
         for (int c = 0; c < 3; ++c) rgb[c] = base;
@@ -429,12 +444,68 @@ void PlayState::remasterRainDraws(std::vector<omk::Draw>& list, const omk::View&
         for (int c = 0; c < 3; ++c) rgb[c] = rgb[c] * (1.0f - 0.7f * neonL) + neon[c];
         return std::pair<bool, float>{lit, neonL};
     };
-    for (const auto& d : all) {
-        if (shot && boxes) {
-            const double p0[3] = {d.p[0], d.p[1], d.p[2]};
-            const double up[3] = {0.0, -kRainRoofRay, 0.0};   // Y points down
-            if (omk::sweepSphere(*shot, *boxes, p0, up, 0.0).has_value()) { ++roofed; continue; }
+    // ...kept by cell (`kRoofCell`) and base, while the light table is this one
+    struct LitCell { float rgb[3]; bool lit; float neonL; };
+    static std::unordered_map<std::uint64_t, LitCell> litCells;
+    static const omk::Light3do* litTable = nullptr;
+    static std::size_t litCount = 0, litSet = 0;
+    if (lights.data() != litTable || lights.size() != litCount || setLightCount != litSet ||
+        litCells.size() > kRoofCacheMax) {
+        litCells.clear();
+        litTable = lights.data();
+        litCount = lights.size();
+        litSet = setLightCount;
+    }
+    const auto lightAt = [&](const float p[3], float base, float rgb[3]) {
+        const auto cell = [](float v) { return static_cast<std::int64_t>(std::floor(v / kRoofCell)); };
+        const std::int64_t cx = cell(p[0]), cy = cell(p[1]), cz = cell(p[2]);
+        // the base (a few values, one per kind of streak) in the key's top bits
+        const std::uint64_t key = (static_cast<std::uint64_t>(static_cast<std::uint32_t>(base * 4096.0f) & 0x3FFu) << 54) |
+                                  (static_cast<std::uint64_t>(cx & 0x3FFFF) << 36) |
+                                  (static_cast<std::uint64_t>(cy & 0x3FFFF) << 18) |
+                                  static_cast<std::uint64_t>(cz & 0x3FFFF);
+        const auto hit = litCells.find(key);
+        if (hit != litCells.end()) {
+            for (int c = 0; c < 3; ++c) rgb[c] = hit->second.rgb[c];
+            return std::pair<bool, float>{hit->second.lit, hit->second.neonL};
         }
+        const float centre[3] = {(static_cast<float>(cx) + 0.5f) * kRoofCell, (static_cast<float>(cy) + 0.5f) * kRoofCell,
+                                 (static_cast<float>(cz) + 0.5f) * kRoofCell};
+        const auto r = lightAtPoint(centre, base, rgb);
+        LitCell lc{{rgb[0], rgb[1], rgb[2]}, r.first, r.second};
+        litCells.emplace(key, lc);
+        return r;
+    };
+    // the roofs' cells, for this set's shot soup (a new set, or a slot
+    // refilled, empties them)
+    static std::unordered_map<std::uint64_t, bool> roofCells;
+    static const omk::TriangleSoup* roofSoup = nullptr;
+    static std::size_t roofSoupSize = 0;
+    static std::string roofSet;
+    if (shot && (shot != roofSoup || shot->size() != roofSoupSize || roofSet != worldSet ||
+                 roofCells.size() > kRoofCacheMax)) {
+        roofCells.clear();
+        roofSoup = shot;
+        roofSoupSize = shot->size();
+        roofSet = worldSet;
+    }
+    const auto roofOver = [&](const float p[3]) {
+        const auto cell = [](float v) { return static_cast<std::int64_t>(std::floor(v / kRoofCell)); };
+        const std::int64_t cx = cell(p[0]), cy = cell(p[1]), cz = cell(p[2]);
+        const std::uint64_t key = (static_cast<std::uint64_t>(cx & 0x1FFFFF) << 42) |
+                                  (static_cast<std::uint64_t>(cy & 0x1FFFFF) << 21) |
+                                  static_cast<std::uint64_t>(cz & 0x1FFFFF);
+        const auto hit = roofCells.find(key);
+        if (hit != roofCells.end()) return hit->second;
+        const double p0[3] = {(static_cast<double>(cx) + 0.5) * kRoofCell, (static_cast<double>(cy) + 0.5) * kRoofCell,
+                              (static_cast<double>(cz) + 0.5) * kRoofCell};
+        const double up[3] = {0.0, -kRainRoofRay, 0.0};   // Y points down
+        const bool roofed = omk::sweepSphere(*shot, *boxes, p0, up, 0.0).has_value();
+        roofCells.emplace(key, roofed);
+        return roofed;
+    };
+    for (const auto& d : all) {
+        if (shot && boxes && roofOver(d.p)) { ++roofed; continue; }
         if (sand) {
             // THE GRAIN: a soft dot facing the eye - the grain's own picture in
             // the field, filtered, additive - small, in the dust (the reader:
@@ -604,7 +675,7 @@ void PlayState::remasterRainDraws(std::vector<omk::Draw>& list, const omk::View&
     // drop, more of them the heavier the shower - and lands in a splash. On
     // the weather's clock (held while paused). `OMK_NO_DRIPS=1`, an
     // INSTRUMENT, none (`verify.py: engine: rain 3d` part 16)
-    static const bool noDrips = omk::envFlag("OMK_NO_DRIPS");
+    const bool noDrips = omk::envFlag("OMK_NO_DRIPS");   // read each frame: the sweep switches it
     const bool noSplashSpawn = omk::envFlag("OMK_NO_SPLASHES");   // (the splashes' own instrument)
     int drawnDrips = 0;
     const double dripNow = weatherClockMs / 1000.0;
@@ -670,7 +741,7 @@ void PlayState::remasterRainDraws(std::vector<omk::Draw>& list, const omk::View&
     // (so none while paused, and none from the skip's jump), aged on it
     const std::size_t rainCorners = rainGeo.corners.size();
     int splashRoofed = 0;
-    static const bool noSplashes = omk::envFlag("OMK_NO_SPLASHES");
+    const bool noSplashes = omk::envFlag("OMK_NO_SPLASHES");   // read each frame: the sweep switches it
     if (snow || sand || noSplashes || !shot || !boxes) {
         rainSplashes.clear();
         splashClock = -1.0;
@@ -783,7 +854,7 @@ void PlayState::remasterRainDraws(std::vector<omk::Draw>& list, const omk::View&
     // `OMK_NO_RAIN_STRIPS=1`, an INSTRUMENT: the drops' strips left out of
     // the draw (built and counted all the same), the splashes kept - what
     // the strips alone cost the GPU
-    static const bool noStrips = omk::envFlag("OMK_NO_RAIN_STRIPS");
+    const bool noStrips = omk::envFlag("OMK_NO_RAIN_STRIPS");   // read each frame: the sweep switches it
     if (!noStrips) add(snow ? snowTexSlot : sand ? sandTexSlot : rainTexSlot, 0, rainCorners);
     add(splashTexSlot, rainCorners, rainGeo.corners.size() - rainCorners);
 }

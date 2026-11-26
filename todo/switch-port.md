@@ -587,6 +587,23 @@ textures - 2.3 ms an open in the 2088-name folder, 12 MB/s), the archive's
 case; and the 3D RAIN (~17 ms over the original's 2D under rain). The swap
 still waits for the refresh (16.6 ms floors every step that fits).
 
+**3. THE 3D RAIN, on the CPU** (2026-11-26): no single part of it (strips,
+splashes, veils, halos, light streaks, wet bodies, puddles, drips - each now
+a sweep step under the held rain, through `omk::envOverride`, the
+switches read each frame) moved the M1's frame; its BUILD did - a span of
+its own, `rain build`: **3.7 ms** a frame in Anekbah's shower, ~60% of it
+the roof ray each of the 800 drops casts up through the shot soup, most of
+the rest the set's lights at each drop. Both now kept by 32-unit CELL while
+the set and its light table stay (`playremaster_rain.cpp` kRoofCell): **0.6
+ms**, the same drops roofed (105-115 against 111-118 of 800, the random
+drops) and 322 of 230400 pixels differing on the streaks' tint. On the
+Switch's A57 that build was the rain's ~17 ms. **On the console** (Anekbah, the same
+sweep, 2026-11-26): `rain build` 3.0-3.2 ms; **raining 16.7 ms** median
+(p90 33.4 - a frame now and then past the refresh), against 40.2 before;
+the 3D rain off - the original's 2D lines composed on the CPU - 22.9, now
+the DEARER of the two; the original raining 17.8. No part off moves the
+median (16.6-16.7, the swap's floor).
+
 **S2 - first light.** ~1-2 days, needs a console or an emulator (§4).
 * `playgpu_gles.cpp`: on the Switch a GLES 3.0 context (the Quest's branch;
   Mesa offers 3.2); decision 2's `OMK_GLES3` in `glesrender.cpp`.

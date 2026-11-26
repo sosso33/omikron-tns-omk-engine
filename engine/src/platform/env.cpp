@@ -142,6 +142,7 @@ constexpr const char* kSwitches[] = {
     "OMK_TRANSIENT_MOTIONS",    // A/B: a scene's mesh motions per tick - the old, wrong reading (engine: node rest)
     "OMK_TUNNEL",               // =1 log: the transition refusals that lost the tunnel's far door
     "OMK_UPLOAD_LOG",           // log: every whole vertex upload, by geometry and size
+    "OMK_UPLOAD_PROBE",         // =<an .astc.ktx2> GLES times one 1024 upload in each compressed format named
     "OMK_VERIFY_GPU_CLOUD",     // the GPU cloud's frame checked against the CPU's composition (engine: gpu cloud)
     "OMK_VERIFY_GPU_PRESENT",   // the GPU present's picture checked against the CPU's (engine: gpu present)
     "OMK_VERIFY_GROUND",        // the floor probe through the grid and the scan both, counted (engine: ground grid)
@@ -192,6 +193,11 @@ int indexOf(const char* name) {
     return -1;
 }
 
+Snapshot& snapshot() {
+    static Snapshot snap;
+    return snap;
+}
+
 }  // namespace
 
 const char* envStr(const char* name) {
@@ -200,8 +206,17 @@ const char* envStr(const char* name) {
         std::fprintf(stderr, "env: %s is not in src/platform/env.cpp's table - read uncached\n", name);
         return std::getenv(name);
     }
-    static const Snapshot snap;
+    const Snapshot& snap = snapshot();
     return snap.set[i] ? snap.value[i].c_str() : nullptr;
+}
+
+bool envOverride(const char* name, const char* value) {
+    const int i = indexOf(name);
+    if (i < 0) return false;
+    Snapshot& snap = snapshot();
+    snap.set[i] = value != nullptr;
+    snap.value[i] = value ? value : "";
+    return true;
 }
 
 bool envFlag(const char* name) { return envStr(name) != nullptr; }
