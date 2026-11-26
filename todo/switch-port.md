@@ -616,6 +616,23 @@ textures READ in **0.35 s** against 1.32 (the archive at 80.8 MB/s against
 remaster 0.97 s against 1.9; the frames as before. `verify.py: engine: pack
 archive`.
 
+**QALISAR AGAIN, the Switch's tier and the archive** (2026-11-26, the stand
+that froze - its street, the neons in view): **no freeze**, all 29 steps.
+Original 16.6, remaster **19.9** (p90 24.3; the pool's switch 0.85 s), its
+fx light off 16.7, its floors off 18.4, every effect off 16.6; raining
+25.0 (the 3D rain off 31.6 - the original's 2D lines again the dearer; the
+original raining 18.5). The freeze was per-pixel lighting's 60 point
+lights a pixel, which the Switch's `all` no longer raises.
+
+**JAUNPUR AGAIN** (2026-11-26, address 44, the square): **no crash** - the
+load and all 23 steps (the crash of the second sweep stays unexplained:
+once, at a load, never since). Original 16.6, remaster 21.1 (p90 32.5 -
+the frames sit at the refresh's edge, half at 16.6, half at 33.3; its
+"again" 29.8, the square's crowd moving), its fx light off 16.9, upscale
+1.0 30.5; **the sand** 33.3, its 3D grains off 22.4, **its DUST off 20.5**
+- the remaster's dust fog is the sand's cost (~13 ms), the next for the
+Switch; the original's sand 16.6.
+
 **S2 - first light.** ~1-2 days, needs a console or an emulator (§4).
 * `playgpu_gles.cpp`: on the Switch a GLES 3.0 context (the Quest's branch;
   Mesa offers 3.2); decision 2's `OMK_GLES3` in `glesrender.cpp`.
