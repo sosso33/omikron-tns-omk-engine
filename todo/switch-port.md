@@ -491,6 +491,23 @@ it is not live); the enhancements cost the original ~18 ms (34.9 against
 16.6); the effects ~1-3 ms each; the WET FLOORS under rain ~60 ms and the
 rain in all +85.
 
+**THE REST OF THE SECOND SWEEP** (read over the network, 2026-11-26): the
+RESTAURANT - original 16.6 (the floor), remaster 20.0, every effect ~0
+alone, the pack alone and the fx light off at the floor, per-vertex
+lighting 22.8, upscale 1.0 26.9. MAHALEEL - original 16.5, remaster 23.7,
+the pack alone at the floor, shadows not mapped 20.6, upscale 2.0 20.5;
+**the snow**: remaster 31.2, its 3D snow off (the original's 2D flakes
+under the remaster) **41.6**, the original snowing 26.5 against 16.5 dry -
+the original's 2D weather, composed on the CPU, costs ~10 ms there.
+**JAUNPUR CRASHED** at its load (`omk-play-20261126-171901`, 270 lines;
+Atmosphère `01795709954_01003fc01670c000`, Data Abort at 0 inside
+`_malloc_r`), symbolised against a rebuild of `469f9ed` - the NRO the run
+used, sent by netloader - into a thread-pool worker posing the crowd
+(`playframe_world_crowd.cpp:212`, `applyPose` copying a rest `Geometry`):
+`malloc` faulting means the heap was already corrupted, by whom NOT YET
+KNOWN. The next test: the same start (`--area 1 --address 44`) again, then
+with `--no-thread-bodies`.
+
 **S2 - first light.** ~1-2 days, needs a console or an emulator (§4).
 * `playgpu_gles.cpp`: on the Switch a GLES 3.0 context (the Quest's branch;
   Mesa offers 3.2); decision 2's `OMK_GLES3` in `glesrender.cpp`.

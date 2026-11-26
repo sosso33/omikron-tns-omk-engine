@@ -31,8 +31,10 @@
 //
 // Launched with `nxlink -s omk.nro` (the dev loop over Wi-Fi) the output goes
 // to the Mac's terminal instead of the files - `tools/switch_link.py` is the
-// Mac's side, nxlink's protocol in Python. The ARGUMENTS it sends: `--ls DIR`
-// and `--cat FILE` print and end (read-only, no game: the card's logs and
+// Mac's side, nxlink's protocol in Python. The ARGUMENTS it sends: `--ls DIR`,
+// `--cat FILE` and `--b64 FILE` (a binary, base64) print and end - a FILE
+// ending in `*` is every name in its folder with that prefix, sorted
+// (read-only, no game: the card's logs and
 // reports read without taking the card out), `--no-plan` leaves the
 // performance sweep's plan alone, and any other is the game's, after
 // args.txt's.
@@ -47,6 +49,7 @@
 #include <pthread.h>
 #include <sys/stat.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <dirent.h>
 #include <ctime>
@@ -167,11 +170,39 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i)
         if (argv[i] && argv[i][0]) linkArgs.push_back(argv[i]);
     bool noPlan = false, served = false;
+    // a FILE ending in `*`: its folder's names with that prefix, sorted
+    const auto expand = [](const std::string& path) {
+        std::vector<std::string> out;
+        if (path.empty() || path.back() != '*') { out.push_back(path); return out; }
+        const auto slash = path.rfind('/');
+        const std::string dir = slash == std::string::npos ? "." : path.substr(0, slash);
+        const std::string pre = path.substr(slash == std::string::npos ? 0 : slash + 1, path.size() - 1 - (slash + 1));
+        if (DIR* d = opendir(dir.c_str())) {
+            while (const dirent* e = readdir(d))
+                if (std::string(e->d_name).rfind(pre, 0) == 0) out.push_back(dir + "/" + e->d_name);
+            closedir(d);
+        }
+        std::sort(out.begin(), out.end());
+        return out;
+    };
+    const auto b64 = [](std::FILE* f) {
+        static const char* k = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        unsigned char in[3];
+        int col = 0;
+        std::size_t n;
+        while ((n = std::fread(in, 1, 3, f)) > 0) {
+            const unsigned v = in[0] << 16 | (n > 1 ? in[1] << 8 : 0) | (n > 2 ? in[2] : 0);
+            char o[4] = {k[v >> 18 & 63], k[v >> 12 & 63], n > 1 ? k[v >> 6 & 63] : '=', n > 2 ? k[v & 63] : '='};
+            std::fwrite(o, 1, 4, stdout);
+            if (++col == 19) { std::fputc('\n', stdout); col = 0; }
+        }
+        std::fputc('\n', stdout);
+    };
     for (std::size_t i = 0; i < linkArgs.size(); ++i) {
         const std::string& a = linkArgs[i];
         if (a == "--no-plan") { noPlan = true; continue; }
-        if ((a == "--ls" || a == "--cat") && i + 1 < linkArgs.size()) {
-            const std::string path = linkArgs[++i];
+        if ((a == "--ls" || a == "--cat" || a == "--b64") && i + 1 < linkArgs.size()) {
+          for (const std::string& path : a == "--ls" ? std::vector<std::string>{linkArgs[i + 1]} : expand(linkArgs[i + 1])) {
             served = true;
             if (a == "--ls") {
                 std::printf("ls %s\n", path.c_str());
@@ -188,15 +219,21 @@ int main(int argc, char** argv) {
                     std::printf("(not a folder)\n");
                 }
             } else if (std::FILE* f = std::fopen(path.c_str(), "rb")) {
-                std::printf("cat %s\n", path.c_str());
-                char buf[4096];
-                std::size_t n;
-                while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) std::fwrite(buf, 1, n, stdout);
+                std::printf("%s %s\n", a == "--b64" ? "b64" : "cat", path.c_str());
+                if (a == "--b64") {
+                    b64(f);
+                } else {
+                    char buf[4096];
+                    std::size_t n;
+                    while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) std::fwrite(buf, 1, n, stdout);
+                }
                 std::fclose(f);
                 std::printf("\n-- end of %s\n", path.c_str());
             } else {
                 std::printf("cat %s: cannot open\n", path.c_str());
             }
+          }
+          ++i;
         }
     }
     if (served) {

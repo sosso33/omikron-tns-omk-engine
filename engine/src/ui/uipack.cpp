@@ -86,7 +86,10 @@ bool UiPack::open(const std::string& dir) {
     for (const auto& name : hostfs::listNames(dir)) {
         if (name.size() != 20 || name.substr(16) != ".png") continue;
         char* end = nullptr;
-        const unsigned long long k = std::strtoull(name.substr(0, 16).c_str(), &end, 16);
+        // the hex KEPT while `end` points into it: a temporary's buffer is
+        // gone at the semicolon (AddressSanitizer, 2026-11-26)
+        const std::string hex = name.substr(0, 16);
+        const unsigned long long k = std::strtoull(hex.c_str(), &end, 16);
         if (end && *end == '\0') impl_->keys.insert(k);
     }
     active_ = !impl_->keys.empty();
