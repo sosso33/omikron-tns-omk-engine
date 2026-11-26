@@ -8,9 +8,11 @@
 #include "platform/hostthread.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <system_error>
 #include <thread>
 #include <vector>
 
@@ -23,6 +25,7 @@
 // keeps core 0. `hardware_concurrency()` is not trusted either (newlib's may
 // answer 0, which would read as "no workers").
 #include <switch.h>
+#include <pthread.h>
 #include <cstdio>
 namespace {
 constexpr int kSwitchAppCores = 3;   // cores 0..2; core 3 belongs to the system
@@ -176,10 +179,77 @@ void Threads::parallelFor(std::size_t begin, std::size_t end, std::size_t grain,
 }
 
 namespace hostthread {
-bool spawnDetached(const char*, std::size_t, std::function<void()> fn) {
-    std::thread(std::move(fn)).detach();
+#if defined(__SWITCH__)
+// THE SWITCH HAS NO DETACHED THREAD. libnx defines no
+// `__syscall_thread_detach`, so newlib's `pthread_detach` answers ENOSYS (88)
+// and `std::thread::detach()` THROWS - the first background job (the
+// remaster's preload, at the first door) ended the game in `std::terminate`
+// (the reader's crash of 2026-11-25, `todo/switch-port.md`). A thread's
+// kernel object and stack are released only by a join, so the threads made
+// here are kept and JOINED once they say they are done, at the next spawn.
+// Made with pthreads, which take the stack size asked (std::thread's is
+// libnx's 128 KB default, and a job is a set loader), and moved to core 2 -
+// libnx makes every thread on core 0, the game thread's.
+namespace {
+struct Spawned {
+    pthread_t t{};
+    std::function<void()> fn;
+    std::atomic<bool> done{false};
+};
+// never destroyed: a thread still running at exit is the kernel's to end
+std::mutex& spawnedLock() { static auto* m = new std::mutex; return *m; }
+std::vector<Spawned*>& spawnedList() { static auto* v = new std::vector<Spawned*>; return *v; }
+void* spawnedRun(void* p) {
+    auto* s = static_cast<Spawned*>(p);
+    svcSetThreadCoreMask(threadGetCurHandle(), kSwitchAppCores - 1, 1u << (kSwitchAppCores - 1));
+    s->fn();
+    s->fn = nullptr;
+    s->done.store(true, std::memory_order_release);
+    return nullptr;
+}
+}  // namespace
+bool spawnDetached(const char*, std::size_t stackBytes, std::function<void()> fn) {
+    std::lock_guard<std::mutex> lk(spawnedLock());
+    auto& list = spawnedList();
+    for (auto it = list.begin(); it != list.end();) {
+        if ((*it)->done.load(std::memory_order_acquire)) {
+            pthread_join((*it)->t, nullptr);
+            delete *it;
+            it = list.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    auto* s = new Spawned;
+    s->fn = std::move(fn);
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    if (stackBytes) pthread_attr_setstacksize(&attr, stackBytes);
+    const int rc = pthread_create(&s->t, &attr, spawnedRun, s);
+    pthread_attr_destroy(&attr);
+    if (rc != 0) { delete s; return false; }   // the caller runs it
+    list.push_back(s);
     return true;
 }
+#else
+// -> false when no thread could be made, as `hostthread.h` promises: a
+// `std::system_error` out of here would reach `std::terminate`. And a
+// detach that fails must not leave the thread joinable in a destructor
+// (that is `std::terminate` too): it is joined - the work then done.
+bool spawnDetached(const char*, std::size_t, std::function<void()> fn) {
+    try {
+        std::thread t(std::move(fn));
+        try {
+            t.detach();
+        } catch (const std::system_error&) {
+            t.join();
+        }
+        return true;
+    } catch (const std::system_error&) {
+        return false;
+    }
+}
+#endif
 void sleepMs(int ms) { std::this_thread::sleep_for(std::chrono::milliseconds(ms)); }
 }  // namespace hostthread
 

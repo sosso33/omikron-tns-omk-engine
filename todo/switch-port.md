@@ -250,6 +250,82 @@ the remaster's build half of S6 brought forward):
 The NRO 11.1 MB; `engine: switch build` and `engine: vita build` green,
 `make play play-gles` builds.
 
+**What that first run's log says** (`omk-play-20261125-222600.log`, read
+off the card; the run stayed in the start menu and its options, 3738 frames,
+quit by `Quitter -> Oui`, 0 areas entered):
+* launched in **title takeover** (application, full memory), **handheld**,
+  1280x720;
+* **the pinning is right**: `worker 0 on core 1 (asked 1)`, `worker 1 on
+  core 2 (asked 2)` - S1's open question closed;
+* `memory at main: 3185 MB used of 3189 MB`, the same at exit: newlib's heap
+  takes the whole of what the process may have at start, so `svcGetInfo`'s
+  used/total says nothing about the game. The peak heap needs mallinfo (the
+  Vita's way), for S5;
+* `renderer: GLES2` - the generic `<GLES2/gl2.h>` branch, so the reader's
+  `[Enhancements] all = max` got `8x MSAA refused` (S2's `OMK_GLES3` gives it
+  MSAA); no `GL_RENDERER` / extension line yet (S2);
+* the menus: sim+draw 3.2-32.0 ms a 60-frame mean, of which `screen draw`
+  2.5-14.9 ms (the CPU composer); 49 slow frames, the two worst explained -
+  726 ms saving the options to the SD card, 776 ms applying `all = max`
+  (every program relinked, every texture re-sent);
+* SDL opened `Switch Controller` eight times - libnx's eight pad slots.
+* The reader moved files with **hekate's USB mass storage / a card reader**;
+  Haze (hbmenu's "USB File Transfer", MTP) was SEEN by the Mac (057e:201d)
+  but OpenMTP could not use it - Kalam "an error occurred", Legacy nothing,
+  `ptpcamerad` killed and back. `nxlink -a <ip>` from the image is the
+  untested alternative.
+
+**THE PACK ON THE CARD, 2026-11-25** (the reader: *"le mode remaster ne peut
+pas fonctionner car il manque le pack"*). The card had 2.3 GiB free (59 GiB,
+the emuMMC and the game data on it), so the pack went over in ASTC only:
+`sdmc:/switch/omk/remaster/` = `pack/` - `full-anchor3`'s 3347
+`.astc.ktx2` (colours, normal maps, light maps; 1340 MB, copied `-L` through
+its symlinks) - plus `ui/`, `films/`, `fonts/`, `grades/` from the M1's
+`~/omk-pack`; 1.9 GB, every file compared, no `._` files, **366 MiB left**.
+`omk.ini` gained `[Remaster] dir = sdmc:/switch/omk/remaster` (the options
+menu edits the file, so the key survives a save). **The open question it
+rests on: does Mesa's nouveau name `GL_KHR_texture_compression_astc_ldr` on
+the GM20B?** The GLES backend reads ASTC only then, and the CPU fallback
+decodes BC7/BC4 only (`texpack.cpp`), which this card does not hold. The
+next log answers it: `remaster: sdmc:/switch/omk/remaster - the preset:
+texture pack .../pack` and `gles: the texture pack's ASTC files - N colours
+read as blocks` (N should be 1255). Without it, the BC7 pack is 2.9 GB - a
+bigger card, or a pack trimmed to the street.
+
+**THE SECOND CONSOLE RUN - the reader, 2026-11-25 23:18** (the NRO of
+`5b8b1e4` and the pack above): *"Le jeu a crashé. Les lumières semblaient
+ne pas fonctionner, tout était affiché de manière uniforme, comme en plein
+jour."* The log (`omk-play-20261125-231844.log`) says:
+* **the keyboard works**: `name field: the system keyboard gave "test"` -
+  `swkbdShow` from the game's own thread is fine;
+* **ASTC works**: Mesa names it - `gles: the texture pack's ASTC files -
+  1255 colours read as blocks`; the film, interface and font packs load;
+* the new game ran from GRID through AIMPASSE (area 222) to the first door,
+  AIMPASAS (142) at frame 3650, and the log stops mid-line there.
+**The crash**: Atmosphère's report (`atmosphere/crash_reports/
+01795645311_01003fc01670c000.log` - the NRO is not in its module list, so
+the load base was found as the one 0x1000-aligned base that puts 34 of 35
+return addresses after a BL/BLR: `0x52fdca3000`) symbolises, on the game
+thread, to `PlayState::phaseWorld` -> `phasePreload` -> `std::thread::
+detach` -> `__cxa_throw` -> `std::terminate` -> `abort`. libnx defines no
+`__syscall_thread_detach`, so newlib's `pthread_detach` (in libsysbase)
+returns ENOSYS (88) and `std::thread::detach()` throws: the FIRST background
+job - the remaster's preload, at the first door - ends the game. Fixed in
+`platform/threads_std.cpp`: on the Switch `hostthread::spawnDetached` makes
+a pthread with the stack size asked (std::thread's is libnx's 128 KB, and a
+job is a set loader; 1 MB asked), moves it to core 2, and keeps it to be
+JOINED once it says it is done, at the next spawn. Elsewhere the same
+function now keeps `hostthread.h`'s promise - false when no thread could be
+made, a failed detach joined - instead of letting a `std::system_error`
+reach `std::terminate`. `thread pool`, `engine: threaded bodies`, `engine:
+preload`, `engine: switch build` green. The new NRO copied to the card,
+compared.
+**The light**: the reader's `omk.ini` has `[Enhancements] all = max`, so
+per-pixel lighting is on with the remaster - and that pair floods a set on
+EVERY GPU backend, not the Switch's alone (the Mac's GLES and Vulkan
+measured, `todo/remaster.md` "OPEN: per-pixel lighting floods a set").
+Per-pixel lighting off is the workaround until it is read.
+
 **S2 - first light.** ~1-2 days, needs a console or an emulator (§4).
 * `playgpu_gles.cpp`: on the Switch a GLES 3.0 context (the Quest's branch;
   Mesa offers 3.2); decision 2's `OMK_GLES3` in `glesrender.cpp`.

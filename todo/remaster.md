@@ -3192,3 +3192,35 @@ remaster/pack` path. `verify.py: engine: vita pack` holds the tools (shown
 to fail: the cap's loop taken out - 64x64 with 7 levels; the opacity test
 always true - the keyed texture BC1).
 
+## OPEN: per-pixel lighting floods a set under the remaster's fx light (2026-11-26)
+
+Found from the reader's first Switch run (`todo/switch-port.md`, *"les
+lumières semblaient ne pas fonctionner, tout était affiché de manière
+uniforme, comme en plein jour"*), and NOT the Switch's: the Mac shows it on
+GLES and on Vulkan alike. AIMPASSE (area 222, the first street of a new
+game), `--area 222 --res 1280x720 --frames 150 --dump`, the frame's mean
+RGB level:
+
+| run | GLES | Vulkan |
+|---|---|---|
+| software reference | 23.7 | - |
+| no remaster, no enhancement | 24.2 | - |
+| `--enhance-all` alone | 23.9 | - |
+| `--lighting perpixel` alone | 24.2 | - |
+| `--remaster ~/omk-pack` | 32.9 | 31.8 |
+| `--remaster` + `--clip 0` | 32.8 | - |
+| `--remaster` + `--lighting perpixel` | **59.3** | **56.9** |
+| `--remaster` + `--lighting perpixel --fx-light 0` | 32.9 | - |
+| `--remaster` + `--enhance-all` (the reader's ini) | 59.2 | - |
+
+So it is the remaster's fx light under the per-pixel ENHANCEMENT: the
+set's 13 lights plus its emitters' and glowing surfaces' (`fx light:
+AIMPASSE - 4 glowing surfaces ...`, `per-pixel lighting - 8 of the set's
+lights reach the player, 4 of the 8 are emitters' lights`) light the set's
+batches per pixel, and the alley comes out evenly lit at about twice the
+vertex-lit level - the original's darkness gone. `maxPixelLights()` takes
+`kMaxGpuLights` only when both are on (`glesrender.cpp`), which is why
+neither alone shows it. NOT YET READ: whether the set's batches should
+receive these lights at all, and at what strength - the reading the fix
+waits on. Workaround: per-pixel lighting off (`[Enhancements] lighting`).
+
