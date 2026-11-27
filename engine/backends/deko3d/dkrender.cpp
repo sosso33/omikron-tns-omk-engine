@@ -91,7 +91,7 @@ constexpr uint32_t kSsboPose = 12;                                   // scene.ve
 // the fixed image descriptors; a pool texture takes the next free one
 enum : uint32_t { kImgWhite = 0, kImgBlack = 1, kImgFlat = 2, kImgColour = 3, kImgSurface = 4,
                   kImgOverC = 5, kImgOverM = 6, kImgEasu = 7, kImgPostSrc = 8, kImgGlow0 = 9, kImgGlow1 = 10,
-                  kImgLut = 11, kImgShadow = 12, kImgFirst = 16 };
+                  kImgLut = 11, kImgShadow = 12, kImgRefl = 13, kImgFirst = 16 };
 // the samplers: the pool's filter (0 nearest - the original's software
 // devices - 1 bilinear, its 3D cards'), and the present's nearest clamp
 enum : uint32_t { kSampNearest = 0, kSampLinear = 1, kSampClamp = 2, kSampTrilinear = 3, kSampLinearClamp = 4,
@@ -304,7 +304,13 @@ public:
     bool drawsEmitterLights() const override { return true; }
     bool setBodyTint(bool) override { return true; }       // the pose block carries it
     bool drawsBodyTint() const override { return true; }
-    bool setWater(float) override { return true; }         // the wet floors, the mist, the 3D rain: the shader's
+    // the wet floors, the mist, the 3D rain: the shader's - and THE WATER
+    // REFLECTION's strength (D4e): its pass drawn while it is above 0
+    bool setWater(float s) override { waterWant_ = s < 0.0f ? 0.0f : s; return true; }
+    bool drawsWater() const override { return dev_ && waterWant_ > 0.0f; }
+    bool drawWaterScene(const omk::View& v, const omk::View& refl, std::span<const omk::Draw> scene,
+                        std::span<const omk::Draw> above, std::span<const omk::Draw> water, float strength,
+                        float planeY) override;
     uint32_t sampler() const { return filter_ >= 2 ? kSampTrilinear : filter_ ? kSampLinear : kSampNearest; }
     bool bakeDepthTie(const omk::Geometry* g, std::span<const omk::Draw> order) override;
     // BODIES POSED BY THE RENDERER (`renderer.h` `Draw::meshPose`), as Vulkan,
@@ -468,6 +474,19 @@ private:
     void markIdle() { for (Slot& sl : slots_) sl.pending = false; }
     bool cbOpen_ = false;           // `cb_` holds this frame's commands
     bool recording_ = false;        // between `begin` and `end`
+    // THE WATER REFLECTION (D4e, Vulkan's `drawWaterScene`): the reflected
+    // camera's pass into `refl_`, then the frame's in the same list - the
+    // second `begin` of a frame (`inFrame_`) keeps the pose buffer and the
+    // counts the first began. The floors' reflection at half size in the
+    // image's top-left quarter (`reflHalf_`); one level (no second: D4e's
+    // rest). The frame's depth serves both passes, cleared by each.
+    bool makeReflection();
+    float waterWant_ = 0.0f, waterStrength_ = 0.0f, waterY_ = 0.0f;
+    bool inFrame_ = false, reflectingNow_ = false, waterNow_ = false, reflLive_ = false, reflHalf_ = false;
+    bool reflMade_ = false;
+    DkImage refl_{};
+    Alloc reflMem_;
+    DkImageView reflView_{};
     bool sceneSubmitted_ = false;   // `end` sent a scene that no present has closed
     bool dirty_ = false;            // a scene ended that `readback` has not read
 
@@ -1065,7 +1084,11 @@ void DekoRenderer::bindFrameState(const DkImageView* target) {
     const uint32_t samp = sampler();
     dkCmdBufBindTexture(cb_, DkStage_Fragment, kTexEmis, dkMakeTextureHandle(kImgBlack, samp));
     boundEmis_ = kImgBlack;
-    dkCmdBufBindTexture(cb_, DkStage_Fragment, kTexRefl, dkMakeTextureHandle(kImgBlack, samp));
+    // the WATER REFLECTION drawn this frame, read by the frame's pass (never
+    // by its own); black otherwise
+    dkCmdBufBindTexture(cb_, DkStage_Fragment, kTexRefl,
+                        reflLive_ && !reflectingNow_ ? dkMakeTextureHandle(kImgRefl, kSampLinearClamp)
+                                                     : dkMakeTextureHandle(kImgBlack, samp));
     dkCmdBufBindTexture(cb_, DkStage_Fragment, kTexShadow,
                         dkMakeTextureHandle(shadowLive_ ? kImgShadow : kImgBlack, kSampClamp));
     lastBlend_ = -1;
@@ -1073,15 +1096,18 @@ void DekoRenderer::bindFrameState(const DkImageView* target) {
 
 void DekoRenderer::begin(const omk::View& view) {
     if (!dev_) return;
+    // the frame's SECOND pass (the water's: the reflection began it) - the
+    // list, the pose buffer and the counts are the first pass's, kept
+    const bool again = inFrame_;
     // a scene the last frame sent and nothing presented (a readback alone, or
     // `OMK_NO_GPU_PRESENT`): done once the queue is, and its list started over
-    if (cbOpen_ && sceneSubmitted_) {
+    if (!again && cbOpen_ && sceneSubmitted_) {
         dkQueueWaitIdle(queue_);
         markIdle();
         cbOpen_ = false;
     }
     openCb();   // (the shadow pass may have opened it: then a no-op)
-    st_ = omk::RasterStats{};
+    if (!again) st_ = omk::RasterStats{};
     fog_ = view.fog;
     fogStart_ = view.fogStart;
     fogEnd_ = view.fogEnd;
@@ -1097,12 +1123,15 @@ void DekoRenderer::begin(const omk::View& view) {
     // shader on both sides)
     const bool forceFull = omk::envOn("OMK_DEKO_FULL");
     frameOrig_ = !forceFull && !shadowLive_ && view.mist <= 0.0f && view.dust <= 0.0f && view.veil <= 0.0f;
-    cur().poseUsed = 0;   // the slot's last frame is done (`openCb`): its pose buffer from the start
-    cur().poseCache.clear();
-    probe_ = omk::envInt("OMK_DEKO_PROBE", 0);
-    ++frames_;
-    pushRingAt_ = 0;
-    if (probe_ == 5 && !pushRing_) pushRing_ = data_.alloc(kPushRingSlots * kUboAlign, kUboAlign);
+    if (!again) {
+        cur().poseUsed = 0;   // the slot's last frame is done (`openCb`): its pose buffer from the start
+        cur().poseCache.clear();
+        probe_ = omk::envInt("OMK_DEKO_PROBE", 0);
+        ++frames_;
+        pushRingAt_ = 0;
+        if (probe_ == 5 && !pushRing_) pushRing_ = data_.alloc(kPushRingSlots * kUboAlign, kUboAlign);
+    }
+    inFrame_ = true;
     pushView(view);
 
     // ---- THE FRAME'S BLOCKS, Vulkan's `begin` field for field (no tiles: D4)
@@ -1162,14 +1191,17 @@ void DekoRenderer::begin(const omk::View& view) {
     // THE POST-PASS's this frame: decided here, where the scene's target is
     // chosen - the glow only with a light map in the pool (without one every
     // texel's light is 0), the grade whenever one is set (Vulkan's rule)
-    halo_ = view.halo;
-    if (lutDirty_ && lutN_ > 1 && !uploadLut()) lutN_ = 0;
-    postNow_ = ((bloom_ > 0.0f && poolLit_) || lutN_ > 1) && makePost();
-    lightMapNow_ = false;
-    bindFrameState(postNow_ ? &postSrcView_ : &colourView_);
+    // (the reflection's pass draws into its own image, no post-pass of its own)
+    if (!reflectingNow_) {
+        halo_ = view.halo;
+        if (lutDirty_ && lutN_ > 1 && !uploadLut()) lutN_ = 0;
+        postNow_ = ((bloom_ > 0.0f && poolLit_) || lutN_ > 1) && makePost();
+        lightMapNow_ = false;
+    }
+    bindFrameState(reflectingNow_ ? &reflView_ : postNow_ ? &postSrcView_ : &colourView_);
     dkCmdBufPushConstants(cb_, lightUbo_.gpu(), lightUbo_.size, 0, sizeof ub, &ub);
     dkCmdBufPushConstants(cb_, shadowUbo_.gpu(), shadowUbo_.size, 0, sizeof sb, &sb);
-    rung(1);
+    if (!again) rung(1);
 
     // the clear: the scene's fog colour (`View::clearColour`), depth far, stencil 0
     const DkScissor all{0, 0, static_cast<uint32_t>(w_), static_cast<uint32_t>(h_)};
@@ -1179,11 +1211,13 @@ void DekoRenderer::begin(const omk::View& view) {
     dkCmdBufClearColorFloat(cb_, 0, DkColorMask_RGBA, view.clearColour[0] / 255.0f, view.clearColour[1] / 255.0f,
                             view.clearColour[2] / 255.0f, bloom_ > 0.0f ? 0.0f : 1.0f);
     dkCmdBufClearDepthStencil(cb_, true, 1.0f, 0xFF, 0);
-    rung(2);
+    if (!again) rung(2);
     // the letterbox is a VIEWPORT: the picture in the top-left `vw x vh`
     picH_ = view.letterboxed() ? view.vh : h_;
     // ...in RENDER pixels: the upscale draws it `up_` times smaller
-    const int vw = rs(view.letterboxed() ? view.vw : w_), vhR = rs(picH_);
+    int vw = rs(view.letterboxed() ? view.vw : w_), vhR = rs(picH_);
+    // ...and the FLOORS' reflection at HALF size, the image's top-left quarter
+    if (reflectingNow_ && reflHalf_) { vw = (vw + 1) / 2; vhR = (vhR + 1) / 2; }
     const DkViewport vp{0.0f, 0.0f, static_cast<float>(vw), static_cast<float>(vhR), 0.0f, 1.0f};
     const DkScissor sc = probe_ == 3 || probe_ == 7 ? DkScissor{0, 0, 1, 1}
                                      : DkScissor{0, 0, static_cast<uint32_t>(std::min(vw, w_)), static_cast<uint32_t>(vhR)};
@@ -1413,16 +1447,20 @@ void DekoRenderer::submitOne(const omk::Draw& d, bool posed, uint32_t poseOff) {
         }
         lightMapNow_ |= em != kImgBlack;
     }
-    // no reflection pass and no water yet (D4): a WET floor's darkening and
-    // the rain's ripples ride in the mode's high bits, as on Vulkan
-    push_.water = 0;
-    if (d.wet > 0.0f) {
+    // THE WATER's mode (Vulkan's): 1 a water draw adding the reflection, 3 a
+    // REFLECTING FLOOR's run (`Draw::reflect`) in the frame's pass, 2 the
+    // reflection's pass (below the plane discarded); a WET floor's darkening
+    // and the rain's ripples in the mode's high bits
+    const bool floorNow = reflLive_ && !reflectingNow_ && d.reflect > 0.0f;
+    push_.water = waterNow_ ? 1 : floorNow ? 3 : reflectingNow_ ? 2 : 0;
+    if (!reflectingNow_ && d.wet > 0.0f) {
         push_.water |= static_cast<int32_t>(std::lround(std::min(d.wet, 1.0f) * 255.0f)) << 4;
         push_.water |= static_cast<int32_t>(std::lround(std::clamp(rain_, 0.0f, 1.0f) * 255.0f)) << 12;
         if (d.snow) push_.water |= 1 << 20;
         if (d.wetBody) push_.water |= 1 << 21;
     }
-    push_.waterStrength = 0.0f;
+    push_.waterStrength = reflectingNow_ ? waterY_ : floorNow ? waterStrength_ * d.reflect
+                        : waterNow_ ? waterStrength_ : 0.0f;
     {
         // THE PACK: a replacement `su` x `sv` the original's size, its UVs
         // still in the original's texels (`scene.frag` texScaled)
@@ -1492,6 +1530,8 @@ void DekoRenderer::end() {
     if (!recording_) return;
     recording_ = false;
     shadowLive_ = false;   // the next frame's shadow pass sets it again
+    inFrame_ = false;
+    reflLive_ = false;
     if (postNow_) recordPost();
     rung(3);
     stamp(1);
@@ -1833,6 +1873,55 @@ bool DekoRenderer::uploadLightMap(const omk::PackImage& rep, DTex& t) {
     t.emSlot = takeSlot();
     if (t.emSlot == kImgWhite) { t.emSlot = kImgBlack; return false; }
     writeDescriptor(t.emSlot, t.emImg);
+    return true;
+}
+
+// ---- THE WATER REFLECTION (D4e) ---------------------------------------------
+//
+// Vulkan's `drawWaterScene`: the draws above the plane through the REFLECTED
+// camera into `refl_` (the frame's render size - the floors' at half, its
+// top-left quarter), then the frame, the water's draws and the reflecting
+// floors adding it at their screen position. The reflected camera (a half
+// turn of roll, X flipped - `renderer.cpp`) goes through `pushView` as the
+// frame's does, so the image lands as the frame's would and `scene.frag`
+// reads it at `gl_FragCoord`, as on Vulkan.
+bool DekoRenderer::makeReflection() {
+    if (reflMade_) return static_cast<bool>(reflMem_);
+    reflMade_ = true;
+    if (!makeImage(refl_, reflMem_, DkImageFormat_RGBA8_Unorm, rs(w_), rs(h_), DkImageFlags_UsageRender)) {
+        std::printf("deko3d: the water reflection's image could not be made - no reflections\n");
+        return false;
+    }
+    dkImageViewDefaults(&reflView_, &refl_);
+    writeDescriptor(kImgRefl, refl_);
+    std::printf("deko3d: the water reflection's target - %dx%d (a REMASTER feature)\n", rs(w_), rs(h_));
+    return true;
+}
+
+bool DekoRenderer::drawWaterScene(const omk::View& v, const omk::View& refl, std::span<const omk::Draw> scene,
+                                  std::span<const omk::Draw> above, std::span<const omk::Draw> water,
+                                  float strength, float planeY) {
+    // (no water draws: the REFLECTING FLOORS' frame - its floors in `scene`,
+    // `Draw::reflect` set)
+    if (!dev_ || strength <= 0.0f || !makeReflection()) return false;
+    reflHalf_ = water.empty();
+    // 1. THE REFLECTION: what lies above the plane, through the reflected camera
+    reflectingNow_ = true;
+    begin(refl);
+    waterY_ = planeY;
+    for (const auto& d : above) submit(d);
+    reflectingNow_ = false;
+    // its writes done before the frame's fragments read it
+    dkCmdBufBarrier(cb_, DkBarrier_Fragments, DkInvalidateFlags_Image);
+    reflLive_ = true;
+    // 2. THE FRAME, the water's own draws (and the floors') adding it
+    begin(v);
+    waterStrength_ = strength;
+    for (const auto& d : scene) submit(d);
+    waterNow_ = true;
+    for (const auto& d : water) submit(d);
+    waterNow_ = false;
+    end();
     return true;
 }
 

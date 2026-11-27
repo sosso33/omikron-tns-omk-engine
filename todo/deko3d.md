@@ -330,6 +330,30 @@ backend's own to follow (D3).
     14-23, for 9 in the slab. A cull to the slab (bodies near its centre
     kept) would serve every backend - not done here. The Switch's preset
     keeps the shadows fitted.
+* **D4e - the water and the floors' reflections (2026-11-27, on the
+  console).** Vulkan's `drawWaterScene`: the draws above the plane through
+  the reflected camera into `refl_` (the render size; RGBA8), the frame's
+  depth serving both passes; then the frame, the water's draws (mode 1)
+  and the reflecting floors' runs (mode 3, `Draw::reflect`) adding it at
+  `gl_FragCoord` - the reflected camera goes through `pushView` as the
+  frame's does, so no axis needs turning. The floors' reflection at half
+  size in the image's top-left quarter. `begin` may now run twice in one
+  frame (`inFrame_`): the second keeps the list, the pose buffer and the
+  counts - a reset there would have let the frame's bodies overwrite the
+  reflection's poses before the GPU read them.
+  * Anekbah's street has neither (no "reflection's target" line): the
+    places are JAUNPUR'S CANAL (area 1, `10524,-40,10284,180`, the water)
+    and QALISAR'S NEON STREET (area 101, `15300,0,-10050,270` - the card's
+    `floors.txt` lists Qalisar's three floors alone).
+  * The canal: original 9.6 ms; remaster 34.9 (29 fps), water off 24.2 -
+    the water's whole-size reflection 10.7 ms. Qalisar: original 8.4;
+    remaster 25.0 (40 fps), floors off 19.6 - the floors' half-size one
+    5.4 ms. Two frames captured on the console: the canal's railing and
+    wall mirrored in the water, Qalisar's walkers and green sign in the
+    floor, each the right way up.
+  * Not yet: the SECOND reflecting level (`drawsTwoReflections`, GLES's
+    and Vulkan's `[Remaster] reflections = 2` - the card's preset asks
+    it): deko3d answers no, so the frontend keeps one plane.
 * **D4 - the remaster**: the per-pixel and tiled lights, the shadow map, the
   pack (ASTC natively - Maxwell samples it), water and the two reflections,
   bloom and grade, the 3D rain and its veils, the dust once a pixel (the pass
