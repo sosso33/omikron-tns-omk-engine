@@ -46,6 +46,7 @@
 #include "o3de/raster.h"
 #include "o3de/geom3do.h"
 #include "o3de/texpack.h"
+#include "o3de/fsrcon.h"
 #include "formats/ktx2.h"
 #include "ui/surface.h"
 #include "platform/env.h"
@@ -88,10 +89,11 @@ constexpr uint32_t kSsboPose = 12;                                   // scene.ve
 
 // the fixed image descriptors; a pool texture takes the next free one
 enum : uint32_t { kImgWhite = 0, kImgBlack = 1, kImgFlat = 2, kImgColour = 3, kImgSurface = 4,
-                  kImgOverC = 5, kImgOverM = 6, kImgFirst = 8 };
+                  kImgOverC = 5, kImgOverM = 6, kImgEasu = 7, kImgFirst = 8 };
 // the samplers: the pool's filter (0 nearest - the original's software
 // devices - 1 bilinear, its 3D cards'), and the present's nearest clamp
-enum : uint32_t { kSampNearest = 0, kSampLinear = 1, kSampClamp = 2, kSampTrilinear = 3, kSampCount = 4 };
+enum : uint32_t { kSampNearest = 0, kSampLinear = 1, kSampClamp = 2, kSampTrilinear = 3, kSampLinearClamp = 4,
+                  kSampCount = 5 };
 
 constexpr uint32_t alignUp(uint32_t v, uint32_t a) { return (v + a - 1) / a * a; }
 
@@ -241,7 +243,7 @@ public:
     // occlusion, the reflections, the relief (D4b-e) - their setters answer no.
     unsigned takes() const override {
         return omk::kTakesTextureFilter | omk::kTakesTrilinear | omk::kTakesPixelLights | omk::kTakesWater |
-               omk::kTakesBodyTint | omk::kTakesEmitterLights | omk::kTakesMist;
+               omk::kTakesBodyTint | omk::kTakesEmitterLights | omk::kTakesMist | omk::kTakesUpscale;
     }
     bool setTextureFilter(int mode) override {
         if (dev_) return false;   // the samplers exist - `retexture` moves it later
@@ -261,6 +263,12 @@ public:
         return true;
     }
     bool takesPack() const override { return true; }
+    // THE UPSCALE (D4b): before `init` - the targets are made for it
+    bool setUpscale(float f) override {
+        if (dev_) return false;
+        up_ = f > 1.0f ? std::min(f, 3.0f) : 1.0f;
+        return true;
+    }
     bool drawsPixelLights() const override { return true; }
     int maxPixelLights() const override { return omk::View::kMaxGpuLights; }
     bool setEmitterLights(bool) override { return true; }   // the points ride in the frame's light block
@@ -314,6 +322,22 @@ private:
     // `over`: the overlay's fade - its planes already staged in the slot - to
     // lay over the present's picture; nullptr for none
     bool runPresent(uint32_t imgSlot, int vy, int vh, bool raw, const float* over = nullptr);
+    void recordPresentDraw(const DkImageView* rt, uint32_t imgSlot, int vy, int vh, bool raw);
+    static bool amdFsr() { static const bool a = omk::envOn("OMK_DEKO_FSR_AMD"); return a; }
+    // a picture `v` output pixels long, in RENDER pixels (Vulkan's `rs`): the
+    // upscale draws the frame `up_` times smaller
+    int rs(int v) const {
+        return up_ > 1.0f ? std::max(1, static_cast<int>(std::lround(static_cast<float>(v) / up_))) : v;
+    }
+    float up_ = 1.0f;
+    DkShader shEasu_{}, shEasuFetch_{};   // AMD's EASU gathered, and with its texels fetched
+    // THE LITE PAIR (the default): GLES's float transcriptions - EASU
+    // (`easu_lite.frag`) and the present with RCAS (`present.frag`
+    // OMK_RCAS_LITE); `OMK_DEKO_FSR_AMD=1` takes AMD's header through `uam`
+    DkShader shEasuLite_{}, shPresentLite_{};
+    DkImage easu_{}, readImg_{};   // EASU's output, and the upscaled readback's picture
+    Alloc easuMem_, readImgMem_;
+    DkImageView easuView_{}, readView_{};
     void stamp(int k);
     void readStamps();
     bool writePose(const omk::Draw& d, uint32_t& off);
@@ -338,6 +362,8 @@ public:
 private:
     bool ladder_ = false;
     double rungSum_[8] = {};
+    double easuSum_ = 0.0;   // rung 5 -> 7, EASU's alone (a frame with the upscale)
+    long easuFrames_ = 0;
     long rungFrames_ = 0;
 
     GpuVert vertOf(const omk::Geometry& g, std::size_t i, const std::vector<std::uint8_t>* lose) const {
@@ -632,7 +658,9 @@ bool DekoRenderer::init(int w, int h) {
         !loadShader("scene_cut.frag", shFragCut_) || !loadShader("fsq.vert", shFsq_) ||
         !loadShader("present.frag", shPresent_) || !loadShader("fsq.frag", shFsqFrag_) ||
         !loadShader("scene_orig.frag", shOrig_) || !loadShader("scene_orig_cut.frag", shOrigCut_) ||
-        !loadShader("overlay.frag", shOverlay_))
+        !loadShader("overlay.frag", shOverlay_) || !loadShader("easu.frag", shEasu_) ||
+        !loadShader("easu_nogather.frag", shEasuFetch_) || !loadShader("easu_lite.frag", shEasuLite_) ||
+        !loadShader("present_lite.frag", shPresentLite_))
         return false;
 
     // the descriptors: one array of images, one of samplers
@@ -655,12 +683,16 @@ bool DekoRenderer::init(int w, int h) {
         dkSamplerDefaults(&s);
         s.wrapMode[0] = s.wrapMode[1] = s.wrapMode[2] = DkWrapMode_ClampToEdge;
         dkSamplerDescriptorInitialize(&sd[kSampClamp], &s);
+        s.minFilter = s.magFilter = DkFilter_Linear;   // EASU's gather
+        dkSamplerDescriptorInitialize(&sd[kSampLinearClamp], &s);
     }
 
     // the targets: the scene's colour (read by the present pass and the
     // readback's copy) and depth-stencil, the uploaded surface, the swapchain
-    if (!makeImage(colour_, colourMem_, DkImageFormat_RGBA8_Unorm, w, h,
-                   DkImageFlags_UsageRender | DkImageFlags_Usage2DEngine) ||
+    // (no `Usage2DEngine`: the readback's copy is the copy engine's, and works
+    // without it - checked on the console. Suspected of the upscale's cost,
+    // it was not: the present 9.92 ms with or without the flag)
+    if (!makeImage(colour_, colourMem_, DkImageFormat_RGBA8_Unorm, w, h, DkImageFlags_UsageRender) ||
         !makeImage(depth_, depthMem_, DkImageFormat_Z24S8, w, h,
                    DkImageFlags_UsageRender | DkImageFlags_HwCompression) ||
         !makeImage(surfImg_, surfMem_, DkImageFormat_RGBA8_Unorm, w, h, DkImageFlags_Usage2DEngine))
@@ -674,6 +706,17 @@ bool DekoRenderer::init(int w, int h) {
         return false;
     writeDescriptor(kImgOverC, overC_);
     writeDescriptor(kImgOverM, overM_);
+    if (up_ > 1.0f) {
+        if (!makeImage(easu_, easuMem_, DkImageFormat_RGBA8_Unorm, w, h, DkImageFlags_UsageRender) ||
+            !makeImage(readImg_, readImgMem_, DkImageFormat_RGBA8_Unorm, w, h,
+                       DkImageFlags_UsageRender | DkImageFlags_Usage2DEngine))
+            return false;
+        dkImageViewDefaults(&easuView_, &easu_);
+        dkImageViewDefaults(&readView_, &readImg_);
+        writeDescriptor(kImgEasu, easu_);
+        std::printf("deko3d: the upscale x%.2f - the scene drawn at %dx%d, EASU and RCAS to %dx%d\n",
+                    static_cast<double>(up_), rs(w), rs(h), w, h);
+    }
     const DkImage* swapPtrs[kSwapImages];
     for (int i = 0; i < kSwapImages; ++i) {
         if (!makeImage(swapImg_[i], swapMem_[i], DkImageFormat_RGBA8_Unorm, w, h,
@@ -803,8 +846,14 @@ std::string DekoRenderer::takeLadder() {
         std::snprintf(b, sizeof b, "%s%s %.2f", k ? ", " : "", names[k], rungSum_[k] / static_cast<double>(rungFrames_));
         out += b;
     }
+    if (easuFrames_ > 0) {
+        std::snprintf(b, sizeof b, " (of it EASU %.2f)", easuSum_ / static_cast<double>(easuFrames_));
+        out += b;
+    }
     for (double& v : rungSum_) v = 0.0;
     rungFrames_ = 0;
+    easuSum_ = 0.0;
+    easuFrames_ = 0;
     return out;
 }
 
@@ -820,13 +869,17 @@ void DekoRenderer::readStamps() {
     // the slot's LAST frame - done, its fence waited for (`openCb`)
     Slot& sl = cur();
     unsigned& stamped_ = sl.stamped;
-    if (ladder_ && sl.rungs == 0x7Fu) {
+    if (ladder_ && (sl.rungs & 0x7Fu) == 0x7Fu) {
         const auto* q = static_cast<const volatile std::uint64_t*>(sl.stamps.cpu());
         std::uint64_t t[7];
         for (int k = 0; k < 7; ++k) t[k] = q[2 * (4 + k) + 1];
         for (int k = 0; k < 6; ++k)
             rungSum_[k] += t[k + 1] >= t[k] ? static_cast<double>(dkTimestampToNs(t[k + 1] - t[k])) / 1e6 : 0.0;
         ++rungFrames_;
+        if (sl.rungs & 0x80u) {
+            const std::uint64_t te = q[2 * (4 + 7) + 1];
+            if (te >= t[5]) { easuSum_ += static_cast<double>(dkTimestampToNs(te - t[5])) / 1e6; ++easuFrames_; }
+        }
     }
     sl.rungs = 0;
     if ((stamped_ & 0x9u) != 0x9u) { stamped_ = 0; return; }
@@ -1037,10 +1090,11 @@ void DekoRenderer::begin(const omk::View& view) {
     rung(2);
     // the letterbox is a VIEWPORT: the picture in the top-left `vw x vh`
     picH_ = view.letterboxed() ? view.vh : h_;
-    const int vw = view.letterboxed() ? view.vw : w_;
-    const DkViewport vp{0.0f, 0.0f, static_cast<float>(vw), static_cast<float>(picH_), 0.0f, 1.0f};
+    // ...in RENDER pixels: the upscale draws it `up_` times smaller
+    const int vw = rs(view.letterboxed() ? view.vw : w_), vhR = rs(picH_);
+    const DkViewport vp{0.0f, 0.0f, static_cast<float>(vw), static_cast<float>(vhR), 0.0f, 1.0f};
     const DkScissor sc = probe_ == 3 || probe_ == 7 ? DkScissor{0, 0, 1, 1}
-                                     : DkScissor{0, 0, static_cast<uint32_t>(std::min(vw, w_)), static_cast<uint32_t>(picH_)};
+                                     : DkScissor{0, 0, static_cast<uint32_t>(std::min(vw, w_)), static_cast<uint32_t>(vhR)};
     dkCmdBufSetViewports(cb_, 0, &vp, 1);
     dkCmdBufSetScissors(cb_, 0, &sc, 1);
     recording_ = true;
@@ -1349,10 +1403,21 @@ const omk::Surface& DekoRenderer::readback() {
     dirty_ = false;
     openCb();
     // the scene's writes done before the copy engine reads the target
-    dkCmdBufBarrier(cb_, DkBarrier_Full, 0);
+    dkCmdBufBarrier(cb_, DkBarrier_Full, DkInvalidateFlags_Image);
     const DkImageRect r{0, 0, 0, static_cast<uint32_t>(w_), static_cast<uint32_t>(h_), 1};
     const DkCopyBuf dst{readBuf_.gpu(), 0, 0};
-    dkCmdBufCopyImageToBuffer(cb_, &colourView_, &r, &dst, 0);
+    if (up_ > 1.0f) {
+        // UPSCALED, the picture is read at the OUTPUT size through the same
+        // EASU and RCAS as the present pass's, undithered (`raw`) - Vulkan's
+        // rule - and quantised below as a frame drawn at that size would be
+        dkCmdBufBindImageDescriptorSet(cb_, imgDesc_.gpu(), kMaxImages);
+        dkCmdBufBindSamplerDescriptorSet(cb_, sampDesc_.gpu(), kSampCount);
+        recordPresentDraw(&readView_, kImgColour, 0, picH_ > 0 ? picH_ : h_, true);
+        dkCmdBufBarrier(cb_, DkBarrier_Full, 0);
+        dkCmdBufCopyImageToBuffer(cb_, &readView_, &r, &dst, 0);
+    } else {
+        dkCmdBufCopyImageToBuffer(cb_, &colourView_, &r, &dst, 0);
+    }
     dkQueueSubmitCommands(queue_, dkCmdBufFinishList(cb_));
     dkQueueWaitIdle(queue_);
     markIdle();   // the queue is idle
@@ -1404,44 +1469,7 @@ bool DekoRenderer::runPresent(uint32_t imgSlot, int vy, int vh, bool raw, const 
     // the descriptor arrays again: this is a new command list
     dkCmdBufBindImageDescriptorSet(cb_, imgDesc_.gpu(), kMaxImages);
     dkCmdBufBindSamplerDescriptorSet(cb_, sampDesc_.gpu(), kSampCount);
-    const DkImageView* rt = &swapView_[slot];
-    dkCmdBufBindRenderTargets(cb_, &rt, 1, nullptr);
-    const DkViewport vp{0.0f, 0.0f, static_cast<float>(w_), static_cast<float>(h_), 0.0f, 1.0f};
-    const DkScissor sc{0, 0, static_cast<uint32_t>(w_), static_cast<uint32_t>(h_)};
-    dkCmdBufSetViewports(cb_, 0, &vp, 1);
-    dkCmdBufSetScissors(cb_, 0, &sc, 1);
-    // `OMK_DEKO_CLEAR=1`, an instrument: the image MAGENTA first - seen
-    // magenta, the swapchain reaches the screen and the pass draws nothing;
-    // still black, the images never reach it
-    static const bool magenta = omk::envFlag("OMK_DEKO_CLEAR");
-    if (magenta) dkCmdBufClearColorFloat(cb_, 0, DkColorMask_RGBA, 1.0f, 0.0f, 1.0f, 1.0f);
-    const DkShader* sh[2] = {&shFsq_, &shPresent_};
-    dkCmdBufBindShaders(cb_, DkStageFlag_GraphicsMask, sh, 2);
-    lastFrag_ = nullptr;
-    DkRasterizerState rs;
-    dkRasterizerStateDefaults(&rs);
-    rs.cullMode = DkFace_None;
-    dkCmdBufBindRasterizerState(cb_, &rs);
-    DkColorState cs;
-    dkColorStateDefaults(&cs);
-    dkCmdBufBindColorState(cb_, &cs);
-    DkColorWriteState cw;
-    dkColorWriteStateDefaults(&cw);
-    dkCmdBufBindColorWriteState(cb_, &cw);
-    DkDepthStencilState ds;
-    dkDepthStencilStateDefaults(&ds);
-    ds.depthTestEnable = 0;
-    ds.depthWriteEnable = 0;
-    dkCmdBufBindDepthStencilState(cb_, &ds);
-    lastBlend_ = -1;
-    dkCmdBufBindVtxAttribState(cb_, nullptr, 0);
-    dkCmdBufBindVtxBufferState(cb_, nullptr, 0);
-    dkCmdBufBindTexture(cb_, DkStage_Fragment, 0, dkMakeTextureHandle(imgSlot, kSampClamp));
-    dkCmdBufBindUniformBuffer(cb_, DkStage_Fragment, kUboPush, pushUbo_.gpu(), pushUbo_.size);
-    vh = std::clamp(vh, 1, h_);
-    const PresentPush pp{vy, vh, w_, dither_ && !raw ? 1 : 0, 1, 0, 0u, raw ? 1 : 0};
-    dkCmdBufPushConstants(cb_, pushUbo_.gpu(), pushUbo_.size, 0, sizeof pp, &pp);
-    dkCmdBufDraw(cb_, DkPrimitive_Triangles, 3, 1, 0, 0);
+    recordPresentDraw(&swapView_[slot], imgSlot, vy, vh, raw);
     if (over) {
         // ...and the interface over it: C + world * M, the fade over all
         // (the blend ONE, SRC_ALPHA - GLES's)
@@ -1482,6 +1510,89 @@ bool DekoRenderer::runPresent(uint32_t imgSlot, int vy, int vh, bool raw, const 
     cur().pending = true;
     cbOpen_ = false;   // the next frame starts its list from the top, once this one is done
     return true;
+}
+
+// THE PRESENT PASS's draw into `rt` (the swapchain's image, or `readbackImg_`):
+// `imgSlot`'s picture - with the upscale, EASU's of it - dithered and
+// expanded, or (`raw`) its 8-bit values
+void DekoRenderer::recordPresentDraw(const DkImageView* rt, uint32_t imgSlot, int vy, int vh, bool raw) {
+    dkCmdBufBindRenderTargets(cb_, &rt, 1, nullptr);
+    const DkViewport vp{0.0f, 0.0f, static_cast<float>(w_), static_cast<float>(h_), 0.0f, 1.0f};
+    const DkScissor sc{0, 0, static_cast<uint32_t>(w_), static_cast<uint32_t>(h_)};
+    dkCmdBufSetViewports(cb_, 0, &vp, 1);
+    dkCmdBufSetScissors(cb_, 0, &sc, 1);
+    // `OMK_DEKO_CLEAR=1`, an instrument: the image MAGENTA first - seen
+    // magenta, the swapchain reaches the screen and the pass draws nothing;
+    // still black, the images never reach it
+    static const bool magenta = omk::envFlag("OMK_DEKO_CLEAR");
+    if (magenta) dkCmdBufClearColorFloat(cb_, 0, DkColorMask_RGBA, 1.0f, 0.0f, 1.0f, 1.0f);
+    const DkShader* sh[2] = {&shFsq_, &shPresent_};
+    dkCmdBufBindShaders(cb_, DkStageFlag_GraphicsMask, sh, 2);
+    lastFrag_ = nullptr;
+    DkRasterizerState rast;
+    dkRasterizerStateDefaults(&rast);
+    rast.cullMode = DkFace_None;
+    dkCmdBufBindRasterizerState(cb_, &rast);
+    DkColorState cs;
+    dkColorStateDefaults(&cs);
+    dkCmdBufBindColorState(cb_, &cs);
+    DkColorWriteState cw;
+    dkColorWriteStateDefaults(&cw);
+    dkCmdBufBindColorWriteState(cb_, &cw);
+    DkDepthStencilState ds;
+    dkDepthStencilStateDefaults(&ds);
+    ds.depthTestEnable = 0;
+    ds.depthWriteEnable = 0;
+    dkCmdBufBindDepthStencilState(cb_, &ds);
+    lastBlend_ = -1;
+    dkCmdBufBindVtxAttribState(cb_, nullptr, 0);
+    dkCmdBufBindVtxBufferState(cb_, nullptr, 0);
+    dkCmdBufBindUniformBuffer(cb_, DkStage_Fragment, kUboPush, pushUbo_.gpu(), pushUbo_.size);
+    vh = std::clamp(vh, 1, h_);
+    // THE UPSCALE (`todo/remaster.md` A6, Vulkan's): the scene drawn `up_`
+    // times smaller in `colour_`'s top-left, brought up to the picture's
+    // size by FSR 1's EASU (`easu.frag`, the four texels round a point by
+    // textureGather - a linear, clamped sampler) into `easu_`, then
+    // sharpened by RCAS in this pass (`present.frag`), before the dither
+    const bool up = up_ > 1.0f && imgSlot == kImgColour;
+    if (up) {
+        const DkImageView* ert = &easuView_;
+        dkCmdBufBindRenderTargets(cb_, &ert, 1, nullptr);
+        const DkViewport evp{0.0f, 0.0f, static_cast<float>(w_), static_cast<float>(vh), 0.0f, 1.0f};
+        const DkScissor esc{0, 0, static_cast<uint32_t>(w_), static_cast<uint32_t>(vh)};
+        dkCmdBufSetViewports(cb_, 0, &evp, 1);
+        dkCmdBufSetScissors(cb_, 0, &esc, 1);
+        // `OMK_DEKO_EASU_GATHER=1`, an A/B: the gathered module (the cyan picture's)
+        static const bool gather = omk::envOn("OMK_DEKO_EASU_GATHER");
+        const DkShader* esh[2] = {&shFsq_, !amdFsr() ? &shEasuLite_ : gather ? &shEasu_ : &shEasuFetch_};
+        dkCmdBufBindShaders(cb_, DkStageFlag_GraphicsMask, esh, 2);
+        dkCmdBufBindTexture(cb_, DkStage_Fragment, 0, dkMakeTextureHandle(kImgColour, kSampLinearClamp));
+        if (amdFsr()) {
+            std::uint32_t con[16];
+            omk::fsrEasuCon(con, static_cast<float>(rs(w_)), static_cast<float>(rs(vh)), static_cast<float>(w_),
+                            static_cast<float>(h_), static_cast<float>(w_), static_cast<float>(vh));
+            dkCmdBufPushConstants(cb_, pushUbo_.gpu(), pushUbo_.size, 0, sizeof con, con);
+        } else {
+            // the lite EASU's: the drawn picture, then the output's
+            const float sizes[4] = {static_cast<float>(rs(w_)), static_cast<float>(rs(vh)), static_cast<float>(w_),
+                                    static_cast<float>(vh)};
+            dkCmdBufPushConstants(cb_, pushUbo_.gpu(), pushUbo_.size, 0, sizeof sizes, sizes);
+        }
+        dkCmdBufDraw(cb_, DkPrimitive_Triangles, 3, 1, 0, 0);
+        rung(7);   // (the ladder's: EASU's span, apart from the present's)
+        // EASU's writes done before the present pass samples them
+        dkCmdBufBarrier(cb_, DkBarrier_Fragments, DkInvalidateFlags_Image);
+    }
+    dkCmdBufBindRenderTargets(cb_, &rt, 1, nullptr);
+    dkCmdBufSetViewports(cb_, 0, &vp, 1);
+    dkCmdBufSetScissors(cb_, 0, &sc, 1);
+    const DkShader* psh[2] = {&shFsq_, up && !amdFsr() ? &shPresentLite_ : &shPresent_};
+    dkCmdBufBindShaders(cb_, DkStageFlag_GraphicsMask, psh, 2);
+    dkCmdBufBindTexture(cb_, DkStage_Fragment, 0, dkMakeTextureHandle(up ? kImgEasu : imgSlot, kSampClamp));
+    const PresentPush pp{vy, vh, w_, dither_ && !raw ? 1 : 0, 1, up ? 1 : 0,
+                         up ? omk::fsrRcasCon(omk::kFsrRcasStops) : 0u, raw ? 1 : 0};
+    dkCmdBufPushConstants(cb_, pushUbo_.gpu(), pushUbo_.size, 0, sizeof pp, &pp);
+    dkCmdBufDraw(cb_, DkPrimitive_Triangles, 3, 1, 0, 0);
 }
 
 bool DekoRenderer::presentWorld(int vy, int vh) {

@@ -23,9 +23,35 @@ layout(push_constant) uniform Easu {
 layout(location = 0) out vec4 o;
 
 #define FSR_EASU_F 1
+#ifdef OMK_NO_GATHER
+// THE FOUR TEXELS FETCHED, not gathered (-DOMK_NO_GATHER, deko3d's module -
+// `todo/deko3d.md` D4b): on the Switch `textureGather` returned the wrong
+// components - the picture came out CYAN, its red lost (the reader's photo,
+// and a frame captured each way: fetched, the street as it is). The same
+// four texels in `textureGather`'s order - (i0,j1), (i1,j1), (i1,j0),
+// (i0,j0) round the corner `p` falls on. FSR asks red, green and blue of a
+// point in that order (`ffx_fsr1.h` FsrEasuF), so the red call FETCHES and
+// keeps the four, and green and blue read what it kept: 16 fetches a pixel,
+// not 48 (the three calls' own fetches were not shared - 12.4 ms against 2.1).
+// Vulkan never defines it: its module is as it was.
+vec4 gT0, gT1, gT2, gT3;
+AF4 FsrEasuRF(AF2 p) {
+    ivec2 sz = textureSize(src, 0);
+    ivec2 i0 = ivec2(floor(p * vec2(sz) - 0.5));
+    ivec2 mx = sz - 1;
+    gT0 = texelFetch(src, clamp(i0 + ivec2(0, 1), ivec2(0), mx), 0);
+    gT1 = texelFetch(src, clamp(i0 + ivec2(1, 1), ivec2(0), mx), 0);
+    gT2 = texelFetch(src, clamp(i0 + ivec2(1, 0), ivec2(0), mx), 0);
+    gT3 = texelFetch(src, clamp(i0, ivec2(0), mx), 0);
+    return AF4(gT0.r, gT1.r, gT2.r, gT3.r);
+}
+AF4 FsrEasuGF(AF2 p) { return AF4(gT0.g, gT1.g, gT2.g, gT3.g); }
+AF4 FsrEasuBF(AF2 p) { return AF4(gT0.b, gT1.b, gT2.b, gT3.b); }
+#else
 AF4 FsrEasuRF(AF2 p) { return textureGather(src, p, 0); }
 AF4 FsrEasuGF(AF2 p) { return textureGather(src, p, 1); }
 AF4 FsrEasuBF(AF2 p) { return textureGather(src, p, 2); }
+#endif
 #include "ffx_fsr1.h"
 
 void main() {

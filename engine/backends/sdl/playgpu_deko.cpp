@@ -59,6 +59,18 @@ void PlayState::gpuOpenWindow() {
         std::printf("deko3d: SDL video (input only) did not start: %s\n", SDL_GetError());
     omk::Renderer* r = omk::makeDekoRenderer();
     if (texFilter > 0) r->setTextureFilter(texFilter);
+    // THE UPSCALE, NATIVE UNDER THE PRESET (`todo/deko3d.md` D4b, the reader's
+    // choice of 2026-11-27): on deko3d EASU over 1280x720 costs ~6.4 ms of GPU,
+    // and the street's frame went SLOWER upscaled (original 13.1 ms against
+    // 8.5 native, remaster 16.6 against 15.1) - so the preset's 1.5
+    // (`kPresetUpscale`, the Switch's for GLES) is not taken here. A value set
+    // by hand - `--upscale`, `[Remaster] upscale`, OMK's menu - still is.
+    if (upscale > 1.0f && upscaleFlag < 0.0f && settings.upscaleSource != omk::Settings::Source::Ini) {
+        std::printf("deko3d: the preset's upscale x%.2f not taken - native is faster here (todo/deko3d.md D4b); "
+                    "--upscale or [Remaster] upscale sets one\n", static_cast<double>(upscale));
+        upscale = 1.0f;
+    }
+    remasterConfigure(*r);   // the remaster's (`backends/remaster/`): the upscale, before `init`, as Vulkan's and GLES's
     if (r->init(dispW, dispH)) {
         vkRen = r;
         g_deko.r = r;

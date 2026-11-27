@@ -82,7 +82,31 @@ void main() {
     int r = 0, g = 0, b = 0;
     if (pc.rcas != 0) {
         AF1 fr, fg, fb;
+#ifdef OMK_RCAS_LITE
+        // RCAS in plain floats (-DOMK_RCAS_LITE, deko3d's module - GLES's
+        // transcription, `kRcasFrag`): AMD's header through `uam` made the
+        // Switch's upscaled present ~7 ms dearer than the native one. Within
+        // its own error of AMD's, not bit for bit; Vulkan never defines it.
+        {
+            ivec2 lim = ivec2(pc.w - 1, pc.vh - 1);
+            vec3 tb = texelFetch(world, clamp(ivec2(p.x, wy - 1), ivec2(0), lim), 0).rgb;
+            vec3 td = texelFetch(world, clamp(ivec2(p.x - 1, wy), ivec2(0), lim), 0).rgb;
+            vec3 te = texelFetch(world, clamp(ivec2(p.x, wy), ivec2(0), lim), 0).rgb;
+            vec3 tf = texelFetch(world, clamp(ivec2(p.x + 1, wy), ivec2(0), lim), 0).rgb;
+            vec3 th = texelFetch(world, clamp(ivec2(p.x, wy + 1), ivec2(0), lim), 0).rgb;
+            vec3 mn4 = min(min(tb, td), min(tf, th));
+            vec3 mx4 = max(max(tb, td), max(tf, th));
+            vec3 hitMin = min(mn4, te) / max(4.0 * mx4, vec3(1.0e-20));
+            vec3 hitMax = (1.0 - max(mx4, te)) / min(4.0 * mn4 - 4.0, vec3(-1.0e-20));
+            vec3 lobeC = max(-hitMin, hitMax);
+            float lobe = max(-(0.25 - 1.0 / 16.0), min(max(lobeC.r, max(lobeC.g, lobeC.b)), 0.0)) *
+                         uintBitsToFloat(pc.rcasCon);
+            vec3 rc = (lobe * tb + lobe * td + lobe * th + lobe * tf + te) / (4.0 * lobe + 1.0);
+            fr = rc.r; fg = rc.g; fb = rc.b;
+        }
+#else
         FsrRcasF(fr, fg, fb, AU2(p.x, wy), AU4(pc.rcasCon, 0u, 0u, 0u));
+#endif
         r = clampByte(int(round(fr * 255.0)));
         g = clampByte(int(round(fg * 255.0)));
         b = clampByte(int(round(fb * 255.0)));

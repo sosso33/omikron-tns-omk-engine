@@ -242,6 +242,39 @@ backend's own to follow (D3).
   **remaster 15.1 ms (66 fps), GPU 14.7** - at the native 720p (no upscale
   yet), and with no bloom, grade, occlusion or reflection. The reader, after
   switching modes back and forth: *"pas de problèmes pour l'instant"*.
+* **D4b - THE UPSCALE** (2026-11-27): the scene drawn `rs()` smaller in
+  `colour_`'s top-left, brought to the output's size by EASU into `easu_`,
+  sharpened by RCAS in the present pass, then dithered; the upscaled readback
+  through both, raw; and `remasterConfigure` called before `init` (it never
+  was: no upscale, no bloom could reach deko3d).
+  * **THE CYAN PICTURE** (the reader's photo of the remaster session): AMD's
+    EASU reads through `textureGather`, and on deko3d / Maxwell the gather
+    returns the wrong components - `uam`'s TGSI asks components 0, 1, 2
+    correctly, the picture comes out cyan anyway. Two frames captured on the
+    console (`--frames 300 --dump`, the readback through EASU, fetched with
+    the launcher's `--b64`): gathered, the reader's cyan; the same four
+    texels FETCHED (`easu.frag` -DOMK_NO_GATHER), the street as it is.
+  * **ITS COST** (Anekbah, the ladder with a rung after EASU): AMD's header
+    through `uam`, fetched or gathered, and GLES's float transcription
+    (`backends/deko3d/shaders/easu_lite.frag`, and RCAS under
+    `present.frag` OMK_RCAS_LITE - the default here, `OMK_DEKO_FSR_AMD=1`
+    for AMD's) cost the same: the upscaled present **9.9 ms, EASU 6.36 of
+    it**, RCAS's present 3.58, against the native present's 2.73. Not the
+    reads either (the scene target without `Usage2DEngine`: no change). On
+    this GPU at the handheld clock EASU over 1280x720 costs about twice the
+    original's whole native scene, so the frame is SLOWER upscaled: original
+    13.1 ms (GPU 12.8) against 8.5 native, remaster 16.6 against 15.1. It
+    pays only where the scene at the output's size costs more than ~10 ms
+    over the drawn one's - the remaster's full-screen passes (D4c-e) may
+    bring it there. GLES's whole frame with the same upscale is 8.5 ms: its
+    compiler (Mesa's GLSL -> NIR) makes better code of the same arithmetic
+    than `uam`'s TGSI path - not measured, inferred.
+  * **NATIVE UNDER THE PRESET** (the reader's choice, 2026-11-27): deko3d
+    does not take the preset's 1.5 (`kPresetUpscale`, GLES's on the Switch),
+    a value set by hand still is (`--upscale`, `[Remaster] upscale`, OMK's
+    menu) - `playgpu_deko.cpp`, said in the log. The street: original 8.1
+    ms (124 fps), remaster 15.0. To be weighed again once D4c-e's
+    full-screen passes raise the scene's cost.
 * **D4 - the remaster**: the per-pixel and tiled lights, the shadow map, the
   pack (ASTC natively - Maxwell samples it), water and the two reflections,
   bloom and grade, the 3D rain and its veils, the dust once a pixel (the pass
