@@ -783,15 +783,16 @@ constexpr float kTieLoserPhase = 8192.0f;
 constexpr GLuint kAttrPos = 0, kAttrUV = 1, kAttrCol = 2, kAttrPhase = 3, kAttrSlot = 4,
                  kAttrNormal = 5;
 // the lights a posed body may carry (`uLight`); a body reached by more is lit
-// on the CPU by the frontend. SIXTEEN, Vulkan's (`kPoseLights`), where the
-// program has the room: under the remaster's emitters' lights Qalisar's
-// walkers take ~14 each, and at 8 thirty-one of thirty-three fell to the
-// CPU's posing and lighting - 1.1 ms a frame on the M1, ~7 on the Switch
-// (2026-11-27). The Vita keeps 8 (its program's uniforms untried at 16).
+// on the CPU by the frontend. THIRTY-TWO, Vulkan's (`kPoseLights`), where
+// the program has the room (~200 vec4 with `uPose`, under every target's
+// 256): under the remaster's emitters' lights Qalisar's walkers take ~14-30
+// each - at 8 thirty-one of thirty-three fell to the CPU's posing and
+// lighting (1.1 ms a frame on the M1, ~7 on the Switch), at 16 nine, at 32
+// none (2026-11-27). The Vita keeps 8 (its program's uniforms untried).
 #if defined(__vita__)
 constexpr int kVertexLights = 8;
 #else
-constexpr int kVertexLights = 16;
+constexpr int kVertexLights = 32;
 #endif
 // ...written into a posing program's source (it says 8: `uLight[16]`, the loop)
 std::string vertexLightsFit(const char* src) {

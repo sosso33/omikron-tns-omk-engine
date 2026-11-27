@@ -27,7 +27,7 @@ layout(push_constant) uniform Push {
 // kLights lights of two vec4 (direction x strength, colour bytes), then three
 // vec4 an affine: world = R rest + t, the rows of a 3x4 (`renderer.h`), then
 // one vec4 the body light's tint (rgb).
-const int kLights = 16;
+const int kLights = 32;   // vkrender.cpp's kPoseLights
 layout(std430, set = 2, binding = 0) readonly buffer Pose { vec4 d[]; } pose;
 
 layout(location = 0) in vec3 inPos;    // world position

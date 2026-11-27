@@ -717,6 +717,24 @@ one at the swap's floor.
   8.3 -> **2.5 ms** a rain frame on the Switch (1.5 -> 0.8 on the M1); the
   remaster with the original's rain 30.1 -> **23.1 ms**.
 
+**THE CROWD, ITS LAST 6.5 ms** (2026-11-27): two causes, read on the M1
+(Qalisar, the remaster): the BODY LIGHT - `LightProbes::sample` looked up
+the 7x7x7 cells round each body, 343 hash finds a walker a frame, most of
+them empty (~0.35 ms of 34 walkers on the M1); each cell's window is now
+read ONCE (`nearOf`, the cells that exist in the window's own order, their
+centres divided out once) and a sample walks that list with the same
+arithmetic in the same order - the frames BYTE-IDENTICAL (Qalisar and
+Anekbah, the remaster). And the walkers past 16 lights, still posed and
+lit on the CPU: GLES (not the Vita) and Vulkan carry 32 now (`kVertexLights`,
+`kPoseLights`/`kLights`) - 34 of 34 on the GPU. On the M1 the crowd 0.8 ->
+0.2 ms. **On the Switch** the crowd's section 6.5 -> **1.2 ms** (the
+original's 1.0), the remaster at the floor; the remaster with the
+original's rain 23.1 -> 18.7. Under the remaster's own rain the frame now
+sits on the refresh's 33.3 step (the GPU past 16.7 ms, its swap waiting -
+a median that moved 27.3 -> 33.2 with the CPU's share smaller: the
+refresh's steps, not a cost added). Checked: engine: gles pose, engine:
+vulkan pose, engine: body light, engine: pose equivalence.
+
 **THE DUST ONCE A PIXEL, measured** (Jaunpur, the Switch's tier, the
 preload off): the sand 30.8 ms, its dust off 26.3 - the dust ~4.5 ms
 against ~13 drawn per draw (33.3 / 20.5). The frames sit on the refresh's

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <mutex>
 
 namespace omk {
 
@@ -52,7 +53,37 @@ void pieces(const P& a, const P& b, const P& c, float cell, int depth, F&& add) 
 
 }  // namespace
 
+struct LightProbes::Near {
+    std::mutex m;
+    std::unordered_map<std::uint64_t, std::unique_ptr<std::vector<NearCell>>> lists;
+};
+
+const std::vector<LightProbes::NearCell>& LightProbes::nearOf(int cx, int cy, int cz) const {
+    Near& nr = *near_;
+    const std::uint64_t k = key(cx, cy, cz);
+    {
+        std::lock_guard<std::mutex> l(nr.m);
+        if (const auto it = nr.lists.find(k); it != nr.lists.end()) return *it->second;
+    }
+    // the window read once, outside the lock (the cells do not change after
+    // `build`); a list made twice by two threads at once: the first kept
+    const int reach = static_cast<int>(std::ceil(kReach / kCell));
+    auto list = std::make_unique<std::vector<NearCell>>();
+    for (int z = cz - reach; z <= cz + reach; ++z)
+        for (int y = cy - reach; y <= cy + reach; ++y)
+            for (int x = cx - reach; x <= cx + reach; ++x)
+                if (const auto it = cells_.find(key(x, y, z)); it != cells_.end()) {
+                    const Cell& e = it->second;
+                    list->push_back({e.x / e.w, e.y / e.w, e.z / e.w, e.w, e.r, e.g, e.b});
+                }
+    std::lock_guard<std::mutex> l(nr.m);
+    auto& slot = nr.lists[k];
+    if (!slot) slot = std::move(list);
+    return *slot;   // a list never moves once made: its own allocation
+}
+
 bool LightProbes::build(const Geometry& g) {
+    near_ = std::make_shared<Near>();
     cells_.clear();
     n_ = 0;
     double luma = 0.0, area = 0.0;
@@ -109,27 +140,22 @@ bool LightProbes::build(const Geometry& g) {
 }
 
 bool LightProbes::sample(const float p[3], float rgb[3]) const {
-    if (!n_) return false;
-    const int reach = static_cast<int>(std::ceil(kReach / kCell));
+    if (!n_ || !near_) return false;
     const int cx = static_cast<int>(std::floor(p[0] / kCell));
     const int cy = static_cast<int>(std::floor(p[1] / kCell));
     const int cz = static_cast<int>(std::floor(p[2] / kCell));
     const double r2 = static_cast<double>(kReach) * kReach;
     double w = 0.0, r = 0.0, g = 0.0, b = 0.0;
-    for (int z = cz - reach; z <= cz + reach; ++z)
-        for (int y = cy - reach; y <= cy + reach; ++y)
-            for (int x = cx - reach; x <= cx + reach; ++x) {
-                const auto it = cells_.find(key(x, y, z));
-                if (it == cells_.end()) continue;
-                const Cell& e = it->second;
-                const double n = e.w;
-                const double dx = e.x / n - p[0], dy = e.y / n - p[1], dz = e.z / n - p[2];
-                const double d2 = dx * dx + dy * dy + dz * dz;
-                if (d2 >= r2) continue;
-                const double f = 1.0 - d2 / r2;
-                const double k = f * f;   // per unit area: the cell's sums carry its area
-                w += k * n; r += k * e.r; g += k * e.g; b += k * e.b;
-            }
+    // the window's cells that exist, in its z, y, x order (`nearOf`)
+    for (const NearCell& e : nearOf(cx, cy, cz)) {
+        const double n = e.w;
+        const double dx = e.cx - p[0], dy = e.cy - p[1], dz = e.cz - p[2];
+        const double d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 >= r2) continue;
+        const double f = 1.0 - d2 / r2;
+        const double k = f * f;   // per unit area: the cell's sums carry its area
+        w += k * n; r += k * e.r; g += k * e.g; b += k * e.b;
+    }
     if (w <= 0.0) return false;
     rgb[0] = static_cast<float>(r / w);
     rgb[1] = static_cast<float>(g / w);

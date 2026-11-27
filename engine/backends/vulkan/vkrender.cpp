@@ -721,7 +721,10 @@ private:
     // `begin` (the frame before it was waited for), one block a posed body -
     // a header (lights, from-black, the base grey, the affines' count), the
     // lights (two vec4 each, `kPoseLights` places), then three vec4 an affine
-    static constexpr int kPoseLights = 16, kPoseMaxMeshes = 256;
+    // (32 since 2026-11-27: Qalisar's walkers under the remaster's emitters'
+    // lights take ~14-30 each, and a body reached by more is posed and lit
+    // on the CPU - `scene.vert`'s kLights must say the same)
+    static constexpr int kPoseLights = 32, kPoseMaxMeshes = 256;
     // 2 MB: the Anekbah street walk's busiest frame writes 288 KB (25 staged
     // bodies and the crowd, measured 2026-10-20); a frame past it poses the
     // rest on the CPU (`writePose` refuses)

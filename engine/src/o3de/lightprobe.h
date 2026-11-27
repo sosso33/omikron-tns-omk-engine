@@ -32,7 +32,9 @@
 #include "o3de/geom3do.h"
 
 #include <cstdint>
+#include <memory>
 #include <unordered_map>
+#include <vector>
 
 namespace omk {
 
@@ -72,6 +74,20 @@ private:
     struct Cell { double r = 0, g = 0, b = 0, x = 0, y = 0, z = 0, w = 0; };   // sums by area
     static std::uint64_t key(int x, int y, int z);
     std::unordered_map<std::uint64_t, Cell> cells_;
+    // THE CELLS NEAR A CELL, kept: `sample` looked up all 7x7x7 keys of the
+    // window round its point - 343 hash finds a body a frame, most of them
+    // empty: the crowd's body light ~0.35 ms on the M1 for 34 walkers, ~3 on
+    // the Switch (2026-11-27). Now each cell's window is read ONCE, the cells
+    // that exist copied in the window's own z, y, x order, and a sample walks
+    // that list with the same arithmetic in the same order - the same bits.
+    // Shared by copies (built afresh by `build`), filled under its lock from
+    // any thread (the crowd's bodies are posed on several).
+    // ...each kept with its centre already divided out (`x / w` - the same
+    // operation on the same values as the sample made, once)
+    struct NearCell { double cx, cy, cz, w, r, g, b; };
+    struct Near;
+    std::shared_ptr<Near> near_;
+    const std::vector<NearCell>& nearOf(int cx, int cy, int cz) const;
     long  n_ = 0;          // pieces
     float meanLuma_ = 0.0f;
     float meanRgb_[3] = {0.0f, 0.0f, 0.0f};   // ...and its colour
