@@ -676,6 +676,30 @@ launcher hands the process on. **A fourth series, eight chained loads with
 the preload ON: eight finished, no crash report.** The Switch's preset
 keeps the preload at 15 m again.
 
+**VULKAN'S DUST, measured and DEFERRED to deko3d** (2026-11-27, the reader's
+choice): Vulkan computes the same dust in every opaque draw (`scene.frag`
+dustAmount). On the M1 at 720p it does not show (8.2 ms either way, the GPU
+not the wall); at 4K (Jaunpur's sand, OMK_PRESENT_IMMEDIATE) **~2.9 ms of
+22.7** (19.8 without the dust). The once-a-pixel pass there needs the scene's
+render pass split before the blended draws (a LOAD variant of each - plain,
+the reflection's, the second level's), the depth read between, and MSAA's
+samples - ~a day in `vkrender.cpp` for ~2 ms at 4K on a desktop. The deko3d
+backend, built from Vulkan's, reorders its passes anyway: the dust pass goes
+in there (as GLES's: `remasterDustPass`).
+
+**THE ORIGINAL'S 2D WEATHER AND THE TWO PLACES LEFT** (2026-11-27, a chained
+plan of three short sweeps, 30 frames settled and 120 measured): the 2D
+rain and snow go into `fb` and the GLES window takes it as an OVERLAY plane,
+its changed rows re-sent - ~630 rows a frame under the rain, scattered, in
+runs: "texture upload" 8.3 ms a frame. On the Switch, as on Android, the
+span from the first changed row to the last now goes up in ONE call: the
+remaster with the original's rain in Qalisar, present 10.7 -> **5.9 ms**
+(30.1 a frame against 31.6; the crowd's section moves several ms between
+runs there). MAHALEEL on the Switch's tier: remaster 16.6 (23.7 before),
+snowing 16.6 (31.2), its 2D snow under the remaster 16.7 (41.6), the
+original snowing 16.6 (26.5). The RESTAURANT: remaster 16.6 (20.0) - every
+one at the swap's floor.
+
 **THE DUST ONCE A PIXEL, measured** (Jaunpur, the Switch's tier, the
 preload off): the sand 30.8 ms, its dust off 26.3 - the dust ~4.5 ms
 against ~13 drawn per draw (33.3 / 20.5). The frames sit on the refresh's

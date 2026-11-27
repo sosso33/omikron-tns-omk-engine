@@ -4007,6 +4007,10 @@ bool GlesRenderer::presentOverlay(const Surface& s, const unsigned char* mask, c
             // driver's cost there is per call into a busy texture, not per
             // byte (the same shape as the buffer re-floor in the handoff's
             // traps). `OMK_PRESENT_ROWS` keeps the console's row-by-row.
+            // ...and on the SWITCH too (Mesa): the city's 2D rain changes
+            // ~630 rows of the plane a frame, scattered, and their runs cost
+            // 8.3 ms of "texture upload" a frame (Qalisar, 2026-11-26) - the
+            // remaster with the original's rain at 31.6 ms, 25.0 with its own.
 #if !defined(__vita__)
             static const bool rowsOnly = omk::envFlag("OMK_PRESENT_ROWS");
 #endif
@@ -4040,7 +4044,7 @@ bool GlesRenderer::presentOverlay(const Surface& s, const unsigned char* mask, c
                     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, y, s.w, 1, fmt, type, cur + y * rowBytes);
                     continue;
                 }
-#if !defined(__ANDROID__)
+#if !defined(__ANDROID__) && !defined(__SWITCH__)
                 if (runFrom >= 0 && y != runTo + 1) flush();
 #endif
                 if (runFrom < 0) runFrom = y;
