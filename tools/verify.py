@@ -37678,16 +37678,19 @@ def c_engine_mist():
 
 def c_engine_upscale():
     r"""THE UPSCALE - the remaster's A6 (`todo/remaster.md`), `[Remaster]
-    upscale = F` / `--upscale F` (1..3), OFF unless named and NOT in the
-    `--remaster` preset (a frame rate's choice, not a look). Vulkan. The frame
+    upscale = F` / `--upscale F` (1..3), OFF unless named and NOT the
+    `--remaster` preset's look (a frame rate's choice): under the preset the
+    PLATFORM's (`kPresetUpscale`, 1.5 on the Switch since 2026-11-26's
+    `5d7a0ab`, 1 everywhere else - this check's builds). Vulkan. The frame
     is drawn F times smaller each way (`rs()`: every render size through one
     rule) and brought up to the output by AMD FSR 1 - EASU (`easu.frag`) then
     RCAS's sharpening inside the present pass, BEFORE the original's 565
     dither, so the dither stays the output pixel's. AMD's shader code is
     vendored verbatim (MIT, `third_party/ffx_fsr1.h`).
     Parts:
-      1. the source: 1 by default, [Remaster] only, never `all = max`, not the
-         preset's; the present pass binds EASU's output only upscaled;
+      1. the source: 1 by default, [Remaster] only, never `all = max`, under
+         the preset the platform's `kPresetUpscale` - 1.0 but on the Switch;
+         the present pass binds EASU's output only upscaled;
       2. the CONSTANTS: `src/o3de/fsrcon.h`'s transcription against AMD's own
          `FsrEasuCon` / `FsrRcasCon` (the header under `A_CPU`), compiled side
          by side - every word, for six size triples and four sharpnesses;
@@ -37754,7 +37757,10 @@ def c_engine_upscale():
     src_ok = (bool(re.search(r"float\s+upscale\s*=\s*1\.0f;", sh)),
               'kRemaster, "upscale"' in sc and 'kEnhancements, "upscale"' not in sc,
               "upscale" not in max_body,
-              "preset" not in pre and pre.rstrip(";").endswith(": 1.0f"),
+              # under the preset the PLATFORM's, 1 but on the Switch
+              pre.rstrip(";").endswith("? omk::kPresetUpscale : 1.0f") and
+              re.search(r"#if defined\(__SWITCH__\)\s*inline constexpr float kPresetUpscale = [0-9.]+f;\s*"
+                        r"#else\s*inline constexpr float kPresetUpscale = 1\.0f;\s*#endif", sh) is not None,
               "up ? &presUpDs_ : &presDs_" in vk,
               # GLES's two passes ONCE a frame (`readback` and the present
               # both ask; `end` forgets them) and their 11 uniforms looked up
@@ -37865,7 +37871,7 @@ int main() {
           f"the window at x1.5: {gm[-1] if gm else 'no verify'} (compared, differing), GPU-presented {gpu}")
     return (src_ok, con_ok, drawn, a != b, m0 < 6.0, best, gpu_ok), \
            ((True,) * 7, True, ("640", "480"), True, True, (0, 0), True), \
-        "the source (off by default, [Remaster] only, never all = max, not the preset's, EASU's output " \
+        "the source (off by default, [Remaster] only, never all = max, under the preset the platform's (1 but on the Switch), EASU's output " \
         "bound only upscaled); the 100 constant words AMD's; the street drawn at 640x480 for 1280x960, " \
         "the native frame upscaled (close, and registered); the window's present pass 0 pixels from " \
         "the readback's over 90 frames, every one the GPU's"

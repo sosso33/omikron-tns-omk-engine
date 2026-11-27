@@ -37,7 +37,6 @@
 #include <cstdio>
 #include <cstring>
 #include <functional>
-#include <fstream>
 #include <map>
 #include <string>
 #include <vector>
@@ -388,13 +387,17 @@ void PlayState::benchFrame(double workMs) {
             char name[64];
             std::snprintf(name, sizeof name, "/step-%02zu-%dx%d.bin", b.at + 1, s.w, s.h);
             const std::string path = std::string(dir) + name;
-            if (s.w > 0 && omk::safeOutputPath(path)) {
-                std::ofstream o(path, std::ios::binary);
-                for (const auto v : s.px) {
-                    const char b2[2] = {static_cast<char>(v & 0xFF), static_cast<char>(v >> 8)};
-                    o.write(b2, 2);
+            // (stdio, not a stream: no C++ stream in the classic build -
+            // `verify.py: engine: classic build`, PORTING A10)
+            if (s.w > 0 && omk::safeOutputPath(path))
+                if (std::FILE* o = std::fopen(path.c_str(), "wb")) {
+                    for (const auto v : s.px) {
+                        const unsigned char b2[2] = {static_cast<unsigned char>(v & 0xFF),
+                                                     static_cast<unsigned char>(v >> 8)};
+                        std::fwrite(b2, 1, 2, o);
+                    }
+                    std::fclose(o);
                 }
-            }
         }
     }
     // the next step that applies
