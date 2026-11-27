@@ -73,25 +73,55 @@ file(GLOB OMK_REMASTER_SRC ${ENGINE}/backends/remaster/*.cpp)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(OMK_SDL2 REQUIRED sdl2)
 
+# THE GPU BACKEND: GLES through Mesa (the default), or DEKO3D - the console's
+# own API, `todo/deko3d.md` (`make switch-deko`). One or the other is linked,
+# as each desktop build links one `playgpu_*.cpp`.
+option(OMK_DEKO3D "draw with deko3d instead of GLES through Mesa (todo/deko3d.md)" OFF)
+if(OMK_DEKO3D)
+  set(OMK_GPU_SRC
+    ${ENGINE}/backends/sdl/playgpu_deko.cpp
+    ${ENGINE}/backends/deko3d/dkrender.cpp)
+else()
+  set(OMK_GPU_SRC
+    ${ENGINE}/backends/sdl/playgpu_gles.cpp
+    ${ENGINE}/backends/gles/glesrender.cpp)
+endif()
+
 add_executable(omk_switch
   ${CMAKE_CURRENT_SOURCE_DIR}/switch_main.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/swkbd.cpp
   ${OMK_PLAY_SRC}
   ${OMK_REMASTER_SRC}
-  ${ENGINE}/backends/sdl/playgpu_gles.cpp
-  ${ENGINE}/backends/gles/glesrender.cpp)
+  ${OMK_GPU_SRC})
 # `play.cpp`'s `main` becomes `omk_play_main`, which `switch_main.cpp` calls
 # (the Vita's arrangement); SDL_MAIN_HANDLED keeps SDL_main.h's own
 # `#define main SDL_main` out of every file.
 set_source_files_properties(${ENGINE}/backends/sdl/play.cpp
   PROPERTIES COMPILE_DEFINITIONS "main=omk_play_main")
-target_compile_definitions(omk_switch PRIVATE OMK_GLES=1 SDL_MAIN_HANDLED)
 target_include_directories(omk_switch PRIVATE ${OMK_SDL2_INCLUDE_DIRS} ${ENGINE}/backends/sdl)
-# SDL2's pkg-config names its own dependencies but not the GL the BACKEND
-# calls: Mesa's GLES2 / EGL and what they stand on (glapi, libdrm_nouveau),
-# then libnx again for them - a static link resolves left to right
-target_link_libraries(omk_switch omk_engine ${OMK_SDL2_STATIC_LIBRARIES}
-  EGL GLESv2 glapi drm_nouveau nx m)
+if(OMK_DEKO3D)
+  target_compile_definitions(omk_switch PRIVATE OMK_DEKO3D=1 SDL_MAIN_HANDLED)
+  # deko3d's DEBUG library while the backend is new (`todo/deko3d.md`): every
+  # call validated, a fault said through the device's debug callback rather
+  # than a silent GPU hang - the first console run went black without a word
+  option(OMK_DEKO3D_DEBUG "link libdeko3dd (validated) instead of libdeko3d" ON)
+  if(OMK_DEKO3D_DEBUG)
+    set(OMK_DEKO_LIB deko3dd)
+  else()
+    set(OMK_DEKO_LIB deko3d)
+  endif()
+  # SDL2's static libraries name EGL and GLES (its video driver's), so they
+  # stay linked; the renderer itself calls deko3d alone
+  target_link_libraries(omk_switch omk_engine ${OMK_SDL2_STATIC_LIBRARIES}
+    ${OMK_DEKO_LIB} EGL GLESv2 glapi drm_nouveau nx m)
+else()
+  target_compile_definitions(omk_switch PRIVATE OMK_GLES=1 SDL_MAIN_HANDLED)
+  # SDL2's pkg-config names its own dependencies but not the GL the BACKEND
+  # calls: Mesa's GLES2 / EGL and what they stand on (glapi, libdrm_nouveau),
+  # then libnx again for them - a static link resolves left to right
+  target_link_libraries(omk_switch omk_engine ${OMK_SDL2_STATIC_LIBRARIES}
+    EGL GLESv2 glapi drm_nouveau nx m)
+endif()
 target_link_directories(omk_switch PRIVATE ${OMK_SDL2_STATIC_LIBRARY_DIRS})
 
 # ---- THE ROMFS: `tables/*.json` (the tables lifted out of the exe) inside the
@@ -106,9 +136,66 @@ add_custom_command(
   COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_BINARY_DIR}/romfs.stamp
   DEPENDS ${OMK_TABLES}
   VERBATIM)
-add_custom_target(omk_romfs DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/romfs.stamp)
+set(OMK_ROMFS_DEPS ${CMAKE_CURRENT_BINARY_DIR}/romfs.stamp)
+
+# ---- THE DEKO3D SHADERS (`todo/deko3d.md` D0): Vulkan's GLSL, translated by
+# `backends/deko3d/dkshaders.py` and compiled by devkitPro's `uam` into
+# `romfs:/shaders/<name>.dksh`. Each row: the module's name, its stage, its
+# source, its defines - the Makefile's VK_SHADERS rules, one for one.
+if(OMK_DEKO3D)
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  find_program(OMK_UAM uam HINTS $ENV{DEVKITPRO}/tools/bin /opt/devkitpro/tools/bin REQUIRED)
+  set(VKSH ${ENGINE}/backends/vulkan/shaders)
+  set(DKSH_GLSL ${CMAKE_CURRENT_BINARY_DIR}/dkglsl)
+  file(MAKE_DIRECTORY ${OMK_ROMFS}/shaders)
+  set(OMK_DKSH_ROWS
+    "scene.vert|vert|scene.vert|"
+    "scene.frag|frag|scene.frag|"
+    "scene_tiled.frag|frag|scene.frag|OMK_TILED"
+    "scene_cut.frag|frag|scene.frag|OMK_LATE_DEPTH"
+    "scene_tiled_cut.frag|frag|scene.frag|OMK_TILED,OMK_LATE_DEPTH"
+    "fsq.vert|vert|fsq.vert|"
+    "fsq.frag|frag|fsq.frag|"
+    "shadow.vert|vert|shadow.vert|"
+    "present.frag|frag|present.frag|"
+    "easu.frag|frag|easu.frag|"
+    "under.frag|frag|under.frag|"
+    "post.frag|frag|post.frag|"
+    "ao.frag|frag|ao.frag|"
+    "ao_ms.frag|frag|ao.frag|OMK_MS")
+  foreach(row ${OMK_DKSH_ROWS})
+    string(REPLACE "|" ";" f "${row}")
+    list(GET f 0 name)
+    list(GET f 1 stage)
+    list(GET f 2 src)
+    list(LENGTH f nf)
+    set(defs "")
+    if(nf GREATER 3)
+      list(GET f 3 dl)
+      if(dl)
+        string(REPLACE "," ";" dl "${dl}")
+        foreach(d ${dl})
+          list(APPEND defs -D ${d})
+        endforeach()
+      endif()
+    endif()
+    set(out ${OMK_ROMFS}/shaders/${name}.dksh)
+    add_custom_command(
+      OUTPUT ${out}
+      COMMAND ${Python3_EXECUTABLE} ${ENGINE}/backends/deko3d/dkshaders.py
+              ${VKSH}/${src} ${DKSH_GLSL}/${name}.glsl -I ${ENGINE}/third_party ${defs}
+      COMMAND ${OMK_UAM} -s ${stage} -o ${out} ${DKSH_GLSL}/${name}.glsl
+      DEPENDS ${VKSH}/${src} ${ENGINE}/backends/deko3d/dkshaders.py
+              ${ENGINE}/third_party/ffx_a.h ${ENGINE}/third_party/ffx_fsr1.h
+      VERBATIM)
+    list(APPEND OMK_ROMFS_DEPS ${out})
+  endforeach()
+endif()
+
+add_custom_target(omk_romfs DEPENDS ${OMK_ROMFS_DEPS})
 add_dependencies(omk_switch omk_romfs)
-set_target_properties(omk_switch PROPERTIES LINK_DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/romfs.stamp)
+# a changed table or shader re-links and re-packs
+set_target_properties(omk_switch PROPERTIES LINK_DEPENDS "${OMK_ROMFS_DEPS}")
 
 nx_generate_nacp(${CMAKE_CURRENT_BINARY_DIR}/omk.nacp
   NAME "OMK" AUTHOR "OMK" VERSION "0.1.0")

@@ -763,7 +763,26 @@ again under each value), `OMK_BENCH_SHOTS` (each step's frame).
 preload off): the sand 30.8 ms, its dust off 26.3 - the dust ~4.5 ms
 against ~13 drawn per draw (33.3 / 20.5). The frames sit on the refresh's
 16.6 / 33.3 steps there (the swap waits for it), so these medians are
-coarse.
+coarse. On the M1 the pass drew the same picture as the per-draw dust:
+13,384 pixels at most 2 levels apart (rounding), one further; Anekbah's
+street at the remaster's maximum and the original byte-identical. The old
+per-draw path stays where the depth is not readable, under MSAA and in the
+reflections. (Recovered 2026-11-27 from the session's report, which the
+plan had not kept.)
+
+**DOCKED, the BC7 pack at 512** (the reader's question, 2026-11-26; recovered
+2026-11-27 from the session's answer): docked the GPU clocks 768 MHz against
+307-460 handheld, ~2x, for 2.25x the pixels of 1080p - and Anekbah at a
+native 720p handheld already took 92.8 ms a frame. So docked keeps the
+UPSCALE too: the 3D drawn near 1280x720 and brought to 1080p by FSR, as
+handheld does from 853x480. A texture is read at that INNER size, so 512
+suffices almost everywhere: no difference far or mid-distance (the mips),
+slightly softer than the PC's 1024 only on a surface filling more than 512
+screen pixels (a wall Kay'l walks along, his own body, a sign seen close) -
+still twice the 1999 original's 256. The interface, fonts and films have
+their own packs, unchanged docked. Not yet measured docked (S4); a mixed
+pack (1024 for what is seen close, 512 for the rest) is the option if a
+larger card allows.
 
 **S2 - first light.** ~1-2 days, needs a console or an emulator (§4).
 * `playgpu_gles.cpp`: on the Switch a GLES 3.0 context (the Quest's branch;

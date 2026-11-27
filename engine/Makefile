@@ -520,6 +520,7 @@ endif
 #
 #     make switch            -> build/switch/omk.nro
 #     make switch-release    -> build/switch-release/omk.nro (OMK_RELEASE)
+#     make switch-deko       -> build/switch-deko/omk.nro (deko3d, `todo/deko3d.md`)
 #
 # **Keep it compiling**: `verify.py: engine: switch build`.
 SWITCH_IMAGE ?= devkitpro/devkita64@sha256:1fc388c3a0d34bd2045a6dadcb1020e069d5f876a187fd705de14b4440c00282
@@ -541,7 +542,7 @@ switch_cmake = docker run --rm --user "$$(id -u):$$(id -g)" -v "$(REPO_ROOT):$(R
 endif
 SWITCH_HAVE = $(or $(SWITCH_NATIVE),$(shell docker info >/dev/null 2>&1 && echo docker))
 
-.PHONY: switch switch-release
+.PHONY: switch switch-release switch-deko
 switch:
 ifeq ($(SWITCH_HAVE),)
 	@echo "no Switch toolchain (devkitA64 under \$$DEVKITPRO, or a running Docker daemon"
@@ -560,6 +561,18 @@ else
 	@mkdir -p build/switch-release
 	$(call switch_cmake,build/switch-release-cmake,build/switch-release,-DOMK_RELEASE=ON)
 	@echo "built build/switch-release/omk.nro - no profiler, no instruments"
+endif
+
+# ...and with DEKO3D, the console's own GPU API, in place of GLES through Mesa
+# (`todo/deko3d.md`): its own NRO, beside the default one until it has proved
+# itself on the console
+switch-deko:
+ifeq ($(SWITCH_HAVE),)
+	@echo "no Switch toolchain - the Switch build is optional (todo/switch-port.md)."
+else
+	@mkdir -p build/switch-deko
+	$(call switch_cmake,build/switch-deko-cmake,build/switch-deko,-DOMK_DEKO3D=ON)
+	@echo "built build/switch-deko/omk.nro - the deko3d backend (todo/deko3d.md)"
 endif
 
 # The Vita bench on THIS machine - the same source, so a device run divides

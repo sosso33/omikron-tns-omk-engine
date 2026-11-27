@@ -53598,8 +53598,13 @@ def c_licence_headers():
     # 715: + `engine/backends/switch/swkbd.cpp` (the name field's keyboard)
     # 716: + `engine/backends/sdl/playbench.cpp` (the performance sweep, `--bench`)
     # 717: + `tools/switch_link.py` (the Switch's netloader driven from the Mac)
+    # 720: + `engine/backends/deko3d/dkrender.cpp`, `engine/backends/sdl/playgpu_deko.cpp`
+    # (the Switch's deko3d backend, `todo/deko3d.md`) and
+    # `engine/backends/vulkan/shaderblocks.h` (the shaders' blocks, moved out of
+    # `vkrender.cpp`); `backends/deko3d/dkshaders.py` carries the tag but is not
+    # scanned here (only `.h .cpp .c .inl` under engine/backends)
     return (authored, sorted(missing), len(vendored), mislabelled), \
-           (717, [], 10, []), \
+           (720, [], 10, []), \
            "authored source files under tools/, engine/src, engine/tools, " \
            "engine/backends and scripts/; those MISSING the SPDX tag; " \
            "vendored files in engine/third_party; and vendored files wrongly " \
