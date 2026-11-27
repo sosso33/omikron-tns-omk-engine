@@ -336,10 +336,6 @@ std::string waterVariant(const std::string& frag) {
                      "        vec3 dw = vec3(vWxz.x, vWy, vWxz.y);\n"
                      "        c = mix(c, uDustColour, dustAmount(dw + vToEye, dw, uDust));\n"
                      "    }\n"
-                     "    if (uVeil.x > 0.0 && (uFogEnd > uFogStart || uFogEnd < 0.0)) {\n"
-                     "        vec3 vw = vec3(vWxz.x, vWy, vWxz.y);\n"
-                     "        c = mix(c, uVeilColour.rgb, veilAmount(vw + vToEye, vw, uVeil, uVeilColour.w));\n"
-                     "    }\n"
                      "    float wetF = uSnow > 0.5 || uWetBody > 0.5 ? 0.0 : uWet;\n"
                      "    float pud = 0.0;\n"   // the PUDDLES, `scene.frag`'s `puddleMask`
                      "    bool wall = vWall > 0.5;\n"   // a WALL: a lighter film and its trickles, `scene.frag`'s
@@ -370,7 +366,18 @@ std::string waterVariant(const std::string& frag) {
                      "        float f = max(0.02 + 0.98 * pow(1.0 - ct, 5.0), kPuddleFresnel * pud);\n"
                      "        vec2 at = gl_FragCoord.xy + rip.xy * 0.02 * (0.5 / uReflInv.y);\n"
                      "        c += texture2D(uRefl, clamp(at * uReflInv + uReflOff, uReflBox.xy, uReflBox.zw)).rgb * uWater * f * wetHere;\n"
-                     "    }\n    ");
+                     "    }\n"
+                     // THE RAIN'S VEILS LAST: rain in the AIR between the eye and
+                     // the surface, over the surface's whole light - its wet
+                     // film, ripples, streaks and reflection - as a fog is
+                     // (2026-11-27; before, the film darkened the veil and the
+                     // reflection lay over it), and as the screen pass
+                     // (`remasterDustPass`) lays it over the finished pixel
+                     "    if (uVeil.x > 0.0 && (uFogEnd > uFogStart || uFogEnd < 0.0)) {\n"
+                     "        vec3 vw = vec3(vWxz.x, vWy, vWxz.y);\n"
+                     "        c = mix(c, uVeilColour.rgb, veilAmount(vw + vToEye, vw, uVeil, uVeilColour.w));\n"
+                     "    }\n"
+                     "    ");
     else anchorMissed("water", "gl_FragColor = vec4(c,");
     // SNOW LYING (`o3de/wetfloor.h` coverRuns, `scene.frag`'s rule): the floor
     // turned white under its own light - `c / texel`, the light alone - by the

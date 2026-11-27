@@ -19,6 +19,9 @@ namespace {
 constexpr const char* kSwitches[] = {
     "OMK_ACTIVE_POOL_ONLY",     // A/B: a staged body's program looked up in the active pool alone - the old, wrong lookup (engine: walk-in scene)
     "OMK_AUDIO_DEVICE",         // the world's audio device opened in a --frames run too, which never opens it (engine: sdl3)
+    "OMK_BENCH_SHOTS",          // =<dir> the bench writes each step's last frame there (step-NN-WxH.bin, RGB565)
+    "OMK_BENCH_STEPS",          // =2,19,23 the bench runs only those steps (their numbers in the full list)
+    "OMK_BENCH_VARY",           // =NAME=v1,v2 the bench's steps again under each value of that variable
     "OMK_BLOOM",                // run_vulkan: the remaster's bloom at S (engine: bloom and grade)
     "OMK_BODYLOG",              // log: every staged body's line every frame, culled or not (engine: beat handover)
     "OMK_CAMEYE",               // log: the resolved camera eye every frame (camera travel)
@@ -54,6 +57,7 @@ constexpr const char* kSwitches[] = {
     "OMK_GLES_NO_HIGHP",        // GLES: the fragment stage taken for one with no highp float - the upscale refused (engine: gles upscale)
     "OMK_GLES_NO_STATE_CACHE",  // GLES: the draw-state cache off (engine: gles state cache)
     "OMK_GLES_WINDUMP",         // =<path> GLES: the window's own picture written on the last frame (engine: gles overlay)
+    "OMK_GL_FLUSH",             // =N GLES hands its commands to the GPU (glFlush) every N draws - an instrument
     "OMK_GPU_PRESENT_STATS",    // log: the GPU present's counts every 30 frames (engine: gpu present)
     "OMK_GPU_TIMES",            // Vulkan: the GPU's time per pass (shadow, reflection, scene, post), every 60 frames
     "OMK_GRADE",                // =<file.cube> run_vulkan: the remaster's grade (engine: bloom and grade)

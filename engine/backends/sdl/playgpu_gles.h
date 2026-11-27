@@ -11,6 +11,7 @@ namespace omk {
 Renderer* makeGlesRenderer();
 bool glesPresentSurface(Renderer*, const Surface&, int winW, int winH);
 bool glesPresentWorld(Renderer*, int vy, int vh, int frameW, int frameH, int winW, int winH);
+void glesTimerEnd(Renderer*);   // the GPU timer's frame closed, before the swap (`gpuFrameMs`)
 void glesTakeTimings(double out[4]);
 std::string glesFrameReport();
 long glesTakePatches();

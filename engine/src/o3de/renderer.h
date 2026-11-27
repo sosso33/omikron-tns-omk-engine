@@ -464,6 +464,11 @@ public:
     virtual bool bakeDepthTie(const Geometry* /*g*/, std::span<const Draw> /*order*/) { return false; }
     // How many lights a posed draw may carry (`Draw::vertexLights`).
     virtual int maxVertexLights() const { return 0; }
+    // THE GPU'S OWN TIME for a recent frame, ms, from a timer query where the
+    // backend has one (GLES: `GL_EXT_disjoint_timer_query` / `GL_EXT_timer_query`)
+    // - the frame's work with no refresh in it (the Switch's swap waits for
+    // one whatever the interval asked) - or -1 (none, or not yet in)
+    virtual double gpuFrameMs() const { return -1.0; }
     // Whether the backend DRAWS two enhancements the frontend prepares for it:
     // `View::lights` (per-pixel lighting) and `shadowPass` (mapped shadows).
     // The frontend asks at start-up and REFUSES the enhancement when the

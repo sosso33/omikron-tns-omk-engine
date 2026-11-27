@@ -45,7 +45,7 @@ static void swapOrSubmit(omk::Renderer* r) {
         return;
     }
 #endif
-    (void)r;
+    omk::glesTimerEnd(r);   // the frame's GPU time measured without the swap's wait
     SDL_GL_SwapWindow(glWin);
 }
 

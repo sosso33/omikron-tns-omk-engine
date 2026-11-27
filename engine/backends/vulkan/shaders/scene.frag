@@ -637,9 +637,6 @@ void main() {
     // ...and THE SAND'S DUST (`dustAmount` above), on the same batches
     if (lg.dust.x > 0.0 && (pc.fogEnd > pc.fogStart || pc.fogEnd < 0.0) && waterMode != 2)
         c = mix(c, lg.dustColour.rgb, dustAmount(lg.eye.xyz, vWorld, lg.dust));
-    // ...and THE RAIN'S VEILS (`veilAmount` above), on the same batches
-    if (lg.veil.x > 0.0 && (pc.fogEnd > pc.fogStart || pc.fogEnd < 0.0) && waterMode != 2)
-        c = mix(c, lg.veilColour.rgb, veilAmount(lg.eye.xyz, vWorld, lg.veil, lg.veilColour.w));
     // THE FRESNEL (Schlick, F0 0.02 - water's): the water mirrors little
     // looked down into and nearly all at grazing, so `waterStrength` is the
     // GRAZING strength. The plane is level: cos theta is the eye ray's height.
@@ -702,6 +699,13 @@ void main() {
         }
         c += texture(refl, at / rs).rgb * pc.waterStrength * f * wetHere;
     }
+    // THE RAIN'S VEILS (`veilAmount` above), on the fog's batches - LAST: rain
+    // in the AIR between the eye and the surface, over the surface's whole
+    // light (its wet film, ripples, streaks and reflection), as a fog is and
+    // as the GLES screen pass lays it (2026-11-27; before, the film darkened
+    // the veil and the reflection lay over it)
+    if (lg.veil.x > 0.0 && (pc.fogEnd > pc.fogStart || pc.fogEnd < 0.0) && waterMode != 2)
+        c = mix(c, lg.veilColour.rgb, veilAmount(lg.eye.xyz, vWorld, lg.veil, lg.veilColour.w));
     // THE ALPHA, read by the post-pass (`post.frag`, `ao.frag`): 0 on a BODY
     // (`caster`: a character, the shadow map's - posed here or on the CPU),
     // and on the set 1/255 plus its light map's value (the bloom's glow) in

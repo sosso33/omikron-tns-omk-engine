@@ -78,6 +78,29 @@
 #else
 #  include <GLES2/gl2.h>
 #endif
+#if defined(__SWITCH__)
+#  include <EGL/egl.h>   // the timer query's entry points (`GL_EXT_disjoint_timer_query`)
+#endif
+
+// THE GPU TIMER (`Renderer::gpuFrameMs`): a frame between a TIME_ELAPSED
+// query's begin and end, read back two frames later without waiting. The
+// Switch's GLES 2 header names none of it: its context's
+// `GL_EXT_disjoint_timer_query` entry points are fetched at init; the Mac's
+// GL 2.1 has `GL_EXT_timer_query` as calls. Elsewhere: none (-1).
+#if defined(__SWITCH__) || defined(__APPLE__)
+#  define OMK_GLES_TIMER 1
+#  ifndef GL_TIME_ELAPSED_EXT
+#    define GL_TIME_ELAPSED_EXT 0x88BF
+#  endif
+#  ifndef GL_QUERY_RESULT_AVAILABLE_EXT
+#    define GL_QUERY_RESULT_AVAILABLE_EXT 0x8867
+#  endif
+#  ifndef GL_QUERY_RESULT_EXT
+#    define GL_QUERY_RESULT_EXT 0x8866
+#  endif
+#else
+#  define OMK_GLES_TIMER 0
+#endif
 
 // MULTISAMPLED RENDER TARGETS (`todo/enhancements.md` 0) need
 // `glRenderbufferStorageMultisample` and `glBlitFramebuffer`: desktop GL has
@@ -1587,7 +1610,7 @@ private:
     // as a texture where the context samples one, the pass's own target
     // (`colour_` alone), its program
     GLuint depthTex_ = 0, dustFbo_ = 0, dustProg_ = 0;
-    GLint  dustLoc_[6] = {-1, -1, -1, -1, -1, -1};
+    GLint  dustLoc_[8] = {-1, -1, -1, -1, -1, -1, -1, -1};   // ...its uniforms, the veils' two last
     int    depthTexState_ = 0;   // 0 not asked, 1 the context takes one, -1 it does not (or it failed)
     bool   dustDone_ = false;    // this pass's dust applied: the draws after it take their own
 #else
@@ -1629,6 +1652,28 @@ private:
     std::unordered_map<const Geometry*, Vbo> vbo_;
     std::unordered_map<const Geometry*, DepthTie> tie_;
     bool tieOn_ = true;
+    // THE GPU TIMER (`gpuFrameMs`, OMK_GLES_TIMER): a ring of TIME_ELAPSED
+    // queries, a frame from `begin` to the swap, read back when in
+    double gpuMs_ = -1.0;
+    long flushEvery_ = 0, flushCount_ = 0;   // `OMK_GL_FLUSH` (read each frame: the sweep switches it)
+#if OMK_GLES_TIMER
+    using QGen = void (*)(GLsizei, GLuint*);
+    using QBegin = void (*)(GLenum, GLuint);
+    using QEnd = void (*)(GLenum);
+    using QGetU = void (*)(GLuint, GLenum, GLuint*);
+    using QGetU64 = void (*)(GLuint, GLenum, unsigned long long*);
+    QGen qGen_ = nullptr; QBegin qBegin_ = nullptr; QEnd qEnd_ = nullptr; QGetU qGetU_ = nullptr; QGetU64 qGetU64_ = nullptr;
+    static constexpr int kTimerRing = 4;
+    GLuint timerQ_[kTimerRing] = {};
+    bool timerUsed_[kTimerRing] = {};
+    int timerAt_ = 0;
+    bool timerOpen_ = false;
+    void timerInit();
+#endif
+public:
+    double gpuFrameMs() const override { return gpuMs_; }
+    void timerFrameEnd();
+private:
     int  filter_ = 0;        // 0 nearest (the software devices), 1 bilinear (a 3D card), 2 trilinear
     int  aniso_ = 1;         // asked; 1 is off
     int  anisoOn_ = 1;       // what `init` found the context grants (1: none)
@@ -2136,6 +2181,9 @@ bool GlesRenderer::init(int w, int h) {
 
     resolveAnisotropy();
     remasterInitCodecs();   // the pack's block formats (ASTC)
+#if OMK_GLES_TIMER
+    timerInit();            // the GPU timer, where the context has one
+#endif
     if (omk::tieOff()) tieOn_ = false;
 #if defined(__vita__)
     streamOn_ = !omk::envFlag("OMK_NO_STREAM");
@@ -3001,7 +3049,66 @@ void GlesRenderer::begin(const View& view) {
     }
     ++frameNo_;
     if (frameFromPresent_ != presentSeq_) { frameFromPresent_ = presentSeq_; ++frameSeq_; }
+    flushEvery_ = omk::envInt("OMK_GL_FLUSH", 0);
+#if OMK_GLES_TIMER
+    // the frame's GPU time opens here (a frame that never reached the swap
+    // closed first); its slot skipped while its last answer is not read
+    if (qGen_) {
+        if (timerOpen_) timerFrameEnd();
+        if (!timerUsed_[timerAt_]) {
+            qBegin_(GL_TIME_ELAPSED_EXT, timerQ_[timerAt_]);
+            timerOpen_ = true;
+        }
+    }
+#endif
     beginPass(view);
+}
+
+#if OMK_GLES_TIMER
+void GlesRenderer::timerInit() {
+    const char* ext = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
+#if defined(__SWITCH__)
+    if (ext && std::strstr(ext, "GL_EXT_disjoint_timer_query")) {
+        qGen_ = reinterpret_cast<QGen>(eglGetProcAddress("glGenQueriesEXT"));
+        qBegin_ = reinterpret_cast<QBegin>(eglGetProcAddress("glBeginQueryEXT"));
+        qEnd_ = reinterpret_cast<QEnd>(eglGetProcAddress("glEndQueryEXT"));
+        qGetU_ = reinterpret_cast<QGetU>(eglGetProcAddress("glGetQueryObjectuivEXT"));
+        qGetU64_ = reinterpret_cast<QGetU64>(eglGetProcAddress("glGetQueryObjectui64vEXT"));
+    }
+#else
+    if (ext && std::strstr(ext, "GL_EXT_timer_query")) {
+        qGen_ = glGenQueries; qBegin_ = glBeginQuery; qEnd_ = glEndQuery; qGetU_ = glGetQueryObjectuiv;
+        qGetU64_ = reinterpret_cast<QGetU64>(glGetQueryObjectui64vEXT);
+    }
+#endif
+    if (qGen_ && qBegin_ && qEnd_ && qGetU_ && qGetU64_) qGen_(kTimerRing, timerQ_);
+    else qGen_ = nullptr;
+    std::printf("gles: the GPU timer %s\n", qGen_ ? "on - each frame's GPU time, begin to swap (`gpuFrameMs`)"
+                                                  : "absent - the context names no timer query");
+}
+#endif
+
+// ...the frame closed and the oldest answer read, never waited for
+void GlesRenderer::timerFrameEnd() {
+#if OMK_GLES_TIMER
+    if (!qGen_ || !timerOpen_) return;
+    qEnd_(GL_TIME_ELAPSED_EXT);
+    timerOpen_ = false;
+    timerUsed_[timerAt_] = true;
+    timerAt_ = (timerAt_ + 1) % kTimerRing;
+    // the oldest of the ring: answered by now, or left for later
+    const int old = timerAt_;
+    if (timerUsed_[old]) {
+        GLuint ready = 0;
+        qGetU_(timerQ_[old], GL_QUERY_RESULT_AVAILABLE_EXT, &ready);
+        if (ready) {
+            unsigned long long ns = 0;
+            qGetU64_(timerQ_[old], GL_QUERY_RESULT_EXT, &ns);
+            gpuMs_ = static_cast<double>(ns) / 1e6;
+            timerUsed_[old] = false;
+        }
+    }
+#endif
 }
 
 void GlesRenderer::beginPass(const View& view) {
@@ -3362,6 +3469,9 @@ void GlesRenderer::submit(const Draw& d) {
     if (!recording_ || !d.geo || !d.count) return;
     // the opaque draws done: the remaster's dust over them, once a pixel
     if (d.blend != Blend::Opaque && remasterDustPassDue()) remasterDustPass(&d);
+    // `OMK_GL_FLUSH=N`, an INSTRUMENT: the commands handed to the GPU every N
+    // draws, so it starts on the frame while the CPU is still recording it
+    if (flushEvery_ > 0 && ++flushCount_ % flushEvery_ == 0) glFlush();
     PoseVbo* pvb = nullptr;
     bool posed = usePosed(d);
     // a LIT plain draw reads its normals from a buffer of their own
@@ -4208,6 +4318,10 @@ bool glesRetarget(Renderer* r, int samples, int ss, float up) {
 void glesSetStateCache(Renderer* r, bool on) {
     if (auto* g = dynamic_cast<GlesRenderer*>(r)) g->setStateCache(on);
 }
+void glesTimerEnd(Renderer* r) {
+    if (r) static_cast<GlesRenderer*>(r)->timerFrameEnd();
+}
+
 bool glesPresentSurface(Renderer* r, const Surface& s, int winW, int winH) {
     return static_cast<GlesRenderer*>(r)->presentSurface(s, winW, winH);
 }

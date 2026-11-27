@@ -735,6 +735,30 @@ a median that moved 27.3 -> 33.2 with the CPU's share smaller: the
 refresh's steps, not a cost added). Checked: engine: gles pose, engine:
 vulkan pose, engine: body light, engine: pose equivalence.
 
+**THE REMASTER'S 3D RAIN, ITS VEILS** (2026-11-27). The sweep now reads
+the GPU's own time (`Renderer::gpuFrameMs`, a TIME_ELAPSED query from the
+frame's `begin` to the swap - `GL_EXT_disjoint_timer_query`, fetched with
+`eglGetProcAddress`; the Mac's `GL_EXT_timer_query`): the Switch's swap
+waits for a refresh whatever the interval asked, so a frame's time is 16.7
+or 33.3 and hides what a part costs. Qalisar, GPU ms a frame: original 9.0,
+remaster 12.6, its rain 16.3 - and the rain's VEILS alone 2.9 of it (13.4
+without them; every other part 0.0-0.4). The veils (`veilAmount`, three
+noises a fragment) were computed in every opaque draw, a pixel paying once
+a layer: they now go in the DUST's screen pass (`remasterDustPass`, once a
+pixel from the depth texture, the two in one blend), the opaque draws
+leaving theirs. And LAST, in the pass and in the draws (GLES and Vulkan's
+`scene.frag`): rain in the AIR, over the surface's whole light - before,
+the wet film darkened the veil and the reflection lay over it; on the M1
+the difference under the drops' own noise (mean 0.26 against 0.17 between
+two runs). The rain's GPU 16.3 -> **14.3 ms**, its median 33.3 -> 22.7.
+NOT YET 60: frames still miss the refresh - the remaster's DRY frame too,
+its p90 33.4 at GPU ~13 - and handing the commands over mid-frame
+(`OMK_GL_FLUSH=16/64/256`, an instrument) moved nothing beyond the runs'
+own scatter. The GPU's ~13-14 ms is most of the 16.7; what is left lies
+past the timer (the swap, the compositor). Instruments added: the timer,
+`OMK_BENCH_STEPS` (a few steps), `OMK_BENCH_VARY=NAME=v1,v2` (the steps
+again under each value), `OMK_BENCH_SHOTS` (each step's frame).
+
 **THE DUST ONCE A PIXEL, measured** (Jaunpur, the Switch's tier, the
 preload off): the sand 30.8 ms, its dust off 26.3 - the dust ~4.5 ms
 against ~13 drawn per draw (33.3 / 20.5). The frames sit on the refresh's

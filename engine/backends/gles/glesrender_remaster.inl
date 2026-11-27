@@ -613,6 +613,13 @@ void GlesRenderer::remasterInitCodecs() {
 // draws' own did, the bloom's light-map alpha untouched. Not with MSAA (the
 // samples' depth is another buffer's) nor in the water's reflection;
 // elsewhere the draws keep their own. `OMK_NO_DUST_PASS=1` keeps them always.
+// THE RAIN'S VEILS TOO (2026-11-27): `kVeilGlsl`'s `veilAmount`, three more
+// noises a fragment in every opaque draw, held Qalisar's remaster rain at
+// 33.3 ms on the Switch (its GPU 16.3 ms a frame, 13.4 without them); the
+// same pass lays them over the pixel after the dust - last, as the draws'
+// own now do (after the wet surface's film, ripples, streaks and reflection).
+// The two in one blend: dust `ad` then veil `av` over `c` is
+// `c (1-ad)(1-av) + D ad (1-av) + V av`.
 constexpr const char* kDustPassFrag = R"(
 #ifdef GL_ES
 precision highp float;
@@ -622,6 +629,8 @@ uniform mat4 uInv;
 uniform vec3 uEye;
 uniform vec4 uDust;
 uniform vec3 uDustColour;
+uniform vec4 uVeil;
+uniform vec4 uVeilColour;
 varying vec2 vUv;
 )";
 constexpr const char* kDustPassMain = R"(
@@ -629,7 +638,12 @@ void main() {
     float z = texture2D(uDepth, vUv).r;
     if (z >= 1.0) discard;   // nothing drawn there: no draw's dust either
     vec4 p = uInv * vec4(vUv * 2.0 - 1.0, z * 2.0 - 1.0, 1.0);
-    gl_FragColor = vec4(uDustColour, dustAmount(uEye, p.xyz / p.w, uDust));
+    vec3 w = p.xyz / p.w;
+    float ad = uDust.x > 0.0 ? dustAmount(uEye, w, uDust) : 0.0;
+    float av = uVeil.x > 0.0 ? veilAmount(uEye, w, uVeil, uVeilColour.w) : 0.0;
+    float a = 1.0 - (1.0 - ad) * (1.0 - av);
+    if (a <= 0.0) discard;
+    gl_FragColor = vec4((uDustColour * ad * (1.0 - av) + uVeilColour.rgb * av) / a, a);
 }
 )";
 
@@ -671,23 +685,23 @@ void GlesRenderer::remasterDepthTextureFailed() {
 }
 
 bool GlesRenderer::remasterDustPassDue() const {
-    return depthTex_ && depthTexState_ > 0 && !dustDone_ && !reflectingNow_ && !msFbo_ && dust_[0] > 0.0f &&
-           (fog_ || mistOn_);
+    return depthTex_ && depthTexState_ > 0 && !dustDone_ && !reflectingNow_ && !msFbo_ &&
+           (dust_[0] > 0.0f || veil_[0] > 0.0f) && (fog_ || mistOn_);
 }
 
 void GlesRenderer::remasterDustPass(const Draw*) {
     dustDone_ = true;
     if (!dustProg_) {
-        const std::string frag = std::string(kDustPassFrag) + kDustGlsl + kDustPassMain;
+        const std::string frag = std::string(kDustPassFrag) + kDustGlsl + kVeilGlsl + kDustPassMain;
         dustProg_ = link(kPostVert, frag.c_str(), {{0, "aPos"}});
         if (!dustProg_) {
             std::printf("gles: the dust's screen pass did not build - the dust in each draw\n");
             depthTexState_ = -1;
             return;
         }
-        const char* names[6] = {"uDepth", "uInv", "uEye", "uDust", "uDustColour", "uSrcInv"};
-        for (int k = 0; k < 6; ++k) dustLoc_[k] = glGetUniformLocation(dustProg_, names[k]);
-        std::printf("gles: the dust's screen pass - once a pixel, from the depth\n");
+        const char* names[8] = {"uDepth", "uInv", "uEye", "uDust", "uDustColour", "uSrcInv", "uVeil", "uVeilColour"};
+        for (int k = 0; k < 8; ++k) dustLoc_[k] = glGetUniformLocation(dustProg_, names[k]);
+        std::printf("gles: the dust's and the veils' screen pass - once a pixel, from the depth\n");
         omk::event("remaster.dustpass", {{"backend", "gles"}});
     }
     // the frame's clip space back to the world: the inverse of `mvp_`
@@ -729,6 +743,8 @@ void GlesRenderer::remasterDustPass(const Draw*) {
     glUniform3f(dustLoc_[2], waterEye_[0], waterEye_[1], waterEye_[2]);
     glUniform4f(dustLoc_[3], dust_[0], dust_[1], dust_[2], dust_[3]);
     glUniform3f(dustLoc_[4], dustColour_[0], dustColour_[1], dustColour_[2]);
+    glUniform4f(dustLoc_[6], veil_[0], veil_[1], veil_[2], veil_[3]);
+    glUniform4f(dustLoc_[7], veilColour_[0], veilColour_[1], veilColour_[2], veilColour_[3]);
     glBindBuffer(GL_ARRAY_BUFFER, quad_);
     for (GLuint a = 1; a <= kAttrPhase; ++a) glDisableVertexAttribArray(a);
     glEnableVertexAttribArray(0);
@@ -881,7 +897,9 @@ void GlesRenderer::remasterWaterUniforms(const Draw& d, const SceneLoc& L, UniCa
             U.streakFrame = frameNo_;
         }
         // ...and THE RAIN'S VEILS (`View::veil`), not in the reflection's pass
-        const float v0 = reflectingNow_ ? 0.0f : veil_[0];
+        // (an opaque draw leaves them to the screen pass when that is due, as
+        // the dust; `w`, the puddles' strength, kept)
+        const float v0 = reflectingNow_ || (d.blend == Blend::Opaque && remasterDustPassDue()) ? 0.0f : veil_[0];
         if (set(!uv || U.veil[0] != v0 || U.veil[1] != veil_[1] || U.veil[2] != veil_[2] || U.veil[3] != veil_[3])) {
             glUniform4f(L.veil, v0, veil_[1], veil_[2], veil_[3]);   // w the PUDDLES' strength
             U.veil[0] = v0; U.veil[1] = veil_[1]; U.veil[2] = veil_[2]; U.veil[3] = veil_[3];

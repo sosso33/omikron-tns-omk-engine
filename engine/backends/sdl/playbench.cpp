@@ -35,7 +35,9 @@
 #include <chrono>
 #include <cstdarg>
 #include <cstdio>
+#include <cstring>
 #include <functional>
+#include <fstream>
 #include <map>
 #include <string>
 #include <vector>
@@ -91,6 +93,7 @@ struct PlayState::BenchRun {
     // runs inside it, outside any frame the pacer measures) and the frame after
     double applyMs = 0.0, switchMs = 0.0, settleMax = 0.0, settleSum = 0.0;
     std::vector<double> work;
+    std::vector<double> gpu;   // the renderer's GPU time a frame, where it has a timer (`gpuFrameMs`)
     std::map<std::string, double> sections;
     // the run's own settings, every step's start
     std::map<std::string, float> strengths;
@@ -271,6 +274,36 @@ void PlayState::benchSetup() {
         }
         if (b.switchable) add(kind + ", original", [this, rain] { rain(); return remasterShow(false, "the bench"); });
     }
+    // `OMK_BENCH_STEPS=2,19,23`: only those steps (their numbers in the full
+    // list) - a quick reading of a few
+    if (const char* only = omk::envStr("OMK_BENCH_STEPS"); only && *only) {
+        const std::string list = std::string(",") + only + ",";
+        std::vector<BenchRun::Step> kept;
+        for (std::size_t k = 0; k < b.steps.size(); ++k)
+            if (list.find("," + std::to_string(k + 1) + ",") != std::string::npos) kept.push_back(b.steps[k]);
+        b.steps = std::move(kept);
+    }
+    // `OMK_BENCH_VARY=NAME=v1,v2,...`: the steps again under each value of an
+    // instrument's variable (`omk::envOverride`), in one launch
+    if (const char* vary = omk::envStr("OMK_BENCH_VARY"); vary && std::strchr(vary, '=')) {
+        const std::string spec = vary;
+        const std::string name = spec.substr(0, spec.find('='));
+        std::vector<std::string> values;
+        std::string v;
+        for (const char c : spec.substr(spec.find('=') + 1) + ",") {
+            if (c != ',') { v += c; continue; }
+            if (!v.empty()) values.push_back(v);
+            v.clear();
+        }
+        std::vector<BenchRun::Step> varied;
+        for (const auto& value : values)
+            for (const auto& s : b.steps)
+                varied.push_back({s.name + " [" + name + "=" + value + "]", [name, value, fn = s.apply] {
+                                      omk::envOverride(name.c_str(), value.c_str());
+                                      return fn();
+                                  }});
+        b.steps = std::move(varied);
+    }
     b.say("%zu steps", b.steps.size());
 }
 
@@ -307,6 +340,7 @@ void PlayState::benchFrame(double workMs) {
         } else {
             b.work.push_back(workMs);
             b.drops = std::max(b.drops, weather.count());
+            if (world_ && world_->gpuFrameMs() >= 0.0) b.gpu.push_back(world_->gpuFrameMs());
             for (std::size_t k = 1; k < phases.marks.size(); ++k)
                 b.sections[phases.marks[k].first] += (phases.marks[k].second - phases.marks[k - 1].second) * 1000.0;
         }
@@ -329,12 +363,30 @@ void PlayState::benchFrame(double workMs) {
             top += s;
         }
         const double med = percentile(b.work, 0.5), p90 = percentile(b.work, 0.9), mx = percentile(b.work, 1.0);
-        b.say("step %zu \"%s\": work median %.1f ms (%.0f fps), p90 %.1f, max %.1f; its switch %.0f ms, "
+        char gpuText[48] = "";
+        if (!b.gpu.empty())
+            std::snprintf(gpuText, sizeof gpuText, "; GPU %.1f ms (p90 %.1f)", percentile(b.gpu, 0.5), percentile(b.gpu, 0.9));
+        b.say("step %zu \"%s\": work median %.1f ms (%.0f fps), p90 %.1f, max %.1f%s; its switch %.0f ms, "
               "settling %.0f ms in all (max %.0f); weather drops %d; sections (ms a frame): %s",
-              b.at + 1, b.steps[b.at].name.c_str(), med, med > 0.0 ? 1000.0 / med : 0.0, p90, mx, b.switchMs,
+              b.at + 1, b.steps[b.at].name.c_str(), med, med > 0.0 ? 1000.0 / med : 0.0, p90, mx, gpuText, b.switchMs,
               b.settleSum, b.settleMax, b.drops, top.c_str());
         omk::event("bench.step", {{"step", b.steps[b.at].name}, {"median", med}, {"p90", p90}, {"max", mx},
                                   {"switch", b.switchMs}, {"settle", b.settleSum}, {"drops", b.drops}});
+        // `OMK_BENCH_SHOTS=<dir>`: each step's last frame, raw LE RGB565
+        // (`step-NN-WxH.bin`), to lay two steps' pictures side by side
+        if (const char* dir = omk::envStr("OMK_BENCH_SHOTS"); dir && *dir && world_) {
+            const omk::Surface& s = world_->readback();
+            char name[64];
+            std::snprintf(name, sizeof name, "/step-%02zu-%dx%d.bin", b.at + 1, s.w, s.h);
+            const std::string path = std::string(dir) + name;
+            if (s.w > 0 && omk::safeOutputPath(path)) {
+                std::ofstream o(path, std::ios::binary);
+                for (const auto v : s.px) {
+                    const char b2[2] = {static_cast<char>(v & 0xFF), static_cast<char>(v >> 8)};
+                    o.write(b2, 2);
+                }
+            }
+        }
     }
     // the next step that applies
     for (;;) {
@@ -355,6 +407,7 @@ void PlayState::benchFrame(double workMs) {
         b.say("step %zu \"%s\": not this run's - skipped", b.at + 1, b.steps[b.at].name.c_str());
     }
     b.work.clear();
+    b.gpu.clear();
     b.sections.clear();
     b.drops = 0;
     b.switchMs = b.settleMax = b.settleSum = 0.0;
