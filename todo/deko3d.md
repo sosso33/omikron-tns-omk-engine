@@ -354,9 +354,16 @@ backend's own to follow (D3).
   * THE SECOND REFLECTING LEVEL (`drawTwoReflections`, `[Remaster]
     reflections = 2`, the card's preset): Vulkan's - a second reflected pass
     into the image's top-right quarter (its clear scissored to it, the
-    first's kept), a level-2 floor's run bit 22. No occlusion query yet
-    (`secondLevelSeen` -1: the frontend draws the level whenever it is
-    found; GLES and Vulkan skip it while hidden).
+    first's kept), a level-2 floor's run bit 22.
+  * ITS OCCLUSION TEST (`secondLevelSeen`, Vulkan's and GLES's probe): in
+    a floors' frame the second level's runs drawn again after the scene,
+    depth LEQUAL, neither depth nor colour written, the samples counted
+    (`DkCounter_SamplesPassed` reset, then reported into the slot's stamps
+    report 14) and read when the slot comes round - two frames late with
+    two in flight, Vulkan's one. On the console: the LAMP STREET draws the
+    second pass once (frame 2, the level's fade still 0) and never again -
+    Vulkan never; the RAISED WALK draws it from frame 2 to the end, one
+    frame off at 3 while the camera settles - Vulkan from frame 3.
     * Qalisar's raised walk (`15000,-140,-10500,270`): remaster 28.0 ms
       (36 fps) with both levels, floors off 19.4 - the two 8.6 ms.
     * The proof is `engine: floor levels`' own: on the LAMP STREET

@@ -464,7 +464,8 @@ private:
         DkFence fence{};
         bool pending = false;       // its last frame's fence not waited for yet
         std::vector<Alloc> dead;    // retired while it was recorded: freed when it comes round
-        Alloc stamps;               // the GPU timer's and the ladder's reports
+        Alloc stamps;               // the GPU timer's and the ladder's reports (and 14: the level's query)
+        bool levelIssued = false;   // its frame counted the second level's floors' samples
         unsigned stamped = 0, rungs = 0;
         Alloc surfStage;
         Alloc overStage;            // the overlay's two planes: C (16 bits a pixel), then M
@@ -491,6 +492,14 @@ private:
     float waterWant_ = 0.0f, waterStrength_ = 0.0f, waterY_ = 0.0f;
     bool inFrame_ = false, reflectingNow_ = false, waterNow_ = false, reflLive_ = false, reflHalf_ = false;
     bool second_ = false, twoRefl_ = false;   // the second level's pass; a frame with two
+    // THE SECOND LEVEL'S OCCLUSION TEST (Vulkan's and GLES's probe): its
+    // floors drawn again after the scene, nothing written, the samples that
+    // passed counted (`DkCounter_SamplesPassed`, the slot's report 14) and
+    // read when the slot comes round - 1 seen, 0 hidden, -1 not known
+    static constexpr int kLevelReport = 14;
+    bool levelProbe_ = false;
+    int levelSeen_ = -1;
+    int secondLevelSeen() override { return levelSeen_; }
     const omk::View* secondView_ = nullptr;
     std::span<const omk::Draw> secondAbove_;
     float secondY_ = 0.0f;
@@ -986,6 +995,11 @@ void DekoRenderer::readStamps() {
         }
     }
     sl.rungs = 0;
+    if (sl.levelIssued) {
+        const auto* q = static_cast<const volatile std::uint64_t*>(sl.stamps.cpu());
+        levelSeen_ = q[2 * kLevelReport] > 0 ? 1 : 0;   // the report's first word, the count
+        sl.levelIssued = false;
+    }
     if ((stamped_ & 0x9u) != 0x9u) { stamped_ = 0; return; }
     const auto* r = static_cast<const volatile std::uint64_t*>(sl.stamps.cpu());
     const std::uint64_t t0 = r[1], t1 = r[3], t2 = r[5], t3 = r[7];   // each report's second word
@@ -1412,6 +1426,7 @@ void DekoRenderer::submitOne(const omk::Draw& d, bool posed, uint32_t poseOff) {
     // THE BLEND - `omk::blendRule`, Vulkan's three pipelines as three states
     int k = d.blend == omk::Blend::Opaque ? 0 : d.blend == omk::Blend::Add ? 1 : 2;
     if (probe_ == 7 && lastBlend_ >= 0) k = lastBlend_;   // the probe: the first state kept
+    if (levelProbe_) k = lastBlend_;                       // the level's query: its own state kept
     if (k != lastBlend_) {
         const omk::Blend kModes[3] = {omk::Blend::Opaque, omk::Blend::Add, omk::Blend::Mul};
         const omk::BlendRule rule = omk::blendRule(kModes[k]);
@@ -1950,6 +1965,34 @@ bool DekoRenderer::drawWaterScene(const omk::View& v, const omk::View& refl, std
     begin(v);
     waterStrength_ = strength;
     for (const auto& d : scene) submit(d);
+    // ...then the SECOND level's floors again, counted (`secondLevelSeen`):
+    // after the whole scene, so what covers them counts whatever order it was
+    // drawn in - depth LEQUAL, neither depth nor colour written
+    bool marked = false;
+    for (const auto& d : scene) marked |= d.reflectPlane == 1;
+    if (water.empty() && marked) {
+        DkColorWriteState cw;
+        dkColorWriteStateDefaults(&cw);
+        dkColorWriteStateSetMask(&cw, 0, 0);
+        dkCmdBufBindColorWriteState(cb_, &cw);
+        DkDepthStencilState ds;
+        dkDepthStencilStateDefaults(&ds);
+        ds.depthTestEnable = 1;
+        ds.depthWriteEnable = 0;
+        ds.depthCompareOp = DkCompareOp_Lequal;
+        dkCmdBufBindDepthStencilState(cb_, &ds);
+        lastBlend_ = 3;   // (a state of its own: `submitOne` keeps it)
+        levelProbe_ = true;
+        dkCmdBufResetCounter(cb_, DkCounter_SamplesPassed);
+        for (const auto& d : scene)
+            if (d.reflectPlane == 1) submit(d);
+        dkCmdBufReportCounter(cb_, DkCounter_SamplesPassed, cur().stamps.gpu() + 16 * kLevelReport);
+        cur().levelIssued = true;
+        levelProbe_ = false;
+        dkColorWriteStateDefaults(&cw);
+        dkCmdBufBindColorWriteState(cb_, &cw);
+        lastBlend_ = -1;
+    }
     waterNow_ = true;
     for (const auto& d : water) submit(d);
     waterNow_ = false;
