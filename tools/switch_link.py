@@ -178,7 +178,14 @@ def main():
         args = args + ["--recv"]
         pt = threading.Thread(target=lambda: prc.__setitem__(0, push_files(a.push, a.wait)))
         pt.start()
-    send_nro(a.address, a.nro, a.path, args)
+    try:
+        send_nro(a.address, a.nro, a.path, args)
+    except OSError as e:
+        # no netloader there (not opened with Y in hbmenu, or closed again):
+        # said at once, not after the output's wait
+        print(f"switch_link: the console's netloader did not answer at {a.address} ({e}) - "
+              "press Y in hbmenu and try again", file=sys.stderr, flush=True)
+        os._exit(2)
     if pt:
         pt.join()
     t.join()

@@ -783,11 +783,34 @@ constexpr float kTieLoserPhase = 8192.0f;
 constexpr GLuint kAttrPos = 0, kAttrUV = 1, kAttrCol = 2, kAttrPhase = 3, kAttrSlot = 4,
                  kAttrNormal = 5;
 // the lights a posed body may carry (`uLight`); a body reached by more is lit
-// on the CPU by the frontend
+// on the CPU by the frontend. SIXTEEN, Vulkan's (`kPoseLights`), where the
+// program has the room: under the remaster's emitters' lights Qalisar's
+// walkers take ~14 each, and at 8 thirty-one of thirty-three fell to the
+// CPU's posing and lighting - 1.1 ms a frame on the M1, ~7 on the Switch
+// (2026-11-27). The Vita keeps 8 (its program's uniforms untried at 16).
+#if defined(__vita__)
 constexpr int kVertexLights = 8;
+#else
+constexpr int kVertexLights = 16;
+#endif
+// ...written into a posing program's source (it says 8: `uLight[16]`, the loop)
+std::string vertexLightsFit(const char* src) {
+    std::string s = src;
+    const auto swap = [&](const std::string& from, const std::string& to) {
+        const auto at = s.find(from);
+        if (at == std::string::npos) { std::fprintf(stderr, "gles: posing source lacks '%s'\n", from.c_str()); return; }
+        s.replace(at, from.size(), to);
+    };
+    swap("uniform vec4  uLight[16];", "uniform vec4  uLight[" + std::to_string(2 * kVertexLights) + "];");
+    swap("for (int i = 0; i < 8; ++i) {\n        if (float(i) >= uLightCount) break;",
+         "for (int i = 0; i < " + std::to_string(kVertexLights) + "; ++i) {\n        if (float(i) >= uLightCount) break;");
+    return s;
+}
 // a posed body's meshes, one affine (four vec4 rows of `uPose`, three used) each: Kay'l
 // has 20, a crowd skeleton 19; a body with more is posed here on the CPU
 constexpr int kPoseSlots = 32;
+// an overlay plane that changed almost whole goes up whole, unhashed, this many frames
+constexpr int kWholeFrames = 15;
 
 // ---- THE INTERFACE AS AN OVERLAY (`todo/vita-port.md` G6 step 2) ----------
 //
@@ -1597,6 +1620,7 @@ private:
     std::vector<PackImage> packDecode(std::span<const Texture* const> ts) const;
     static bool gpuBlocks(const PackBlocks& z);   // `z` holds blocks the GL takes as they are (ASTC or BC)
     static bool uploadBlocks(const PackBlocks& z, bool mips);   // into the bound texture; false: no whole chain
+    int maskWhole_ = 0, surfWhole_ = 0;   // frames a plane still goes up whole (`presentOverlay`)
     int surfW_ = 0, surfH_ = 0;
 
     std::vector<Tex> tex_;
@@ -1685,6 +1709,10 @@ bool GlesRenderer::linkScene() {
     const char* vPosedX = kPosedVertX;
     const char* vPosed = kPosedVert;
     remasterSources(pointLit, sceneFragX, sceneFrag, vSceneX, vScene, vPosedX, vPosed);
+    // the posing programs with the platform's light count (`kVertexLights`)
+    const std::string vPosedXFit = vertexLightsFit(vPosedX), vPosedFit = vertexLightsFit(vPosed);
+    vPosedX = vPosedXFit.c_str();
+    vPosed = vPosedFit.c_str();
     if (wantPixLights_ || wantShadowMap_) {
         prog_ = link(vSceneX, sceneFragX, {{kAttrPos, "aPos"}, {kAttrUV, "aUV"},
                                                 {kAttrCol, "aCol"}, {kAttrPhase, "aPhase"},
@@ -3963,7 +3991,7 @@ bool GlesRenderer::presentOverlay(const Surface& s, const unsigned char* mask, c
     const int bw = (s.w + nb - 1) / nb;
     const auto sync = [&](GLuint tex, const unsigned char* cur, std::vector<std::uint32_t>& last,
                           int bpp, GLenum fmt, GLenum type, const unsigned char* rows,
-                          std::vector<unsigned char>& wasFlagged) {
+                          std::vector<unsigned char>& wasFlagged, int& wholeLeft) {
         glBindTexture(GL_TEXTURE_2D, tex);
         const std::size_t rowBytes = static_cast<std::size_t>(s.w) * bpp;
         const std::size_t perRow = static_cast<std::size_t>(nb) * 2;
@@ -3985,6 +4013,25 @@ bool GlesRenderer::presentOverlay(const Surface& s, const unsigned char* mask, c
             return m;
         };
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+#if !defined(__vita__)
+        // A PLANE THAT CHANGES ALMOST WHOLE every frame - the city's 2D rain
+        // and snow over all of it - goes up whole for `kWholeFrames` frames,
+        // its rows not hashed (the hash read the whole plane to find that
+        // nearly every row had moved: on the Switch most of a rain frame's 5.9
+        // ms of present, 2026-11-27). The frame after, every row hashed afresh
+        // and sent once more, so no row the hash last saw can stay stale.
+        if (wholeLeft > 0 && last.size() == static_cast<std::size_t>(s.h) * perRow) {
+            if (--wholeLeft == 0) {
+                for (int y = 0; y < s.h; ++y) changedBlocks(y, true);
+                wasFlagged.assign(static_cast<std::size_t>(s.h), 1);
+            }
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, s.w, s.h, fmt, type, cur);
+            overlayRows_ += s.h;
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+            return;
+        }
+#endif
+        const long rowsBefore = overlayRows_;
         if (last.size() != static_cast<std::size_t>(s.h) * perRow) {
             glTexImage2D(GL_TEXTURE_2D, 0, fmt, s.w, s.h, 0, fmt, type, cur);
             gpuTexture("interface", tex, static_cast<long long>(bpp) * s.w * s.h);
@@ -4052,12 +4099,15 @@ bool GlesRenderer::presentOverlay(const Surface& s, const unsigned char* mask, c
 #endif
             }
             flush();
+#if !defined(__vita__)
+            if ((overlayRows_ - rowsBefore) * 4 > static_cast<long>(s.h) * 3) wholeLeft = kWholeFrames;
+#endif
         }
         glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
     };
-    sync(maskTex_, mask, lastMask_, 1, GL_LUMINANCE, GL_UNSIGNED_BYTE, maskRows, maskFlagged_);
+    sync(maskTex_, mask, lastMask_, 1, GL_LUMINANCE, GL_UNSIGNED_BYTE, maskRows, maskFlagged_, maskWhole_);
     sync(surfTex_, reinterpret_cast<const unsigned char*>(s.px.data()), lastOverlay_, 2, GL_RGB,
-         GL_UNSIGNED_SHORT_5_6_5, nullptr, surfFlagged_);
+         GL_UNSIGNED_SHORT_5_6_5, nullptr, surfFlagged_, surfWhole_);
     surfW_ = s.w; surfH_ = s.h;
     const double t1 = glesClockMs();
     g_glesMs[2] += t1 - t0;

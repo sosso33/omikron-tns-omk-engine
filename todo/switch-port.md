@@ -700,6 +700,23 @@ snowing 16.6 (31.2), its 2D snow under the remaster 16.7 (41.6), the
 original snowing 16.6 (26.5). The RESTAURANT: remaster 16.6 (20.0) - every
 one at the swap's floor.
 
+**THE TWO SMALL GAINS** (2026-11-27, Qalisar's stand, a short sweep):
+* THE CROWD under the emitters' lights: a walker reached by more lights
+  than the posing program carries is posed and lit on the CPU, and GLES
+  carried 8 - Qalisar's walkers take ~14 each with the neons, so on the M1
+  2 of 33 stayed on the GPU (`ped light` 1.1 ms). GLES now carries 16,
+  Vulkan's `kPoseLights` (the Vita keeps 8; `vertexLightsFit` writes the
+  count into the posing sources): 24 of 33 on the GPU, 0.5 ms on the M1. On
+  the Switch the crowd's section 8.1 -> 6.5 ms and the remaster 19.8 ->
+  **16.7** (the swap's floor). The lighting is the same function either
+  way (`engine: gles pose`).
+* THE OVERLAY under the 2D rain: a plane whose rows changed past three
+  quarters goes up WHOLE, unhashed, for `kWholeFrames` (15) frames, then
+  one frame hashes every row afresh and sends all (no row the hash saw last
+  can stay stale); not on the Vita (its own copy path). "texture upload"
+  8.3 -> **2.5 ms** a rain frame on the Switch (1.5 -> 0.8 on the M1); the
+  remaster with the original's rain 30.1 -> **23.1 ms**.
+
 **THE DUST ONCE A PIXEL, measured** (Jaunpur, the Switch's tier, the
 preload off): the sand 30.8 ms, its dust off 26.3 - the dust ~4.5 ms
 against ~13 drawn per draw (33.3 / 20.5). The frames sit on the refresh's
