@@ -91,7 +91,7 @@ constexpr uint32_t kSsboPose = 12;                                   // scene.ve
 // the fixed image descriptors; a pool texture takes the next free one
 enum : uint32_t { kImgWhite = 0, kImgBlack = 1, kImgFlat = 2, kImgColour = 3, kImgSurface = 4,
                   kImgOverC = 5, kImgOverM = 6, kImgEasu = 7, kImgPostSrc = 8, kImgGlow0 = 9, kImgGlow1 = 10,
-                  kImgLut = 11, kImgFirst = 16 };
+                  kImgLut = 11, kImgShadow = 12, kImgFirst = 16 };
 // the samplers: the pool's filter (0 nearest - the original's software
 // devices - 1 bilinear, its 3D cards'), and the present's nearest clamp
 enum : uint32_t { kSampNearest = 0, kSampLinear = 1, kSampClamp = 2, kSampTrilinear = 3, kSampLinearClamp = 4,
@@ -235,6 +235,10 @@ public:
     void begin(const omk::View& v) override;
     void submit(const omk::Draw& d) override;
     void end() override;
+    // THE MAPPED SHADOW (D4d, Vulkan's `shadowPass`): the characters' depth
+    // from the light into a 1024x1024 map, before the frame's own pass
+    void shadowPass(const omk::View& v, std::span<const omk::Draw> casters) override;
+    bool drawsShadowMap() const override { return true; }
     const omk::Surface& readback() override;
     omk::RasterStats stats() const override { return st_; }
     const char* name() const override { return "deko3d"; }
@@ -246,7 +250,7 @@ public:
     unsigned takes() const override {
         return omk::kTakesTextureFilter | omk::kTakesTrilinear | omk::kTakesPixelLights | omk::kTakesWater |
                omk::kTakesBodyTint | omk::kTakesEmitterLights | omk::kTakesMist | omk::kTakesUpscale |
-               omk::kTakesBloom | omk::kTakesGrade;
+               omk::kTakesBloom | omk::kTakesGrade | omk::kTakesAnisotropy | omk::kTakesShadowMap;
     }
     bool setTextureFilter(int mode) override {
         if (dev_) return false;   // the samplers exist - `retexture` moves it later
@@ -257,14 +261,26 @@ public:
     // moved, every texture dropped - the frame hands the pool over again,
     // from the pack or as shipped (Vulkan's `retexture`)
     bool retexture(int filter, int aniso) override {
-        (void)aniso;   // (no anisotropy here yet)
         filter_ = filter < 1 ? 0 : filter < 2 ? 1 : 2;
+        aniso_ = aniso < 1 ? 1 : aniso > 16 ? 16 : aniso;
         if (!dev_) return true;
         poolTextures({});
-        std::printf("deko3d: retextured - %s; every texture dropped, uploaded again\n",
-                    filter_ == 0 ? "nearest" : filter_ == 1 ? "bilinear" : "trilinear");
+        // the samplers rewritten with no frame in flight reading them
+        dkQueueWaitIdle(queue_);
+        markIdle();
+        writeSamplers();
+        std::printf("deko3d: retextured - %s, anisotropy %dx; every texture dropped, uploaded again\n",
+                    filter_ == 0 ? "nearest" : filter_ == 1 ? "bilinear" : "trilinear", anisotropy());
         return true;
     }
+    // THE ANISOTROPY (D4d, GLES's and Vulkan's rule): asked before `init`, and
+    // only behind trilinear - the sampler's, Maxwell's own up to 16x
+    bool setAnisotropy(int n) override {
+        if (dev_) return false;
+        aniso_ = n < 1 ? 1 : n > 16 ? 16 : n;
+        return true;
+    }
+    int anisotropy() const { return filter_ >= 2 ? aniso_ : 1; }
     bool takesPack() const override { return true; }
     // THE BLOOM and THE GRADE (D4c, Vulkan's post-pass - `post.frag`): any time,
     // no target to remake; the glow only where a draw bound a light map
@@ -344,6 +360,15 @@ private:
     DkImageView postSrcView_{}, glowView_[2]{};
     int gw_ = 0, gh_ = 0, lutMadeN_ = 0;
     DkShader shPost_{};
+    // the mapped shadow: its depth map, its vertex module, this frame's block
+    static constexpr int kShadowSide = 1024;   // Vulkan's
+    DkImage shadow_{};
+    Alloc shadowMem_;
+    DkImageView shadowView_{};
+    DkShader shShadow_{};
+    bool shadowMade_ = false, shadowLive_ = false;
+    float shadowMvp_[16]{};
+    float shadowStrength_ = 0.0f;
     uint32_t boundEmis_ = kImgBlack;
     void pushView(const omk::View& v);
     // the buffer this frame draws `g` from, its contents current - or nullptr
@@ -495,6 +520,8 @@ private:
     std::vector<uint32_t> freeSlots_;
     uint32_t nextSlot_ = kImgFirst;
     int filter_ = 0;
+    int aniso_ = 1;   // asked; 1 is off
+    void writeSamplers();
 
     // ---- the targets
     int w_ = 0, h_ = 0;
@@ -588,6 +615,26 @@ void DekoRenderer::addCmdMem(void* user, DkCmdBuf cb, size_t minReq) {
     if (!a) return;   // the device reports the overflow itself
     dkCmdBufAddMemory(cb, a.mb, a.off, a.size);
     self->cur().extra.push_back(a);
+}
+
+void DekoRenderer::writeSamplers() {
+    auto* sd = static_cast<DkSamplerDescriptor*>(sampDesc_.cpu());
+    DkSampler s;
+    dkSamplerDefaults(&s);   // nearest, REPEAT - `raster.cpp`'s `% t.width`
+    dkSamplerDescriptorInitialize(&sd[kSampNearest], &s);
+    s.minFilter = s.magFilter = DkFilter_Linear;
+    dkSamplerDescriptorInitialize(&sd[kSampLinear], &s);
+    // TRILINEAR (the enhancement, `setTextureFilter(2)`): the pack's block
+    // files carry their own mip chain; a texture with one level samples
+    // as bilinear through it. Its ANISOTROPY, when asked (`anisotropy()`)
+    s.mipFilter = DkMipFilter_Linear;
+    s.maxAnisotropy = static_cast<float>(anisotropy());
+    dkSamplerDescriptorInitialize(&sd[kSampTrilinear], &s);
+    dkSamplerDefaults(&s);
+    s.wrapMode[0] = s.wrapMode[1] = s.wrapMode[2] = DkWrapMode_ClampToEdge;
+    dkSamplerDescriptorInitialize(&sd[kSampClamp], &s);
+    s.minFilter = s.magFilter = DkFilter_Linear;   // EASU's gather
+    dkSamplerDescriptorInitialize(&sd[kSampLinearClamp], &s);
 }
 
 bool DekoRenderer::loadShader(const char* name, DkShader& sh) {
@@ -698,7 +745,8 @@ bool DekoRenderer::init(int w, int h) {
         !loadShader("scene_orig.frag", shOrig_) || !loadShader("scene_orig_cut.frag", shOrigCut_) ||
         !loadShader("overlay.frag", shOverlay_) || !loadShader("easu.frag", shEasu_) ||
         !loadShader("easu_nogather.frag", shEasuFetch_) || !loadShader("easu_lite.frag", shEasuLite_) ||
-        !loadShader("present_lite.frag", shPresentLite_) || !loadShader("post.frag", shPost_))
+        !loadShader("present_lite.frag", shPresentLite_) || !loadShader("post.frag", shPost_) ||
+        !loadShader("shadow.vert", shShadow_))
         return false;
 
     // the descriptors: one array of images, one of samplers
@@ -706,24 +754,10 @@ bool DekoRenderer::init(int w, int h) {
     sampDesc_ = data_.alloc(kSampCount * sizeof(DkSamplerDescriptor), DK_SAMPLER_DESCRIPTOR_ALIGNMENT);
     if (!imgDesc_ || !sampDesc_) return false;
     std::memset(imgDesc_.cpu(), 0, imgDesc_.size);
-    {
-        auto* sd = static_cast<DkSamplerDescriptor*>(sampDesc_.cpu());
-        DkSampler s;
-        dkSamplerDefaults(&s);   // nearest, REPEAT - `raster.cpp`'s `% t.width`
-        dkSamplerDescriptorInitialize(&sd[kSampNearest], &s);
-        s.minFilter = s.magFilter = DkFilter_Linear;
-        dkSamplerDescriptorInitialize(&sd[kSampLinear], &s);
-        // TRILINEAR (the enhancement, `setTextureFilter(2)`): the pack's block
-        // files carry their own mip chain; a texture with one level samples
-        // as bilinear through it
-        s.mipFilter = DkMipFilter_Linear;
-        dkSamplerDescriptorInitialize(&sd[kSampTrilinear], &s);
-        dkSamplerDefaults(&s);
-        s.wrapMode[0] = s.wrapMode[1] = s.wrapMode[2] = DkWrapMode_ClampToEdge;
-        dkSamplerDescriptorInitialize(&sd[kSampClamp], &s);
-        s.minFilter = s.magFilter = DkFilter_Linear;   // EASU's gather
-        dkSamplerDescriptorInitialize(&sd[kSampLinearClamp], &s);
-    }
+    writeSamplers();
+    if (aniso_ > 1)
+        std::printf(filter_ >= 2 ? "deko3d: anisotropy %dx\n" : "deko3d: anisotropy %d ignored - it needs "
+                    "trilinear filtering (a mip chain)\n", aniso_);
 
     // the targets: the scene's colour (read by the present pass and the
     // readback's copy) and depth-stencil, the uploaded surface, the swapchain
@@ -1032,7 +1066,8 @@ void DekoRenderer::bindFrameState(const DkImageView* target) {
     dkCmdBufBindTexture(cb_, DkStage_Fragment, kTexEmis, dkMakeTextureHandle(kImgBlack, samp));
     boundEmis_ = kImgBlack;
     dkCmdBufBindTexture(cb_, DkStage_Fragment, kTexRefl, dkMakeTextureHandle(kImgBlack, samp));
-    dkCmdBufBindTexture(cb_, DkStage_Fragment, kTexShadow, dkMakeTextureHandle(kImgBlack, kSampClamp));
+    dkCmdBufBindTexture(cb_, DkStage_Fragment, kTexShadow,
+                        dkMakeTextureHandle(shadowLive_ ? kImgShadow : kImgBlack, kSampClamp));
     lastBlend_ = -1;
 }
 
@@ -1045,7 +1080,7 @@ void DekoRenderer::begin(const omk::View& view) {
         markIdle();
         cbOpen_ = false;
     }
-    openCb();
+    openCb();   // (the shadow pass may have opened it: then a no-op)
     st_ = omk::RasterStats{};
     fog_ = view.fog;
     fogStart_ = view.fogStart;
@@ -1061,7 +1096,7 @@ void DekoRenderer::begin(const omk::View& view) {
     // is "set", and OMK_DEKO_FULL=0 is set (the console's A/B drew the full
     // shader on both sides)
     const bool forceFull = omk::envOn("OMK_DEKO_FULL");
-    frameOrig_ = !forceFull && view.mist <= 0.0f && view.dust <= 0.0f && view.veil <= 0.0f;
+    frameOrig_ = !forceFull && !shadowLive_ && view.mist <= 0.0f && view.dust <= 0.0f && view.veil <= 0.0f;
     cur().poseUsed = 0;   // the slot's last frame is done (`openCb`): its pose buffer from the start
     cur().poseCache.clear();
     probe_ = omk::envInt("OMK_DEKO_PROBE", 0);
@@ -1112,8 +1147,17 @@ void DekoRenderer::begin(const omk::View& view) {
     ub.tiles = 0;
     litCount_ = n;
     ShadowUbo sb{};
-    sb.texel = 1.0f / 1024.0f;    // Vulkan's kShadowSide; the strength 0 - no shadow pass yet (D4)
+    sb.texel = 1.0f / static_cast<float>(kShadowSide);
     sb.shimmer = view.shimmerClock;
+    if (shadowLive_) {
+        // the light's matrix as the fragment reads it - NOT the flipped one
+        // the depth pass drew with (`shadowPass`)
+        std::memcpy(sb.lightMvp, shadowMvp_, sizeof shadowMvp_);
+        sb.strength = shadowStrength_;
+        // in the slab's own 0..1 depth, one map texel of slope at the worst
+        // angle - enough to stop the ground shadowing itself (Vulkan's)
+        sb.bias = 0.0015f;
+    }
 
     // THE POST-PASS's this frame: decided here, where the scene's target is
     // chosen - the glow only with a light map in the pool (without one every
@@ -1447,6 +1491,7 @@ void DekoRenderer::submitOne(const omk::Draw& d, bool posed, uint32_t poseOff) {
 void DekoRenderer::end() {
     if (!recording_) return;
     recording_ = false;
+    shadowLive_ = false;   // the next frame's shadow pass sets it again
     if (postNow_) recordPost();
     rung(3);
     stamp(1);
@@ -1789,6 +1834,143 @@ bool DekoRenderer::uploadLightMap(const omk::PackImage& rep, DTex& t) {
     if (t.emSlot == kImgWhite) { t.emSlot = kImgBlack; return false; }
     writeDescriptor(t.emSlot, t.emImg);
     return true;
+}
+
+// ---- THE MAPPED SHADOW (D4d) -------------------------------------------------
+//
+// Vulkan's `shadowPass`: the light's orthographic basis about the casters'
+// centre, a slab `radius` wide, the casters' depth into the map, drawn with
+// the SAME matrix the fragment reads it with (`sb.lightMvp`). MEASURED on the
+// console (2026-11-27), against the reasoning of `pushView`: drawn with the
+// matrix's second row negated (as the scene's projection is), the street
+// gained a long false streak of shadow that Vulkan's frame has none of
+// (2441 px darker than the fitted frame, against 385 of noise unflipped) -
+// so into this offscreen target deko3d's `OriginUpperLeft` maps Y as
+// Vulkan does (`todo/deko3d.md` D4d; why the scene's needs the negation is
+// open). `OMK_DEKO_SHADOW_FLIP=1` draws it negated, the A/B. And the casters
+// are posed here, positions alone, into one buffer (below).
+void DekoRenderer::shadowPass(const omk::View& v, std::span<const omk::Draw> casters) {
+    if (!dev_ || !v.shadow.on || casters.empty()) return;
+    if (!shadowMade_) {
+        if (!makeImage(shadow_, shadowMem_, DkImageFormat_ZF32, kShadowSide, kShadowSide,
+                       DkImageFlags_UsageRender)) {   // (sampled: no depth compression)
+            std::printf("deko3d: the shadow map could not be made - no mapped shadow\n");
+            shadowMade_ = true;   // said once; `shadow_` stays empty
+            return;
+        }
+        dkImageViewDefaults(&shadowView_, &shadow_);
+        writeDescriptor(kImgShadow, shadow_);
+        shadowMade_ = true;
+        std::printf("deko3d: the mapped shadow - a %dx%d depth map\n", kShadowSide, kShadowSide);
+    }
+    if (!shadowMem_) return;
+    const float R = v.shadow.radius > 1.0f ? v.shadow.radius : 1.0f;
+    float f[3] = {v.shadow.dir[0], v.shadow.dir[1], v.shadow.dir[2]};
+    const float fl = std::sqrt(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
+    if (fl < 1e-6f) return;
+    for (float& c : f) c /= fl;
+    float up[3] = {0.0f, -1.0f, 0.0f};
+    if (std::fabs(f[0] * up[0] + f[1] * up[1] + f[2] * up[2]) > 0.99f) {
+        up[0] = 1.0f; up[1] = 0.0f; up[2] = 0.0f;
+    }
+    float r[3] = {up[1] * f[2] - up[2] * f[1], up[2] * f[0] - up[0] * f[2], up[0] * f[1] - up[1] * f[0]};
+    const float rl = std::sqrt(r[0] * r[0] + r[1] * r[1] + r[2] * r[2]);
+    for (float& c : r) c /= rl;
+    const float u[3] = {f[1] * r[2] - f[2] * r[1], f[2] * r[0] - f[0] * r[2], f[0] * r[1] - f[1] * r[0]};
+    const float back = R * 2.0f;
+    float eye[3];
+    for (int k = 0; k < 3; ++k) eye[k] = v.shadow.centre[k] - f[k] * back;
+    const float far = back + R * 2.0f;
+    float m[16] = {};
+    const float* ax[3] = {r, u, f};
+    const float sc[3] = {1.0f / R, 1.0f / R, 1.0f / far};
+    for (int row = 0; row < 3; ++row) {
+        float d = 0.0f;
+        for (int c = 0; c < 3; ++c) {
+            m[c * 4 + row] = ax[row][c] * sc[row];
+            d += ax[row][c] * eye[c];
+        }
+        m[12 + row] = -d * sc[row];
+    }
+    m[15] = 1.0f;
+    std::memcpy(shadowMvp_, m, sizeof m);
+    shadowStrength_ = v.shadow.strength;
+    float drawM[16];
+    std::memcpy(drawM, m, sizeof m);
+    // (`OMK_DEKO_SHADOW_FLIP=1`, the A/B: the second row negated, as the
+    // scene's projection is - the false streak)
+    if (omk::envInt("OMK_DEKO_SHADOW_FLIP", 0) != 0)
+        for (int c = 0; c < 4; ++c) drawM[c * 4 + 1] = -drawM[c * 4 + 1];
+
+    // the frame's list, opened here (`begin` then finds it open)
+    if (cbOpen_ && sceneSubmitted_) {
+        dkQueueWaitIdle(queue_);
+        markIdle();
+        cbOpen_ = false;
+    }
+    openCb();
+    // THE CASTERS' POSITIONS, one buffer for the frame: each draw's own range
+    // posed (`cornerAffine`, positions alone - depth needs no normal and no
+    // light). Not Vulkan's `cpuPose`: that poses and LIGHTS every corner of
+    // the draw's whole geometry, then uploads it whole, once a caster - 54 ms
+    // of CPU a frame for the street's nine bodies on the console (2026-11-27)
+    std::size_t total = 0;
+    for (const auto& d : casters)
+        if (d.geo && d.count) total += std::min(d.count, d.geo->corners.size() - std::min(d.start, d.geo->corners.size()));
+    if (total == 0) return;
+    Alloc pos = data_.alloc(alignUp(static_cast<uint32_t>(total * 12), 256), 256);
+    if (!pos) return;
+    cur().extra.push_back(pos);
+    float* out = static_cast<float*>(pos.cpu());
+    for (const auto& d : casters) {
+        if (!d.geo || !d.count) continue;
+        const omk::Geometry& g = *d.geo;
+        const bool posed = d.meshPose && d.meshPoses && g.cornerMesh.size() == g.corners.size();
+        const std::size_t e = std::min(d.start + d.count, g.corners.size());
+        for (std::size_t i = std::min(d.start, e); i < e; ++i, out += 3) {
+            const omk::Corner& c = g.corners[i];
+            if (const float* a = posed ? omk::cornerAffine(d, i) : nullptr) omk::posePoint(a, c.x, c.y, c.z, out);
+            else { out[0] = c.x; out[1] = c.y; out[2] = c.z; }
+        }
+    }
+
+    // the frame before's fragments done sampling the map before it is drawn over
+    dkCmdBufBarrier(cb_, DkBarrier_Fragments, 0);
+    dkCmdBufBindRenderTargets(cb_, nullptr, 0, &shadowView_);
+    const DkViewport vp{0.0f, 0.0f, static_cast<float>(kShadowSide), static_cast<float>(kShadowSide), 0.0f, 1.0f};
+    const DkScissor all{0, 0, static_cast<uint32_t>(kShadowSide), static_cast<uint32_t>(kShadowSide)};
+    dkCmdBufSetViewports(cb_, 0, &vp, 1);
+    dkCmdBufSetScissors(cb_, 0, &all, 1);
+    dkCmdBufClearDepthStencil(cb_, true, 1.0f, 0, 0);
+    const DkShader* sh[1] = {&shShadow_};
+    dkCmdBufBindShaders(cb_, DkStageFlag_GraphicsMask, sh, 1);   // depth alone: no fragment stage
+    lastFrag_ = nullptr;
+    DkRasterizerState rast;
+    dkRasterizerStateDefaults(&rast);
+    rast.cullMode = DkFace_None;
+    dkCmdBufBindRasterizerState(cb_, &rast);
+    DkDepthStencilState ds;
+    dkDepthStencilStateDefaults(&ds);
+    ds.depthTestEnable = 1;
+    ds.depthWriteEnable = 1;
+    ds.depthCompareOp = DkCompareOp_Lequal;
+    dkCmdBufBindDepthStencilState(cb_, &ds);
+    DkVtxAttribState a;
+    std::memset(&a, 0, sizeof a);
+    a.bufferId = 0;
+    a.offset = 0;
+    a.size = DkVtxAttribSize_3x32;
+    a.type = DkVtxAttribType_Float;
+    dkCmdBufBindVtxAttribState(cb_, &a, 1);
+    const DkVtxBufferState vb{12, 0};
+    dkCmdBufBindVtxBufferState(cb_, &vb, 1);
+    dkCmdBufBindUniformBuffer(cb_, DkStage_Vertex, kUboPush, pushUbo_.gpu(), pushUbo_.size);
+    dkCmdBufPushConstants(cb_, pushUbo_.gpu(), pushUbo_.size, 0, sizeof drawM, drawM);
+    dkCmdBufBindVtxBuffer(cb_, 0, pos.gpu(), pos.size);
+    dkCmdBufDraw(cb_, DkPrimitive_Triangles, static_cast<uint32_t>(total), 1, 0, 0);
+    // the map's depth written before the scene's fragments sample it
+    dkCmdBufBarrier(cb_, DkBarrier_Fragments, DkInvalidateFlags_Image);
+    shadowLive_ = true;
 }
 
 // ---- THE POST-PASS (D4c) ---------------------------------------------------

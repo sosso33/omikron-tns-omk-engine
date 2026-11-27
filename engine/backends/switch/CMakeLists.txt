@@ -167,6 +167,7 @@ if(OMK_DEKO3D)
     "easu_lite.frag|frag|deko/easu_lite.frag|"
     "under.frag|frag|under.frag|"
     "post.frag|frag|post.frag|"
+    "shadow.vert|vert|shadow.vert|"
     "ao.frag|frag|ao.frag|"
     "ao_ms.frag|frag|ao.frag|OMK_MS"
     "overlay.frag|frag|deko/overlay.frag|")

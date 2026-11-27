@@ -294,6 +294,42 @@ backend's own to follow (D3).
   * Not yet: the remaster's log lines still say "drawn by Vulkan and GLES
     only" (`texpack.cpp`, `playremaster_setup.cpp`) - true of the desktop
     builds, to be widened when D5 makes deko3d the Switch's default.
+* **D4d - the anisotropy and the mapped shadow (2026-11-27, on the
+  console).** RE-SCOPED from "the tiled lights and the relief": GLES's
+  Switch draws neither, and the card's pack carries no normal maps (the
+  relief's) - so D4d took what GLES draws there and deko3d did not
+  (`kTakesAnisotropy`, `kTakesShadowMap`); the tiled lights and the relief
+  stay beyond GLES, after D4e.
+  * THE ANISOTROPY: the trilinear sampler's `maxAnisotropy` (GLES's and
+    Vulkan's rule: only behind trilinear), set before `init`, moved by
+    `retexture` with no frame in flight. The preset's 16x on the street:
+    GPU 19.5 ms against D4c's 18.2 - about 1.3 ms.
+  * THE MAPPED SHADOW: Vulkan's `shadowPass` (`shadow.vert`, a 1024x1024
+    ZF32 map, 3x3 PCF in `scene.frag`); the frame's list opened by the pass,
+    a barrier before it (the frame before still sampling the map) and after;
+    the original's module off on a frame with a live map (it has no
+    `litness`). Two departures from Vulkan, both measured:
+    * THE CASTERS posed here, POSITIONS ALONE, into one buffer drawn once.
+      Vulkan's `cpuPose` (first used) poses AND LIGHTS every corner of the
+      draw's whole geometry and uploads it whole, once a caster: the street
+      went to 62 ms (original) and 195 ms (remaster) of CPU a frame.
+    * NO Y NEGATION: drawn with the scene's negated second row, the street
+      gained a long false streak of shadow (2441 px darker than the fitted
+      frame), Vulkan's same frame on the M1 none (mapped against fitted, 2
+      px); drawn with Vulkan's matrix as it is, 385 px - the anisotropy's
+      and the walkers' noise. So `OriginUpperLeft` maps Y into this target
+      as Vulkan does. OPEN: why the scene's projection then needs its
+      negation (`pushView`) and lands upright - the present chain is not yet
+      read for the step that compensates. `OMK_DEKO_SHADOW_FLIP=1`, the A/B.
+  * The street, `--shadow-quality mapped`: original 19.2 ms (GPU 19.0),
+    remaster 29.2 (GPU 27.2), remaster with the shadows fitted 19.8 -
+    GLES's sweep paid ~11 ms for the map (53.5 against 42.7). The most of
+    it is the FRONTEND's, every backend's: with a map no body is culled by
+    the view's sides (`sideCullBodies`, `cornersUnread` - an off-screen
+    caster's shadow can fall in view), 155-213 bodies posed a frame against
+    14-23, for 9 in the slab. A cull to the slab (bodies near its centre
+    kept) would serve every backend - not done here. The Switch's preset
+    keeps the shadows fitted.
 * **D4 - the remaster**: the per-pixel and tiled lights, the shadow map, the
   pack (ASTC natively - Maxwell samples it), water and the two reflections,
   bloom and grade, the 3D rain and its veils, the dust once a pixel (the pass

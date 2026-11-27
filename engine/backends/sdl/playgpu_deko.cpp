@@ -59,6 +59,7 @@ void PlayState::gpuOpenWindow() {
         std::printf("deko3d: SDL video (input only) did not start: %s\n", SDL_GetError());
     omk::Renderer* r = omk::makeDekoRenderer();
     if (texFilter > 0) r->setTextureFilter(texFilter);
+    if (texAniso > 1) r->setAnisotropy(texAniso);
     // THE UPSCALE, NATIVE UNDER THE PRESET (`todo/deko3d.md` D4b, the reader's
     // choice of 2026-11-27): on deko3d EASU over 1280x720 costs ~6.4 ms of GPU,
     // and the street's frame went SLOWER upscaled (original 13.1 ms against
