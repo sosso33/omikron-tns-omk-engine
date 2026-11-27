@@ -311,6 +311,13 @@ public:
     bool drawWaterScene(const omk::View& v, const omk::View& refl, std::span<const omk::Draw> scene,
                         std::span<const omk::Draw> above, std::span<const omk::Draw> water, float strength,
                         float planeY) override;
+    // THE SECOND REFLECTING LEVEL (`[Remaster] reflections = 2`, Vulkan's):
+    // the floors' frame with a second reflected pass into the image's
+    // top-right quarter, a level-2 floor reading it (bit 22)
+    bool drawsTwoReflections() const override { return drawsWater(); }
+    bool drawTwoReflections(const omk::View& v, const omk::View& refl, std::span<const omk::Draw> scene,
+                            std::span<const omk::Draw> above, float strength, float planeY,
+                            const omk::View& refl2, std::span<const omk::Draw> above2, float planeY2) override;
     uint32_t sampler() const { return filter_ >= 2 ? kSampTrilinear : filter_ ? kSampLinear : kSampNearest; }
     bool bakeDepthTie(const omk::Geometry* g, std::span<const omk::Draw> order) override;
     // BODIES POSED BY THE RENDERER (`renderer.h` `Draw::meshPose`), as Vulkan,
@@ -483,6 +490,12 @@ private:
     bool makeReflection();
     float waterWant_ = 0.0f, waterStrength_ = 0.0f, waterY_ = 0.0f;
     bool inFrame_ = false, reflectingNow_ = false, waterNow_ = false, reflLive_ = false, reflHalf_ = false;
+    bool second_ = false, twoRefl_ = false;   // the second level's pass; a frame with two
+    const omk::View* secondView_ = nullptr;
+    std::span<const omk::Draw> secondAbove_;
+    float secondY_ = 0.0f;
+    // the second level's x origin: the render width's half, rounded up (Vulkan's `reflHalfW`)
+    int reflHalfW() const { return (rs(w_) + 1) / 2; }
     bool reflMade_ = false;
     DkImage refl_{};
     Alloc reflMem_;
@@ -1204,7 +1217,11 @@ void DekoRenderer::begin(const omk::View& view) {
     if (!again) rung(1);
 
     // the clear: the scene's fog colour (`View::clearColour`), depth far, stencil 0
-    const DkScissor all{0, 0, static_cast<uint32_t>(w_), static_cast<uint32_t>(h_)};
+    // - the SECOND level's pass clears its own quarter alone (the first's kept)
+    const DkScissor all = second_ ? DkScissor{static_cast<uint32_t>(reflHalfW()), 0,
+                                              static_cast<uint32_t>(rs(w_) - reflHalfW()),
+                                              static_cast<uint32_t>((rs(h_) + 1) / 2)}
+                                  : DkScissor{0, 0, static_cast<uint32_t>(w_), static_cast<uint32_t>(h_)};
     dkCmdBufSetScissors(cb_, 0, &all, 1);
     // (with the BLOOM the alpha is the light map's value: what no surface
     // covers clears to 0 - not light; at 1 the fog past the clip glowed)
@@ -1218,9 +1235,13 @@ void DekoRenderer::begin(const omk::View& view) {
     int vw = rs(view.letterboxed() ? view.vw : w_), vhR = rs(picH_);
     // ...and the FLOORS' reflection at HALF size, the image's top-left quarter
     if (reflectingNow_ && reflHalf_) { vw = (vw + 1) / 2; vhR = (vhR + 1) / 2; }
-    const DkViewport vp{0.0f, 0.0f, static_cast<float>(vw), static_cast<float>(vhR), 0.0f, 1.0f};
-    const DkScissor sc = probe_ == 3 || probe_ == 7 ? DkScissor{0, 0, 1, 1}
-                                     : DkScissor{0, 0, static_cast<uint32_t>(std::min(vw, w_)), static_cast<uint32_t>(vhR)};
+    // ...the SECOND level's in the top-RIGHT quarter
+    const int x0 = second_ && reflectingNow_ && reflHalf_ ? reflHalfW() : 0;
+    const DkViewport vp{static_cast<float>(x0), 0.0f, static_cast<float>(vw), static_cast<float>(vhR), 0.0f, 1.0f};
+    const DkScissor sc = probe_ == 3 || probe_ == 7
+                             ? DkScissor{0, 0, 1, 1}
+                             : DkScissor{static_cast<uint32_t>(x0), 0,
+                                         static_cast<uint32_t>(std::min(vw, rs(w_) - x0)), static_cast<uint32_t>(vhR)};
     dkCmdBufSetViewports(cb_, 0, &vp, 1);
     dkCmdBufSetScissors(cb_, 0, &sc, 1);
     recording_ = true;
@@ -1453,6 +1474,8 @@ void DekoRenderer::submitOne(const omk::Draw& d, bool posed, uint32_t poseOff) {
     // and the rain's ripples in the mode's high bits
     const bool floorNow = reflLive_ && !reflectingNow_ && d.reflect > 0.0f;
     push_.water = waterNow_ ? 1 : floorNow ? 3 : reflectingNow_ ? 2 : 0;
+    // ...and bit 22: a floor of the SECOND level, its reflection the top-right quarter
+    if (floorNow && twoRefl_ && d.reflectPlane == 1) push_.water |= 1 << 22;
     if (!reflectingNow_ && d.wet > 0.0f) {
         push_.water |= static_cast<int32_t>(std::lround(std::min(d.wet, 1.0f) * 255.0f)) << 4;
         push_.water |= static_cast<int32_t>(std::lround(std::clamp(rain_, 0.0f, 1.0f) * 255.0f)) << 12;
@@ -1910,6 +1933,15 @@ bool DekoRenderer::drawWaterScene(const omk::View& v, const omk::View& refl, std
     begin(refl);
     waterY_ = planeY;
     for (const auto& d : above) submit(d);
+    // ...and THE SECOND LEVEL's, into the top-right quarter of the same image
+    if (secondView_) {
+        dkCmdBufBarrier(cb_, DkBarrier_Fragments, 0);   // the first's depth done with
+        second_ = true;
+        begin(*secondView_);
+        waterY_ = secondY_;
+        for (const auto& d : secondAbove_) submit(d);
+        second_ = false;
+    }
     reflectingNow_ = false;
     // its writes done before the frame's fragments read it
     dkCmdBufBarrier(cb_, DkBarrier_Fragments, DkInvalidateFlags_Image);
@@ -1923,6 +1955,21 @@ bool DekoRenderer::drawWaterScene(const omk::View& v, const omk::View& refl, std
     waterNow_ = false;
     end();
     return true;
+}
+
+bool DekoRenderer::drawTwoReflections(const omk::View& v, const omk::View& refl, std::span<const omk::Draw> scene,
+                                      std::span<const omk::Draw> above, float strength, float planeY,
+                                      const omk::View& refl2, std::span<const omk::Draw> above2, float planeY2) {
+    if (!drawsTwoReflections() || !makeReflection()) return false;
+    twoRefl_ = true;
+    secondView_ = &refl2;
+    secondAbove_ = above2;
+    secondY_ = planeY2;
+    const bool ok = drawWaterScene(v, refl, scene, above, {}, strength, planeY);
+    secondView_ = nullptr;
+    secondAbove_ = {};
+    twoRefl_ = false;
+    return ok;
 }
 
 // ---- THE MAPPED SHADOW (D4d) -------------------------------------------------

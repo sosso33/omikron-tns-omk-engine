@@ -351,9 +351,26 @@ backend's own to follow (D3).
     5.4 ms. Two frames captured on the console: the canal's railing and
     wall mirrored in the water, Qalisar's walkers and green sign in the
     floor, each the right way up.
-  * Not yet: the SECOND reflecting level (`drawsTwoReflections`, GLES's
-    and Vulkan's `[Remaster] reflections = 2` - the card's preset asks
-    it): deko3d answers no, so the frontend keeps one plane.
+  * THE SECOND REFLECTING LEVEL (`drawTwoReflections`, `[Remaster]
+    reflections = 2`, the card's preset): Vulkan's - a second reflected pass
+    into the image's top-right quarter (its clear scissored to it, the
+    first's kept), a level-2 floor's run bit 22. No occlusion query yet
+    (`secondLevelSeen` -1: the frontend draws the level whenever it is
+    found; GLES and Vulkan skip it while hidden).
+    * Qalisar's raised walk (`15000,-140,-10500,270`): remaster 28.0 ms
+      (36 fps) with both levels, floors off 19.4 - the two 8.6 ms.
+    * The proof is `engine: floor levels`' own: on the LAMP STREET
+      (`10341,-260,-9507,90`) `OMK_SWAP_LEVELS=1 --reflections 2` (the
+      street reflected through the SECOND pass and quarter) against
+      `--reflections 1`: 0 pixels differ on the console, 0 bytes on
+      Vulkan (M1) - a frame whose reflection moves 42768 pixels on Vulkan
+      (`--reflections 0` against 1). On the raised walk, `--reflections 2`
+      against 1 moves 1 pixel on the console and 1 on Vulkan with the
+      card's `floors.txt` (the check's own list moves >1000) - no proof
+      there either way.
+    * deko3d against Vulkan at the lamp street, one level: 14419 pixels
+      past 48 levels - not chased (the runs' anisotropy and packs differ:
+      the card's against the M1's `~/omk-pack`).
 * **D4 - the remaster**: the per-pixel and tiled lights, the shadow map, the
   pack (ASTC natively - Maxwell samples it), water and the two reflections,
   bloom and grade, the 3D rain and its veils, the dust once a pixel (the pass
