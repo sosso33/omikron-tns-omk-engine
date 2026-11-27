@@ -14,11 +14,38 @@
 #include "sdlfront.h"
 #include "platform/env.h"
 
+#include <chrono>
+
 namespace omk {
 Renderer* makeDekoRenderer();
 bool dekoPresentWorld(Renderer*, int vy, int vh);
 bool dekoPresentSurface(Renderer*, const Surface&);
 const char* dekoDeviceName(Renderer*);
+void dekoSetSwapInterval(Renderer*, int n);
+void dekoTakeCounts(Renderer*, long out[4]);
+std::string dekoTakeLadder(Renderer*);
+}
+
+// THE DEVICE CLOSED AT THE PROGRAM'S END. hbloader loads the next program -
+// hbmenu, the netloader's next NRO, a sweep's next run - into this SAME
+// process, and a deko3d device never destroyed keeps nvservices' transfer
+// memory: its pages, inside the heap the next program is given, stay
+// locked to it. The reader's console (2026-11-27): the launch after a
+// `--bench` run that returned crashed in `dkDeviceCreate` -> `nvInitialize`
+// -> `tmemCreate`'s memset (a data abort at 0x752f3f7000, in the heap).
+// GLES needs none of this - `SDL_Quit` closes its EGL. The frontend never
+// deletes its renderer, so the end of the program does: a static owner,
+// destroyed after `main` returns.
+namespace {
+struct DekoOwner {
+    omk::Renderer* r = nullptr;
+    ~DekoOwner() {
+        if (!r) return;
+        delete r;   // `dkDeviceDestroy` -> `nvExit`: the transfer memory back
+        r = nullptr;
+    }
+};
+DekoOwner g_deko;
 }
 
 bool PlayState::gpuWindowBuild() const { return true; }
@@ -32,7 +59,14 @@ void PlayState::gpuOpenWindow() {
     if (texFilter > 0) r->setTextureFilter(texFilter);
     if (r->init(dispW, dispH)) {
         vkRen = r;
+        g_deko.r = r;
         std::printf("renderer: DEKO3D - %s\n", omk::dekoDeviceName(r));
+        // v-sync off under the performance sweep, as the GLES window's rule
+        // (`playgpu_gles.cpp`): a frame's work then ends when the GPU takes it
+        if (!opt.benchPath.empty()) {
+            omk::dekoSetSwapInterval(r, 0);
+            std::printf("deko3d: v-sync off - the performance sweep\n");
+        }
     } else {
         delete r;
         std::printf("renderer: deko3d did not come up - the software reference\n");
@@ -65,7 +99,33 @@ bool PlayState::gpuDriverRow(std::vector<std::string>& drivers) {
 }
 bool PlayState::gpuRelinkLighting(bool, bool) { return false; }
 bool PlayState::gpuRetarget(int, int, float, float) { return false; }   // no MSAA / supersample / upscale yet
-void PlayState::gpuReportTimings() {}
+void PlayState::gpuReportTimings() {
+    if (!vkRen) return;
+    long c[4];
+    omk::dekoTakeCounts(vkRen, c);
+    if (c[3] > 0)
+        std::printf("frame %ld deko3d (a frame, mean of %ld): %.0f draws, %.0f runs of the cull, %.0f vertices; "
+                    "GPU %.2f ms\n", frameNo, c[3], static_cast<double>(c[0]) / c[3], static_cast<double>(c[1]) / c[3],
+                    static_cast<double>(c[2]) / c[3], vkRen->gpuFrameMs());
+    const std::string ladder = omk::dekoTakeLadder(vkRen);
+    if (!ladder.empty()) std::printf("frame %ld deko3d ladder (GPU ms, mean): %s\n", frameNo, ladder.c_str());
+}
 void PlayState::gpuSlowFrameReport() {}
-void PlayState::gpuFinishReport() {}
+// ...and closed HERE, at the run's end, while the output still reaches the
+// Mac: the static owner alone was not enough (the relaunch after a returning
+// `--bench` run crashed the same way), and its destructor ran past the point
+// where anything it said could be read. Nothing draws after `finish` asks
+// for this report (`playsetup_finish.cpp`); the static owner stays for the
+// run that ends another way.
+void PlayState::gpuFinishReport() {
+    if (!g_deko.r) return;
+    const auto t0 = std::chrono::steady_clock::now();
+    delete g_deko.r;
+    if (world_ == vkRen) world_ = nullptr;
+    vkRen = nullptr;
+    g_deko.r = nullptr;
+    std::printf("deko3d: the device closed at the run's end (%.1f ms) - nvservices' memory given back "
+                "before the next program loads into this process\n",
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+}
 void PlayState::gpuVerifyWorldPicture() {}

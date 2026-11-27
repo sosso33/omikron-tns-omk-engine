@@ -55,9 +55,21 @@ AF4 FsrRcasLoadF(ASU2 p) { return texelFetch(world, clamp(p, ASU2(0), ASU2(pc.w 
 void FsrRcasInputF(inout AF1 r, inout AF1 g, inout AF1 b) {}
 #include "ffx_fsr1.h"
 
-const int kBayer4[16] = int[16](0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
-
-int divTrunc(int a, int b) { return a >= 0 ? a / b : -((-a) / b); }
+// NO INTEGER DIVISION in this pass (2026-11-27, `todo/deko3d.md`): the Switch's
+// GPU has none, and its compiler (`uam`) made each of the pass's thirteen `/`
+// a long sequence a pixel - the present cost 12.05 ms of a 22.7 ms frame
+// there, more than GLES's whole frame. Every divisor here is a constant or a
+// power of two, so each is a shift or a multiply, EXACT over the values it
+// meets (checked exhaustively): a / 255 for 0 <= a <= 65535 is
+// (a * 257 + 257) >> 16; t * 8 / 16 and t * 4 / 16 truncated are shifts of
+// the magnitude; the supersample's n = ss * ss is 1, 4 or 16. The 4x4 Bayer
+// matrix (0 8 2 10 / 12 4 14 6 / 3 11 1 9 / 15 7 13 5, the table this was)
+// is its bits: x0^y0, y0, x1^y1, y1, high to low.
+int div255(int a) { return (a * 257 + 257) >> 16; }
+int shrTrunc(int a, int s) { return a >= 0 ? a >> s : -((-a) >> s); }
+int bayer4(int x, int y) {
+    return (((x ^ y) & 1) << 3) | ((y & 1) << 2) | ((((x >> 1) ^ (y >> 1)) & 1) << 1) | ((y >> 1) & 1);
+}
 int clampByte(int v) { return v < 0 ? 0 : (v > 255 ? 255 : v); }
 
 void main() {
@@ -82,10 +94,12 @@ void main() {
                 g += int(round(s.g * 255.0));
                 b += int(round(s.b * 255.0));
             }
-        int n = pc.ss * pc.ss;
-        r = (r + n / 2) / n;
-        g = (g + n / 2) / n;
-        b = (b + n / 2) / n;
+        // the rounded mean of the block: n = ss * ss, a power of two
+        int halfN = (pc.ss * pc.ss) >> 1;
+        int sh = pc.ss == 4 ? 4 : (pc.ss == 2 ? 2 : 0);
+        r = (r + halfN) >> sh;
+        g = (g + halfN) >> sh;
+        b = (b + halfN) >> sh;
     }
     if (pc.raw != 0) {
         o = vec4(float(r), float(g), float(b), 255.0) / 255.0;
@@ -93,12 +107,12 @@ void main() {
     }
     int r5, g6, b5;
     if (pc.dither != 0) {
-        int t = kBayer4[(wy & 3) * 4 + (p.x & 3)] - 8;
-        int d5 = divTrunc(t * 8, 16);
-        int d6 = divTrunc(t * 4, 16);
-        r5 = (clampByte(r + d5) * 31 + 127) / 255;
-        g6 = (clampByte(g + d6) * 63 + 127) / 255;
-        b5 = (clampByte(b + d5) * 31 + 127) / 255;
+        int t = bayer4(p.x, wy) - 8;
+        int d5 = shrTrunc(t * 8, 4);
+        int d6 = shrTrunc(t * 4, 4);
+        r5 = div255(clampByte(r + d5) * 31 + 127);
+        g6 = div255(clampByte(g + d6) * 63 + 127);
+        b5 = div255(clampByte(b + d5) * 31 + 127);
     } else {
         r5 = r >> 3;
         g6 = g >> 2;

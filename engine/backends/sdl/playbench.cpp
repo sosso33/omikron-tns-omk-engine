@@ -275,12 +275,21 @@ void PlayState::benchSetup() {
         if (b.switchable) add(kind + ", original", [this, rain] { rain(); return remasterShow(false, "the bench"); });
     }
     // `OMK_BENCH_STEPS=2,19,23`: only those steps (their numbers in the full
-    // list) - a quick reading of a few
+    // list) - a quick reading of a few. ...or by NAME, the names separated by
+    // `|` (`OMK_BENCH_STEPS=original|original, enhancements off`): a number
+    // moves with the run's own settings and the place's weather, a name not
     if (const char* only = omk::envStr("OMK_BENCH_STEPS"); only && *only) {
-        const std::string list = std::string(",") + only + ",";
+        const std::string spec = only;
         std::vector<BenchRun::Step> kept;
-        for (std::size_t k = 0; k < b.steps.size(); ++k)
-            if (list.find("," + std::to_string(k + 1) + ",") != std::string::npos) kept.push_back(b.steps[k]);
+        if (spec.find('|') != std::string::npos || spec.find_first_not_of("0123456789,") != std::string::npos) {
+            const std::string names = "|" + spec + "|";
+            for (const auto& st : b.steps)
+                if (names.find("|" + st.name + "|") != std::string::npos) kept.push_back(st);
+        } else {
+            const std::string list = "," + spec + ",";
+            for (std::size_t k = 0; k < b.steps.size(); ++k)
+                if (list.find("," + std::to_string(k + 1) + ",") != std::string::npos) kept.push_back(b.steps[k]);
+        }
         b.steps = std::move(kept);
     }
     // `OMK_BENCH_VARY=NAME=v1,v2,...`: the steps again under each value of an

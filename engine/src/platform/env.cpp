@@ -32,6 +32,11 @@ constexpr const char* kSwitches[] = {
     "OMK_CPU_MOTION",           // A/B: the moving meshes posed on the CPU on a renderer that poses them (engine: dirty corners)
     "OMK_CPU_PLAYER",           // A/B: the player posed on the CPU on a renderer that poses bodies
     "OMK_CPU_SKY",              // A/B: the sky moved on the CPU on a renderer that moves it
+    "OMK_DEKO_CLEAR",           // deko3d: the swapchain image cleared MAGENTA under the present pass (the images reach the screen?) (todo/deko3d.md)
+    "OMK_DEKO_CULL_SIGN",       // =-1 deko3d: the back-face cull's sense flipped, if the rooms turn inside out (todo/deko3d.md)
+    "OMK_DEKO_LADDER",          // deko3d: a timestamp at each rung of a frame, each span's GPU ms said every 60 frames (todo/deko3d.md)
+    "OMK_DEKO_PROBE",           // =N deko3d: one part of the scene's GPU time taken away (1 trivial shader, 2 no cutout shader, 3 no pixel, 4 one push a draw, 5 a ring of blocks, 6 no draw, 7 no pixel nor state change)
+    "OMK_DEKO_TRACE",           // =N deko3d: the first N presents said step by step, each fence waited for (default 3)
     "OMK_DIRTY_AUDIT",          // GLES: checks the dirty-corner list is complete on every partial upload
     "OMK_EAGER_SOUPS",          // A/B: every collision soup built at the load instead of when first asked (engine: lazy collision)
     "OMK_EVENTS",               // the `@evt` lines beside the prose (`platform/events.h`): machine-readable records for the checks

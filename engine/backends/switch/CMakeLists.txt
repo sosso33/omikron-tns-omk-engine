@@ -101,10 +101,11 @@ set_source_files_properties(${ENGINE}/backends/sdl/play.cpp
 target_include_directories(omk_switch PRIVATE ${OMK_SDL2_INCLUDE_DIRS} ${ENGINE}/backends/sdl)
 if(OMK_DEKO3D)
   target_compile_definitions(omk_switch PRIVATE OMK_DEKO3D=1 SDL_MAIN_HANDLED)
-  # deko3d's DEBUG library while the backend is new (`todo/deko3d.md`): every
+  # deko3d's DEBUG library on request (`make switch-deko DEKO_DEBUG=1`): every
   # call validated, a fault said through the device's debug callback rather
-  # than a silent GPU hang - the first console run went black without a word
-  option(OMK_DEKO3D_DEBUG "link libdeko3dd (validated) instead of libdeko3d" ON)
+  # than a silent GPU hang - but its checks cost the CPU, so a measurement
+  # takes the release one (`todo/deko3d.md` D2)
+  option(OMK_DEKO3D_DEBUG "link libdeko3dd (validated) instead of libdeko3d" OFF)
   if(OMK_DEKO3D_DEBUG)
     set(OMK_DEKO_LIB deko3dd)
   else()

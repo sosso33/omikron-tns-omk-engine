@@ -108,7 +108,52 @@ backend's own to follow (D3).
     under the present pass (seen magenta: the images reach the screen and the
     pass draws nothing).
 * **D2 - the Switch's frame as GLES draws it** (first: the RELEASE library
-  for a measurement, `-DOMK_DEKO3D_DEBUG=OFF`, and the GPU timer): the interface as OVERLAY
+  for a measurement, `-DOMK_DEKO3D_DEBUG=OFF`, and the GPU timer).
+
+  **MEASURED 2026-11-27** (the console, Anekbah's street, `save-appart`,
+  `--bench` with `OMK_BENCH_STEPS=original|original, enhancements off` -
+  steps chosen by NAME now, `|`-separated): **GLES** work 16.6 ms (the
+  refresh's floor), GPU **8.5**, either step. **deko3d** work 31.9, GPU
+  **22.7**. The GPU timer (`gpuFrameMs`): four `DkCounter_Timestamp`
+  reports, the scene's list and the present's, the swapchain wait between
+  them left out; each report 16 bytes, the timestamp its SECOND word (read
+  on the console, not assumed). `OMK_DEKO_PROBE` (via `OMK_BENCH_VARY`), the
+  GPU time with one part taken away: a trivial fragment shader 13.1; no
+  pixel (1x1 scissor) 12.5; no cutout-shader switch 23.1; one push a draw
+  22.9; a ring of uniform blocks instead of `pushConstants` 22.7; **NO DRAW
+  AT ALL 12.3**; no pixel nor state change 12.5. ~88 draws, ~25,000 vertices
+  a frame (`dekoTakeCounts`) - GLES draws 86. So a FIXED 12 ms a frame, and
+  `OMK_DEKO_LADDER` (a timestamp at each rung) put it in the PRESENT PASS's
+  draw: 12.05 ms (the clears 0.31, the barrier 0.3, the state 0.01).
+  **The cause: thirteen integer divisions in `present.frag`.** Maxwell has
+  no integer divide and `uam` made each a long sequence a pixel (the menus'
+  RAW path, fewer of them, presented in 3 ms). Every divisor there is a
+  constant or a power of two: each is now a shift or a multiply, exact over
+  its domain (`a / 255 = (a*257 + 257) >> 16` for 0..65535, checked
+  exhaustively; the Bayer table its bits) - in the SHARED shader, Vulkan's
+  result bit for bit the same. The present 12.05 -> **2.73 ms**; deko3d's
+  GPU 22.7 -> **13.3**, the work 31.9 -> 22.4. What is left: the scene's
+  fragment shader (~9.5 ms: Vulkan's, every remaster feature behind uniform
+  branches, 49 registers - `scene.vert` 22), and the CPU waiting for the
+  GPU (one frame in flight: "submit" 16 ms). Both are next.
+* **THE RELAUNCH CRASH** (2026-11-27, the reader: *"crash au lancement"*):
+  the launch after a `--bench` run that RETURNED crashed in
+  `dkDeviceCreate` -> `nvInitialize` -> `tmemCreate`'s memset (a data abort
+  at 0x752f3f7000, in the heap - Atmosphère's report symbolised with the
+  build's ELF). hbloader loads the next program into the SAME process, and a
+  device never destroyed keeps nvservices' transfer memory, whose pages
+  inside the next program's heap stay locked. The frontend never deletes
+  its renderer (GLES needs nothing: `SDL_Quit` closes EGL), so
+  `playgpu_deko.cpp` closes the device in `gpuFinishReport` (the run's end,
+  said in the log: "the device closed at the run's end (57.7 ms)"), a static
+  owner beside it for another exit. The relaunch then came up and ran.
+* **`tools/switch_link.py` sent EVERY NRO to `omk/omk.nro`**: its program
+  arguments were a `REMAINDER` positional after `nro`, which swallowed
+  `--path` and `--log` given after it (they reached the game). Fixed: the
+  program's arguments are what follows `--`, split off before parsing. The
+  GLES `omk.nro` was put back on the card.
+
+  The rest of D2: the interface as OVERLAY
   planes over the GPU world (`glesPresentOverlay`'s C/M planes and fade -
   Vulkan reads back instead), the cloud under the menus (`under.frag`),
   frames in flight, the GPU timer (`dkCmdBufReportCounter` timestamps ->

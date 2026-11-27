@@ -237,10 +237,16 @@ public:
         return true;
     }
     bool bakeDepthTie(const omk::Geometry* g, std::span<const omk::Draw> order) override;
+    // THE GPU'S OWN TIME for the last frame (`renderer.h`), from four
+    // timestamps (`stamp`): the scene's list and the present's, the queue's
+    // wait for a swapchain image between them left out - as GLES's timer
+    // ends before the swap
+    double gpuFrameMs() const override { return gpuMs_; }
 
     bool presentWorld(int vy, int vh);
     bool presentSurface(const omk::Surface& s);
     const char* device() const { return "Tegra X1 (deko3d)"; }
+    void setSwapInterval(int n) { if (swap_) dkSwapchainSetSwapInterval(swap_, n < 0 ? 0 : static_cast<uint32_t>(n)); }
 
 private:
     static void geometryGone(void* self, const omk::Geometry* g);
@@ -258,6 +264,20 @@ private:
     bool stage(uint32_t bytes, Alloc& out);
     void flushUploads();
     bool runPresent(uint32_t imgSlot, int vy, int vh, bool raw);
+    void stamp(int k);
+    void readStamps();
+    // THE LADDER (`OMK_DEKO_LADDER=1`, an instrument): a timestamp at each
+    // rung of a frame - 0 the list opened, 1 the frame's state and blocks,
+    // 2 the clears, 3 the scene sent, 4 the present's list begun, 5 its
+    // barrier, 6 its draw - and each span's mean said every 60 frames
+    void rung(int k);
+public:
+    std::string takeLadder();
+private:
+    bool ladder_ = false;
+    unsigned rungs_ = 0;
+    double rungSum_[8] = {};
+    long rungFrames_ = 0;
 
     GpuVert vertOf(const omk::Geometry& g, std::size_t i, const std::vector<std::uint8_t>* lose) const {
         const auto& c = g.corners[i];
@@ -282,7 +302,27 @@ private:
     bool dirty_ = false;            // a scene ended that `readback` has not read
 
     // ---- the shaders (Vulkan's, `dkshaders.py`)
-    DkShader shVert_{}, shFrag_{}, shFragCut_{}, shFsq_{}, shPresent_{};
+    DkShader shVert_{}, shFrag_{}, shFragCut_{}, shFsq_{}, shPresent_{}, shFsqFrag_{};
+    // `OMK_DEKO_PROBE=N`, an instrument read at each `begin` (so `--bench`'s
+    // OMK_BENCH_VARY steps through it): what the scene's GPU time is made of,
+    // one part taken away at a time - 1 a trivial fragment shader (fsq.frag),
+    // 2 no switch to the cutout's shader, 3 a 1x1 scissor (no pixel drawn),
+    // 4 one push a draw, not one a run of the cull, 5 each run's block written
+    // in a RING of uniform buffers and bound there - no `pushConstants`, 6 no
+    // draw at all (the frame's fixed cost), 7 probe 3 without the per-draw
+    // texture bind and state changes. 0 the frame as it is.
+    int probe_ = 0;
+    Alloc pushRing_;                  // probe 5's ring, one 256-byte slot a run
+    uint32_t pushRingAt_ = 0;
+    static constexpr uint32_t kPushRingSlots = 8192;
+    // what a frame issued, summed for `dekoTakeCounts` (the 60-frame report)
+    long draws_ = 0, runs_ = 0, verts_ = 0, frames_ = 0;
+public:
+    void takeCounts(long out[4]) {
+        out[0] = draws_; out[1] = runs_; out[2] = verts_; out[3] = frames_;
+        draws_ = runs_ = verts_ = frames_ = 0;
+    }
+private:
     std::vector<Alloc> shaderMem_;
 
     // ---- the descriptors
@@ -303,6 +343,12 @@ private:
 
     // ---- the frame's blocks
     Alloc pushUbo_, shadowUbo_, lightUbo_, poseBuf_, readBuf_, surfStage_;
+    // the GPU timer: four reports of 16 bytes (a value, then the timestamp)
+    // - 0 the frame's list opened, 1 the scene sent, 2 the present's list
+    // begun, 3 the frame done; `stamped_` which were written this frame
+    Alloc stamps_;
+    unsigned stamped_ = 0;
+    double gpuMs_ = -1.0;
     Push push_{};
     bool fog_ = false, mistOn_ = false;
     float fogStart_ = 0, fogEnd_ = 0, fogColour_[3] = {0, 0, 0};
@@ -457,7 +503,7 @@ bool DekoRenderer::init(int w, int h) {
 
     if (!loadShader("scene.vert", shVert_) || !loadShader("scene.frag", shFrag_) ||
         !loadShader("scene_cut.frag", shFragCut_) || !loadShader("fsq.vert", shFsq_) ||
-        !loadShader("present.frag", shPresent_))
+        !loadShader("present.frag", shPresent_) || !loadShader("fsq.frag", shFsqFrag_))
         return false;
 
     // the descriptors: one array of images, one of samplers
@@ -513,7 +559,9 @@ bool DekoRenderer::init(int w, int h) {
     poseBuf_ = data_.alloc(256, kUboAlign);   // `scene.vert` declares it; a posed draw never comes (D3)
     readBuf_ = cached_.alloc(static_cast<uint32_t>(w) * static_cast<uint32_t>(h) * 4, 256);
     surfStage_ = data_.alloc(static_cast<uint32_t>(w) * static_cast<uint32_t>(h) * 4, DK_IMAGE_LINEAR_STRIDE_ALIGNMENT);
-    if (!pushUbo_ || !shadowUbo_ || !lightUbo_ || !poseBuf_ || !readBuf_ || !surfStage_) return false;
+    stamps_ = data_.alloc(16 * 16, 16);   // the timer's four, then the ladder's (`rung`)
+    if (!pushUbo_ || !shadowUbo_ || !lightUbo_ || !poseBuf_ || !readBuf_ || !surfStage_ || !stamps_) return false;
+    std::memset(stamps_.cpu(), 0, stamps_.size);
     std::memset(poseBuf_.cpu(), 0, poseBuf_.size);
 
     // the stand-ins: white for a material with no texture (`raster.cpp`
@@ -583,6 +631,63 @@ void DekoRenderer::waitFrame() {
     }
 }
 
+void DekoRenderer::rung(int k) {
+    if (!ladder_) return;
+    dkCmdBufReportCounter(cb_, DkCounter_Timestamp, stamps_.gpu() + static_cast<uint32_t>(16 * (4 + k)));
+    rungs_ |= 1u << k;
+}
+
+std::string DekoRenderer::takeLadder() {
+    if (!ladder_ || rungFrames_ == 0) return {};
+    static const char* names[6] = {"state+blocks", "clears", "scene", "(acquire)", "barrier", "present draw"};
+    std::string out;
+    char b[64];
+    for (int k = 0; k < 6; ++k) {
+        std::snprintf(b, sizeof b, "%s%s %.2f", k ? ", " : "", names[k], rungSum_[k] / static_cast<double>(rungFrames_));
+        out += b;
+    }
+    for (double& v : rungSum_) v = 0.0;
+    rungFrames_ = 0;
+    return out;
+}
+
+void DekoRenderer::stamp(int k) {
+    dkCmdBufReportCounter(cb_, DkCounter_Timestamp, stamps_.gpu() + static_cast<uint32_t>(16 * k));
+    stamped_ |= 1u << k;
+}
+
+// the last frame's GPU time, once its fence is known signalled: the scene's
+// span plus the present's, or (no scene sent apart - a surface alone) the
+// whole list's
+void DekoRenderer::readStamps() {
+    if (ladder_ && rungs_ == 0x7Fu) {
+        const auto* q = static_cast<const volatile std::uint64_t*>(stamps_.cpu());
+        std::uint64_t t[7];
+        for (int k = 0; k < 7; ++k) t[k] = q[2 * (4 + k) + 1];
+        for (int k = 0; k < 6; ++k)
+            rungSum_[k] += t[k + 1] >= t[k] ? static_cast<double>(dkTimestampToNs(t[k + 1] - t[k])) / 1e6 : 0.0;
+        ++rungFrames_;
+    }
+    rungs_ = 0;
+    if ((stamped_ & 0x9u) != 0x9u) { stamped_ = 0; return; }
+    const auto* r = static_cast<const volatile std::uint64_t*>(stamps_.cpu());
+    const std::uint64_t t0 = r[1], t1 = r[3], t2 = r[5], t3 = r[7];   // each report's second word
+    std::uint64_t ticks = 0;
+    if ((stamped_ & 0x6u) == 0x6u && t1 >= t0 && t3 >= t2) ticks = (t1 - t0) + (t3 - t2);
+    else if (t3 >= t0) ticks = t3 - t0;
+    gpuMs_ = static_cast<double>(dkTimestampToNs(ticks)) / 1e6;
+    static int told = 0;
+    if (told < 3) {
+        ++told;
+        // every word, both of each report: which one is the timestamp is
+        // read here, not assumed (each report's second word is taken)
+        std::printf("deko3d: the GPU timer - frame %.2f ms, mask %x, words", gpuMs_, stamped_);
+        for (int w = 0; w < 8; ++w) std::printf(" %llu", static_cast<unsigned long long>(r[w]));
+        std::printf("\n");
+    }
+    stamped_ = 0;
+}
+
 // the frame's command list, from the start of its memory once the GPU is done with it
 void DekoRenderer::openCb() {
     if (cbOpen_) return;
@@ -591,10 +696,14 @@ void DekoRenderer::openCb() {
     cmdExtra_.clear();
     for (Alloc& a : deadVbo_) data_.free(a);
     deadVbo_.clear();
+    readStamps();   // the frame before is done: its timestamps are in
     dkCmdBufClear(cb_);
     dkCmdBufAddMemory(cb_, cmdMem_.mb, cmdMem_.off, cmdMem_.size);
     cbOpen_ = true;
     sceneSubmitted_ = false;
+    stamp(0);
+    ladder_ = omk::envFlag("OMK_DEKO_LADDER");
+    rung(0);
     // the descriptors the CPU wrote since (a new pool's), and the images the
     // uploads filled, seen fresh
     dkCmdBufBindImageDescriptorSet(cb_, imgDesc_.gpu(), kMaxImages);
@@ -691,6 +800,10 @@ void DekoRenderer::begin(const omk::View& view) {
     for (int i = 0; i < 3; ++i) fogColour_[i] = static_cast<float>(view.fogColour[i]) / 255.0f;
     rain_ = view.rain;
     dither_ = view.dither;
+    probe_ = omk::envInt("OMK_DEKO_PROBE", 0);
+    ++frames_;
+    pushRingAt_ = 0;
+    if (probe_ == 5 && !pushRing_) pushRing_ = data_.alloc(kPushRingSlots * kUboAlign, kUboAlign);
     pushView(view);
 
     // ---- THE FRAME'S BLOCKS, Vulkan's `begin` field for field (no tiles: D4)
@@ -741,6 +854,7 @@ void DekoRenderer::begin(const omk::View& view) {
     bindFrameState();
     dkCmdBufPushConstants(cb_, lightUbo_.gpu(), lightUbo_.size, 0, sizeof ub, &ub);
     dkCmdBufPushConstants(cb_, shadowUbo_.gpu(), shadowUbo_.size, 0, sizeof sb, &sb);
+    rung(1);
 
     // the clear: the scene's fog colour (`View::clearColour`), depth far, stencil 0
     const DkScissor all{0, 0, static_cast<uint32_t>(w_), static_cast<uint32_t>(h_)};
@@ -748,11 +862,13 @@ void DekoRenderer::begin(const omk::View& view) {
     dkCmdBufClearColorFloat(cb_, 0, DkColorMask_RGBA, view.clearColour[0] / 255.0f, view.clearColour[1] / 255.0f,
                             view.clearColour[2] / 255.0f, 1.0f);
     dkCmdBufClearDepthStencil(cb_, true, 1.0f, 0xFF, 0);
+    rung(2);
     // the letterbox is a VIEWPORT: the picture in the top-left `vw x vh`
     picH_ = view.letterboxed() ? view.vh : h_;
     const int vw = view.letterboxed() ? view.vw : w_;
     const DkViewport vp{0.0f, 0.0f, static_cast<float>(vw), static_cast<float>(picH_), 0.0f, 1.0f};
-    const DkScissor sc{0, 0, static_cast<uint32_t>(std::min(vw, w_)), static_cast<uint32_t>(picH_)};
+    const DkScissor sc = probe_ == 3 || probe_ == 7 ? DkScissor{0, 0, 1, 1}
+                                     : DkScissor{0, 0, static_cast<uint32_t>(std::min(vw, w_)), static_cast<uint32_t>(picH_)};
     dkCmdBufSetViewports(cb_, 0, &vp, 1);
     dkCmdBufSetScissors(cb_, 0, &sc, 1);
     recording_ = true;
@@ -802,11 +918,13 @@ bool DekoRenderer::bakeDepthTie(const omk::Geometry* g, std::span<const omk::Dra
 
 void DekoRenderer::submit(const omk::Draw& d) {
     if (!recording_ || !d.geo || !d.count) return;
+    if (probe_ == 6) return;   // the probe: no draw
     if (!uploadGeometry(d.geo)) return;
     st_.triangles += static_cast<long>(d.count / 3);
 
     // THE BLEND - `omk::blendRule`, Vulkan's three pipelines as three states
-    const int k = d.blend == omk::Blend::Opaque ? 0 : d.blend == omk::Blend::Add ? 1 : 2;
+    int k = d.blend == omk::Blend::Opaque ? 0 : d.blend == omk::Blend::Add ? 1 : 2;
+    if (probe_ == 7 && lastBlend_ >= 0) k = lastBlend_;   // the probe: the first state kept
     if (k != lastBlend_) {
         const omk::Blend kModes[3] = {omk::Blend::Opaque, omk::Blend::Add, omk::Blend::Mul};
         const omk::BlendRule rule = omk::blendRule(kModes[k]);
@@ -837,8 +955,8 @@ void DekoRenderer::submit(const omk::Draw& d) {
         lastBlend_ = k;
     }
     // an opaque CUTOUT draw: the shader with the late depth (`scene.frag` OMK_LATE_DEPTH)
-    const DkShader* frag = d.cutout && k == 0 ? &shFragCut_ : &shFrag_;
-    if (frag != lastFrag_) {
+    const DkShader* frag = probe_ == 1 ? &shFsqFrag_ : d.cutout && k == 0 && probe_ != 2 ? &shFragCut_ : &shFrag_;
+    if (frag != lastFrag_ && probe_ != 7) {
         const DkShader* sh[1] = {frag};
         dkCmdBufBindShaders(cb_, DkStageFlag_Fragment, sh, 1);
         lastFrag_ = frag;
@@ -846,7 +964,9 @@ void DekoRenderer::submit(const omk::Draw& d) {
     // THE TEXTURE: the key's low six bits, or the pool's index above them
     const std::size_t slot = omk::drawTextureSlot(d);
     const uint32_t img = slot < texSlot_.size() ? texSlot_[slot] : kImgWhite;
-    dkCmdBufBindTexture(cb_, DkStage_Fragment, kTexTex, dkMakeTextureHandle(img, filter_ ? kSampLinear : kSampNearest));
+    if (probe_ != 7 || draws_ == 0)
+        dkCmdBufBindTexture(cb_, DkStage_Fragment, kTexTex, dkMakeTextureHandle(img, filter_ ? kSampLinear : kSampNearest));
+    ++draws_;
 
     push_.posed = 0;
     push_.cutout = d.cutout ? 1 : 0;
@@ -889,8 +1009,19 @@ void DekoRenderer::submit(const omk::Draw& d) {
         const std::uint8_t c = haveCull ? g->cornerCull[i] : 0u;
         std::size_t j = i;
         while (j < e && (haveCull ? g->cornerCull[j] : 0u) == c) ++j;
+        if (probe_ == 4) j = e;   // the probe: the whole draw as one run
         push_.cull = c ? (flipX_ ? -cullSign() : cullSign()) : 0;
-        dkCmdBufPushConstants(cb_, pushUbo_.gpu(), pushUbo_.size, 0, sizeof(Push), &push_);
+        if (probe_ == 5 && pushRing_ && pushRingAt_ < kPushRingSlots) {
+            // the probe: the run's block in a slot of its own, bound in both stages
+            const uint32_t off = pushRingAt_++ * kUboAlign;
+            std::memcpy(static_cast<char*>(pushRing_.cpu()) + off, &push_, sizeof(Push));
+            dkCmdBufBindUniformBuffer(cb_, DkStage_Vertex, kUboPush, pushRing_.gpu() + off, kUboAlign);
+            dkCmdBufBindUniformBuffer(cb_, DkStage_Fragment, kUboPush, pushRing_.gpu() + off, kUboAlign);
+        } else {
+            dkCmdBufPushConstants(cb_, pushUbo_.gpu(), pushUbo_.size, 0, sizeof(Push), &push_);
+        }
+        ++runs_;
+        verts_ += static_cast<long>(j - i);
         dkCmdBufDraw(cb_, DkPrimitive_Triangles, static_cast<uint32_t>(j - i), 1, static_cast<uint32_t>(i), 0);
         i = j;
     }
@@ -900,6 +1031,8 @@ void DekoRenderer::submit(const omk::Draw& d) {
 void DekoRenderer::end() {
     if (!recording_) return;
     recording_ = false;
+    rung(3);
+    stamp(1);
     dkQueueSubmitCommands(queue_, dkCmdBufFinishList(cb_));
     sceneSubmitted_ = true;
     dirty_ = true;
@@ -943,9 +1076,13 @@ bool DekoRenderer::runPresent(uint32_t imgSlot, int vy, int vh, bool raw) {
     const int slot = dkQueueAcquireImage(queue_, swap_);
     DKTRACE("present: image %d acquired\n", slot);
     if (slot < 0 || slot >= kSwapImages) return false;
+    // (a list of its own after a scene sent apart: its span timed alone)
+    if (sceneSubmitted_) stamp(2);
+    rung(4);
     // what wrote the source (the scene's pass, or the surface's copy) done
     // and its image cache dropped before the pass samples it
     dkCmdBufBarrier(cb_, DkBarrier_Full, DkInvalidateFlags_Image);
+    rung(5);
     // the descriptor arrays again: this is a new command list
     dkCmdBufBindImageDescriptorSet(cb_, imgDesc_.gpu(), kMaxImages);
     dkCmdBufBindSamplerDescriptorSet(cb_, sampDesc_.gpu(), kSampCount);
@@ -990,6 +1127,8 @@ bool DekoRenderer::runPresent(uint32_t imgSlot, int vy, int vh, bool raw) {
     // the frame's fence INSIDE its list, as deko3d's samples do
     // (`CCmdMemRing::end`): signalled on the queue after the present (the
     // first console run) it never signalled - every wait ran out its 2 s
+    rung(6);
+    stamp(3);
     dkCmdBufSignalFence(cb_, &frameFence_, true);
     dkQueueSubmitCommands(queue_, dkCmdBufFinishList(cb_));
     DKTRACE("present: submitted, presenting image %d\n", slot);
@@ -1134,4 +1273,7 @@ bool dekoPresentSurface(Renderer* r, const Surface& s) {
     return static_cast<DekoRenderer*>(r)->presentSurface(s);
 }
 const char* dekoDeviceName(Renderer* r) { return static_cast<DekoRenderer*>(r)->device(); }
+void dekoSetSwapInterval(Renderer* r, int n) { static_cast<DekoRenderer*>(r)->setSwapInterval(n); }
+void dekoTakeCounts(Renderer* r, long out[4]) { static_cast<DekoRenderer*>(r)->takeCounts(out); }
+std::string dekoTakeLadder(Renderer* r) { return static_cast<DekoRenderer*>(r)->takeLadder(); }
 }  // namespace omk

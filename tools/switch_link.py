@@ -164,9 +164,14 @@ def main():
     ap.add_argument("--wait", type=float, default=60.0, help="seconds to wait for the output connection")
     ap.add_argument("--push", action="append", default=[], metavar="LOCAL=DEST",
                     help="send LOCAL (a file or folder) to sdmc:/switch/omk/DEST; repeatable")
-    ap.add_argument("args", nargs=argparse.REMAINDER)
-    a = ap.parse_args()
-    args = a.args[1:] if a.args[:1] == ["--"] else a.args
+    # the program's arguments are what follows `--`, split off BEFORE parsing:
+    # a REMAINDER positional after `nro` swallowed `--path` and `--log` given
+    # after it, so every NRO went to omk/omk.nro and those options reached the
+    # game (2026-11-27 - the deko3d build overwrote the GLES one)
+    argv = sys.argv[1:]
+    cut = argv.index("--") if "--" in argv else len(argv)
+    a = ap.parse_args(argv[:cut])
+    args = argv[cut + 1:]
     # listen BEFORE sending: the program may connect back at once
     import threading
     rc = [1]

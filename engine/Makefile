@@ -565,13 +565,13 @@ endif
 
 # ...and with DEKO3D, the console's own GPU API, in place of GLES through Mesa
 # (`todo/deko3d.md`): its own NRO, beside the default one until it has proved
-# itself on the console
+# itself on the console. `DEKO_DEBUG=1` links deko3d's validated library.
 switch-deko:
 ifeq ($(SWITCH_HAVE),)
 	@echo "no Switch toolchain - the Switch build is optional (todo/switch-port.md)."
 else
 	@mkdir -p build/switch-deko
-	$(call switch_cmake,build/switch-deko-cmake,build/switch-deko,-DOMK_DEKO3D=ON)
+	$(call switch_cmake,build/switch-deko-cmake,build/switch-deko,-DOMK_DEKO3D=ON -DOMK_DEKO3D_DEBUG=$(if $(DEKO_DEBUG),ON,OFF))
 	@echo "built build/switch-deko/omk.nro - the deko3d backend (todo/deko3d.md)"
 endif
 
