@@ -275,6 +275,25 @@ backend's own to follow (D3).
     menu) - `playgpu_deko.cpp`, said in the log. The street: original 8.1
     ms (124 fps), remaster 15.0. To be weighed again once D4c-e's
     full-screen passes raise the scene's cost.
+* **D4c - the bloom and the grade (2026-11-27, on the console).** Vulkan's
+  `recordPost` (`post.frag` itself, untranslated beyond `dkshaders.py`):
+  with a glow or a grade the scene draws into `postSrc_` (RGBA8, the alpha
+  the texel's light under the bloom), the glow's extraction and two blurs
+  at a quarter of the size (320x180, RGBA16F), the halos in the rain at that
+  size, then the final pass - the scene, the glow screened over it, the
+  grade's LUT - into `colour_`, which the present pass reads as before. The
+  pack's LIGHT MAPS (`_e`, BC4 blocks or R8 bytes) go up with their texture
+  and are bound per draw at binding 1; the glow only when a draw bound one
+  (Vulkan's `lightMapNow_`). No ambient occlusion: GLES's Switch draws none.
+  * The street, `--bench` (bloom 1.6, the ANEKBAH grade): original 8.5 ms,
+    unchanged (no post-pass without a glow or a grade); remaster 18.5 ms
+    (54 fps), GPU 18.2, against 15.0 before - the glow and the grade 3.5
+    ms. The ladder's scene rung (the post-pass recorded inside it): 14.45
+    ms. A captured frame (`--frames --dump`, fetched with `--b64`): the
+    lamps' and the fire's glow, the grade's colour - the picture right.
+  * Not yet: the remaster's log lines still say "drawn by Vulkan and GLES
+    only" (`texpack.cpp`, `playremaster_setup.cpp`) - true of the desktop
+    builds, to be widened when D5 makes deko3d the Switch's default.
 * **D4 - the remaster**: the per-pixel and tiled lights, the shadow map, the
   pack (ASTC natively - Maxwell samples it), water and the two reflections,
   bloom and grade, the 3D rain and its veils, the dust once a pixel (the pass

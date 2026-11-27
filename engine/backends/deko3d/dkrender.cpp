@@ -47,6 +47,7 @@
 #include "o3de/geom3do.h"
 #include "o3de/texpack.h"
 #include "o3de/fsrcon.h"
+#include "o3de/colourgrade.h"
 #include "formats/ktx2.h"
 #include "ui/surface.h"
 #include "platform/env.h"
@@ -89,7 +90,8 @@ constexpr uint32_t kSsboPose = 12;                                   // scene.ve
 
 // the fixed image descriptors; a pool texture takes the next free one
 enum : uint32_t { kImgWhite = 0, kImgBlack = 1, kImgFlat = 2, kImgColour = 3, kImgSurface = 4,
-                  kImgOverC = 5, kImgOverM = 6, kImgEasu = 7, kImgFirst = 8 };
+                  kImgOverC = 5, kImgOverM = 6, kImgEasu = 7, kImgPostSrc = 8, kImgGlow0 = 9, kImgGlow1 = 10,
+                  kImgLut = 11, kImgFirst = 16 };
 // the samplers: the pool's filter (0 nearest - the original's software
 // devices - 1 bilinear, its 3D cards'), and the present's nearest clamp
 enum : uint32_t { kSampNearest = 0, kSampLinear = 1, kSampClamp = 2, kSampTrilinear = 3, kSampLinearClamp = 4,
@@ -243,7 +245,8 @@ public:
     // occlusion, the reflections, the relief (D4b-e) - their setters answer no.
     unsigned takes() const override {
         return omk::kTakesTextureFilter | omk::kTakesTrilinear | omk::kTakesPixelLights | omk::kTakesWater |
-               omk::kTakesBodyTint | omk::kTakesEmitterLights | omk::kTakesMist | omk::kTakesUpscale;
+               omk::kTakesBodyTint | omk::kTakesEmitterLights | omk::kTakesMist | omk::kTakesUpscale |
+               omk::kTakesBloom | omk::kTakesGrade;
     }
     bool setTextureFilter(int mode) override {
         if (dev_) return false;   // the samplers exist - `retexture` moves it later
@@ -263,6 +266,16 @@ public:
         return true;
     }
     bool takesPack() const override { return true; }
+    // THE BLOOM and THE GRADE (D4c, Vulkan's post-pass - `post.frag`): any time,
+    // no target to remake; the glow only where a draw bound a light map
+    bool setBloom(float s) override { bloom_ = s < 0.0f ? 0.0f : s > 4.0f ? 4.0f : s; return true; }
+    bool setGrade(const float* rgb, int n) override {
+        if (!rgb || n < 2) { lutN_ = 0; return true; }
+        omk::lutStrip(rgb, n, lutData_);
+        lutN_ = n;
+        lutDirty_ = true;
+        return true;
+    }
     // THE UPSCALE (D4b): before `init` - the targets are made for it
     bool setUpscale(float f) override {
         if (dev_) return false;
@@ -311,7 +324,27 @@ private:
     uint32_t takeSlot();
     void waitFrame();
     void openCb();
-    void bindFrameState();
+    void bindFrameState(const DkImageView* target);
+    // THE POST-PASS (D4c): the scene drawn into `postSrc_` when the frame has
+    // a glow or a grade, then the glow's passes at a quarter of the size and
+    // the final one into `colour_` - Vulkan's `recordPost`, without the
+    // occlusion (GLES's Switch draws none)
+    bool makePost();
+    bool uploadLut();
+    void recordPost();
+    void postPass(const DkImageView* rt, int w, int h, uint32_t src, uint32_t glow, int srcW, int srcH, float dx,
+                  float dy, int mode, float strength, float halo);
+    float bloom_ = 0.0f, halo_ = 0.0f;
+    int lutN_ = 0;
+    bool lutDirty_ = false;
+    std::vector<unsigned char> lutData_;
+    bool postNow_ = false, lightMapNow_ = false, poolLit_ = false, postMade_ = false;
+    DkImage postSrc_{}, glow_[2]{}, lut_{};
+    Alloc postSrcMem_, glowMem_[2], lutMem_;
+    DkImageView postSrcView_{}, glowView_[2]{};
+    int gw_ = 0, gh_ = 0, lutMadeN_ = 0;
+    DkShader shPost_{};
+    uint32_t boundEmis_ = kImgBlack;
     void pushView(const omk::View& v);
     // the buffer this frame draws `g` from, its contents current - or nullptr
     const Alloc* uploadGeometry(const omk::Geometry* g);
@@ -503,9 +536,14 @@ private:
         // original's size, the UVs still in the original's texels (`texScaled`)
         bool packed = false;
         float su = 1.0f, sv = 1.0f;
+        // its LIGHT MAP (the pack's `_e`, the bloom's): one channel, read `.r`
+        DkImage emImg{};
+        Alloc emMem;
+        uint32_t emSlot = kImgBlack;
     };
     std::vector<const DTex*> texOf_;   // the pool's index -> its texture (nullptr: none)
     bool uploadBlocks(const omk::PackBlocks& z, DTex& out);   // a pack KTX2's levels, as they are
+    bool uploadLightMap(const omk::PackImage& rep, DTex& t);  // its `_e`: BC4 blocks, or R8 bytes
     struct Uploaded {
         omk::PixelBuffer idx, pal;   // the storage held, so its address cannot come back as another texture's
         bool used = false;
@@ -660,7 +698,7 @@ bool DekoRenderer::init(int w, int h) {
         !loadShader("scene_orig.frag", shOrig_) || !loadShader("scene_orig_cut.frag", shOrigCut_) ||
         !loadShader("overlay.frag", shOverlay_) || !loadShader("easu.frag", shEasu_) ||
         !loadShader("easu_nogather.frag", shEasuFetch_) || !loadShader("easu_lite.frag", shEasuLite_) ||
-        !loadShader("present_lite.frag", shPresentLite_))
+        !loadShader("present_lite.frag", shPresentLite_) || !loadShader("post.frag", shPost_))
         return false;
 
     // the descriptors: one array of images, one of samplers
@@ -951,8 +989,8 @@ void DekoRenderer::pushView(const omk::View& view) {
 }
 
 // the state every scene draw shares, bound once a frame
-void DekoRenderer::bindFrameState() {
-    const DkImageView* rt = &colourView_;
+void DekoRenderer::bindFrameState(const DkImageView* target) {
+    const DkImageView* rt = target;
     dkCmdBufBindRenderTargets(cb_, &rt, 1, &depthView_);
     const DkShader* sh[2] = {&shVert_, &shFrag_};
     dkCmdBufBindShaders(cb_, DkStageFlag_GraphicsMask, sh, 2);
@@ -992,6 +1030,7 @@ void DekoRenderer::bindFrameState() {
     // the stand-ins under the light map, the reflection and the shadow map
     const uint32_t samp = sampler();
     dkCmdBufBindTexture(cb_, DkStage_Fragment, kTexEmis, dkMakeTextureHandle(kImgBlack, samp));
+    boundEmis_ = kImgBlack;
     dkCmdBufBindTexture(cb_, DkStage_Fragment, kTexRefl, dkMakeTextureHandle(kImgBlack, samp));
     dkCmdBufBindTexture(cb_, DkStage_Fragment, kTexShadow, dkMakeTextureHandle(kImgBlack, kSampClamp));
     lastBlend_ = -1;
@@ -1076,7 +1115,14 @@ void DekoRenderer::begin(const omk::View& view) {
     sb.texel = 1.0f / 1024.0f;    // Vulkan's kShadowSide; the strength 0 - no shadow pass yet (D4)
     sb.shimmer = view.shimmerClock;
 
-    bindFrameState();
+    // THE POST-PASS's this frame: decided here, where the scene's target is
+    // chosen - the glow only with a light map in the pool (without one every
+    // texel's light is 0), the grade whenever one is set (Vulkan's rule)
+    halo_ = view.halo;
+    if (lutDirty_ && lutN_ > 1 && !uploadLut()) lutN_ = 0;
+    postNow_ = ((bloom_ > 0.0f && poolLit_) || lutN_ > 1) && makePost();
+    lightMapNow_ = false;
+    bindFrameState(postNow_ ? &postSrcView_ : &colourView_);
     dkCmdBufPushConstants(cb_, lightUbo_.gpu(), lightUbo_.size, 0, sizeof ub, &ub);
     dkCmdBufPushConstants(cb_, shadowUbo_.gpu(), shadowUbo_.size, 0, sizeof sb, &sb);
     rung(1);
@@ -1084,8 +1130,10 @@ void DekoRenderer::begin(const omk::View& view) {
     // the clear: the scene's fog colour (`View::clearColour`), depth far, stencil 0
     const DkScissor all{0, 0, static_cast<uint32_t>(w_), static_cast<uint32_t>(h_)};
     dkCmdBufSetScissors(cb_, 0, &all, 1);
+    // (with the BLOOM the alpha is the light map's value: what no surface
+    // covers clears to 0 - not light; at 1 the fog past the clip glowed)
     dkCmdBufClearColorFloat(cb_, 0, DkColorMask_RGBA, view.clearColour[0] / 255.0f, view.clearColour[1] / 255.0f,
-                            view.clearColour[2] / 255.0f, 1.0f);
+                            view.clearColour[2] / 255.0f, bloom_ > 0.0f ? 0.0f : 1.0f);
     dkCmdBufClearDepthStencil(cb_, true, 1.0f, 0xFF, 0);
     rung(2);
     // the letterbox is a VIEWPORT: the picture in the top-left `vw x vh`
@@ -1310,7 +1358,17 @@ void DekoRenderer::submitOne(const omk::Draw& d, bool posed, uint32_t poseOff) {
     }
     push_.cutout = d.cutout ? 1 : 0;
     push_.caster = d.castsShadow ? 1 : 0;
-    push_.bloomMode = 0;
+    // THE BLOOM: the alpha written is the texel's LIGHT, its light map's
+    push_.bloomMode = bloom_ > 0.0f ? 1 : 0;
+    if (bloom_ > 0.0f) {
+        const DTex* bt = slot < texOf_.size() ? texOf_[slot] : nullptr;
+        const uint32_t em = bt ? bt->emSlot : kImgBlack;
+        if (em != boundEmis_) {
+            dkCmdBufBindTexture(cb_, DkStage_Fragment, kTexEmis, dkMakeTextureHandle(em, sampler()));
+            boundEmis_ = em;
+        }
+        lightMapNow_ |= em != kImgBlack;
+    }
     // no reflection pass and no water yet (D4): a WET floor's darkening and
     // the rain's ripples ride in the mode's high bits, as on Vulkan
     push_.water = 0;
@@ -1389,6 +1447,7 @@ void DekoRenderer::submitOne(const omk::Draw& d, bool posed, uint32_t poseOff) {
 void DekoRenderer::end() {
     if (!recording_) return;
     recording_ = false;
+    if (postNow_) recordPost();
     rung(3);
     stamp(1);
     dkQueueSubmitCommands(queue_, dkCmdBufFinishList(cb_));
@@ -1707,6 +1766,138 @@ bool DekoRenderer::uploadBlocks(const omk::PackBlocks& z, DTex& out) {
     return true;
 }
 
+// a texture's LIGHT MAP (the pack's `_e`, the bloom's - `scene.frag` reads its
+// `.r`): the BC4 block file as it is, or the decoded bytes as R8
+bool DekoRenderer::uploadLightMap(const omk::PackImage& rep, DTex& t) {
+    if (!rep.emissiveZ.empty()) {
+        DTex e;
+        if (!uploadBlocks(rep.emissiveZ, e) || e.slot == kImgWhite) return false;
+        t.emImg = e.img; t.emMem = e.mem; t.emSlot = e.slot;
+        return true;
+    }
+    if (rep.emissive.empty() || rep.ew < 1 || rep.eh < 1) return false;
+    const uint32_t bytes = static_cast<uint32_t>(rep.ew) * static_cast<uint32_t>(rep.eh);
+    Alloc st;
+    if (!makeImage(t.emImg, t.emMem, DkImageFormat_R8_Unorm, rep.ew, rep.eh, 0) || !stage(bytes, st)) return false;
+    std::memcpy(st.cpu(), rep.emissive.data(), std::min<std::size_t>(bytes, rep.emissive.size()));
+    DkImageView v;
+    dkImageViewDefaults(&v, &t.emImg);
+    const DkCopyBuf src{st.gpu(), 0, 0};
+    const DkImageRect r{0, 0, 0, static_cast<uint32_t>(rep.ew), static_cast<uint32_t>(rep.eh), 1};
+    dkCmdBufCopyBufferToImage(upCb_, &src, &v, &r, 0);
+    t.emSlot = takeSlot();
+    if (t.emSlot == kImgWhite) { t.emSlot = kImgBlack; return false; }
+    writeDescriptor(t.emSlot, t.emImg);
+    return true;
+}
+
+// ---- THE POST-PASS (D4c) ---------------------------------------------------
+
+bool DekoRenderer::makePost() {
+    if (postMade_) return true;
+    gw_ = std::max(1, w_ / 4);
+    gh_ = std::max(1, h_ / 4);
+    // the scene's picture in RGBA8, the glow's two in half floats (Vulkan's)
+    if (!makeImage(postSrc_, postSrcMem_, DkImageFormat_RGBA8_Unorm, w_, h_, DkImageFlags_UsageRender) ||
+        !makeImage(glow_[0], glowMem_[0], DkImageFormat_RGBA16_Float, gw_, gh_, DkImageFlags_UsageRender) ||
+        !makeImage(glow_[1], glowMem_[1], DkImageFormat_RGBA16_Float, gw_, gh_, DkImageFlags_UsageRender)) {
+        std::printf("deko3d: the post-pass's images could not be made - no bloom, no grade\n");
+        bloom_ = 0.0f;
+        lutN_ = 0;
+        return false;
+    }
+    dkImageViewDefaults(&postSrcView_, &postSrc_);
+    dkImageViewDefaults(&glowView_[0], &glow_[0]);
+    dkImageViewDefaults(&glowView_[1], &glow_[1]);
+    writeDescriptor(kImgPostSrc, postSrc_);
+    writeDescriptor(kImgGlow0, glow_[0]);
+    writeDescriptor(kImgGlow1, glow_[1]);
+    postMade_ = true;
+    std::printf("deko3d: the post-pass - the glow at %dx%d, a grade's LUT when one is set\n", gw_, gh_);
+    return true;
+}
+
+// the grade's LUT, its N^3 entries as an N*N x N strip (`omk::lutStrip`)
+bool DekoRenderer::uploadLut() {
+    lutDirty_ = false;
+    if (lutN_ < 2) return false;
+    const int w = lutN_ * lutN_, h = lutN_;
+    if (lutMadeN_ != lutN_) {
+        if (lutMadeN_) { dkQueueWaitIdle(queue_); markIdle(); images_.free(lutMem_); }
+        lutMadeN_ = 0;
+        if (!makeImage(lut_, lutMem_, DkImageFormat_RGBA8_Unorm, w, h, 0)) return false;
+        writeDescriptor(kImgLut, lut_);
+        lutMadeN_ = lutN_;
+    }
+    Alloc st;
+    const uint32_t bytes = static_cast<uint32_t>(lutData_.size());
+    if (bytes < static_cast<uint32_t>(w * h * 4) || !stage(bytes, st)) return false;
+    std::memcpy(st.cpu(), lutData_.data(), bytes);
+    DkImageView v;
+    dkImageViewDefaults(&v, &lut_);
+    const DkCopyBuf src{st.gpu(), 0, 0};
+    const DkImageRect r{0, 0, 0, static_cast<uint32_t>(w), static_cast<uint32_t>(h), 1};
+    dkCmdBufCopyBufferToImage(upCb_, &src, &v, &r, 0);
+    flushUploads();
+    return true;
+}
+
+// one pass of `post.frag` into `rt` (`w` x `h`): `src` and `glow` image
+// descriptors, the push block Vulkan's (`PostPush`)
+void DekoRenderer::postPass(const DkImageView* rt, int w, int h, uint32_t src, uint32_t glow, int srcW, int srcH,
+                            float dx, float dy, int mode, float strength, float halo) {
+    dkCmdBufBindRenderTargets(cb_, &rt, 1, nullptr);
+    const DkViewport vp{0.0f, 0.0f, static_cast<float>(w), static_cast<float>(h), 0.0f, 1.0f};
+    const DkScissor sc{0, 0, static_cast<uint32_t>(w), static_cast<uint32_t>(h)};
+    dkCmdBufSetViewports(cb_, 0, &vp, 1);
+    dkCmdBufSetScissors(cb_, 0, &sc, 1);
+    dkCmdBufBindTexture(cb_, DkStage_Fragment, 0, dkMakeTextureHandle(src, kSampLinearClamp));
+    dkCmdBufBindTexture(cb_, DkStage_Fragment, 1, dkMakeTextureHandle(glow, kSampLinearClamp));
+    dkCmdBufBindTexture(cb_, DkStage_Fragment, 2,
+                        dkMakeTextureHandle(lutMadeN_ > 1 ? kImgLut : kImgBlack, kSampLinearClamp));
+    dkCmdBufBindTexture(cb_, DkStage_Fragment, 3, dkMakeTextureHandle(kImgWhite, kSampLinearClamp));
+    const PostPush p{{1.0f / static_cast<float>(w), 1.0f / static_cast<float>(h)},
+                     {1.0f / static_cast<float>(srcW), 1.0f / static_cast<float>(srcH)},
+                     {dx, dy}, strength, mode, lutN_ > 1 && lutMadeN_ == lutN_ ? lutN_ : 0, 0, halo};
+    dkCmdBufPushConstants(cb_, pushUbo_.gpu(), pushUbo_.size, 0, sizeof p, &p);
+    dkCmdBufDraw(cb_, DkPrimitive_Triangles, 3, 1, 0, 0);
+    // its writes done before the next pass samples them
+    dkCmdBufBarrier(cb_, DkBarrier_Fragments, DkInvalidateFlags_Image);
+}
+
+// Vulkan's `recordPost`: the glow (only where a draw bound a light map) - its
+// extraction at a quarter of the size, the two blurs, the halos in the rain -
+// then the final pass: the scene, the glow over it, the grade, into `colour_`
+void DekoRenderer::recordPost() {
+    const bool glow = bloom_ > 0.0f && lightMapNow_;
+    const bool halos = glow && halo_ > 0.0f;
+    dkCmdBufBarrier(cb_, DkBarrier_Fragments, DkInvalidateFlags_Image);   // the scene's writes, sampled next
+    const DkShader* sh[2] = {&shFsq_, &shPost_};
+    dkCmdBufBindShaders(cb_, DkStageFlag_GraphicsMask, sh, 2);
+    lastFrag_ = nullptr;
+    DkColorState cs;
+    dkColorStateDefaults(&cs);
+    dkCmdBufBindColorState(cb_, &cs);
+    DkDepthStencilState ds;
+    dkDepthStencilStateDefaults(&ds);
+    ds.depthTestEnable = 0;
+    ds.depthWriteEnable = 0;
+    dkCmdBufBindDepthStencilState(cb_, &ds);
+    lastBlend_ = -1;
+    dkCmdBufBindVtxAttribState(cb_, nullptr, 0);
+    dkCmdBufBindVtxBufferState(cb_, nullptr, 0);
+    dkCmdBufBindUniformBuffer(cb_, DkStage_Fragment, kUboPush, pushUbo_.gpu(), pushUbo_.size);
+    if (glow) {
+        postPass(&glowView_[0], gw_, gh_, kImgPostSrc, kImgBlack, w_, h_, 0.0f, 0.0f, 0, 0.0f, 0.0f);
+        postPass(&glowView_[1], gw_, gh_, kImgGlow0, kImgBlack, gw_, gh_, 1.0f, 0.0f, 1, 0.0f, 0.0f);
+        postPass(&glowView_[0], gw_, gh_, kImgGlow1, kImgBlack, gw_, gh_, 0.0f, 1.0f, 1, 0.0f, 0.0f);
+        // THE HALOS at the glow's size, once (`post.frag` mode 3: `srcInv` the frame's)
+        if (halos) postPass(&glowView_[1], gw_, gh_, kImgGlow0, kImgBlack, w_, h_, 0.0f, 0.0f, 3, 0.0f, halo_);
+    }
+    postPass(&colourView_, w_, h_, kImgPostSrc, halos ? kImgGlow1 : glow ? kImgGlow0 : kImgBlack, w_, h_, 0.0f, 0.0f,
+             2, glow ? bloom_ : 0.0f, 0.0f);
+}
+
 void DekoRenderer::poolTextures(std::span<const omk::Texture> t) {
     if (!dev_) return;
     // THE POOL, UPLOADED ONLY WHERE IT IS NEW (Vulkan's rule): a texture
@@ -1723,6 +1914,10 @@ void DekoRenderer::poolTextures(std::span<const omk::Texture> t) {
         if (!waited) { dkQueueWaitIdle(queue_); markIdle(); waited = true; }
         images_.free(it->second.t->mem);
         if (it->second.t->slot >= kImgFirst) freeSlots_.push_back(it->second.t->slot);
+        if (it->second.t->emSlot >= kImgFirst) {
+            images_.free(it->second.t->emMem);
+            freeSlots_.push_back(it->second.t->emSlot);
+        }
         it = uploaded_.erase(it);
     }
     texSlot_.assign(t.size(), kImgWhite);
@@ -1741,7 +1936,7 @@ void DekoRenderer::poolTextures(std::span<const omk::Texture> t) {
         reps = pack.replacements(toDecode);
     }
     const auto t1 = clk::now();
-    int fresh = 0, packed = 0, blocks = 0;
+    int fresh = 0, packed = 0, blocks = 0, lit = 0;
     for (std::size_t i = 0; i < t.size(); ++i) {
         const omk::Texture& x = t[i];
         if (!x.hasPixels()) continue;
@@ -1757,6 +1952,7 @@ void DekoRenderer::poolTextures(std::span<const omk::Texture> t) {
                 u.t->su = static_cast<float>(reps[i].w) / static_cast<float>(x.width);
                 u.t->sv = static_cast<float>(reps[i].h) / static_cast<float>(x.height);
                 ++blocks; ++fresh; ++packed;
+                lit += uploadLightMap(reps[i], *u.t) ? 1 : 0;
                 hit = uploaded_.emplace(keyOf(x), std::move(u)).first;
                 texSlot_[i] = hit->second.t->slot;
                 texOf_[i] = hit->second.t.get();
@@ -1786,6 +1982,7 @@ void DekoRenderer::poolTextures(std::span<const omk::Texture> t) {
                 if (u.t->slot != kImgWhite) writeDescriptor(u.t->slot, u.t->img);
                 ++fresh;
             }
+            if (hasRep) lit += uploadLightMap(reps[i], *u.t) ? 1 : 0;
             hit = uploaded_.emplace(keyOf(x), std::move(u)).first;
         }
         texSlot_[i] = hit->second.t->slot;
@@ -1793,12 +1990,14 @@ void DekoRenderer::poolTextures(std::span<const omk::Texture> t) {
         packed += hit->second.t->packed ? 1 : 0;
     }
     flushUploads();
+    // the glow's condition: a light map in the pool (Vulkan's `poolLit_`)
+    poolLit_ = std::any_of(texOf_.begin(), texOf_.end(), [](const DTex* d) { return d && d->emSlot != kImgBlack; });
     const double decodeMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
     const double uploadMs = std::chrono::duration<double, std::milli>(clk::now() - t1).count();
     if (fresh > 0)
         std::printf("deko3d: texture pool - %d new of %zu (%d from the pack's block files), %d replaced by the "
-                    "pack; the pack's read and decode %.1f ms, the uploads %.1f ms; images %llu of %llu KB\n",
-                    fresh, t.size(), blocks, packed, decodeMs, uploadMs,
+                    "pack, %d light maps; the pack's read and decode %.1f ms, the uploads %.1f ms; images %llu of "
+                    "%llu KB\n", fresh, t.size(), blocks, packed, lit, decodeMs, uploadMs,
                     static_cast<unsigned long long>(images_.used() >> 10),
                     static_cast<unsigned long long>(images_.total() >> 10));
 }
