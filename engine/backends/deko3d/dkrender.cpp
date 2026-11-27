@@ -85,7 +85,8 @@ constexpr uint32_t kTexTex = 0, kTexEmis = 1, kTexRefl = 2, kTexShadow = 7;
 constexpr uint32_t kSsboPose = 12;                                   // scene.vert set 2.0
 
 // the fixed image descriptors; a pool texture takes the next free one
-enum : uint32_t { kImgWhite = 0, kImgBlack = 1, kImgFlat = 2, kImgColour = 3, kImgSurface = 4, kImgFirst = 8 };
+enum : uint32_t { kImgWhite = 0, kImgBlack = 1, kImgFlat = 2, kImgColour = 3, kImgSurface = 4,
+                  kImgOverC = 5, kImgOverM = 6, kImgFirst = 8 };
 // the samplers: the pool's filter (0 nearest - the original's software
 // devices - 1 bilinear, its 3D cards'), and the present's nearest clamp
 enum : uint32_t { kSampNearest = 0, kSampLinear = 1, kSampClamp = 2, kSampCount = 3 };
@@ -238,6 +239,13 @@ public:
         return true;
     }
     bool bakeDepthTie(const omk::Geometry* g, std::span<const omk::Draw> order) override;
+    // BODIES POSED BY THE RENDERER (`renderer.h` `Draw::meshPose`), as Vulkan,
+    // GLES, GL1 and the 3DS: a posed draw's REST corners - static, uploaded
+    // once - and its block in the slot's pose buffer, which `scene.vert`
+    // places, turns and lights each corner by. A body that will not fit the
+    // buffer is posed on the CPU (`cpuPose`), so no path draws it wrong.
+    bool posesBodies() const override { return slots_[0].pose.mb != nullptr; }
+    int maxVertexLights() const override { return posesBodies() ? kPoseLights : 0; }
     // THE GPU'S OWN TIME for the last frame (`renderer.h`), from four
     // timestamps (`stamp`): the scene's list and the present's, the queue's
     // wait for a swapchain image between them left out - as GLES's timer
@@ -246,6 +254,12 @@ public:
 
     bool presentWorld(int vy, int vh);
     bool presentSurface(const omk::Surface& s);
+    // THE INTERFACE AS AN OVERLAY over the GPU's world (`overlay.frag`,
+    // GLES's `presentOverlay`): `s` the CPU's frame with the world's pixels
+    // left as the key, `mask` the planes' M (`resolveOverlayPlanes`), `fade`
+    // the colour fade (rgb, weight). False: not taken (the frame composed on
+    // the CPU instead).
+    bool presentOverlay(const omk::Surface& s, const unsigned char* mask, const float fade[4], int vy, int vh);
     const char* device() const { return "Tegra X1 (deko3d)"; }
     void setSwapInterval(int n) { if (swap_) dkSwapchainSetSwapInterval(swap_, n < 0 ? 0 : static_cast<uint32_t>(n)); }
 
@@ -266,9 +280,23 @@ private:
     void poolTextures(std::span<const omk::Texture> t);
     bool stage(uint32_t bytes, Alloc& out);
     void flushUploads();
-    bool runPresent(uint32_t imgSlot, int vy, int vh, bool raw);
+    // `over`: the overlay's fade - its planes already staged in the slot - to
+    // lay over the present's picture; nullptr for none
+    bool runPresent(uint32_t imgSlot, int vy, int vh, bool raw, const float* over = nullptr);
     void stamp(int k);
     void readStamps();
+    bool writePose(const omk::Draw& d, uint32_t& off);
+    omk::Draw cpuPose(const omk::Draw& d);
+    void submitOne(const omk::Draw& d, bool posed, uint32_t poseOff);
+    // Vulkan's `kPoseLights` / `kPoseMaxMeshes` (`scene.vert`'s kLights must say the same)
+    static constexpr int kPoseLights = 32, kPoseMaxMeshes = 256;
+    // 2 MB a slot: Anekbah's busiest street frame writes ~288 KB (Vulkan's note)
+    static constexpr uint32_t kPoseBytes = 2u << 20;
+    static constexpr uint32_t kPoseRange = (1 + 2 * kPoseLights + 3 * kPoseMaxMeshes + 1) * 16;
+    static constexpr uint32_t kPoseAlign = 256;
+    std::map<const omk::Geometry*, omk::Geometry> cpuPosed_;   // `cpuPose`'s corners
+    std::uint64_t cpuPoseRev_ = 0;
+    DkGpuAddr boundPose_ = 0;   // the storage buffer bound at binding 12 now
     // THE LADDER (`OMK_DEKO_LADDER=1`, an instrument): a timestamp at each
     // rung of a frame - 0 the list opened, 1 the frame's state and blocks,
     // 2 the clears, 3 the scene sent, 4 the present's list begun, 5 its
@@ -311,6 +339,13 @@ private:
         Alloc stamps;               // the GPU timer's and the ladder's reports
         unsigned stamped = 0, rungs = 0;
         Alloc surfStage;
+        Alloc overStage;            // the overlay's two planes: C (16 bits a pixel), then M
+        // THE POSE BUFFER (`scene.vert` set 2 -> storage buffer 12): the
+        // frame's posed bodies, one block each, written from the start at
+        // every `begin`; the slot's own, as the CPU writes it each frame
+        Alloc pose;
+        uint32_t poseUsed = 0;
+        std::map<std::pair<const float*, const float*>, uint32_t> poseCache;   // a body's block this frame
     };
     Slot slots_[kMaxSlots];
     int nSlots_ = 2, slot_ = 0;
@@ -328,6 +363,10 @@ private:
     // remaster in a frame that asks nothing of it (`frameOrig_`, `submit`) -
     // the full shader's 49 registers were ~9.5 ms of the street's 13.3
     DkShader shOrig_{}, shOrigCut_{};
+    DkShader shOverlay_{};
+    DkImage overC_{}, overM_{};   // the overlay's planes: C as R16_UINT words, M as R8
+    Alloc overCMem_, overMMem_;
+    long overlays_ = 0;
     bool frameOrig_ = true;
     // `OMK_DEKO_PROBE=N`, an instrument read at each `begin` (so `--bench`'s
     // OMK_BENCH_VARY steps through it): what the scene's GPU time is made of,
@@ -342,20 +381,20 @@ private:
     uint32_t pushRingAt_ = 0;
     static constexpr uint32_t kPushRingSlots = 8192;
     // what a frame issued, summed for `dekoTakeCounts` (the 60-frame report)
-    long draws_ = 0, runs_ = 0, verts_ = 0, frames_ = 0, origDraws_ = 0;
+    long draws_ = 0, runs_ = 0, verts_ = 0, frames_ = 0, origDraws_ = 0, posedDraws_ = 0;
     // ...and what the CPU spent in `submit`: the vertex uploads (how many,
     // their bytes, their ms) and the whole of it
     long uploads_ = 0, upBytes_ = 0;
     double upMs_ = 0.0, submitMs_ = 0.0, waitMs_ = 0.0;   // waitMs_: `waitFrame`, the slot's fence
 public:
-    void takeCounts(long out[5]) {
-        out[0] = draws_; out[1] = runs_; out[2] = verts_; out[3] = frames_; out[4] = origDraws_;
-        draws_ = runs_ = verts_ = frames_ = origDraws_ = 0;
+    void takeCounts(long out[6]) {
+        out[0] = draws_; out[1] = runs_; out[2] = verts_; out[3] = frames_; out[4] = origDraws_; out[5] = posedDraws_;
+        draws_ = runs_ = verts_ = frames_ = origDraws_ = posedDraws_ = 0;
     }
-    void takeCpu(double out[5]) {
+    void takeCpu(double out[6]) {
         out[0] = static_cast<double>(uploads_); out[1] = static_cast<double>(upBytes_);
-        out[2] = upMs_; out[3] = submitMs_; out[4] = waitMs_;
-        uploads_ = upBytes_ = 0;
+        out[2] = upMs_; out[3] = submitMs_; out[4] = waitMs_; out[5] = static_cast<double>(overlays_);
+        uploads_ = upBytes_ = overlays_ = 0;
         upMs_ = submitMs_ = waitMs_ = 0.0;
     }
 private:
@@ -553,7 +592,8 @@ bool DekoRenderer::init(int w, int h) {
     if (!loadShader("scene.vert", shVert_) || !loadShader("scene.frag", shFrag_) ||
         !loadShader("scene_cut.frag", shFragCut_) || !loadShader("fsq.vert", shFsq_) ||
         !loadShader("present.frag", shPresent_) || !loadShader("fsq.frag", shFsqFrag_) ||
-        !loadShader("scene_orig.frag", shOrig_) || !loadShader("scene_orig_cut.frag", shOrigCut_))
+        !loadShader("scene_orig.frag", shOrig_) || !loadShader("scene_orig_cut.frag", shOrigCut_) ||
+        !loadShader("overlay.frag", shOverlay_))
         return false;
 
     // the descriptors: one array of images, one of samplers
@@ -585,6 +625,11 @@ bool DekoRenderer::init(int w, int h) {
     dkImageViewDefaults(&depthView_, &depth_);
     writeDescriptor(kImgColour, colour_);
     writeDescriptor(kImgSurface, surfImg_);
+    if (!makeImage(overC_, overCMem_, DkImageFormat_R16_Uint, w, h, DkImageFlags_Usage2DEngine) ||
+        !makeImage(overM_, overMMem_, DkImageFormat_R8_Unorm, w, h, DkImageFlags_Usage2DEngine))
+        return false;
+    writeDescriptor(kImgOverC, overC_);
+    writeDescriptor(kImgOverM, overM_);
     const DkImage* swapPtrs[kSwapImages];
     for (int i = 0; i < kSwapImages; ++i) {
         if (!makeImage(swapImg_[i], swapMem_[i], DkImageFormat_RGBA8_Unorm, w, h,
@@ -612,6 +657,10 @@ bool DekoRenderer::init(int w, int h) {
         slots_[k].surfStage = data_.alloc(static_cast<uint32_t>(w) * static_cast<uint32_t>(h) * 4,
                                           DK_IMAGE_LINEAR_STRIDE_ALIGNMENT);
         slots_[k].stamps = data_.alloc(16 * 16, 16);   // the timer's four, then the ladder's (`rung`)
+        slots_[k].overStage = data_.alloc(static_cast<uint32_t>(w) * static_cast<uint32_t>(h) * 3,
+                                          DK_IMAGE_LINEAR_STRIDE_ALIGNMENT);
+        if (!slots_[k].overStage) return false;
+        slots_[k].pose = data_.alloc(kPoseBytes, kPoseAlign);   // none: the bodies posed on the CPU
         if (!slots_[k].surfStage || !slots_[k].stamps) return false;
         std::memset(slots_[k].stamps.cpu(), 0, slots_[k].stamps.size);
     }
@@ -840,6 +889,7 @@ void DekoRenderer::bindFrameState() {
     dkCmdBufBindUniformBuffer(cb_, DkStage_Fragment, kUboShadow, shadowUbo_.gpu(), shadowUbo_.size);
     dkCmdBufBindUniformBuffer(cb_, DkStage_Fragment, kUboLights, lightUbo_.gpu(), lightUbo_.size);
     dkCmdBufBindStorageBuffer(cb_, DkStage_Vertex, kSsboPose, poseBuf_.gpu(), poseBuf_.size);
+    boundPose_ = poseBuf_.gpu();
     // the stand-ins under the light map, the reflection and the shadow map
     const uint32_t samp = filter_ ? kSampLinear : kSampNearest;
     dkCmdBufBindTexture(cb_, DkStage_Fragment, kTexEmis, dkMakeTextureHandle(kImgBlack, samp));
@@ -874,6 +924,8 @@ void DekoRenderer::begin(const omk::View& view) {
     // shader on both sides)
     const bool forceFull = omk::envOn("OMK_DEKO_FULL");
     frameOrig_ = !forceFull && view.mist <= 0.0f && view.dust <= 0.0f && view.veil <= 0.0f;
+    cur().poseUsed = 0;   // the slot's last frame is done (`openCb`): its pose buffer from the start
+    cur().poseCache.clear();
     probe_ = omk::envInt("OMK_DEKO_PROBE", 0);
     ++frames_;
     pushRingAt_ = 0;
@@ -1044,8 +1096,61 @@ bool DekoRenderer::bakeDepthTie(const omk::Geometry* g, std::span<const omk::Dra
     return true;
 }
 
+bool DekoRenderer::writePose(const omk::Draw& d, uint32_t& off) {
+    // Vulkan's block, word for word: a header (lights, from black, the base
+    // grey, the affines' count), the lights (two vec4 each), three vec4 an
+    // affine, then the body light's tint
+    Slot& sl = cur();
+    const auto key = std::make_pair(d.meshPose, d.vertexLights);
+    if (const auto it = sl.poseCache.find(key); it != sl.poseCache.end()) { off = it->second; return true; }
+    const uint32_t at = alignUp(sl.poseUsed, kPoseAlign);
+    if (!sl.pose || at + kPoseRange > sl.pose.size || d.meshPoses > static_cast<std::size_t>(kPoseMaxMeshes)) return false;
+    float* f = reinterpret_cast<float*>(static_cast<unsigned char*>(sl.pose.cpu()) + at);
+    const int nl = d.vertexLights ? std::min(d.vertexLightCount, kPoseLights) : 0;
+    f[0] = static_cast<float>(nl);
+    f[1] = d.lightsFromBlack ? 1.0f : 0.0f;
+    f[2] = d.lightBase;
+    f[3] = static_cast<float>(d.meshPoses);
+    for (int i = 0; i < nl; ++i) std::memcpy(f + 4 + 8 * i, d.vertexLights + 8 * i, 8 * sizeof(float));
+    float* a = f + 4 + 8 * kPoseLights;
+    std::memcpy(a, d.meshPose, d.meshPoses * 12 * sizeof(float));
+    float* t = a + 12 * d.meshPoses;
+    t[0] = d.lightTint[0]; t[1] = d.lightTint[1]; t[2] = d.lightTint[2]; t[3] = 1.0f;
+    sl.poseUsed = at + static_cast<uint32_t>((1 + 2 * kPoseLights + 3 * d.meshPoses + 1) * 16);
+    off = at;
+    sl.poseCache.emplace(key, off);
+    return true;
+}
+
+// A posed draw's corners placed on the CPU instead (Vulkan's `cpuPose`): the
+// same affine, and `applyLights`' law for the colour
+omk::Draw DekoRenderer::cpuPose(const omk::Draw& d) {
+    omk::Geometry& cp = cpuPosed_[d.geo];
+    omk::poseGeometry(d, cp, omk::PoseParts{true, true, kPoseLights});
+    cp.revision = d.geo->revision + (++cpuPoseRev_ << 32);
+    omk::Draw out = d;
+    out.geo = &cp;
+    out.meshPose = nullptr;
+    out.meshPoses = 0;
+    out.vertexLights = nullptr;
+    out.vertexLightCount = 0;
+    out.lightsFromBlack = false;
+    return out;
+}
+
 void DekoRenderer::submit(const omk::Draw& d) {
     if (!recording_ || !d.geo || !d.count) return;
+    if (d.meshPose && d.meshPoses && d.geo->cornerMesh.size() == d.geo->corners.size()) {
+        uint32_t off = 0;
+        if (writePose(d, off)) submitOne(d, true, off);
+        else submitOne(cpuPose(d), false, 0);
+        ++posedDraws_;
+        return;
+    }
+    submitOne(d, false, 0);
+}
+
+void DekoRenderer::submitOne(const omk::Draw& d, bool posed, uint32_t poseOff) {
     if (probe_ == 6) return;   // the probe: no draw
     using clk = std::chrono::steady_clock;
     const auto s0 = clk::now();
@@ -1096,7 +1201,13 @@ void DekoRenderer::submit(const omk::Draw& d) {
         dkCmdBufBindTexture(cb_, DkStage_Fragment, kTexTex, dkMakeTextureHandle(img, filter_ ? kSampLinear : kSampNearest));
     ++draws_;
 
-    push_.posed = 0;
+    // the pose buffer: the body's block for a posed draw, the stand-in else
+    push_.posed = posed ? 1 : 0;
+    const DkGpuAddr poseAt = posed ? cur().pose.gpu() + poseOff : poseBuf_.gpu();
+    if (poseAt != boundPose_) {
+        dkCmdBufBindStorageBuffer(cb_, DkStage_Vertex, kSsboPose, poseAt, posed ? kPoseRange : poseBuf_.size);
+        boundPose_ = poseAt;
+    }
     push_.cutout = d.cutout ? 1 : 0;
     push_.caster = d.castsShadow ? 1 : 0;
     push_.bloomMode = 0;
@@ -1212,7 +1323,7 @@ const omk::Surface& DekoRenderer::readback() {
 // THE PRESENT PASS (`present.frag`): `colour_` or the uploaded surface into
 // the swapchain image - the dither and the 565 expansion, or (`raw`) the
 // 8-bit values as they are
-bool DekoRenderer::runPresent(uint32_t imgSlot, int vy, int vh, bool raw) {
+bool DekoRenderer::runPresent(uint32_t imgSlot, int vy, int vh, bool raw, const float* over) {
     DKTRACE("present: acquiring a swapchain image\n");
     const int slot = dkQueueAcquireImage(queue_, swap_);
     DKTRACE("present: image %d acquired\n", slot);
@@ -1220,6 +1331,20 @@ bool DekoRenderer::runPresent(uint32_t imgSlot, int vy, int vh, bool raw) {
     // (a list of its own after a scene sent apart: its span timed alone)
     if (sceneSubmitted_) stamp(2);
     rung(4);
+    if (over) {
+        // the overlay's planes from the slot's staging into their images -
+        // after every earlier command, the last frame's overlay that read them
+        // included (`DkBarrier_Full`)
+        dkCmdBufBarrier(cb_, DkBarrier_Full, 0);
+        const uint32_t cBytes = static_cast<uint32_t>(w_) * static_cast<uint32_t>(h_) * 2;
+        const DkImageRect r{0, 0, 0, static_cast<uint32_t>(w_), static_cast<uint32_t>(h_), 1};
+        DkImageView vc, vm;
+        dkImageViewDefaults(&vc, &overC_);
+        dkImageViewDefaults(&vm, &overM_);
+        const DkCopyBuf sc{cur().overStage.gpu(), 0, 0}, sm{cur().overStage.gpu() + cBytes, 0, 0};
+        dkCmdBufCopyBufferToImage(cb_, &sc, &vc, &r, 0);
+        dkCmdBufCopyBufferToImage(cb_, &sm, &vm, &r, 0);
+    }
     // what wrote the source (the scene's pass, or the surface's copy) done
     // and its image cache dropped before the pass samples it
     dkCmdBufBarrier(cb_, DkBarrier_Full, DkInvalidateFlags_Image);
@@ -1265,6 +1390,26 @@ bool DekoRenderer::runPresent(uint32_t imgSlot, int vy, int vh, bool raw) {
     const PresentPush pp{vy, vh, w_, dither_ && !raw ? 1 : 0, 1, 0, 0u, raw ? 1 : 0};
     dkCmdBufPushConstants(cb_, pushUbo_.gpu(), pushUbo_.size, 0, sizeof pp, &pp);
     dkCmdBufDraw(cb_, DkPrimitive_Triangles, 3, 1, 0, 0);
+    if (over) {
+        // ...and the interface over it: C + world * M, the fade over all
+        // (the blend ONE, SRC_ALPHA - GLES's)
+        const DkShader* osh[1] = {&shOverlay_};
+        dkCmdBufBindShaders(cb_, DkStageFlag_Fragment, osh, 1);
+        DkColorState ocs;
+        dkColorStateDefaults(&ocs);
+        dkColorStateSetBlendEnable(&ocs, 0, true);
+        dkCmdBufBindColorState(cb_, &ocs);
+        DkBlendState obs;
+        dkBlendStateDefaults(&obs);
+        dkBlendStateSetOps(&obs, DkBlendOp_Add, DkBlendOp_Add);
+        dkBlendStateSetFactors(&obs, DkBlendFactor_One, DkBlendFactor_SrcAlpha, DkBlendFactor_Zero, DkBlendFactor_One);
+        dkCmdBufBindBlendState(cb_, 0, &obs);
+        dkCmdBufBindTexture(cb_, DkStage_Fragment, 0, dkMakeTextureHandle(kImgOverC, kSampClamp));
+        dkCmdBufBindTexture(cb_, DkStage_Fragment, 1, dkMakeTextureHandle(kImgOverM, kSampClamp));
+        dkCmdBufPushConstants(cb_, pushUbo_.gpu(), pushUbo_.size, 0, 4 * sizeof(float), over);
+        dkCmdBufDraw(cb_, DkPrimitive_Triangles, 3, 1, 0, 0);
+        ++overlays_;
+    }
     // the frame's fence INSIDE its list, as deko3d's samples do
     // (`CCmdMemRing::end`): signalled on the queue after the present (the
     // first console run) it never signalled - every wait ran out its 2 s
@@ -1309,6 +1454,18 @@ bool DekoRenderer::presentSurface(const omk::Surface& s) {
     const DkImageRect r{0, 0, 0, static_cast<uint32_t>(w_), static_cast<uint32_t>(h_), 1};
     dkCmdBufCopyBufferToImage(cb_, &src, &v, &r, 0);
     return runPresent(kImgSurface, 0, h_, true);
+}
+
+bool DekoRenderer::presentOverlay(const omk::Surface& s, const unsigned char* mask, const float fade[4], int vy,
+                                  int vh) {
+    // the planes cover the window: the frame must be the swapchain's size
+    if (!swap_ || recording_ || s.w != w_ || s.h != h_ || !mask) return false;
+    openCb();   // waits for the slot's last frame, which may still read its staging
+    const std::size_t px = static_cast<std::size_t>(w_) * static_cast<std::size_t>(h_);
+    auto* st = static_cast<unsigned char*>(cur().overStage.cpu());
+    std::memcpy(st, s.px.data(), px * 2);
+    std::memcpy(st + px * 2, mask, px);
+    return runPresent(kImgColour, vy, vh, false, fade);
 }
 
 // ---- THE TEXTURE POOL -----------------------------------------------------
@@ -1415,7 +1572,10 @@ bool dekoPresentSurface(Renderer* r, const Surface& s) {
 }
 const char* dekoDeviceName(Renderer* r) { return static_cast<DekoRenderer*>(r)->device(); }
 void dekoSetSwapInterval(Renderer* r, int n) { static_cast<DekoRenderer*>(r)->setSwapInterval(n); }
-void dekoTakeCpu(Renderer* r, double out[5]) { static_cast<DekoRenderer*>(r)->takeCpu(out); }
-void dekoTakeCounts(Renderer* r, long out[5]) { static_cast<DekoRenderer*>(r)->takeCounts(out); }
+bool dekoPresentOverlay(Renderer* r, const Surface& s, const unsigned char* mask, const float fade[4], int vy, int vh) {
+    return static_cast<DekoRenderer*>(r)->presentOverlay(s, mask, fade, vy, vh);
+}
+void dekoTakeCpu(Renderer* r, double out[6]) { static_cast<DekoRenderer*>(r)->takeCpu(out); }
+void dekoTakeCounts(Renderer* r, long out[6]) { static_cast<DekoRenderer*>(r)->takeCounts(out); }
 std::string dekoTakeLadder(Renderer* r) { return static_cast<DekoRenderer*>(r)->takeLadder(); }
 }  // namespace omk

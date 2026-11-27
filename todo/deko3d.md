@@ -187,15 +187,38 @@ backend's own to follow (D3).
   of the corners: a frame writes its own slot's copy alone, and only what
   changed. Submit 8.9 -> **1.6 ms** (1.3 MB a frame left: the bodies posed
   on the CPU, whole). The reader on that run: *"il n'y avait que les piétons comme
-  objet mobile dans la scène de tests, pas de problèmes vu"* - **OPEN**: a
-  door or a moving mesh, drawn through the copies' `pending` corners, is
-  still to be watched on the console (what changed Anekbah's set each frame
-  was not seen moving).
+  objet mobile dans la scène de tests, pas de problèmes vu"*; and then,
+  checked on purpose: *"door are corrects"* - the copies' `pending` corners
+  draw a door moving as it should.
 * **WHERE THE STREET STANDS** (the original, enhancements off, two frames
   in flight, 2026-11-27): deko3d **work 8.2 ms (122 fps unpaced), GPU 7.2,
   submit 2.0** - GLES 16.6 (the refresh's floor: its swap waits), GPU 8.5,
   submit 1.3. This morning deko3d was 31.9 / 22.7. Left on the CPU's side:
   `pedestrians, traffic` 2.7, the bodies posed on the CPU (D3: on the GPU).
+
+* **THE BODIES POSED ON THE GPU** (2026-11-27, D3's item done early - the
+  reader's *"do the two optimizations"*): Vulkan's pose block word for word
+  (a header, 32 lights, three vec4 an affine, the body light's tint) in the
+  SLOT's pose buffer (2 MB, the CPU writes it each frame), bound at storage
+  buffer 12 (`scene.vert` set 2) per posed draw; the draw's corners are its
+  REST corners, static, uploaded once. A body past the buffer is posed on
+  the CPU (`cpuPose`, Vulkan's). The street (the original, enhancements off):
+  work 8.5 ms (118 fps), GPU 7.0; `pedestrians, traffic` 2.7 -> **0.7 ms**;
+  the uploads 1.3 MB -> 0.1 MB a frame, the submit 1.6 -> 0.4 ms - the CPU
+  now waits ~3.8 ms for the GPU, the GPU the frame's wall again.
+* **THE INTERFACE AS AN OVERLAY** (2026-11-27, the rest of D2): GLES's and
+  GL1's planes - `resolveOverlayPlanes` leaves C (the CPU's 565 frame, its
+  world pixels the KEY) and M - laid over the world the present pass just
+  drew, `C + world * M`, the colour fade over all (`backends/deko3d/shaders/
+  overlay.frag`, deko3d's own module, its CMake row `deko/overlay.frag`). C
+  is read as its 565 WORDS (R16_UINT) and widened by replication, not by a
+  UNORM read. The planes go up from the slot's staging each frame (2.7 MB,
+  behind a full barrier: the last frame's overlay read the same images). A
+  frame with a HUD, a subtitle, a conversation or an open screen then needs
+  no readback. The reader's session in Anekbah: whole runs of frames through
+  it (up to 60 of 60), none refused, the device closed at the end (41146
+  frames). The reader on both, posed bodies and overlay: *"Tout était
+  bon"*.
 
   The rest of D2: the interface as OVERLAY
   planes over the GPU world (`glesPresentOverlay`'s C/M planes and fade -

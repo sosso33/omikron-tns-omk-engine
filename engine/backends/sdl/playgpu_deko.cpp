@@ -22,8 +22,9 @@ bool dekoPresentWorld(Renderer*, int vy, int vh);
 bool dekoPresentSurface(Renderer*, const Surface&);
 const char* dekoDeviceName(Renderer*);
 void dekoSetSwapInterval(Renderer*, int n);
-void dekoTakeCounts(Renderer*, long out[5]);
-void dekoTakeCpu(Renderer*, double out[5]);
+void dekoTakeCounts(Renderer*, long out[6]);
+void dekoTakeCpu(Renderer*, double out[6]);
+bool dekoPresentOverlay(Renderer*, const Surface& s, const unsigned char* mask, const float fade[4], int vy, int vh);
 std::string dekoTakeLadder(Renderer*);
 }
 
@@ -81,7 +82,23 @@ bool PlayState::gpuPresentSurface(const omk::Surface& pic) {
 }
 
 void PlayState::gpuPresentVerify(bool&) {}
-void PlayState::gpuPresentOverlay(bool&) {}   // the overlay planes: D2
+// THE INTERFACE AS AN OVERLAY (`todo/deko3d.md` D2, GLES's and GL1's glue): a
+// frame the soft gate keeps on the GPU - a HUD, a subtitle, a conversation -
+// is the world presented as it is with the CPU's frame laid over it, its world
+// pixels the key, instead of a readback and a CPU composite
+void PlayState::gpuPresentOverlay(bool& presentedWorld) {
+    if (!overlayFrame || !vkRen) return;
+    static std::vector<std::uint8_t> ovMask, ovMaskRow;
+    static std::vector<std::uint64_t> ovMaskBlocks;
+    omk::resolveOverlayPlanes(fb.px.data(), fb.w, fb.h, g_ov, ovMask, ovMaskRow, ovMaskBlocks);
+    presentedWorld = omk::dekoPresentOverlay(vkRen, fb, ovMask.data(), ovFade, gpuVy, gpuVh);
+    static bool refusedTold = false;
+    if (!presentedWorld && !refusedTold) {
+        refusedTold = true;
+        std::printf("deko3d: the overlay REFUSED at frame %ld (frame %dx%d) - composed on the CPU\n", frameNo,
+                    fb.w, fb.h);
+    }
+}
 
 void PlayState::gpuPresentWorld(bool& presentedWorld) {
     if (vkRen && !presentedWorld) presentedWorld = omk::dekoPresentWorld(vkRen, gpuVy, gpuVh);
@@ -91,7 +108,15 @@ bool PlayState::gpuWorldOnWindow() {
     return vkRen && world_ == vkRen;
 }
 
-void PlayState::gpuOverlayDecision(const char*&) {}
+void PlayState::gpuOverlayDecision(const char*& keep) {
+    static const bool noOverlay = omk::envFlag("OMK_NO_OVERLAY");
+    overlayFrame = softGate && !noOverlay && !verifyGpuPresent && gpuWorldOnWindow();
+    if (overlayFrame) {
+        static std::string overlayWhy;   // the statistics name the soft gate behind it
+        overlayWhy = std::string("overlay (") + keep + ")";
+        keep = overlayWhy.c_str();
+    }
+}
 void PlayState::gpuResize(int, int, bool&) {}   // the dock's two sizes: D3
 
 bool PlayState::gpuDriverRow(std::vector<std::string>& drivers) {
@@ -102,19 +127,20 @@ bool PlayState::gpuRelinkLighting(bool, bool) { return false; }
 bool PlayState::gpuRetarget(int, int, float, float) { return false; }   // no MSAA / supersample / upscale yet
 void PlayState::gpuReportTimings() {
     if (!vkRen) return;
-    long c[5];
+    long c[6];
     omk::dekoTakeCounts(vkRen, c);
     if (c[3] > 0)
-        std::printf("frame %ld deko3d (a frame, mean of %ld): %.0f draws (%.0f by the original's module), "
-                    "%.0f runs of the cull, %.0f vertices; GPU %.2f ms\n", frameNo, c[3],
-                    static_cast<double>(c[0]) / c[3], static_cast<double>(c[4]) / c[3],
+        std::printf("frame %ld deko3d (a frame, mean of %ld): %.0f draws (%.0f by the original's module, %.0f of "
+                    "bodies posed), %.0f runs of the cull, %.0f vertices; GPU %.2f ms\n", frameNo, c[3],
+                    static_cast<double>(c[0]) / c[3], static_cast<double>(c[4]) / c[3], static_cast<double>(c[5]) / c[3],
                     static_cast<double>(c[1]) / c[3], static_cast<double>(c[2]) / c[3], vkRen->gpuFrameMs());
-    double cpu[5];
+    double cpu[6];
     omk::dekoTakeCpu(vkRen, cpu);
     if (c[3] > 0)
         std::printf("frame %ld deko3d CPU (a frame, mean of %ld): the slot's fence waited %.2f ms; submit %.2f ms, "
-                    "of it %.1f vertex uploads (%.0f KB) %.2f ms\n", frameNo, c[3], cpu[4] / c[3], cpu[3] / c[3],
-                    cpu[0] / c[3], cpu[1] / 1024.0 / c[3], cpu[2] / c[3]);
+                    "of it %.1f vertex uploads (%.0f KB) %.2f ms; %.0f of the frames presented as an overlay\n",
+                    frameNo, c[3], cpu[4] / c[3], cpu[3] / c[3], cpu[0] / c[3], cpu[1] / 1024.0 / c[3], cpu[2] / c[3],
+                    cpu[5]);
     const std::string ladder = omk::dekoTakeLadder(vkRen);
     if (!ladder.empty()) std::printf("frame %ld deko3d ladder (GPU ms, mean): %s\n", frameNo, ladder.c_str());
 }

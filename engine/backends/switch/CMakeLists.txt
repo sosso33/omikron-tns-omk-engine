@@ -165,7 +165,8 @@ if(OMK_DEKO3D)
     "under.frag|frag|under.frag|"
     "post.frag|frag|post.frag|"
     "ao.frag|frag|ao.frag|"
-    "ao_ms.frag|frag|ao.frag|OMK_MS")
+    "ao_ms.frag|frag|ao.frag|OMK_MS"
+    "overlay.frag|frag|deko/overlay.frag|")
   foreach(row ${OMK_DKSH_ROWS})
     string(REPLACE "|" ";" f "${row}")
     list(GET f 0 name)
@@ -182,13 +183,20 @@ if(OMK_DEKO3D)
         endforeach()
       endif()
     endif()
+    # `deko/x`: a module of deko3d's own (`backends/deko3d/shaders/`), not Vulkan's
+    if(src MATCHES "^deko/")
+      string(REGEX REPLACE "^deko/" "" rest "${src}")
+      set(srcpath ${ENGINE}/backends/deko3d/shaders/${rest})
+    else()
+      set(srcpath ${VKSH}/${src})
+    endif()
     set(out ${OMK_ROMFS}/shaders/${name}.dksh)
     add_custom_command(
       OUTPUT ${out}
       COMMAND ${Python3_EXECUTABLE} ${ENGINE}/backends/deko3d/dkshaders.py
-              ${VKSH}/${src} ${DKSH_GLSL}/${name}.glsl -I ${ENGINE}/third_party ${defs}
+              ${srcpath} ${DKSH_GLSL}/${name}.glsl -I ${ENGINE}/third_party ${defs}
       COMMAND ${OMK_UAM} -s ${stage} -o ${out} ${DKSH_GLSL}/${name}.glsl
-      DEPENDS ${VKSH}/${src} ${ENGINE}/backends/deko3d/dkshaders.py
+      DEPENDS ${srcpath} ${ENGINE}/backends/deko3d/dkshaders.py
               ${ENGINE}/third_party/ffx_a.h ${ENGINE}/third_party/ffx_fsr1.h
       VERBATIM)
     list(APPEND OMK_ROMFS_DEPS ${out})
