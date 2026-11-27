@@ -45,6 +45,8 @@
 #include "o3de/drawcore.h"
 #include "o3de/raster.h"
 #include "o3de/geom3do.h"
+#include "o3de/texpack.h"
+#include "formats/ktx2.h"
 #include "ui/surface.h"
 #include "platform/env.h"
 #include "../vulkan/shaderblocks.h"
@@ -89,7 +91,7 @@ enum : uint32_t { kImgWhite = 0, kImgBlack = 1, kImgFlat = 2, kImgColour = 3, kI
                   kImgOverC = 5, kImgOverM = 6, kImgFirst = 8 };
 // the samplers: the pool's filter (0 nearest - the original's software
 // devices - 1 bilinear, its 3D cards'), and the present's nearest clamp
-enum : uint32_t { kSampNearest = 0, kSampLinear = 1, kSampClamp = 2, kSampCount = 3 };
+enum : uint32_t { kSampNearest = 0, kSampLinear = 1, kSampClamp = 2, kSampTrilinear = 3, kSampCount = 4 };
 
 constexpr uint32_t alignUp(uint32_t v, uint32_t a) { return (v + a - 1) / a * a; }
 
@@ -232,12 +234,41 @@ public:
     const omk::Surface& readback() override;
     omk::RasterStats stats() const override { return st_; }
     const char* name() const override { return "deko3d"; }
-    unsigned takes() const override { return omk::kTakesTextureFilter; }
+    // THE REMASTER (`todo/deko3d.md` D4a): the pack, the per-pixel and the
+    // emitters' lights, the mist, the wet floors and the 3D rain (`setWater`),
+    // the body light - what the scene shader computes from the frame's blocks
+    // and each draw's fields. Not yet: the upscale, the bloom and grade, the
+    // occlusion, the reflections, the relief (D4b-e) - their setters answer no.
+    unsigned takes() const override {
+        return omk::kTakesTextureFilter | omk::kTakesTrilinear | omk::kTakesPixelLights | omk::kTakesWater |
+               omk::kTakesBodyTint | omk::kTakesEmitterLights | omk::kTakesMist;
+    }
     bool setTextureFilter(int mode) override {
-        if (dev_) return false;   // the samplers exist
-        filter_ = mode < 1 ? 0 : 1;   // trilinear needs the mip chain: D4
+        if (dev_) return false;   // the samplers exist - `retexture` moves it later
+        filter_ = mode < 1 ? 0 : mode < 2 ? 1 : 2;
         return true;
     }
+    // the mode switch (original <-> remaster) and OMK's menu: the filter
+    // moved, every texture dropped - the frame hands the pool over again,
+    // from the pack or as shipped (Vulkan's `retexture`)
+    bool retexture(int filter, int aniso) override {
+        (void)aniso;   // (no anisotropy here yet)
+        filter_ = filter < 1 ? 0 : filter < 2 ? 1 : 2;
+        if (!dev_) return true;
+        poolTextures({});
+        std::printf("deko3d: retextured - %s; every texture dropped, uploaded again\n",
+                    filter_ == 0 ? "nearest" : filter_ == 1 ? "bilinear" : "trilinear");
+        return true;
+    }
+    bool takesPack() const override { return true; }
+    bool drawsPixelLights() const override { return true; }
+    int maxPixelLights() const override { return omk::View::kMaxGpuLights; }
+    bool setEmitterLights(bool) override { return true; }   // the points ride in the frame's light block
+    bool drawsEmitterLights() const override { return true; }
+    bool setBodyTint(bool) override { return true; }       // the pose block carries it
+    bool drawsBodyTint() const override { return true; }
+    bool setWater(float) override { return true; }         // the wet floors, the mist, the 3D rain: the shader's
+    uint32_t sampler() const { return filter_ >= 2 ? kSampTrilinear : filter_ ? kSampLinear : kSampNearest; }
     bool bakeDepthTie(const omk::Geometry* g, std::span<const omk::Draw> order) override;
     // BODIES POSED BY THE RENDERER (`renderer.h` `Draw::meshPose`), as Vulkan,
     // GLES, GL1 and the 3DS: a posed draw's REST corners - static, uploaded
@@ -267,7 +298,7 @@ private:
     static void geometryGone(void* self, const omk::Geometry* g);
     static void addCmdMem(void* user, DkCmdBuf cb, size_t minReq);
     bool loadShader(const char* name, DkShader& sh);
-    bool makeImage(DkImage& img, Alloc& mem, DkImageFormat fmt, int w, int h, uint32_t flags);
+    bool makeImage(DkImage& img, Alloc& mem, DkImageFormat fmt, int w, int h, uint32_t flags, uint32_t levels = 1);
     void writeDescriptor(uint32_t slot, const DkImage& img);
     uint32_t takeSlot();
     void waitFrame();
@@ -442,7 +473,13 @@ private:
         DkImage img{};
         Alloc mem;
         uint32_t slot = kImgWhite;
+        // THE PACK's replacement (`o3de/texpack.h`): `su` x `sv` the
+        // original's size, the UVs still in the original's texels (`texScaled`)
+        bool packed = false;
+        float su = 1.0f, sv = 1.0f;
     };
+    std::vector<const DTex*> texOf_;   // the pool's index -> its texture (nullptr: none)
+    bool uploadBlocks(const omk::PackBlocks& z, DTex& out);   // a pack KTX2's levels, as they are
     struct Uploaded {
         omk::PixelBuffer idx, pal;   // the storage held, so its address cannot come back as another texture's
         bool used = false;
@@ -518,13 +555,15 @@ bool DekoRenderer::loadShader(const char* name, DkShader& sh) {
     return true;
 }
 
-bool DekoRenderer::makeImage(DkImage& img, Alloc& mem, DkImageFormat fmt, int w, int h, uint32_t flags) {
+bool DekoRenderer::makeImage(DkImage& img, Alloc& mem, DkImageFormat fmt, int w, int h, uint32_t flags,
+                             uint32_t levels) {
     DkImageLayoutMaker lm;
     dkImageLayoutMakerDefaults(&lm, dev_);
     lm.flags = flags;
     lm.format = fmt;
     lm.dimensions[0] = static_cast<uint32_t>(w);
     lm.dimensions[1] = static_cast<uint32_t>(h);
+    lm.mipLevels = levels;
     DkImageLayout layout;
     dkImageLayoutInitialize(&layout, &lm);
     mem = images_.alloc(static_cast<uint32_t>(dkImageLayoutGetSize(&layout)), dkImageLayoutGetAlignment(&layout));
@@ -608,6 +647,11 @@ bool DekoRenderer::init(int w, int h) {
         dkSamplerDescriptorInitialize(&sd[kSampNearest], &s);
         s.minFilter = s.magFilter = DkFilter_Linear;
         dkSamplerDescriptorInitialize(&sd[kSampLinear], &s);
+        // TRILINEAR (the enhancement, `setTextureFilter(2)`): the pack's block
+        // files carry their own mip chain; a texture with one level samples
+        // as bilinear through it
+        s.mipFilter = DkMipFilter_Linear;
+        dkSamplerDescriptorInitialize(&sd[kSampTrilinear], &s);
         dkSamplerDefaults(&s);
         s.wrapMode[0] = s.wrapMode[1] = s.wrapMode[2] = DkWrapMode_ClampToEdge;
         dkSamplerDescriptorInitialize(&sd[kSampClamp], &s);
@@ -693,6 +737,8 @@ bool DekoRenderer::init(int w, int h) {
         flushUploads();
     }
     fb_ = omk::Surface(w, h, 0);
+    // the pack's BLOCK FILES this GPU samples: Maxwell takes BC and ASTC both
+    omk::texturePack().setCodecs(omk::kCodecBc | omk::kCodecAstc);
     std::printf("deko3d: up - %dx%d, %d swapchain images, %d frame(s) in flight, filter %s\n", w, h,
                 kSwapImages, nSlots_, filter_ ? "bilinear" : "nearest");
     return true;
@@ -891,7 +937,7 @@ void DekoRenderer::bindFrameState() {
     dkCmdBufBindStorageBuffer(cb_, DkStage_Vertex, kSsboPose, poseBuf_.gpu(), poseBuf_.size);
     boundPose_ = poseBuf_.gpu();
     // the stand-ins under the light map, the reflection and the shadow map
-    const uint32_t samp = filter_ ? kSampLinear : kSampNearest;
+    const uint32_t samp = sampler();
     dkCmdBufBindTexture(cb_, DkStage_Fragment, kTexEmis, dkMakeTextureHandle(kImgBlack, samp));
     dkCmdBufBindTexture(cb_, DkStage_Fragment, kTexRefl, dkMakeTextureHandle(kImgBlack, samp));
     dkCmdBufBindTexture(cb_, DkStage_Fragment, kTexShadow, dkMakeTextureHandle(kImgBlack, kSampClamp));
@@ -1198,7 +1244,7 @@ void DekoRenderer::submitOne(const omk::Draw& d, bool posed, uint32_t poseOff) {
     const std::size_t slot = omk::drawTextureSlot(d);
     const uint32_t img = slot < texSlot_.size() ? texSlot_[slot] : kImgWhite;
     if (probe_ != 7 || draws_ == 0)
-        dkCmdBufBindTexture(cb_, DkStage_Fragment, kTexTex, dkMakeTextureHandle(img, filter_ ? kSampLinear : kSampNearest));
+        dkCmdBufBindTexture(cb_, DkStage_Fragment, kTexTex, dkMakeTextureHandle(img, sampler()));
     ++draws_;
 
     // the pose buffer: the body's block for a posed draw, the stand-in else
@@ -1221,8 +1267,14 @@ void DekoRenderer::submitOne(const omk::Draw& d, bool posed, uint32_t poseOff) {
         if (d.wetBody) push_.water |= 1 << 21;
     }
     push_.waterStrength = 0.0f;
-    push_.texScaled = 0;
-    push_.texScaleU = push_.texScaleV = 1.0f;
+    {
+        // THE PACK: a replacement `su` x `sv` the original's size, its UVs
+        // still in the original's texels (`scene.frag` texScaled)
+        const DTex* bound = slot < texOf_.size() ? texOf_[slot] : nullptr;
+        push_.texScaled = bound && bound->packed ? 1 : 0;
+        push_.texScaleU = bound ? bound->su : 1.0f;
+        push_.texScaleV = bound ? bound->sv : 1.0f;
+    }
     push_.lit = litCount_ > 0 ? d.lit : 0;
     // THE FOG's two exclusions - `renderer.cpp`'s rule, Vulkan's
     push_.fogStart = 0.0f;
@@ -1505,6 +1557,45 @@ void DekoRenderer::flushUploads() {
     upOwn_.clear();
 }
 
+// a pack KTX2 (`o3de/texpack.h` PackBlocks): its levels copied as they are -
+// every one when the sampler takes mips, else level 0. False: a format this
+// does not know (the texture then comes from the RGBA path)
+bool DekoRenderer::uploadBlocks(const omk::PackBlocks& z, DTex& out) {
+    DkImageFormat fmt;
+    switch (z.vkFormat) {
+    case omk::kVkBc1RgbaUnorm: fmt = DkImageFormat_RGBA_BC1; break;
+    case omk::kVkBc3Unorm: fmt = DkImageFormat_RGBA_BC3; break;
+    case omk::kVkBc4Unorm: fmt = DkImageFormat_R_BC4_Unorm; break;
+    case omk::kVkBc7Unorm: fmt = DkImageFormat_RGBA_BC7_Unorm; break;
+    case omk::kVkAstc4x4Unorm: fmt = DkImageFormat_RGBA_ASTC_4x4; break;
+    case omk::kVkAstc5x5Unorm: fmt = DkImageFormat_RGBA_ASTC_5x5; break;
+    case omk::kVkAstc6x6Unorm: fmt = DkImageFormat_RGBA_ASTC_6x6; break;
+    case omk::kVkAstc8x8Unorm: fmt = DkImageFormat_RGBA_ASTC_8x8; break;
+    default: return false;
+    }
+    if (z.levels.empty() || z.w < 1 || z.h < 1) return false;
+    const uint32_t levels = filter_ >= 2 ? static_cast<uint32_t>(z.levels.size()) : 1u;
+    if (!makeImage(out.img, out.mem, fmt, z.w, z.h, 0, levels)) return false;
+    for (uint32_t l = 0; l < levels; ++l) {
+        const auto [off, len] = z.levels[l];
+        if (off + len > z.bytes.size()) break;
+        Alloc st;
+        if (!stage(static_cast<uint32_t>(len), st)) break;
+        std::memcpy(st.cpu(), z.bytes.data() + off, len);
+        DkImageView v;
+        dkImageViewDefaults(&v, &out.img);
+        v.mipLevelOffset = static_cast<uint8_t>(l);
+        v.mipLevelCount = 1;
+        const DkCopyBuf src{st.gpu(), 0, 0};
+        const DkImageRect r{0, 0, 0, std::max(1u, static_cast<uint32_t>(z.w) >> l),
+                            std::max(1u, static_cast<uint32_t>(z.h) >> l), 1};
+        dkCmdBufCopyBufferToImage(upCb_, &src, &v, &r, 0);
+    }
+    out.slot = takeSlot();
+    if (out.slot != kImgWhite) writeDescriptor(out.slot, out.img);
+    return true;
+}
+
 void DekoRenderer::poolTextures(std::span<const omk::Texture> t) {
     if (!dev_) return;
     // THE POOL, UPLOADED ONLY WHERE IT IS NEW (Vulkan's rule): a texture
@@ -1524,8 +1615,22 @@ void DekoRenderer::poolTextures(std::span<const omk::Texture> t) {
         it = uploaded_.erase(it);
     }
     texSlot_.assign(t.size(), kImgWhite);
-    int fresh = 0;
-    std::vector<std::uint8_t> rgba;
+    texOf_.assign(t.size(), nullptr);
+    // THE TEXTURE PACK (`o3de/texpack.h`), consulted only when one is shown:
+    // every texture this pool brings that the device does not hold yet,
+    // decoded together on the thread pool (Vulkan's)
+    const omk::TexturePack& pack = omk::texturePack();
+    std::vector<omk::PackImage> reps;
+    using clk = std::chrono::steady_clock;
+    const auto t0 = clk::now();
+    if (pack.shown()) {
+        std::vector<const omk::Texture*> toDecode(t.size(), nullptr);
+        for (std::size_t i = 0; i < t.size(); ++i)
+            if (t[i].hasPixels() && !uploaded_.count(keyOf(t[i]))) toDecode[i] = &t[i];
+        reps = pack.replacements(toDecode);
+    }
+    const auto t1 = clk::now();
+    int fresh = 0, packed = 0, blocks = 0;
     for (std::size_t i = 0; i < t.size(); ++i) {
         const omk::Texture& x = t[i];
         if (!x.hasPixels()) continue;
@@ -1534,15 +1639,37 @@ void DekoRenderer::poolTextures(std::span<const omk::Texture> t) {
             Uploaded u;
             u.idx = x.idx; u.pal = x.pal; u.used = true;
             u.t = std::make_unique<DTex>();
+            const bool hasRep = pack.shown() && i < reps.size() && reps[i].ok;
+            if (hasRep && !reps[i].colourZ.empty() && uploadBlocks(reps[i].colourZ, *u.t)) {
+                // the pack's BLOCK file, its levels as they are (BC7 / ASTC)
+                u.t->packed = true;
+                u.t->su = static_cast<float>(reps[i].w) / static_cast<float>(x.width);
+                u.t->sv = static_cast<float>(reps[i].h) / static_cast<float>(x.height);
+                ++blocks; ++fresh; ++packed;
+                hit = uploaded_.emplace(keyOf(x), std::move(u)).first;
+                texSlot_[i] = hit->second.t->slot;
+                texOf_[i] = hit->second.t.get();
+                continue;
+            }
+            // ...else the pack's RGBA replacement, or the shipped texture
+            const bool rgbaRep = hasRep && reps[i].colourZ.empty() && !reps[i].rgba.empty();
+            const int tw = rgbaRep ? reps[i].w : x.width, th = rgbaRep ? reps[i].h : x.height;
             Alloc st;
-            const uint32_t bytes = static_cast<uint32_t>(x.width) * static_cast<uint32_t>(x.height) * 4;
-            if (makeImage(u.t->img, u.t->mem, DkImageFormat_RGBA8_Unorm, x.width, x.height, 0) && stage(bytes, st)) {
-                // alpha the COLOUR KEY: 0 where the texel is black - the cutout's discard
-                x.toRgbaKeyed(static_cast<std::uint8_t*>(st.cpu()));
+            const uint32_t bytes = static_cast<uint32_t>(tw) * static_cast<uint32_t>(th) * 4;
+            if (makeImage(u.t->img, u.t->mem, DkImageFormat_RGBA8_Unorm, tw, th, 0) && stage(bytes, st)) {
+                if (rgbaRep) {
+                    std::memcpy(st.cpu(), reps[i].rgba.data(), std::min<std::size_t>(bytes, reps[i].rgba.size()));
+                    u.t->packed = true;
+                    u.t->su = static_cast<float>(tw) / static_cast<float>(x.width);
+                    u.t->sv = static_cast<float>(th) / static_cast<float>(x.height);
+                } else {
+                    // alpha the COLOUR KEY: 0 where the texel is black - the cutout's discard
+                    x.toRgbaKeyed(static_cast<std::uint8_t*>(st.cpu()));
+                }
                 DkImageView v;
                 dkImageViewDefaults(&v, &u.t->img);
                 const DkCopyBuf src{st.gpu(), 0, 0};
-                const DkImageRect r{0, 0, 0, static_cast<uint32_t>(x.width), static_cast<uint32_t>(x.height), 1};
+                const DkImageRect r{0, 0, 0, static_cast<uint32_t>(tw), static_cast<uint32_t>(th), 1};
                 dkCmdBufCopyBufferToImage(upCb_, &src, &v, &r, 0);
                 u.t->slot = takeSlot();
                 if (u.t->slot != kImgWhite) writeDescriptor(u.t->slot, u.t->img);
@@ -1551,10 +1678,16 @@ void DekoRenderer::poolTextures(std::span<const omk::Texture> t) {
             hit = uploaded_.emplace(keyOf(x), std::move(u)).first;
         }
         texSlot_[i] = hit->second.t->slot;
+        texOf_[i] = hit->second.t.get();
+        packed += hit->second.t->packed ? 1 : 0;
     }
     flushUploads();
+    const double decodeMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    const double uploadMs = std::chrono::duration<double, std::milli>(clk::now() - t1).count();
     if (fresh > 0)
-        std::printf("deko3d: texture pool - %d new of %zu; images %llu of %llu KB\n", fresh, t.size(),
+        std::printf("deko3d: texture pool - %d new of %zu (%d from the pack's block files), %d replaced by the "
+                    "pack; the pack's read and decode %.1f ms, the uploads %.1f ms; images %llu of %llu KB\n",
+                    fresh, t.size(), blocks, packed, decodeMs, uploadMs,
                     static_cast<unsigned long long>(images_.used() >> 10),
                     static_cast<unsigned long long>(images_.total() >> 10));
 }

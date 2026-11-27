@@ -228,6 +228,20 @@ backend's own to follow (D3).
 * **D3 - the platform**: touch from libnx, docked 1920x1080 / handheld
   1280x720 (the swapchain remade on the operation mode), the posed bodies on
   the GPU (set 2), the depth tie baked.
+* **D4a - THE REMASTER'S FIRST PART** (2026-11-27, the reader's *"Fais D4"*):
+  the pack (`takesPack`, the codecs BC and ASTC: Maxwell samples both; a
+  block file's levels copied as they are, every one under trilinear - the
+  sampler's mip filter, `kSampTrilinear`), the per-pixel and the emitters'
+  lights (`drawsPixelLights`, `drawsEmitterLights`, 64 in the frame's light
+  block - the tiled points wait for D4d), the mist, the wet floors and the
+  3D rain (`setWater`: the shader's, from the draws' bits and the frame's
+  block), the body light (the pose block carries its tint), and
+  `retexture` - the mode switch drops every texture and the pool comes again,
+  from the pack or as shipped. The street: 31 of 35 textures from the pack's
+  block files, uploaded in 7.8 ms; original work 8.5 ms (GPU 6.9),
+  **remaster 15.1 ms (66 fps), GPU 14.7** - at the native 720p (no upscale
+  yet), and with no bloom, grade, occlusion or reflection. The reader, after
+  switching modes back and forth: *"pas de problèmes pour l'instant"*.
 * **D4 - the remaster**: the per-pixel and tiled lights, the shadow map, the
   pack (ASTC natively - Maxwell samples it), water and the two reflections,
   bloom and grade, the 3D rain and its veils, the dust once a pixel (the pass
