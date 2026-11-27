@@ -153,6 +153,50 @@ backend's own to follow (D3).
   program's arguments are what follows `--`, split off before parsing. The
   GLES `omk.nro` was put back on the card.
 
+* **THE ORIGINAL'S MODULE** (2026-11-27): `scene.frag` `-DOMK_ORIGINAL`
+  (and with OMK_LATE_DEPTH, the cutout's) leaves out every block a draw
+  with no per-pixel light, no water or wet bit and no bloom, in a frame with
+  no mist, dust or veil (and no mapped shadow - not drawn here yet), would
+  run as a no-op of the full shader: the game's own shading is what is left
+  (the cull, the cutout, the shimmer, the grey bank, the fog). 2 KB and 9
+  registers against 26 KB and 49. Vulkan never defines it: its four
+  `scene.frag` modules are byte-identical (glslc before and after). The
+  street: 88 of 88 draws take it; the scene's GPU 9.8 -> 3.5 ms. The A/B on
+  the console (`OMK_DEKO_FULL=0,1` through `OMK_BENCH_VARY`; read by
+  `envOn` - `envFlag` is "set", and `=0` is set: the first A/B drew the
+  full shader on both sides): GPU **6.6 ms** against 13.5 - GLES 8.5.
+* **TWO FRAMES IN FLIGHT** (`OMK_DEKO_SLOTS`, default 2): a slot holds a
+  frame's command memory, fence, timestamps, surface staging and retired
+  buffers; a frame waits for its slot's LAST frame alone. A geometry's
+  changed contents go into a NEW buffer, the old one freed when its slot
+  comes round (a frame in flight may still read it - the bodies posed on the
+  CPU change every frame). With the full shader the street's work went 22.4
+  -> 16.1 ms (the GPU the same, 13.5); with the original's module 16.1 ->
+  **15.5 ms** (65 fps unpaced), GPU 6.6. The reader, on the picture of those runs:
+  *"je n'ai pas tout regardé, mais je n'ai pas vu de problèmes"*.
+* **THE CPU'S SUBMIT, MEASURED** (`deko3d CPU` in the 60-frame report: the
+  slot's fence waited, the submit, its vertex uploads): 8.9 ms a frame, of
+  it 23 uploads of 7.5 MB in 8.6 ms - NOT the bodies (the suspect): the
+  whole of Anekbah's set re-sent each frame for its moving meshes, where
+  GLES sends ~72 KB (`dirtyCorners`). With frames in flight a buffer may
+  not be written in place, and Vulkan's copy-on-write (a second buffer, the
+  first COPIED into it) would read 7 MB of CPU-uncached memory back here.
+  So a static geometry keeps one buffer, and one whose contents change gets
+  ONE COPY A SLOT, each keeping the union of the `dirtyCorners` it missed
+  (`pending`) - or `whole` after a revision without them, or past a quarter
+  of the corners: a frame writes its own slot's copy alone, and only what
+  changed. Submit 8.9 -> **1.6 ms** (1.3 MB a frame left: the bodies posed
+  on the CPU, whole). The reader on that run: *"il n'y avait que les piétons comme
+  objet mobile dans la scène de tests, pas de problèmes vu"* - **OPEN**: a
+  door or a moving mesh, drawn through the copies' `pending` corners, is
+  still to be watched on the console (what changed Anekbah's set each frame
+  was not seen moving).
+* **WHERE THE STREET STANDS** (the original, enhancements off, two frames
+  in flight, 2026-11-27): deko3d **work 8.2 ms (122 fps unpaced), GPU 7.2,
+  submit 2.0** - GLES 16.6 (the refresh's floor: its swap waits), GPU 8.5,
+  submit 1.3. This morning deko3d was 31.9 / 22.7. Left on the CPU's side:
+  `pedestrians, traffic` 2.7, the bodies posed on the CPU (D3: on the GPU).
+
   The rest of D2: the interface as OVERLAY
   planes over the GPU world (`glesPresentOverlay`'s C/M planes and fade -
   Vulkan reads back instead), the cloud under the menus (`under.frag`),

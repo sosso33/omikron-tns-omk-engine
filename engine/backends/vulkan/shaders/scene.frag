@@ -563,6 +563,16 @@ void main() {
     }
     // (the remaster's NIGHT, `lg.eye.w`, dims the painted and the start light
     // under the point lights; 1 - a multiply by one - everywhere else)
+#ifdef OMK_ORIGINAL
+    // THE ORIGINAL'S MODULE (-DOMK_ORIGINAL, deko3d's - `todo/deko3d.md`):
+    // bound only for a draw with no per-pixel light, no water or wet bit and
+    // no bloom, in a frame with no mist, dust, veil or mapped shadow - where
+    // every block this leaves out is a no-op of the full shader (a multiply by
+    // 1, an add of 0, `litness()` 1). What is left is the game's own: the
+    // cull, the cutout, the shimmer, the grey bank, the fog. Vulkan never
+    // defines it, so its modules are as they were.
+    vec3 shade = vCol + vec3(wave);
+#else
     float night = lg.eye.w;
     vec3 nL = normalize(vNrm);
 #ifdef OMK_TILED
@@ -572,6 +582,7 @@ void main() {
                : pc.lit == 2 ? min(vCol * night + litColour(nL, vWorld, false), vec3(1.0))
                : pc.lit == 3 ? min((vCol + vec3(wave)) * night + litColour(nL, vWorld, true), vec3(1.0))
                              : vCol + vec3(wave);
+#endif
     // THE GREYSCALE BANK (ops 150/151, `o3de/greybank.h`): `sub_42FF80`
     // writes each vertex colour as its luma, `(299 R + 587 G + 114 B) / 1000`
     // on the BYTES, truncated - here on the colour the batch ends with, after
@@ -582,7 +593,11 @@ void main() {
                              vec3(299.0, 587.0, 114.0)) + 0.5) / 1000.0);
         shade = vec3(y / 255.0);
     }
+#ifdef OMK_ORIGINAL
+    vec3 c = clamp(t.rgb * shade, 0.0, 1.0);   // (no mapped shadow: `litness()` is 1)
+#else
     vec3 c = clamp(t.rgb * shade * litness(), 0.0, 1.0);
+#endif
     // SNOW LYING (`o3de/wetfloor.h` coverRuns): the floor turned white under
     // its own light - `c / texel`, the light alone - by the cover times the
     // open sky here, before the fog takes it like the rest
@@ -592,6 +607,7 @@ void main() {
     // as plastic: the reader, 2026-10-28): strongest at the grazing angles
     // (Fresnel) and where the reflected ray rises to the sky (Y is down: -y).
     // `reflect` takes either sign of the normal alike. GLES alike
+#ifndef OMK_ORIGINAL
     if (wetBody && wetFilm > 0.0) {
         float y = dot(c, vec3(0.299, 0.587, 0.114));
         c = max(mix(vec3(y), c, 1.0 + kWetBodySat * wetFilm), 0.0) * (1.0 - kWetBodyDark * wetFilm);
@@ -610,6 +626,7 @@ void main() {
         c = mix(c, clamp(lightHere * 0.9, 0.0, 1.0), wetFilm * openSky * darkTexel);
         wetFilm = 0.0;   // no rain's film, no ripples, on snow
     }
+#endif
     // THE FOG, and it is raster.cpp's line transcribed. Linear -
     // `FOGTABLEMODE` 3 at density 1.0, the only mode the engine sets - over
     // the range the clip distance sizes. The CPU side has already applied the
@@ -619,6 +636,7 @@ void main() {
         float f = clamp((pc.fogEnd - vDepth) / (pc.fogEnd - pc.fogStart), 0.0, 1.0);
         c = mix(pc.fogColour, c, f);
     }
+#ifndef OMK_ORIGINAL
     // THE MIST (the remaster's A4, `View::mist`): a height fog in the same
     // colour, on what the game fogs - its density 1 at the set's GROUND and
     // falling as exp(-h / height) above it (Y is down: h = ground - y), the
@@ -713,5 +731,8 @@ void main() {
     // ambient occlusion. A body marked by the top of the range would collide
     // with full glow: additive draws ADD their alpha.
     float glowV = pc.bloomMode != 0 ? textureGrad(emis, vUV / texels, gradUV[0], gradUV[1]).r : 0.0;
+#else
+    float glowV = 0.0;   // (no bloom)
+#endif
     outColour = vec4(c, pc.caster != 0 ? 0.0 : (1.0 + 254.0 * glowV) / 255.0);
 }

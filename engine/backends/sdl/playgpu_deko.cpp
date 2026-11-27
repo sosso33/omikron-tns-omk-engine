@@ -22,7 +22,8 @@ bool dekoPresentWorld(Renderer*, int vy, int vh);
 bool dekoPresentSurface(Renderer*, const Surface&);
 const char* dekoDeviceName(Renderer*);
 void dekoSetSwapInterval(Renderer*, int n);
-void dekoTakeCounts(Renderer*, long out[4]);
+void dekoTakeCounts(Renderer*, long out[5]);
+void dekoTakeCpu(Renderer*, double out[5]);
 std::string dekoTakeLadder(Renderer*);
 }
 
@@ -101,12 +102,19 @@ bool PlayState::gpuRelinkLighting(bool, bool) { return false; }
 bool PlayState::gpuRetarget(int, int, float, float) { return false; }   // no MSAA / supersample / upscale yet
 void PlayState::gpuReportTimings() {
     if (!vkRen) return;
-    long c[4];
+    long c[5];
     omk::dekoTakeCounts(vkRen, c);
     if (c[3] > 0)
-        std::printf("frame %ld deko3d (a frame, mean of %ld): %.0f draws, %.0f runs of the cull, %.0f vertices; "
-                    "GPU %.2f ms\n", frameNo, c[3], static_cast<double>(c[0]) / c[3], static_cast<double>(c[1]) / c[3],
-                    static_cast<double>(c[2]) / c[3], vkRen->gpuFrameMs());
+        std::printf("frame %ld deko3d (a frame, mean of %ld): %.0f draws (%.0f by the original's module), "
+                    "%.0f runs of the cull, %.0f vertices; GPU %.2f ms\n", frameNo, c[3],
+                    static_cast<double>(c[0]) / c[3], static_cast<double>(c[4]) / c[3],
+                    static_cast<double>(c[1]) / c[3], static_cast<double>(c[2]) / c[3], vkRen->gpuFrameMs());
+    double cpu[5];
+    omk::dekoTakeCpu(vkRen, cpu);
+    if (c[3] > 0)
+        std::printf("frame %ld deko3d CPU (a frame, mean of %ld): the slot's fence waited %.2f ms; submit %.2f ms, "
+                    "of it %.1f vertex uploads (%.0f KB) %.2f ms\n", frameNo, c[3], cpu[4] / c[3], cpu[3] / c[3],
+                    cpu[0] / c[3], cpu[1] / 1024.0 / c[3], cpu[2] / c[3]);
     const std::string ladder = omk::dekoTakeLadder(vkRen);
     if (!ladder.empty()) std::printf("frame %ld deko3d ladder (GPU ms, mean): %s\n", frameNo, ladder.c_str());
 }

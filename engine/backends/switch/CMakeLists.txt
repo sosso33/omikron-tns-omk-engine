@@ -155,6 +155,8 @@ if(OMK_DEKO3D)
     "scene_tiled.frag|frag|scene.frag|OMK_TILED"
     "scene_cut.frag|frag|scene.frag|OMK_LATE_DEPTH"
     "scene_tiled_cut.frag|frag|scene.frag|OMK_TILED,OMK_LATE_DEPTH"
+    "scene_orig.frag|frag|scene.frag|OMK_ORIGINAL"
+    "scene_orig_cut.frag|frag|scene.frag|OMK_ORIGINAL,OMK_LATE_DEPTH"
     "fsq.vert|vert|fsq.vert|"
     "fsq.frag|frag|fsq.frag|"
     "shadow.vert|vert|shadow.vert|"

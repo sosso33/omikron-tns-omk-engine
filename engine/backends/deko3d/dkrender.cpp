@@ -50,6 +50,7 @@
 #include "../vulkan/shaderblocks.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -259,7 +260,9 @@ private:
     void openCb();
     void bindFrameState();
     void pushView(const omk::View& v);
-    bool uploadGeometry(const omk::Geometry* g);
+    // the buffer this frame draws `g` from, its contents current - or nullptr
+    const Alloc* uploadGeometry(const omk::Geometry* g);
+    void writeCorners(const omk::Geometry& g, Alloc& mem, const std::vector<std::uint32_t>* only);
     void poolTextures(std::span<const omk::Texture> t);
     bool stage(uint32_t bytes, Alloc& out);
     void flushUploads();
@@ -275,7 +278,6 @@ public:
     std::string takeLadder();
 private:
     bool ladder_ = false;
-    unsigned rungs_ = 0;
     double rungSum_[8] = {};
     long rungFrames_ = 0;
 
@@ -292,10 +294,28 @@ private:
     DkQueue queue_ = nullptr;
     DkCmdBuf cb_ = nullptr, upCb_ = nullptr;
     Heap data_, cached_, images_, code_;
-    Alloc cmdMem_, upCmdMem_;
-    std::vector<Alloc> cmdExtra_;   // what the frame's list outgrew into, freed with the frame
-    DkFence frameFence_{};
-    bool framePending_ = false;     // the last present's fence not waited for yet
+    Alloc upCmdMem_;
+    // THE FRAMES IN FLIGHT (`todo/deko3d.md` D2): a frame works in a SLOT -
+    // its command memory and what that outgrew into, its fence, its
+    // timestamps, its surface's staging, the buffers retired while it was
+    // recorded - and waits only for THAT slot's last frame (`openCb`), so the
+    // CPU records frame N+1 while the GPU draws N. `OMK_DEKO_SLOTS` 1..3,
+    // default 2; 1 is the one-frame-at-a-time of first light.
+    static constexpr int kMaxSlots = 3;
+    struct Slot {
+        Alloc cmdMem;
+        std::vector<Alloc> extra;   // what the frame's list outgrew into
+        DkFence fence{};
+        bool pending = false;       // its last frame's fence not waited for yet
+        std::vector<Alloc> dead;    // retired while it was recorded: freed when it comes round
+        Alloc stamps;               // the GPU timer's and the ladder's reports
+        unsigned stamped = 0, rungs = 0;
+        Alloc surfStage;
+    };
+    Slot slots_[kMaxSlots];
+    int nSlots_ = 2, slot_ = 0;
+    Slot& cur() { return slots_[slot_]; }
+    void markIdle() { for (Slot& sl : slots_) sl.pending = false; }
     bool cbOpen_ = false;           // `cb_` holds this frame's commands
     bool recording_ = false;        // between `begin` and `end`
     bool sceneSubmitted_ = false;   // `end` sent a scene that no present has closed
@@ -303,6 +323,12 @@ private:
 
     // ---- the shaders (Vulkan's, `dkshaders.py`)
     DkShader shVert_{}, shFrag_{}, shFragCut_{}, shFsq_{}, shPresent_{}, shFsqFrag_{};
+    // THE ORIGINAL'S MODULES (`scene.frag` -DOMK_ORIGINAL, and its cutout's):
+    // the game's own shading alone, for a draw that asks nothing of the
+    // remaster in a frame that asks nothing of it (`frameOrig_`, `submit`) -
+    // the full shader's 49 registers were ~9.5 ms of the street's 13.3
+    DkShader shOrig_{}, shOrigCut_{};
+    bool frameOrig_ = true;
     // `OMK_DEKO_PROBE=N`, an instrument read at each `begin` (so `--bench`'s
     // OMK_BENCH_VARY steps through it): what the scene's GPU time is made of,
     // one part taken away at a time - 1 a trivial fragment shader (fsq.frag),
@@ -316,11 +342,21 @@ private:
     uint32_t pushRingAt_ = 0;
     static constexpr uint32_t kPushRingSlots = 8192;
     // what a frame issued, summed for `dekoTakeCounts` (the 60-frame report)
-    long draws_ = 0, runs_ = 0, verts_ = 0, frames_ = 0;
+    long draws_ = 0, runs_ = 0, verts_ = 0, frames_ = 0, origDraws_ = 0;
+    // ...and what the CPU spent in `submit`: the vertex uploads (how many,
+    // their bytes, their ms) and the whole of it
+    long uploads_ = 0, upBytes_ = 0;
+    double upMs_ = 0.0, submitMs_ = 0.0, waitMs_ = 0.0;   // waitMs_: `waitFrame`, the slot's fence
 public:
-    void takeCounts(long out[4]) {
-        out[0] = draws_; out[1] = runs_; out[2] = verts_; out[3] = frames_;
-        draws_ = runs_ = verts_ = frames_ = 0;
+    void takeCounts(long out[5]) {
+        out[0] = draws_; out[1] = runs_; out[2] = verts_; out[3] = frames_; out[4] = origDraws_;
+        draws_ = runs_ = verts_ = frames_ = origDraws_ = 0;
+    }
+    void takeCpu(double out[5]) {
+        out[0] = static_cast<double>(uploads_); out[1] = static_cast<double>(upBytes_);
+        out[2] = upMs_; out[3] = submitMs_; out[4] = waitMs_;
+        uploads_ = upBytes_ = 0;
+        upMs_ = submitMs_ = waitMs_ = 0.0;
     }
 private:
     std::vector<Alloc> shaderMem_;
@@ -342,12 +378,10 @@ private:
     DkSwapchain swap_ = nullptr;
 
     // ---- the frame's blocks
-    Alloc pushUbo_, shadowUbo_, lightUbo_, poseBuf_, readBuf_, surfStage_;
+    Alloc pushUbo_, shadowUbo_, lightUbo_, poseBuf_, readBuf_;
     // the GPU timer: four reports of 16 bytes (a value, then the timestamp)
     // - 0 the frame's list opened, 1 the scene sent, 2 the present's list
     // begun, 3 the frame done; `stamped_` which were written this frame
-    Alloc stamps_;
-    unsigned stamped_ = 0;
     double gpuMs_ = -1.0;
     Push push_{};
     bool fog_ = false, mistOn_ = false;
@@ -384,13 +418,24 @@ private:
     std::vector<Alloc> upOwn_;        // staging past the ring's size, freed after the flush
 
     // ---- the geometry
+    // A GEOMETRY'S VERTICES ON THE GPU. A static one has ONE buffer, every
+    // frame's. One whose contents change (a set's moving meshes, a body posed
+    // on the CPU) has one COPY A SLOT: a frame writes its own slot's copy
+    // alone, which no frame in flight reads (its last frame was waited for),
+    // and writes only the corners changed since that copy was last brought up
+    // to date - each copy keeps the union of the `dirtyCorners` it missed
+    // (`pending`), or `whole` when a revision came without them. The first
+    // console reading: Anekbah's whole 7.5 MB re-sent each frame for its
+    // moving meshes, 8.6 of a 9 ms submit (GLES sends ~72 KB - the same rule).
     struct Vbo {
-        Alloc mem;
+        Alloc mem[kMaxSlots];
+        int copies = 0;                       // 1 (static, or one slot) or nSlots_
         std::size_t n = 0;
-        std::uint64_t rev = 0;
+        std::uint64_t seen = 0;               // the latest revision observed
+        bool whole[kMaxSlots] = {};
+        std::vector<std::uint32_t> pending[kMaxSlots];
     };
     std::map<const omk::Geometry*, Vbo> vbo_;
-    std::vector<Alloc> deadVbo_;      // released once the frame that may draw them is done
     std::map<const omk::Geometry*, std::vector<std::uint8_t>> baked_;
 };
 
@@ -402,7 +447,7 @@ void DekoRenderer::addCmdMem(void* user, DkCmdBuf cb, size_t minReq) {
                                 DK_CMDMEM_ALIGNMENT);
     if (!a) return;   // the device reports the overflow itself
     dkCmdBufAddMemory(cb, a.mb, a.off, a.size);
-    self->cmdExtra_.push_back(a);
+    self->cur().extra.push_back(a);
 }
 
 bool DekoRenderer::loadShader(const char* name, DkShader& sh) {
@@ -496,14 +541,19 @@ bool DekoRenderer::init(int w, int h) {
     DkCmdBufMaker um;
     dkCmdBufMakerDefaults(&um, dev_);
     upCb_ = dkCmdBufCreate(&um);
-    cmdMem_ = data_.alloc(kCmdBytes, DK_CMDMEM_ALIGNMENT);
+    nSlots_ = static_cast<int>(std::clamp<long>(omk::envInt("OMK_DEKO_SLOTS", 2), 1, kMaxSlots));
+    for (int k = 0; k < nSlots_; ++k) {
+        slots_[k].cmdMem = data_.alloc(kCmdBytes, DK_CMDMEM_ALIGNMENT);
+        if (!slots_[k].cmdMem) return false;
+    }
     upCmdMem_ = data_.alloc(kUpCmdBytes, DK_CMDMEM_ALIGNMENT);
     ring_ = data_.alloc(kStagingBytes, DK_IMAGE_LINEAR_STRIDE_ALIGNMENT);
-    if (!cb_ || !upCb_ || !cmdMem_ || !upCmdMem_ || !ring_) return false;
+    if (!cb_ || !upCb_ || !upCmdMem_ || !ring_) return false;
 
     if (!loadShader("scene.vert", shVert_) || !loadShader("scene.frag", shFrag_) ||
         !loadShader("scene_cut.frag", shFragCut_) || !loadShader("fsq.vert", shFsq_) ||
-        !loadShader("present.frag", shPresent_) || !loadShader("fsq.frag", shFsqFrag_))
+        !loadShader("present.frag", shPresent_) || !loadShader("fsq.frag", shFsqFrag_) ||
+        !loadShader("scene_orig.frag", shOrig_) || !loadShader("scene_orig_cut.frag", shOrigCut_))
         return false;
 
     // the descriptors: one array of images, one of samplers
@@ -558,10 +608,14 @@ bool DekoRenderer::init(int w, int h) {
     lightUbo_ = data_.alloc(alignUp(sizeof(LightUbo), kUboAlign), kUboAlign);
     poseBuf_ = data_.alloc(256, kUboAlign);   // `scene.vert` declares it; a posed draw never comes (D3)
     readBuf_ = cached_.alloc(static_cast<uint32_t>(w) * static_cast<uint32_t>(h) * 4, 256);
-    surfStage_ = data_.alloc(static_cast<uint32_t>(w) * static_cast<uint32_t>(h) * 4, DK_IMAGE_LINEAR_STRIDE_ALIGNMENT);
-    stamps_ = data_.alloc(16 * 16, 16);   // the timer's four, then the ladder's (`rung`)
-    if (!pushUbo_ || !shadowUbo_ || !lightUbo_ || !poseBuf_ || !readBuf_ || !surfStage_ || !stamps_) return false;
-    std::memset(stamps_.cpu(), 0, stamps_.size);
+    for (int k = 0; k < nSlots_; ++k) {
+        slots_[k].surfStage = data_.alloc(static_cast<uint32_t>(w) * static_cast<uint32_t>(h) * 4,
+                                          DK_IMAGE_LINEAR_STRIDE_ALIGNMENT);
+        slots_[k].stamps = data_.alloc(16 * 16, 16);   // the timer's four, then the ladder's (`rung`)
+        if (!slots_[k].surfStage || !slots_[k].stamps) return false;
+        std::memset(slots_[k].stamps.cpu(), 0, slots_[k].stamps.size);
+    }
+    if (!pushUbo_ || !shadowUbo_ || !lightUbo_ || !poseBuf_ || !readBuf_) return false;
     std::memset(poseBuf_.cpu(), 0, poseBuf_.size);
 
     // the stand-ins: white for a material with no texture (`raster.cpp`
@@ -590,8 +644,8 @@ bool DekoRenderer::init(int w, int h) {
         flushUploads();
     }
     fb_ = omk::Surface(w, h, 0);
-    std::printf("deko3d: up - %dx%d, %d swapchain images, filter %s\n", w, h, kSwapImages,
-                filter_ ? "bilinear" : "nearest");
+    std::printf("deko3d: up - %dx%d, %d swapchain images, %d frame(s) in flight, filter %s\n", w, h,
+                kSwapImages, nSlots_, filter_ ? "bilinear" : "nearest");
     return true;
 }
 
@@ -609,7 +663,8 @@ DekoRenderer::~DekoRenderer() {
 void DekoRenderer::geometryGone(void* self, const omk::Geometry* g) {
     auto* r = static_cast<DekoRenderer*>(self);
     if (auto it = r->vbo_.find(g); it != r->vbo_.end()) {
-        r->deadVbo_.push_back(it->second.mem);   // a frame in flight may still draw it
+        for (int c = 0; c < it->second.copies; ++c)
+            r->cur().dead.push_back(it->second.mem[c]);   // a frame in flight may still draw it
         r->vbo_.erase(it);
     }
     r->baked_.erase(g);
@@ -618,23 +673,30 @@ void DekoRenderer::geometryGone(void* self, const omk::Geometry* g) {
 // ---- THE FRAME ------------------------------------------------------------
 
 void DekoRenderer::waitFrame() {
-    if (framePending_) {
+    Slot& sl = cur();
+    if (sl.pending) {
+        const auto w0 = std::chrono::steady_clock::now();
+        struct WaitTimer {
+            double& ms; std::chrono::steady_clock::time_point t0;
+            ~WaitTimer() { ms += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count(); }
+        } wt{waitMs_, w0};
         DKTRACE("waiting for the frame's fence\n");
-        const DkResult r = dkFenceWait(&frameFence_, kFenceTimeoutNs);
+        const DkResult r = dkFenceWait(&sl.fence, kFenceTimeoutNs);
         if (r != DkResult_Success) {
             std::printf("deko3d: the frame's fence did not signal in 2 s (result %d, queue %s)\n",
                         static_cast<int>(r), dkQueueIsInErrorState(queue_) ? "IN ERROR" : "not in error");
             std::fflush(stdout);
             dkQueueWaitIdle(queue_);
+            markIdle();
         }
-        framePending_ = false;
+        sl.pending = false;
     }
 }
 
 void DekoRenderer::rung(int k) {
     if (!ladder_) return;
-    dkCmdBufReportCounter(cb_, DkCounter_Timestamp, stamps_.gpu() + static_cast<uint32_t>(16 * (4 + k)));
-    rungs_ |= 1u << k;
+    dkCmdBufReportCounter(cb_, DkCounter_Timestamp, cur().stamps.gpu() + static_cast<uint32_t>(16 * (4 + k)));
+    cur().rungs |= 1u << k;
 }
 
 std::string DekoRenderer::takeLadder() {
@@ -652,25 +714,28 @@ std::string DekoRenderer::takeLadder() {
 }
 
 void DekoRenderer::stamp(int k) {
-    dkCmdBufReportCounter(cb_, DkCounter_Timestamp, stamps_.gpu() + static_cast<uint32_t>(16 * k));
-    stamped_ |= 1u << k;
+    dkCmdBufReportCounter(cb_, DkCounter_Timestamp, cur().stamps.gpu() + static_cast<uint32_t>(16 * k));
+    cur().stamped |= 1u << k;
 }
 
 // the last frame's GPU time, once its fence is known signalled: the scene's
 // span plus the present's, or (no scene sent apart - a surface alone) the
 // whole list's
 void DekoRenderer::readStamps() {
-    if (ladder_ && rungs_ == 0x7Fu) {
-        const auto* q = static_cast<const volatile std::uint64_t*>(stamps_.cpu());
+    // the slot's LAST frame - done, its fence waited for (`openCb`)
+    Slot& sl = cur();
+    unsigned& stamped_ = sl.stamped;
+    if (ladder_ && sl.rungs == 0x7Fu) {
+        const auto* q = static_cast<const volatile std::uint64_t*>(sl.stamps.cpu());
         std::uint64_t t[7];
         for (int k = 0; k < 7; ++k) t[k] = q[2 * (4 + k) + 1];
         for (int k = 0; k < 6; ++k)
             rungSum_[k] += t[k + 1] >= t[k] ? static_cast<double>(dkTimestampToNs(t[k + 1] - t[k])) / 1e6 : 0.0;
         ++rungFrames_;
     }
-    rungs_ = 0;
+    sl.rungs = 0;
     if ((stamped_ & 0x9u) != 0x9u) { stamped_ = 0; return; }
-    const auto* r = static_cast<const volatile std::uint64_t*>(stamps_.cpu());
+    const auto* r = static_cast<const volatile std::uint64_t*>(sl.stamps.cpu());
     const std::uint64_t t0 = r[1], t1 = r[3], t2 = r[5], t3 = r[7];   // each report's second word
     std::uint64_t ticks = 0;
     if ((stamped_ & 0x6u) == 0x6u && t1 >= t0 && t3 >= t2) ticks = (t1 - t0) + (t3 - t2);
@@ -691,14 +756,15 @@ void DekoRenderer::readStamps() {
 // the frame's command list, from the start of its memory once the GPU is done with it
 void DekoRenderer::openCb() {
     if (cbOpen_) return;
+    slot_ = (slot_ + 1) % nSlots_;   // the next slot: its last frame is the one to wait for
     waitFrame();
-    for (Alloc& a : cmdExtra_) data_.free(a);
-    cmdExtra_.clear();
-    for (Alloc& a : deadVbo_) data_.free(a);
-    deadVbo_.clear();
+    for (Alloc& a : cur().extra) data_.free(a);
+    cur().extra.clear();
+    for (Alloc& a : cur().dead) data_.free(a);
+    cur().dead.clear();
     readStamps();   // the frame before is done: its timestamps are in
     dkCmdBufClear(cb_);
-    dkCmdBufAddMemory(cb_, cmdMem_.mb, cmdMem_.off, cmdMem_.size);
+    dkCmdBufAddMemory(cb_, cur().cmdMem.mb, cur().cmdMem.off, cur().cmdMem.size);
     cbOpen_ = true;
     sceneSubmitted_ = false;
     stamp(0);
@@ -788,7 +854,7 @@ void DekoRenderer::begin(const omk::View& view) {
     // `OMK_NO_GPU_PRESENT`): done once the queue is, and its list started over
     if (cbOpen_ && sceneSubmitted_) {
         dkQueueWaitIdle(queue_);
-        framePending_ = false;
+        markIdle();
         cbOpen_ = false;
     }
     openCb();
@@ -800,6 +866,14 @@ void DekoRenderer::begin(const omk::View& view) {
     for (int i = 0; i < 3; ++i) fogColour_[i] = static_cast<float>(view.fogColour[i]) / 255.0f;
     rain_ = view.rain;
     dither_ = view.dither;
+    // the original's module may draw this frame: none of the frame-wide
+    // remaster passes (the mapped shadow is not drawn here yet - D4) -
+    // `OMK_DEKO_FULL=1` keeps the full shader throughout, to compare
+    // read each frame (`OMK_BENCH_VARY` moves it), and by its VALUE: `envFlag`
+    // is "set", and OMK_DEKO_FULL=0 is set (the console's A/B drew the full
+    // shader on both sides)
+    const bool forceFull = omk::envOn("OMK_DEKO_FULL");
+    frameOrig_ = !forceFull && view.mist <= 0.0f && view.dust <= 0.0f && view.veil <= 0.0f;
     probe_ = omk::envInt("OMK_DEKO_PROBE", 0);
     ++frames_;
     pushRingAt_ = 0;
@@ -874,35 +948,87 @@ void DekoRenderer::begin(const omk::View& view) {
     recording_ = true;
 }
 
-bool DekoRenderer::uploadGeometry(const omk::Geometry* g) {
-    // cached by pointer while the CONTENT has not moved (`Geometry::revision`);
-    // the frame before is done (`openCb` waited), so a buffer that still fits
-    // is rewritten in place
-    auto it = vbo_.find(g);
-    if (it != vbo_.end() && it->second.rev == g->revision && it->second.n == g->corners.size()) return true;
-    const std::size_t n = g->corners.size();
-    if (!n) return false;
-    const auto bk = baked_.find(g);
+void DekoRenderer::writeCorners(const omk::Geometry& g, Alloc& mem, const std::vector<std::uint32_t>* only) {
+    const auto u0 = std::chrono::steady_clock::now();
+    const auto bk = baked_.find(&g);
     const std::vector<std::uint8_t>* lose = bk == baked_.end() ? nullptr : &bk->second;
-    const uint32_t bytes = static_cast<uint32_t>(n * sizeof(GpuVert));
-    if (it != vbo_.end() && it->second.mem.size < bytes) {
-        deadVbo_.push_back(it->second.mem);
-        vbo_.erase(it);
-        it = vbo_.end();
+    auto* dst = static_cast<GpuVert*>(mem.cpu());
+    const std::size_t n = g.corners.size();
+    std::size_t wrote = 0;
+    if (only) {
+        for (const std::uint32_t i : *only)
+            if (i < n) { dst[i] = vertOf(g, i, lose); ++wrote; }
+    } else {
+        for (std::size_t i = 0; i < n; ++i) dst[i] = vertOf(g, i, lose);
+        wrote = n;
     }
-    if (it == vbo_.end()) {
+    ++uploads_;
+    upBytes_ += static_cast<long>(wrote * sizeof(GpuVert));
+    upMs_ += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - u0).count();
+}
+
+const Alloc* DekoRenderer::uploadGeometry(const omk::Geometry* g) {
+    const std::size_t n = g->corners.size();
+    if (!n) return nullptr;
+    const uint32_t bytes = static_cast<uint32_t>(n * sizeof(GpuVert));
+    auto it = vbo_.find(g);
+    // new, or of another size (or marked by `bakeDepthTie`): one buffer, written whole
+    if (it == vbo_.end() || it->second.n != n) {
+        if (it != vbo_.end()) {
+            for (int c = 0; c < it->second.copies; ++c) cur().dead.push_back(it->second.mem[c]);
+            vbo_.erase(it);
+        }
         Vbo v;
-        // half as much again for a geometry that has grown once (Vulkan's rule)
-        v.mem = data_.alloc(bytes, 256);
-        if (!v.mem) return false;
+        v.mem[0] = data_.alloc(bytes, 256);
+        if (!v.mem[0]) return nullptr;
+        v.copies = 1;
+        v.n = n;
+        v.seen = g->revision;
         it = vbo_.emplace(g, std::move(v)).first;
         g->resident.mark();
+        writeCorners(*g, it->second.mem[0], nullptr);
+        return &it->second.mem[0];
     }
-    auto* dst = static_cast<GpuVert*>(it->second.mem.cpu());
-    for (std::size_t i = 0; i < n; ++i) dst[i] = vertOf(*g, i, lose);
-    it->second.n = n;
-    it->second.rev = g->revision;
-    return true;
+    Vbo& v = it->second;
+    if (g->revision != v.seen) {
+        // the change observed: which corners, if the geometry says (`dirtyCorners`)
+        static const bool noDirty = omk::envFlag("OMK_NO_DIRTY");
+        const bool delta = !noDirty && g->dirtyTo != 0 && g->dirtyTo == g->revision && g->dirtyFrom == v.seen;
+        if (v.copies == 1 && nSlots_ > 1) {
+            // static until now: its one buffer may be in flight - a copy a slot from here on
+            cur().dead.push_back(v.mem[0]);
+            v.mem[0] = Alloc{};
+            v.copies = nSlots_;
+            for (int c = 0; c < v.copies; ++c) {
+                v.mem[c] = data_.alloc(bytes, 256);
+                if (!v.mem[c]) { for (int k = 0; k < c; ++k) data_.free(v.mem[k]); vbo_.erase(it); return nullptr; }
+                v.whole[c] = true;
+                v.pending[c].clear();
+            }
+        } else {
+            for (int c = 0; c < v.copies; ++c) {
+                if (v.whole[c]) continue;
+                if (!delta || v.pending[c].size() + g->dirtyCorners.size() > n / 4) {
+                    v.whole[c] = true;   // a revision without its corners, or most of them: all
+                    v.pending[c].clear();
+                } else {
+                    v.pending[c].insert(v.pending[c].end(), g->dirtyCorners.begin(), g->dirtyCorners.end());
+                }
+            }
+        }
+        v.seen = g->revision;
+    }
+    // this frame's copy, brought up to date
+    const int c = v.copies == 1 ? 0 : slot_;
+    if (v.whole[c]) {
+        writeCorners(*g, v.mem[c], nullptr);
+        v.whole[c] = false;
+        v.pending[c].clear();
+    } else if (!v.pending[c].empty()) {
+        writeCorners(*g, v.mem[c], &v.pending[c]);
+        v.pending[c].clear();
+    }
+    return &v.mem[c];
 }
 
 bool DekoRenderer::bakeDepthTie(const omk::Geometry* g, std::span<const omk::Draw> order) {
@@ -912,14 +1038,23 @@ bool DekoRenderer::bakeDepthTie(const omk::Geometry* g, std::span<const omk::Dra
     for (const std::size_t tri : tris)
         for (std::size_t k = 3 * tri; k < 3 * tri + 3 && k < lose.size(); ++k) lose[k] = 1;
     baked_[g] = std::move(lose);
-    if (auto it = vbo_.find(g); it != vbo_.end()) it->second.rev = ~std::uint64_t{0};   // rewritten marked
+    // the buffers hold the old decision: rewritten whole, marked - each a NEW
+    // buffer (an old one may be in flight)
+    if (auto it = vbo_.find(g); it != vbo_.end()) it->second.n = 0;
     return true;
 }
 
 void DekoRenderer::submit(const omk::Draw& d) {
     if (!recording_ || !d.geo || !d.count) return;
     if (probe_ == 6) return;   // the probe: no draw
-    if (!uploadGeometry(d.geo)) return;
+    using clk = std::chrono::steady_clock;
+    const auto s0 = clk::now();
+    struct SubmitTimer {   // the whole of `submit`, however it returns
+        DekoRenderer* r; clk::time_point t0;
+        ~SubmitTimer() { r->submitMs_ += std::chrono::duration<double, std::milli>(clk::now() - t0).count(); }
+    } timer{this, s0};
+    const Alloc* vmem = uploadGeometry(d.geo);
+    if (!vmem) return;
     st_.triangles += static_cast<long>(d.count / 3);
 
     // THE BLEND - `omk::blendRule`, Vulkan's three pipelines as three states
@@ -953,13 +1088,6 @@ void DekoRenderer::submit(const omk::Draw& d) {
         ds.depthCompareOp = DkCompareOp_Less;
         dkCmdBufBindDepthStencilState(cb_, &ds);
         lastBlend_ = k;
-    }
-    // an opaque CUTOUT draw: the shader with the late depth (`scene.frag` OMK_LATE_DEPTH)
-    const DkShader* frag = probe_ == 1 ? &shFsqFrag_ : d.cutout && k == 0 && probe_ != 2 ? &shFragCut_ : &shFrag_;
-    if (frag != lastFrag_ && probe_ != 7) {
-        const DkShader* sh[1] = {frag};
-        dkCmdBufBindShaders(cb_, DkStageFlag_Fragment, sh, 1);
-        lastFrag_ = frag;
     }
     // THE TEXTURE: the key's low six bits, or the pool's index above them
     const std::size_t slot = omk::drawTextureSlot(d);
@@ -998,8 +1126,21 @@ void DekoRenderer::submit(const omk::Draw& d) {
         push_.fogEnd = -1.0f;
         for (int i = 0; i < 3; ++i) push_.fogColour[i] = fogColour_[i];
     }
-    const Vbo& vb = vbo_.find(d.geo)->second;
-    dkCmdBufBindVtxBuffer(cb_, 0, vb.mem.gpu(), vb.mem.size);
+    // THE FRAGMENT MODULE: an opaque CUTOUT draw the late depth's (`scene.frag`
+    // OMK_LATE_DEPTH); the original's (OMK_ORIGINAL) wherever the draw and the
+    // frame ask nothing of the remaster - the full module everywhere else
+    const bool orig = frameOrig_ && push_.lit == 0 && push_.water == 0 && push_.bloomMode == 0;
+    const bool cut = d.cutout && k == 0 && probe_ != 2;
+    const DkShader* frag = probe_ == 1 ? &shFsqFrag_
+                         : orig ? (cut ? &shOrigCut_ : &shOrig_)
+                                : (cut ? &shFragCut_ : &shFrag_);
+    if (frag != lastFrag_ && probe_ != 7) {
+        const DkShader* sh[1] = {frag};
+        dkCmdBufBindShaders(cb_, DkStageFlag_Fragment, sh, 1);
+        lastFrag_ = frag;
+    }
+    origDraws_ += orig ? 1 : 0;
+    dkCmdBufBindVtxBuffer(cb_, 0, vmem->gpu(), vmem->size);
     // THE BACK-FACE CULL, one push per run of `cornerCull`
     const omk::Geometry* g = d.geo;
     const bool haveCull = g->cornerCull.size() == g->corners.size();
@@ -1051,7 +1192,7 @@ const omk::Surface& DekoRenderer::readback() {
     dkCmdBufCopyImageToBuffer(cb_, &colourView_, &r, &dst, 0);
     dkQueueSubmitCommands(queue_, dkCmdBufFinishList(cb_));
     dkQueueWaitIdle(queue_);
-    framePending_ = false;   // the queue is idle
+    markIdle();   // the queue is idle
     // the CPU's cached copy of what the GPU wrote, dropped before it is read
     dkMemBlockFlushCpuCache(readBuf_.mb, readBuf_.off, readBuf_.size);
     const auto* src = static_cast<const unsigned char*>(readBuf_.cpu());
@@ -1129,19 +1270,19 @@ bool DekoRenderer::runPresent(uint32_t imgSlot, int vy, int vh, bool raw) {
     // first console run) it never signalled - every wait ran out its 2 s
     rung(6);
     stamp(3);
-    dkCmdBufSignalFence(cb_, &frameFence_, true);
+    dkCmdBufSignalFence(cb_, &cur().fence, true);
     dkQueueSubmitCommands(queue_, dkCmdBufFinishList(cb_));
     DKTRACE("present: submitted, presenting image %d\n", slot);
     dkQueuePresentImage(queue_, swap_, slot);
     if (traceLeft() > 0) {
         // the first frames waited for here, so a GPU fault is said at once
-        const DkResult r = dkFenceWait(&frameFence_, kFenceTimeoutNs);
+        const DkResult r = dkFenceWait(&cur().fence, kFenceTimeoutNs);
         std::printf("deko3d trace: present done - fence %d, queue %s\n", static_cast<int>(r),
                     dkQueueIsInErrorState(queue_) ? "IN ERROR" : "fine");
         std::fflush(stdout);
         --traceLeft();
     }
-    framePending_ = true;
+    cur().pending = true;
     cbOpen_ = false;   // the next frame starts its list from the top, once this one is done
     return true;
 }
@@ -1158,11 +1299,11 @@ bool DekoRenderer::presentSurface(const omk::Surface& s) {
     openCb();   // waits for the frame before, which may still read the staging buffer
     // 565 -> replicated RGBA8 through the table (`expand565Rgba`), as Vulkan:
     // a UNORM read of a 565 texture would round, not replicate
-    auto* dst = static_cast<unsigned char*>(surfStage_.cpu());
+    auto* dst = static_cast<unsigned char*>(cur().surfStage.cpu());
     const unsigned char* lut = omk::expand565Rgba();
     const int n = std::min<int>(w_ * h_, static_cast<int>(s.px.size()));
     for (int i = 0; i < n; ++i) std::memcpy(dst + 4 * i, lut + 4 * static_cast<std::size_t>(s.px[static_cast<std::size_t>(i)]), 4);
-    const DkCopyBuf src{surfStage_.gpu(), 0, 0};
+    const DkCopyBuf src{cur().surfStage.gpu(), 0, 0};
     DkImageView v;
     dkImageViewDefaults(&v, &surfImg_);
     const DkImageRect r{0, 0, 0, static_cast<uint32_t>(w_), static_cast<uint32_t>(h_), 1};
@@ -1200,7 +1341,7 @@ void DekoRenderer::flushUploads() {
     dkCmdBufBarrier(upCb_, DkBarrier_Full, DkInvalidateFlags_Image | DkInvalidateFlags_Descriptors);
     dkQueueSubmitCommands(queue_, dkCmdBufFinishList(upCb_));
     dkQueueWaitIdle(queue_);
-    framePending_ = false;
+    markIdle();
     upOpen_ = false;
     ringAt_ = 0;
     for (Alloc& a : upOwn_) data_.free(a);
@@ -1220,7 +1361,7 @@ void DekoRenderer::poolTextures(std::span<const omk::Texture> t) {
     bool waited = false;
     for (auto it = uploaded_.begin(); it != uploaded_.end();) {
         if (it->second.used) { ++it; continue; }
-        if (!waited) { dkQueueWaitIdle(queue_); framePending_ = false; waited = true; }
+        if (!waited) { dkQueueWaitIdle(queue_); markIdle(); waited = true; }
         images_.free(it->second.t->mem);
         if (it->second.t->slot >= kImgFirst) freeSlots_.push_back(it->second.t->slot);
         it = uploaded_.erase(it);
@@ -1274,6 +1415,7 @@ bool dekoPresentSurface(Renderer* r, const Surface& s) {
 }
 const char* dekoDeviceName(Renderer* r) { return static_cast<DekoRenderer*>(r)->device(); }
 void dekoSetSwapInterval(Renderer* r, int n) { static_cast<DekoRenderer*>(r)->setSwapInterval(n); }
-void dekoTakeCounts(Renderer* r, long out[4]) { static_cast<DekoRenderer*>(r)->takeCounts(out); }
+void dekoTakeCpu(Renderer* r, double out[5]) { static_cast<DekoRenderer*>(r)->takeCpu(out); }
+void dekoTakeCounts(Renderer* r, long out[5]) { static_cast<DekoRenderer*>(r)->takeCounts(out); }
 std::string dekoTakeLadder(Renderer* r) { return static_cast<DekoRenderer*>(r)->takeLadder(); }
 }  // namespace omk
